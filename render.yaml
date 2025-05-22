@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: store
+    env: ruby
+    plan: free
+    buildCommand: "./bin/render-build.sh"
+    startCommand: "bundle exec puma -C config/puma.rb"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: store_db
+          property: connectionString
+      - key: RAILS_MASTER_KEY
+        sync: false
+      - key: RAILS_ENV
+        value: production
+      - key: DEFAULT_USER_EMAIL
+        sync: false
+      - key: DEFAULT_USER_PASSWORD
+        sync: false
+
+databases:
+  - name: store_db
+    databaseName: store
+    plan: free
+    ipAllowList: [] # Only allow internal connections
