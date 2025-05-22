@@ -4,7 +4,7 @@ module CreativesHelper
       creatives.map do |creative|
         concat(
           content_tag(:li) do
-            concat(link_to(creative.name, creative))
+            concat(link_to(creative.description, creative))
             if creative.children.any?
               concat(render_creative_tree(creative.children))
             end

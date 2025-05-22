@@ -5,7 +5,11 @@
 
   <section class="creative-info">
     <% cache @creative do %>
-      <h1><%= @creative.name %></h1>
+      <% if @creative.parent %>
+        <h1>
+          <%= @creative.parent.description %>
+        </h1>
+      <% end %>
       <%= @creative.description %>
     <% end %>
 
