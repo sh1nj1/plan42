@@ -1,23 +1,23 @@
-# README
+# Plan42
 
-[🇰🇷 (한국어)](./README_KO.md) | [🇬🇧 (English)](./README.md)
+A simple issue management or documenting tool for productive development.
 
-This is working codes for [Ruby on Rails getting started document](getting_started.md).
+## Getting Started
 
-Runtime version info:
+[Ruby on Rails getting started document](getting_started.md)
+
+* `bin/rails db:migrate` - Run database migrations (default to use sqlite3)
+* `bin/rails db:seed` - Insert seed data into the database (data in db/seeds.rb)
+* `bin/rails server` - Start the Rails server
+
+### Runtime version info:
 
 ```bash
 store % ruby -v
 ruby 3.4.1 (2024-12-25 revision 48d4efcb85) +PRISM [arm64-darwin24]
 store % rails -v
-Rails 8.0.1
+Rails 8.0.2
 ```
-
-## Getting Started
-
-* `bin/rails db:migrate` - Run database migrations (default to use sqlite3)
-* `bin/rails db:seed` - Insert seed data into the database (data in db/seeds.rb)
-* `bin/rails server` - Start the Rails server
 
 ## Deploy to AWS EC2
 
