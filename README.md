@@ -2,9 +2,11 @@
 
 A simple issue management or documenting tool for productive development.
 
+* [Features](docs/features.md)
+
 ## Getting Started
 
-[Ruby on Rails getting started document](getting_started.md)
+[Ruby on Rails getting started document](docs/getting_started.md)
 
 * `bin/rails db:migrate` - Run database migrations (default to use sqlite3)
 * `bin/rails db:seed` - Insert seed data into the database (data in db/seeds.rb)
@@ -21,7 +23,7 @@ Rails 8.0.2
 
 ## Deploy to AWS EC2
 
-- [Deploy to AWS EC2](deploy_to_ec2.md)
+- [Deploy to AWS EC2](docs/deploy_to_ec2.md)
 
 ## Deploying to Render
 
