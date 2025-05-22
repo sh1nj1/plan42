@@ -29,6 +29,6 @@
 
 en:
   hello: "Hello world"
-  products:
+  creatives:
     index:
-      title: "Products"
+      title: "creatives"

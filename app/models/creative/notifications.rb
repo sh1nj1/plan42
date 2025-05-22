@@ -1,4 +1,4 @@
-module Product::Notifications
+module Creative::Notifications
     extend ActiveSupport::Concern
 
     included do
@@ -12,7 +12,7 @@ module Product::Notifications
 
     def notify_subscribers
       subscribers.each do |subscriber|
-        ProductMailer.with(product: self, subscriber: subscriber).in_stock.deliver_later
+        CreativeMailer.with(creative: self, subscriber: subscriber).in_stock.deliver_later
       end
     end
 end

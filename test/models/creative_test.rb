@@ -1,19 +1,19 @@
 require "test_helper"
 
-class ProductTest < ActiveSupport::TestCase
+class CreativeTest < ActiveSupport::TestCase
   # test "the truth" do
   #   assert true
   # end
   include ActionMailer::TestHelper
 
   test "sends email notifications when back in stock" do
-    product = products(:tshirt)
+    creative = creatives(:tshirt)
 
-    # Set product out of stock
-    product.update(inventory_count: 0)
+    # Set creative out of stock
+    creative.update(inventory_count: 0)
 
     assert_emails 2 do
-      product.update(inventory_count: 99)
+      creative.update(inventory_count: 99)
     end
   end
 end

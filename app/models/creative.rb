@@ -1,4 +1,4 @@
-class Product < ApplicationRecord
+class Creative < ApplicationRecord
     include Notifications
 
     has_many :subscribers, dependent: :destroy

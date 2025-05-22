@@ -1,6 +1,6 @@
 Good news!
 
-<%= @product.name %> is back in stock.
-<%= product_url(@product) %>
+<%= @creative.name %> is back in stock.
+<%= creative_url(@creative) %>
 
 Unsubscribe: <%= unsubscribe_url(token: params[:subscriber].generate_token_for(:unsubscribe)) %>

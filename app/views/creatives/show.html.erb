@@ -1,0 +1,19 @@
+<p><%= link_to "Back", creatives_path %></p>
+
+<section class="creative">
+  <%= image_tag @creative.featured_image if @creative.featured_image.attached? %>
+
+  <section class="creative-info">
+    <% cache @creative do %>
+      <h1><%= @creative.name %></h1>
+      <%= @creative.description %>
+    <% end %>
+
+    <%= render "inventory", creative: @creative %>
+
+    <% if authenticated? %>
+      <%= link_to "Edit", edit_creative_path(@creative) %>
+      <%= button_to "Delete", @creative, method: :delete, data: { turbo_confirm: "Are you sure?" } %>
+    <% end %>
+  </section>
+</section>

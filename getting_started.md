@@ -233,14 +233,14 @@ It helps generate the structured query language (SQL) for interacting with the
 database like creating, updating, and deleting tables and records. Our
 application is using SQLite which is the default for Rails.
 
-Let's start by adding a database table to our Rails application to add products
+Let's start by adding a database table to our Rails application to add creatives
 to our simple e-commerce store.
 
 ```bash
-$ bin/rails generate model Product name:string
+$ bin/rails generate model creative name:string
 ```
 
-This command tells Rails to generate a model named `Product` which has a `name`
+This command tells Rails to generate a model named `creative` which has a `name`
 column and type of `string` in the database. Later on, you'll learn how to add
 other column types.
 
@@ -248,21 +248,21 @@ You'll see the following in your terminal:
 
 ```bash
       invoke  active_record
-      create    db/migrate/20240426151900_create_products.rb
-      create    app/models/product.rb
+      create    db/migrate/20240426151900_create_creatives.rb
+      create    app/models/creative.rb
       invoke    test_unit
-      create      test/models/product_test.rb
-      create      test/fixtures/products.yml
+      create      test/models/creative_test.rb
+      create      test/fixtures/creatives.yml
 ```
 
 This command does several things. It creates...
 
 1. A migration in the `db/migrate` folder.
-2. An Active Record model in `app/models/product.rb`.
+2. An Active Record model in `app/models/creative.rb`.
 3. Tests and test fixtures for this model.
 
 NOTE: Model names are *singular*, because an instantiated model represents a
-single record in the database (i.e., You are creating a _product_ to add to the
+single record in the database (i.e., You are creating a _creative_ to add to the
 database.).
 
 ### Database Migrations
@@ -276,12 +276,12 @@ they can be deployed to production (live, online!) safely.
 
 In your code editor, open the migration Rails created for us so we can see what
 the migration does. This is located in
-`db/migrate/<timestamp>_create_products.rb`:
+`db/migrate/<timestamp>_create_creatives.rb`:
 
 ```ruby
-class CreateProducts < ActiveRecord::Migration[8.1]
+class CreateCreatives < ActiveRecord::Migration[8.1]
   def change
-    create_table :products do |t|
+    create_table :creatives do |t|
       t.string :name
 
       t.timestamps
@@ -290,16 +290,16 @@ class CreateProducts < ActiveRecord::Migration[8.1]
 end
 ```
 
-This migration is telling Rails to create a new database table named `products`.
+This migration is telling Rails to create a new database table named `creatives`.
 
 NOTE: In contrast to the model above, Rails makes the database table names
 _plural_, because the database holds all of the instances of each model (i.e.,
-You are creating a database of _products_).
+You are creating a database of _creatives_).
 
 The `create_table` block then defines which columns and types should be defined
 in this database table.
 
-`t.string :name` tells Rails to create a column in the `products` table called
+`t.string :name` tells Rails to create a column in the `creatives` table called
 `name` and set the type as `string`.
 
 `t.timestamps` is a shortcut for defining two columns on your models:
@@ -320,10 +320,10 @@ This command checks for any new migrations and applies them to your database.
 Its output looks like this:
 
 ```bash
-== 20240426151900 CreateProducts: migrating ===================================
--- create_table(:products)
+== 20240426151900 CreateCreatives: migrating ===================================
+-- create_table(:creatives)
    -> 0.0030s
-== 20240426151900 CreateProducts: migrated (0.0031s) ==========================
+== 20240426151900 CreateCreatives: migrated (0.0031s) ==========================
 ```
 
 TIP: If you make a mistake, you can run `bin/rails db:rollback` to undo the last
@@ -332,7 +332,7 @@ migration.
 Rails Console
 -------------
 
-Now that we have created our products table, we can interact with it in Rails.
+Now that we have created our creatives table, we can interact with it in Rails.
 Let's try it out.
 
 For this, we're going to use a Rails feature called the *console*. The console
@@ -362,30 +362,30 @@ It works!
 Active Record Model Basics
 --------------------------
 
-When we ran the Rails model generator to create the `Product` model, it created
-a file at `app/models/product.rb`. This file creates a class that uses Active
-Record for interacting with our `products` database table.
+When we ran the Rails model generator to create the `creative` model, it created
+a file at `app/models/creative.rb`. This file creates a class that uses Active
+Record for interacting with our `creatives` database table.
 
 ```ruby
-class Product < ApplicationRecord
+class creative < ApplicationRecord
 end
 ```
 
 You might be surprised that there is no code in this class. How does Rails know
 what defines this model?
 
-When the `Product` model is used, Rails will query the database table for the
+When the `creative` model is used, Rails will query the database table for the
 column names and types and automatically generate code for these attributes.
 Rails saves us from writing this boilerplate code and instead takes care of it
 for us behind the scenes so we can focus on our application logic instead.
 
-Let's use the Rails console to see what columns Rails detects for the Product
+Let's use the Rails console to see what columns Rails detects for the creative
 model.
 
 Run:
 
 ```irb
-store(dev)> Product.column_names
+store(dev)> creative.column_names
 ```
 
 And you should see:
@@ -395,28 +395,28 @@ And you should see:
 ```
 
 Rails asked the database for column information above and used that information
-to define attributes on the `Product` class dynamically so you don't have to
+to define attributes on the `creative` class dynamically so you don't have to
 manually define each of them. This is one example of how Rails makes development
 a breeze.
 
 ### Creating Records
 
-We can instantiate a new Product record with the following code:
+We can instantiate a new creative record with the following code:
 
 ```irb
-store(dev)> product = Product.new(name: "T-Shirt")
-=> #<Product:0x000000012e616c30 id: nil, name: "T-Shirt", created_at: nil, updated_at: nil>
+store(dev)> creative = creative.new(name: "T-Shirt")
+=> #<creative:0x000000012e616c30 id: nil, name: "T-Shirt", created_at: nil, updated_at: nil>
 ```
 
-The `product` variable is an instance of `Product`. It has not been saved to the
+The `creative` variable is an instance of `creative`. It has not been saved to the
 database, and so does not have an ID, created_at, or updated_at timestamps.
 
 We can call `save` to write the record to the database.
 
 ```irb
-store(dev)> product.save
+store(dev)> creative.save
   TRANSACTION (0.1ms)  BEGIN immediate TRANSACTION /*application='Store'*/
-  Product Create (0.9ms)  INSERT INTO "products" ("name", "created_at", "updated_at") VALUES ('T-Shirt', '2024-11-09 16:35:01.117836', '2024-11-09 16:35:01.117836') RETURNING "id" /*application='Store'*/
+  creative Create (0.9ms)  INSERT INTO "creatives" ("name", "created_at", "updated_at") VALUES ('T-Shirt', '2024-11-09 16:35:01.117836', '2024-11-09 16:35:01.117836') RETURNING "id" /*application='Store'*/
   TRANSACTION (0.9ms)  COMMIT TRANSACTION /*application='Store'*/
 => true
 ```
@@ -426,41 +426,41 @@ When `save` is called, Rails takes the attributes in memory and generates an
 
 Rails also updates the object in memory with the database record `id` along with
 the `created_at` and `updated_at` timestamps. We can see that by printing out
-the `product` variable.
+the `creative` variable.
 
 ```irb
-store(dev)> product
-=> #<Product:0x00000001221f6260 id: 1, name: "T-Shirt", created_at: "2024-11-09 16:35:01.117836000 +0000", updated_at: "2024-11-09 16:35:01.117836000 +0000">
+store(dev)> creative
+=> #<creative:0x00000001221f6260 id: 1, name: "T-Shirt", created_at: "2024-11-09 16:35:01.117836000 +0000", updated_at: "2024-11-09 16:35:01.117836000 +0000">
 ```
 
 Similar to `save`, we can use `create` to instantiate and save an Active Record
 object in a single call.
 
 ```irb
-store(dev)> Product.create(name: "Pants")
+store(dev)> creative.create(name: "Pants")
   TRANSACTION (0.1ms)  BEGIN immediate TRANSACTION /*application='Store'*/
-  Product Create (0.4ms)  INSERT INTO "products" ("name", "created_at", "updated_at") VALUES ('Pants', '2024-11-09 16:36:01.856751', '2024-11-09 16:36:01.856751') RETURNING "id" /*application='Store'*/
+  creative Create (0.4ms)  INSERT INTO "creatives" ("name", "created_at", "updated_at") VALUES ('Pants', '2024-11-09 16:36:01.856751', '2024-11-09 16:36:01.856751') RETURNING "id" /*application='Store'*/
   TRANSACTION (0.1ms)  COMMIT TRANSACTION /*application='Store'*/
-=> #<Product:0x0000000120485c80 id: 2, name: "Pants", created_at: "2024-11-09 16:36:01.856751000 +0000", updated_at: "2024-11-09 16:36:01.856751000 +0000">
+=> #<creative:0x0000000120485c80 id: 2, name: "Pants", created_at: "2024-11-09 16:36:01.856751000 +0000", updated_at: "2024-11-09 16:36:01.856751000 +0000">
 ```
 
 ### Querying Records
 
 We can also look up records from the database using our Active Record model.
 
-To find all the Product records in the database, we can use the `all` method.
-This is a _class_ method, which is why we can use it on Product (versus an
-instance method that we would call on the product instance, like `save` above).
+To find all the creative records in the database, we can use the `all` method.
+This is a _class_ method, which is why we can use it on creative (versus an
+instance method that we would call on the creative instance, like `save` above).
 
 ```irb
-store(dev)> Product.all
-  Product Load (0.1ms)  SELECT "products".* FROM "products" /* loading for pp */ LIMIT 11 /*application='Store'*/
-=> [#<Product:0x0000000121845158 id: 1, name: "T-Shirt", created_at: "2024-11-09 16:35:01.117836000 +0000", updated_at: "2024-11-09 16:35:01.117836000 +0000">,
- #<Product:0x0000000121845018 id: 2, name: "Pants", created_at: "2024-11-09 16:36:01.856751000 +0000", updated_at: "2024-11-09 16:36:01.856751000 +0000">]
+store(dev)> creative.all
+  creative Load (0.1ms)  SELECT "creatives".* FROM "creatives" /* loading for pp */ LIMIT 11 /*application='Store'*/
+=> [#<creative:0x0000000121845158 id: 1, name: "T-Shirt", created_at: "2024-11-09 16:35:01.117836000 +0000", updated_at: "2024-11-09 16:35:01.117836000 +0000">,
+ #<creative:0x0000000121845018 id: 2, name: "Pants", created_at: "2024-11-09 16:36:01.856751000 +0000", updated_at: "2024-11-09 16:36:01.856751000 +0000">]
 ```
 
-This generates a `SELECT` SQL query to load all records from the `products`
-table. Each record is automatically converted into an instance of our Product
+This generates a `SELECT` SQL query to load all records from the `creatives`
+table. Each record is automatically converted into an instance of our creative
 Active Record model so we can easily work with them from Ruby.
 
 TIP: The `all` method returns an `ActiveRecord::Relation` object which is an
@@ -473,9 +473,9 @@ What if we want to filter the results from our database? We can use `where` to
 filter records by a column.
 
 ```irb
-store(dev)> Product.where(name: "Pants")
-  Product Load (1.5ms)  SELECT "products".* FROM "products" WHERE "products"."name" = 'Pants' /* loading for pp */ LIMIT 11 /*application='Store'*/
-=> [#<Product:0x000000012184d858 id: 2, name: "Pants", created_at: "2024-11-09 16:36:01.856751000 +0000", updated_at: "2024-11-09 16:36:01.856751000 +0000">]
+store(dev)> creative.where(name: "Pants")
+  creative Load (1.5ms)  SELECT "creatives".* FROM "creatives" WHERE "creatives"."name" = 'Pants' /* loading for pp */ LIMIT 11 /*application='Store'*/
+=> [#<creative:0x000000012184d858 id: 2, name: "Pants", created_at: "2024-11-09 16:36:01.856751000 +0000", updated_at: "2024-11-09 16:36:01.856751000 +0000">]
 ```
 
 This generates a `SELECT` SQL query but also adds a `WHERE` clause to filter the
@@ -485,10 +485,10 @@ records that have a `name` matching `"Pants"`. This also returns an
 We can use `order(name: :asc)` to sort records by name in ascending alphabetical order.
 
 ```irb
-store(dev)> Product.order(name: :asc)
-  Product Load (0.3ms)  SELECT "products".* FROM "products" /* loading for pp */ ORDER BY "products"."name" ASC LIMIT 11 /*application='Store'*/
-=> [#<Product:0x0000000120e02a88 id: 2, name: "Pants", created_at: "2024-11-09 16:36:01.856751000 +0000", updated_at: "2024-11-09 16:36:01.856751000 +0000">,
- #<Product:0x0000000120e02948 id: 1, name: "T-Shirt", created_at: "2024-11-09 16:35:01.117836000 +0000", updated_at: "2024-11-09 16:35:01.117836000 +0000">]
+store(dev)> creative.order(name: :asc)
+  creative Load (0.3ms)  SELECT "creatives".* FROM "creatives" /* loading for pp */ ORDER BY "creatives"."name" ASC LIMIT 11 /*application='Store'*/
+=> [#<creative:0x0000000120e02a88 id: 2, name: "Pants", created_at: "2024-11-09 16:36:01.856751000 +0000", updated_at: "2024-11-09 16:36:01.856751000 +0000">,
+ #<creative:0x0000000120e02948 id: 1, name: "T-Shirt", created_at: "2024-11-09 16:35:01.117836000 +0000", updated_at: "2024-11-09 16:35:01.117836000 +0000">]
 ```
 
 ### Finding Records
@@ -499,16 +499,16 @@ We can do this by using the `find` class method to look up a single record by
 ID. Call the method and pass in the specific ID by using the following code:
 
 ```irb
-store(dev)> Product.find(1)
-  Product Load (0.2ms)  SELECT "products".* FROM "products" WHERE "products"."id" = 1 LIMIT 1 /*application='Store'*/
-=> #<Product:0x000000012054af08 id: 1, name: "T-Shirt", created_at: "2024-11-09 16:35:01.117836000 +0000", updated_at: "2024-11-09 16:35:01.117836000 +0000">
+store(dev)> creative.find(1)
+  creative Load (0.2ms)  SELECT "creatives".* FROM "creatives" WHERE "creatives"."id" = 1 LIMIT 1 /*application='Store'*/
+=> #<creative:0x000000012054af08 id: 1, name: "T-Shirt", created_at: "2024-11-09 16:35:01.117836000 +0000", updated_at: "2024-11-09 16:35:01.117836000 +0000">
 ```
 
 This generates a `SELECT` query but specifies a `WHERE` for the `id` column
 matching the ID of `1` that was passed in. It also adds a `LIMIT` to only return
 a single record.
 
-This time, we get a `Product` instance instead of an `ActiveRecord::Relation`
+This time, we get a `creative` instance instead of an `ActiveRecord::Relation`
 since we're only retrieving a single record from the database.
 
 ### Updating Records
@@ -516,37 +516,37 @@ since we're only retrieving a single record from the database.
 Records can be updated in 2 ways: using `update` or assigning attributes and
 calling `save`.
 
-We can call `update` on a Product instance and pass in a Hash of new attributes
+We can call `update` on a creative instance and pass in a Hash of new attributes
 to save to the database. This will assign the attributes, run validations, and
 save the changes to the database in one method call.
 
 ```irb
-store(dev)> product = Product.find(1)
-store(dev)> product.update(name: "Shoes")
+store(dev)> creative = creative.find(1)
+store(dev)> creative.update(name: "Shoes")
   TRANSACTION (0.1ms)  BEGIN immediate TRANSACTION /*application='Store'*/
-  Product Update (0.3ms)  UPDATE "products" SET "name" = 'Shoes', "updated_at" = '2024-11-09 22:38:19.638912' WHERE "products"."id" = 1 /*application='Store'*/
+  creative Update (0.3ms)  UPDATE "creatives" SET "name" = 'Shoes', "updated_at" = '2024-11-09 22:38:19.638912' WHERE "creatives"."id" = 1 /*application='Store'*/
   TRANSACTION (0.4ms)  COMMIT TRANSACTION /*application='Store'*/
 => true
 ```
 
-This updated the name of the "T-Shirt" product to "Shoes" in the database.
-Confirm this by running `Product.all` again.
+This updated the name of the "T-Shirt" creative to "Shoes" in the database.
+Confirm this by running `creative.all` again.
 
 ```irb
-store(dev)> Product.all
+store(dev)> creative.all
 ```
 
-You will see two products: Shoes and Pants.
+You will see two creatives: Shoes and Pants.
 
 ```irb
-  Product Load (0.3ms)  SELECT "products".* FROM "products" /* loading for pp */ LIMIT 11 /*application='Store'*/
+  creative Load (0.3ms)  SELECT "creatives".* FROM "creatives" /* loading for pp */ LIMIT 11 /*application='Store'*/
 =>
-[#<Product:0x000000012c0f7300
+[#<creative:0x000000012c0f7300
   id: 1,
   name: "Shoes",
   created_at: "2024-12-02 20:29:56.303546000 +0000",
   updated_at: "2024-12-02 20:30:14.127456000 +0000">,
- #<Product:0x000000012c0f71c0
+ #<creative:0x000000012c0f71c0
   id: 2,
   name: "Pants",
   created_at: "2024-12-02 20:30:02.997261000 +0000",
@@ -559,12 +559,12 @@ validate and save changes to the database.
 Let's change the name "Shoes" back to "T-Shirt".
 
 ```irb
-store(dev)> product = Product.find(1)
-store(dev)> product.name = "T-Shirt"
+store(dev)> creative = creative.find(1)
+store(dev)> creative.name = "T-Shirt"
 => "T-Shirt"
-store(dev)> product.save
+store(dev)> creative.save
   TRANSACTION (0.1ms)  BEGIN immediate TRANSACTION /*application='Store'*/
-  Product Update (0.2ms)  UPDATE "products" SET "name" = 'T-Shirt', "updated_at" = '2024-11-09 22:39:09.693548' WHERE "products"."id" = 1 /*application='Store'*/
+  creative Update (0.2ms)  UPDATE "creatives" SET "name" = 'T-Shirt', "updated_at" = '2024-11-09 22:39:09.693548' WHERE "creatives"."id" = 1 /*application='Store'*/
   TRANSACTION (0.0ms)  COMMIT TRANSACTION /*application='Store'*/
 => true
 ```
@@ -574,21 +574,21 @@ store(dev)> product.save
 The `destroy` method can be used to delete a record from the database.
 
 ```irb
-store(dev)> product.destroy
+store(dev)> creative.destroy
   TRANSACTION (0.1ms)  BEGIN immediate TRANSACTION /*application='Store'*/
-  Product Destroy (0.4ms)  DELETE FROM "products" WHERE "products"."id" = 1 /*application='Store'*/
+  creative Destroy (0.4ms)  DELETE FROM "creatives" WHERE "creatives"."id" = 1 /*application='Store'*/
   TRANSACTION (0.1ms)  COMMIT TRANSACTION /*application='Store'*/
-=> #<Product:0x0000000125813d48 id: 1, name: "T-Shirt", created_at: "2024-11-09 22:39:38.498730000 +0000", updated_at: "2024-11-09 22:39:38.498730000 +0000">
+=> #<creative:0x0000000125813d48 id: 1, name: "T-Shirt", created_at: "2024-11-09 22:39:38.498730000 +0000", updated_at: "2024-11-09 22:39:38.498730000 +0000">
 ```
 
-This deleted the T-Shirt product from our database. We can confirm this with
-`Product.all` to see that it only returns Pants.
+This deleted the T-Shirt creative from our database. We can confirm this with
+`creative.all` to see that it only returns Pants.
 
 ```irb
-store(dev)> Product.all
-  Product Load (1.9ms)  SELECT "products".* FROM "products" /* loading for pp */ LIMIT 11 /*application='Store'*/
+store(dev)> creative.all
+  creative Load (1.9ms)  SELECT "creatives".* FROM "creatives" /* loading for pp */ LIMIT 11 /*application='Store'*/
 =>
-[#<Product:0x000000012abde4c8
+[#<creative:0x000000012abde4c8
   id: 2,
   name: "Pants",
   created_at: "2024-11-09 22:33:19.638912000 +0000",
@@ -600,11 +600,11 @@ store(dev)> Product.all
 Active Record provides *validations* which allows you to ensure data inserted
 into the database adheres to certain rules.
 
-Let's add a `presence` validation to the Product model to ensure that all
-products must have a `name`.
+Let's add a `presence` validation to the creative model to ensure that all
+creatives must have a `name`.
 
 ```ruby
-class Product < ApplicationRecord
+class creative < ApplicationRecord
   validates :name, presence: true
 end
 ```
@@ -618,11 +618,11 @@ store(dev)> reload!
 Reloading...
 ```
 
-Let's try to create a Product without a name in the Rails console.
+Let's try to create a creative without a name in the Rails console.
 
 ```irb
-store(dev)> product = Product.new
-store(dev)> product.save
+store(dev)> creative = creative.new
+store(dev)> creative.save
 => false
 ```
 
@@ -633,7 +633,7 @@ to ensure valid input. To see a list of errors generated by validations, we can
 call `errors` on the instance.
 
 ```irb
-store(dev)> product.errors
+store(dev)> creative.errors
 => #<ActiveModel::Errors [#<ActiveModel::Error attribute=name, type=blank, options={}>]>
 ```
 
@@ -644,11 +644,11 @@ It also can generate friendly error messages for us that we can use in our user
 interface.
 
 ```irb
-store(dev)> product.errors.full_messages
+store(dev)> creative.errors.full_messages
 => ["Name can't be blank"]
 ```
 
-Now let's build a web interface for our Products.
+Now let's build a web interface for our creatives.
 
 We are done with the console for now, so you can exit out of it by running
 `exit`.
@@ -682,14 +682,14 @@ First, let's do a quick refresher on URLs and HTTP Request methods.
 Let's examine the different parts of a URL:
 
 ```
-https://example.org/products?sale=true&sort=asc
+https://example.org/creatives?sale=true&sort=asc
 ```
 
 In this URL, each part has a name:
 
 - `https` is the **protocol**
 - `example.org` is the **host**
-- `/products` is the **path**
+- `/creatives` is the **path**
 - `?sale=true&sort=asc` are the **query parameters**
 
 ### HTTP Methods and Their Purpose
@@ -715,15 +715,15 @@ following route to `config/routes.rb`
 
 ```ruby
 Rails.application.routes.draw do
-  get "/products", to: "products#index"
+  get "/creatives", to: "creatives#index"
 end
 ```
 
-This route tells Rails to look for GET requests to the `/products` path. In this
-example, we specified `"products#index"` for where to route the request.
+This route tells Rails to look for GET requests to the `/creatives` path. In this
+example, we specified `"creatives#index"` for where to route the request.
 
 When Rails sees a request that matches, it will send the request to the
-`ProductsController` and the `index` action inside of that controller. This is
+`CreativesController` and the `index` action inside of that controller. This is
 how Rails will process the request and return a response to the browser.
 
 You'll notice that we don't need to specify the protocol, domain, or query
@@ -741,24 +741,24 @@ request, so they are typically used in the controller for filtering the data.
 Let's look at another example. Add this line after the previous route:
 
 ```ruby
-post "/products", to: "products#create"
+post "/creatives", to: "creatives#create"
 ```
 
-Here, we've told Rails to take POST requests to "/products" and process them
-with the `ProductsController` using the `create` action.
+Here, we've told Rails to take POST requests to "/creatives" and process them
+with the `CreativesController` using the `create` action.
 
 Routes may also need to match URLs with certain patterns. So how does that work?
 
 ```ruby
-get "/products/:id", to: "products#show"
+get "/creatives/:id", to: "creatives#show"
 ```
 
 This route has `:id` in it. This is called a `parameter` and it captures a
 portion of the URL to be used later for processing the request.
 
-If a user visits `/products/1`, the `:id` param is set to `1` and can be used in
-the controller action to look up and display the Product record with an ID of 1.
-`/products/2` would display Product with an ID of 2 and so on.
+If a user visits `/creatives/1`, the `:id` param is set to `1` and can be used in
+the controller action to look up and display the creative record with an ID of 1.
+`/creatives/2` would display creative with an ID of 2 and so on.
 
 Route parameters don't have to be Integers, either.
 
@@ -790,18 +790,18 @@ Update, Delete (CRUD). This translates to 8 typical routes:
 We can add routes for these CRUD actions with the following:
 
 ```ruby
-get "/products", to: "products#index"
+get "/creatives", to: "creatives#index"
 
-get "/products/new", to: "products#new"
-post "/products", to: "products#create"
+get "/creatives/new", to: "creatives#new"
+post "/creatives", to: "creatives#create"
 
-get "/products/:id", to: "products#show"
+get "/creatives/:id", to: "creatives#show"
 
-get "/products/:id/edit", to: "products#edit"
-patch "/products/:id", to: "products#update"
-put "/products/:id", to: "products#update"
+get "/creatives/:id/edit", to: "creatives#edit"
+patch "/creatives/:id", to: "creatives#update"
+put "/creatives/:id", to: "creatives#update"
 
-delete "/products/:id", to: "products#destroy"
+delete "/creatives/:id", to: "creatives#destroy"
 ```
 
 #### Resource Routes
@@ -811,7 +811,7 @@ for defining them. To create all of the same CRUD routes, replace the above
 routes with this single line:
 
 ```ruby
-resources :products
+resources :creatives
 ```
 
 TIP: If you don’t want all these CRUD actions, you specify exactly what you
@@ -829,18 +829,18 @@ $ bin/rails routes
 ```
 
 You'll see this in the output which are the routes generated by
-`resources :products`
+`resources :creatives`
 
 ```
                                   Prefix Verb   URI Pattern                                                                                       Controller#Action
-                                products GET    /products(.:format)                                                                               products#index
-                                         POST   /products(.:format)                                                                               products#create
-                             new_product GET    /products/new(.:format)                                                                           products#new
-                            edit_product GET    /products/:id/edit(.:format)                                                                      products#edit
-                                 product GET    /products/:id(.:format)                                                                           products#show
-                                         PATCH  /products/:id(.:format)                                                                           products#update
-                                         PUT    /products/:id(.:format)                                                                           products#update
-                                         DELETE /products/:id(.:format)                                                                           products#destroy
+                                creatives GET    /creatives(.:format)                                                                               creatives#index
+                                         POST   /creatives(.:format)                                                                               creatives#create
+                             new_creative GET    /creatives/new(.:format)                                                                           creatives#new
+                            edit_creative GET    /creatives/:id/edit(.:format)                                                                      creatives#edit
+                                 creative GET    /creatives/:id(.:format)                                                                           creatives#show
+                                         PATCH  /creatives/:id(.:format)                                                                           creatives#update
+                                         PUT    /creatives/:id(.:format)                                                                           creatives#update
+                                         DELETE /creatives/:id(.:format)                                                                           creatives#destroy
 ```
 
 You'll also see routes from other built-in Rails features like health checks.
@@ -848,23 +848,23 @@ You'll also see routes from other built-in Rails features like health checks.
 Controllers & Actions
 ---------------------
 
-Now that we've defined routes for Products, let's implement the controller and
+Now that we've defined routes for creatives, let's implement the controller and
 actions to handle requests to these URLs.
 
-This command will generate a `ProductsController with an index action. Since
+This command will generate a `CreativesController with an index action. Since
 we've already set up routes, we can skip that part of the generator using a
 flag.
 
 ```bash
-$ bin/rails generate controller Products index --skip-routes
-      create  app/controllers/products_controller.rb
+$ bin/rails generate controller creatives index --skip-routes
+      create  app/controllers/creatives_controller.rb
       invoke  erb
-      create    app/views/products
-      create    app/views/products/index.html.erb
+      create    app/views/creatives
+      create    app/views/creatives/index.html.erb
       invoke  test_unit
-      create    test/controllers/products_controller_test.rb
+      create    test/controllers/creatives_controller_test.rb
       invoke  helper
-      create    app/helpers/products_helper.rb
+      create    app/helpers/creatives_helper.rb
       invoke    test_unit
 ```
 
@@ -876,30 +876,30 @@ This command generates a handful of files for our controller:
 * A test file for this controller
 * A helper file for extracting logic in our views
 
-Let's take a look at the ProductsController defined in
-`app/controllers/products_controller.rb`. It looks like this:
+Let's take a look at the CreativesController defined in
+`app/controllers/creatives_controller.rb`. It looks like this:
 
 ```ruby
-class ProductsController < ApplicationController
+class CreativesController < ApplicationController
   def index
   end
 end
 ```
 
-NOTE: You may notice the file name `products_controller.rb` is an underscored
-version of the Class this file defines, `ProductsController`. This pattern helps
+NOTE: You may notice the file name `creatives_controller.rb` is an underscored
+version of the Class this file defines, `CreativesController`. This pattern helps
 Rails to automatically load code without having to use `require` like you may
 have seen in other languages.
 
 The `index` method here is an Action. Even though it's an empty method, Rails
 will default to rendering a template with the matching name.
 
-The `index` action will render `app/views/products/index.html.erb`. If we open
+The `index` action will render `app/views/creatives/index.html.erb`. If we open
 up that file in our code editor, we'll see the HTML it renders.
 
 ```erb
-<h1>Products#index</h1>
-<p>Find me in app/views/products/index.html.erb</p>
+<h1>creatives#index</h1>
+<p>Find me in app/views/creatives/index.html.erb</p>
 ```
 
 ### Making Requests
@@ -908,23 +908,23 @@ Let's see this in our browser. First, run `bin/rails server` in your terminal to
 start the Rails server. Then open http://localhost:3000 and you will see the
 Rails welcome page.
 
-If we open http://localhost:3000/products in the browser, Rails will render the
-products index HTML.
+If we open http://localhost:3000/creatives in the browser, Rails will render the
+creatives index HTML.
 
-Our browser requested `/products` and Rails matched this route to
-`products#index`. Rails sent the request to the `ProductsController` and called
+Our browser requested `/creatives` and Rails matched this route to
+`creatives#index`. Rails sent the request to the `CreativesController` and called
 the `index` action. Since this action was empty, Rails rendered the matching
-template at `app/views/products/index.html.erb` and returned that to our
+template at `app/views/creatives/index.html.erb` and returned that to our
 browser. Pretty cool!
 
 If we open `config/routes.rb`, we can tell Rails the root route should render
-the Products index action by adding this line:
+the creatives index action by adding this line:
 
 ```ruby
-root "products#index"
+root "creatives#index"
 ```
 
-Now when you visit http://localhost:3000, Rails will render Products#index.
+Now when you visit http://localhost:3000, Rails will render creatives#index.
 
 ### Instance Variables
 
@@ -935,23 +935,23 @@ variable. Rails uses instance variables (variables that start with an @) to
 share data with the views.
 
 ```ruby
-class ProductsController < ApplicationController
+class CreativesController < ApplicationController
   def index
-    @products = Product.all
+    @creatives = creative.all
   end
 end
 ```
 
-In `app/views/products/index.html.erb`, we can replace the HTML with this ERB:
+In `app/views/creatives/index.html.erb`, we can replace the HTML with this ERB:
 
 ```erb
-<%= debug @products %>
+<%= debug @creatives %>
 ```
 
 ERB is short for [Embedded Ruby](https://docs.ruby-lang.org/en/master/ERB.html)
 and allows us to execute Ruby code to dynamically generate HTML with Rails. The
 `<%= %>` tag tells ERB to execute the Ruby code inside and output the return
-value. In our case, this takes `@products`, converts it to YAML, and outputs the
+value. In our case, this takes `@creatives`, converts it to YAML, and outputs the
 YAML.
 
 Now refresh http://localhost:3000/ in your browser and you'll see that the
@@ -959,100 +959,100 @@ output has changed. What you're seeing is the records in your database being
 displayed in YAML format.
 
 The `debug` helper prints out variables in YAML format to help with debugging.
-For example, if you weren't paying attention and typed singular `@product`
-instead of plural `@products`, the debug helper could help you identify that the
+For example, if you weren't paying attention and typed singular `@creative`
+instead of plural `@creatives`, the debug helper could help you identify that the
 variable was not set correctly in the controller.
 
 TIP: Check out the [Action View Helpers guide](https://guides.rubyonrails.org/action_view_helpers.html) to see
 more helpers that are available.
 
-Let's update `app/views/products/index.html.erb` to render all of our product
+Let's update `app/views/creatives/index.html.erb` to render all of our creative
 names.
 
 ```erb
-<h1>Products</h1>
+<h1>creatives</h1>
 
-<div id="products">
-  <% @products.each do |product| %>
+<div id="creatives">
+  <% @creatives.each do |creative| %>
     <div>
-      <%= product.name %>
+      <%= creative.name %>
     </div>
   <% end %>
 </div>
 ```
 
-Using ERB, this code loops through each product in the `@products`
-`ActiveRecord::Relation` object and renders a `<div>` tag containing the product
+Using ERB, this code loops through each creative in the `@creatives`
+`ActiveRecord::Relation` object and renders a `<div>` tag containing the creative
 name.
 
 We've used a new ERB tag this time as well. `<% %>` evaluates the Ruby code but
-does not output the return value. That ignores the output of `@products.each`
+does not output the return value. That ignores the output of `@creatives.each`
 which would output an array that we don't want in our HTML.
 
 ### CRUD Actions
 
-We need to be able to access individual products. This is the R in CRUD to read
+We need to be able to access individual creatives. This is the R in CRUD to read
 a resource.
 
-We've already defined the route for individual products with our
-`resources :products` route. This generates `/products/:id` as a route that
-points to `products#show`.
+We've already defined the route for individual creatives with our
+`resources :creatives` route. This generates `/creatives/:id` as a route that
+points to `creatives#show`.
 
-Now we need to add that action to the `ProductsController` and define what
+Now we need to add that action to the `CreativesController` and define what
 happens when it is called.
 
-### Showing Individual Products
+### Showing Individual creatives
 
-Open the Products controller and add the `show` action like this:
+Open the creatives controller and add the `show` action like this:
 
 ```ruby
-class ProductsController < ApplicationController
+class CreativesController < ApplicationController
   def index
-    @products = Product.all
+    @creatives = creative.all
   end
 
   def show
-    @product = Product.find(params[:id])
+    @creative = creative.find(params[:id])
   end
 end
 ```
 
-The `show` action here defines the *singular* `@product` because it's loading a
-single record from the database, in other words: Show this one product. We use
-plural `@products` in `index` because we're loading multiple products.
+The `show` action here defines the *singular* `@creative` because it's loading a
+single record from the database, in other words: Show this one creative. We use
+plural `@creatives` in `index` because we're loading multiple creatives.
 
 To query the database, we use `params` to access the request parameters. In this
-case, we're using the `:id` from our route `/products/:id`. When we visit
-`/products/1`, the params hash contains `{id: 1}` which results in our `show`
-action calling `Product.find(1)` to load Product with ID of `1` from the
+case, we're using the `:id` from our route `/creatives/:id`. When we visit
+`/creatives/1`, the params hash contains `{id: 1}` which results in our `show`
+action calling `creative.find(1)` to load creative with ID of `1` from the
 database.
 
 We need a view for the show action next. Following the Rails naming conventions,
-the `ProductsController` expects views in `app/views` in a subfolder named
-`products`.
+the `CreativesController` expects views in `app/views` in a subfolder named
+`creatives`.
 
-The `show` action expects a file in `app/views/products/show.html.erb`. Let's
+The `show` action expects a file in `app/views/creatives/show.html.erb`. Let's
 create that file in our editor and add the following contents:
 
 ```erb
-<h1><%= @product.name %></h1>
+<h1><%= @creative.name %></h1>
 
-<%= link_to "Back", products_path %>
+<%= link_to "Back", creatives_path %>
 ```
 
-It would be helpful for the index page to link to the show page for each product
+It would be helpful for the index page to link to the show page for each creative
 so we can click on them to navigate. We can update the
-`app/views/products/index.html.erb` view to link to this new page to use an
+`app/views/creatives/index.html.erb` view to link to this new page to use an
 anchor tag to the path for the `show` action.
 
 ```erb#6,8
-<h1>Products</h1>
+<h1>creatives</h1>
 
-<div id="products">
-  <% @products.each do |product| %>
+<div id="creatives">
+  <% @creatives.each do |creative| %>
     <div>
-      <a href="/products/<%= product.id %>">
-        <%= product.name %>
+      <a href="/creatives/<%= creative.id %>">
+        <%= creative.name %>
       </a>
     </div>
   <% end %>
@@ -1068,16 +1068,16 @@ helpers you can use for generating URLs with Ruby code.
 
 ```
                                   Prefix Verb   URI Pattern                                                                                       Controller#Action
-                                products GET    /products(.:format)                                                                               products#index
-                                 product GET    /products/:id(.:format)                                                                           products#show
+                                creatives GET    /creatives(.:format)                                                                               creatives#index
+                                 creative GET    /creatives/:id(.:format)                                                                           creatives#show
 ```
 
 These route prefixes give us helpers like the following:
 
-* `products_path` generates `"/products`"`
-* `products_url` generates `"http://localhost:3000/products`"`
-* `product_path(1)` generates `"/products/1"`
-* `product_url(1)` generates `"http://localhost:3000/products/1"`
+* `creatives_path` generates `"/creatives`"`
+* `creatives_url` generates `"http://localhost:3000/creatives`"`
+* `creative_path(1)` generates `"/creatives/1"`
+* `creative_url(1)` generates `"http://localhost:3000/creatives/1"`
 
 `_path` returns a relative path which the browser understands is for the current
 domain.
@@ -1089,77 +1089,77 @@ browser.
 
 Combined with the `link_to` helper, we can generate anchor tags and use the URL
 helper to do this cleanly in Ruby. `link_to` accepts the display content for the
-link (`product.name`) and the path or URL to link to for the `href` attribute
-(`product`).
+link (`creative.name`) and the path or URL to link to for the `href` attribute
+(`creative`).
 
 Let's refactor this to use these helpers:
 
 ```erb#6
-<h1>Products</h1>
+<h1>creatives</h1>
 
-<div id="products">
-  <% @products.each do |product| %>
+<div id="creatives">
+  <% @creatives.each do |creative| %>
     <div>
-      <%= link_to product.name, product %>
+      <%= link_to creative.name, creative %>
     </div>
   <% end %>
 </div>
 ```
 
-### Creating Products
+### Creating creatives
 
-So far we've had to create products in the Rails console, but let's make this
+So far we've had to create creatives in the Rails console, but let's make this
 work in the browser.
 
 We need to create two actions for create:
 
-1. The new product form to collect product information
-2. The create action in the controller to save the product and check for errors
+1. The new creative form to collect creative information
+2. The create action in the controller to save the creative and check for errors
 
 Let's start with our controller actions.
 
 ```ruby
-class ProductsController < ApplicationController
+class CreativesController < ApplicationController
   def index
-    @products = Product.all
+    @creatives = creative.all
   end
 
   def show
-    @product = Product.find(params[:id])
+    @creative = creative.find(params[:id])
   end
 
   def new
-    @product = Product.new
+    @creative = creative.new
   end
 end
 ```
 
-The `new` action instantiates a new `Product` which we will use for displaying
+The `new` action instantiates a new `creative` which we will use for displaying
 the form fields.
 
-We can update `app/views/products/index.html.erb` to link to the new action.
+We can update `app/views/creatives/index.html.erb` to link to the new action.
 
 ```erb#3
-<h1>Products</h1>
+<h1>creatives</h1>
 
-<%= link_to "New product", new_product_path %>
+<%= link_to "New creative", new_creative_path %>
 
-<div id="products">
-  <% @products.each do |product| %>
+<div id="creatives">
+  <% @creatives.each do |creative| %>
     <div>
-      <%= link_to product.name, product %>
+      <%= link_to creative.name, creative %>
     </div>
   <% end %>
 </div>
 ```
 
-Let's create `app/views/products/new.html.erb` to render the form for this new
-`Product`.
+Let's create `app/views/creatives/new.html.erb` to render the form for this new
+`creative`.
 
 ```erb
-<h1>New product</h1>
+<h1>New creative</h1>
 
-<%= form_with model: @product do |form| %>
+<%= form_with model: @creative do |form| %>
   <div>
     <%= form.label :name %>
     <%= form.text_field :name %>
@@ -1172,7 +1172,7 @@ Let's create `app/views/products/new.html.erb` to render the form for this new
 ```
 
 In this view, we are using the Rails `form_with` helper to generate an HTML form
-to create products. This helper uses a *form builder* to handle things like CSRF
+to create creatives. This helper uses a *form builder* to handle things like CSRF
 tokens, generating the URL based upon the `model:` provided, and even tailoring
 the submit button text to the model.
 
@@ -1180,16 +1180,16 @@ If you open this page in your browser and View Source, the HTML for the form
 will look like this:
 
 ```html
-<form action="/products" accept-charset="UTF-8" method="post">
+<form action="/creatives" accept-charset="UTF-8" method="post">
   <input type="hidden" name="authenticity_token" value="UHQSKXCaFqy_aoK760zpSMUPy6TMnsLNgbPMABwN1zpW-Jx6k-2mISiF0ulZOINmfxPdg5xMyZqdxSW1UK-H-Q" autocomplete="off">
 
   <div>
-    <label for="product_name">Name</label>
-    <input type="text" name="product[name]" id="product_name">
+    <label for="creative_name">Name</label>
+    <input type="text" name="creative[name]" id="creative_name">
   </div>
 
   <div>
-    <input type="submit" name="commit" value="Create Product" data-disable-with="Create Product">
+    <input type="submit" name="commit" value="Create creative" data-disable-with="Create creative">
   </div>
 </form>
 ```
@@ -1198,39 +1198,39 @@ The form builder has included a CSRF token for security, configured the form for
 UTF-8 support, set the input field names and even added a disabled state for the
 submit button.
 
-Because we passed a new `Product` instance to the form builder, it automatically
-generated a form configured to send a `POST` request to `/products`, which is
+Because we passed a new `creative` instance to the form builder, it automatically
+generated a form configured to send a `POST` request to `/creatives`, which is
 the default route for creating a new record.
 
 To handle this, we first need to implement the `create` action in our
 controller.
 
 ```ruby#14-26
-class ProductsController < ApplicationController
+class CreativesController < ApplicationController
   def index
-    @products = Product.all
+    @creatives = creative.all
   end
 
   def show
-    @product = Product.find(params[:id])
+    @creative = creative.find(params[:id])
   end
 
   def new
-    @product = Product.new
+    @creative = creative.new
   end
 
   def create
-    @product = Product.new(product_params)
-    if @product.save
-      redirect_to @product
+    @creative = creative.new(creative_params)
+    if @creative.save
+      redirect_to @creative
     else
       render :new, status: :unprocessable_entity
     end
   end
 
   private
-    def product_params
-      params.expect(product: [ :name ])
+    def creative_params
+      params.expect(creative: [ :name ])
     end
 end
 ```
@@ -1238,43 +1238,43 @@ end
 #### Strong Parameters
 
 The `create` action handles the data submitted by the form, but it needs to be
-filtered for security. That's where the `product_params` method comes into play.
+filtered for security. That's where the `creative_params` method comes into play.
 
-In `product_params`, we tell Rails to inspect the params and ensure there is a
-key named `:product` with an array of parameters as the value. The only
-permitted parameters for products is `:name` and Rails will ignore any other
+In `creative_params`, we tell Rails to inspect the params and ensure there is a
+key named `:creative` with an array of parameters as the value. The only
+permitted parameters for creatives is `:name` and Rails will ignore any other
 parameters. This protects our application from malicious users who might try to
 hack our application.
 
 #### Handling Errors
 
-After assigning these params to the new `Product`, we can try to save it to the
-database. `@product.save` tells Active Record to run validations and save the
+After assigning these params to the new `creative`, we can try to save it to the
+database. `@creative.save` tells Active Record to run validations and save the
 record to the database.
 
-If `save` is successful, we want to redirect to the new product. When
+If `save` is successful, we want to redirect to the new creative. When
 `redirect_to` is given an Active Record object, Rails generates a path for that
 record's show action.
 
 ```ruby
-redirect_to @product
+redirect_to @creative
 ```
 
-Since `@product` is a `Product` instance, Rails pluralizes the model name and
-includes the object's ID in the path to produce `"/products/2"` for the
+Since `@creative` is a `creative` instance, Rails pluralizes the model name and
+includes the object's ID in the path to produce `"/creatives/2"` for the
 redirect.
 
 When `save` is unsuccessful and the record wasn't valid, we want to re-render
 the form so the user can fix the invalid data. In the `else` clause, we tell
-Rails to `render :new`. Rails knows we're in the `Products` controller, so it
-should render `app/views/products/new.html.erb`. Since we've set the `@product`
+Rails to `render :new`. Rails knows we're in the `creatives` controller, so it
+should render `app/views/creatives/new.html.erb`. Since we've set the `@creative`
 variable in `create`, we can render that template and the form will be populated
-with our `Product` data even though it wasn't able to be saved in the database.
+with our `creative` data even though it wasn't able to be saved in the database.
 
 We also set the HTTP status to 422 Unprocessable Entity to tell the browser this
 POST request failed and to handle it accordingly.
 
-### Editing Products
+### Editing creatives
 
 The process of editing records is very similar to creating records. Instead of
 `new` and `create` actions, we will have `edit` and `update`.
@@ -1282,55 +1282,55 @@ The process of editing records is very similar to creating records. Instead of
 Let's implement them in the controller with the following:
 
 ```ruby#23-34
-class ProductsController < ApplicationController
+class CreativesController < ApplicationController
   def index
-    @products = Product.all
+    @creatives = creative.all
   end
 
   def show
-    @product = Product.find(params[:id])
+    @creative = creative.find(params[:id])
   end
 
   def new
-    @product = Product.new
+    @creative = creative.new
   end
 
   def create
-    @product = Product.new(product_params)
-    if @product.save
-      redirect_to @product
+    @creative = creative.new(creative_params)
+    if @creative.save
+      redirect_to @creative
     else
       render :new, status: :unprocessable_entity
     end
   end
 
   def edit
-    @product = Product.find(params[:id])
+    @creative = creative.find(params[:id])
   end
 
   def update
-    @product = Product.find(params[:id])
-    if @product.update(product_params)
-      redirect_to @product
+    @creative = creative.find(params[:id])
+    if @creative.update(creative_params)
+      redirect_to @creative
     else
       render :edit, status: :unprocessable_entity
     end
   end
 
   private
-    def product_params
-      params.expect(product: [ :name ])
+    def creative_params
+      params.expect(creative: [ :name ])
     end
 end
 ```
 
-Next we can add an Edit link to `app/views/products/show.html.erb`:
+Next we can add an Edit link to `app/views/creatives/show.html.erb`:
 
 ```erb#4
-<h1><%= @product.name %></h1>
+<h1><%= @creative.name %></h1>
 
-<%= link_to "Back", products_path %>
-<%= link_to "Edit", edit_product_path(@product) %>
+<%= link_to "Back", creatives_path %>
+<%= link_to "Edit", edit_creative_path(@creative) %>
 ```
 
 #### Before Actions
@@ -1340,31 +1340,31 @@ deduplicate this into a `before_action`.
 
 A `before_action` allows you to extract shared code between actions and run it
 *before* the action. In the above controller code,
-`@product = Product.find(params[:id])` is defined in three different methods.
-Extracting this query to a before action called `set_product` cleans up our code
+`@creative = creative.find(params[:id])` is defined in three different methods.
+Extracting this query to a before action called `set_creative` cleans up our code
 for each action.
 
 This is a good example of the DRY (Don't Repeat Yourself) philosophy in action.
 
 ```ruby#2,8-9,24-25,27-33,36-38
-class ProductsController < ApplicationController
-  before_action :set_product, only: %i[ show edit update ]
+class CreativesController < ApplicationController
+  before_action :set_creative, only: %i[ show edit update ]
 
   def index
-    @products = Product.all
+    @creatives = creative.all
   end
 
   def show
   end
 
   def new
-    @product = Product.new
+    @creative = creative.new
   end
 
   def create
-    @product = Product.new(product_params)
-    if @product.save
-      redirect_to @product
+    @creative = creative.new(creative_params)
+    if @creative.save
+      redirect_to @creative
     else
       render :new, status: :unprocessable_entity
     end
@@ -1374,39 +1374,39 @@ class ProductsController < ApplicationController
   end
 
   def update
-    if @product.update(product_params)
-      redirect_to @product
+    if @creative.update(creative_params)
+      redirect_to @creative
     else
       render :edit, status: :unprocessable_entity
     end
   end
 
   private
-    def set_product
-      @product = Product.find(params[:id])
+    def set_creative
+      @creative = creative.find(params[:id])
     end
 
-    def product_params
-      params.expect(product: [ :name ])
+    def creative_params
+      params.expect(creative: [ :name ])
     end
 end
 ```
 
 #### Extracting Partials
 
-We've already written a form for creating new products. Wouldn't it be nice if
+We've already written a form for creating new creatives. Wouldn't it be nice if
 we could reuse that for edit and update? We can, using a feature called
 "partials" that allows you to reuse a view in multiple places.
 
-We can move the form into a file called `app/views/products/_form.html.erb`. The
+We can move the form into a file called `app/views/creatives/_form.html.erb`. The
 filename starts with an underscore to denote this is a partial.
 
 We also want to replace any instance variables with a local variable, which we
-can define when we render the partial. We'll do this by replacing `@product`
-with `product`.
+can define when we render the partial. We'll do this by replacing `@creative`
+with `creative`.
 
 ```erb#1
-<%= form_with model: product do |form| %>
+<%= form_with model: creative do |form| %>
   <div>
     <%= form.label :name %>
     <%= form.text_field :name %>
@@ -1422,57 +1422,57 @@ TIP: Using local variables allows partials to be reused multiple times on the
 same page with a different value each time. This comes in handy rendering lists
 of items like an index page.
 
-To use this partial in our `app/views/products/new.html.erb` view, we can
+To use this partial in our `app/views/creatives/new.html.erb` view, we can
 replace the form with a render call:
 
 ```erb#3
-<h1>New product</h1>
+<h1>New creative</h1>
 
-<%= render "form", product: @product %>
-<%= link_to "Cancel", products_path %>
+<%= render "form", creative: @creative %>
+<%= link_to "Cancel", creatives_path %>
 ```
 
 The edit view becomes almost the exact same thing thanks to the form partial.
-Let's create `app/views/products/edit.html.erb` with the following:
+Let's create `app/views/creatives/edit.html.erb` with the following:
 
 ```erb#3
-<h1>Edit product</h1>
+<h1>Edit creative</h1>
 
-<%= render "form", product: @product %>
-<%= link_to "Cancel", @product %>
+<%= render "form", creative: @creative %>
+<%= link_to "Cancel", @creative %>
 ```
 
 To learn more about view partials, check out the
 [Action View Guide](https://guides.rubyonrails.org/action_view_overview.html).
 
-### Deleting Products
+### Deleting creatives
 
-The last feature we need to implement is deleting products. We will add a
-`destroy` action to our `ProductsController` to handle `DELETE /products/:id`
+The last feature we need to implement is deleting creatives. We will add a
+`destroy` action to our `CreativesController` to handle `DELETE /creatives/:id`
 requests.
 
-Adding `destroy` to `before_action :set_product` lets us set the `@product`
+Adding `destroy` to `before_action :set_creative` lets us set the `@creative`
 instance variable in the same way we do for the other actions.
 
 ```ruby#2,35-38
-class ProductsController < ApplicationController
-  before_action :set_product, only: %i[ show edit update destroy ]
+class CreativesController < ApplicationController
+  before_action :set_creative, only: %i[ show edit update destroy ]
 
   def index
-    @products = Product.all
+    @creatives = creative.all
   end
 
   def show
   end
 
   def new
-    @product = Product.new
+    @creative = creative.new
   end
 
   def create
-    @product = Product.new(product_params)
-    if @product.save
-      redirect_to @product
+    @creative = creative.new(creative_params)
+    if @creative.save
+      redirect_to @creative
     else
       render :new, status: :unprocessable_entity
     end
@@ -1482,43 +1482,43 @@ class ProductsController < ApplicationController
   end
 
   def update
-    if @product.update(product_params)
-      redirect_to @product
+    if @creative.update(creative_params)
+      redirect_to @creative
     else
       render :edit, status: :unprocessable_entity
     end
   end
 
   def destroy
-    @product.destroy
-    redirect_to products_path
+    @creative.destroy
+    redirect_to creatives_path
   end
 
   private
-    def set_product
-      @product = Product.find(params[:id])
+    def set_creative
+      @creative = creative.find(params[:id])
     end
 
-    def product_params
-      params.expect(product: [ :name ])
+    def creative_params
+      params.expect(creative: [ :name ])
     end
 end
 ```
 
 To make this work, we need to add a Delete button to
-`app/views/products/show.html.erb`:
+`app/views/creatives/show.html.erb`:
 
 ```erb#5
-<h1><%= @product.name %></h1>
+<h1><%= @creative.name %></h1>
 
-<%= link_to "Back", products_path %>
-<%= link_to "Edit", edit_product_path(@product) %>
-<%= button_to "Delete", @product, method: :delete, data: { turbo_confirm: "Are you sure?" } %>
+<%= link_to "Back", creatives_path %>
+<%= link_to "Edit", edit_creative_path(@creative) %>
+<%= button_to "Delete", @creative, method: :delete, data: { turbo_confirm: "Are you sure?" } %>
 ```
 
 `button_to` generates a form with a single button in it with the "Delete" text.
 When this button is clicked, it submits the form which makes a `DELETE` request
-to `/products/:id` which triggers the `destroy` action in our controller.
+to `/creatives/:id` which triggers the `destroy` action in our controller.
 
 The `turbo_confirm` data attribute tells the Turbo JavaScript library to ask the
 user to confirm before submitting the form. We'll dig more into that shortly.
@@ -1526,8 +1526,8 @@ user to confirm before submitting the form. We'll dig more into that shortly.
 Adding Authentication
 ---------------------
 
-Anyone can edit or delete products which isn't safe. Let's add some security by
-requiring a user to be authenticated to manage products.
+Anyone can edit or delete creatives which isn't safe. Let's add some security by
+requiring a user to be authenticated to manage creatives.
 
 Rails comes with an authentication generator that we can use. It creates User
 and Session models and the controllers and views necessary to login to our
@@ -1568,7 +1568,7 @@ $ bin/rails server
 When you visit any page, Rails will prompt for a username and password. Enter
 the email and password you used when creating the User record.
 
-Try it out by visiting http://localhost:3000/products/new
+Try it out by visiting http://localhost:3000/creatives/new
 
 If you enter the correct username and password, it will allow you through. Your
 browser will also store these credentials for future requests so you don't have
@@ -1607,31 +1607,31 @@ user out.
 
 ### Allowing Unauthenticated Access
 
-However, our store's product index and show pages should be accessible to
+However, our store's creative index and show pages should be accessible to
 everyone. By default, the Rails authentication generator will restrict all pages
 to authenticated users only.
 
-To allow guests to view products, we can allow unauthenticated access in our
+To allow guests to view creatives, we can allow unauthenticated access in our
 controller.
 
 ```ruby#2
-class ProductsController < ApplicationController
+class CreativesController < ApplicationController
   allow_unauthenticated_access only: %i[ index show ]
   # ...
 end
 ```
 
-Log out and visit the products index and show pages to see they're accessible
+Log out and visit the creatives index and show pages to see they're accessible
 without being authenticated.
 
 ### Showing Links for Authenticated Users Only
 
-Since only logged in users can create products, we can modify the
-`app/views/products/index.html.erb` view to only display the new product link if
+Since only logged in users can create creatives, we can modify the
+`app/views/creatives/index.html.erb` view to only display the new creative link if
 the user is authenticated.
 
 ```erb
-<%= link_to "New product", new_product_path if authenticated? %>
+<%= link_to "New creative", new_creative_path if authenticated? %>
 ```
 
 Click the Log out button and you'll see the New link is hidden. Log in at
@@ -1645,19 +1645,19 @@ link if not authenticated.
 ```
 
 You can also update the Edit and Delete links on the
-`app/views/products/show.html.erb` view to only display if authenticated.
+`app/views/creatives/show.html.erb` view to only display if authenticated.
 
 ```erb#4,7
-<h1><%= @product.name %></h1>
+<h1><%= @creative.name %></h1>
 
-<%= link_to "Back", products_path %>
+<%= link_to "Back", creatives_path %>
 <% if authenticated? %>
-  <%= link_to "Edit", edit_product_path(@product) %>
-  <%= button_to "Delete", @product, method: :delete, data: { turbo_confirm: "Are you sure?" } %>
+  <%= link_to "Edit", edit_creative_path(@creative) %>
+  <%= button_to "Delete", @creative, method: :delete, data: { turbo_confirm: "Are you sure?" } %>
 <% end %>
 ```
 
-Caching Products
+Caching creatives
 ----------------
 
 Sometimes caching specific parts of a page can improve performance. Rails
@@ -1665,17 +1665,17 @@ simplifies this process with Solid Cache, a database-backed cache store that
 comes included by default.
 
 Using the `cache` method, we can store HTML in the cache. Let's cache the header
-in `app/views/products/show.html.erb`.
+in `app/views/creatives/show.html.erb`.
 
 ```erb#1,3
-<% cache @product do %>
-  <h1><%= @product.name %></h1>
+<% cache @creative do %>
+  <h1><%= @creative.name %></h1>
 <% end %>
 ```
 
-By passing `@product` into `cache`, Rails generates a unique cache key for the
-product. Active Record objects have a `cache_key` method that returns a String
-like `"products/1"`. The `cache` helper in the views combines this with the
+By passing `@creative` into `cache`, Rails generates a unique cache key for the
+creative. Active Record objects have a `cache_key` method that returns a String
+like `"creatives/1"`. The `cache` helper in the views combines this with the
 template digest to create a unique key for this HTML.
 
 To enable caching in development, run the following command in your terminal.
@@ -1684,12 +1684,12 @@ To enable caching in development, run the following command in your terminal.
 $ bin/rails dev:cache
 ```
 
-When you visit a product's show action (like `/products/2`), you'll see the new
+When you visit a creative's show action (like `/creatives/2`), you'll see the new
 caching lines in your Rails server logs:
 
 ```bash
-Read fragment views/products/show:a5a585f985894cd27c8b3d49bb81de3a/products/1-20240918154439539125 (1.6ms)
-Write fragment views/products/show:a5a585f985894cd27c8b3d49bb81de3a/products/1-20240918154439539125 (4.0ms)
+Read fragment views/creatives/show:a5a585f985894cd27c8b3d49bb81de3a/creatives/1-20240918154439539125 (1.6ms)
+Write fragment views/creatives/show:a5a585f985894cd27c8b3d49bb81de3a/creatives/1-20240918154439539125 (4.0ms)
 ```
 
 The first time we open this page, Rails will generate a cache key and ask the
@@ -1702,7 +1702,7 @@ in the logs.
 Refresh the page and you'll see the logs no longer contain the `Write fragment`.
 
 ```bash
-Read fragment views/products/show:a5a585f985894cd27c8b3d49bb81de3a/products/1-20240918154439539125 (1.3ms)
+Read fragment views/creatives/show:a5a585f985894cd27c8b3d49bb81de3a/creatives/1-20240918154439539125 (1.3ms)
 ```
 
 The cache entry was written by the last request, so Rails finds the cache entry
@@ -1727,22 +1727,22 @@ $ bin/rails db:migrate
 
 Restart your Rails server to make sure all the new features are loaded.
 
-Now, let's add a rich text description field to our product.
+Now, let's add a rich text description field to our creative.
 
-First, add the following to the `Product` model:
+First, add the following to the `creative` model:
 
 ```ruby#2
-class Product < ApplicationRecord
+class creative < ApplicationRecord
   has_rich_text :description
   validates :name, presence: true
 end
 ```
 
 The form can now be updated to include a rich text field for editing the
-description in `app/views/products/_form.html.erb` before the submit button.
+description in `app/views/creatives/_form.html.erb` before the submit button.
 
 ```erb#4-7
-<%= form_with model: product do |form| %>
+<%= form_with model: creative do |form| %>
   <%# ... %>
 
   <div>
@@ -1758,30 +1758,30 @@ description in `app/views/products/_form.html.erb` before the submit button.
 
 Our controller also needs to permit this new parameter when the form is
 submitted, so we'll update the permitted params to include description in
-`app/controllers/products_controller.rb`
+`app/controllers/creatives_controller.rb`
 
 ```ruby#3
     # Only allow a list of trusted parameters through.
-    def product_params
-      params.expect(product: [ :name, :description ])
+    def creative_params
+      params.expect(creative: [ :name, :description ])
     end
 ```
 
 We also need to update the show view to display the description in
-`app/views/products/show.html.erb`:
+`app/views/creatives/show.html.erb`:
 
 ```erb#3
-<% cache @product do %>
-  <h1><%= @product.name %></h1>
-  <%= @product.description %>
+<% cache @creative do %>
+  <h1><%= @creative.name %></h1>
+  <%= @creative.description %>
 <% end %>
 ```
 
 The cache key generated by Rails also changes when the view is modified. This
 makes sure the cache stays in sync with the latest version of the view template.
 
-Create a new product and add a description with bold and italic text. You'll see
-that the show page displays the formatted text and editing the product retains
+Create a new creative and add a description with bold and italic text. You'll see
+that the show page displays the formatted text and editing the creative retains
 this rich text in the text area.
 
 Check out the [Action Text Overview](https://guides.rubyonrails.org/action_text_overview.html) to learn more.
@@ -1792,26 +1792,26 @@ File Uploads with Active Storage
 Action Text is built upon another feature of Rails called Active Storage that
 makes it easy to upload files.
 
-Try editing a product and dragging an image into the rich text editor, then
+Try editing a creative and dragging an image into the rich text editor, then
 update the record. You'll see that Rails uploads this image and renders it
 inside the rich text editor. Cool, right?!
 
 We can also use Active Storage directly. Let's add a featured image to the
-`Product` model.
+`creative` model.
 
 ```ruby#2
-class Product < ApplicationRecord
+class creative < ApplicationRecord
   has_one_attached :featured_image
   has_rich_text :description
   validates :name, presence: true
 end
 ```
 
-Then we can add a file upload field to our product form before the submit
+Then we can add a file upload field to our creative form before the submit
 button:
 
 ```erb#4-7
-<%= form_with model: product do |form| %>
+<%= form_with model: creative do |form| %>
   <%# ... %>
 
   <div>
@@ -1826,23 +1826,23 @@ button:
 ```
 
 Add `:featured_image` as a permitted parameter in
-`app/controllers/products_controller.rb`
+`app/controllers/creatives_controller.rb`
 
 ```ruby#3
     # Only allow a list of trusted parameters through.
-    def product_params
-      params.expect(product: [ :name, :description, :featured_image ])
+    def creative_params
+      params.expect(creative: [ :name, :description, :featured_image ])
     end
 ```
 
-Lastly, we want to display the featured image for our product in
-`app/views/products/show.html.erb`. Add the following to the top.
+Lastly, we want to display the featured image for our creative in
+`app/views/creatives/show.html.erb`. Add the following to the top.
 
 ```erb
-<%= image_tag @product.featured_image if @product.featured_image.attached? %>
+<%= image_tag @creative.featured_image if @creative.featured_image.attached? %>
 ```
 
-Try uploading an image for a product and you'll see the image displayed on the
+Try uploading an image for a creative and you'll see the image displayed on the
 show page after saving.
 
 Check out the [Active Storage Overview](https://guides.rubyonrails.org/active_storage_overview.html) for more
@@ -1856,7 +1856,7 @@ Rails makes it easy to translate your app into other languages.
 The `translate` or `t` helper in our views looks up a translation by name and
 returns the text for the current locale.
 
-In `app/views/products/index.html.erb`, let's update the header tag to use a
+In `app/views/creatives/index.html.erb`, let's update the header tag to use a
 translation.
 
 ```erb
@@ -1903,11 +1903,11 @@ This will run every request and look for `locale` in the params or fallback to
 the default locale. It sets the locale for the request and resets it after it's
 finished.
 
-* Visit http://localhost:3000/products?locale=en, you will see the English
+* Visit http://localhost:3000/creatives?locale=en, you will see the English
   translation.
-* Visit http://localhost:3000/products?locale=es, you will see the Spanish
+* Visit http://localhost:3000/creatives?locale=es, you will see the Spanish
   translation.
-* Visit http://localhost:3000/products without a locale param, it will fallback
+* Visit http://localhost:3000/creatives without a locale param, it will fallback
   to English.
 
 Let's update the index header to use a real translation instead of
@@ -1920,17 +1920,17 @@ Let's update the index header to use a real translation instead of
 TIP: Notice the `.` before `title`? This tells Rails to use a relative locale
 lookup. Relative lookups include the controller and action automatically in the
 key so you don't have to type them every time. For `.title` with the English
-locale, it will look up `en.products.index.title`.
+locale, it will look up `en.creatives.index.title`.
 
-In `config/locales/en.yml` we want to add the `title` key under `products` and
+In `config/locales/en.yml` we want to add the `title` key under `creatives` and
 `index` to match our controller, view, and translation name.
 
 ```yaml
 en:
   hello: "Hello world"
-  products:
+  creatives:
     index:
-      title: "Products"
+      title: "creatives"
 ```
 
 In the Spanish locales file, we can do the same thing:
@@ -1938,12 +1938,12 @@ In the Spanish locales file, we can do the same thing:
 ```yaml
 es:
   hello: "Hola mundo"
-  products:
+  creatives:
     index:
-      title: "Productos"
+      title: "Creativo"
 ```
 
-You'll now see "Products" when viewing the English locale and "Productos" when
+You'll now see "creatives" when viewing the English locale and "Creativo" when
 viewing the Spanish locale.
 
 Learn more about the [Rails Internationalization (I18n) API](https://guides.rubyonrails.org/i18n.html).
@@ -1952,16 +1952,16 @@ Adding In Stock Notifications
 -----------------------------
 
 A common feature of e-commerce stores is an email subscription to get notified
-when a product is back in stock. Now that we've seen the basics of Rails, let's
+when a creative is back in stock. Now that we've seen the basics of Rails, let's
 add this feature to our store.
 
 ### Basic Inventory Tracking
 
-First, let's add an inventory count to the Product model so we can keep track of
+First, let's add an inventory count to the creative model so we can keep track of
 stock. We can generate this migration using the following command:
 
 ```bash
-$ bin/rails generate migration AddInventoryCountToProducts inventory_count:integer
+$ bin/rails generate migration AddInventoryCountToCreatives inventory_count:integer
 ```
 
 Then let's run the migration.
@@ -1970,11 +1970,11 @@ Then let's run the migration.
 $ bin/rails db:migrate
 ```
 
-We'll need to add the inventory count to the product form in
-`app/views/products/_form.html.erb`.
+We'll need to add the inventory count to the creative form in
+`app/views/creatives/_form.html.erb`.
 
 ```erb#4-7
-<%= form_with model: product do |form| %>
+<%= form_with model: creative do |form| %>
   <%# ... %>
 
   <div>
@@ -1991,8 +1991,8 @@ We'll need to add the inventory count to the product form in
 The controller also needs `:inventory_count` added to the permitted parameters.
 
 ```ruby#2
-    def product_params
-      params.expect(product: [ :name, :description, :featured_image, :inventory_count ])
+    def creative_params
+      params.expect(creative: [ :name, :description, :featured_image, :inventory_count ])
     end
 ```
 
@@ -2000,7 +2000,7 @@ It would also be helpful to validate that our inventory count is never a
 negative number, so let's also add a validation for that in our model.
 
 ```ruby#6
-class Product < ApplicationRecord
+class creative < ApplicationRecord
   has_one_attached :featured_image
   has_rich_text :description
 
@@ -2009,19 +2009,19 @@ class Product < ApplicationRecord
 end
 ```
 
-With these changes, we can now update the inventory count of products in our
+With these changes, we can now update the inventory count of creatives in our
 store.
 
-### Adding Subscribers to Products
+### Adding Subscribers to creatives
 
-In order to notify users that a product is back in stock, we need to keep track
+In order to notify users that a creative is back in stock, we need to keep track
 of these subscribers.
 
 Let's generate a model called Subscriber to store these email addresses and
-associate them with the respective product.
+associate them with the respective creative.
 
 ```bash
-$ bin/rails generate model Subscriber product:belongs_to email
+$ bin/rails generate model Subscriber creative:belongs_to email
 ```
 
 Then run the new migration:
@@ -2030,17 +2030,17 @@ Then run the new migration:
 $ bin/rails db:migrate
 ```
 
-By including `product:belongs_to` above, we told Rails that subscribers and
-products have a one-to-many relationship, meaning a Subscriber "belongs to" a
-single Product instance.
+By including `creative:belongs_to` above, we told Rails that subscribers and
+creatives have a one-to-many relationship, meaning a Subscriber "belongs to" a
+single creative instance.
 
-A Product, however, can have many subscribers, so we then add
-`has_many :subscribers, dependent: :destroy` to our Product model to add the
+A creative, however, can have many subscribers, so we then add
+`has_many :subscribers, dependent: :destroy` to our creative model to add the
 second part of this association between the two models. This tells Rails how to
 join queries between the two database tables.
 
 ```ruby#2
-class Product < ApplicationRecord
+class creative < ApplicationRecord
   has_many :subscribers, dependent: :destroy
   has_one_attached :featured_image
   has_rich_text :description
@@ -2056,17 +2056,17 @@ Now we need a controller to create these subscribers. Let's create that in
 ```ruby
 class SubscribersController < ApplicationController
   allow_unauthenticated_access
-  before_action :set_product
+  before_action :set_creative
 
   def create
-    @product.subscribers.where(subscriber_params).first_or_create
-    redirect_to @product, notice: "You are now subscribed."
+    @creative.subscribers.where(subscriber_params).first_or_create
+    redirect_to @creative, notice: "You are now subscribed."
   end
 
   private
 
-  def set_product
-    @product = Product.find(params[:product_id])
+  def set_creative
+    @creative = creative.find(params[:creative_id])
   end
 
   def subscriber_params
@@ -2091,69 +2091,69 @@ To display the flash message, let's add the notice to
 </html>
 ```
 
-To subscribe users to a specific product, we'll use a nested route so we know
-which product the subscriber belongs to. In `config/routes.rb` change
-`resources :products` to the following:
+To subscribe users to a specific creative, we'll use a nested route so we know
+which creative the subscriber belongs to. In `config/routes.rb` change
+`resources :creatives` to the following:
 
 ```ruby
-  resources :products do
+  resources :creatives do
     resources :subscribers, only: [ :create ]
   end
 ```
 
-On the product show page, we can check if there is inventory and display the
+On the creative show page, we can check if there is inventory and display the
 amount in stock. Otherwise, we can display an out of stock message with the
 subscribe form to get notified when it is back in stock.
 
-Create a new partial at `app/views/products/_inventory.html.erb` and add the
+Create a new partial at `app/views/creatives/_inventory.html.erb` and add the
 following:
 
 ```erb
-<% if product.inventory_count? %>
-  <p><%= product.inventory_count %> in stock</p>
+<% if creative.inventory_count? %>
+  <p><%= creative.inventory_count %> in stock</p>
 <% else %>
   <p>Out of stock</p>
   <p>Email me when available.</p>
 
-  <%= form_with model: [product, Subscriber.new] do |form| %>
+  <%= form_with model: [creative, Subscriber.new] do |form| %>
     <%= form.email_field :email, placeholder: "you@example.com", required: true %>
     <%= form.submit "Submit" %>
   <% end %>
 <% end %>
 ```
 
-Then update `app/views/products/show.html.erb` to render this partial after the
+Then update `app/views/creatives/show.html.erb` to render this partial after the
 `cache` block.
 
 ```erb
-<%= render "inventory", product: @product %>
+<%= render "inventory", creative: @creative %>
 ```
 
 ### In Stock Email Notifications
 
 Action Mailer is a feature of Rails that allows you to send emails. We'll use it
-to notify subscribers when a product is back in stock.
+to notify subscribers when a creative is back in stock.
 
 We can generate a mailer with the following command:
 
 ```bash
-$ bin/rails g mailer Product in_stock
+$ bin/rails g mailer creative in_stock
 ```
 
-This generates a class at `app/mailers/product_mailer.rb` with an `in_stock`
+This generates a class at `app/mailers/creative_mailer.rb` with an `in_stock`
 method.
 
 Update this method to mail to a subscriber's email address.
 
 ```ruby#7-10
-class ProductMailer < ApplicationMailer
+class CreativeMailer < ApplicationMailer
   # Subject can be set in your I18n file at config/locales/en.yml
   # with the following lookup:
   #
-  #   en.product_mailer.in_stock.subject
+  #   en.creative_mailer.in_stock.subject
   #
   def in_stock
-    @product = params[:product]
+    @creative = params[:creative]
     mail to: params[:subscriber].email
   end
 end
@@ -2161,41 +2161,41 @@ end
 
 The mailer generator also generates two email templates in our views folder: one
 for HTML and one for Text. We can update those to include a message and link to
-the product.
+the creative.
 
-Change `app/views/product_mailer/in_stock.html.erb` to:
+Change `app/views/creative_mailer/in_stock.html.erb` to:
 
 ```erb
 <h1>Good news!</h1>
 
-<p><%= link_to @product.name, product_url(@product) %> is back in stock.</p>
+<p><%= link_to @creative.name, creative_url(@creative) %> is back in stock.</p>
 ```
 
-And `app/views/product_mailer/in_stock.text.erb` to:
+And `app/views/creative_mailer/in_stock.text.erb` to:
 
 ```erb
 Good news!
 
-<%= @product.name %> is back in stock.
-<%= product_url(@product) %>
+<%= @creative.name %> is back in stock.
+<%= creative_url(@creative) %>
 ```
 
-We use `product_url` instead of `product_path` in mailers because email clients
+We use `creative_url` instead of `creative_path` in mailers because email clients
 need to know the full URL to open in the browser when the link is clicked.
 
-We can test an email by opening the Rails console and loading a product and
+We can test an email by opening the Rails console and loading a creative and
 subscriber to send to:
 
 ```irb
-store(dev)> product = Product.first
-store(dev)> subscriber = product.subscribers.find_or_create_by(email: "subscriber@example.org")
-store(dev)> ProductMailer.with(product: product, subscriber: subscriber).in_stock.deliver_later
+store(dev)> creative = creative.first
+store(dev)> subscriber = creative.subscribers.find_or_create_by(email: "subscriber@example.org")
+store(dev)> CreativeMailer.with(creative: creative, subscriber: subscriber).in_stock.deliver_later
 ```
 
 You'll see that it prints out an email in the logs.
 
 ```
-ProductMailer#in_stock: processed outbound mail in 63.0ms
+CreativeMailer#in_stock: processed outbound mail in 63.0ms
 Delivered mail 66a3a9afd5d4a_108b04a4c41443@local.mail (33.1ms)
 Date: Fri, 26 Jul 2024 08:50:39 -0500
 From: from@example.com
@@ -2217,7 +2217,7 @@ Content-Transfer-Encoding: 7bit
 Good news!
 
 T-Shirt is back in stock.
-http://localhost:3000/products/1
+http://localhost:3000/creatives/1
 
 
 ----==_mimepart_66a3a9afd235e_108b04a4c4136f
@@ -2235,10 +2235,10 @@ Content-Transfer-Encoding: 7bit
   </head>
 
   <body>
-    <!-- BEGIN app/views/product_mailer/in_stock.html.erb --><h1>Good news!</h1>
+    <!-- BEGIN app/views/creative_mailer/in_stock.html.erb --><h1>Good news!</h1>
 
-<p><a href="http://localhost:3000/products/1">T-Shirt</a> is back in stock.</p>
-<!-- END app/views/product_mailer/in_stock.html.erb -->
+<p><a href="http://localhost:3000/creatives/1">T-Shirt</a> is back in stock.</p>
+<!-- END app/views/creative_mailer/in_stock.html.erb -->
   </body>
 </html>
 <!-- END app/views/layouts/mailer.html.erb -->
@@ -2247,11 +2247,11 @@ Content-Transfer-Encoding: 7bit
 Performed ActionMailer::MailDeliveryJob (Job ID: 5e2bd5f2-f54f-4088-ace3-3f6eb15aaf46) from Async(default) in 111.34ms
 ```
 
-To trigger these emails, we can use a callback in the Product model to send
+To trigger these emails, we can use a callback in the creative model to send
 emails anytime the inventory count changes from 0 to a positive number.
 
 ```ruby#9-19
-class Product < ApplicationRecord
+class creative < ApplicationRecord
   has_one_attached :featured_image
   has_rich_text :description
   has_many :subscribers, dependent: :destroy
@@ -2267,7 +2267,7 @@ class Product < ApplicationRecord
 
   def notify_subscribers
     subscribers.each do |subscriber|
-      ProductMailer.with(product: self, subscriber: subscriber).in_stock.deliver_later
+      CreativeMailer.with(creative: self, subscriber: subscriber).in_stock.deliver_later
     end
   end
 end
@@ -2280,24 +2280,25 @@ if the `back_in_stock?` method returns true.
 Active Record keeps track of changes to attributes so `back_in_stock?` checks
 the previous value of `inventory_count` using `inventory_count_previously_was`.
 Then we can compare that against the current inventory count to determine if the
-product is back in stock.
+creative is back in stock.
 
 `notify_subscribers` uses the Active Record association to query the
-`subscribers` table for all subscribers for this specific product and then
+`subscribers` table for all subscribers for this specific creative and then
 queues up the `in_stock` email to be sent to each of them.
 
 ### Extracting a Concern
 
-The Product model now has a decent amount of code for handling notifications. To
+The creative model now has a decent amount of code for handling notifications. To
 better organize our code, we can extract this to an `ActiveSupport::Concern`. A
 Concern is a Ruby module with some syntactic sugar to make using them easier.
 
 First let’s create the Notifications module.
 
-Create a file at `app/models/product/notifications.rb` with the following:
+Create a file at `app/models/creative/notifications.rb` with the following:
 
 ```ruby
-module Product::Notifications
+
+module creative::Notifications
   extend ActiveSupport::Concern
 
   included do
@@ -2311,7 +2312,7 @@ module Product::Notifications
 
   def notify_subscribers
     subscribers.each do |subscriber|
-      ProductMailer.with(product: self, subscriber: subscriber).in_stock.deliver_later
+      CreativeMailer.with(creative: self, subscriber: subscriber).in_stock.deliver_later
     end
   end
 end
@@ -2322,11 +2323,11 @@ as if it’s part of that class. At the same time, the methods defined in the
 module become regular methods you can call on objects (instances) of that class.
 
 Now that the code triggering the notification has been extracted into the
-Notification module, the Product model can be simplified to include the
+Notification module, the creative model can be simplified to include the
 Notifications module.
 
 ```ruby#2
-class Product < ApplicationRecord
+class creative < ApplicationRecord
   include Notifications
 
   has_one_attached :featured_image
@@ -2338,9 +2339,9 @@ end
 ```
 
 Concerns are a great way to organize features of your Rails application. As you
-add more features to the Product, the class will become messy. Instead, we can
+add more features to the creative, the class will become messy. Instead, we can
 use Concerns to extract each feature out into a self-contained module like
-`Product::Notifications` which contains all the functionality for handling
+`creative::Notifications` which contains all the functionality for handling
 subscribers and how notifications are sent.
 
 Extracting code into concerns also helps make features reusable. For example, we
@@ -2364,7 +2365,7 @@ for generating a unique unsubscribe token to use in the email's unsubscribe URL.
 
 ```ruby#3
 class Subscriber < ApplicationRecord
-  belongs_to :product
+  belongs_to :creative
   generates_token_for :unsubscribe
 end
 ```
@@ -2394,23 +2395,23 @@ end
 
 Last but not least, let's add the unsubscribe link to our email templates.
 
-In `app/views/product_mailer/in_stock.html.erb`, add a `link_to`:
+In `app/views/creative_mailer/in_stock.html.erb`, add a `link_to`:
 
 ```erb#5
 <h1>Good news!</h1>
 
-<p><%= link_to @product.name, product_url(@product) %> is back in stock.</p>
+<p><%= link_to @creative.name, creative_url(@creative) %> is back in stock.</p>
 
 <%= link_to "Unsubscribe", unsubscribe_url(token: params[:subscriber].generate_token_for(:unsubscribe)) %>
 ```
 
-In `app/views/product_mailer/in_stock.text.erb`, add the URL in plain text:
+In `app/views/creative_mailer/in_stock.text.erb`, add the URL in plain text:
 
 ```erb#6
 Good news!
 
-<%= @product.name %> is back in stock.
-<%= product_url(@product) %>
+<%= @creative.name %> is back in stock.
+<%= creative_url(@creative) %>
 
 Unsubscribe: <%= unsubscribe_url(token: params[:subscriber].generate_token_for(:unsubscribe)) %>
 ```
@@ -2468,38 +2469,38 @@ main {
   color: green;
 }
 
-section.product {
+section.creative {
   display: flex;
   gap: 1rem;
   flex-direction: row;
 }
 
-section.product img {
+section.creative img {
   border-radius: 8px;
   flex-basis: 50%;
   max-width: 50%;
 }
 ```
 
-Then we'll update `app/views/products/show.html.erb` to use these new styles.
+Then we'll update `app/views/creatives/show.html.erb` to use these new styles.
 
 ```erb#1,3,6,18-19
-<p><%= link_to "Back", products_path %></p>
+<p><%= link_to "Back", creatives_path %></p>
 
-<section class="product">
-  <%= image_tag @product.featured_image if @product.featured_image.attached? %>
+<section class="creative">
+  <%= image_tag @creative.featured_image if @creative.featured_image.attached? %>
 
-  <section class="product-info">
-    <% cache @product do %>
-      <h1><%= @product.name %></h1>
-      <%= @product.description %>
+  <section class="creative-info">
+    <% cache @creative do %>
+      <h1><%= @creative.name %></h1>
+      <%= @creative.description %>
     <% end %>
 
-    <%= render "inventory", product: @product %>
+    <%= render "inventory", creative: @creative %>
 
     <% if authenticated? %>
-      <%= link_to "Edit", edit_product_path(@product) %>
-      <%= button_to "Delete", @product, method: :delete, data: { turbo_confirm: "Are you sure?" } %>
+      <%= link_to "Edit", edit_creative_path(@creative) %>
+      <%= button_to "Delete", @creative, method: :delete, data: { turbo_confirm: "Are you sure?" } %>
     <% end %>
   </section>
 </section>
@@ -2552,7 +2553,7 @@ generated HTML. It is comprised of 3 core components:
    mobile features.
 
 We haven't written any JavaScript yet, but we have been using Hotwire on the
-frontend. For instance, the form you created to add and edit a product was
+frontend. For instance, the form you created to add and edit a creative was
 powered by Turbo.
 
 Learn more in the [Asset Pipeline](https://guides.rubyonrails.org/asset_pipeline.html) and
@@ -2563,7 +2564,7 @@ Testing
 -------
 
 Rails comes with a robust test suite. Let's write a test to ensure that the
-correct number of emails are sent when a product is back in stock.
+correct number of emails are sent when a creative is back in stock.
 
 ### Fixtures
 
@@ -2577,7 +2578,7 @@ making it simple to access them in your tests.
 This file will be empty by default - you need to populate it with fixtures for
 your tests.
 
-Let’s update the product fixtures file at `test/fixtures/products.yml` with the
+Let’s update the creative fixtures file at `test/fixtures/creatives.yml` with the
 following:
 
 ```yaml
@@ -2591,15 +2592,15 @@ And for subscribers, let's add these two fixtures to
 
 ```yaml
 david:
-  product: tshirt
+  creative: tshirt
   email: david@example.org
 
 chris:
-  product: tshirt
+  creative: tshirt
   email: chris@example.org
 ```
 
-You'll notice that we can reference the `Product` fixture by name here. Rails
+You'll notice that we can reference the `creative` fixture by name here. Rails
 associates this automatically for us in the database so we don't have to manage
 record IDs and associations in tests.
 
@@ -2608,22 +2609,22 @@ test suite.
 
 ### Testing Emails
 
-In `test/models/product_test.rb`, let's add a test:
+In `test/models/creative_test.rb`, let's add a test:
 
 ```ruby
 require "test_helper"
 
-class ProductTest < ActiveSupport::TestCase
+class CreativeTest < ActiveSupport::TestCase
   include ActionMailer::TestHelper
 
   test "sends email notifications when back in stock" do
-    product = products(:tshirt)
+    creative = creatives(:tshirt)
 
-    # Set product out of stock
-    product.update(inventory_count: 0)
+    # Set creative out of stock
+    creative.update(inventory_count: 0)
 
     assert_emails 2 do
-      product.update(inventory_count: 99)
+      creative.update(inventory_count: 99)
     end
   end
 end
@@ -2634,7 +2635,7 @@ Let's break down what this test is doing.
 First, we include the Action Mailer test helpers so we can monitor emails sent
 during the test.
 
-The `tshirt` fixture is loaded using the `products()` fixture helper and returns
+The `tshirt` fixture is loaded using the `creatives()` fixture helper and returns
 the Active Record object for that record. Each fixture generates a helper in the
 test suite to make it easy to reference fixtures by name since their database
 IDs may be different each run.
@@ -2642,8 +2643,8 @@ IDs may be different each run.
 Then we ensure the tshirt is out of stock by updating it's inventory to 0.
 
 Next, we use `assert_emails` to ensure 2 emails were generated by the code
-inside the block. To trigger the emails, we update the product's inventory count
-inside the block. This triggers the `notify_subscribers` callback in the Product
+inside the block. To trigger the emails, we update the creative's inventory count
+inside the block. This triggers the `notify_subscribers` callback in the creative
 model to send emails. Once that's done executing, `assert_emails` counts the
 emails and ensures it matches the expected count.
 
@@ -2651,7 +2652,7 @@ We can run the test suite with `bin/rails test` or an individual test file by
 passing the filename.
 
 ```bash
-$ bin/rails test test/models/product_test.rb
+$ bin/rails test test/models/creative_test.rb
 Running 1 tests in a single process (parallelization threshold is 50)
 Run options: --seed 3556
 
@@ -2665,18 +2666,18 @@ Finished in 0.343842s, 2.9083 runs/s, 5.8166 assertions/s.
 
 Our test passes!
 
-Rails also generated an example test for `ProductMailer` at
-`test/mailers/product_mailer_test.rb`. Let's update it to make it also pass.
+Rails also generated an example test for `CreativeMailer` at
+`test/mailers/creative_mailer_test.rb`. Let's update it to make it also pass.
 
 ```ruby
 require "test_helper"
 
-class ProductMailerTest < ActionMailer::TestCase
+class CreativeMailerTest < ActionMailer::TestCase
   test "in_stock" do
-    mail = ProductMailer.with(product: products(:tshirt), subscriber: subscribers(:david)).in_stock
+    mail = CreativeMailer.with(creative: creatives(:tshirt), subscriber: subscribers(:david)).in_stock
     assert_equal "In stock", mail.subject
-    assert_equal [ "david@example.org" ], mail.to
-    assert_equal [ "from@example.com" ], mail.from
+    assert_equal ["david@example.org"], mail.to
+    assert_equal ["from@example.com"], mail.from
     assert_match "Good news!", mail.body.encoded
   end
 end
@@ -2861,7 +2862,7 @@ $ bin/kamal deploy
 
 ### Adding a User to Production
 
-To create and edit products in production, we need a User record in the
+To create and edit creatives in production, we need a User record in the
 production database.
 
 You can use Kamal to open a production Rails console.
@@ -2875,7 +2876,7 @@ store(prod)> User.create!(email_address: "you@example.org", password: "s3cr3t", 
 ```
 
 Now you can log in to production with this email and password and manage
-products.
+creatives.
 
 ### Background Jobs using Solid Queue
 
@@ -2917,11 +2918,11 @@ We recommend continuing to add features and deploy updates to continue learning.
 Here are some ideas:
 
 * Improve the design with CSS
-* Add product reviews
+* Add creative reviews
 * Finish translating the app into another language
 * Add a checkout flow for payments
-* Add wishlists for users to save products
-* Add a carousel for product images
+* Add wishlists for users to save creatives
+* Add a carousel for creative images
 
 We also recommend learning more by reading other Ruby on Rails Guides:
 

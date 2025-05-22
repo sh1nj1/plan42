@@ -1,16 +1,16 @@
 class SubscribersController < ApplicationController
     allow_unauthenticated_access
-    before_action :set_product
+    before_action :set_creative
 
     def create
-      @product.subscribers.where(subscriber_params).first_or_create
-      redirect_to @product, notice: "You are now subscribed."
+      @creative.subscribers.where(subscriber_params).first_or_create
+      redirect_to @creative, notice: "You are now subscribed."
     end
 
     private
 
-    def set_product
-      @product = Product.find(params[:product_id])
+    def set_creative
+      @creative = Creative.find(params[:creative_id])
     end
 
     def subscriber_params

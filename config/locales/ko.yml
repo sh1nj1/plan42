@@ -1,5 +1,5 @@
 ko:
   hello: "안녕하세요"
-  products:
+  creatives:
     index:
       title: "제품 목록"
