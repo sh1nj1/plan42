@@ -3,9 +3,5 @@
 <%= link_to "New creative", new_creative_path if authenticated? %>
 
 <div id="creatives">
-  <% @creatives.each do |creative| %>
-    <div>
-      <%= link_to creative.name, creative %>
-    </div>
-  <% end %>
+  <%= render_creative_tree(@creatives.where(parent_id: nil)) %>
 </div>

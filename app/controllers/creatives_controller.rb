@@ -45,6 +45,6 @@ class CreativesController < ApplicationController
     end
 
     def creative_params
-      params.require(:creative).permit(:name, :description, :featured_image, :inventory_count)
+      params.require(:creative).permit(:name, :description, :featured_image, :inventory_count, :parent_id)
     end
 end
