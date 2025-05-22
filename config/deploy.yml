@@ -1,13 +1,13 @@
 # Name of your application. Used to uniquely configure containers.
-service: ror_getting_started_store
+service: plan42
 
 # Name of the container image.
-image: soonoh/ror_getting_started_store
+image: soonoh/plan42
 
 # Deploy to these servers.
 servers:
   web:
-    - <%= ENV["SERVER_DEV1"] %>
+    - <%= ENV['SERVER_VRERV1'] || 'vrerv1' %>
   # job:
   #   hosts:
   #     - 192.168.0.1
@@ -19,7 +19,7 @@ servers:
 # Note: If using Cloudflare, set encryption mode in SSL/TLS setting to "Full" to enable CF-to-app encryption.
 proxy:
   ssl: true
-  host: ror-getting-started-store.vrerv.com
+  host: plan42.vrerv.com
 
 # Credentials for your image host.
 registry:
@@ -76,6 +76,7 @@ asset_path: /rails/public/assets
 # Configure the image builder.
 builder:
   arch: amd64
+  dockerfile: Dockerfile
 
   # # Build image via remote server (useful for faster amd64 builds on arm64 computers)
   # remote: ssh://docker@docker-builder-server
@@ -91,7 +92,7 @@ builder:
 ssh:
   user: ec2-user
   keys_only: true
-  keys: [ "~/.ssh/id.pem" ]
+  keys: [ "~/.ssh/id2.pem" ]
   log_level: fatal
 
 # Use accessory services (secrets come from .kamal/secrets).

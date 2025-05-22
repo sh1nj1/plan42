@@ -20,14 +20,27 @@ test:
   <<: *default
   database: storage/test.sqlite3
 
+production:
+  primary:
+    <<: *default
+    database: storage/production-primary.sqlite3
+  cache:
+    <<: *default
+    database: storage/production-cache.sqlite3
+  queue:
+    <<: *default
+    database: storage/production-queue.sqlite3
+  cable:
+    <<: *default
+    database: storage/production-cable.sqlite3
 
-default_production: &default_production
+default_production_pg: &default_production
   <<: *default
   adapter: postgresql
   encoding: unicode
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
 
-production:
+production_pg:
   primary:
     <<: *default_production
     url: <%= ENV['DATABASE_URL'] %>
