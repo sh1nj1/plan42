@@ -41,6 +41,11 @@ class CreativesController < ApplicationController
     redirect_to creatives_path
   end
 
+  def recalculate_progress
+    Creative.recalculate_all_progress!
+    redirect_to creatives_path, notice: 'All parent progress recalculated.'
+  end
+
   private
 
     def set_creative

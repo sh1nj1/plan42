@@ -18,6 +18,9 @@ Rails.application.routes.draw do
 
   resources :creatives do
     resources :subscribers, only: [ :create ]
+    collection do
+      post :recalculate_progress
+    end
   end
 
   resource :unsubscribe, only: [ :show ]
