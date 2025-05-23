@@ -65,3 +65,17 @@
     font-size: 0.9em;
     margin-left: 10px;
   }
+  
+  .creative-row.h1, .creative-row.h2, .creative-row.h3, h1.creative-row, h2.creative-row, h3.creative-row {
+    font-size: 1.3em;
+  }
+
+  .creative-row.h2, h2.creative-row {
+    font-size: 1.2em;
+    margin-left: 0.2em;
+  }
+
+  .creative-row.h3, h3.creative-row {
+    font-size: 1.1em;
+    margin-left: 0.4em;
+  }
