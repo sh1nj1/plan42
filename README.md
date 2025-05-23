@@ -8,8 +8,7 @@ A simple issue management or documenting tool for productive development.
 
 [Ruby on Rails getting started document](docs/getting_started.md)
 
-* `bin/rails db:migrate` - Run database migrations (default to use sqlite3)
-* `bin/rails db:seed` - Insert seed data into the database (data in db/seeds.rb)
+* `bin/rails db:prepare` - Run database migrations (default to use sqlite3)
 * `bin/rails server` - Start the Rails server
 
 ### Runtime version info:

@@ -1,18 +1,6 @@
 class CreateSolidTables < ActiveRecord::Migration[7.1]
   def change
-    # Solid Cache tables
-    create_table "solid_cache_entries", force: :cascade do |t|
-      t.binary "key", limit: 1024, null: false
-      t.binary "value", limit: 536870912, null: false
-      t.datetime "created_at", null: false
-      t.integer "key_hash", limit: 8, null: false
-      t.integer "byte_size", limit: 4, null: false
-      t.index [ "byte_size" ], name: "index_solid_cache_entries_on_byte_size"
-      t.index [ "key_hash", "byte_size" ], name: "index_solid_cache_entries_on_key_hash_and_byte_size"
-      t.index [ "key_hash" ], name: "index_solid_cache_entries_on_key_hash", unique: true
-    end
 
-    # Solid Queue tables
     create_table "solid_queue_blocked_executions", force: :cascade do |t|
       t.bigint "job_id", null: false
       t.string "queue_name", null: false
@@ -72,7 +60,9 @@ class CreateSolidTables < ActiveRecord::Migration[7.1]
       t.string "hostname"
       t.text "metadata"
       t.datetime "created_at", null: false
+      t.string "name", null: false
       t.index [ "last_heartbeat_at" ], name: "index_solid_queue_processes_on_last_heartbeat_at"
+      t.index [ "name", "supervisor_id" ], name: "index_solid_queue_processes_on_name_and_supervisor_id", unique: true
       t.index [ "supervisor_id" ], name: "index_solid_queue_processes_on_supervisor_id"
     end
 
@@ -82,9 +72,33 @@ class CreateSolidTables < ActiveRecord::Migration[7.1]
       t.integer "priority", default: 0, null: false
       t.datetime "created_at", null: false
       t.index [ "job_id" ], name: "index_solid_queue_ready_executions_on_job_id", unique: true
-      t.index [ "priority", "job_id" ], name: "index_solid_queue_ready_executions_by_priority"
-      t.index [ "queue_name", "priority", "job_id" ], name: "index_solid_queue_poll_all"
-      t.index [ "queue_name" ], name: "index_solid_queue_ready_executions_by_queue"
+      t.index [ "priority", "job_id" ], name: "index_solid_queue_poll_all"
+      t.index [ "queue_name", "priority", "job_id" ], name: "index_solid_queue_poll_by_queue"
+    end
+
+    create_table "solid_queue_recurring_executions", force: :cascade do |t|
+      t.bigint "job_id", null: false
+      t.string "task_key", null: false
+      t.datetime "run_at", null: false
+      t.datetime "created_at", null: false
+      t.index [ "job_id" ], name: "index_solid_queue_recurring_executions_on_job_id", unique: true
+      t.index [ "task_key", "run_at" ], name: "index_solid_queue_recurring_executions_on_task_key_and_run_at", unique: true
+    end
+
+    create_table "solid_queue_recurring_tasks", force: :cascade do |t|
+      t.string "key", null: false
+      t.string "schedule", null: false
+      t.string "command", limit: 2048
+      t.string "class_name"
+      t.text "arguments"
+      t.string "queue_name"
+      t.integer "priority", default: 0
+      t.boolean "static", default: true, null: false
+      t.text "description"
+      t.datetime "created_at", null: false
+      t.datetime "updated_at", null: false
+      t.index [ "key" ], name: "index_solid_queue_recurring_tasks_on_key", unique: true
+      t.index [ "static" ], name: "index_solid_queue_recurring_tasks_on_static"
     end
 
     create_table "solid_queue_scheduled_executions", force: :cascade do |t|
@@ -108,15 +122,11 @@ class CreateSolidTables < ActiveRecord::Migration[7.1]
       t.index [ "key" ], name: "index_solid_queue_semaphores_on_key", unique: true
     end
 
-    # Solid Cable tables
-    create_table "solid_cable_messages", force: :cascade do |t|
-      t.binary "channel", limit: 1024, null: false
-      t.binary "payload", limit: 536870912, null: false
-      t.datetime "created_at", null: false
-      t.integer "channel_hash", limit: 8, null: false
-      t.index [ "channel" ], name: "index_solid_cable_messages_on_channel"
-      t.index [ "channel_hash" ], name: "index_solid_cable_messages_on_channel_hash"
-      t.index [ "created_at" ], name: "index_solid_cable_messages_on_created_at"
-    end
+    add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+    add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+    add_foreign_key "solid_queue_failed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+    add_foreign_key "solid_queue_ready_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+    add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+    add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   end
 end
