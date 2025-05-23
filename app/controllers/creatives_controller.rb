@@ -46,6 +46,31 @@ class CreativesController < ApplicationController
     redirect_to creatives_path, notice: 'All parent progress recalculated.'
   end
 
+  def reorder
+    dragged = Creative.find_by(id: params[:dragged_id])
+    target = Creative.find_by(id: params[:target_id])
+    direction = params[:direction]
+    return head :unprocessable_entity unless dragged && target && %w[up down].include?(direction)
+
+    # Change parent if needed
+    if dragged.parent_id != target.parent_id
+      dragged.update!(parent_id: target.parent_id)
+    end
+
+    siblings = Creative.where(parent_id: target.parent_id).order(:sequence).to_a
+    siblings.delete(dragged)
+    target_index = siblings.index(target)
+    new_index = direction == 'up' ? target_index : target_index + 1
+    siblings.insert(new_index, dragged)
+
+    # Reassign sequence values
+    siblings.each_with_index do |creative, idx|
+      creative.update_column(:sequence, idx)
+    end
+
+    head :ok
+  end
+
   private
 
     def set_creative

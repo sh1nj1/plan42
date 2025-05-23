@@ -20,6 +20,7 @@ Rails.application.routes.draw do
     resources :subscribers, only: [ :create ]
     collection do
       post :recalculate_progress
+      post :reorder
     end
   end
 
