@@ -1,6 +1,8 @@
 # Plan42
 
-A simple issue management or documenting tool for productive development.
+A tracker of your creatives.
+
+Your creativeness is coming!
 
 * [Features](docs/features.md)
 
