@@ -48,3 +48,8 @@
     max-width: 50%;
   }
   
+  /* Remove link styling for all Creative links */
+  .unstyled-link {
+    color: inherit;
+    text-decoration: none;
+  }

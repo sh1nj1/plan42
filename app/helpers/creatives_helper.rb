@@ -4,11 +4,11 @@ module CreativesHelper
       creatives.map do |creative|
         concat(
           content_tag(:li) do
-            concat(link_to(creative.description, creative))
+            concat(link_to(creative.description, creative, class: "unstyled-link"))
             # Show progress on the right side
             concat(content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress", style: "float: right; margin-left: 10px; color: #888; font-size: 0.9em;"))
             if creative.children.any?
-              concat(render_creative_tree(creative.children.order(:sequence)))
+              concat(render_creative_tree(creative.children))
             end
           end
         )
