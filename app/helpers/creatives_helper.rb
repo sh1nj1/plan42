@@ -2,7 +2,7 @@ module CreativesHelper
   def render_creative_tree(creatives, level = 1)
     safe_join(
       creatives.map do |creative|
-        if level <= 3
+        if level <= 3 and creative.children.any?
           # Render as heading tag for root and second-level only
           heading_tag = "h#{level}"
           content_tag(heading_tag, class: "creative-row") do
