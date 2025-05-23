@@ -8,6 +8,7 @@ A simple issue management or documenting tool for productive development.
 
 [Ruby on Rails getting started document](docs/getting_started.md)
 
+* `bin/rails credentials:edit` - Create or edit the `config/credentials.yml.enc` file and `config/master.key` file.
 * `bin/rails db:prepare` - Run database migrations (default to use sqlite3)
 * `bin/rails server` - Start the Rails server
 
