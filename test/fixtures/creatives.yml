@@ -1,5 +1,5 @@
 # Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
 
 tshirt:
-  name: T-Shirt
+  description: T-Shirt
   progress: 0.5
