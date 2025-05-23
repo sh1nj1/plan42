@@ -8,5 +8,5 @@ class Creative < ApplicationRecord
     belongs_to :parent, class_name: "Creative", optional: true
     has_many :children, class_name: "Creative", foreign_key: :parent_id, dependent: :nullify
 
-    validates :inventory_count, numericality: { greater_than_or_equal_to: 0 }
+    validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }
 end

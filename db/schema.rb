@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_05_23_042143) do
+ActiveRecord::Schema[8.0].define(version: 2025_05_23_133100) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -52,7 +52,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_23_042143) do
   create_table "creatives", force: :cascade do |t|
     t.text "description"
     t.string "featured_image"
-    t.integer "inventory_count"
+    t.float "progress", default: 0.0
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "parent_id"

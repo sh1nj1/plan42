@@ -7,7 +7,7 @@ module Creative::Notifications
     end
 
     def back_in_stock?
-      inventory_count_previously_was == 0 && inventory_count > 0
+      progress_previously_was.to_f == 0.0 && progress.to_f > 0.0
     end
 
     def notify_subscribers

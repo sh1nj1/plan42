@@ -2,4 +2,4 @@
 
 tshirt:
   name: T-Shirt
-  inventory_count: 15
+  progress: 0.5

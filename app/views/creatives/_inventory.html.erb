@@ -1,8 +1,10 @@
-<% if creative.inventory_count? %>
-  <p><%= creative.inventory_count %> in stock</p>
+<% if creative.progress > 0 and creative.progress < 1 %>
+  <p><%= creative.progress %> Progress</p>
+<% elsif creative.progress == 1 %>
+  <p>Completed</p>
 <% else %>
-  <p>Out of stock</p>
-  <p>Email me when available.</p>
+  <p>Todo</p>
+  <p>Email me when is progressing.</p>
 
   <%= form_with model: [creative, Subscriber.new] do |form| %>
     <%= form.email_field :email, placeholder: "you@example.com", required: true %>
