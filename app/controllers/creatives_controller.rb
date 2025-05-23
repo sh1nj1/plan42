@@ -6,7 +6,7 @@ class CreativesController < ApplicationController
   before_action :set_creative, only: %i[ show edit update destroy ]
 
   def index
-    @creatives = Creative.all
+    @creatives = Creative.order(:sequence)
   end
 
   def show
@@ -48,6 +48,6 @@ class CreativesController < ApplicationController
     end
 
     def creative_params
-      params.require(:creative).permit(:description, :featured_image, :progress, :parent_id)
+      params.require(:creative).permit(:description, :featured_image, :progress, :parent_id, :sequence)
     end
 end
