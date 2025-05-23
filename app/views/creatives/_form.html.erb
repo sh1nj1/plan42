@@ -16,7 +16,7 @@
 
   <div>
     <%= form.label :parent_id, style: "display: block" %>
-    <%= form.number_field :parent_id %>
+    <%= form.number_field :parent_id, value: params[:parent_id] || form.object.parent_id %>
   </div>
 
   <div>
