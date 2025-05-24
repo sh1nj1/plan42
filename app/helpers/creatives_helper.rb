@@ -25,6 +25,11 @@ module CreativesHelper
                         class: "before-link creative-toggle-btn",
                         style: "width: 9px; height: 9px; font-size: 9px; margin-right: 6px; display: flex; align-items: center; justify-content: center; line-height: 1; cursor: pointer;",
                         data: { creative_id: creative.id }) +
+              link_to("+", new_creative_path(parent_id: creative.id),
+                      class: "add-creative-btn",
+                      style: "margin-left: 6px; font-size: 12px; width: 12px; font-weight: bold; text-decoration: none; cursor: pointer;",
+                      title: "Add child creative"
+              ) +
             wrapper.call {
               link_to(creative.description, creative, class: "unstyled-link")
             }
