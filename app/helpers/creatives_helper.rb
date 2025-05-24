@@ -9,11 +9,11 @@ module CreativesHelper
           ondragover: "handleDragOver(event)",
           ondrop: "handleDrop(event)"
         }
-        if level <= 3 and (creative.children.any? or creative.parent.nil?)
+        if level <= 3
           # Render as heading tag for root and second-level only
           content_tag(:div, class: "creative-tree", **drag_attrs) {
-            heading_tag = "h#{level}"
-            content_tag(heading_tag, class: "creative-row") do
+            heading_tag = (creative.children.any? or creative.parent.nil?) ? "h#{level}" : "div"
+            content_tag(heading_tag, class: "creative-row indent#{level}") do
               link_to(creative.description, creative, class: "unstyled-link") +
               content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress", style: "margin-left: 10px; color: #888; font-size: 0.9em;")
             end +

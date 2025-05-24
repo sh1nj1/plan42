@@ -72,11 +72,19 @@
 
   .creative-row.h2, h2.creative-row {
     font-size: 1.2em;
-    margin-left: 0.2em;
   }
 
   .creative-row.h3, h3.creative-row {
     font-size: 1.1em;
+  }
+
+  .indent1 {
+    margin-left: 0.0em;
+  }
+  .indent2 {
+    margin-left: 0.2em;
+  }
+  .indent3 {
     margin-left: 0.4em;
   }
   
