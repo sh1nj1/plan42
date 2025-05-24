@@ -59,22 +59,20 @@
     justify-content: space-between;
     align-items: center;
   }
-  
+
   .creative-progress {
     color: #888;
     font-size: 0.9em;
     margin-left: 10px;
   }
   
-  .creative-row.h1, .creative-row.h2, .creative-row.h3, h1.creative-row, h2.creative-row, h3.creative-row {
+  .creative-row-left h1 {
     font-size: 1.3em;
   }
-
-  .creative-row.h2, h2.creative-row {
+  .creative-row-left h2 {
     font-size: 1.2em;
   }
-
-  .creative-row.h3, h3.creative-row {
+  .creative-row-left h3 {
     font-size: 1.1em;
   }
 

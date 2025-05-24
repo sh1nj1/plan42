@@ -88,6 +88,23 @@ window.handleDragLeave = function(event) {
   if (row) row.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom');
 };
 
+// Toggle children visibility on ▶/▼ button click
+function setupCreativeToggles() {
+  document.querySelectorAll(".creative-toggle-btn").forEach(function(btn) {
+    btn.addEventListener("click", function(e) {
+      const creativeId = btn.dataset.creativeId;
+      const childrenDiv = document.getElementById(`creative-children-${creativeId}`);
+      if (childrenDiv) {
+        const isHidden = childrenDiv.style.display === "none";
+        childrenDiv.style.display = isHidden ? "" : "none";
+        btn.textContent = isHidden ? "▼" : "▶";
+      }
+    });
+  });
+}
+
+document.addEventListener("DOMContentLoaded", setupCreativeToggles);
+
 function sendNewOrder(draggedId, targetId, direction, onErrorRevert) {
   fetch('/creatives/reorder', {
     method: 'POST',
