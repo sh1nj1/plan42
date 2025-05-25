@@ -1,6 +1,5 @@
 class CreateSolidTables < ActiveRecord::Migration[7.1]
   def change
-
     create_table "solid_queue_blocked_executions", force: :cascade do |t|
       t.bigint "job_id", null: false
       t.string "queue_name", null: false

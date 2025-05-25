@@ -1,5 +1,5 @@
 class UsersController < ApplicationController
-  allow_unauthenticated_access only: [:new, :create]
+  allow_unauthenticated_access only: [ :new, :create ]
 
   def new
     @user = User.new
@@ -9,7 +9,7 @@ class UsersController < ApplicationController
     @user = User.new(user_params)
     if @user.save
       session.delete(:return_to_after_authenticating)
-      redirect_to new_session_path, notice: 'Account created successfully! Please sign in.'
+      redirect_to new_session_path, notice: "Account created successfully! Please sign in."
     else
       render :new, status: :unprocessable_entity
     end
