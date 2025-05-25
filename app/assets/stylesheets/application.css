@@ -65,6 +65,11 @@
     font-size: 0.9em;
     margin-left: 10px;
   }
+
+  .page-title {
+    margin-left: 1.5em;
+    font-size: 1.4em;
+  }
   
   .creative-row-left h1 {
     font-size: 1.3em;

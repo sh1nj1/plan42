@@ -18,10 +18,14 @@
 
 <% if @parent_creative %>
   <div class="creative-row">
-    <h1><%= @parent_creative.description %></h1>
+    <h1 class="page-title"><%= @parent_creative.description %></h1>
     <h1>
       <%= render_creative_progress(@parent_creative) %>
     </h1>
+  </div>
+<% else %>
+  <div class="creative-row">
+    <h1 class="page-title"><%= "Creatives" %></h1>
   </div>
 <% end %>
 
