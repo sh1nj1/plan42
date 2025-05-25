@@ -19,6 +19,10 @@ class CreativesController < ApplicationController
 
   def new
     @creative = Creative.new
+    if params[:parent_id].present?
+      @parent_creative = Creative.find_by(id: params[:parent_id])
+      @creative.parent = @parent_creative if @parent_creative
+    end
   end
 
   def create

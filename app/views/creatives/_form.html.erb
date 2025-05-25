@@ -1,4 +1,15 @@
 <%= form_with model: creative do |form| %>
+
+  <% if form.object.parent_id.present? && form.object.parent %>
+    <div>
+      <strong>Parent Creative:</strong>
+      <div style="margin: 0.5em 0 1em 0; padding: 0.5em; background: #f5f5f5; border-radius: 5px;">
+        <%= form.object.parent.description.to_plain_text %>
+      </div>
+      <%= form.hidden_field :parent_id %>
+    </div>
+  <% end %>
+
   <div>
     <%= form.label :description, style: "display: block" %>
     <%= form.rich_text_area :description %>
@@ -7,11 +18,6 @@
   <div>
     <%= form.label :featured_image, style: "display: block" %>
     <%= form.file_field :featured_image, accept: "image/*" %>
-  </div>
-
-  <div>
-    <%= form.label :parent_id, style: "display: block" %>
-    <%= form.number_field :parent_id, value: params[:parent_id] || form.object.parent_id %>
   </div>
 
   <div>
