@@ -34,3 +34,4 @@ en:
     sign_in: "Sign in"
     sign_out: "Sign out"
     cancel: "Cancel"
+    creative_guide: "A Creative is a content block that works like a task. It's similar to a to-do list, organized as a tree—letting you zoom out for high-level summaries or zoom in to detailed subtasks. Progress automatically summarizes progress from the steps below, and list of Creatives are presented as a document, complete with headings, bullet-point lists and progress indicators."

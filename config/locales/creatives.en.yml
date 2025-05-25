@@ -16,7 +16,7 @@ en:
       progress_recalculated: "All parent progress recalculated."
     form:
       parent_creative: "Parent Creative"
-      description: "Description"
+      description: "Contents"
       sequence: "Sequence"
       progress: "Progress"
       submit: "Save"

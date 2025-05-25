@@ -28,10 +28,40 @@
       <%= link_to t('app.home'), root_path %>
       <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
       <%= button_to t('app.sign_out'), session_path, method: :delete if authenticated? %>
+      <a href="#" id="creative-guide-link" style="margin-left: 1em; font-size: 1.2em; text-decoration: none;">?</a>
     </nav>
+
+    <div id="creative-guide-popover" style="display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%); background:white; border:1px solid #ccc; box-shadow:0 2px 8px rgba(0,0,0,0.12); padding:1.2em; max-width:400px; z-index:1000; border-radius:8px;">
+      <span style="float:right; cursor:pointer; font-weight:bold;" id="close-creative-guide">&times;</span>
+      <div style="margin-top:0.5em; color:#444; font-size:1em; line-height:1.5;">
+        <%= t('app.creative_guide') %>
+      </div>
+    </div>
 
     <main>
       <%= yield %>
     </main>
+
+    <script>
+      document.addEventListener('turbo:load', function() {
+        var link = document.getElementById('creative-guide-link');
+        var popover = document.getElementById('creative-guide-popover');
+        var close = document.getElementById('close-creative-guide');
+        if (link && popover && close) {
+          link.addEventListener('click', function(e) {
+            e.preventDefault();
+            popover.style.display = 'block';
+          });
+          close.addEventListener('click', function() {
+            popover.style.display = 'none';
+          });
+          document.addEventListener('click', function(e) {
+            if (!popover.contains(e.target) && e.target !== link) {
+              popover.style.display = 'none';
+            }
+          });
+        }
+      });
+    </script>
   </body>
 </html>
