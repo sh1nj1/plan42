@@ -2,7 +2,7 @@
 
   <% if form.object.parent_id.present? && form.object.parent %>
     <div>
-      <strong>Parent Creative:</strong>
+      <strong><%= t('.parent_creative') %>:</strong>
       <div style="margin: 0.5em 0 1em 0; padding: 0.5em; background: #f5f5f5; border-radius: 5px;">
         <%= form.object.parent.description.to_plain_text %>
       </div>
@@ -11,23 +11,23 @@
   <% end %>
 
   <div>
-    <%= form.label :description, style: "display: block" %>
+    <%= form.label :description, t('.description'), style: "display: block" %>
     <%= form.rich_text_area :description %>
   </div>
 
   <div>
-    <%= form.label :sequence, style: "display: block" %>
+    <%= form.label :sequence, t('.sequence'), style: "display: block" %>
     <%= form.number_field :sequence %>
   </div>
 
 <% if form.object.children.empty? %>
   <div>
-    <%= form.label :progress, style: "display: block" %>
+    <%= form.label :progress, t('.progress'), style: "display: block" %>
     <%= form.number_field :progress, step: 0.01, min: 0, max: 1 %>
   </div>
 <% end %>
 
   <div>
-    <%= form.submit %>
+    <%= form.submit t('.submit') %>
   </div>
 <% end %>

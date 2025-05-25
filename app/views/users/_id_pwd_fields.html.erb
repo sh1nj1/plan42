@@ -1,0 +1,3 @@
+
+<%= form.email_field :email_address, required: true, autofocus: true, autocomplete: "username", placeholder: t('users.new.enter_your_email_address'), value: params[:email_address] %><br/>
+<%= form.password_field :password, required: true, autocomplete: "current-password", placeholder: t('users.new.enter_your_password'), maxlength: 72 %><br/>

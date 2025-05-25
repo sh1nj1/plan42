@@ -51,7 +51,7 @@ class CreativesController < ApplicationController
 
   def recalculate_progress
     Creative.recalculate_all_progress!
-    redirect_to creatives_path, notice: "All parent progress recalculated."
+    redirect_to creatives_path, notice: t("creatives.notices.progress_recalculated")
   end
 
   def reorder

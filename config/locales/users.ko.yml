@@ -1,0 +1,16 @@
+ko:
+  users:
+    app_header:
+      your_creativeness_is_coming: "당신의 창의성이 곧 찾아옵니다!"
+      a_tracker_of_your_creatives: "당신의 크리에이티브를 추적합니다."
+    new:
+      enter_your_email_address: "이메일 주소를 입력하세요"
+      enter_your_password: "비밀번호를 입력하세요"
+      confirm_your_password: "비밀번호를 다시 입력하세요"
+      sign_up: "회원가입"
+      back_to_sign_in: "로그인 화면으로 돌아가기"
+    sessions:
+      new:
+        forgot_password: "비밀번호를 잊으셨나요?"
+        try_again_later: "잠시 후 다시 시도하세요."
+        try_another_email_or_password: "이메일 주소나 비밀번호를 다시 확인하세요."

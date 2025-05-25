@@ -33,7 +33,7 @@ module CreativesHelper
                 link_to("+", new_creative_path(parent_id: creative.id),
                         class: "add-creative-btn",
                         style: "margin-left: 6px; font-size: 12px; width: 12px; font-weight: bold; text-decoration: none; cursor: pointer;",
-                        title: "Add child creative"
+                        title: I18n.t("creatives.help.add_child_creative")
                 )
             end +
             wrapper.call {

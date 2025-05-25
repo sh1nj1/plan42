@@ -1,14 +1,13 @@
-<%= tag.div(flash[:alert], style: "color:red") if flash[:alert] %>
 
 <%= render 'users/app_header' %>
 
 <%= form_with url: session_path do |form| %>
-  <%= form.email_field :email_address, required: true, autofocus: true, autocomplete: "username", placeholder: "Enter your email address", value: params[:email_address] %><br>
-  <%= form.password_field :password, required: true, autocomplete: "current-password", placeholder: "Enter your password", maxlength: 72 %><br>
-  <%= form.submit "Sign in" %>
+  <%= render 'users/id_pwd_fields', form: form %>
+  <%= tag.div(flash[:alert], style: "color:red") if flash[:alert] %>
+  <%= form.submit t('app.sign_in') %>
 <% end %>
 <br>
 
-<%= link_to "Forgot password?", new_password_path %>
+<%= link_to t('users.sessions.new.forgot_password'), new_password_path %>
 <br>
-<%= link_to "Sign Up", new_user_path, class: "sign-up-link" %>
+<%= link_to t("users.new.sign_up"), new_user_path, class: "sign-up-link" %>

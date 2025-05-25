@@ -1,0 +1,16 @@
+en:
+  users:
+    app_header:
+      your_creativeness_is_coming: "Your Creativeness Is Coming!"
+      a_tracker_of_your_creatives: "A Tracker Of Your Creatives."
+    new:
+      enter_your_email_address: "Enter your email address"
+      enter_your_password: "Enter your password"
+      confirm_your_password: "Confirm your password"
+      sign_up: "Sign Up"
+      back_to_sign_in: "Back to Sign In"
+    sessions:
+      new:
+        forgot_password: "Forgot password?"
+        try_again_later: "Try again later."
+        try_another_email_or_password: "Try another email address or password."

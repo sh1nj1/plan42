@@ -28,7 +28,9 @@
 #       enabled: "ON"
 
 en:
-  hello: "Hello world"
-  creatives:
-    index:
-      title: "Creatives"
+  app:
+    name: "Plan42"
+    home: "Home"
+    sign_in: "Sign in"
+    sign_out: "Sign out"
+    cancel: "Cancel"

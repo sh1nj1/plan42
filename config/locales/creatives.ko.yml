@@ -1,0 +1,22 @@
+ko:
+  creatives:
+    index:
+      up: "위로"
+      new_creative: "새 크리에이티브"
+      new_sub_creative: "하위 크리에이티브 추가"
+      edit: "수정"
+      delete: "삭제"
+      are_you_sure: "정말 삭제하시겠습니까?"
+      creatives: "크리에이티브 목록"
+      recalculate_progress: "진행률 다시 계산"
+      recalculate_all_parent_progress: "모든 상위 진행률을 다시 계산하시겠습니까?"
+    notices:
+      progress_recalculated: "진행률을 다시 계산 했습니다."
+    form:
+      parent_creative: "상위 크리에이티브"
+      description: "설명"
+      sequence: "순서"
+      progress: "진행률"
+      submit: "저장"
+    help:
+      add_child_creative: "하위 크리에이티브 추가"

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title><%= content_for(:title) || "Plan42" %></title>
+    <title><%= content_for(:title) || t('app.name') %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
@@ -25,9 +25,9 @@
     <div class="notice"><%= notice %></div>
 
     <nav>
-      <%= link_to "Home", root_path %>
-      <%= link_to "Login", new_session_path unless authenticated? %>
-      <%= button_to "Log out", session_path, method: :delete if authenticated? %>
+      <%= link_to t('app.home'), root_path %>
+      <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
+      <%= button_to t('app.sign_out'), session_path, method: :delete if authenticated? %>
     </nav>
 
     <main>

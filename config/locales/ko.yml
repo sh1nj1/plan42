@@ -1,5 +1,7 @@
 ko:
-  hello: "안녕하세요"
-  creatives:
-    index:
-      title: "크리에이티브 목록"
+  app:
+    name: "플랜42"
+    home: "홈"
+    sign_in: "로그인"
+    sign_out: "로그아웃"
+    cancel: "취소"
