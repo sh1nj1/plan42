@@ -105,6 +105,7 @@
   }
   
   .creative-actions-row {
+    margin-left: 2.0em;
     display: flex;
     gap: 10px;
     align-items: center;

@@ -5,7 +5,7 @@
     <%= link_to t('.up'), creatives_path, class: "up-link" %>
   <% end %>
   
-  <%= link_to t('.new_creative'), new_creative_path if authenticated? %>
+  <%= link_to t('.new_creative'), new_creative_path if authenticated? and not params[:id] %>
   <% if authenticated? and @parent_creative %>
     <%= link_to t('.new_sub_creative'), @parent_creative&.id ? new_creative_path(parent_id: @parent_creative.id) : new_creative_path %>
     <%= link_to t('.edit'), edit_creative_path(@parent_creative) %>
@@ -30,7 +30,12 @@
 <% end %>
 
 <div id="creatives">
-  <%= render_creative_tree(@creatives.where(parent_id: params[:id] || nil)) %>
+  <% creatives_for_tree = @creatives.where(parent_id: params[:id] || nil) %>
+  <% if creatives_for_tree.exists? %>
+    <%= render_creative_tree(creatives_for_tree) %>
+  <% else %>
+    <p style="text-align: center;"><%= params[:id] ? t('.no_sub_creatives') : t('.no_creatives') %></p>
+  <% end %>
 </div>
 
 <%= javascript_include_tag 'creatives_drag_drop', defer: true %>

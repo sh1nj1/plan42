@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_05_23_133101) do
+ActiveRecord::Schema[8.0].define(version: 2025_05_25_205100) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -57,7 +57,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_23_133101) do
     t.datetime "updated_at", null: false
     t.integer "parent_id"
     t.integer "sequence", default: 0, null: false
+    t.integer "user_id", null: false
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
+    t.index ["user_id"], name: "index_creatives_on_user_id"
   end
 
   create_table "sessions", force: :cascade do |t|
@@ -230,6 +232,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_23_133101) do
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
+  add_foreign_key "creatives", "users"
   add_foreign_key "sessions", "users"
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade

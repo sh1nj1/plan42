@@ -5,7 +5,7 @@ class CreativesController < ApplicationController
   before_action :set_creative, only: %i[ show edit update destroy ]
 
   def index
-    @creatives = Creative.order(:sequence)
+    @creatives = Creative.where(user: Current.user).order(:sequence)
     if params[:id].present?
       @parent_creative = Creative.find_by(id: params[:id])
     end
@@ -26,6 +26,7 @@ class CreativesController < ApplicationController
 
   def create
     @creative = Creative.new(creative_params)
+    @creative.user = Current.user
     if @creative.save
       redirect_to @creative
     else

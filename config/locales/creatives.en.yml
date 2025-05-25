@@ -10,6 +10,8 @@ en:
       creatives: "Creatives"
       recalculate_progress: "Recalculate Progress"
       recalculate_all_parent_progress: "Recalculate all parent progress?"
+      no_creatives: "No creatives found."
+      no_sub_creatives: "No sub-creatives found."
     notices:
       progress_recalculated: "All parent progress recalculated."
     form:
