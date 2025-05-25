@@ -10,6 +10,7 @@ class Creative < ApplicationRecord
     belongs_to :user
 
     validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }
+    validates :description, presence: true
 
     after_save :update_parent_progress
     after_destroy :update_parent_progress
