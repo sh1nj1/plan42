@@ -4,6 +4,10 @@ module CreativesHelper
     expanded ? "\u25BC" : "\u25B6" # ▼ or ▶
   end
 
+  def render_creative_progress(creative)
+    content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress", style: "margin-left: 10px; color: #888; font-size: 0.9em;")
+  end
+
   def render_creative_tree(creatives, level = 1)
     safe_join(
       creatives.map do |creative|
@@ -33,7 +37,7 @@ module CreativesHelper
             wrapper.call {
               link_to(creative.description, creative, class: "unstyled-link")
             }
-          end + content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress", style: "margin-left: 10px; color: #888; font-size: 0.9em;")
+          end + render_creative_progress(creative)
         }
         bullet_starting_level = 3
         if level <= bullet_starting_level

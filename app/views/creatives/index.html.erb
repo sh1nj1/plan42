@@ -17,7 +17,12 @@
 <%#= button_to "Recalculate Progress", recalculate_progress_creatives_path, method: :post, form: { data: { turbo_confirm: "Recalculate all parent progress?" } } if authenticated? %>
 
 <% if @parent_creative %>
-  <h1><%= @parent_creative.description %></h1>
+  <div class="creative-row">
+    <h1><%= @parent_creative.description %></h1>
+    <h1>
+      <%= render_creative_progress(@parent_creative) %>
+    </h1>
+  </div>
 <% end %>
 
 <div id="creatives">
