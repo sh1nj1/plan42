@@ -1,0 +1,6 @@
+.creative-row-actions {
+  visibility: hidden;
+}
+.creative-row:hover .creative-row-actions {
+  visibility: visible;
+}

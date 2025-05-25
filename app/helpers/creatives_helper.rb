@@ -25,15 +25,17 @@ module CreativesHelper
         }
         render_row_content = ->(wrapper) {
           content_tag(:div, class: "creative-row-left", style: "display: flex; align-items: center;") do
-            content_tag(:div, ((level <= 3 and creative.children.any?) ? toggle_button_symbol(expanded: true) : ""),
-                        class: "before-link creative-toggle-btn",
-                        style: "width: 9px; height: 9px; font-size: 9px; margin-right: 6px; display: flex; align-items: center; justify-content: center; line-height: 1; cursor: pointer;",
-                        data: { creative_id: creative.id }) +
-              link_to("+", new_creative_path(parent_id: creative.id),
-                      class: "add-creative-btn",
-                      style: "margin-left: 6px; font-size: 12px; width: 12px; font-weight: bold; text-decoration: none; cursor: pointer;",
-                      title: "Add child creative"
-              ) +
+            content_tag(:div, class: "creative-row-actions", style: "display: flex; align-items: center;") do
+              content_tag(:div, ((level <= 3 and creative.children.any?) ? toggle_button_symbol(expanded: true) : ""),
+                          class: "before-link creative-toggle-btn",
+                          style: "width: 9px; height: 9px; font-size: 9px; margin-right: 6px; display: flex; align-items: center; justify-content: center; line-height: 1; cursor: pointer;",
+                          data: { creative_id: creative.id }) +
+                link_to("+", new_creative_path(parent_id: creative.id),
+                        class: "add-creative-btn",
+                        style: "margin-left: 6px; font-size: 12px; width: 12px; font-weight: bold; text-decoration: none; cursor: pointer;",
+                        title: "Add child creative"
+                )
+            end +
             wrapper.call {
               link_to(creative.description, creative, class: "unstyled-link")
             }
