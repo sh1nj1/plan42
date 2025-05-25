@@ -1,0 +1,7 @@
+tshirt_description:
+  record_type: Creative
+  record_id: <%= ActiveRecord::FixtureSet.identify(:tshirt, :creatives) %>
+  name: description
+  body: <div>T-Shirt</div>
+  created_at: <%= Time.now %>
+  updated_at: <%= Time.now %>

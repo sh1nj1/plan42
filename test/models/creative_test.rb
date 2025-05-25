@@ -10,7 +10,7 @@ class CreativeTest < ActiveSupport::TestCase
     creative = creatives(:tshirt)
 
     # Set creative out of stock
-    creative.update(progress: 0.0)
+    creative.update!(progress: 0.0)
 
     assert_emails 2 do
       creative.update(progress: 0.99)

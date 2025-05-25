@@ -7,7 +7,7 @@ class Creative < ApplicationRecord
     belongs_to :parent, class_name: "Creative", optional: true
     has_many :children, -> { order(:sequence) }, class_name: "Creative", foreign_key: :parent_id, dependent: :nullify
 
-    belongs_to :user
+    belongs_to :user, optional: true
 
     validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }
     validates :description, presence: true

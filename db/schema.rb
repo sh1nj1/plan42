@@ -57,7 +57,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_25_205100) do
     t.datetime "updated_at", null: false
     t.integer "parent_id"
     t.integer "sequence", default: 0, null: false
-    t.integer "user_id", null: false
+    t.integer "user_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
   end
