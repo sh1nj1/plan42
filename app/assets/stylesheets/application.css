@@ -98,3 +98,9 @@
   .drag-over-bottom {
     border-bottom: 3px solid #ffb300 !important;
   }
+  
+  .creative-actions-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }

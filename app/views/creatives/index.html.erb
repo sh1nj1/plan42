@@ -1,10 +1,27 @@
+<div class="creative-actions-row">
+  <% if @parent_creative&.parent_id.present? %>
+    <%= link_to "Up", creative_path(@parent_creative.parent_id), class: "back-link" %>
+  <% elsif @parent_creative.present? %>
+    <%= link_to "Up", creatives_path, class: "up-link" %>
+  <% end %>
+  
+  <%= link_to "New Creative", new_creative_path if authenticated? %>
+  <% if authenticated? and @parent_creative %>
+    <%= link_to "New sub-creative", @parent_creative&.id ? new_creative_path(parent_id: @parent_creative.id) : new_creative_path %>
+    <%= link_to "Edit", edit_creative_path(@parent_creative) %>
+    <%= button_to "Delete", @parent_creative, method: :delete, data: { turbo_confirm: "Are you sure?" }, class: "danger-link" %>
+  <% end %>
+</div>
 
-<%= link_to "New Creative", new_creative_path if authenticated? %>
 <%#= TODO: remove this later completely recalculate progress you need to remove route, and controller also %>
 <%#= button_to "Recalculate Progress", recalculate_progress_creatives_path, method: :post, form: { data: { turbo_confirm: "Recalculate all parent progress?" } } if authenticated? %>
 
+<% if @parent_creative %>
+  <h1><%= @parent_creative.description %></h1>
+<% end %>
+
 <div id="creatives">
-  <%= render_creative_tree(@creatives.where(parent_id: nil)) %>
+  <%= render_creative_tree(@creatives.where(parent_id: params[:id] || nil)) %>
 </div>
 
 <%= javascript_include_tag 'creatives_drag_drop', defer: true %>

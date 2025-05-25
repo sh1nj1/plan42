@@ -1,3 +1,4 @@
+<%#= TODO: remove this later, currently show uses index template, see controller %>
 <p><%= link_to "Back", creatives_path %></p>
 
 <section class="creative">
@@ -15,10 +16,12 @@
 
     <%= render "inventory", creative: @creative %>
 
-    <% if authenticated? %>
-      <%= link_to "New sub-creative", @creative&.id ? new_creative_path(parent_id: @creative.id) : new_creative_path %>
-      <%= link_to "Edit", edit_creative_path(@creative) %>
-      <%= button_to "Delete", @creative, method: :delete, data: { turbo_confirm: "Are you sure?" } %>
-    <% end %>
+    <div class="creative-actions-row">
+      <% if authenticated? %>
+        <%= link_to "New sub-creative", @creative&.id ? new_creative_path(parent_id: @creative.id) : new_creative_path %>
+        <%= link_to "Edit", edit_creative_path(@creative) %>
+        <%= button_to "Delete", @creative, method: :delete, data: { turbo_confirm: "Are you sure?" } %>
+      <% end %>
+    </div>
   </section>
 </section>

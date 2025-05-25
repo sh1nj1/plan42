@@ -7,9 +7,14 @@ class CreativesController < ApplicationController
 
   def index
     @creatives = Creative.order(:sequence)
+    if params[:id].present?
+      @parent_creative = Creative.find_by(id: params[:id])
+    end
   end
 
   def show
+    index
+    render :index
   end
 
   def new
