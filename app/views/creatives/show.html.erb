@@ -2,8 +2,7 @@
 <p><%= link_to "Back", creatives_path %></p>
 
 <section class="creative">
-  <%= image_tag @creative.featured_image if @creative.featured_image.attached? %>
-
+  
   <section class="creative-info">
     <% cache @creative do %>
       <% if @creative.parent %>
