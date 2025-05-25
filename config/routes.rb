@@ -16,6 +16,8 @@ Rails.application.routes.draw do
 
   root "creatives#index"
 
+  resources :users, only: [ :new, :create ]
+
   resources :creatives do
     resources :subscribers, only: [ :create ]
     collection do
