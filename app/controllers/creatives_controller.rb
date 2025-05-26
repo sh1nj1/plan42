@@ -46,8 +46,15 @@ class CreativesController < ApplicationController
   end
 
   def destroy
+    parent = @creative.parent
+    # Re-link children to parent
+    @creative.children.update_all(parent_id: parent&.id)
     @creative.destroy
-    redirect_to creatives_path
+    if parent
+      redirect_to creative_path(parent)
+    else
+      redirect_to creatives_path
+    end
   end
 
   def recalculate_progress
