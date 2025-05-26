@@ -5,7 +5,7 @@ class Creative < ApplicationRecord
     has_rich_text :description
 
     belongs_to :parent, class_name: "Creative", optional: true
-    has_many :children, -> { order(:sequence) }, class_name: "Creative", foreign_key: :parent_id, dependent: :nullify
+    has_many :children, -> { order(:sequence) }, class_name: "Creative", foreign_key: :parent_id, dependent: :destroy
 
     belongs_to :user, optional: true
 

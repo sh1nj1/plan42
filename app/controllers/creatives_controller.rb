@@ -47,9 +47,13 @@ class CreativesController < ApplicationController
 
   def destroy
     parent = @creative.parent
-    # Re-link children to parent
-    @creative.children.update_all(parent_id: parent&.id)
-    @creative.destroy
+    if params[:delete_with_children]
+      @creative.destroy
+    else
+      # Re-link children to parent
+      @creative.children.update_all(parent_id: parent&.id)
+      @creative.destroy
+    end
     if parent
       redirect_to creative_path(parent)
     else

@@ -9,7 +9,32 @@
   <% if authenticated? and @parent_creative %>
     <%= link_to t('.new_sub_creative'), @parent_creative&.id ? new_creative_path(parent_id: @parent_creative.id) : new_creative_path %>
     <%= link_to t('.edit'), edit_creative_path(@parent_creative) %>
-    <%= button_to t('.delete'), @parent_creative, method: :delete, data: { turbo_confirm: t('.are_you_sure') }, class: "danger-link" %>
+    <div class="delete-dropdown" style="display:inline-block;position:relative;">
+      <button type="button" class="danger-link" id="delete-dropdown-btn">
+        <%= t('.delete') %>
+      </button>
+      <div class="delete-options" id="delete-options-popup" style="display:none;position:absolute;z-index:10;background:#fff;border:1px solid #ccc;padding:0.5em;box-shadow:0 2px 8px #ccc;min-width:220px;">
+        <%= button_to t('.delete_only_this'), @parent_creative, method: :delete, form: { data: { turbo_confirm: t('.are_you_sure_delete_only_this') } }, params: {}, class: "danger-link", style: 'margin-bottom:0.5em;' %>
+        <%= button_to t('.delete_with_children'), @parent_creative, method: :delete, params: { delete_with_children: true }, form: { data: { turbo_confirm: t('.are_you_sure_delete_with_children') } }, class: "danger-link" %>
+      </div>
+    </div>
+    <script>
+      document.addEventListener('turbo:load', function() {
+        const btn = document.getElementById('delete-dropdown-btn');
+        const popup = document.getElementById('delete-options-popup');
+        if (btn && popup) {
+          btn.onclick = function(e) {
+            popup.style.display = (popup.style.display === 'block') ? 'none' : 'block';
+            e.stopPropagation();
+          };
+          document.addEventListener('click', function(e) {
+            if (!popup.contains(e.target) && e.target !== btn) {
+              popup.style.display = 'none';
+            }
+          });
+        }
+      });
+    </script>
   <% end %>
   <button id="import-markdown-btn" class="import-btn"><%= t('.import_markdown') %></button>
 </div>
@@ -52,4 +77,4 @@
 </div>
 
 <%= javascript_include_tag 'creatives_drag_drop', defer: true %>
-<%= javascript_include_tag 'creatives_import' %>
+<%= javascript_include_tag 'creatives_import', defer: true %>
