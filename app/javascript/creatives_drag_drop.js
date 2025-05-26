@@ -3,7 +3,7 @@ if (!window.creativesDragDropInitialized) {
 
   console.log('creatives_drag_drop.js loaded');
 
-  const rightZoneRatio = 0.1; // 10% of the width for child drop indication
+  const rightZoneRatio = 0.2;
   const draggableClassName = '.creative-tree';
   // Drag and Drop for Creative Tree
   let draggedCreativeId = null;
