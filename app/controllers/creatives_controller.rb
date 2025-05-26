@@ -94,6 +94,78 @@ class CreativesController < ApplicationController
     head :ok
   end
 
+  def import_markdown
+    unless authenticated?
+      render json: { error: 'Unauthorized' }, status: :unauthorized and return
+    end
+    if params[:markdown].blank? || !params[:markdown].content_type.in?(%w(text/markdown text/x-markdown application/octet-stream))
+      render json: { error: 'Invalid file type' }, status: :unprocessable_entity and return
+    end
+    parent = params[:parent_id].present? ? Creative.find_by(id: params[:parent_id]) : nil
+    file = params[:markdown]
+    content = file.read.force_encoding('UTF-8')
+    lines = content.lines
+    created = []
+
+    # Find page title (first non-empty, non-heading, non-list line)
+    i = 0
+    while i < lines.size && lines[i].strip.empty?
+      i += 1
+    end
+    root_creative = nil
+    if i < lines.size && lines[i] !~ /^\s*#/ && lines[i] !~ /^\s*[-*+]/
+      page_title = lines[i].strip
+      root_creative = Creative.create(user: Current.user, parent: parent, description: page_title)
+      created << root_creative
+      i += 1
+    end
+    # If no page title, use parent as root
+    root_creative ||= parent
+
+    # Now, stack always starts with root_creative
+    stack = [[0, root_creative]]
+    while i < lines.size
+      line = lines[i]
+      if line =~ /^(#+)\s+(.*)$/ # Heading
+        level = $1.length # 1 for h1, 2 for h2, etc.
+        desc = $2.strip
+        while stack.any? && stack.last[0] >= level
+          stack.pop
+        end
+        new_parent = stack.any? ? stack.last[1] : root_creative
+        c = Creative.create(user: Current.user, parent: new_parent, description: desc)
+        created << c
+        stack << [level, c]
+        i += 1
+      elsif line =~ /^([ \t]*)([-*+])\s+(.*)$/ # Bullet list
+        indent = $1.length
+        desc = $3.strip
+        bullet_level = 10 + indent / 2
+        while stack.any? && stack.last[0] >= bullet_level
+          stack.pop
+        end
+        new_parent = stack.any? ? stack.last[1] : root_creative
+        c = Creative.create(user: Current.user, parent: new_parent, description: desc)
+        created << c
+        stack << [bullet_level, c]
+        i += 1
+      elsif !line.strip.empty? # Paragraph/content under a heading
+        desc = line.strip
+        new_parent = stack.any? ? stack.last[1] : root_creative
+        c = Creative.create(user: Current.user, parent: new_parent, description: desc)
+        created << c
+        i += 1
+      else
+        i += 1
+      end
+    end
+    if created.any?
+      render json: { success: true, created: created.map(&:id) }
+    else
+      render json: { error: 'No creatives created' }, status: :unprocessable_entity
+    end
+  end
+
   private
 
     def set_creative

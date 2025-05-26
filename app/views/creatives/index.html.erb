@@ -11,6 +11,19 @@
     <%= link_to t('.edit'), edit_creative_path(@parent_creative) %>
     <%= button_to t('.delete'), @parent_creative, method: :delete, data: { turbo_confirm: t('.are_you_sure') }, class: "danger-link" %>
   <% end %>
+  <button id="import-markdown-btn" class="import-btn"><%= t('.import_markdown') %></button>
+</div>
+<div id="import-markdown-area" data-parent-creative-id="<%= @parent_creative&.id %>" style="display:none; margin: 1em 0;">
+  <div id="import-markdown-dropzone"
+    style="border:2px dashed #888;padding:2em;text-align:center;cursor:pointer;background:#fafafa;"
+    data-uploading="<%= t('.import_uploading') %>"
+    data-success="<%= t('.import_success') %>"
+    data-failed="<%= t('.import_failed') %>"
+    data-only-markdown="<%= t('.only_markdown') %>">
+    <%= t('.drop_or_click_markdown') %>
+    <input type="file" id="import-markdown-input" accept=".md" style="display:none;" />
+    <div id="import-markdown-progress" style="margin-top:1em;color:#0074d9;display:none;"></div>
+  </div>
 </div>
 
 <%#= TODO: remove this later completely recalculate progress you need to remove route, and controller also %>
@@ -39,3 +52,4 @@
 </div>
 
 <%= javascript_include_tag 'creatives_drag_drop', defer: true %>
+<%= javascript_include_tag 'creatives_import' %>

@@ -12,6 +12,12 @@ en:
       recalculate_all_parent_progress: "Recalculate all parent progress?"
       no_creatives: "No creatives found."
       no_sub_creatives: "No sub-creatives found."
+      import_uploading: "Uploading..."
+      import_success: "Import successful! Reloading..."
+      import_failed: "Import failed."
+      only_markdown: "Only markdown (.md) files are allowed."
+      drop_or_click_markdown: "Drop or click here to select a markdown file"
+      import_markdown: "Import Markdown"
     notices:
       progress_recalculated: "All parent progress recalculated."
     form:

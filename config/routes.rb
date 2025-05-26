@@ -23,6 +23,7 @@ Rails.application.routes.draw do
     collection do
       post :recalculate_progress
       post :reorder
+      post :import_markdown
     end
   end
 

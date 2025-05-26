@@ -12,6 +12,12 @@ ko:
       recalculate_all_parent_progress: "모든 상위 진행률을 다시 계산하시겠습니까?"
       no_creatives: "크리에이티브가 없습니다."
       no_sub_creatives: "하위 크리에이티브가 없습니다."
+      import_uploading: "업로드 중..."
+      import_success: "가져오기 성공! 새로고침 중..."
+      import_failed: "가져오기 실패"
+      only_markdown: "마크다운(.md) 파일만 가능합니다."
+      drop_or_click_markdown: "여기에 파일을 드롭하거나 클릭하여 마크다운 파일을 선택하세요"
+      import_markdown: "마크다운 가져오기"
     notices:
       progress_recalculated: "진행률을 다시 계산 했습니다."
     form:
