@@ -103,14 +103,14 @@ class CreativesController < ApplicationController
 
   def import_markdown
     unless authenticated?
-      render json: { error: 'Unauthorized' }, status: :unauthorized and return
+      render json: { error: "Unauthorized" }, status: :unauthorized and return
     end
-    if params[:markdown].blank? || !params[:markdown].content_type.in?(%w(text/markdown text/x-markdown application/octet-stream))
-      render json: { error: 'Invalid file type' }, status: :unprocessable_entity and return
+    if params[:markdown].blank? || !params[:markdown].content_type.in?(%w[text/markdown text/x-markdown application/octet-stream])
+      render json: { error: "Invalid file type" }, status: :unprocessable_entity and return
     end
     parent = params[:parent_id].present? ? Creative.find_by(id: params[:parent_id]) : nil
     file = params[:markdown]
-    content = file.read.force_encoding('UTF-8')
+    content = file.read.force_encoding("UTF-8")
     lines = content.lines
     created = []
 
@@ -130,7 +130,7 @@ class CreativesController < ApplicationController
     root_creative ||= parent
 
     # Now, stack always starts with root_creative
-    stack = [[0, root_creative]]
+    stack = [ [ 0, root_creative ] ]
     while i < lines.size
       line = lines[i]
       if line =~ /^(#+)\s+(.*)$/ # Heading
@@ -142,7 +142,7 @@ class CreativesController < ApplicationController
         new_parent = stack.any? ? stack.last[1] : root_creative
         c = Creative.create(user: Current.user, parent: new_parent, description: desc)
         created << c
-        stack << [level, c]
+        stack << [ level, c ]
         i += 1
       elsif line =~ /^([ \t]*)([-*+])\s+(.*)$/ # Bullet list
         indent = $1.length
@@ -154,7 +154,7 @@ class CreativesController < ApplicationController
         new_parent = stack.any? ? stack.last[1] : root_creative
         c = Creative.create(user: Current.user, parent: new_parent, description: desc)
         created << c
-        stack << [bullet_level, c]
+        stack << [ bullet_level, c ]
         i += 1
       elsif !line.strip.empty? # Paragraph/content under a heading
         desc = line.strip
@@ -169,7 +169,7 @@ class CreativesController < ApplicationController
     if created.any?
       render json: { success: true, created: created.map(&:id) }
     else
-      render json: { error: 'No creatives created' }, status: :unprocessable_entity
+      render json: { error: "No creatives created" }, status: :unprocessable_entity
     end
   end
 
