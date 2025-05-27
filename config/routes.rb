@@ -16,7 +16,12 @@ Rails.application.routes.draw do
 
   root "creatives#index"
 
-  resources :users, only: [ :new, :create, :index ]
+  resources :users, only: [ :new, :create, :index, :show ] do
+    member do
+      get :edit_password
+      patch :update_password
+    end
+  end
 
   resources :creatives do
     resources :subscribers, only: [ :create ]

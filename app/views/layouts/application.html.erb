@@ -26,7 +26,9 @@
 
     <nav>
       <%= link_to t('app.home'), root_path %>
-      <%= Current.user.email_address if Current.user %>
+      <% if Current.user %>
+        <%= link_to Current.user.email_address, user_path(Current.user) %>
+      <% end %>
       <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
       <%= button_to t('app.sign_out'), session_path, method: :delete if authenticated? %>
       <a href="#" id="creative-guide-link" style="margin-left: 1em; font-size: 1.2em; text-decoration: none;">?</a>
