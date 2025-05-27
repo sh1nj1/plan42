@@ -32,7 +32,7 @@ module CreativesHelper
                           data: { creative_id: creative.id }) +
                 link_to("+", new_creative_path(parent_id: creative.id),
                         class: "add-creative-btn",
-                        style: "margin-left: 6px; font-size: 12px; width: 12px; font-weight: bold; text-decoration: none; cursor: pointer;",
+                        style: "margin-left: 6px; font-size: 12px; width: 12px; font-weight: bold; text-decoration: none; cursor: pointer;#{' visibility: hidden;' unless creative.has_permission?(Current.user, :write)}",
                         title: I18n.t("creatives.help.add_child_creative")
                 )
             end +

@@ -28,7 +28,14 @@ class Creative < ApplicationRecord
       end
     end
 
-    private
+  def has_permission?(user, required_permission = :read)
+    return true if self.user_id == user.id
+    share = CreativeShare.find_by(user: user, creative: self)
+    return false unless share
+    CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
+  end
+
+  private
 
     def update_parent_progress
       return unless parent
