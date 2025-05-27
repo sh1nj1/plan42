@@ -23,6 +23,16 @@ en:
       only_markdown: "Only markdown (.md) files are allowed."
       drop_or_click_markdown: "Drop or click here to select a markdown file"
       import_markdown: "Import Markdown"
+      share_creative: "Share Creative"
+      shared_with: "Shared With"
+      unknown_user: "Unknown user"
+      user_email: "User Email"
+      permission: "Permission"
+      permission_read: "Read"
+      permission_read_tree: "Read Tree"
+      permission_write: "Write"
+      permission_write_tree: "Write Tree"
+      share: "Share"
     notices:
       progress_recalculated: "All parent progress recalculated."
     errors:
