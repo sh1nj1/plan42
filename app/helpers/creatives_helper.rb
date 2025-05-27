@@ -19,14 +19,14 @@ module CreativesHelper
           ondrop: "handleDrop(event)"
         }
         render_next_block = -> {
-          (creative.children.any? ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children") {
-            render_creative_tree(creative.children, level + 1)
+          (creative.children_with_permission.any? ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children") {
+            render_creative_tree(creative.children_with_permission, level + 1)
           }: "".html_safe)
         }
         render_row_content = ->(wrapper) {
           content_tag(:div, class: "creative-row-left", style: "display: flex; align-items: center;") do
             content_tag(:div, class: "creative-row-actions", style: "display: flex; align-items: center;") do
-              content_tag(:div, ((level <= 3 and creative.children.any?) ? toggle_button_symbol(expanded: true) : ""),
+              content_tag(:div, ((level <= 3 and creative.children_with_permission.any?) ? toggle_button_symbol(expanded: true) : ""),
                           class: "before-link creative-toggle-btn",
                           style: "width: 9px; height: 9px; font-size: 9px; margin-right: 6px; display: flex; align-items: center; justify-content: center; line-height: 1; cursor: pointer;",
                           data: { creative_id: creative.id }) +
@@ -44,7 +44,7 @@ module CreativesHelper
         bullet_starting_level = 3
         if level <= bullet_starting_level
           content_tag(:div, class: "creative-tree", **drag_attrs) {
-            heading_tag = (creative.children.any? or creative.parent.nil?) ? "h#{level}" : "div"
+            heading_tag = (creative.children_with_permission.any? or creative.parent.nil?) ? "h#{level}" : "div"
             content_tag(:div, class: "creative-row") do
               render_row_content.call(->(&block) {
                 content_tag(heading_tag, class: "indent#{level}") do

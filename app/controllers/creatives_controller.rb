@@ -43,6 +43,13 @@ class CreativesController < ApplicationController
 
     if @creative.save
       @child_creative.save if @child_creative
+      # Add CreativeShare for all users who have _tree permission to the parent
+      if @creative.parent
+        parent_shares = CreativeShare.where(creative: @creative.parent).where("permission = ? OR permission = ?", CreativeShare.permissions[:read_tree], CreativeShare.permissions[:write_tree])
+        parent_shares.each do |parent_share|
+          CreativeShare.create!(creative: @creative, user: parent_share.user, permission: parent_share.permission)
+        end
+      end
       redirect_to @creative
     else
       render :new, status: :unprocessable_entity

@@ -35,6 +35,12 @@ class Creative < ApplicationRecord
     CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
   end
 
+  # Returns only children for which the user has at least the given permission (default: :read)
+  def children_with_permission(user = nil, min_permission = :read)
+    user ||= Current.user
+    children.select { |child| child.has_permission?(user, min_permission) }
+  end
+
   private
 
   def update_parent_progress
