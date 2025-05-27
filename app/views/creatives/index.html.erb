@@ -6,6 +6,46 @@
   <% end %>
   
   <%= link_to t('.new_creative'), new_creative_path if authenticated? and not params[:id] %>
+  <% if @parent_creative || @creative %>
+    <button id="share-creative-btn" class="btn btn-primary"><%= t('.share') %></button>
+    <!-- Share Creative Modal -->
+    <div id="share-creative-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.4);z-index:1000;align-items:center;justify-content:center;">
+      <div style="background:#fff;padding:2em;border-radius:8px;min-width:320px;max-width:90vw;position:relative;">
+        <button id="close-share-modal" style="position:absolute;top:0.5em;right:0.5em;">&times;</button>
+        <h2><%= t('.share_creative') %></h2>
+        <form id="share-creative-form" action="<%= creative_creative_shares_path(@parent_creative || @creative) %>" method="post">
+          <%= csrf_meta_tags %>
+          <div style="margin-bottom:1em;">
+            <label for="share-user-email"><%= t('.user_email') %></label>
+            <input type="email" name="user_email" id="share-user-email" required style="width:100%;" />
+          </div>
+          <div style="margin-bottom:1em;">
+            <label for="share-permission"><%= t('.permission') %></label>
+            <select name="permission" id="share-permission" style="width:100%;">
+              <option value="read"><%= t('.permission_read') %></option>
+              <option value="read_tree"><%= t('.permission_read_tree') %></option>
+              <option value="write"><%= t('.permission_write') %></option>
+              <option value="write_tree"><%= t('.permission_write_tree') %></option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary"><%= t('.share') %></button>
+        </form>
+      </div>
+    </div>
+    <script>
+      document.addEventListener('turbo:load', function() {
+        const shareBtn = document.getElementById('share-creative-btn');
+        const modal = document.getElementById('share-creative-modal');
+        const closeBtn = document.getElementById('close-share-modal');
+        if (shareBtn && modal && closeBtn) {
+          shareBtn.onclick = function() { modal.style.display = 'flex'; };
+          closeBtn.onclick = function() { modal.style.display = 'none'; };
+          modal.onclick = function(e) { if (e.target === modal) modal.style.display = 'none'; };
+        }
+      });
+    </script>
+  <% end %>
+  
   <% if authenticated? and @parent_creative %>
     <%= link_to t('.new_sub_creative'), @parent_creative&.id ? new_creative_path(parent_id: @parent_creative.id) : new_creative_path %>
     <%= link_to t('.edit'), edit_creative_path(@parent_creative) %>

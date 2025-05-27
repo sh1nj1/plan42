@@ -20,11 +20,15 @@ Rails.application.routes.draw do
 
   resources :creatives do
     resources :subscribers, only: [ :create ]
+    resources :creative_shares, only: [ :create ]
     collection do
       post :recalculate_progress
       post :reorder
       post :import_markdown
-      get :append_as_parent, to: 'creatives#append_as_parent', as: :append_as_parent_creative
+      get :append_as_parent, to: "creatives#append_as_parent", as: :append_as_parent_creative
+    end
+    member do
+      post :share, to: "creatives#share", as: :share_creative
     end
   end
 

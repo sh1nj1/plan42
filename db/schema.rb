@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_05_25_205100) do
+ActiveRecord::Schema[8.0].define(version: 2025_05_27_014217) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -49,6 +49,17 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_25_205100) do
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
   end
 
+  create_table "creative_shares", force: :cascade do |t|
+    t.integer "creative_id", null: false
+    t.integer "user_id", null: false
+    t.integer "permission", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["creative_id", "user_id"], name: "index_creative_shares_on_creative_id_and_user_id", unique: true
+    t.index ["creative_id"], name: "index_creative_shares_on_creative_id"
+    t.index ["user_id"], name: "index_creative_shares_on_user_id"
+  end
+
   create_table "creatives", force: :cascade do |t|
     t.text "description"
     t.string "featured_image"
@@ -57,7 +68,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_25_205100) do
     t.datetime "updated_at", null: false
     t.integer "parent_id"
     t.integer "sequence", default: 0, null: false
-    t.integer "user_id"
+    t.integer "user_id", null: false
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
   end
@@ -231,6 +242,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_25_205100) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "creative_shares", "creatives"
+  add_foreign_key "creative_shares", "users"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
   add_foreign_key "sessions", "users"
