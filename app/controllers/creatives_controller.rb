@@ -215,11 +215,7 @@ class CreativesController < ApplicationController
 
   def append_as_parent
     @parent_creative = Creative.find_by(id: params[:parent_id]).parent
-    if @parent_creative
-      redirect_to new_creative_path(parent_id: @parent_creative.id, child_id: params[:parent_id])
-    else
-      redirect_to creatives_path
-    end
+    redirect_to new_creative_path(parent_id: @parent_creative&.id, child_id: params[:parent_id])
   end
 
   private
