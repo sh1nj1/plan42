@@ -25,6 +25,8 @@ en:
       import_markdown: "Import Markdown"
     notices:
       progress_recalculated: "All parent progress recalculated."
+    errors:
+      no_permission: "You do not have permission to perform this action."
     form:
       parent_creative: "Parent Creative"
       child_creative: "Child Creative"

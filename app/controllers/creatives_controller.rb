@@ -69,11 +69,25 @@ class CreativesController < ApplicationController
 
   def destroy
     parent = @creative.parent
+    unless @creative.has_permission?(Current.user, :write)
+      redirect_to @creative, alert: t("creatives.errors.no_permission") and return
+    end
     if params[:delete_with_children]
+      deletable_children = @creative.children_with_permission(Current.user, :write)
+      non_deletable_children = @creative.children - deletable_children
+      deletable_children.each do |child|
+        CreativeShare.where(creative: child).destroy_all
+        child.destroy
+      end
+      # Reassign and save each non-deletable child
+      non_deletable_children.each { |child| child.update!(parent_id: parent&.id) }
+      @creative.children.reload
+      CreativeShare.where(creative: @creative).destroy_all
       @creative.destroy
     else
       # Re-link children to parent
       @creative.children.update_all(parent_id: parent&.id)
+      CreativeShare.where(creative: @creative).destroy_all
       @creative.destroy
     end
     if parent

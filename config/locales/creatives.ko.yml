@@ -25,6 +25,8 @@ ko:
       import_markdown: "마크다운 가져오기"
     notices:
       progress_recalculated: "진행률을 다시 계산 했습니다."
+    errors:
+      no_permission: "이 작업을 수행할 권한이 없습니다."
     form:
       parent_creative: "상위 크리에이티브"
       child_creative: "하위 크리에이티브"
