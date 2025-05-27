@@ -22,12 +22,23 @@ class CreativesController < ApplicationController
       @parent_creative = Creative.find_by(id: params[:parent_id])
       @creative.parent = @parent_creative if @parent_creative
     end
+    if params[:child_id].present?
+      @child_creative = Creative.find_by(id: params[:child_id])
+    end
   end
 
   def create
     @creative = Creative.new(creative_params)
     @creative.user = Current.user
+
+    # Rebuild @child_creative from params if present
+    if params[:child_id].present?
+      @child_creative = Creative.find_by(id: params[:child_id])
+      @child_creative.parent = @creative if @child_creative
+    end
+
     if @creative.save
+      @child_creative.save if @child_creative
       redirect_to @creative
     else
       render :new, status: :unprocessable_entity
@@ -174,6 +185,15 @@ class CreativesController < ApplicationController
       render json: { success: true, created: created.map(&:id) }
     else
       render json: { error: "No creatives created" }, status: :unprocessable_entity
+    end
+  end
+
+  def append_as_parent
+    @parent_creative = Creative.find_by(id: params[:parent_id]).parent
+    if @parent_creative
+      redirect_to new_creative_path(parent_id: @parent_creative.id, child_id: params[:parent_id])
+    else
+      redirect_to creatives_path
     end
   end
 

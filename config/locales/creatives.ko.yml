@@ -3,8 +3,9 @@ ko:
     index:
       up: "위로"
       new_creative: "새 크리에이티브"
-      new_sub_creative: "하위 크리에이티브 추가"
+      new_sub_creative: "하위에 추가"
       edit: "수정"
+      append_as_parent_creative: "상위에 추가"
       delete: "삭제"
       delete_only_this: "이 항목만 삭제"
       delete_with_children: "이 항목과 모든 하위 항목 삭제"
@@ -26,6 +27,7 @@ ko:
       progress_recalculated: "진행률을 다시 계산 했습니다."
     form:
       parent_creative: "상위 크리에이티브"
+      child_creative: "하위 크리에이티브"
       description: "내용"
       sequence: "순서"
       progress: "진행률"

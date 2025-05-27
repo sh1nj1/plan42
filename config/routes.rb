@@ -24,6 +24,7 @@ Rails.application.routes.draw do
       post :recalculate_progress
       post :reorder
       post :import_markdown
+      get :append_as_parent, to: 'creatives#append_as_parent', as: :append_as_parent_creative
     end
   end
 

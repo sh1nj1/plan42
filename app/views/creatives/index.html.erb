@@ -9,6 +9,7 @@
   <% if authenticated? and @parent_creative %>
     <%= link_to t('.new_sub_creative'), @parent_creative&.id ? new_creative_path(parent_id: @parent_creative.id) : new_creative_path %>
     <%= link_to t('.edit'), edit_creative_path(@parent_creative) %>
+    <%= link_to t('.append_as_parent_creative'), append_as_parent_creative_creatives_path(parent_id: @parent_creative&.id), class: 'btn btn-secondary' %>
     <div class="delete-dropdown" style="display:inline-block;position:relative;">
       <button type="button" class="danger-link" id="delete-dropdown-btn">
         <%= t('.delete') %>

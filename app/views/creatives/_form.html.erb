@@ -10,6 +10,18 @@
     </div>
   <% end %>
 
+  <% if params[:child_id].present? && defined?(@child_creative) && @child_creative %>
+    <div>
+      <strong><%= t('.child_creative', default: 'Child Creative') %>:</strong>
+      <div style="margin: 0.5em 0 1em 0; padding: 0.5em; background: #f5f5f5; border-radius: 5px;">
+        <%= @child_creative.description.to_plain_text if @child_creative&.description.present? %>
+      </div>
+      <%= hidden_field_tag :child_id, @child_creative.id %>
+    </div>
+  <% elsif params[:child_id].present? %>
+    <%= hidden_field_tag :child_id, params[:child_id] %>
+  <% end %>
+
   <div>
     <%= form.label :description, t('.description'), style: "display: block" %>
     <%= form.rich_text_area :description %>
