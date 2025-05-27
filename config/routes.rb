@@ -26,6 +26,8 @@ Rails.application.routes.draw do
       post :reorder
       post :import_markdown
       get :append_as_parent, to: "creatives#append_as_parent", as: :append_as_parent_creative
+      get :get_expansion_states
+      post :set_expansion_states
     end
     member do
       post :share, to: "creatives#share", as: :share_creative

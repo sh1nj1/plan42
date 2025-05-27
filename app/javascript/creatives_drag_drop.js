@@ -128,51 +128,110 @@ if (!window.creativesDragDropInitialized) {
     }
   };
 
-  // Toggle children visibility on ▶/▼ button click
-  function setupCreativeToggles() {
-    console.log("Setting up creative toggles");
-    // Get current creative id from path, e.g. /creatives/10 or /creatives
-    let match = window.location.pathname.match(/\/creatives\/(\d+)/);
-    const currentCreativeId = match ? match[1] : 'root';
-    document.querySelectorAll(".creative-toggle-btn").forEach(function(btn) {
-      btn.addEventListener("click", function(e) {
-        const creativeId = btn.dataset.creativeId;
-        const childrenDiv = document.getElementById(`creative-children-${creativeId}`);
-        if (childrenDiv) {
-          const isHidden = childrenDiv.style.display === "none";
-          childrenDiv.style.display = isHidden ? "" : "none";
-          btn.textContent = isHidden ? "▼" : "▶";
-          // Store expansion state in localStorage, scoped by currentCreativeId
-          let allStates = JSON.parse(localStorage.getItem("creativeTreeExpandedByParent") || '{}');
-          let expanded = allStates[currentCreativeId] || {};
-          if (isHidden) {
-            delete expanded[creativeId];
-          } else {
-            expanded[creativeId] = false;
-          }
-          allStates[currentCreativeId] = expanded;
-          localStorage.setItem("creativeTreeExpandedByParent", JSON.stringify(allStates));
-        }
-      });
+  // Global variable to store collapsed states. True means collapsed.
+  let userCreativeCollapsedStates = {};
 
-      // On load, restore state
-      const creativeId = btn.dataset.creativeId;
-      const childrenDiv = document.getElementById(`creative-children-${creativeId}`);
-      let allStates = JSON.parse(localStorage.getItem("creativeTreeExpandedByParent") || '{}');
-      let expanded = allStates[currentCreativeId] || {};
-      if (childrenDiv && expanded[creativeId] === undefined) {
-        childrenDiv.style.display = "";
-        btn.textContent = "▼";
-      } else if (childrenDiv) {
-        childrenDiv.style.display = "none";
-        btn.textContent = "▶";
+  // Fetch states from server and apply them
+  function fetchAndApplyExpansionStates() {
+    console.log("Fetching expansion states from server...");
+    fetch('/creatives/get_expansion_states', {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
       }
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('Network response was not ok for get_expansion_states');
+      }
+      return response.json();
+    })
+    .then(data => {
+      userCreativeCollapsedStates = data || {}; // Ensure it's an object
+      console.log("Fetched states:", userCreativeCollapsedStates);
+      setupCreativeTogglesEventListenersAndInitialView();
+    })
+    .catch(error => {
+      console.error('Error fetching expansion states:', error);
+      // Proceed with setup anyway, possibly with default (expanded) states
+      setupCreativeTogglesEventListenersAndInitialView();
     });
   }
 
-  // XXX: do not initialize Toggles it only do once when page loads or changes, so only use turbo:load
-  // document.addEventListener("DOMContentLoaded", setupCreativeToggles);
-  document.addEventListener("turbo:load", setupCreativeToggles);
+  // Setup event listeners for toggles and set initial view based on fetched states
+  function setupCreativeTogglesEventListenersAndInitialView() {
+    console.log("Setting up creative toggles event listeners and initial view.");
+    document.querySelectorAll(".creative-toggle-btn").forEach(function(btn) {
+      const creativeId = btn.dataset.creativeId;
+      const childrenDiv = document.getElementById(`creative-children-${creativeId}`);
+
+      if (!childrenDiv) return; // No children div, nothing to toggle
+
+      // Set initial view
+      if (userCreativeCollapsedStates[creativeId]) { // if true, it's collapsed
+        childrenDiv.style.display = "none";
+        btn.textContent = "▶";
+      } else {
+        childrenDiv.style.display = "";
+        btn.textContent = "▼";
+      }
+
+      // Remove existing event listener to prevent multiple attachments if this function is called again
+      // A simple way is to replace the element, but that can be complex.
+      // For now, we'll assume this function is called once per element after turbo:load,
+      // or that multiple identical listeners don't cause issues.
+      // A more robust way: btn.replaceWith(btn.cloneNode(true)); and then re-select the new btn.
+      // For simplicity now, we just add. If issues arise, this should be revisited.
+
+      btn.addEventListener("click", function(e) {
+        e.preventDefault(); // Prevent any default action
+        const isCurrentlyCollapsed = childrenDiv.style.display === "none";
+        if (isCurrentlyCollapsed) {
+          childrenDiv.style.display = "";
+          btn.textContent = "▼";
+          delete userCreativeCollapsedStates[creativeId]; // Expanded, so remove from collapsed states
+        } else {
+          childrenDiv.style.display = "none";
+          btn.textContent = "▶";
+          userCreativeCollapsedStates[creativeId] = true; // Collapsed, so add to states
+        }
+        sendExpansionStatesToServer();
+      });
+    });
+  }
+
+  // Send the current state of userCreativeCollapsedStates to the server
+  function sendExpansionStatesToServer() {
+    console.log("Sending expansion states to server:", userCreativeCollapsedStates);
+    fetch('/creatives/set_expansion_states', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+      },
+      body: JSON.stringify({ states: userCreativeCollapsedStates })
+    })
+    .then(response => {
+      if (!response.ok) {
+        console.error('Failed to send expansion states to server. Status:', response.status);
+        // Optionally, revert the state or notify the user
+      } else {
+        console.log('Expansion states successfully sent to server.');
+      }
+    })
+    .catch(error => {
+      console.error('Error sending expansion states:', error);
+      // Optionally, revert the state or notify the user
+    });
+  }
+
+  document.addEventListener("turbo:load", () => {
+    console.log("turbo:load event triggered for creatives_drag_drop.js");
+    // Initialize/reset states and fetch fresh from server on each turbo:load
+    userCreativeCollapsedStates = {};
+    fetchAndApplyExpansionStates();
+  });
 
   function sendNewOrder(draggedId, targetId, direction, onErrorRevert) {
     fetch('/creatives/reorder', {

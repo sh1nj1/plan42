@@ -3,6 +3,7 @@ class CreativesController < ApplicationController
   # Removed unauthenticated access to index and show actions
   # allow_unauthenticated_access only: %i[ index show ]
   before_action :set_creative, only: %i[ show edit update destroy ]
+  before_action :authenticate_user_for_expansion_states!, only: %i[get_expansion_states set_expansion_states]
 
   def index
     # Show creatives owned by the user or shared with the user (with permission >= read)
@@ -227,4 +228,24 @@ class CreativesController < ApplicationController
     def creative_params
       params.require(:creative).permit(:description, :progress, :parent_id, :sequence)
     end
+
+  # Actions for creative expansion states
+  def get_expansion_states
+    states = Current.user.creative_expansion_states
+    render json: states.present? ? states : {}
+  end
+
+  def set_expansion_states
+    if Current.user.update(creative_expansion_states: params[:states])
+      head :ok
+    else
+      head :unprocessable_entity
+    end
+  end
+
+  def authenticate_user_for_expansion_states!
+    unless Current.user
+      render json: { error: "Unauthorized" }, status: :unauthorized
+    end
+  end
 end
