@@ -4,3 +4,9 @@
 .creative-row:hover .creative-row-actions {
   visibility: visible;
 }
+
+@media (max-width: 768px) {
+  .creative-row-actions {
+    visibility: visible !important;
+  }
+}
