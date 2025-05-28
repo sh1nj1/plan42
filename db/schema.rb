@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_05_27_014217) do
+ActiveRecord::Schema[8.0].define(version: 2025_05_28_142349) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -68,7 +68,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_27_014217) do
     t.datetime "updated_at", null: false
     t.integer "parent_id"
     t.integer "sequence", default: 0, null: false
-    t.integer "user_id", null: false
+    t.integer "user_id"
+    t.integer "origin_id"
+    t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
   end
@@ -244,6 +246,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_27_014217) do
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
+  add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
   add_foreign_key "sessions", "users"

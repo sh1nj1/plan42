@@ -7,10 +7,14 @@ class Creative < ApplicationRecord
   belongs_to :parent, class_name: "Creative", optional: true
   has_many :children, -> { order(:sequence) }, class_name: "Creative", foreign_key: :parent_id, dependent: :destroy
 
+  belongs_to :origin, class_name: "Creative", optional: true
+  has_many :linked_creatives, class_name: "Creative", foreign_key: :origin_id, dependent: :destroy
   belongs_to :user, optional: true
 
-  validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }
-  validates :description, presence: true
+  has_many :creative_shares, dependent: :destroy
+
+  validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }, unless: -> { origin_id.present? }
+  validates :description, presence: true, unless: -> { origin_id.present? }
 
   after_save :update_parent_progress
   after_destroy :update_parent_progress
@@ -22,29 +26,77 @@ class Creative < ApplicationRecord
   end
 
   def recalculate_subtree_progress!
-    children.each(&:recalculate_subtree_progress!)
-    if children.any?
-      update(progress: children.average(:progress) || 0)
+    if origin_id.nil?
+      children.each(&:recalculate_subtree_progress!)
+      if children.any?
+        update(progress: children.average(:progress) || 0)
+      end
+    else
+      origin.recalculate_subtree_progress!
     end
   end
 
   def has_permission?(user, required_permission = :read)
-    return true if self.user_id == user.id
-    share = CreativeShare.find_by(user: user, creative: self)
-    return false unless share
-    CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
+    origin_id.nil? ? has_permission_impl(user, required_permission) : origin.has_permission?(user, required_permission)
   end
 
   # Returns only children for which the user has at least the given permission (default: :read)
   def children_with_permission(user = nil, min_permission = :read)
     user ||= Current.user
-    children.select { |child| child.has_permission?(user, min_permission) }
+    effective_origin.children.select do |child|
+      child.has_permission?(user, min_permission)
+    end
+  end
+
+  # Returns the effective attribute for linked creatives
+  def effective_attribute(attr)
+    return self[attr] if origin_id.nil? || attr.to_s == "parent_id"
+    origin.send(attr)
+  end
+
+  def effective_origin
+    return self if origin_id.nil?
+    origin
+  end
+
+  # Linked Creative의 description을 안전하게 반환
+  def effective_description
+    if origin_id.nil?
+      rich_text_description&.body&.to_s || ""
+    else
+      origin.rich_text_description&.body&.to_s || ""
+    end
+  end
+
+  def progress
+    effective_attribute(:progress)
+  end
+
+  def user
+    origin_id.nil? ? super : origin.user
+  end
+
+  def children
+    origin_id.nil? ? super : origin.children.has_permission?(Current.user, :read)
+  end
+
+  def owning_parent
+    Creative.find_by(origin_id: id, user: Current.user)&.parent || parent
+  end
+
+  def update_parent_progress
+    # 참조 하는 모든 Linked Creative 도 업데이트
+    linked_creatives.update(progress: progress)
+    return unless parent
+    parent.update(progress: parent.children.average(:progress) || 0)
   end
 
   private
 
-  def update_parent_progress
-    return unless parent
-    parent.update(progress: parent.children.average(:progress) || 0)
+  def has_permission_impl(user, required_permission = :read)
+    return true if self.user_id == user.id
+    share = CreativeShare.find_by(user: user, creative: self)
+    return false unless share
+    CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
   end
 end
