@@ -123,7 +123,7 @@
 <% end %>
 
 <div id="creatives">
-  <% creatives_for_tree = @creatives.where(parent_id: params[:id] || nil) %>
+  <% creatives_for_tree = @creatives %>
   <% if creatives_for_tree.exists? %>
     <%= render_creative_tree(creatives_for_tree) %>
   <% else %>

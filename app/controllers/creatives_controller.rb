@@ -5,13 +5,9 @@ class CreativesController < ApplicationController
   before_action :set_creative, only: %i[ show edit update destroy ]
 
   def index
-    # Show creatives owned by the user or shared with the user (with permission >= read)
-    owned = Creative.where(user: Current.user)
-    shared_ids = CreativeShare.where("user_id = ? AND permission >= ?", Current.user.id, CreativeShare.permissions[:read])
-                              .pluck(:creative_id)
-    @creatives = Creative.where(id: owned.pluck(:id) + shared_ids).order(:sequence)
+    @creatives = Creative.where(user: Current.user).where(parent_id: params[:id] || nil).order(:sequence)
     if params[:id].present?
-      @parent_creative = Creative.find_by(id: params[:id])
+      @parent_creative = Creative.where(user: Current.user).find_by(id: params[:id])
     end
   end
 
