@@ -23,10 +23,24 @@ class CreativeSharesController < ApplicationController
     end
 
     if shares.all?(&:save)
+      create_linked_creative_for_user user, @creative
       flash[:notice] = "Creative shared!"
     else
       flash[:alert] = shares.map { |s| s.errors.full_messages }.flatten.to_sentence
     end
     redirect_back(fallback_location: creatives_path)
   end
+
+  private
+
+    def create_linked_creative_for_user(user, to_creative)
+      # 만약 creative 가 이미 Linked Creative 면, origin 을 사용해야 함.
+      creative = to_creative.effective_origin
+      return if creative.user_id == user.id
+      # 이미 Linked Creative가 있으면 생성하지 않음
+      linked = Creative.find_by(origin_id: creative.id, user_id: user.id)
+      return if linked
+      linked = Creative.new(origin_id: creative.id, user_id: user.id, parent_id: nil)
+      linked.save!
+    end
 end

@@ -1,6 +1,6 @@
 <div class="creative-actions-row">
   <% if @parent_creative&.parent_id.present? %>
-    <%= link_to t('.up'), creative_path(@parent_creative.parent_id), class: "back-link" %>
+    <%= link_to t('.up'), creative_path(@parent_creative.owning_parent), class: "back-link" %>
   <% elsif @parent_creative.present? %>
     <%= link_to t('.up'), creatives_path, class: "up-link" %>
   <% end %>
@@ -111,7 +111,7 @@
 
 <% if @parent_creative %>
   <div class="creative-row">
-    <h1 class="page-title"><%= @parent_creative.description %></h1>
+    <h1 class="page-title"><%= @parent_creative.effective_description %></h1>
     <h1>
       <%= render_creative_progress(@parent_creative) %>
     </h1>
@@ -123,9 +123,8 @@
 <% end %>
 
 <div id="creatives">
-  <% creatives_for_tree = @creatives %>
-  <% if creatives_for_tree.exists? %>
-    <%= render_creative_tree(creatives_for_tree) %>
+  <% if @creatives %>
+    <%= render_creative_tree(@creatives) %>
   <% else %>
     <p style="text-align: center;"><%= params[:id] ? t('.no_sub_creatives') : t('.no_creatives') %></p>
   <% end %>

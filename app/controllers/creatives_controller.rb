@@ -5,9 +5,16 @@ class CreativesController < ApplicationController
   before_action :set_creative, only: %i[ show edit update destroy ]
 
   def index
-    @creatives = Creative.where(user: Current.user).where(parent_id: params[:id] || nil).order(:sequence)
-    if params[:id].present?
-      @parent_creative = Creative.where(user: Current.user).find_by(id: params[:id])
+    if params[:id]
+      creative = Creative.where(id: params[:id])
+                   .order(:sequence)
+                          .select { |c| c.user == Current.user || c.has_permission?(Current.user, :read) }
+                           .first
+      @parent_creative = creative
+      @creatives = creative.children_with_permission(Current.user, :read) if creative
+    else
+      @creatives = Creative.where(user: Current.user).where(parent_id: nil)
+      @parent_creative = nil
     end
   end
 
