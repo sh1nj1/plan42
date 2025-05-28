@@ -73,23 +73,14 @@ class CreativesController < ApplicationController
       redirect_to @creative, alert: t("creatives.errors.no_permission") and return
     end
     if params[:delete_with_children]
-      deletable_children = @creative.children_with_permission(Current.user, :write)
-      non_deletable_children = @creative.children - deletable_children
-      deletable_children.each do |child|
-        CreativeShare.where(creative: child).destroy_all
-        child.destroy
-      end
-      # Reassign and save each non-deletable child
-      non_deletable_children.each { |child| child.update!(parent_id: parent&.id) }
-      @creative.children.reload
-      CreativeShare.where(creative: @creative).destroy_all
-      @creative.destroy
+      # Recursively destroy deletable descendants before deleting parent
+      destroy_descendants_recursively(@creative, Current.user)
     else
       # Re-link children to parent
       @creative.children.update_all(parent_id: parent&.id)
-      CreativeShare.where(creative: @creative).destroy_all
-      @creative.destroy
     end
+    CreativeShare.where(creative: @creative).destroy_all
+    @creative.destroy
     if parent
       redirect_to creative_path(parent)
     else
@@ -226,5 +217,15 @@ class CreativesController < ApplicationController
 
     def creative_params
       params.require(:creative).permit(:description, :progress, :parent_id, :sequence)
+    end
+
+    # Recursively destroy all descendants the user can delete
+    def destroy_descendants_recursively(creative, user)
+      deletable_children = creative.children_with_permission(user, :write)
+      deletable_children.each do |child|
+        destroy_descendants_recursively(child, user)
+        CreativeShare.where(creative: child).destroy_all
+        child.destroy
+      end
     end
 end
