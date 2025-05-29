@@ -1,0 +1,46 @@
+/* 다크모드 변수 및 스타일 */
+:root {
+  --color-bg: #fff;
+  --color-text: #222;
+  --color-link: #1a73e8;
+  --color-nav-bg: #fff;
+  --color-section-bg: #fff;
+  --color-btn-bg: #000;
+  --color-btn-text: #fff;
+}
+
+body.dark-mode {
+  --color-bg: #181a1b;
+  --color-text: #e8eaed;
+  --color-link: #8ab4f8;
+  --color-nav-bg: #181a1b;
+  --color-section-bg: #181a1b;
+  --color-btn-bg: #000;
+  --color-btn-text: #fff;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  transition: background 0.3s, color 0.3s;
+}
+nav {
+  background: var(--color-nav-bg);
+}
+a {
+  color: var(--color-link);
+}
+main, section.creative {
+  background: var(--color-section-bg);
+}
+
+button, input[type="button"], input[type="submit"] {
+  background: var(--color-btn-bg);
+  color: var(--color-btn-text);
+  border: none;
+  border-radius: 1px;
+  padding: 2px 4px;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* 기타 요소도 필요에 따라 추가 가능 */
