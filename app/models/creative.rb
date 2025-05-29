@@ -1,3 +1,4 @@
+require "ostruct"
 class Creative < ApplicationRecord
   include Notifications
 
@@ -8,7 +9,7 @@ class Creative < ApplicationRecord
   has_many :children, -> { order(:sequence) }, class_name: "Creative", foreign_key: :parent_id, dependent: :destroy
 
   belongs_to :origin, class_name: "Creative", optional: true
-  has_many :linked_creatives, class_name: "Creative", foreign_key: :origin_id, dependent: :destroy
+  has_many :linked_creatives, class_name: "Creative", foreign_key: :origin_id, dependent: :delete_all
   belongs_to :user, optional: true
 
   has_many :creative_shares, dependent: :destroy
@@ -77,7 +78,7 @@ class Creative < ApplicationRecord
   end
 
   def children
-    origin_id.nil? ? super : origin.children.has_permission?(Current.user, :read)
+    origin_id.nil? ? super : origin.children_with_permission(Current.user, :read)
   end
 
   def owning_parent
@@ -86,9 +87,11 @@ class Creative < ApplicationRecord
 
   def update_parent_progress
     # 참조 하는 모든 Linked Creative 도 업데이트
-    linked_creatives.update(progress: progress)
+    linked_creatives.update_all(progress: self[:progress])
     return unless parent
-    parent.update(progress: parent.children.average(:progress) || 0)
+    parent.reload
+    new_progress = parent.children.any? ? parent.children.map(&:progress).sum.to_f / parent.children.size : 0
+    parent.update(progress: new_progress)
   end
 
   private
