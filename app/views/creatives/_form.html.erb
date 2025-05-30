@@ -3,7 +3,7 @@
   <% if form.object.parent_id.present? && form.object.parent %>
     <div>
       <strong><%= t('.parent_creative') %>:</strong>
-      <div style="margin: 0.5em 0 1em 0; padding: 0.5em; background: #f5f5f5; border-radius: 5px;">
+      <div style="margin: 0.5em 0 1em 0; padding: 0.5em; border-radius: 5px;">
         <%= form.object.parent.description.to_plain_text %>
       </div>
       <%= form.hidden_field :parent_id %>
@@ -13,7 +13,7 @@
   <% if params[:child_id].present? && defined?(@child_creative) && @child_creative %>
     <div>
       <strong><%= t('.child_creative', default: 'Child Creative') %>:</strong>
-      <div style="margin: 0.5em 0 1em 0; padding: 0.5em; background: #f5f5f5; border-radius: 5px;">
+      <div style="margin: 0.5em 0 1em 0; padding: 0.5em; border-radius: 5px;">
         <%= @child_creative.description.to_plain_text if @child_creative&.description.present? %>
       </div>
       <%= hidden_field_tag :child_id, @child_creative.id %>

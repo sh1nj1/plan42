@@ -5,8 +5,8 @@
   --color-link: #1a73e8;
   --color-nav-bg: #fff;
   --color-section-bg: #fff;
-  --color-btn-bg: #000;
-  --color-btn-text: #fff;
+  --color-btn-bg: #eee;
+  --color-btn-text: #000;
 }
 
 body.dark-mode {
