@@ -10,7 +10,6 @@ function setupDarkModeToggle() {
   if (isDark) {
     document.body.classList.add('dark-mode');
   }
-  console.log("isDark", isDark);
 
   // 토글 버튼 생성(이미 있으면 생략)
   if (!document.getElementById('dark-mode-toggle')) {

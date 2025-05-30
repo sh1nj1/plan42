@@ -21,7 +21,7 @@
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
     <%= stylesheet_link_tag :dark_mode %>
 
-
+    <%= javascript_include_tag 'dark_mode_toggle', defer: true %>
     <%= javascript_importmap_tags %>
   </head>
   <body>
@@ -90,7 +90,6 @@
       <%= yield %>
     </main>
 
-    <%= javascript_include_tag 'dark_mode_toggle', defer: true %>
     <script>
       document.addEventListener('turbo:load', function() {
         var link = document.getElementById('creative-guide-link');
