@@ -227,6 +227,38 @@ class CreativesController < ApplicationController
     redirect_to new_creative_path(parent_id: @parent_creative&.id, child_id: params[:parent_id])
   end
 
+  def set_plan
+    plan_id = params[:plan_id]
+    creative_ids = params[:creative_ids].to_s.split(',').map(&:strip).reject(&:blank?)
+    plan = Plan.find_by(id: plan_id)
+    if plan && creative_ids.any?
+      Creative.where(id: creative_ids).find_each do |creative|
+        # Assuming Tag model with fields: taggable (polymorphic), plan_id
+        creative.tags.find_or_create_by(taggable: plan, creative_id: creative.id)
+      end
+      flash[:notice] = t('creatives.index.plan_tags_applied', default: 'Plan tags applied to selected creatives.')
+    else
+      flash[:alert] = t('creatives.index.plan_tag_failed', default: 'Please select a plan and at least one creative.')
+    end
+    redirect_to creatives_path(select_mode: 1)
+  end
+
+  def remove_plan
+    plan_id = params[:plan_id]
+    creative_ids = params[:creative_ids].to_s.split(',').map(&:strip).reject(&:blank?)
+    plan = Plan.find_by(id: plan_id)
+    if plan && creative_ids.any?
+      Creative.where(id: creative_ids).find_each do |creative|
+        tag = creative.tags.find_by(taggable: plan, creative_id: creative.id)
+        tag&.destroy
+      end
+      flash[:notice] = t('creatives.index.plan_tags_removed', default: 'Plan tag removed from selected creatives.')
+    else
+      flash[:alert] = t('creatives.index.plan_tag_remove_failed', default: 'Please select a plan and at least one creative.')
+    end
+    redirect_to creatives_path(select_mode: 1)
+  end
+
   private
 
     def set_creative

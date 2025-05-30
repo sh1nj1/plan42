@@ -18,7 +18,11 @@
     <%= render 'delete_button' %>
 
   <% end %>
-  <button id="select-creative-btn" class="select-btn"><%= t('.select') %></button>
+  <% if params[:select_mode].present? %>
+    <button id="set-plan-btn" class="set-plan-btn"><%= t('app.set_plan') %></button>
+    <input type="checkbox" id="select-all-creatives" style="margin-left:1em;vertical-align:middle;" />
+  <% end %>
+  <button id="select-creative-btn" class="select-btn"><%= t('app.select') %></button>
   <button id="import-markdown-btn" class="import-btn"><%= t('.import_markdown') %></button>
 </div>
 <%= render 'import_upload_zone' %>
@@ -28,7 +32,9 @@
 
 <% if @parent_creative %>
   <div class="creative-row">
-    <h1 class="page-title"><%= @parent_creative.effective_description %></h1>
+    <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
+      <%= @parent_creative.effective_description %>
+    </h1>
     <h1>
       <%= render_creative_progress(@parent_creative) %>
     </h1>
@@ -47,6 +53,8 @@
     <p style="text-align: center;"><%= params[:id] ? t('.no_sub_creatives') : t('.no_creatives') %></p>
   <% end %>
 </div>
+
+<%= render 'set_plan_modal' %>
 
 <%= javascript_include_tag 'creatives_drag_drop', defer: true %>
 <%= javascript_include_tag 'creatives_import', defer: true %>
@@ -67,7 +75,19 @@
     });
     // Change button text if in select mode
     if (window.location.search.includes('select_mode')) {
-      selectBtn.textContent = selectBtn.textContent.replace(/select/i, 'Cancel Select');
+      selectBtn.textContent = '<%= t("app.cancel_select") %>';
+    }
+  });
+</script>
+
+<script>
+  document.addEventListener('turbo:load', function() {
+    var selectAll = document.getElementById('select-all-creatives');
+    if (selectAll) {
+      selectAll.addEventListener('change', function() {
+        var boxes = document.querySelectorAll('.select-creative-checkbox');
+        boxes.forEach(function(cb) { cb.checked = selectAll.checked; });
+      });
     }
   });
 </script>
