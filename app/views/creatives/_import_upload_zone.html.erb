@@ -1,0 +1,12 @@
+<div id="import-markdown-area" data-parent-creative-id="<%= @parent_creative&.id %>" style="display:none; margin: 1em 0;">
+  <div id="import-markdown-dropzone"
+    style="border:2px dashed #888;padding:2em;text-align:center;cursor:pointer;"
+    data-uploading="<%= t('creatives.index.import_uploading') %>"
+    data-success="<%= t('creatives.index.import_success') %>"
+    data-failed="<%= t('creatives.index.import_failed') %>"
+    data-only-markdown="<%= t('creatives.index.only_markdown') %>">
+    <%= t('creatives.index.drop_or_click_markdown') %>
+    <input type="file" id="import-markdown-input" accept=".md" style="display:none;" />
+    <div id="import-markdown-progress" style="margin-top:1em;color:#0074d9;display:none;"></div>
+  </div>
+</div>

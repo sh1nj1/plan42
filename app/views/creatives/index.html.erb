@@ -7,104 +7,20 @@
   
   <%= link_to t('.new_creative'), new_creative_path if authenticated? and not params[:id] %>
   <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
-    <button id="share-creative-btn" class="btn btn-primary"><%= t('.share') %></button>
-    <!-- Share Creative Modal -->
-    <div id="share-creative-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
-      <div style="background: var(--color-bg);padding:2em;border-radius:8px;min-width:320px;max-width:90vw;position:relative;">
-        <button id="close-share-modal" style="position:absolute;top:0.5em;right:0.5em;">&times;</button>
-        <h2><%= t('.share_creative') %></h2>
-        <% shared_creative = @parent_creative || @creative %>
-        <% shared_list = CreativeShare.where(creative: shared_creative).includes(:user) %>
-        <% if shared_list.any? %>
-          <div style="margin-bottom:1em;">
-            <strong><%= t('.shared_with') %>:</strong>
-            <ul style="padding-left:1.5em;">
-              <% shared_list.each do |share| %>
-                <li>
-                  <%= share.user&.email_address || t('.unknown_user') %> - <%= t(".permission_#{share.permission}") %>
-                </li>
-              <% end %>
-            </ul>
-          </div>
-        <% end %>
-        <form id="share-creative-form" action="<%= creative_creative_shares_path(@parent_creative || @creative) %>" method="post">
-          <%= csrf_meta_tags %>
-          <div style="margin-bottom:1em;">
-            <label for="share-user-email"><%= t('.user_email') %></label>
-            <input type="email" name="user_email" id="share-user-email" required style="width:100%;" />
-          </div>
-          <div style="margin-bottom:1em;">
-            <label for="share-permission"><%= t('.permission') %></label>
-            <select name="permission" id="share-permission" style="width:100%;">
-              <option value="read"><%= t('.permission_read') %></option>
-              <option value="read_tree"><%= t('.permission_read_tree') %></option>
-              <option value="write"><%= t('.permission_write') %></option>
-              <option value="write_tree"><%= t('.permission_write_tree') %></option>
-            </select>
-          </div>
-          <button type="submit" class="btn btn-primary"><%= t('.share') %></button>
-        </form>
-      </div>
-    </div>
-    <script>
-      document.addEventListener('turbo:load', function() {
-        const shareBtn = document.getElementById('share-creative-btn');
-        const modal = document.getElementById('share-creative-modal');
-        const closeBtn = document.getElementById('close-share-modal');
-        if (shareBtn && modal && closeBtn) {
-          shareBtn.onclick = function() { modal.style.display = 'flex'; };
-          closeBtn.onclick = function() { modal.style.display = 'none'; };
-          modal.onclick = function(e) { if (e.target === modal) modal.style.display = 'none'; };
-        }
-      });
-    </script>
+    <%= render 'share_button' %>
   <% end %>
   
   <% if authenticated? && @parent_creative && @parent_creative.has_permission?(Current.user, :write) %>
     <%= link_to t('.new_sub_creative'), @parent_creative&.id ? new_creative_path(parent_id: @parent_creative.id) : new_creative_path %>
     <%= link_to t('.edit'), edit_creative_path(@parent_creative) %>
     <%= link_to t('.append_as_parent_creative'), append_as_parent_creative_creatives_path(parent_id: @parent_creative&.id), class: 'btn btn-secondary' %>
-    <div class="delete-dropdown" style="display:inline-block;position:relative;">
-      <button type="button" class="danger-link" id="delete-dropdown-btn">
-        <%= t('.delete') %>
-      </button>
-      <div class="delete-options" id="delete-options-popup" style="display:none;position:absolute;z-index:10;background:#fff;border:1px solid #ccc;padding:0.5em;box-shadow:0 2px 8px #ccc;min-width:220px;">
-        <%= button_to t('.delete_only_this'), @parent_creative, method: :delete, form: { data: { turbo_confirm: t('.are_you_sure_delete_only_this') } }, params: {}, class: "danger-link", style: 'margin-bottom:0.5em;' %>
-        <%= button_to t('.delete_with_children'), @parent_creative, method: :delete, params: { delete_with_children: true }, form: { data: { turbo_confirm: t('.are_you_sure_delete_with_children') } }, class: "danger-link" %>
-      </div>
-    </div>
-    <script>
-      document.addEventListener('turbo:load', function() {
-        const btn = document.getElementById('delete-dropdown-btn');
-        const popup = document.getElementById('delete-options-popup');
-        if (btn && popup) {
-          btn.onclick = function(e) {
-            popup.style.display = (popup.style.display === 'block') ? 'none' : 'block';
-            e.stopPropagation();
-          };
-          document.addEventListener('click', function(e) {
-            if (!popup.contains(e.target) && e.target !== btn) {
-              popup.style.display = 'none';
-            }
-          });
-        }
-      });
-    </script>
+
+    <%= render 'delete_button' %>
+
   <% end %>
   <button id="import-markdown-btn" class="import-btn"><%= t('.import_markdown') %></button>
 </div>
-<div id="import-markdown-area" data-parent-creative-id="<%= @parent_creative&.id %>" style="display:none; margin: 1em 0;">
-  <div id="import-markdown-dropzone"
-    style="border:2px dashed #888;padding:2em;text-align:center;cursor:pointer;"
-    data-uploading="<%= t('.import_uploading') %>"
-    data-success="<%= t('.import_success') %>"
-    data-failed="<%= t('.import_failed') %>"
-    data-only-markdown="<%= t('.only_markdown') %>">
-    <%= t('.drop_or_click_markdown') %>
-    <input type="file" id="import-markdown-input" accept=".md" style="display:none;" />
-    <div id="import-markdown-progress" style="margin-top:1em;color:#0074d9;display:none;"></div>
-  </div>
-</div>
+<%= render 'import_upload_zone' %>
 
 <%#= TODO: remove this later completely recalculate progress you need to remove route, and controller also %>
 <%#= button_to t('.recalculate_progress'), recalculate_progress_creatives_path, method: :post, form: { data: { turbo_confirm: t('.recalculate_all_parent_progress') } } if authenticated? %>

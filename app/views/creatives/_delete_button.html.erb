@@ -1,0 +1,26 @@
+<div class="delete-dropdown" style="display:inline-block;position:relative;">
+  <button type="button" class="danger-link" id="delete-dropdown-btn">
+    <%= t('creatives.index.delete') %>
+  </button>
+  <div class="delete-options" id="delete-options-popup" style="display:none;position:absolute;z-index:10;background:#fff;border:1px solid #ccc;padding:0.5em;box-shadow:0 2px 8px #ccc;min-width:220px;">
+    <%= button_to t('creatives.index.delete_only_this'), @parent_creative, method: :delete, form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_only_this') } }, params: {}, class: "danger-link", style: 'margin-bottom:0.5em;' %>
+    <%= button_to t('creatives.index.delete_with_children'), @parent_creative, method: :delete, params: { delete_with_children: true }, form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_with_children') } }, class: "danger-link" %>
+  </div>
+</div>
+<script>
+    document.addEventListener('turbo:load', function() {
+        const btn = document.getElementById('delete-dropdown-btn');
+        const popup = document.getElementById('delete-options-popup');
+        if (btn && popup) {
+            btn.onclick = function(e) {
+                popup.style.display = (popup.style.display === 'block') ? 'none' : 'block';
+                e.stopPropagation();
+            };
+            document.addEventListener('click', function(e) {
+                if (!popup.contains(e.target) && e.target !== btn) {
+                    popup.style.display = 'none';
+                }
+            });
+        }
+    });
+</script>
