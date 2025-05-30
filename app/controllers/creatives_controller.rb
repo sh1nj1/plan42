@@ -5,7 +5,22 @@ class CreativesController < ApplicationController
   before_action :set_creative, only: %i[ show edit update destroy ]
 
   def index
-    if params[:id]
+    if params[:search].present?
+      @creatives = Creative.joins(:rich_text_description)
+                           .where("action_text_rich_texts.body LIKE ?", "%#{params[:search]}%")
+                           .where(origin_id: nil)
+                           .where(
+                             "creatives.user_id = :user_id OR EXISTS (
+                        SELECT 1 FROM creative_shares
+                        WHERE creative_shares.creative_id = creatives.id
+                          AND creative_shares.user_id = :user_id
+                          AND creative_shares.permission >= :read
+                      )",
+                             user_id: Current.user.id,
+                             read: CreativeShare.permissions[:read]
+                           )
+      @parent_creative = nil
+    elsif params[:id]
       creative = Creative.where(id: params[:id])
                    .order(:sequence)
                           .select { |c| c.user == Current.user || c.has_permission?(Current.user, :read) }
