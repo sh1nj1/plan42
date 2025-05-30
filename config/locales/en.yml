@@ -40,3 +40,5 @@ en:
     set_plan: "Set Plan"
     select: "Select"
     cancel_select: "Cancel Select"
+    filter_complete: "Completed"
+    filter_incomplete: "Incomplete"

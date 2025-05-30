@@ -2,7 +2,7 @@ class PlansController < ApplicationController
   def create
     @plan = Plan.new(plan_params)
     if @plan.save
-      redirect_back fallback_location: root_path, notice: 'Plan was successfully created.'
+      redirect_back fallback_location: root_path, notice: "Plan was successfully created."
     else
       flash[:alert] = @plan.errors.full_messages.join(", ")
       redirect_back fallback_location: root_path
@@ -12,7 +12,7 @@ class PlansController < ApplicationController
   def destroy
     @plan = Plan.find(params[:id])
     @plan.destroy
-    redirect_back fallback_location: root_path, notice: t('plans.deleted', default: 'Plan deleted.')
+    redirect_back fallback_location: root_path, notice: t("plans.deleted", default: "Plan deleted.")
   end
 
   private

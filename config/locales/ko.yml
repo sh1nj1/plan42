@@ -11,3 +11,5 @@ ko:
     set_plan: "계획 설정"
     select: "선택"
     cancel_select: "선택 취소"
+    filter_complete: "완료"
+    filter_incomplete: "미완료"

@@ -33,6 +33,8 @@
       </form>
       <%= link_to t('app.home'), root_path %>
       <button id="plans-menu-btn" type="button" style="margin-left: 10px;"><%= t('app.plans') %></button>
+      <%= link_to t('app.filter_complete'), creatives_path(params.permit!.to_h.merge(min_progress: 1, max_progress: 1)) %>
+      <%= link_to t('app.filter_incomplete'), creatives_path(params.permit!.to_h.merge(min_progress: 0, max_progress: 0.99)) %>
 
       <% if Current.user %>
         <%= link_to Current.user.email_address, user_path(Current.user) %>
