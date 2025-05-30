@@ -12,3 +12,12 @@
 해결:
 
 * `rm -rf public/assets`
+
+### open prod console
+
+`kamal app exec -i ./bin/rails console`
+
+### show docker volume path
+
+`docker volume inspect plan42_storage`
+
