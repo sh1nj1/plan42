@@ -19,9 +19,9 @@ module CreativesHelper
           ondrop: "handleDrop(event)"
         }
         filtered_children = creative.children_with_permission(Current.user)
-        render_next_block = -> {
+        render_next_block = ->(level) {
           (filtered_children.any? ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children") {
-            render_creative_tree(filtered_children, level + 1, select_mode: select_mode)
+            render_creative_tree(filtered_children, level, select_mode: select_mode)
           }: "".html_safe)
         }
         render_row_content = ->(wrapper) {
@@ -56,11 +56,11 @@ module CreativesHelper
         end
 
         if skip
-          render_next_block.call
+          render_next_block.call level # skip this creative, so decrease level
         else
           bullet_starting_level = 3
           if level <= bullet_starting_level
-            content_tag(:div, class: "creative-tree", **drag_attrs) {
+            content_tag(:div, class: "creative-tree", **drag_attrs) do
               heading_tag = (filtered_children.any? or creative.parent.nil?) ? "h#{level}" : "div"
               content_tag(:div, class: "creative-row") do
                 render_row_content.call(->(&block) {
@@ -68,8 +68,8 @@ module CreativesHelper
                     block.call
                   end
                 })
-              end + render_next_block.call
-            }
+              end
+            end
           else
             # low level creative render as li
             content_tag(:div, class: "creative-tree", **drag_attrs) do
@@ -81,9 +81,9 @@ module CreativesHelper
                     block.call
                   end
                 })
-              end + render_next_block.call
+              end
             end
-          end
+          end + render_next_block.call(level + 1)
         end
       end
     )
