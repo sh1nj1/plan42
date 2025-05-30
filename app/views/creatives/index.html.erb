@@ -9,8 +9,8 @@
   <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
     <button id="share-creative-btn" class="btn btn-primary"><%= t('.share') %></button>
     <!-- Share Creative Modal -->
-    <div id="share-creative-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.4);z-index:1000;align-items:center;justify-content:center;">
-      <div style="background:#fff;padding:2em;border-radius:8px;min-width:320px;max-width:90vw;position:relative;">
+    <div id="share-creative-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
+      <div style="background: var(--color-bg);padding:2em;border-radius:8px;min-width:320px;max-width:90vw;position:relative;">
         <button id="close-share-modal" style="position:absolute;top:0.5em;right:0.5em;">&times;</button>
         <h2><%= t('.share_creative') %></h2>
         <% shared_creative = @parent_creative || @creative %>
