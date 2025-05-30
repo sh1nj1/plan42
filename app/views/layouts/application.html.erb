@@ -47,6 +47,7 @@
           <% path = params[:id].present? ? creatives_path(params[:id], tags: [plan.id]) : creatives_path(tags: [plan.id]) %>
           <%= link_to (plan.name.presence || plan.target_date), path %>
           <%= plan.target_date %>
+          <%= button_to 'X', plan_path(plan), method: :delete, data: { confirm: t('plans.delete_confirm', default: 'Are you sure?') }, form: { style: 'display:inline;' }, class: 'delete-plan-btn' %>
         </div>
       <% end %>
       <hr>

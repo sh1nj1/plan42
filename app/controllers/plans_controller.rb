@@ -9,6 +9,12 @@ class PlansController < ApplicationController
     end
   end
 
+  def destroy
+    @plan = Plan.find(params[:id])
+    @plan.destroy
+    redirect_back fallback_location: root_path, notice: t('plans.deleted', default: 'Plan deleted.')
+  end
+
   private
 
   def plan_params
