@@ -8,7 +8,7 @@ module CreativesHelper
     content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress", style: "margin-left: 10px; color: #888; font-size: 0.9em;")
   end
 
-  def render_creative_tree(creatives, level = 1)
+  def render_creative_tree(creatives, level = 1, select_mode: false)
     safe_join(
       creatives.map do |creative|
         drag_attrs = {
@@ -21,7 +21,7 @@ module CreativesHelper
         filtered_children = creative.children_with_permission(Current.user)
         render_next_block = -> {
           (filtered_children.any? ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children") {
-            render_creative_tree(filtered_children, level + 1)
+            render_creative_tree(filtered_children, level + 1, select_mode: select_mode)
           }: "".html_safe)
         }
         render_row_content = ->(wrapper) {
@@ -31,10 +31,14 @@ module CreativesHelper
                           class: "before-link creative-toggle-btn",
                           style: "width: 9px; height: 9px; font-size: 9px; margin-right: 6px; display: flex; align-items: center; justify-content: center; line-height: 1; cursor: pointer;",
                           data: { creative_id: creative.id }) +
-                link_to("+", new_creative_path(parent_id: creative.id),
-                        class: "add-creative-btn",
-                        style: "margin-left: 6px; font-size: 12px; width: 12px; font-weight: bold; text-decoration: none; cursor: pointer;#{' visibility: hidden;' unless creative.has_permission?(Current.user, :write)}",
-                        title: I18n.t("creatives.help.add_child_creative")
+                (
+                  select_mode ?
+                    check_box_tag("selected_creative_ids[]", creative.id, false, class: "select-creative-checkbox", style: "margin-left: 6px; width: 16px; height: 16px; cursor: pointer; visibility: visible;") :
+                    link_to("+", new_creative_path(parent_id: creative.id),
+                      class: "add-creative-btn",
+                      style: "margin-left: 6px; font-size: 12px; width: 12px; font-weight: bold; text-decoration: none; cursor: pointer;#{' visibility: hidden;' unless creative.has_permission?(Current.user, :write)}",
+                      title: I18n.t("creatives.help.add_child_creative")
+                    )
                 )
             end +
             wrapper.call {

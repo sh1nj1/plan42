@@ -18,6 +18,7 @@
     <%= render 'delete_button' %>
 
   <% end %>
+  <button id="select-creative-btn" class="select-btn"><%= t('.select') %></button>
   <button id="import-markdown-btn" class="import-btn"><%= t('.import_markdown') %></button>
 </div>
 <%= render 'import_upload_zone' %>
@@ -40,7 +41,8 @@
 
 <div id="creatives">
   <% if @creatives %>
-    <%= render_creative_tree(@creatives) %>
+    <% select_mode = params[:select_mode].present? %>
+    <%= render_creative_tree(@creatives, 1, select_mode: select_mode) %>
   <% else %>
     <p style="text-align: center;"><%= params[:id] ? t('.no_sub_creatives') : t('.no_creatives') %></p>
   <% end %>
@@ -49,3 +51,23 @@
 <%= javascript_include_tag 'creatives_drag_drop', defer: true %>
 <%= javascript_include_tag 'creatives_import', defer: true %>
 <%= javascript_include_tag 'creatives_expansion', defer: true %>
+
+<script>
+  document.addEventListener('turbo:load', function() {
+    var selectBtn = document.getElementById('select-creative-btn');
+    if (!selectBtn) return;
+    selectBtn.addEventListener('click', function() {
+      var url = new URL(window.location.href);
+      if (url.searchParams.get('select_mode')) {
+        url.searchParams.delete('select_mode');
+      } else {
+        url.searchParams.set('select_mode', '1');
+      }
+      window.location.href = url.toString();
+    });
+    // Change button text if in select mode
+    if (window.location.search.includes('select_mode')) {
+      selectBtn.textContent = selectBtn.textContent.replace(/select/i, 'Cancel Select');
+    }
+  });
+</script>
