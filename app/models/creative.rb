@@ -13,6 +13,7 @@ class Creative < ApplicationRecord
   belongs_to :user, optional: true
 
   has_many :creative_shares, dependent: :destroy
+  has_many :tags, dependent: :destroy
 
   validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }, unless: -> { origin_id.present? }
   validates :description, presence: true, unless: -> { origin_id.present? }

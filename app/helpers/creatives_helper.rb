@@ -18,15 +18,16 @@ module CreativesHelper
           ondragover: "handleDragOver(event)",
           ondrop: "handleDrop(event)"
         }
+        filtered_children = creative.children_with_permission(Current.user)
         render_next_block = -> {
-          (creative.children_with_permission.any? ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children") {
-            render_creative_tree(creative.children_with_permission, level + 1)
+          (filtered_children.any? ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children") {
+            render_creative_tree(filtered_children, level + 1)
           }: "".html_safe)
         }
         render_row_content = ->(wrapper) {
           content_tag(:div, class: "creative-row-left", style: "display: flex; align-items: center;") do
             content_tag(:div, class: "creative-row-actions", style: "display: flex; align-items: center;") do
-              content_tag(:div, ((level <= 3 and creative.children_with_permission.any?) ? toggle_button_symbol(expanded: true) : ""),
+              content_tag(:div, ((level <= 3 and filtered_children.any?) ? toggle_button_symbol(expanded: true) : ""),
                           class: "before-link creative-toggle-btn",
                           style: "width: 9px; height: 9px; font-size: 9px; margin-right: 6px; display: flex; align-items: center; justify-content: center; line-height: 1; cursor: pointer;",
                           data: { creative_id: creative.id }) +
@@ -41,30 +42,43 @@ module CreativesHelper
             }
           end + render_creative_progress(creative)
         }
-        bullet_starting_level = 3
-        if level <= bullet_starting_level
-          content_tag(:div, class: "creative-tree", **drag_attrs) {
-            heading_tag = (creative.children_with_permission.any? or creative.parent.nil?) ? "h#{level}" : "div"
-            content_tag(:div, class: "creative-row") do
-              render_row_content.call(->(&block) {
-                content_tag(heading_tag, class: "indent#{level}") do
-                  block.call
-                end
-              })
-            end + render_next_block.call
-          }
+
+        # filter if params[:tags]
+        skip = false
+        if params[:tags].present?
+          tag_ids = Array(params[:tags]).map(&:to_s)
+          creative_tag_ids = creative.tags.pluck(:taggable_id).map(&:to_s)
+          skip =(creative_tag_ids & tag_ids).empty?
+        end
+
+        if skip
+          render_next_block.call
         else
-          # low level creative render as li
-          content_tag(:div, class: "creative-tree", **drag_attrs) do
-            content_tag(:div, class: "creative-row") do
-              render_row_content.call(->(&block) {
-                margin = level > 0 ? "margin-left: #{(level - bullet_starting_level) * 20}px;" : ""
-                content_tag(:div, class: "creative-tree-li", style: "#{margin} display: flex; align-items: center;") do
-                  content_tag(:div, "", class: "creative-tree-bullet", style: "width: 8px; height: 8px; border-radius: 50%; background: #333; margin-right: 8px;") +
-                  block.call
-                end
-              })
-            end + render_next_block.call
+          bullet_starting_level = 3
+          if level <= bullet_starting_level
+            content_tag(:div, class: "creative-tree", **drag_attrs) {
+              heading_tag = (filtered_children.any? or creative.parent.nil?) ? "h#{level}" : "div"
+              content_tag(:div, class: "creative-row") do
+                render_row_content.call(->(&block) {
+                  content_tag(heading_tag, class: "indent#{level}") do
+                    block.call
+                  end
+                })
+              end + render_next_block.call
+            }
+          else
+            # low level creative render as li
+            content_tag(:div, class: "creative-tree", **drag_attrs) do
+              content_tag(:div, class: "creative-row") do
+                render_row_content.call(->(&block) {
+                  margin = level > 0 ? "margin-left: #{(level - bullet_starting_level) * 20}px;" : ""
+                  content_tag(:div, class: "creative-tree-li", style: "#{margin} display: flex; align-items: center;") do
+                    content_tag(:div, "", class: "creative-tree-bullet", style: "width: 8px; height: 8px; border-radius: 50%; background: #333; margin-right: 8px;") +
+                    block.call
+                  end
+                })
+              end + render_next_block.call
+            end
           end
         end
       end

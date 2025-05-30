@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_05_28_142349) do
+ActiveRecord::Schema[8.0].define(version: 2025_05_30_060200) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -68,11 +68,18 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_28_142349) do
     t.datetime "updated_at", null: false
     t.integer "parent_id"
     t.integer "sequence", default: 0, null: false
-    t.integer "user_id"
+    t.integer "user_id", null: false
     t.integer "origin_id"
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
+  end
+
+  create_table "plans", force: :cascade do |t|
+    t.date "target_date", null: false
+    t.string "name"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
   end
 
   create_table "sessions", force: :cascade do |t|
@@ -232,6 +239,15 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_28_142349) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["creative_id"], name: "index_subscribers_on_creative_id"
+  end
+
+  create_table "tags", force: :cascade do |t|
+    t.string "taggable_type", null: false
+    t.integer "taggable_id", null: false
+    t.integer "creative_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["taggable_type", "taggable_id"], name: "index_tags_on_taggable"
   end
 
   create_table "users", force: :cascade do |t|
