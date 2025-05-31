@@ -16,7 +16,7 @@ if (!window.isSelectModeInitialized) {
         });
         // Change button text if in select mode
         if (window.location.search.includes('select_mode')) {
-            selectBtn.textContent = '<%= t("app.cancel_select") %>';
+            selectBtn.textContent = selectBtn.dataset.cancelText;
         }
     });
     document.addEventListener('turbo:load', function() {

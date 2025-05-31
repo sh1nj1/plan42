@@ -22,7 +22,7 @@
     <button id="set-plan-btn" class="set-plan-btn"><%= t('app.set_plan') %></button>
     <input type="checkbox" id="select-all-creatives" style="margin-left:1em;vertical-align:middle;" />
   <% end %>
-  <button id="select-creative-btn" class="select-btn"><%= t('app.select') %></button>
+  <button id="select-creative-btn" class="select-btn" data-cancel-text="<%= t('app.cancel_select') %>"><%= t('app.select') %></button>
   <button id="import-markdown-btn" class="import-btn"><%= t('.import_markdown') %></button>
 </div>
 <%= render 'import_upload_zone' %>
