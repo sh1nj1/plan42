@@ -92,16 +92,16 @@
   }
   
   .drag-over {
-    background: #ffe082 !important;
+    background: var(--color-drag-over) !important;
     transition: background 0.15s;
   }
   
   .drag-over-top {
-    border-top: 3px solid #ffb300 !important;
+    border-top: 3px solid var(--color-drag-over-edge) !important;
   }
   
   .drag-over-bottom {
-    border-bottom: 3px solid #ffb300 !important;
+    border-bottom: 3px solid var(--color-drag-over-edge) !important;
   }
   
   .creative-actions-row {

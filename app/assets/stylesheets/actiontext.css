@@ -41,7 +41,7 @@ trix-toolbar .trix-button-group-spacer {
 trix-toolbar .trix-button {
   position: relative;
   float: left;
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--color-btn-text);
   font-size: 0.75em;
   font-weight: 600;
   white-space: nowrap;
@@ -51,16 +51,17 @@ trix-toolbar .trix-button {
   border: none;
   border-bottom: 1px solid #ddd;
   border-radius: 0;
-  background: transparent; }
+  /* the text not showing, icon image is current black so, make it white */
+  background: var(--color-btn-text); }
   trix-toolbar .trix-button:not(:first-child) {
     border-left: 1px solid #ccc; }
   trix-toolbar .trix-button.trix-active {
     background: #cbeefa;
-    color: black; }
+    color: var(--color-btn-text); }
   trix-toolbar .trix-button:not(:disabled) {
     cursor: pointer; }
   trix-toolbar .trix-button:disabled {
-    color: rgba(0, 0, 0, 0.125); }
+    color: var(--color-btn-text); }
   @media (max-width: 768px) {
     trix-toolbar .trix-button {
       letter-spacing: -0.01em;

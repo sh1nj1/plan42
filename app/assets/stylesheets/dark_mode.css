@@ -7,6 +7,8 @@
   --color-section-bg: #fff;
   --color-btn-bg: #eee;
   --color-btn-text: #000;
+  --color-drag-over: #ffe082;
+  --color-drag-over-edge: #ffb300;
 }
 
 body.dark-mode {
@@ -17,6 +19,8 @@ body.dark-mode {
   --color-section-bg: #181a1b;
   --color-btn-bg: #000;
   --color-btn-text: #fff;
+  --color-drag-over: #3a3b3c;
+  --color-drag-over-edge: #4a4b4c;
 }
 
 body {
