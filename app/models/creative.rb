@@ -62,7 +62,12 @@ class Creative < ApplicationRecord
   end
 
   # Linked Creative의 description을 안전하게 반환
-  def effective_description
+  # variation_id가 주어지면 해당 Variation의 Tag value를 반환, 없으면 기존 description 반환
+  def effective_description(variation_id = nil)
+    if variation_id.present?
+      variation_tag = tags.find_by(taggable_type: 'Variation', taggable_id: variation_id)
+      return variation_tag.value if variation_tag&.value.present?
+    end
     if origin_id.nil?
       rich_text_description&.body&.to_s || ""
     else

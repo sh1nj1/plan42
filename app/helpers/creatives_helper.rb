@@ -42,7 +42,7 @@ module CreativesHelper
                 )
             end +
             wrapper.call {
-              link_to(creative.effective_description, creative, class: "unstyled-link")
+              link_to(creative.effective_description(params[:tags]&.first), creative, class: "unstyled-link")
             }
           end + render_creative_progress(creative)
         }

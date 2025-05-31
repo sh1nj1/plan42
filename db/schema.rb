@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_05_30_060200) do
+ActiveRecord::Schema[8.0].define(version: 2025_05_31_111259) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -247,6 +247,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_30_060200) do
     t.integer "creative_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "value"
     t.index ["taggable_type", "taggable_id"], name: "index_tags_on_taggable"
   end
 
@@ -256,6 +257,12 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_30_060200) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["email_address"], name: "index_users_on_email_address", unique: true
+  end
+
+  create_table "variations", force: :cascade do |t|
+    t.string "name"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
