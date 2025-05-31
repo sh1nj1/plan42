@@ -10,3 +10,11 @@
     visibility: visible !important;
   }
 }
+
+.creative-actions-row {
+    margin-left: 2.0em;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}

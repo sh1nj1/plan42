@@ -103,13 +103,6 @@
   .drag-over-bottom {
     border-bottom: 3px solid var(--color-drag-over-edge) !important;
   }
-  
-  .creative-actions-row {
-    margin-left: 2.0em;
-    display: flex;
-    gap: 10px;
-    align-items: center;
-  }
 
 button {
   cursor: pointer;
