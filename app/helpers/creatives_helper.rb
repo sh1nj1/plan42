@@ -85,8 +85,11 @@ module CreativesHelper
                 render_row_content.call(->(&block) {
                   margin = level > 0 ? "margin-left: #{(level - bullet_starting_level) * 20}px;" : ""
                   content_tag(:div, class: "creative-tree-li", style: "#{margin} display: flex; align-items: center;") do
-                    content_tag(:div, "", class: "creative-tree-bullet", style: "width: 8px; height: 8px; border-radius: 50%; background: #333; margin-right: 8px;") +
-                    block.call
+                    if creative.effective_description.include?("<li>")
+                      "".html_safe
+                    else
+                      content_tag(:div, "", class: "creative-tree-bullet", style: "width: 5px; height: 5px; border-radius: 50%; background: var(--color-text); margin-right: 8px;")
+                    end + block.call
                   end
                 })
               end
