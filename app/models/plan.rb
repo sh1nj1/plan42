@@ -1,4 +1,3 @@
-class Plan < ApplicationRecord
-  has_many :tags, as: :taggable, dependent: :destroy
+class Plan < Label
   validates :target_date, presence: true
 end

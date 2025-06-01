@@ -233,8 +233,7 @@ class CreativesController < ApplicationController
     plan = Plan.find_by(id: plan_id)
     if plan && creative_ids.any?
       Creative.where(id: creative_ids).find_each do |creative|
-        # Assuming Tag model with fields: taggable (polymorphic), plan_id
-        creative.tags.find_or_create_by(taggable: plan, creative_id: creative.id)
+        creative.tags.find_or_create_by(label: plan, creative_id: creative.id)
       end
       flash[:notice] = t("creatives.index.plan_tags_applied", default: "Plan tags applied to selected creatives.")
     else
@@ -249,7 +248,7 @@ class CreativesController < ApplicationController
     plan = Plan.find_by(id: plan_id)
     if plan && creative_ids.any?
       Creative.where(id: creative_ids).find_each do |creative|
-        tag = creative.tags.find_by(taggable: plan, creative_id: creative.id)
+        tag = creative.tags.find_by(label: plan, creative_id: creative.id)
         tag&.destroy
       end
       flash[:notice] = t("creatives.index.plan_tags_removed", default: "Plan tag removed from selected creatives.")

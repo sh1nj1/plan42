@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_05_31_111259) do
+ActiveRecord::Schema[8.0].define(version: 2025_06_01_061830) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -75,11 +75,13 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_31_111259) do
     t.index ["user_id"], name: "index_creatives_on_user_id"
   end
 
-  create_table "plans", force: :cascade do |t|
-    t.date "target_date", null: false
+  create_table "labels", force: :cascade do |t|
+    t.string "type"
     t.string "name"
+    t.string "value"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.date "target_date"
   end
 
   create_table "sessions", force: :cascade do |t|
@@ -242,13 +244,12 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_31_111259) do
   end
 
   create_table "tags", force: :cascade do |t|
-    t.string "taggable_type", null: false
-    t.integer "taggable_id", null: false
     t.integer "creative_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "value"
-    t.index ["taggable_type", "taggable_id"], name: "index_tags_on_taggable"
+    t.integer "label_id"
+    t.index ["label_id"], name: "index_tags_on_label_id"
   end
 
   create_table "users", force: :cascade do |t|
@@ -257,12 +258,6 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_31_111259) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["email_address"], name: "index_users_on_email_address", unique: true
-  end
-
-  create_table "variations", force: :cascade do |t|
-    t.string "name"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
@@ -280,4 +275,5 @@ ActiveRecord::Schema[8.0].define(version: 2025_05_31_111259) do
   add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "subscribers", "creatives"
+  add_foreign_key "tags", "labels"
 end

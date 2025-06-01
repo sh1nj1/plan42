@@ -51,8 +51,8 @@ module CreativesHelper
         skip = false
         if params[:tags].present?
           tag_ids = Array(params[:tags]).map(&:to_s)
-          creative_tag_ids = creative.tags.pluck(:taggable_id).map(&:to_s)
-          skip = (creative_tag_ids & tag_ids).empty?
+          creative_label_ids = creative.tags.pluck(:label_id).map(&:to_s)
+          skip = (creative_label_ids & tag_ids).empty?
         end
         if not skip and params[:min_progress].present?
           min_progress = params[:min_progress].to_f

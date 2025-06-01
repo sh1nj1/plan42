@@ -43,7 +43,7 @@ if (!window.isSetPlanModalInitialized) {
                 // Submit via POST to /creatives/remove_plan
                 var f = document.createElement('form');
                 f.method = 'POST';
-                f.action = '<%= remove_plan_creatives_path %>';
+                f.action = removeBtn.dataset.removePath;
                 // CSRF
                 var csrf = document.querySelector('meta[name="csrf-token"]');
                 if (csrf) {
