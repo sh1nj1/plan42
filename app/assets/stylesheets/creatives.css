@@ -18,3 +18,16 @@
     gap: 10px;
     align-items: center;
 }
+
+.creative-tree-bullet {
+    width: 5px;
+    height: 5px;
+    min-width: 5px;
+    min-height: 5px;
+    max-width: 5px;
+    max-height: 5px;
+    border-radius: 50%;
+    background: var(--color-text);
+    margin-right: 8px;
+    flex: 0 0 5px;
+}

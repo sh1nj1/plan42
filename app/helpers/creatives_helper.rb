@@ -92,7 +92,7 @@ module CreativesHelper
                     if creative.effective_description.include?("<li>")
                       "".html_safe
                     else
-                      content_tag(:div, "", class: "creative-tree-bullet", style: "width: 5px; height: 5px; border-radius: 50%; background: var(--color-text); margin-right: 8px;")
+                      content_tag(:div, "", class: "creative-tree-bullet")
                     end + block.call
                   end
                 })
