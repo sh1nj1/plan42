@@ -5,7 +5,11 @@ module CreativesHelper
   end
 
   def render_creative_progress(creative)
-    content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress", style: "margin-left: 10px; color: #888; font-size: 0.9em;")
+    content_tag(:div, style: "margin-left: 10px; color: #888; font-size: 0.9em; white-space: nowrap;") do
+    content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress") +
+      button_tag("(#{creative.comments.size})", name: "show-comments-btn",
+                 "data-creative-id": creative.id, "style": "background: transparent;")
+    end
   end
 
   def render_creative_tree(creatives, level = 1, select_mode: false)

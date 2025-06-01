@@ -40,20 +40,7 @@
     <div>
       <h1 style="display: flex; align-items: center; gap: 1em;">
         <%= render_creative_progress(@parent_creative) %>
-        <button id="show-comments-btn">💬 <%= t('comments.comments') %>(<%= @parent_creative.comments.size %>)</button>
       </h1>
-      <div id="comments-popup" data-creative-id="<%= @parent_creative.id %>"
-           data-loading-text="<%= t('app.loading') %>"
-           data-delete-confirm-text="<%= t("comments.delete_confirm") %>">
-        <button id="close-comments-btn">&times;</button>
-        <h3 style="margin-top:0;"><%= t('comments.comments') %></h3>
-        <form id="new-comment-form">
-          <textarea name="comment[content]" rows="2" required></textarea>
-          <button type="submit"><%= t('comments.add_comment') %></button>
-        </form>
-        <br/>
-        <div id="comments-list"><%= t('app.loading') %></div>
-      </div>
     </div>
   </div>
 <% else %>
@@ -69,6 +56,19 @@
   <% else %>
     <p style="text-align: center;"><%= params[:id] ? t('.no_sub_creatives') : t('.no_creatives') %></p>
   <% end %>
+</div>
+
+<div id="comments-popup"
+     data-loading-text="<%= t('app.loading') %>"
+     data-delete-confirm-text="<%= t("comments.delete_confirm") %>">
+  <button id="close-comments-btn">&times;</button>
+  <h3 style="margin-top:0;"><%= t('comments.comments') %></h3>
+  <form id="new-comment-form">
+    <textarea name="comment[content]" rows="2" required></textarea>
+    <button type="submit"><%= t('comments.add_comment') %></button>
+  </form>
+  <br/>
+  <div id="comments-list"><%= t('app.loading') %></div>
 </div>
 
 <%= render 'set_plan_modal' %>

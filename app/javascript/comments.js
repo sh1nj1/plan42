@@ -2,22 +2,25 @@ if (!window.commentsInitialized) {
     window.commentsInitialized = true;
 
     document.addEventListener('turbo:load', function() {
-        var btn = document.getElementById('show-comments-btn');
         var popup = document.getElementById('comments-popup');
         var closeBtn = document.getElementById('close-comments-btn');
         var list = document.getElementById('comments-list');
         var form = document.getElementById('new-comment-form');
-        if (btn && popup) {
-            btn.onclick = function() {
-                // 버튼 위치 계산
-                var rect = btn.getBoundingClientRect();
-                var scrollY = window.scrollY || window.pageYOffset;
-                popup.style.top = (rect.bottom + scrollY + 4) + 'px'; // 버튼 바로 아래에 4px 여유
-                popup.style.right = (window.innerWidth - rect.right) + 'px';
-                popup.style.left = '';
-                popup.style.display = 'block';
-                fetchComments();
-            };
+        if (popup) {
+            const buttons = document.getElementsByName('show-comments-btn');
+            buttons.forEach(function(btn) {
+                btn.onclick = function() {
+                    popup.dataset.creativeId = btn.dataset.creativeId;
+                    // 버튼 위치 계산
+                    var rect = btn.getBoundingClientRect();
+                    var scrollY = window.scrollY || window.pageYOffset;
+                    popup.style.top = (rect.bottom + scrollY + 4) + 'px'; // 버튼 바로 아래에 4px 여유
+                    popup.style.right = (window.innerWidth - rect.right) + 'px';
+                    popup.style.left = '';
+                    popup.style.display = 'block';
+                    fetchComments();
+                };
+            });
             closeBtn.onclick = function() { popup.style.display = 'none'; };
             function fetchComments() {
                 list.innerHTML = popup.dataset.loadingText;
