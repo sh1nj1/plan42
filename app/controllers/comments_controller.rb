@@ -3,14 +3,14 @@ class CommentsController < ApplicationController
 
   def index
     @comments = @creative.comments.order(created_at: :desc)
-    render partial: 'comments/list', locals: { comments: @comments }
+    render partial: "comments/list", locals: { comments: @comments }
   end
 
   def create
     @comment = @creative.comments.build(comment_params)
     @comment.user = Current.user
     if @comment.save
-      render partial: 'comments/comment', locals: { comment: @comment }, status: :created
+      render partial: "comments/comment", locals: { comment: @comment }, status: :created
     else
       render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
     end
