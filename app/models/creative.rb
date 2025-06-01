@@ -4,6 +4,7 @@ class Creative < ApplicationRecord
 
   has_many :subscribers, dependent: :destroy
   has_rich_text :description
+  has_many :comments, dependent: :destroy
 
   belongs_to :parent, class_name: "Creative", optional: true
   has_many :children, -> { order(:sequence) }, class_name: "Creative", foreign_key: :parent_id, dependent: :destroy

@@ -42,3 +42,4 @@ en:
     cancel_select: "Cancel Select"
     filter_complete: "Completed"
     filter_incomplete: "Incomplete"
+    loading: "Loading..."

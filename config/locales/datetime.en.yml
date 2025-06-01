@@ -1,0 +1,3 @@
+en:
+  datetime:
+    ago: "%{time} age"

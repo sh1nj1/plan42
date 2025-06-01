@@ -1,0 +1,9 @@
+<div class="comments-list">
+  <% if comments.any? %>
+    <% comments.each do |comment| %>
+      <%= render partial: 'comments/comment', locals: { comment: comment } %>
+    <% end %>
+  <% else %>
+    <div><%= t('comments.no_comments') %></div>
+  <% end %>
+</div>

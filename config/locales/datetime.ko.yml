@@ -1,0 +1,42 @@
+ko:
+  datetime:
+    ago: "%{time} 전"
+    distance_in_words:
+      half_a_minute: "30초"
+      less_than_x_seconds:
+        one: "1초 미만"
+        other: "%{count}초 미만"
+      x_seconds:
+        one: "1초"
+        other: "%{count}초"
+      less_than_x_minutes:
+        one: "1분 미만"
+        other: "%{count}분 미만"
+      x_minutes:
+        one: "1분"
+        other: "%{count}분"
+      about_x_hours:
+        one: "약 1시간"
+        other: "약 %{count}시간"
+      x_days:
+        one: "1일"
+        other: "%{count}일"
+      about_x_months:
+        one: "약 1개월"
+        other: "약 %{count}개월"
+      x_months:
+        one: "1개월"
+        other: "%{count}개월"
+      about_x_years:
+        one: "약 1년"
+        other: "약 %{count}년"
+      over_x_years:
+        one: "1년 이상"
+        other: "%{count}년 이상"
+      almost_x_years:
+        one: "거의 1년"
+        other: "거의 %{count}년"
+      ago: "%{time} 전"
+      from_now: "%{time} 후"
+      after: "%{time} 후"
+      before: "%{time} 전"

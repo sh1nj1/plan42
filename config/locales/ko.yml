@@ -13,3 +13,4 @@ ko:
     cancel_select: "선택 취소"
     filter_complete: "완료"
     filter_incomplete: "미완료"
+    loading: "로딩 중..."

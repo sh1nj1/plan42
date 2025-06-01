@@ -30,14 +30,31 @@
 <%#= TODO: remove this later completely recalculate progress you need to remove route, and controller also %>
 <%#= button_to t('.recalculate_progress'), recalculate_progress_creatives_path, method: :post, form: { data: { turbo_confirm: t('.recalculate_all_parent_progress') } } if authenticated? %>
 
+<%= stylesheet_link_tag 'comments_popup', media: 'all' %>
+
 <% if @parent_creative %>
   <div class="creative-row">
     <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
       <%= @parent_creative.effective_description %>
     </h1>
-    <h1>
-      <%= render_creative_progress(@parent_creative) %>
-    </h1>
+    <div>
+      <h1 style="display: flex; align-items: center; gap: 1em;">
+        <%= render_creative_progress(@parent_creative) %>
+        <button id="show-comments-btn">💬 <%= t('comments.comments') %>(<%= @parent_creative.comments.size %>)</button>
+      </h1>
+      <div id="comments-popup" data-creative-id="<%= @parent_creative.id %>"
+           data-loading-text="<%= t('app.loading') %>"
+           data-delete-confirm-text="<%= t("comments.delete_confirm") %>">
+        <button id="close-comments-btn">&times;</button>
+        <h3 style="margin-top:0;"><%= t('comments.comments') %></h3>
+        <form id="new-comment-form">
+          <textarea name="comment[content]" rows="2" required></textarea>
+          <button type="submit"><%= t('comments.add_comment') %></button>
+        </form>
+        <br/>
+        <div id="comments-list"><%= t('app.loading') %></div>
+      </div>
+    </div>
   </div>
 <% else %>
   <div class="creative-row">
@@ -60,3 +77,4 @@
 <%= javascript_include_tag 'creatives_import', defer: true %>
 <%= javascript_include_tag 'creatives_expansion', defer: true %>
 <%= javascript_include_tag 'select_mode', defer: true %>
+<%= javascript_include_tag 'comments', defer: true %>
