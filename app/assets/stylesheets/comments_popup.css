@@ -42,31 +42,31 @@
     position: relative;
 }
 
-    .comment-content {
-        margin-top:0.2em;
-        white-space:pre-line;
-    }
+.comment-content {
+    margin-top:0.2em;
+    white-space:pre-line;
+}
 
-    .delete-comment-btn {
-        position: absolute;
-        top: 0.2em;
-        right: 0.2em;
-        border: none;
-        background: none;
-        font-weight: bold;
-        cursor: pointer;
-    }
+.delete-comment-btn {
+    position: absolute;
+    top: 0.2em;
+    right: 0.2em;
+    border: none;
+    background: none;
+    font-weight: bold;
+    cursor: pointer;
+}
 
-    @media (max-width: 600px) {
-        #comments-popup {
-            right: 0.5em;
-            left: 0.5em;
-            top: 2em;
-            width: auto;
-            min-width: 0;
-            max-width: 90vw;
-            max-height: 70vh;
-            padding: 0.5em;
-        }
+@media (max-width: 600px) {
+    #comments-popup {
+        right: 0.5em;
+        left: 0.5em;
+        top: 2em;
+        width: auto;
+        min-width: 0;
+        max-width: 90vw;
+        max-height: 70vh;
+        padding: 0.5em;
     }
 }
+
