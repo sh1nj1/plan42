@@ -52,16 +52,16 @@ trix-toolbar .trix-button {
   border-bottom: 1px solid #ddd;
   border-radius: 0;
   /* the text not showing, icon image is current black so, make it white */
-  background: var(--color-btn-text); }
+  background: #fff; }
   trix-toolbar .trix-button:not(:first-child) {
     border-left: 1px solid #ccc; }
   trix-toolbar .trix-button.trix-active {
     background: #cbeefa;
-    color: var(--color-btn-text); }
+    color: #000; }
   trix-toolbar .trix-button:not(:disabled) {
     cursor: pointer; }
   trix-toolbar .trix-button:disabled {
-    color: var(--color-btn-text); }
+    color: #999; }
   @media (max-width: 768px) {
     trix-toolbar .trix-button {
       letter-spacing: -0.01em;
