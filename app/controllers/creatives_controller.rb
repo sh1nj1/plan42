@@ -7,7 +7,8 @@ class CreativesController < ApplicationController
   def index
     if params[:search].present?
       @creatives = Creative.joins(:rich_text_description)
-                           .where("action_text_rich_texts.body LIKE ?", "%#{params[:search]}%")
+                           .left_joins(:comments) # Include comments to allow searching in them
+                           .where("action_text_rich_texts.body LIKE :q OR comments.content LIKE :q", q: "%#{params[:search]}%")
                            .where(origin_id: nil)
                            .where(
                              "creatives.user_id = :user_id OR EXISTS (
