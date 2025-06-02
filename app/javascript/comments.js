@@ -10,6 +10,11 @@ if (!window.commentsInitialized) {
             const buttons = document.getElementsByName('show-comments-btn');
             buttons.forEach(function(btn) {
                 btn.onclick = function() {
+                    // Toggle: if popup is open, close it; otherwise, open and position
+                    if (popup.style.display === 'block') {
+                        popup.style.display = 'none';
+                        return;
+                    }
                     popup.dataset.creativeId = btn.dataset.creativeId;
                     // 버튼 위치 계산
                     var rect = btn.getBoundingClientRect();
