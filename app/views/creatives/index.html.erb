@@ -32,6 +32,10 @@
 
 <%= stylesheet_link_tag 'comments_popup', media: 'all' %>
 
+<div class="tags">
+  <%= render_tags(@parent_creative&.tags&.map { |tag| tag.label }) %>
+</div>
+
 <% if @parent_creative %>
   <div class="creative-row">
     <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
@@ -45,7 +49,11 @@
   </div>
 <% else %>
   <div class="creative-row">
-    <h1 class="page-title"><%= t('.creatives') %></h1>
+    <h1 class="page-title"><%= t('.creatives') %>
+      <% if params[:tags].present? %>
+      (<%= render_tags(params[:tags]&.map { |tag_id| Label.find(tag_id) }, 'unstyled-link') %>)
+      <% end %>
+    </h1>
   </div>
 <% end %>
 

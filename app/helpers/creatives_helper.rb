@@ -4,6 +4,17 @@ module CreativesHelper
     expanded ? "\u25BC" : "\u25B6" # ▼ or ▶
   end
 
+  def render_tags(labels, class_name = nil)
+    return "" if labels&.empty? or labels.nil?
+
+    safe_join(labels.map do |label|
+      suffix = " 🚩#{label.target_date}" if label.type == "Plan"
+      content_tag(:span, class: "tag") do
+        link_to("##{label.name}", creatives_path(tags: [ label.id ]), class: class_name ? class_name: "", title: label.name) + suffix
+      end
+    end)
+  end
+
   def render_creative_progress(creative)
     content_tag(:div, style: "margin-left: 10px; color: #888; font-size: 0.9em; white-space: nowrap;") do
     content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress") +
