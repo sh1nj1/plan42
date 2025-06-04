@@ -107,3 +107,8 @@
 button {
   cursor: pointer;
 }
+
+#plans-list-area {
+    max-width: 1024px;
+    margin: 0.5em auto;
+}

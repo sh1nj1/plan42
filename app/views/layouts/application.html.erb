@@ -45,13 +45,16 @@
       <%= button_to t('app.sign_out'), session_path, method: :delete if authenticated? %>
       <a href="#" id="creative-guide-link" style="margin-left: 1em; font-size: 1.2em; text-decoration: none;">?</a>
     </nav>
-    <div id="plans-list-area" style="display:none; padding:10px; margin-top:5px;">
-      <% Plan.all.each do |plan| %>
+
+    <div id="plans-list-area" style="display:none;">
+      <% Plan.where(owner: Current.user).or(Plan.where(owner: nil)).each do |plan| %>
         <div style="padding: 4px 0;">
           <% path = params[:id].present? ? creatives_path(params[:id], tags: [plan.id]) : creatives_path(tags: [plan.id]) %>
           <%= link_to (plan.name.presence || plan.target_date), path %>
           <%= plan.target_date %>
-          <%= button_to 'X', plan_path(plan), method: :delete, data: { confirm: t('plans.delete_confirm', default: 'Are you sure?') }, form: { style: 'display:inline;' }, class: 'delete-plan-btn' %>
+          <% if plan.owner == Current.user %>
+            <%= button_to 'X', plan_path(plan), method: :delete, data: { confirm: t('plans.delete_confirm', default: 'Are you sure?') }, form: { style: 'display:inline;' }, class: 'delete-plan-btn' %>
+          <% end %>
         </div>
       <% end %>
       <hr>

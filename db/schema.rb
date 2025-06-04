@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_06_01_061830) do
+ActiveRecord::Schema[8.0].define(version: 2025_06_04_122600) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -92,6 +92,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_01_061830) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.date "target_date"
+    t.integer "owner_id"
+    t.index ["owner_id"], name: "index_labels_on_owner_id"
   end
 
   create_table "sessions", force: :cascade do |t|
@@ -279,6 +281,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_01_061830) do
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
+  add_foreign_key "labels", "users", column: "owner_id"
   add_foreign_key "sessions", "users"
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade

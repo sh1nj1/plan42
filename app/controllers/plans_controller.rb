@@ -1,6 +1,7 @@
 class PlansController < ApplicationController
   def create
     @plan = Plan.new(plan_params)
+    @plan.owner = Current.user
     if @plan.save
       redirect_back fallback_location: root_path, notice: "Plan was successfully created."
     else
