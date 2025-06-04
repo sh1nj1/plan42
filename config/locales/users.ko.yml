@@ -1,8 +1,8 @@
 ko:
   users:
     app_header:
-      your_creativeness_is_coming: "당신의 창의성이 곧 찾아옵니다!"
-      a_tracker_of_your_creatives: "당신의 크리에이티브를 추적합니다."
+      your_creativeness_is_coming: "당신의 창작물이 실현됩니다!"
+      a_tracker_of_your_creatives: "문서처럼 작업 트리 리스트를 보면서 완료여부를 확인하세요."
     new:
       enter_your_email_address: "이메일 주소를 입력하세요"
       enter_your_password: "비밀번호를 입력하세요"
