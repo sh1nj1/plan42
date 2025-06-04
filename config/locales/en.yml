@@ -43,3 +43,5 @@ en:
     filter_complete: "Completed"
     filter_incomplete: "Incomplete"
     loading: "Loading..."
+    collapse_all: "Collapse All"
+    expand_all: "Expand All"
