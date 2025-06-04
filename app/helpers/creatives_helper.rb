@@ -7,9 +7,12 @@ module CreativesHelper
   def render_tags(labels, class_name = nil)
     return "" if labels&.empty? or labels.nil?
 
+    index = 0
     safe_join(labels.map do |label|
-      suffix = " 🚩#{label.target_date}" if label.type == "Plan"
+      suffix = " 🗓#{label.target_date}" if label.type == "Plan"
+      index += 1
       content_tag(:span, class: "tag") do
+        (index == 1 ? "" : " ").html_safe +
         link_to("##{label.name}", creatives_path(tags: [ label.id ]), class: class_name ? class_name: "", title: label.name) + suffix
       end
     end)

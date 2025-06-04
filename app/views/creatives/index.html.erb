@@ -33,7 +33,19 @@
 <%= stylesheet_link_tag 'comments_popup', media: 'all' %>
 
 <div class="tags">
-  <%= render_tags(@parent_creative&.tags&.map { |tag| tag.label }) %>
+  <% labels = @parent_creative&.tags&.map { |tag| tag.label } %>
+  <% labels&.each do |label| %>
+    <input type="checkbox" class="tag-checkbox"
+           <%= "checked" unless params[:tags].present? && params[:tags].include?(label.id.to_s) %>
+           value="<%= label.id %>">
+
+      <%= "##{label.name}" %>
+      <% if label.type == "Plan" %> 🗓<%= label.target_date %><% end %>
+
+  <% end %>
+  <% if labels.present? %>
+  <button id="apply-tags">필터</button>
+  <% end %>
 </div>
 
 <% if @parent_creative %>
