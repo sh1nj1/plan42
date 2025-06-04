@@ -39,3 +39,19 @@
     margin-right: 8px;
     flex: 0 0 5px;
 }
+
+.creative-row-end {
+    margin-left: 10px;
+    color: #888;
+    font-size: 0.9em;
+    white-space: nowrap;
+}
+
+.creative-progress-complete {
+    color: green;
+    display: none;
+}
+
+.creative-progress-incomplete {
+    /* ok */
+}
