@@ -77,7 +77,7 @@
     /* ok */
 }
 
-.creative-row-left {
+.creative-row-start {
     display: flex;
     align-items: center;
 }
@@ -128,15 +128,15 @@
     font-size: 1.4em;
 }
 
-.creative-row-left h1 {
+.creative-row-start h1 {
     font-size: 1.3em;
 }
 
-.creative-row-left h2 {
+.creative-row-start h2 {
     font-size: 1.2em;
 }
 
-.creative-row-left h3 {
+.creative-row-start h3 {
     font-size: 1.1em;
 }
 

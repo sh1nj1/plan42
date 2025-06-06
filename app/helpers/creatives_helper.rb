@@ -43,7 +43,7 @@ module CreativesHelper
           }: "".html_safe)
         }
         render_row_content = ->(wrapper) {
-          content_tag(:div, class: "creative-row-left") do
+          content_tag(:div, class: "creative-row-start") do
             content_tag(:div, class: "creative-row-actions") do
               content_tag(:div, ((level <= 3 and filtered_children.any?) ? toggle_button_symbol(expanded: true) : ""),
                           class: "before-link creative-toggle-btn",
