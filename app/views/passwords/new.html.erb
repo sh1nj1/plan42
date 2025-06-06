@@ -1,8 +1,11 @@
-<h1>Forgot your password?</h1>
+<h1><%= t('users.forgot_password') %></h1>
 
 <%= tag.div(flash[:alert], style: "color:red") if flash[:alert] %>
 
 <%= form_with url: passwords_path do |form| %>
-  <%= form.email_field :email, required: true, autofocus: true, autocomplete: "username", placeholder: "Enter your email", value: params[:email] %><br>
-  <%= form.submit "Email reset instructions" %>
+  <%= form.email_field :email, required: true, autofocus: true, autocomplete: "username", placeholder: t("users.new.enter_your_password"), value: params[:email] %><br>
+  <%= form.submit t('users.send_password_reset_instructions') %>
 <% end %>
+
+<br/>
+<%= link_to t('users.new.back_to_sign_in'), new_session_path %>

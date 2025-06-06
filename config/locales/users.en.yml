@@ -25,3 +25,5 @@ en:
     confirm_new_password: "Confirm New Password"
     back: "Back"
     current_password_incorrect: "Current password is incorrect."
+    forgot_password: "Forgot your password?"
+    send_password_reset_instructions: "Email reset instructions"
