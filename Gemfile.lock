@@ -95,6 +95,9 @@ GEM
       rack-test (>= 0.6.3)
       regexp_parser (>= 1.5, < 3.0)
       xpath (~> 3.2)
+    closure_tree (8.0.0)
+      activerecord (>= 7.1.0)
+      with_advisory_lock (>= 5.0.0, < 6.0.0)
     concurrent-ruby (1.3.5)
     connection_pool (2.5.3)
     crass (1.0.6)
@@ -384,6 +387,9 @@ GEM
       base64
       websocket-extensions (>= 0.1.0)
     websocket-extensions (0.1.5)
+    with_advisory_lock (5.3.0)
+      activerecord (>= 6.1)
+      zeitwerk (>= 2.6)
     xpath (3.2.0)
       nokogiri (~> 1.8)
     zeitwerk (2.7.3)
@@ -404,6 +410,7 @@ DEPENDENCIES
   bootsnap
   brakeman
   capybara
+  closure_tree
   debug
   image_processing (~> 1.14)
   importmap-rails

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_06_06_000000) do
+ActiveRecord::Schema[8.0].define(version: 2025_06_06_150329) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -57,6 +57,14 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_06_000000) do
     t.datetime "updated_at", null: false
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
+  end
+
+  create_table "creative_hierarchies", id: false, force: :cascade do |t|
+    t.integer "ancestor_id", null: false
+    t.integer "descendant_id", null: false
+    t.integer "generations", null: false
+    t.index ["ancestor_id", "descendant_id", "generations"], name: "creative_anc_desc_idx", unique: true
+    t.index ["descendant_id"], name: "creative_desc_idx"
   end
 
   create_table "creative_shares", force: :cascade do |t|

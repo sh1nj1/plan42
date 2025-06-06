@@ -6,8 +6,10 @@ class Creative < ApplicationRecord
   has_rich_text :description
   has_many :comments, dependent: :destroy
 
-  belongs_to :parent, class_name: "Creative", optional: true
-  has_many :children, -> { order(:sequence) }, class_name: "Creative", foreign_key: :parent_id, dependent: :destroy
+  has_closure_tree order: :sequence
+
+  # belongs_to :parent, class_name: "Creative", optional: true
+  # has_many :children, -> { order(:sequence) }, class_name: "Creative", foreign_key: :parent_id, dependent: :destroy
 
   belongs_to :origin, class_name: "Creative", optional: true
   has_many :linked_creatives, class_name: "Creative", foreign_key: :origin_id, dependent: :delete_all
@@ -23,7 +25,7 @@ class Creative < ApplicationRecord
   after_destroy :update_parent_progress
 
   def self.recalculate_all_progress!
-    Creative.where(parent_id: nil).find_each do |root|
+    Creative.roots.find_each do |root|
       root.recalculate_subtree_progress!
     end
   end

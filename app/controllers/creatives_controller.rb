@@ -29,7 +29,7 @@ class CreativesController < ApplicationController
       @parent_creative = creative
       @creatives = creative.children_with_permission(Current.user, :read) if creative
     else
-      @creatives = Creative.where(user: Current.user).where(parent_id: nil)
+      @creatives = Creative.where(user: Current.user).roots
       @parent_creative = nil
     end
   end
@@ -96,7 +96,7 @@ class CreativesController < ApplicationController
       destroy_descendants_recursively(@creative, Current.user)
     else
       # Re-link children to parent
-      @creative.children.update_all(parent_id: parent&.id)
+      @creative.children.each { |child| child.update(parent: parent) }
     end
     CreativeShare.where(creative: @creative).destroy_all
     @creative.destroy
@@ -120,8 +120,9 @@ class CreativesController < ApplicationController
 
     if direction == "child"
       # Make dragged a child of target, append to end of children
-      dragged.update!(parent_id: target.id)
-      siblings = Creative.where(parent_id: target.id).order(:sequence).to_a
+      dragged.parent = target
+      dragged.save!
+      siblings = target.children.order(:sequence).to_a
       siblings.delete(dragged)
       siblings << dragged
       siblings.each_with_index do |creative, idx|
@@ -133,11 +134,12 @@ class CreativesController < ApplicationController
 
     # Up/down logic
     # Change parent if needed
-    if dragged.parent_id != target.parent_id
-      dragged.update!(parent_id: target.parent_id)
+    if dragged.parent != target.parent
+      dragged.parent = target.parent
+      dragged.save!
     end
 
-    siblings = Creative.where(parent_id: target.parent_id).order(:sequence).to_a
+    siblings = dragged.parent ? dragged.parent.children.order(:sequence).to_a : Creative.roots.order(:sequence).to_a
     siblings.delete(dragged)
     target_index = siblings.index(target)
     new_index = direction == "up" ? target_index : target_index + 1
