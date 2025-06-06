@@ -9,7 +9,7 @@ class UsersController < ApplicationController
     @user = User.new(user_params)
     if @user.save
       session.delete(:return_to_after_authenticating)
-      redirect_to new_session_path, notice: "Account created successfully! Please sign in."
+      redirect_to new_session_path, notice: t("users.new.success_sign_up")
     else
       render :new, status: :unprocessable_entity
     end
@@ -50,6 +50,6 @@ class UsersController < ApplicationController
 
   private
   def user_params
-    params.require(:user).permit(:email_address, :password, :password_confirmation)
+    params.require(:user).permit(:email, :password, :password_confirmation)
   end
 end

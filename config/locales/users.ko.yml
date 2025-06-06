@@ -4,18 +4,19 @@ ko:
       your_creativeness_is_coming: "당신의 창작물이 실현됩니다!"
       a_tracker_of_your_creatives: "문서처럼 작업 트리 리스트를 보면서 완료여부를 확인하세요."
     new:
-      enter_your_email_address: "이메일 주소를 입력하세요"
+      enter_your_email: "이메일을 입력하세요"
       enter_your_password: "비밀번호를 입력하세요"
       confirm_your_password: "비밀번호를 다시 입력하세요"
       sign_up: "회원가입"
       back_to_sign_in: "로그인 화면으로 돌아가기"
+      success_sign_up: "회원가입이 완료되었습니다. 로그인해주세요."
     sessions:
       new:
         forgot_password: "비밀번호를 잊으셨나요?"
         try_again_later: "잠시 후 다시 시도하세요."
         try_another_email_or_password: "이메일 주소나 비밀번호를 다시 확인하세요."
     details: "사용자 정보"
-    email_address: "이메일 주소"
+    email: "이메일"
     change_password: "비밀번호 변경"
     password_updated: "비밀번호가 성공적으로 변경되었습니다."
     password_update_failed: "비밀번호 변경에 실패했습니다."

@@ -5,9 +5,9 @@
 # Create default admin user if it doesn't exist
 default_email = ENV.fetch('DEFAULT_USER_EMAIL', 'admin@example.com')
 
-unless User.exists?(email_address: default_email)
+unless User.exists?(email: default_email)
   User.create!(
-    email_address: default_email,
+    email: default_email,
     password: ENV.fetch('DEFAULT_USER_PASSWORD', 'password123'),
     password_confirmation: ENV.fetch('DEFAULT_USER_PASSWORD', 'password123')
   )

@@ -12,7 +12,7 @@
         <ul style="padding-left:1.5em;">
           <% shared_list.each do |share| %>
             <li>
-              <%= share.user&.email_address || t('creatives.index.unknown_user') %> - <%= t(".permission_#{share.permission}") %>
+              <%= share.user&.email || t('creatives.index.unknown_user') %> - <%= t(".permission_#{share.permission}") %>
             </li>
           <% end %>
         </ul>

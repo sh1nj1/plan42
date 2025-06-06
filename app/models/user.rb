@@ -4,5 +4,5 @@ class User < ApplicationRecord
   has_many :creatives
   has_many :labels, foreign_key: :owner_id
 
-  normalizes :email_address, with: ->(e) { e.strip.downcase }
+  normalizes :email, with: ->(e) { e.strip.downcase }
 end

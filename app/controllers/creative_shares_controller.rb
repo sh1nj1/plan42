@@ -1,7 +1,7 @@
 class CreativeSharesController < ApplicationController
   def create
     @creative = Creative.find(params[:creative_id])
-    user = User.find_by(email_address: params[:user_email])
+    user = User.find_by(email: params[:user_email])
     unless user
       flash[:alert] = "User not found"
       redirect_back(fallback_location: creatives_path) and return
