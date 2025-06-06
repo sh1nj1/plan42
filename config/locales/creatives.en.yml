@@ -5,7 +5,7 @@ en:
       new_creative: "New Creative"
       new_sub_creative: "New sub-creative"
       edit: "Edit"
-      append_as_parent_creative: "Append as Parent Creative"
+      append_as_parent_creative: "New upper-creative"
       delete: "Delete"
       delete_only_this: "Delete only this Creative"
       delete_with_children: "Delete this Creative and all its children"
