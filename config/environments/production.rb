@@ -69,6 +69,17 @@ Rails.application.configure do
   #   authentication: :plain
   # }
 
+  # AWS SES SMTP
+  config.action_mailer.delivery_method = :smtp
+  config.action_mailer.smtp_settings = {
+    address:              "email-smtp.#{Rails.application.credentials.dig(:aws, :region)}.amazonaws.com",
+    port:                 587,
+    user_name:            Rails.application.credentials.dig(:aws, :smtp_username),
+    password:             Rails.application.credentials.dig(:aws, :smtp_password),
+    authentication:       :plain,
+    enable_starttls_auto: true
+  }
+
   # Enable locale fallbacks for I18n (makes lookups for any locale fall back to
   # the I18n.default_locale when a translation cannot be found).
   config.i18n.fallbacks = true

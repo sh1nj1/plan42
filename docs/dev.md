@@ -79,3 +79,48 @@ Answer:
    참고: Plan의 target_date 같은 필드는
    Label 단일화 모델에서는 target_date를 NULL 허용으로 두거나, 별도 PlanDetail 등으로 분리하는 방법도 있습니다.
    Polymorphic 방식에서는 각 타입별로 자유롭게 속성을 추가할 수 있습니다.
+
+### Setup AWS SES
+
+* create AWS SES and configure it for your domain and add email address for test in sandbox mode.
+* create SMTP account. you can use `./bin/setup_ses.rb vrerv.com`
+* setup action mailer in `config/environments/production.rb`:
+```ruby
+config.action_mailer.delivery_method = :smtp
+config.action_mailer.smtp_settings = {
+  address:              "email-smtp.#{Rails.application.credentials.dig(:aws, :region)}.amazonaws.com",
+  port:                 587,
+  user_name:            Rails.application.credentials.dig(:aws, :smtp_username),
+  password:             Rails.application.credentials.dig(:aws, :smtp_password),
+  authentication:       :plain,
+  enable_starttls_auto: true,
+  debug_output:         $stdout
+}
+```
+* AWS 자격 증명 설정
+
+.env 또는 credentials.yml.enc 등을 사용해서 다음을 설정하세요.
+
+```bash
+AWS_SMTP_USERNAME=your-access-key
+AWS_SMTP_PASSWORD=your-secret-key
+```
+
+.env.ses 파일을 credentials.yml.enc에 추가하여 사용하기
+
+```bash
+./bin/migrate_env_to_credentials.rb
+```
+
+를 구동하면 credentials.yml.enc 에 추가됨
+ 
+`rails credentials:show` 로 확인 가능
+
+또는 `rails console` 에서 아래 값을 출력해 볼 수 있음.
+
+```ruby
+Rails.application.credentials.dig(:aws, :smtp_username)
+Rails.application.credentials.dig(:aws, :smtp_password)
+Rails.application.credentials.dig(:aws, :region)
+```
+
