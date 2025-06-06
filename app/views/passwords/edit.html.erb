@@ -1,6 +1,6 @@
 <h1><%= t('users.change_password') %></h1>
 
-<%= tag.div(flash[:alert], style: "color:red") if flash[:alert] %>
+<%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
 <%= form_with url: password_path(params[:token]), method: :put do |form| %>
   <%= form.password_field :password, required: true, autocomplete: "new-password", placeholder: t('users.new_password'), maxlength: 72 %><br>

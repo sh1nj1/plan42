@@ -22,7 +22,7 @@ module CreativesHelper
     content_tag(:div, class: "creative-row-end") do
       content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress-#{creative.progress == 1 ? "complete" : "incomplete"}") +
         button_tag("(#{creative.comments.size})", name: "show-comments-btn",
-                   "data-creative-id": creative.id, "style": "background: transparent;")
+                   "data-creative-id": creative.id)
     end
   end
 
@@ -43,18 +43,17 @@ module CreativesHelper
           }: "".html_safe)
         }
         render_row_content = ->(wrapper) {
-          content_tag(:div, class: "creative-row-left", style: "display: flex; align-items: center;") do
-            content_tag(:div, class: "creative-row-actions", style: "display: flex; align-items: center;") do
+          content_tag(:div, class: "creative-row-left") do
+            content_tag(:div, class: "creative-row-actions") do
               content_tag(:div, ((level <= 3 and filtered_children.any?) ? toggle_button_symbol(expanded: true) : ""),
                           class: "before-link creative-toggle-btn",
-                          style: "width: 9px; height: 9px; font-size: 9px; margin-right: 6px; display: flex; align-items: center; justify-content: center; line-height: 1; cursor: pointer;",
                           data: { creative_id: creative.id }) +
                 (
                   select_mode ?
-                    check_box_tag("selected_creative_ids[]", creative.id, false, class: "select-creative-checkbox", style: "margin-left: 6px; width: 16px; height: 16px; cursor: pointer; visibility: visible;") :
+                    check_box_tag("selected_creative_ids[]", creative.id, false, class: "select-creative-checkbox") :
                     link_to("+", new_creative_path(parent_id: creative.id),
                       class: "add-creative-btn",
-                      style: "margin-left: 6px; font-size: 12px; width: 12px; font-weight: bold; text-decoration: none; cursor: pointer;#{' visibility: hidden;' unless creative.has_permission?(Current.user, :write)}",
+                      style: "#{' visibility: hidden;' unless creative.has_permission?(Current.user, :write)}",
                       title: I18n.t("creatives.help.add_child_creative")
                     )
                 )
@@ -102,7 +101,7 @@ module CreativesHelper
               content_tag(:div, class: "creative-row") do
                 render_row_content.call(->(&block) {
                   margin = level > 0 ? "margin-left: #{(level - bullet_starting_level) * 20}px;" : ""
-                  content_tag(:div, class: "creative-tree-li", style: "#{margin} display: flex; align-items: center;") do
+                  content_tag(:div, class: "creative-tree-li", style: "#{margin}") do
                     if creative.effective_description.include?("<li>")
                       "".html_safe
                     else

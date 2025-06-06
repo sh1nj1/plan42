@@ -3,7 +3,7 @@
 
 <%= form_with url: session_path do |form| %>
   <%= render 'users/id_pwd_fields', form: form %>
-  <%= tag.div(flash[:alert], style: "color:red") if flash[:alert] %>
+  <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
   <%= form.submit t('app.sign_in') %>
 <% end %>
 <br>

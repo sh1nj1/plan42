@@ -1,5 +1,7 @@
 .creative-row-actions {
   visibility: hidden;
+  display: flex;
+  align-items: center;
 }
 .creative-row:hover .creative-row-actions {
   visibility: visible;
@@ -19,11 +21,30 @@
     align-items: center;
 }
 
+.delete-options {
+    display: none;
+    position: absolute;
+    z-index: 10;
+    background: #fff;
+    border: 1px solid #ccc;
+    padding: 0.5em;
+    box-shadow: 0 2px 8px #ccc;
+    min-width: 220px;
+}
+.delete-one {
+    margin-bottom: 0.5em;
+}
+
 .tags {
     margin: 0.2em 2.0em;
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+    align-items: center;
+}
+
+.creative-tree-li {
+    display: flex;
     align-items: center;
 }
 
@@ -54,4 +75,79 @@
 
 .creative-progress-incomplete {
     /* ok */
+}
+
+.creative-row-left {
+    display: flex;
+    align-items: center;
+}
+
+.creative-toggle-btn {
+    width: 9px;
+    height: 9px;
+    font-size: 9px;
+    margin-right: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.add-creative-btn {
+    margin-left: 6px;
+    font-size: 12px;
+    width: 12px;
+    font-weight: bold;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.select-creative-checkbox {
+    margin-left: 6px;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    visibility: visible;
+}
+
+.creative-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.creative-progress {
+    color: #888;
+    font-size: 0.9em;
+    margin-left: 10px;
+}
+
+.page-title {
+    margin-left: 1.5em;
+    font-size: 1.4em;
+}
+
+.creative-row-left h1 {
+    font-size: 1.3em;
+}
+
+.creative-row-left h2 {
+    font-size: 1.2em;
+}
+
+.creative-row-left h3 {
+    font-size: 1.1em;
+}
+
+.indent1 {
+    margin-left: 0.0em;
+}
+
+.indent2 {
+    margin-left: 0.2em;
+}
+
+.indent3 {
+    margin-left: 0.4em;
 }
