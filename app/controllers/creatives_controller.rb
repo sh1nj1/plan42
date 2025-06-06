@@ -259,6 +259,16 @@ class CreativesController < ApplicationController
     redirect_to creatives_path(select_mode: 1)
   end
 
+  def export_markdown
+    creatives = if params[:parent_id]
+      Creative.where(id: params[:parent_id])&.map(&:effective_origin) || []
+    else
+      Creative.where(parent_id: nil)
+    end
+    markdown = helpers.render_creative_tree_markdown(creatives)
+    send_data markdown, filename: 'creatives.md', type: 'text/markdown'
+  end
+
   private
 
     def set_creative

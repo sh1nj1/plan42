@@ -20,6 +20,7 @@ en:
       import_uploading: "Uploading..."
       import_success: "Import successful! Reloading..."
       import_failed: "Import failed."
+      export_markdown: "Export to Markdown"
       only_markdown: "Only markdown (.md) files are allowed."
       drop_or_click_markdown: "Drop or click here to select a markdown file"
       import_markdown: "Import Markdown"

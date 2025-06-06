@@ -116,4 +116,34 @@ module CreativesHelper
       end
     )
   end
+
+  # 트리 구조를 마크다운으로 변환하는 헬퍼
+  # creatives: 트리 배열, level: 현재 깊이(1부터 시작)
+  def render_creative_tree_markdown(creatives, level = 1)
+    return '' if creatives.blank?
+    md = ""
+    sanitizer = ActionView::Base.full_sanitizer
+    creatives.each do |creative|
+      desc = creative.effective_description(nil, false)
+      if level <= 4
+        md += "#{'#' * level} #{desc.to_plain_text}\n\n"
+      else
+        html = desc.to_s.gsub(/<!--.*?-->/m, "").strip
+        # trix-content 블록에서 내부 div의 텍스트만 추출
+        if html =~ /<div class="trix-content">\s*<div>(.*?)<\/div>\s*<\/div>/m
+          inner = $1.strip
+          md += "<li>#{inner}</li>\n\n"
+        else
+          md += "<li>#{ActionView::Base.full_sanitizer.sanitize(html)}</li>\n\n"
+        end
+      end
+      # 하위 노드가 있으면 재귀
+      md += "<ul>\n" if level > 4
+      if creative.respond_to?(:children) && creative.children.present?
+        md += render_creative_tree_markdown(creative.children, level + 1)
+      end
+      md += "</ul>\n\n" if level > 4
+    end
+    md
+  end
 end

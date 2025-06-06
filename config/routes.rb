@@ -34,6 +34,7 @@ Rails.application.routes.draw do
       post :set_plan
       post :remove_plan
       get :append_as_parent, to: "creatives#append_as_parent", as: :append_as_parent_creative
+      get :export_markdown
     end
     member do
       post :share, to: "creatives#share", as: :share_creative
