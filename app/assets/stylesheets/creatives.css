@@ -48,6 +48,7 @@
     align-items: center;
 }
 
+/* make it as same as <li> tag */
 .creative-tree-bullet {
     width: 5px;
     height: 5px;
@@ -57,6 +58,7 @@
     max-height: 5px;
     border-radius: 50%;
     background: var(--color-text);
+    margin-left: 4px;
     margin-right: 8px;
     flex: 0 0 5px;
 }
