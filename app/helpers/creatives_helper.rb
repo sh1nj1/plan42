@@ -64,7 +64,6 @@ module CreativesHelper
           end + render_creative_progress(creative)
         }
 
-        # filter if params[:tags]
         skip = false
         if params[:tags].present?
           tag_ids = Array(params[:tags]).map(&:to_s)
@@ -84,32 +83,26 @@ module CreativesHelper
           render_next_block.call level # skip this creative, so decrease level
         else
           bullet_starting_level = 3
-          if level <= bullet_starting_level
-            content_tag(:div, class: "creative-tree", **drag_attrs) do
+          renderer = ->(&block) {
+            if level <= bullet_starting_level
               heading_tag = (filtered_children.any? or creative.parent.nil?) ? "h#{level}" : "div"
-              content_tag(:div, class: "creative-row") do
-                render_row_content.call(->(&block) {
-                  content_tag(heading_tag, class: "indent#{level}") do
-                    block.call
-                  end
-                })
+              content_tag(heading_tag, class: "indent#{level}") do
+                block.call
+              end
+            else # low level creative render as li
+              margin = level > 0 ? "margin-left: #{(level - bullet_starting_level) * 20}px;" : ""
+              content_tag(:div, class: "creative-tree-li", style: "#{margin}") do
+                if creative.effective_description.include?("<li>")
+                  "".html_safe
+                else
+                  content_tag(:div, "", class: "creative-tree-bullet")
+                end + block.call
               end
             end
-          else
-            # low level creative render as li
-            content_tag(:div, class: "creative-tree", **drag_attrs) do
-              content_tag(:div, class: "creative-row") do
-                render_row_content.call(->(&block) {
-                  margin = level > 0 ? "margin-left: #{(level - bullet_starting_level) * 20}px;" : ""
-                  content_tag(:div, class: "creative-tree-li", style: "#{margin}") do
-                    if creative.effective_description.include?("<li>")
-                      "".html_safe
-                    else
-                      content_tag(:div, "", class: "creative-tree-bullet")
-                    end + block.call
-                  end
-                })
-              end
+          }
+          content_tag(:div, class: "creative-tree", **drag_attrs) do
+            content_tag(:div, class: "creative-row") do
+              render_row_content.call(renderer)
             end
           end + render_next_block.call(level + 1)
         end
