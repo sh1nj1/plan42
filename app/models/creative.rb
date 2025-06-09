@@ -96,7 +96,9 @@ class Creative < ApplicationRecord
   end
 
   def owning_parent
-    Creative.find_by(origin_id: id, user: Current.user)&.parent || parent
+    if parent.present?
+      Creative.find_by(origin_id: parent.id, user: Current.user) || parent
+    end
   end
 
   def update_parent_progress
