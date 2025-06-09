@@ -113,7 +113,7 @@ module CreativesHelper
   # 트리 구조를 마크다운으로 변환하는 헬퍼
   # creatives: 트리 배열, level: 현재 깊이(1부터 시작)
   def render_creative_tree_markdown(creatives, level = 1)
-    return '' if creatives.blank?
+    return "" if creatives.blank?
     md = ""
     sanitizer = ActionView::Base.full_sanitizer
     creatives.each do |creative|

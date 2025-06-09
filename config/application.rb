@@ -10,7 +10,7 @@ module Plan42
   class Application < Rails::Application
     # closure_tree uses lock file if db is not MySQL or PostgreSQL. set FLOCK_DIR to tmp dir.
     config.before_initialize do
-      ENV['FLOCK_DIR'] = Rails.root.join('tmp').to_s
+      ENV["FLOCK_DIR"] = Rails.root.join("tmp").to_s
     end
     # Initialize configuration defaults for originally generated Rails version.
     config.load_defaults 8.0

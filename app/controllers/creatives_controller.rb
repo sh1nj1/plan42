@@ -268,7 +268,7 @@ class CreativesController < ApplicationController
       Creative.where(parent_id: nil)
     end
     markdown = helpers.render_creative_tree_markdown(creatives)
-    send_data markdown, filename: 'creatives.md', type: 'text/markdown'
+    send_data markdown, filename: "creatives.md", type: "text/markdown"
   end
 
   private
