@@ -113,7 +113,7 @@ class Creative < ApplicationRecord
   private
 
   def has_permission_impl(user, required_permission = :read)
-    return true if self.user_id == user.id
+    return true if self.user_id == user&.id
     share = CreativeShare.find_by(user: user, creative: self)
     return false unless share
     CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
