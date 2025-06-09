@@ -35,7 +35,7 @@ Example: In your ERB view:
 
 In your JS:
 
-```javscript
+```javascript
 const selectBtn = document.getElementById('select-btn');
 selectBtn.textContent = selectBtn.dataset.cancelText;
 ```
@@ -46,7 +46,7 @@ selectBtn.textContent = selectBtn.dataset.cancelText;
 
 Query:
 
-현재 taggable 에는 Plan, Variation 이 있는데, 이 모든 건 Tag 라는 개념인데, 여러 태그로 검색하기 위해서는 Creative 를 taggable_id 로만 검색할수 없고 또한 해당 아이디는 중복이 될 수 있어. 효율적으로 모든 태그들을 검색하려면, taggable_id 하나로 하는 것이 좋을 것 같아. 따라서 taggable 을 여러 타입의 모델로 마들지 않고 그냥 Label 이라는 하나의 모델로 Plan, Variation, Label 을 표현하고, Label 에 type 컬럼을 둬서 Plan 인지 Variation 인지 Label 인지 구분하는 것이 어떨까? 이때 안좋은 점은 Plan 에는 target_date 필요하지만, 다른 Label 에는 필요하지 않다는 거야.
+현재 taggable 에는 Plan, Variation 이 있는데, 이 모든 건 Tag 라는 개념인데, 여러 태그로 검색하기 위해서는 Creative 를 taggable_id 로만 검색할수 없고 또한 해당 아이디는 중복이 될 수 있어. 효율적으로 모든 태그들을 검색하려면, taggable_id 하나로 하는 것이 좋을 것 같아. 따라서 taggable 을 여러 타입의 모델로 만들지 않고 그냥 Label 이라는 하나의 모델로 Plan, Variation, Label 을 표현하고, Label 에 type 컬럼을 둬서 Plan 인지 Variation 인지 Label 인지 구분하는 것이 어떨까? 이때 안좋은 점은 Plan 에는 target_date 필요하지만, 다른 Label 에는 필요하지 않다는 거야.
 만약 현재 방식으로 taggable 을 유지 한다면, taggable_id 를 중복되지 않도록 uuid 방식으로 해야 할 것 같아
 
 Answer:
