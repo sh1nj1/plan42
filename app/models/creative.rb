@@ -92,6 +92,11 @@ class Creative < ApplicationRecord
   end
 
   def children
+    # better not override this method, use children_with_permission instead or linked_children
+    super
+  end
+
+  def linked_children
     origin_id.nil? ? super : origin.children_with_permission(Current.user, :read)
   end
 

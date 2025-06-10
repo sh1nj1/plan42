@@ -9,11 +9,17 @@ class CreativeSharesController < ApplicationController
 
     permission = params[:permission]
 
-    shares = [ CreativeShare.new(creative: @creative, user: user, permission: permission) ]
+    shares = []
+    unless CreativeShare.exists?(creative: @creative, user: user, permission: permission)
+      shares << CreativeShare.new(creative: @creative, user: user, permission: permission)
+    end
 
+    # TODO: 다 생성하지 않고, ancestor 를 따라가며 권한을 검사하는 방식으로 처리하는 것이 좋다.
     if permission.ends_with?("_tree")
       all_descendants(@creative).each do |descendant|
-        shares << CreativeShare.new(creative: descendant, user: user, permission: permission)
+        unless CreativeShare.exists?(creative: descendant, user: user, permission: permission)
+          shares << CreativeShare.new(creative: descendant, user: user, permission: permission)
+        end
       end
     end
 
