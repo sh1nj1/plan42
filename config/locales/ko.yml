@@ -17,3 +17,4 @@ ko:
     collapse_all: "모두 접기"
     expand_all: "모두 펼치기"
     save: "저장"
+    filter_comments: "코멘트"

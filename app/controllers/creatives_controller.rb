@@ -5,7 +5,16 @@ class CreativesController < ApplicationController
   before_action :set_creative, only: %i[ show edit update destroy ]
 
   def index
-    if params[:search].present?
+    if params[:comment] == 'true'
+      # 코멘트가 있는 creative만, 코멘트 최신 업데이트 순
+      @creatives = Creative
+        .joins(:comments)
+        .where.not(comments: { id: nil })
+        .select { |c| c.user == Current.user || c.has_permission?(Current.user, :read) }
+        .uniq(&:id)
+      @creatives = @creatives.sort_by { |c| c.comments.maximum(:updated_at) || c.updated_at }.reverse
+      @parent_creative = nil
+    elsif params[:search].present?
       @creatives = Creative.joins(:rich_text_description)
                            .left_joins(:comments) # Include comments to allow searching in them
                            .where("action_text_rich_texts.body LIKE :q OR comments.content LIKE :q", q: "%#{params[:search]}%")
