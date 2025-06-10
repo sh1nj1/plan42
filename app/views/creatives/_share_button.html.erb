@@ -4,13 +4,11 @@
   <div style="background: var(--color-bg);padding:2em;border-radius:8px;min-width:320px;max-width:90vw;position:relative;">
     <button id="close-share-modal" style="position:absolute;top:0.5em;right:0.5em;">&times;</button>
     <h2><%= t('creatives.index.share_creative') %></h2>
-    <% shared_creative = @parent_creative || @creative %>
-    <% shared_list = CreativeShare.where(creative: shared_creative).includes(:user) %>
-    <% if shared_list.any? %>
+    <% if @shared_list.any? %>
       <div style="margin-bottom:1em;">
         <strong><%= t('creatives.index.shared_with') %>:</strong>
         <ul style="padding-left:1.5em;">
-          <% shared_list.each do |share| %>
+          <% @shared_list.each do |share| %>
             <li>
               <%= share.user&.email || t('creatives.index.unknown_user') %> - <%= t(".permission_#{share.permission}") %>
             </li>

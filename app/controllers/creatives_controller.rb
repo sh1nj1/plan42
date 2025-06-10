@@ -10,16 +10,7 @@ class CreativesController < ApplicationController
                            .left_joins(:comments) # Include comments to allow searching in them
                            .where("action_text_rich_texts.body LIKE :q OR comments.content LIKE :q", q: "%#{params[:search]}%")
                            .where(origin_id: nil)
-                           .where(
-                             "creatives.user_id = :user_id OR EXISTS (
-                        SELECT 1 FROM creative_shares
-                        WHERE creative_shares.creative_id = creatives.id
-                          AND creative_shares.user_id = :user_id
-                          AND creative_shares.permission >= :read
-                      )",
-                             user_id: Current.user.id,
-                             read: CreativeShare.permissions[:read]
-                           )
+                           .select { |c| c.user == Current.user || c.has_permission?(Current.user, :read) }
       @parent_creative = nil
     elsif params[:id]
       creative = Creative.where(id: params[:id])
@@ -31,6 +22,13 @@ class CreativesController < ApplicationController
     else
       @creatives = Creative.where(user: Current.user).roots
       @parent_creative = nil
+    end
+    # 공유 리스트 로직: 자신과 모든 ancestor에서 공유된 사용자 수집
+    if (@shared_creative = @parent_creative || @creatives&.first)
+      # linked creative(복제본)이면 origin 사용
+      base_creative = @shared_creative.origin_id.present? ? @shared_creative.origin : @shared_creative
+      ancestor_ids = [base_creative.id] + base_creative.ancestors.pluck(:id)
+      @shared_list = CreativeShare.where(creative_id: ancestor_ids).includes(:user)
     end
   end
 

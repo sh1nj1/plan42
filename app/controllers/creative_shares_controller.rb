@@ -10,20 +10,16 @@ class CreativeSharesController < ApplicationController
     permission = params[:permission]
 
     shares = []
-    unless CreativeShare.exists?(creative: @creative, user: user, permission: permission)
+    # ancestors 에 이미 같거나 더 높은 퍼미션이 있으면 새로 만들지 않음
+    ancestor_ids = [@creative.id] + @creative.ancestors.pluck(:id)
+    existing_high_share = CreativeShare.where(creative_id: ancestor_ids, user: user)
+      .where("permission >= ?", CreativeShare.permissions[permission])
+      .exists?
+    unless existing_high_share || CreativeShare.exists?(creative: @creative, user: user, permission: permission)
       shares << CreativeShare.new(creative: @creative, user: user, permission: permission)
     end
 
-    # TODO: 다 생성하지 않고, ancestor 를 따라가며 권한을 검사하는 방식으로 처리하는 것이 좋다.
-    if permission.ends_with?("_tree")
-      all_descendants(@creative).each do |descendant|
-        unless CreativeShare.exists?(creative: descendant, user: user, permission: permission)
-          shares << CreativeShare.new(creative: descendant, user: user, permission: permission)
-        end
-      end
-    end
-
-    if shares.all?(&:save)
+    if shares.any? and shares.all?(&:save)
       create_linked_creative_for_user user, @creative
       flash[:notice] = "Creative shared!"
     else
