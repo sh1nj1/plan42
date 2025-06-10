@@ -120,8 +120,9 @@ class Creative < ApplicationRecord
   def has_permission_impl(user, required_permission = :read)
     return true if self.user_id == user&.id
     # self 및 ancestors 모두 검사
+    cache = Current.respond_to?(:creative_share_cache) ? Current.creative_share_cache : nil
     ([ self ] + ancestors).each do |node|
-      share = CreativeShare.find_by(user: user, creative: node)
+      share = cache ? cache[node.id] : CreativeShare.find_by(user: user, creative: node)
       return true if share && CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
     end
     false

@@ -5,6 +5,8 @@ class CreativesController < ApplicationController
   before_action :set_creative, only: %i[ show edit update destroy ]
 
   def index
+    # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
+    Current.creative_share_cache = CreativeShare.where(user: Current.user).index_by(&:creative_id)
     if params[:comment] == 'true'
       # 코멘트가 있는 creative만, 코멘트 최신 업데이트 순
       @creatives = Creative
