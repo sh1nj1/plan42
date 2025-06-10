@@ -5,3 +5,6 @@ en:
     no_comments: "No comments yet."
     anonymous: "Anonymous"
     add_comment: "Add Comment"
+    delete: "Delete Comment"
+    delete_button: "Delete"
+    not_owner: "Only the comment owner can delete this."

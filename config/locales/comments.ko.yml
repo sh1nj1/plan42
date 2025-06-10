@@ -1,7 +1,10 @@
 ko:
   comments:
-    comments: "댓글"
-    delete_confirm: "댓글을 삭제하시겠습니까?"
-    no_comments: "댓글이 없습니다."
+    comments: "댓글"
+    delete_confirm: "댓글을 삭제하시겠습니까?"
+    no_comments: "댓글이 없습니다."
     anonymous: "익명"
     add_comment: "댓글 추가"
+    delete: "댓글 삭제"
+    delete_button: "삭제"
+    not_owner: "댓글 소유자만 삭제할 수 있습니다."
