@@ -9,21 +9,22 @@ class CreativeSharesController < ApplicationController
 
     permission = params[:permission]
 
-    shares = []
-    # ancestors 에 이미 같거나 더 높은 퍼미션이 있으면 새로 만들지 않음
-    ancestor_ids = [ @creative.id ] + @creative.ancestors.pluck(:id)
+    ancestor_ids = @creative.ancestors.pluck(:id)
     existing_high_share = CreativeShare.where(creative_id: ancestor_ids, user: user)
       .where("permission >= ?", CreativeShare.permissions[permission])
       .exists?
-    unless existing_high_share || CreativeShare.exists?(creative: @creative, user: user, permission: permission)
-      shares << CreativeShare.new(creative: @creative, user: user, permission: permission)
-    end
 
-    if shares.any? and shares.all?(&:save)
-      create_linked_creative_for_user user, @creative
-      flash[:notice] = "Creative shared!"
+    unless existing_high_share
+      share = CreativeShare.find_or_initialize_by(creative: @creative, user: user)
+      share.permission = permission
+      if share.save
+        create_linked_creative_for_user user, @creative
+        flash[:notice] = t("creatives.share.shared")
+      else
+        flash[:alert] = share.errors.full_messages.to_sentence
+      end
     else
-      flash[:alert] = shares.map { |s| s.errors.full_messages }.flatten.to_sentence
+      flash[:alert] = t("creatives.share.already_shared_in_parent")
     end
     redirect_back(fallback_location: creatives_path)
   end

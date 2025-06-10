@@ -1,3 +1,4 @@
+<%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 <div class="creative-actions-row">
   <% if @parent_creative&.parent_id.present? %>
     <%= link_to t('.up'), creative_path(@parent_creative.owning_parent), class: "back-link" %>

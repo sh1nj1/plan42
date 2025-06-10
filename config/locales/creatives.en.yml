@@ -44,6 +44,9 @@ en:
       set_plan_title: "Set Plan for Selected Creative"
       are_you_sure_delete_share: "Are you sure delete share?"
       share_deleted: "The share are deleted."
+    share:
+      shared: "Creative shared successfully."
+      already_shared_in_parent: "Creative already shared in parent creative."
     notices:
       progress_recalculated: "All parent progress recalculated."
     errors:
