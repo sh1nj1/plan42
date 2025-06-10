@@ -39,7 +39,8 @@ module CreativesHelper
         filtered_children = creative.children_with_permission(Current.user)
         expanded = expanded_from_expanded_state(creative.id, @expanded_state_map)
         render_next_block = ->(level) {
-          ((filtered_children.any?) ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children", style: "#{expanded ? "" : "display: none;"}", data: { expanded: expanded }) {
+          filters = params.to_unsafe_h.except(:id).present?
+          ((filtered_children.any?) ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children", style: "#{filters || expanded ? "" : "display: none;"}", data: { expanded: expanded }) {
             render_creative_tree(filtered_children, level, select_mode: select_mode)
           }: "".html_safe)
         }
