@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_06_06_150329) do
+ActiveRecord::Schema[8.0].define(version: 2025_06_10_142000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -57,6 +57,17 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_06_150329) do
     t.datetime "updated_at", null: false
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
+  end
+
+  create_table "creative_expanded_states", force: :cascade do |t|
+    t.integer "creative_id"
+    t.integer "user_id", null: false
+    t.json "expanded_status", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["creative_id", "user_id"], name: "index_creative_expanded_states_on_creative_id_and_user_id", unique: true
+    t.index ["creative_id"], name: "index_creative_expanded_states_on_creative_id"
+    t.index ["user_id"], name: "index_creative_expanded_states_on_user_id"
   end
 
   create_table "creative_hierarchies", id: false, force: :cascade do |t|
@@ -284,6 +295,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_06_150329) do
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "comments", "creatives"
   add_foreign_key "comments", "users"
+  add_foreign_key "creative_expanded_states", "creatives"
+  add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
   add_foreign_key "creatives", "creatives", column: "origin_id"

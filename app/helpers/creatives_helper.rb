@@ -37,15 +37,16 @@ module CreativesHelper
           ondrop: "handleDrop(event)"
         }
         filtered_children = creative.children_with_permission(Current.user)
+        expanded = expanded_from_expanded_state(creative.id, @expanded_state_map)
         render_next_block = ->(level) {
-          (filtered_children.any? ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children") {
+          ((filtered_children.any?) ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children", style: "#{expanded ? "" : "display: none;"}", data: { expanded: expanded }) {
             render_creative_tree(filtered_children, level, select_mode: select_mode)
           }: "".html_safe)
         }
         render_row_content = ->(wrapper) {
           content_tag(:div, class: "creative-row-start") do
             content_tag(:div, class: "creative-row-actions") do
-              content_tag(:div, ((level <= 3 and filtered_children.any?) ? toggle_button_symbol(expanded: true) : ""),
+              content_tag(:div, ((level <= 3 and filtered_children.any?) ? toggle_button_symbol(expanded: expanded) : ""),
                           class: "before-link creative-toggle-btn",
                           data: { creative_id: creative.id }) +
                 (
@@ -64,7 +65,7 @@ module CreativesHelper
         }
 
         skip = false
-        if params[:tags].present?
+        if not skip and params[:tags].present?
           tag_ids = Array(params[:tags]).map(&:to_s)
           creative_label_ids = creative.tags.pluck(:label_id).map(&:to_s)
           skip = (creative_label_ids & tag_ids).empty?
@@ -107,6 +108,11 @@ module CreativesHelper
         end
       end
     )
+  end
+
+  # parent_creative.expandedState[creative.id] 값 사용, parent_creative가 nil이면 controller에서 내려준 expanded_state_map[nil] 사용
+  def expanded_from_expanded_state(creative_id, expanded_state_map)
+    !(expanded_state_map and expanded_state_map[creative_id.to_s] == false)
   end
 
   # 트리 구조를 마크다운으로 변환하는 헬퍼

@@ -15,7 +15,7 @@ if (!window.creativesExpansionInitialized) {
         console.log("Setting up creative toggles");
         // Get current creative id from path, e.g. /creatives/10 or /creatives
         let match = window.location.pathname.match(/\/creatives\/(\d+)/);
-        const currentCreativeId = match ? match[1] : 'root';
+        const currentCreativeId = match ? match[1] : null;
         document.querySelectorAll(".creative-toggle-btn").forEach(function(btn) {
             btn.addEventListener("click", function(e) {
                 const creativeId = btn.dataset.creativeId;
@@ -24,28 +24,32 @@ if (!window.creativesExpansionInitialized) {
                     const isHidden = childrenDiv.style.display === "none";
                     childrenDiv.style.display = isHidden ? "" : "none";
                     btn.textContent = isHidden ? "▼" : "▶";
-                    // Store expansion state in localStorage, scoped by currentCreativeId
-                    let allStates = JSON.parse(localStorage.getItem("creativeTreeExpandedByParent") || '{}');
-                    let expanded = allStates[currentCreativeId] || {};
-                    if (isHidden) {
-                        delete expanded[creativeId];
-                    } else {
-                        expanded[creativeId] = false;
-                    }
-                    allStates[currentCreativeId] = expanded;
-                    localStorage.setItem("creativeTreeExpandedByParent", JSON.stringify(allStates));
+                    // Store expansion state in DB, scoped by currentCreativeId and node_id
+                    let url = `/creative_expanded_states/toggle`;
+                    fetch(url, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                      },
+                      body: JSON.stringify({
+                        creative_id: currentCreativeId,
+                        node_id: creativeId,
+                        expanded: isHidden
+                      })
+                    });
                 }
             });
 
             // On load, restore state
             const creativeId = btn.dataset.creativeId;
             const childrenDiv = document.getElementById(`creative-children-${creativeId}`);
-            let allStates = JSON.parse(localStorage.getItem("creativeTreeExpandedByParent") || '{}');
-            let expanded = allStates[currentCreativeId] || {};
-            if (childrenDiv && expanded[creativeId] === undefined) {
-                expand(childrenDiv, btn);
-            } else if (childrenDiv) {
-                collapse(childrenDiv, btn);
+            if (childrenDiv) {
+                if (childrenDiv.dataset.expanded === "true") {
+                    expand(childrenDiv, btn);
+                } else {
+                    collapse(childrenDiv, btn);
+                }
             }
         });
 

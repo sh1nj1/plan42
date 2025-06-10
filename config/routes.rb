@@ -44,4 +44,6 @@ Rails.application.routes.draw do
   resources :plans, only: [ :create, :destroy ]
 
   resource :unsubscribe, only: [ :show ]
+
+  post '/creative_expanded_states/toggle', to: 'creative_expanded_states#toggle'
 end
