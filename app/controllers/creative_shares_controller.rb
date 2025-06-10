@@ -1,6 +1,6 @@
 class CreativeSharesController < ApplicationController
   def create
-    @creative = Creative.find(params[:creative_id])
+    @creative = Creative.find(params[:creative_id]).effective_origin
     user = User.find_by(email: params[:user_email])
     unless user
       flash[:alert] = "User not found"
