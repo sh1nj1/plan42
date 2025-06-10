@@ -42,6 +42,8 @@ en:
       remove_plan: "Remove Plan"
       add_plan: "Add Plan"
       set_plan_title: "Set Plan for Selected Creative"
+      are_you_sure_delete_share: "Are you sure delete share?"
+      share_deleted: "The share are deleted."
     notices:
       progress_recalculated: "All parent progress recalculated."
     errors:

@@ -42,6 +42,8 @@ ko:
       remove_plan: "계획 제거"
       add_plan: "계획 추가"
       set_plan_title: "선택된 크리에이티브에 대한 계획 설정"
+      are_you_sure_delete_share: "공유를 삭제하시겠습니까?"
+      share_deleted: "공유가 삭제 되었습니다."
     notices:
       progress_recalculated: "진행률을 다시 계산 했습니다."
     errors:

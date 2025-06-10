@@ -11,6 +11,7 @@
           <% @shared_list.each do |share| %>
             <li>
               <%= share.user&.email || t('creatives.index.unknown_user') %> - <%= t(".permission_#{share.permission}") %>
+              <%= button_to '×', creative_creative_share_path(@parent_creative || @creative, share), method: :delete, form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_share') } }, class: 'delete-share-btn', style: 'margin-left:0.5em;padding:0 0.5em;' %>
             </li>
           <% end %>
         </ul>

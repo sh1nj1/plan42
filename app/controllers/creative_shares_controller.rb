@@ -28,6 +28,18 @@ class CreativeSharesController < ApplicationController
     redirect_back(fallback_location: creatives_path)
   end
 
+  def destroy
+    @creative_share = CreativeShare.find(params[:id])
+    @creative_share.destroy
+    # remove linked creative if it exists
+    linked_creative = Creative.find_by(origin_id: @creative_share.creative_id, user_id: @creative_share.user_id)
+    linked_creative&.destroy
+    respond_to do |format|
+      format.html { redirect_back fallback_location: root_path, notice: t('creatives.index.share_deleted') }
+      format.json { head :no_content }
+    end
+  end
+
   private
 
     def all_descendants(creative)
