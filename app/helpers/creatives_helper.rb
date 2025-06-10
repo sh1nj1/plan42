@@ -49,8 +49,7 @@ module CreativesHelper
                           class: "before-link creative-toggle-btn",
                           data: { creative_id: creative.id }) +
                 (
-                  select_mode ?
-                    check_box_tag("selected_creative_ids[]", creative.id, false, class: "select-creative-checkbox") :
+                    check_box_tag("selected_creative_ids[]", creative.id, false, class: "select-creative-checkbox", style: "#{ select_mode ? "" : "display: none"}") +
                     link_to("+", new_creative_path(parent_id: creative.id),
                       class: "add-creative-btn",
                       style: "#{' visibility: hidden;' unless creative.has_permission?(Current.user, :write)}",

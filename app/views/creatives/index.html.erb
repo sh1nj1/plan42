@@ -18,11 +18,9 @@
     <%= render 'delete_button' %>
 
   <% end %>
-  <% if params[:select_mode].present? %>
-    <button id="set-plan-btn" class="set-plan-btn"><%= t('app.set_plan') %></button>
-    <input type="checkbox" id="select-all-creatives" style="margin-left:1em;vertical-align:middle;" />
-  <% end %>
-  <button id="select-creative-btn" class="select-btn" data-cancel-text="<%= t('app.cancel_select') %>"><%= t('app.select') %></button>
+  <button id="set-plan-btn" class="set-plan-btn" style="display:none;"><%= t('app.set_plan') %></button>
+  <input type="checkbox" id="select-all-creatives" style="display:none;margin-left:1em;vertical-align:middle;" />
+  <button id="select-creative-btn" class="select-btn" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>"><%= t('app.select') %></button>
   <button id="expand-all-btn" class="expand-btn" data-collapse-text="<%= t('app.collapse_all') %>" data-expand-text="<%= t('app.expand_all') %>" ><%= t('app.expand_all') %></button>
   <button id="import-markdown-btn" class="import-btn"><%= t('.import_markdown') %></button>
   <button id="export-markdown-btn" class="export-btn" data-parent-creative-id="<%= @parent_creative&.id %>" ><%= t('.export_markdown') %></button>
@@ -73,8 +71,7 @@
 
 <div id="creatives">
   <% if @creatives %>
-    <% select_mode = params[:select_mode].present? %>
-    <%= render_creative_tree(@creatives, 1, select_mode: select_mode) %>
+    <%= render_creative_tree(@creatives, 1, select_mode: false) %>
   <% else %>
     <p style="text-align: center;"><%= params[:id] ? t('.no_sub_creatives') : t('.no_creatives') %></p>
   <% end %>

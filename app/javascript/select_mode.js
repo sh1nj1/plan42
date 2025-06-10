@@ -1,4 +1,3 @@
-
 if (!window.isSelectModeInitialized) {
     window.isSelectModeInitialized = true;
 
@@ -6,18 +5,22 @@ if (!window.isSelectModeInitialized) {
         var selectBtn = document.getElementById('select-creative-btn');
         if (!selectBtn) return;
         selectBtn.addEventListener('click', function() {
-            var url = new URL(window.location.href);
-            if (url.searchParams.get('select_mode')) {
-                url.searchParams.delete('select_mode');
-            } else {
-                url.searchParams.set('select_mode', '1');
+            Array.from(document.getElementsByClassName("select-creative-checkbox")).forEach(function(element) {
+                element.style.display = element.style.display === 'none' ? '' : 'none';
+            });
+            Array.from(document.getElementsByClassName("add-creative-btn")).forEach(function(element) {
+                element.style.display = element.style.display === 'none' ? '' : 'none';
+            });
+            const selectAllBtn = document.getElementById('select-all-creatives')
+            if (selectAllBtn) {
+                selectAllBtn.style.display = selectAllBtn.style.display === 'none' ? '' : 'none';
             }
-            window.location.href = url.toString();
+            const setPlanBtn = document.getElementById('set-plan-btn');
+            if (setPlanBtn) {
+                setPlanBtn.style.display = setPlanBtn.style.display === 'none' ? '' : 'none';
+            }
+            selectBtn.textContent = (selectBtn.textContent === selectBtn.dataset.cancelText) ? selectBtn.dataset.selectText : selectBtn.dataset.cancelText;
         });
-        // Change button text if in select mode
-        if (window.location.search.includes('select_mode')) {
-            selectBtn.textContent = selectBtn.dataset.cancelText;
-        }
     });
     document.addEventListener('turbo:load', function() {
         var selectAll = document.getElementById('select-all-creatives');
