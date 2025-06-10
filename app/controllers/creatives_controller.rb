@@ -27,7 +27,7 @@ class CreativesController < ApplicationController
     if (@shared_creative = @parent_creative || @creatives&.first)
       # linked creative(복제본)이면 origin 사용
       base_creative = @shared_creative.origin_id.present? ? @shared_creative.origin : @shared_creative
-      ancestor_ids = [base_creative.id] + base_creative.ancestors.pluck(:id)
+      ancestor_ids = [ base_creative.id ] + base_creative.ancestors.pluck(:id)
       @shared_list = CreativeShare.where(creative_id: ancestor_ids).includes(:user)
     end
   end

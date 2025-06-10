@@ -11,7 +11,7 @@ class CreativeSharesController < ApplicationController
 
     shares = []
     # ancestors 에 이미 같거나 더 높은 퍼미션이 있으면 새로 만들지 않음
-    ancestor_ids = [@creative.id] + @creative.ancestors.pluck(:id)
+    ancestor_ids = [ @creative.id ] + @creative.ancestors.pluck(:id)
     existing_high_share = CreativeShare.where(creative_id: ancestor_ids, user: user)
       .where("permission >= ?", CreativeShare.permissions[permission])
       .exists?
@@ -35,7 +35,7 @@ class CreativeSharesController < ApplicationController
     linked_creative = Creative.find_by(origin_id: @creative_share.creative_id, user_id: @creative_share.user_id)
     linked_creative&.destroy
     respond_to do |format|
-      format.html { redirect_back fallback_location: root_path, notice: t('creatives.index.share_deleted') }
+      format.html { redirect_back fallback_location: root_path, notice: t("creatives.index.share_deleted") }
       format.json { head :no_content }
     end
   end
