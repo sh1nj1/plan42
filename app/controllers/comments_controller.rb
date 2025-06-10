@@ -29,7 +29,7 @@ class CommentsController < ApplicationController
   private
 
   def set_creative
-    @creative = Creative.find(params[:creative_id])
+    @creative = Creative.find(params[:creative_id]).effective_origin
   end
 
   def comment_params

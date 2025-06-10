@@ -21,7 +21,7 @@ module CreativesHelper
   def render_creative_progress(creative)
     content_tag(:div, class: "creative-row-end") do
       content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress-#{creative.progress == 1 ? "complete" : "incomplete"}") +
-        button_tag("(#{creative.comments.size})", name: "show-comments-btn",
+        button_tag("(#{creative.effective_origin.comments.size})", name: "show-comments-btn",
                    "data-creative-id": creative.id)
     end
   end
