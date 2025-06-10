@@ -9,11 +9,6 @@ class CreativeSharesController < ApplicationController
 
     permission = params[:permission]
 
-    # Helper to collect all descendants
-    def all_descendants(creative)
-      creative.children.flat_map { |child| [ child ] + all_descendants(child) }
-    end
-
     shares = [ CreativeShare.new(creative: @creative, user: user, permission: permission) ]
 
     if permission.ends_with?("_tree")
@@ -32,6 +27,10 @@ class CreativeSharesController < ApplicationController
   end
 
   private
+
+    def all_descendants(creative)
+      creative.children.flat_map { |child| [ child ] + all_descendants(child) }
+    end
 
     def create_linked_creative_for_user(user, to_creative)
       # 만약 creative 가 이미 Linked Creative 면, origin 을 사용해야 함.
