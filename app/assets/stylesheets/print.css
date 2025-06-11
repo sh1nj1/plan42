@@ -1,0 +1,19 @@
+@media print {
+  nav,
+  #plans-list-area,
+  #inbox-panel,
+  #creative-guide-popover,
+  #creative-guide-link,
+  #inbox-menu-btn,
+  #plans-menu-btn,
+  button,
+  input[type="button"],
+  input[type="submit"],
+  form {
+    display: none !important;
+  }
+
+  main {
+    margin: 0;
+  }
+}
