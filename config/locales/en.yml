@@ -55,3 +55,4 @@ en:
     delete: "Delete"
     show_read: "Show read"
     no_messages: "No messages"
+    comment_added: "%{user} added a comment."
