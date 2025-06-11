@@ -99,6 +99,9 @@ class CreativesController < ApplicationController
   end
 
   def edit
+    if params[:inline]
+      render partial: "form", locals: { creative: @creative }
+    end
   end
 
   def update
