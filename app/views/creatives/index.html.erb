@@ -12,9 +12,8 @@
   <% end %>
 
   <% if authenticated? && @parent_creative && @parent_creative.has_permission?(Current.user, :write) %>
-    <%= link_to t('.edit'), edit_creative_path(@parent_creative) %>
+    <%= link_to t('.edit'), edit_creative_path(@parent_creative), data: { action: "inline-editor#showForm" }  %>
     <%= render 'delete_button' %>
-
   <% end %>
   <button id="set-plan-btn" class="set-plan-btn" style="display:none;"><%= t('app.set_plan') %></button>
   <input type="checkbox" id="select-all-creatives" style="display:none;margin-left:1em;vertical-align:middle;" />
@@ -48,10 +47,11 @@
 </div>
 
 <% if @parent_creative %>
-  <div class="creative-row" id="creative-markdown-block">
-    <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
+  <div class="creative-row" id="creative-markdown-block" data-controller="inline-editor" data-inline-editor-edit-url-value="<%= edit_creative_path(@parent_creative) %>" data-inline-editor-update-url-value="<%= creative_path(@parent_creative) %>" data-inline-editor-parent-id-value="<%= @parent_creative.id %>">
+    <h1 class="page-title" style="display:flex;align-items:center;gap:1em;" data-inline-editor-target="display">
       <%= @parent_creative.effective_description %>
     </h1>
+    <div data-inline-editor-target="form" style="display:none"></div>
     <div>
       <h1 style="display: flex; align-items: center; gap: 1em;">
         <%= render_creative_progress(@parent_creative) %>
