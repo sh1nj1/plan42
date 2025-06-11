@@ -8,6 +8,11 @@ class InboxItemsController < ApplicationController
     render partial: "inbox_items/list", locals: { items: @inbox_items }
   end
 
+  def count
+    c = InboxItem.where(owner: Current.user, state: 'new').count
+    render json: { count: c }
+  end
+
   def update
     if @inbox_item.owner == Current.user
       @inbox_item.update(state: params[:state])

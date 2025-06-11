@@ -46,7 +46,9 @@ Rails.application.routes.draw do
 
   resources :plans, only: [ :create, :destroy ]
 
-  resources :inbox_items, path: 'inbox', only: [ :index, :update, :destroy ]
+  resources :inbox_items, path: 'inbox', only: [ :index, :update, :destroy ] do
+    get :count, on: :collection
+  end
 
   resource :unsubscribe, only: [ :show ]
   resource :invite, only: [ :show ]

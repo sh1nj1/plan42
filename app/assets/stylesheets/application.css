@@ -121,3 +121,17 @@ button {
 .inbox-item .actions button {
     margin-right: 0.5em;
 }
+
+#inbox-menu-btn {
+    position: relative;
+}
+
+#inbox-badge {
+    background: red;
+    color: white;
+    border-radius: 10px;
+    padding: 0 4px;
+    font-size: 0.75em;
+    margin-left: 4px;
+    display: none;
+}

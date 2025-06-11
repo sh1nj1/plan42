@@ -43,7 +43,7 @@
       <% end %>
       <% if Current.user %>
         <%= link_to Current.user.email, user_path(Current.user) %>
-        <button id="inbox-menu-btn" type="button"><%= t('app.inbox') %></button>
+        <button id="inbox-menu-btn" type="button"><%= t('app.inbox') %><span id="inbox-badge"></span></button>
       <% end %>
       <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
       <%= button_to t('app.sign_out'), session_path, method: :delete if authenticated? %>
@@ -112,6 +112,22 @@
           var list = document.getElementById('inbox-list');
           var closeBtn = document.getElementById('close-inbox');
           var toggle = document.getElementById('toggle-inbox-read');
+          var badge = document.getElementById('inbox-badge');
+
+          function updateInboxBadge() {
+            if (!badge) return;
+            fetch('/inbox/count')
+              .then(r => r.json())
+              .then(data => {
+                if (data.count > 0) {
+                  badge.textContent = data.count;
+                  badge.style.display = 'inline-block';
+                } else {
+                  badge.textContent = '';
+                  badge.style.display = 'none';
+                }
+              });
+          }
 
           function loadInbox() {
             if (!list) return;
@@ -119,7 +135,7 @@
             var showRead = toggle && toggle.checked;
             fetch('/inbox' + (showRead ? '?show=all' : ''))
               .then(r => r.text())
-              .then(html => { list.innerHTML = html; attachActions(); });
+              .then(html => { list.innerHTML = html; attachActions(); updateInboxBadge(); });
           }
 
           function attachActions() {
@@ -174,6 +190,8 @@
           }
           if (closeBtn) { closeBtn.addEventListener('click', closePanel); }
           if (toggle) { toggle.addEventListener('change', loadInbox); }
+
+          updateInboxBadge();
 
           if (panel && localStorage.getItem('inboxOpen') === '1') {
             panel.classList.add('open');
