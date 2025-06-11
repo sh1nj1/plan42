@@ -1,6 +1,6 @@
 <p>
   You have been invited to collaborate on
-  "<%= @invitation.creative.description %>".
+  "<%= @invitation.creative.description.to_plain_text %>".
   Click <%= link_to 'here', invite_url(token: @invitation.generate_token_for(:invite)) %>
   to accept within 15 days.
 </p>
