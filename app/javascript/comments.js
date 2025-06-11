@@ -27,10 +27,19 @@ if (!window.commentsInitialized) {
                 };
             });
             closeBtn.onclick = function() { popup.style.display = 'none'; };
-            function fetchComments() {
+            function fetchComments(highlightId) {
                 list.innerHTML = popup.dataset.loadingText;
                 fetch(`/creatives/${popup.dataset.creativeId}/comments`)
-                    .then(r => r.text()).then(html => { list.innerHTML = html; });
+                    .then(r => r.text()).then(html => {
+                        list.innerHTML = html;
+                        if (highlightId) {
+                            var el = document.getElementById('comment-' + highlightId);
+                            if (el) {
+                                el.classList.add('highlight-flash');
+                                setTimeout(function(){ el.classList.remove('highlight-flash'); }, 2000);
+                            }
+                        }
+                    });
             }
             form.onsubmit = function(e) {
                 e.preventDefault();
@@ -67,6 +76,28 @@ if (!window.commentsInitialized) {
                     });
                 }
             });
+
+            function openFromUrl() {
+                var params = new URLSearchParams(window.location.search);
+                var commentId = params.get('comment_id');
+                var match = window.location.pathname.match(/\/creatives\/(\d+)/);
+                if (commentId && match) {
+                    var creativeId = match[1];
+                    var btn = document.querySelector('[name="show-comments-btn"][data-creative-id="' + creativeId + '"]');
+                    if (btn) {
+                        var rect = btn.getBoundingClientRect();
+                        var scrollY = window.scrollY || window.pageYOffset;
+                        popup.dataset.creativeId = creativeId;
+                        popup.style.top = (rect.bottom + scrollY + 4) + 'px';
+                        popup.style.right = (window.innerWidth - rect.right) + 'px';
+                        popup.style.left = '';
+                        popup.style.display = 'block';
+                        fetchComments(commentId);
+                    }
+                }
+            }
+
+            openFromUrl();
         }
     });
 }

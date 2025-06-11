@@ -1,5 +1,6 @@
 class CommentsController < ApplicationController
   before_action :set_creative
+  before_action :set_comment, only: [:destroy, :show]
 
   def index
     @comments = @creative.comments.order(created_at: :desc)
@@ -17,7 +18,7 @@ class CommentsController < ApplicationController
   end
 
   def destroy
-    @comment = @creative.comments.find(params[:id])
+    # @comment is set by before_action
     if @comment.user == Current.user
       @comment.destroy
       head :no_content
@@ -26,10 +27,18 @@ class CommentsController < ApplicationController
     end
   end
 
+  def show
+    redirect_to creative_path(@creative, comment_id: @comment.id)
+  end
+
   private
 
   def set_creative
     @creative = Creative.find(params[:creative_id]).effective_origin
+  end
+
+  def set_comment
+    @comment = @creative.comments.find(params[:id])
   end
 
   def comment_params

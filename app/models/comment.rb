@@ -13,7 +13,7 @@ class Comment < ApplicationRecord
 
     InboxItem.create!(
       owner: creative.user,
-      message: I18n.t('inbox.comment_added', user: user.email, comment: content),
+      link: Rails.application.routes.url_helpers.creative_comment_path(creative, self)
       link: Rails.application.routes.url_helpers.creative_path(creative)
     )
   end
