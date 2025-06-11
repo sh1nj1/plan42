@@ -27,3 +27,4 @@ ko:
     show_read: "읽은 메세지 포함"
     no_messages: "메세지가 없습니다"
     comment_added: "%{user} 가 \"%{comment}\" 를 추가했습니다."
+    creative_shared: "%{user} 가 \"%{short_title}\" 을 공유했습니다."
