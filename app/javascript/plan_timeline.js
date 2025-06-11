@@ -7,6 +7,8 @@ if (!window.planTimelineInitialized) {
     const daysWrapper = container.querySelector('.days');
     const monthLeft = container.querySelector('.month-left');
     const monthRight = container.querySelector('.month-right');
+    const navLeft = container.querySelector('.nav-left');
+    const navRight = container.querySelector('.nav-right');
     const DAY_WIDTH = 80;
 
     function formatDate(d) {
@@ -68,6 +70,14 @@ if (!window.planTimelineInitialized) {
       if (first) monthLeft.textContent = first.slice(0,7);
       if (last) monthRight.textContent = last.slice(0,7);
     }
+
+    navLeft.addEventListener('click', function() {
+      container.scrollBy({left: -7 * DAY_WIDTH, behavior: 'smooth'});
+    });
+
+    navRight.addEventListener('click', function() {
+      container.scrollBy({left: 7 * DAY_WIDTH, behavior: 'smooth'});
+    });
 
     container.addEventListener('scroll', function() {
       updateMonths();

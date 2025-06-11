@@ -1,17 +1,2 @@
 <h1><%= t('app.plans') %></h1>
-<style>
-#plan-timeline{position:relative;overflow-x:auto;white-space:nowrap;padding-top:2em;border-top:1px solid #ccc;}
-#plan-timeline .month-label{position:absolute;top:0;font-weight:bold;background:white;padding:0 4px;}
-#plan-timeline .month-left{left:0;}
-#plan-timeline .month-right{right:0;}
-#plan-timeline .days{display:flex;}
-#plan-timeline .day{width:80px;text-align:center;min-height:4em;}
-#plan-timeline .day.has-plan{border-left:2px solid #333;padding-left:4px;}
-#plan-timeline .day-num{font-size:0.9em;margin-bottom:0.5em;}
-</style>
-<div id="plan-timeline">
-  <div class="month-label month-left"></div>
-  <div class="month-label month-right"></div>
-  <div class="days"></div>
-</div>
-<%= javascript_include_tag 'plan_timeline', defer: true %>
+<%= render PlanTimelineComponent.new %>
