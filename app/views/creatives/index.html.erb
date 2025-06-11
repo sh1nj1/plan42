@@ -1,4 +1,8 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
+<% if @parent_creative %>
+<div data-controller="inline-editor" data-inline-editor-edit-url-value="<%= edit_creative_path(@parent_creative) %>" data-inline-editor-update-url-value="<%= creative_path(@parent_creative) %>" data-inline-editor-parent-id-value="<%= @parent_creative.id %>">
+<% end %>
+
 <div class="creative-actions-row">
   <% if @parent_creative&.parent_id.present? %>
     <%= link_to t('.up'), creative_path(@parent_creative.owning_parent), class: "back-link" %>
@@ -50,7 +54,7 @@
 </div>
 
 <% if @parent_creative %>
-  <div class="creative-row" id="creative-markdown-block" data-controller="inline-editor" data-inline-editor-edit-url-value="<%= edit_creative_path(@parent_creative) %>" data-inline-editor-update-url-value="<%= creative_path(@parent_creative) %>" data-inline-editor-parent-id-value="<%= @parent_creative.id %>">
+  <div class="creative-row" id="creative-markdown-block">
     <h1 class="page-title" style="display:flex;align-items:center;gap:1em;" data-inline-editor-target="display">
       <%= @parent_creative.effective_description %>
     </h1>
@@ -79,6 +83,9 @@
       </h1>
     </div>
   </div>
+<% end %>
+<% if @parent_creative %>
+</div>
 <% end %>
 
 <div id="creatives">
