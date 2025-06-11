@@ -2,7 +2,7 @@ class Invitation < ApplicationRecord
   belongs_to :inviter, class_name: "User"
   belongs_to :creative
 
-  enum permission: CreativeShare.permissions
+  enum :permission, CreativeShare.permissions
 
   generates_token_for :invite, expires_in: 15.days
 
