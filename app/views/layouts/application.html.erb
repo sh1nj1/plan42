@@ -20,6 +20,7 @@
     <%# Includes all stylesheet files in app/assets/stylesheets %>
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
     <%= stylesheet_link_tag :dark_mode %>
+    <%= stylesheet_link_tag :print, media: 'print' %>
 
     <%= javascript_include_tag 'dark_mode_toggle', defer: true %>
     <%= javascript_include_tag 'creatives', defer: true %>
