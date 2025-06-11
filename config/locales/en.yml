@@ -56,3 +56,4 @@ en:
     show_read: "Show read"
     no_messages: "No messages"
     comment_added: "%{user} added \"%{comment}\"."
+    creative_shared: "%{user} shared \"%{short_title}\"."
