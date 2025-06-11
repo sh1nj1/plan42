@@ -2,15 +2,18 @@
 <p><%= link_to "Back", creatives_path %></p>
 
 <section class="creative">
-  
-  <section class="creative-info">
+
+  <section class="creative-info" data-controller="inline-editor" data-inline-editor-edit-url-value="<%= edit_creative_path(@creative) %>" data-inline-editor-update-url-value="<%= creative_path(@creative) %>" data-inline-editor-parent-id-value="<%= @creative.id %>">
     <% cache @creative do %>
       <% if @creative.parent %>
         <h1>
           <%= @creative.parent.description %>
         </h1>
       <% end %>
-      <%= @creative.description %>
+      <div data-inline-editor-target="display">
+        <%= @creative.description %>
+      </div>
+      <div data-inline-editor-target="form" style="display:none"></div>
     <% end %>
 
     <%= render "inventory", creative: @creative %>
