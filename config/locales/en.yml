@@ -47,3 +47,10 @@ en:
     expand_all: "Expand All"
     save: "Save"
     filter_comments: "Comments"
+    inbox: "Inbox"
+
+  inbox:
+    mark_read: "Read"
+    archive: "Archive"
+    delete: "Delete"
+    no_messages: "No messages"

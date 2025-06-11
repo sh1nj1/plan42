@@ -1,0 +1,11 @@
+<div class="inbox-item" data-id="<%= item.id %>">
+  <div class="message"><%= h item.message %></div>
+  <div class="time"><%= time_ago_in_words(item.created_at) %></div>
+  <div class="actions">
+    <% unless item.read? %>
+      <button class="mark-read" data-id="<%= item.id %>"><%= t('inbox.mark_read') %></button>
+    <% end %>
+    <button class="mark-archived" data-id="<%= item.id %>"><%= t('inbox.archive') %></button>
+    <button class="delete-item" data-id="<%= item.id %>"><%= t('inbox.delete') %></button>
+  </div>
+</div>

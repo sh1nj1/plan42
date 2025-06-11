@@ -18,3 +18,10 @@ ko:
     expand_all: "모두 펼치기"
     save: "저장"
     filter_comments: "코멘트"
+    inbox: "인박스"
+
+  inbox:
+    mark_read: "읽음"
+    archive: "보관"
+    delete: "삭제"
+    no_messages: "메세지가 없습니다"

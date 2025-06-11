@@ -79,3 +79,29 @@ button {
     max-width: 1024px;
     margin: 0.5em auto;
 }
+
+#inbox-panel.slide-panel {
+    position: fixed;
+    top: 0;
+    right: -300px;
+    width: 300px;
+    height: 100%;
+    background: var(--color-bg, white);
+    box-shadow: -2px 0 5px rgba(0,0,0,0.2);
+    overflow-y: auto;
+    transition: right 0.3s;
+    z-index: 1000;
+}
+
+#inbox-panel.open {
+    right: 0;
+}
+
+.inbox-item {
+    border-bottom: 1px solid #eee;
+    padding: 0.5em;
+}
+
+.inbox-item .actions button {
+    margin-right: 0.5em;
+}

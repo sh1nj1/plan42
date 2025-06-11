@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_06_11_030138) do
+ActiveRecord::Schema[8.0].define(version: 2025_06_11_105524) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -102,6 +102,17 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_11_030138) do
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
+  end
+
+  create_table "inbox_items", force: :cascade do |t|
+    t.text "message"
+    t.integer "owner_id", null: false
+    t.string "link"
+    t.string "state", default: "new", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["owner_id"], name: "index_inbox_items_on_owner_id"
+    t.index ["state"], name: "index_inbox_items_on_state"
   end
 
   create_table "invitations", force: :cascade do |t|
@@ -316,6 +327,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_11_030138) do
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
+  add_foreign_key "inbox_items", "users", column: "owner_id"
   add_foreign_key "invitations", "creatives"
   add_foreign_key "invitations", "users", column: "inviter_id"
   add_foreign_key "labels", "users", column: "owner_id"
