@@ -106,6 +106,16 @@ class Creative < ApplicationRecord
     end
   end
 
+  # 공유 대상 사용자를 위해 Linked Creative를 생성합니다.
+  # 이미 존재하거나 원본 작성자에게는 생성하지 않습니다.
+  def create_linked_creative_for_user(user)
+    original = effective_origin
+    return if original.user_id == user.id
+    Creative.find_or_create_by!(origin_id: original.id, user_id: user.id) do |c|
+      c.parent_id = nil
+    end
+  end
+
   def update_parent_progress
     # 참조 하는 모든 Linked Creative 도 업데이트
     linked_creatives.update_all(progress: self[:progress])

@@ -18,6 +18,7 @@ class UsersController < ApplicationController
         if invitation
           invitation.update(accepted_at: Time.current)
           CreativeShare.create!(creative: invitation.creative, user: @user, permission: invitation.permission)
+          invitation.creative.create_linked_creative_for_user(@user)
         end
         session.delete(:return_to_after_authenticating)
         redirect_to new_session_path, notice: t("users.new.success_sign_up")
