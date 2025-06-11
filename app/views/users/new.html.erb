@@ -3,7 +3,7 @@
 <% if defined?(@invitation) && @invitation.present? %>
   <p>
     <strong><%= t('creatives.index.share_creative') %>:</strong>
-    <%= @invitation.creative.description %>
+    <%= @invitation.creative.description.to_plain_text %>
   </p>
 <% end %>
 
