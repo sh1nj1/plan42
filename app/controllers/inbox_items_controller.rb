@@ -1,15 +1,15 @@
 class InboxItemsController < ApplicationController
-  before_action :set_inbox_item, only: [:update, :destroy]
+  before_action :set_inbox_item, only: [ :update, :destroy ]
 
   def index
     scope = InboxItem.where(owner: Current.user).order(created_at: :desc)
-    scope = scope.new_items unless params[:show] == 'all'
+    scope = scope.new_items unless params[:show] == "all"
     @inbox_items = scope
     render partial: "inbox_items/list", locals: { items: @inbox_items }
   end
 
   def count
-    c = InboxItem.where(owner: Current.user, state: 'new').count
+    c = InboxItem.where(owner: Current.user, state: "new").count
     render json: { count: c }
   end
 

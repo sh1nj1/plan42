@@ -1,6 +1,6 @@
 class CommentsController < ApplicationController
   before_action :set_creative
-  before_action :set_comment, only: [:destroy, :show]
+  before_action :set_comment, only: [ :destroy, :show ]
 
   def index
     @comments = @creative.comments.order(created_at: :desc)

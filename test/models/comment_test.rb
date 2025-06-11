@@ -16,4 +16,3 @@ class CommentTest < ActiveSupport::TestCase
     assert_equal expected_link, item.link
   end
 end
-
