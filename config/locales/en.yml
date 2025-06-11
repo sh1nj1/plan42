@@ -51,6 +51,7 @@ en:
 
   inbox:
     mark_read: "Read"
+    mark_unread: "Unread"
     delete: "Delete"
     show_read: "Show read"
     no_messages: "No messages"

@@ -151,6 +151,18 @@
                 }).then(loadInbox);
               };
             });
+            document.querySelectorAll('.inbox-item .mark-unread').forEach(function(b) {
+              b.onclick = function() {
+                fetch('/inbox/' + b.dataset.id, {
+                  method: 'PATCH',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content
+                  },
+                  body: JSON.stringify({ state: 'new' })
+                }).then(loadInbox);
+              };
+            });
             document.querySelectorAll('.inbox-item .delete-item').forEach(function(b) {
               b.onclick = function() {
                 fetch('/inbox/' + b.dataset.id, {
