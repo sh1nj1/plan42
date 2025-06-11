@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_06_10_142000) do
+ActiveRecord::Schema[8.0].define(version: 2025_06_11_030138) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -102,6 +102,20 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_10_142000) do
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
+  end
+
+  create_table "invitations", force: :cascade do |t|
+    t.string "email"
+    t.integer "inviter_id", null: false
+    t.integer "creative_id", null: false
+    t.integer "permission"
+    t.datetime "expires_at"
+    t.datetime "clicked_at"
+    t.datetime "accepted_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["creative_id"], name: "index_invitations_on_creative_id"
+    t.index ["inviter_id"], name: "index_invitations_on_inviter_id"
   end
 
   create_table "labels", force: :cascade do |t|
@@ -302,6 +316,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_10_142000) do
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
+  add_foreign_key "invitations", "creatives"
+  add_foreign_key "invitations", "users", column: "inviter_id"
   add_foreign_key "labels", "users", column: "owner_id"
   add_foreign_key "sessions", "users"
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade

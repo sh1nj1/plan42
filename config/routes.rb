@@ -21,6 +21,9 @@ Rails.application.routes.draw do
       get :edit_password
       patch :update_password
     end
+    collection do
+      get :exists
+    end
   end
 
   resources :creatives do
@@ -44,6 +47,7 @@ Rails.application.routes.draw do
   resources :plans, only: [ :create, :destroy ]
 
   resource :unsubscribe, only: [ :show ]
+  resource :invite, only: [ :show ]
 
-  post '/creative_expanded_states/toggle', to: 'creative_expanded_states#toggle'
+  post "/creative_expanded_states/toggle", to: "creative_expanded_states#toggle"
 end

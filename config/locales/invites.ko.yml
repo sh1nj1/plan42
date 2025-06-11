@@ -1,0 +1,7 @@
+ko:
+  invites:
+    invalid: "초대 링크가 잘못되었거나 만료되었습니다."
+    invite_sent: "초대 이메일을 보냈습니다."
+  invitation_mailer:
+    invite:
+      subject: "Plan42에 초대되었습니다"

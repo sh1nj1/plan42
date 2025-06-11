@@ -1,5 +1,5 @@
 class UsersController < ApplicationController
-  allow_unauthenticated_access only: [ :new, :create ]
+  allow_unauthenticated_access only: [ :new, :create, :exists ]
 
   def new
     @user = User.new
@@ -7,12 +7,32 @@ class UsersController < ApplicationController
 
   def create
     @user = User.new(user_params)
-    if @user.save
-      session.delete(:return_to_after_authenticating)
-      redirect_to new_session_path, notice: t("users.new.success_sign_up")
-    else
+    Invitation.transaction do
+      if params[:invite_token].present?
+        invitation = Invitation.find_by_token_for(:invite, params[:invite_token])
+        if invitation
+          @user.email = invitation.email
+        end
+      end
+      if @user.save
+        if invitation
+          invitation.update(accepted_at: Time.current)
+          CreativeShare.create!(creative: invitation.creative, user: @user, permission: invitation.permission)
+        end
+        session.delete(:return_to_after_authenticating)
+        redirect_to new_session_path, notice: t("users.new.success_sign_up")
+      else
+        render :new, status: :unprocessable_entity
+      end
+    rescue ActiveSupport::MessageVerifier::InvalidSignature
+      flash.now[:alert] = t("invites.invalid")
       render :new, status: :unprocessable_entity
     end
+  end
+
+  def exists
+    user = User.find_by(email: params[:email])
+    render json: { exists: user.present? }
   end
 
   # List all users

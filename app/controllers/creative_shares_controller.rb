@@ -3,7 +3,9 @@ class CreativeSharesController < ApplicationController
     @creative = Creative.find(params[:creative_id]).effective_origin
     user = User.find_by(email: params[:user_email])
     unless user
-      flash[:alert] = "User not found"
+      invitation = Invitation.create!(email: params[:user_email], inviter: Current.user, creative: @creative, permission: params[:permission])
+      InvitationMailer.with(invitation: invitation).invite.deliver_later
+      flash[:notice] = t("invites.invite_sent")
       redirect_back(fallback_location: creatives_path) and return
     end
 

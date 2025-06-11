@@ -1,0 +1,7 @@
+en:
+  invites:
+    invalid: "Invitation link is invalid or has expired."
+    invite_sent: "Invitation email sent."
+  invitation_mailer:
+    invite:
+      subject: "You're invited to Plan42"

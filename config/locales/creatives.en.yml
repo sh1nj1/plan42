@@ -34,6 +34,7 @@ en:
       permission_write: "Write"
       permission_write_tree: "Write Tree"
       share: "Share"
+      invite: "Invite"
       plan_tags_applied: "Plan tags applied to selected creatives."
       plan_tag_failed: "Please select a plan and at least one creative."
       plan_tags_removed: "Plan tag removed from selected creatives."

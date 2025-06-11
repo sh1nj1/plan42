@@ -34,6 +34,7 @@ ko:
       permission_write: "쓰기"
       permission_write_tree: "쓰기(트리)"
       share: "공유하기"
+      invite: "초대하기"
       plan_tags_applied: "선택한 크리에이티브에 플랜 태그가 적용되었습니다."
       plan_tag_failed: "플랜과 하나 이상의 크리에이티브를 선택하세요."
       plan_tags_removed: "선택한 크리에이티브에서 플랜 태그가 제거되었습니다."
