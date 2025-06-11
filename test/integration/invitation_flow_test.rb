@@ -26,5 +26,6 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
     invitation.reload
     assert_not_nil invitation.clicked_at
     assert_select "input[name=invite_token][value=?]", token
+    assert_select "input[name='user[email]'][readonly][value=?]", "invitee@example.com"
   end
 end
