@@ -57,6 +57,16 @@
     cursor: pointer;
 }
 
+.edit-comment-btn {
+    position: absolute;
+    top: 0.2em;
+    right: 2.5em;
+    border: none;
+    background: none;
+    font-weight: bold;
+    cursor: pointer;
+}
+
 @media (max-width: 600px) {
     #comments-popup {
         right: 0.5em;
