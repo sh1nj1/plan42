@@ -97,6 +97,22 @@ button {
     right: 0;
 }
 
+.inbox-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5em;
+    border-bottom: 1px solid #eee;
+}
+
+#close-inbox {
+    background: none;
+    border: none;
+    font-size: 1.2em;
+    line-height: 1;
+    cursor: pointer;
+}
+
 .inbox-item {
     border-bottom: 1px solid #eee;
     padding: 0.5em;

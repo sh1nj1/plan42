@@ -1,8 +1,14 @@
 <div class="inbox-item" data-id="<%= item.id %>">
-  <div class="message"><%= h item.message %></div>
+  <div class="message">
+    <% if item.link.present? %>
+      <%= link_to item.message, item.link, class: 'item-link' %>
+    <% else %>
+      <%= h item.message %>
+    <% end %>
+  </div>
   <div class="time"><%= time_ago_in_words(item.created_at) %></div>
   <div class="actions">
-    <% unless item.read? %>
+    <% unless item.state == 'read' %>
       <button class="mark-read" data-id="<%= item.id %>"><%= t('inbox.mark_read') %></button>
     <% end %>
     <button class="delete-item" data-id="<%= item.id %>"><%= t('inbox.delete') %></button>

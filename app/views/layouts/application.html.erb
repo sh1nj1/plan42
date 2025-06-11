@@ -76,6 +76,10 @@
     </div>
 
     <div id="inbox-panel" class="slide-panel">
+      <div class="inbox-panel-header">
+        <button id="close-inbox" type="button">&times;</button>
+        <label><input type="checkbox" id="toggle-inbox-read"> <%= t('inbox.show_read') %></label>
+      </div>
       <div id="inbox-list" data-loading-text="<%= t('app.loading') %>"></div>
     </div>
 
@@ -106,13 +110,18 @@
           var btn = document.getElementById('inbox-menu-btn');
           var panel = document.getElementById('inbox-panel');
           var list = document.getElementById('inbox-list');
+          var closeBtn = document.getElementById('close-inbox');
+          var toggle = document.getElementById('toggle-inbox-read');
+
           function loadInbox() {
             if (!list) return;
             list.innerHTML = list.dataset.loadingText;
-            fetch('/inbox')
+            var showRead = toggle && toggle.checked;
+            fetch('/inbox' + (showRead ? '?show=all' : ''))
               .then(r => r.text())
               .then(html => { list.innerHTML = html; attachActions(); });
           }
+
           function attachActions() {
             document.querySelectorAll('.inbox-item .mark-read').forEach(function(b) {
               b.onclick = function() {
@@ -134,12 +143,41 @@
                 }).then(loadInbox);
               };
             });
+            document.querySelectorAll('.inbox-item .item-link').forEach(function(a) {
+              a.addEventListener('click', function() {
+                localStorage.setItem('inboxOpen', '1');
+              });
+            });
           }
+
+          function openPanel() {
+            if (!panel) return;
+            panel.classList.add('open');
+            localStorage.setItem('inboxOpen', '1');
+            loadInbox();
+          }
+
+          function closePanel() {
+            if (!panel) return;
+            panel.classList.remove('open');
+            localStorage.removeItem('inboxOpen');
+          }
+
           if (btn && panel) {
             btn.addEventListener('click', function() {
-              panel.classList.toggle('open');
-              if (panel.classList.contains('open')) { loadInbox(); }
+              if (panel.classList.contains('open')) {
+                closePanel();
+              } else {
+                openPanel();
+              }
             });
+          }
+          if (closeBtn) { closeBtn.addEventListener('click', closePanel); }
+          if (toggle) { toggle.addEventListener('change', loadInbox); }
+
+          if (panel && localStorage.getItem('inboxOpen') === '1') {
+            panel.classList.add('open');
+            loadInbox();
           }
         });
       }
