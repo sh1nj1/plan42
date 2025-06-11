@@ -29,7 +29,7 @@ Rails.application.routes.draw do
   resources :creatives do
     resources :subscribers, only: [ :create ]
     resources :creative_shares, only: [ :create, :destroy ]
-    resources :comments, only: [ :index, :create, :destroy ]
+    resources :comments, only: [ :index, :create, :destroy, :show ]
     collection do
       post :recalculate_progress
       post :reorder
@@ -45,6 +45,10 @@ Rails.application.routes.draw do
   end
 
   resources :plans, only: [ :create, :destroy ]
+
+  resources :inbox_items, path: "inbox", only: [ :index, :update, :destroy ] do
+    get :count, on: :collection
+  end
 
   resource :unsubscribe, only: [ :show ]
   resource :invite, only: [ :show ]

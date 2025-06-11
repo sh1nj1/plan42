@@ -70,3 +70,12 @@
     }
 }
 
+.comment-item.highlight-flash {
+    animation: comment-flash 2s ease-out;
+}
+
+@keyframes comment-flash {
+    from { background: #ffff99; }
+    to { background: transparent; }
+}
+

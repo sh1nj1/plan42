@@ -43,6 +43,7 @@
       <% end %>
       <% if Current.user %>
         <%= link_to Current.user.email, user_path(Current.user) %>
+        <button id="inbox-menu-btn" type="button"><%= t('app.inbox') %><span id="inbox-badge"></span></button>
       <% end %>
       <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
       <%= button_to t('app.sign_out'), session_path, method: :delete if authenticated? %>
@@ -74,6 +75,14 @@
       <% end %>
     </div>
 
+    <div id="inbox-panel" class="slide-panel">
+      <div class="inbox-panel-header">
+        <button id="close-inbox" type="button">&times;</button>
+        <label><input type="checkbox" id="toggle-inbox-read"> <%= t('inbox.show_read') %></label>
+      </div>
+      <div id="inbox-list" data-loading-text="<%= t('app.loading') %>"></div>
+    </div>
+
     <div id="creative-guide-popover" style="display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%); background:white; border:1px solid #ccc; box-shadow:0 2px 8px rgba(0,0,0,0.12); padding:1.2em; max-width:400px; z-index:1000; border-radius:8px;">
       <span style="float:right; cursor:pointer; font-weight:bold;" id="close-creative-guide">&times;</span>
       <div style="margin-top:0.5em; color:#444; font-size:1em; line-height:1.5;">
@@ -90,6 +99,118 @@
           btn.addEventListener('click', function() {
             area.style.display = (area.style.display === 'none') ? 'block' : 'none';
           });
+        });
+      }
+    </script>
+
+    <script>
+      if (!window.isInboxMenuInitialized) {
+        window.isInboxMenuInitialized = true;
+        document.addEventListener('turbo:load', function() {
+          var btn = document.getElementById('inbox-menu-btn');
+          var panel = document.getElementById('inbox-panel');
+          var list = document.getElementById('inbox-list');
+          var closeBtn = document.getElementById('close-inbox');
+          var toggle = document.getElementById('toggle-inbox-read');
+          var badge = document.getElementById('inbox-badge');
+
+          function updateInboxBadge() {
+            if (!badge) return;
+            fetch('/inbox/count')
+              .then(r => r.json())
+              .then(data => {
+                if (data.count > 0) {
+                  badge.textContent = data.count;
+                  badge.style.display = 'inline-block';
+                } else {
+                  badge.textContent = '';
+                  badge.style.display = 'none';
+                }
+              });
+          }
+
+          function loadInbox() {
+            if (!list) return;
+            list.innerHTML = list.dataset.loadingText;
+            var showRead = toggle && toggle.checked;
+            fetch('/inbox' + (showRead ? '?show=all' : ''))
+              .then(r => r.text())
+              .then(html => { list.innerHTML = html; attachActions(); updateInboxBadge(); });
+          }
+
+          function attachActions() {
+            document.querySelectorAll('.inbox-item .mark-read').forEach(function(b) {
+              b.onclick = function() {
+                fetch('/inbox/' + b.dataset.id, {
+                  method: 'PATCH',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content
+                  },
+                  body: JSON.stringify({ state: 'read' })
+                }).then(loadInbox);
+              };
+            });
+            document.querySelectorAll('.inbox-item .mark-unread').forEach(function(b) {
+              b.onclick = function() {
+                fetch('/inbox/' + b.dataset.id, {
+                  method: 'PATCH',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content
+                  },
+                  body: JSON.stringify({ state: 'new' })
+                }).then(loadInbox);
+              };
+            });
+            document.querySelectorAll('.inbox-item .delete-item').forEach(function(b) {
+              b.onclick = function() {
+                fetch('/inbox/' + b.dataset.id, {
+                  method: 'DELETE',
+                  headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }
+                }).then(loadInbox);
+              };
+            });
+            document.querySelectorAll('.inbox-item .item-link').forEach(function(a) {
+              a.addEventListener('click', function() {
+                localStorage.setItem('inboxOpen', '1');
+              });
+            });
+          }
+
+          function openPanel() {
+            if (!panel) return;
+            panel.classList.add('open');
+            localStorage.setItem('inboxOpen', '1');
+            loadInbox();
+          }
+
+          function closePanel() {
+            if (!panel) return;
+            panel.classList.remove('open');
+            localStorage.removeItem('inboxOpen');
+          }
+
+          if (btn && panel) {
+            btn.addEventListener('click', function() {
+              if (panel.classList.contains('open')) {
+                closePanel();
+              } else {
+                openPanel();
+              }
+            });
+          }
+          if (closeBtn) { closeBtn.addEventListener('click', closePanel); }
+          if (toggle) { toggle.addEventListener('change', loadInbox); }
+
+          updateInboxBadge();
+
+          if (panel && btn && localStorage.getItem('inboxOpen') === '1') {
+            panel.classList.add('open');
+            loadInbox();
+          } else if (!btn) {
+            localStorage.removeItem('inboxOpen');
+          }
         });
       }
     </script>
