@@ -2,10 +2,15 @@ class InboxSummaryJob < ApplicationJob
   queue_as :default
 
   def perform
+    Rails.logger.info("Running InboxSummaryJob")
     User.find_each do |user|
       items = InboxItem.where(owner: user, state: "new").order(created_at: :desc).limit(10)
-      next if items.empty?
+      if items.empty?
+        Rails.logger.info("No new inbox items for #{user.email}")
+        next
+      end
 
+      Rails.logger.info("Sending inbox summary to #{user.email} with #{items.count} items")
       InboxMailer.with(user: user, items: items).daily_summary.deliver_now
     end
   end

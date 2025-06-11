@@ -8,4 +8,4 @@ development:
   daily_inbox_summary:
     class: InboxSummaryJob
     queue: default
-    schedule: at 9am every day
+    schedule: every minute
