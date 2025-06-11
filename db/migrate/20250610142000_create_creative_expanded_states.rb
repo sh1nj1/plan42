@@ -6,6 +6,6 @@ class CreateCreativeExpandedStates < ActiveRecord::Migration[8.0]
       t.json :expanded_status, null: false, default: {}
       t.timestamps
     end
-    add_index :creative_expanded_states, [:creative_id, :user_id], unique: true
+    add_index :creative_expanded_states, [ :creative_id, :user_id ], unique: true
   end
 end
