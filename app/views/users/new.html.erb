@@ -11,7 +11,7 @@
   <% if defined?(@invitation) && @invitation.present? %>
     <%= hidden_field_tag :invite_token, params[:token] %>
   <% end %>
-  <%= render 'users/id_pwd_fields', form: form %>
+  <%= render 'users/id_pwd_fields', form: form, disable_email: defined?(@invitation) && @invitation.present? %>
 
   <%= form.password_field :password_confirmation, required: true, autocomplete: "new-password", placeholder: t('.confirm_your_password'), maxlength: 72 %><br/>
   <%= form.submit t('.sign_up') %>

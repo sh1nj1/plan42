@@ -1,2 +1,8 @@
-<%= form.email_field :email, required: true, autofocus: true, autocomplete: "username", placeholder: t('users.new.enter_your_email'), value: params[:email] %><br/>
+<%= form.email_field :email,
+                     required: true,
+                     autofocus: true,
+                     autocomplete: "username",
+                     placeholder: t('users.new.enter_your_email'),
+                     value: form.object.email.presence || params[:email],
+                     readonly: local_assigns[:disable_email] %><br/>
 <%= form.password_field :password, required: true, autocomplete: "current-password", placeholder: t('users.new.enter_your_password'), maxlength: 72 %><br/>
