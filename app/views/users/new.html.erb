@@ -9,7 +9,7 @@
 
 <%= form_with model: @user, url: users_path do |form| %>
   <% if defined?(@invitation) && @invitation.present? %>
-    <%= hidden_field_tag :invite_token, params[:token] %>
+    <%= hidden_field_tag :invite_token, params[:invite_token] || params[:token] %>
   <% end %>
   <%= render 'users/id_pwd_fields', form: form, disable_email: defined?(@invitation) && @invitation.present? %>
 
