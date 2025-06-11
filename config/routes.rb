@@ -44,7 +44,7 @@ Rails.application.routes.draw do
     end
   end
 
-  resources :plans, only: [ :create, :destroy ]
+  resources :plans, only: [ :index, :create, :destroy ]
 
   resource :unsubscribe, only: [ :show ]
   resource :invite, only: [ :show ]

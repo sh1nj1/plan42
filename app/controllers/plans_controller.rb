@@ -1,4 +1,17 @@
 class PlansController < ApplicationController
+  def index
+    respond_to do |format|
+      format.html
+      format.json do
+        start_date = params[:start]&.to_date
+        end_date = params[:end]&.to_date
+        plans = Plan.where(owner: Current.user).or(Plan.where(owner: nil))
+        plans = plans.where(target_date: start_date..end_date) if start_date && end_date
+        render json: plans.group_by(&:target_date).transform_values { |ps| ps.map(&:name) }
+      end
+    end
+  end
+
   def create
     @plan = Plan.new(plan_params)
     @plan.owner = Current.user
