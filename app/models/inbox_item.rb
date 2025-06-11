@@ -7,6 +7,8 @@ class InboxItem < ApplicationRecord
 
   scope :new_items, -> { where(state: "new") }
   scope :read_items, -> { where(state: "read") }
-  scope :archived_items, -> { where(state: "archived") }
-end
 
+  def read?
+    state == "read"
+  end
+end
