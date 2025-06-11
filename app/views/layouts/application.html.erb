@@ -205,9 +205,11 @@
 
           updateInboxBadge();
 
-          if (panel && localStorage.getItem('inboxOpen') === '1') {
+          if (panel && btn && localStorage.getItem('inboxOpen') === '1') {
             panel.classList.add('open');
             loadInbox();
+          } else if (!btn) {
+            localStorage.removeItem('inboxOpen');
           }
         });
       }
