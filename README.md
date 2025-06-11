@@ -12,7 +12,7 @@ Your creativeness is coming!
 
 * `bin/rails credentials:edit` - Create or edit the `config/credentials.yml.enc` file and `config/master.key` file.
 * `bin/rails db:prepare` - Run database migrations (default to use sqlite3)
-* `bin/rails server` - Start the Rails server
+* `bin/rails server` - Start the Rails server. When `SOLID_QUEUE_IN_PUMA` is set, the background job processor and scheduler run alongside the server. The `bin/dev` script sets this variable automatically in development.
 
 ### Runtime version info:
 
