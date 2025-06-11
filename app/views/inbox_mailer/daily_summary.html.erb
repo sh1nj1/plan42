@@ -1,0 +1,11 @@
+<h1><%= t('inbox_mailer.daily_summary.greeting') %></h1>
+<ul>
+  <% @items.each do |item| %>
+    <li>
+      <%= item.message %>
+      <% if item.link.present? %>
+        (<a href="<%= item.link %>"><%= t('inbox_mailer.daily_summary.view') %></a>)
+      <% end %>
+    </li>
+  <% end %>
+</ul>

@@ -1,0 +1,9 @@
+one_new:
+  message: "Hi"
+  owner: one
+  state: new
+
+one_read:
+  message: "Old"
+  owner: one
+  state: read
