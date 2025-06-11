@@ -6,6 +6,9 @@ if (!window.commentsInitialized) {
         var closeBtn = document.getElementById('close-comments-btn');
         var list = document.getElementById('comments-list');
         var form = document.getElementById('new-comment-form');
+        var submitBtn = form.querySelector('button[type="submit"]');
+        var textarea = form.querySelector('textarea');
+        var editingId = null;
         if (popup) {
             const buttons = document.getElementsByName('show-comments-btn');
             buttons.forEach(function(btn) {
@@ -43,18 +46,30 @@ if (!window.commentsInitialized) {
                         }
                     });
             }
+            function resetForm() {
+                form.reset();
+                editingId = null;
+                submitBtn.textContent = popup.dataset.addCommentText;
+            }
+
             form.onsubmit = function(e) {
                 e.preventDefault();
                 var formData = new FormData(form);
-                fetch(`/creatives/${popup.dataset.creativeId}/comments`, {
-                    method: 'POST',
+                var url = `/creatives/${popup.dataset.creativeId}/comments`;
+                var method = 'POST';
+                if (editingId) {
+                    url += `/${editingId}`;
+                    method = 'PATCH';
+                }
+                fetch(url, {
+                    method: method,
                     headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
                     body: formData
                 })
                     .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.errors.join(', ')); }))
                     .then(html => {
-                        form.reset();
-                        fetchComments();
+                        resetForm();
+                        fetchComments(editingId);
                     })
                     .catch(e => { alert(e.message); });
             };
@@ -76,6 +91,13 @@ if (!window.commentsInitialized) {
                             // TODO: handle error
                         }
                     });
+                } else if (e.target.classList.contains('edit-comment-btn')) {
+                    e.preventDefault();
+                    var btn = e.target;
+                    editingId = btn.getAttribute('data-comment-id');
+                    textarea.value = btn.getAttribute('data-comment-content');
+                    submitBtn.textContent = popup.dataset.updateCommentText;
+                    textarea.focus();
                 }
             });
 

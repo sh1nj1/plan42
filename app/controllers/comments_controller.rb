@@ -1,6 +1,6 @@
 class CommentsController < ApplicationController
   before_action :set_creative
-  before_action :set_comment, only: [ :destroy, :show ]
+  before_action :set_comment, only: [ :destroy, :show, :update ]
 
   def index
     @comments = @creative.comments.order(created_at: :desc)
@@ -17,6 +17,18 @@ class CommentsController < ApplicationController
       render partial: "comments/comment", locals: { comment: @comment }, status: :created
     else
       render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
+    end
+  end
+
+  def update
+    if @comment.user == Current.user
+      if @comment.update(comment_params)
+        render partial: "comments/comment", locals: { comment: @comment }
+      else
+        render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
+      end
+    else
+      render json: { error: I18n.t("comments.not_owner") }, status: :forbidden
     end
   end
 
