@@ -62,7 +62,11 @@ class CreativesController < ApplicationController
 
   def create
     @creative = Creative.new(creative_params)
-    @creative.user = Current.user
+    if @creative.parent
+      @creative.user = @creative.parent.user
+    else
+      @creative.user = Current.user
+    end
 
     # Rebuild @child_creative from params if present
     if params[:child_id].present?

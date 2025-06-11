@@ -21,6 +21,8 @@ class Creative < ApplicationRecord
   validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }, unless: -> { origin_id.present? }
   validates :description, presence: true, unless: -> { origin_id.present? }
 
+  before_validation :assign_default_user, on: :create
+
   after_save :update_parent_progress
   after_destroy :update_parent_progress
 
@@ -126,6 +128,15 @@ class Creative < ApplicationRecord
   end
 
   private
+
+  def assign_default_user
+    return if user.present?
+    if parent_id.present? && parent
+      self.user = parent.user
+    else
+      self.user = Current.user
+    end
+  end
 
   def has_permission_impl(user, required_permission = :read)
     return true if self.user_id == user&.id
