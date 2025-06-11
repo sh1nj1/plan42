@@ -22,6 +22,5 @@ ko:
 
   inbox:
     mark_read: "읽음"
-    archive: "보관"
     delete: "삭제"
     no_messages: "메세지가 없습니다"

@@ -51,6 +51,5 @@ en:
 
   inbox:
     mark_read: "Read"
-    archive: "Archive"
     delete: "Delete"
     no_messages: "No messages"

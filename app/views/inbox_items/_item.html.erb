@@ -5,7 +5,6 @@
     <% unless item.read? %>
       <button class="mark-read" data-id="<%= item.id %>"><%= t('inbox.mark_read') %></button>
     <% end %>
-    <button class="mark-archived" data-id="<%= item.id %>"><%= t('inbox.archive') %></button>
     <button class="delete-item" data-id="<%= item.id %>"><%= t('inbox.delete') %></button>
   </div>
 </div>
