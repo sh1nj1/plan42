@@ -52,6 +52,7 @@ Rails.application.routes.draw do
 
   resource :unsubscribe, only: [ :show ]
   resource :invite, only: [ :show ]
+  resource :verify, controller: "email_verifications", only: [ :show ]
 
   post "/creative_expanded_states/toggle", to: "creative_expanded_states#toggle"
 end

@@ -1,0 +1,2 @@
+Please verify your email by visiting the following link:
+<%= verify_url(token: @user.generate_token_for(:email_verification)) %>

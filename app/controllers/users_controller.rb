@@ -21,6 +21,7 @@ class UsersController < ApplicationController
           CreativeShare.create!(creative: invitation.creative, user: @user, permission: invitation.permission)
           invitation.creative.create_linked_creative_for_user(@user)
         end
+        UserMailer.email_verification(@user).deliver_now
         session.delete(:return_to_after_authenticating)
         redirect_to new_session_path, notice: t("users.new.success_sign_up")
       else
