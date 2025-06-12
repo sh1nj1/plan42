@@ -29,6 +29,7 @@ ko:
       unknown_user: "알 수 없는 사용자"
       user_email: "사용자 이메일"
       permission: "권한"
+      permission_none: "없음"
       permission_read: "읽기"
       permission_write: "쓰기"
       permission_feedback: "피드백"

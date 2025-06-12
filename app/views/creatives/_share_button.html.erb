@@ -26,6 +26,7 @@
       <div style="margin-bottom:1em;">
         <label for="share-permission"><%= t('creatives.index.permission') %></label>
         <select name="permission" id="share-permission" style="width:100%;">
+          <option value="none"><%= t('creatives.index.permission_none') %></option>
           <option value="read"><%= t('creatives.index.permission_read') %></option>
           <option value="feedback"><%= t('creatives.index.permission_feedback') %></option>
           <option value="write"><%= t('creatives.index.permission_write') %></option>

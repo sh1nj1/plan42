@@ -29,6 +29,7 @@ en:
       unknown_user: "Unknown user"
       user_email: "User Email"
       permission: "Permission"
+      permission_none: "None"
       permission_read: "Read"
       permission_write: "Write"
       permission_feedback: "Feedback"

@@ -3,10 +3,11 @@ class CreativeShare < ApplicationRecord
   belongs_to :user
 
   enum :permission, {
-    read: 0,
-    feedback: 1,
-    write: 2
-  }
+    none: 0,
+    read: 1,
+    feedback: 2,
+    write: 3
+  }, scopes: false
 
   validates :creative_id, presence: true
   validates :user_id, presence: true
