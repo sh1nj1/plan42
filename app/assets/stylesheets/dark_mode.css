@@ -16,17 +16,17 @@
 }
 
 body.dark-mode {
-  --color-bg: #343541;
-  --color-text: #ececf1;
-  --color-link: #5891ff;
-  --color-nav-bg: #3c3f44;
-  --color-section-bg: #444654;
-  --color-btn-bg: #565869;
-  --color-btn-text: #ececf1;
-  --color-border: #555;
-  --color-muted: #9a9a9a;
-  --color-drag-over: #3c3d43;
-  --color-drag-over-edge: #656565;
+  --color-bg: #212121;
+  --color-text: #eaeaea;
+  --color-link: #6a9eff;
+  --color-nav-bg: #181818;
+  --color-section-bg: #181818;
+  --color-btn-bg: #333543;
+  --color-btn-text: #eaeaea;
+  --color-border: #333333;
+  --color-muted: #aaaaaa;
+  --color-drag-over: #383a40;
+  --color-drag-over-edge: #777;
 }
 
 body {
