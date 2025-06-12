@@ -21,4 +21,22 @@ class CreativeShareTest < ActiveSupport::TestCase
 
     Current.reset
   end
+
+  test "ancestor list ignores none permission" do
+    owner = users(:one)
+    recipient = users(:two)
+    parent = Creative.create!(user: owner, description: "Parent")
+    child = Creative.create!(user: owner, parent: parent, description: "Child")
+
+    CreativeShare.create!(creative: parent, user: recipient, permission: :read)
+    CreativeShare.create!(creative: child, user: recipient, permission: :none)
+
+    ancestor_ids = [ child.id ] + child.ancestors.pluck(:id)
+    list = CreativeShare
+      .where(creative_id: ancestor_ids)
+      .where.not(permission: :none)
+
+    assert_equal 1, list.count
+    assert_equal parent.id, list.first.creative_id
+  end
 end
