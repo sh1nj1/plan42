@@ -1,6 +1,15 @@
 if (!window.creativesDragDropInitialized) {
   window.creativesDragDropInitialized = true;
 
+  // apply mobile drag and drop polyfill with long press support
+  if (window.MobileDragDrop) {
+    window.MobileDragDrop.polyfill({
+      dragImageTranslateOverride: window.MobileDragDrop.scrollBehaviourDragImageTranslateOverride,
+      holdToDrag: 300
+    });
+    window.addEventListener('dragenter', function(event) { event.preventDefault(); });
+  }
+
   console.log('creatives_drag_drop.js loaded');
 
   const rightZoneRatio = 0.2;
