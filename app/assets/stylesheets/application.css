@@ -9,11 +9,12 @@
  * Consider organizing styles into separate files for maintainability.
  */
 body {
-    font-family: var(--font-sans);
+    font-family: var(--font-sans), serif;
     padding: 0;
     line-height: 1.6;
     background: var(--color-bg);
     color: var(--color-text);
+    margin: 0;
 }
 
 nav {
@@ -34,9 +35,15 @@ nav a {
 
 main {
     max-width: 960px;
-    margin: 1rem auto;
+    margin: 0rem auto;
     padding: 0 1rem;
     background: var(--color-section-bg);
+}
+
+@media (max-width: 768px) {
+    main {
+        padding: 0 0.3rem;
+    }
 }
 
 .notice {
