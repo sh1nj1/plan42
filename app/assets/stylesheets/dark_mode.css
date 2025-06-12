@@ -1,26 +1,32 @@
 /* 다크모드 변수 및 스타일 */
 :root {
-  --color-bg: #fff;
-  --color-text: #222;
-  --color-link: #1a73e8;
-  --color-nav-bg: #fff;
-  --color-section-bg: #fff;
-  --color-btn-bg: #eee;
-  --color-btn-text: #000;
-  --color-drag-over: #ffe082;
-  --color-drag-over-edge: #ffb300;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+  --color-bg: #f7f7f8;
+  --color-text: #202123;
+  --color-link: #0a83d7;
+  --color-nav-bg: #ffffff;
+  --color-section-bg: #ffffff;
+  --color-btn-bg: #f1f2f4;
+  --color-btn-text: #202123;
+  --color-border: #e0e0e0;
+  --color-muted: #666;
+  --color-drag-over: #e0e0e0;
+  --color-drag-over-edge: #bbb;
 }
 
 body.dark-mode {
-  --color-bg: #181a1b;
-  --color-text: #e8eaed;
-  --color-link: #8ab4f8;
-  --color-nav-bg: #181a1b;
-  --color-section-bg: #181a1b;
-  --color-btn-bg: #000;
-  --color-btn-text: #fff;
-  --color-drag-over: #3a3b3c;
-  --color-drag-over-edge: #4a4b4c;
+  --color-bg: #343541;
+  --color-text: #ececf1;
+  --color-link: #5891ff;
+  --color-nav-bg: #3c3f44;
+  --color-section-bg: #444654;
+  --color-btn-bg: #565869;
+  --color-btn-text: #ececf1;
+  --color-border: #555;
+  --color-muted: #9a9a9a;
+  --color-drag-over: #3c3d43;
+  --color-drag-over-edge: #656565;
 }
 
 body {

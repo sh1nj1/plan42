@@ -9,18 +9,23 @@
  * Consider organizing styles into separate files for maintainability.
  */
 body {
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: var(--font-sans);
     padding: 0;
+    line-height: 1.6;
+    background: var(--color-bg);
+    color: var(--color-text);
 }
 
 nav {
-    justify-content: flex-end;
     display: flex;
+    justify-content: flex-end;
     font-size: 0.875em;
-    gap: 0.5rem;
-    max-width: 1024px;
+    gap: 0.75rem;
+    max-width: 960px;
     margin: 0 auto;
     padding: 1rem;
+    background: var(--color-nav-bg);
+    border-bottom: 1px solid var(--color-border);
 }
 
 nav a {
@@ -28,8 +33,10 @@ nav a {
 }
 
 main {
-    max-width: 1024px;
-    margin: 0 auto;
+    max-width: 960px;
+    margin: 1rem auto;
+    padding: 0 1rem;
+    background: var(--color-section-bg);
 }
 
 .notice {
@@ -63,6 +70,7 @@ section.creative img {
     transition: background 0.15s;
 }
 
+
 .drag-over-top {
     border-top: 3px solid var(--color-drag-over-edge) !important;
 }
@@ -76,7 +84,7 @@ button {
 }
 
 #plans-list-area {
-    max-width: 1024px;
+    max-width: 960px;
     margin: 0.5em auto;
 }
 
@@ -86,7 +94,7 @@ button {
     right: -300px;
     width: 300px;
     height: 100%;
-    background: var(--color-bg, white);
+    background: var(--color-section-bg);
     box-shadow: -2px 0 5px rgba(0,0,0,0.2);
     overflow-y: auto;
     transition: right 0.3s;
@@ -102,7 +110,7 @@ button {
     justify-content: space-between;
     align-items: center;
     padding: 0.5em;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--color-border);
 }
 
 #close-inbox {
@@ -114,7 +122,7 @@ button {
 }
 
 .inbox-item {
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--color-border);
     padding: 0.5em;
 }
 

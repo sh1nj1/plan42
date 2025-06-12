@@ -25,10 +25,10 @@
     display: none;
     position: absolute;
     z-index: 10;
-    background: #fff;
-    border: 1px solid #ccc;
+    background: var(--color-section-bg);
+    border: 1px solid var(--color-border);
     padding: 0.5em;
-    box-shadow: 0 2px 8px #ccc;
+    box-shadow: 0 2px 8px var(--color-border);
     min-width: 220px;
 }
 .delete-one {
@@ -65,7 +65,7 @@
 
 .creative-row-end {
     margin-left: 10px;
-    color: #888;
+    color: var(--color-muted);
     font-size: 0.9em;
     white-space: nowrap;
 }
@@ -120,7 +120,7 @@
 }
 
 .creative-progress {
-    color: #888;
+    color: var(--color-muted);
     font-size: 0.9em;
     margin-left: 10px;
 }
