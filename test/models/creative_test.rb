@@ -23,14 +23,19 @@ class CreativeTest < ActiveSupport::TestCase
 
     parent = Creative.create!(user: user, description: "Parent")
     Creative.create!(user: user, parent: parent, description: "Child 1", progress: 0.2)
-    tagged_child = Creative.create!(user: user, parent: parent, description: "Child 2", progress: 0.8)
+    tagged_child1 = Creative.create!(user: user, parent: parent, description: "Child 2", progress: 0.8)
+    tagged_child2 = Creative.create!(user: user, parent: parent, description: "Child 3", progress: 0.6)
 
     label = Label.create!(name: "Plan", owner: user)
-    Tag.create!(creative_id: tagged_child.id, label: label)
+    Tag.create!(creative_id: tagged_child1.id, label: label)
+    Tag.create!(creative_id: tagged_child2.id, label: label)
 
-    assert_in_delta tagged_child.progress,
+    parent.reload
+
+    assert_in_delta((0.2 + 0.8 + 0.6) / 3.0, parent.progress, 0.001)
+    assert_in_delta((0.8 + 0.6) / 2.0,
                     parent.progress_for_tags([ label.id ], user),
-                    0.001
+                    0.001)
 
     Current.reset
   end
