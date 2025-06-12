@@ -10,6 +10,9 @@ class CommentsController < ApplicationController
   def create
     @comment = @creative.comments.build(comment_params)
     @comment.user = Current.user
+    unless @creative.has_permission?(Current.user, :feedback)
+      render json: { error: I18n.t("comments.no_permission") }, status: :forbidden and return
+    end
     if @comment.save
       render partial: "comments/comment", locals: { comment: @comment }, status: :created
     else

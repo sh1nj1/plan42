@@ -27,9 +27,8 @@
         <label for="share-permission"><%= t('creatives.index.permission') %></label>
         <select name="permission" id="share-permission" style="width:100%;">
           <option value="read"><%= t('creatives.index.permission_read') %></option>
-          <option value="read_tree"><%= t('creatives.index.permission_read_tree') %></option>
+          <option value="feedback"><%= t('creatives.index.permission_feedback') %></option>
           <option value="write"><%= t('creatives.index.permission_write') %></option>
-          <option value="write_tree"><%= t('creatives.index.permission_write_tree') %></option>
         </select>
       </div>
       <button type="submit" class="btn btn-primary" data-share-invite-target="submit" data-share="<%= t('creatives.index.share') %>" data-invite="<%= t('creatives.index.invite') %>"><%= t('creatives.index.share') %></button>

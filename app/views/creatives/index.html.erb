@@ -83,7 +83,7 @@
      data-delete-confirm-text="<%= t("comments.delete_confirm") %>">
   <button id="close-comments-btn">&times;</button>
   <h3 style="margin-top:0;"><%= t('comments.comments') %></h3>
-  <form id="new-comment-form">
+  <form id="new-comment-form" style="display:none;">
     <textarea name="comment[content]" rows="2" required></textarea>
     <button type="submit"><%= t('comments.add_comment') %></button>
   </form>
