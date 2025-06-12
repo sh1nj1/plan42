@@ -12,11 +12,16 @@ class CreativeSharesController < ApplicationController
     permission = params[:permission]
 
     ancestor_ids = @creative.ancestors.pluck(:id)
-    existing_high_share = CreativeShare.where(creative_id: ancestor_ids, user: user)
-      .where("permission >= ?", CreativeShare.permissions[permission])
-      .exists?
+    ancestor_shares = CreativeShare.where(creative_id: ancestor_ids, user: user)
 
-    unless existing_high_share
+    can_create = true
+    if permission == "none"
+      can_create = ancestor_shares.where.not(permission: :none).exists?
+    else
+      can_create = !ancestor_shares.where("permission >= ?", CreativeShare.permissions[permission]).exists?
+    end
+
+    if can_create
       share = CreativeShare.find_or_initialize_by(creative: @creative, user: user)
       share.permission = permission
       if share.save
@@ -26,7 +31,8 @@ class CreativeSharesController < ApplicationController
         flash[:alert] = share.errors.full_messages.to_sentence
       end
     else
-      flash[:alert] = t("creatives.share.already_shared_in_parent")
+      key = permission == "none" ? "parent_share_required" : "already_shared_in_parent"
+      flash[:alert] = t("creatives.share." + key)
     end
     redirect_back(fallback_location: creatives_path)
   end

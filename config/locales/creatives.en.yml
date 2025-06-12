@@ -48,6 +48,7 @@ en:
     share:
       shared: "Creative shared successfully."
       already_shared_in_parent: "Creative already shared in parent creative."
+      parent_share_required: "Cannot set to none without a parent share."
     notices:
       progress_recalculated: "All parent progress recalculated."
     errors:
