@@ -71,11 +71,10 @@ class CreativesController < ApplicationController
     # Rebuild @child_creative from params if present
     if params[:child_id].present?
       @child_creative = Creative.find_by(id: params[:child_id])
-      @child_creative.parent = @creative if @child_creative
     end
 
     if @creative.save
-      @child_creative.save if @child_creative
+      @child_creative.update(parent: @creative) if @child_creative
       # Propagate all shares from the parent to the new child
       if @creative.parent
         CreativeShare.where(creative: @creative.parent).find_each do |parent_share|
