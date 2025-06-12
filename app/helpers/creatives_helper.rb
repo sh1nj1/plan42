@@ -25,7 +25,7 @@ module CreativesHelper
                    "data-creative-id": creative.id,
                    "data-can-comment": true)
       else
-        content_tag(:span, "(#{creative.effective_origin.comments.size})", data: { can_comment: false })
+        ""
       end
       content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress-#{creative.progress == 1 ? "complete" : "incomplete"}") + comment_part
     end
