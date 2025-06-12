@@ -108,6 +108,22 @@ class Creative < ApplicationRecord
     end
   end
 
+  def progress_for_tags(tag_ids, user = Current.user)
+    return progress if tag_ids.blank?
+
+    tag_ids = Array(tag_ids).map(&:to_s)
+    child_values = children_with_permission(user).map do |child|
+      child.progress_for_tags(tag_ids, user)
+    end.compact
+
+    if child_values.any?
+      child_values.sum.to_f / child_values.size
+    else
+      own_label_ids = tags.pluck(:label_id).map(&:to_s)
+      (own_label_ids & tag_ids).any? ? progress : nil
+    end
+  end
+
   # 공유 대상 사용자를 위해 Linked Creative를 생성합니다.
   # 이미 존재하거나 원본 작성자에게는 생성하지 않습니다.
   def create_linked_creative_for_user(user)

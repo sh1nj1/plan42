@@ -19,6 +19,13 @@ module CreativesHelper
   end
 
   def render_creative_progress(creative)
+    progress_value = if params[:tags].present?
+      tag_ids = Array(params[:tags]).map(&:to_s)
+      creative.progress_for_tags(tag_ids) || 0
+    else
+      creative.progress
+    end
+
     content_tag(:div, class: "creative-row-end") do
       comment_part = if creative.has_permission?(Current.user, :feedback)
         button_tag("(#{creative.effective_origin.comments.size})", name: "show-comments-btn",
@@ -27,7 +34,7 @@ module CreativesHelper
       else
         ""
       end
-      content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress-#{creative.progress == 1 ? "complete" : "incomplete"}") + comment_part
+      content_tag(:span, number_to_percentage(progress_value * 100, precision: 0), class: "creative-progress-#{progress_value == 1 ? "complete" : "incomplete"}") + comment_part
     end
   end
 
