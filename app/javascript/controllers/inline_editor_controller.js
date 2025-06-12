@@ -36,7 +36,10 @@ export default class extends Controller {
     if (!form) return
     form.addEventListener("trix-change", () => this.autoSave())
     form.addEventListener("change", () => this.autoSave())
-    form.addEventListener("keydown", e => this.handleKey(e))
+    const editor = form.querySelector("trix-editor")
+    if (editor) {
+      editor.addEventListener("keydown", e => this.handleKey(e))
+    }
   }
 
   focusEditor() {
@@ -60,14 +63,17 @@ export default class extends Controller {
   handleKey(e) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
+      this.autoSave()
       this.moveToNext()
     } else if (e.key === "Enter" && e.shiftKey) {
       e.preventDefault()
+      this.autoSave()
       this.addChild()
     }
   }
 
   moveToNext() {
+    this.toggleVisibility()
     const next = this.element.nextElementSibling
     if (!next) return
     const btn = next.querySelector('[data-action="inline-editor#showForm"]')
@@ -79,6 +85,7 @@ export default class extends Controller {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
         'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
       },
       body: JSON.stringify({ creative: { description: 'New Creative', parent_id: this.parentIdValue } })
@@ -86,7 +93,7 @@ export default class extends Controller {
       .then(r => r.json())
       .then(data => {
         if (data.id) {
-          window.location.href = `/creatives/${data.id}`
+          window.location.href = `/creatives/${data.id}?edit=1`
         }
       })
   }

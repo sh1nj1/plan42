@@ -25,5 +25,14 @@
         <%= button_to "Delete", @creative, method: :delete, data: { turbo_confirm: "Are you sure?" } %>
       <% end %>
     </div>
+
+    <% if params[:edit] %>
+      <script>
+        document.addEventListener('turbo:load', function() {
+          const btn = document.querySelector('[data-action="inline-editor#showForm"]');
+          if (btn) { btn.click(); }
+        });
+      </script>
+    <% end %>
   </section>
 </section>
