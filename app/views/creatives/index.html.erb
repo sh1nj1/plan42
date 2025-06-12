@@ -69,7 +69,7 @@
         (<%= render_tags(params[:tags]&.map { |tag_id| Label.find(tag_id) }, 'unstyled-link') %>)
         <% end %>
       </span>
-      <% if @overall_progress %>
+      <% unless @overall_progress.nil? %>
         <%= render_progress_value(@overall_progress) %>
       <% end %>
     </h1>
