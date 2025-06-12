@@ -16,4 +16,22 @@ class CreativeTest < ActiveSupport::TestCase
       creative.update(progress: 0.99)
     end
   end
+
+  test "progress_for_tags averages tagged descendants" do
+    user = users(:one)
+    Current.session = OpenStruct.new(user: user)
+
+    parent = Creative.create!(user: user, description: "Parent")
+    Creative.create!(user: user, parent: parent, description: "Child 1", progress: 0.2)
+    tagged_child = Creative.create!(user: user, parent: parent, description: "Child 2", progress: 0.8)
+
+    label = Label.create!(name: "Plan", owner: user)
+    Tag.create!(creative_id: tagged_child.id, label: label)
+
+    assert_in_delta tagged_child.progress,
+                    parent.progress_for_tags([ label.id ], user),
+                    0.001
+
+    Current.reset
+  end
 end
