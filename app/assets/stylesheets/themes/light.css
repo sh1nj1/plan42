@@ -1,0 +1,11 @@
+:root {
+  --color-bg: #fff;
+  --color-text: #222;
+  --color-link: #1a73e8;
+  --color-nav-bg: #fff;
+  --color-section-bg: #fff;
+  --color-btn-bg: #eee;
+  --color-btn-text: #000;
+  --color-drag-over: #ffe082;
+  --color-drag-over-edge: #ffb300;
+}

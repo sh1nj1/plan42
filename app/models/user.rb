@@ -5,4 +5,6 @@ class User < ApplicationRecord
   has_many :labels, foreign_key: :owner_id
 
   normalizes :email, with: ->(e) { e.strip.downcase }
+
+  validates :theme, inclusion: { in: %w[light dark] }
 end

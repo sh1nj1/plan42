@@ -19,13 +19,14 @@
 
     <%# Includes all stylesheet files in app/assets/stylesheets %>
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
-    <%= stylesheet_link_tag :dark_mode %>
+    <%= stylesheet_link_tag :theme_base %>
+    <%= stylesheet_link_tag "themes/#{Current.theme}" %>
 
     <%= javascript_include_tag 'dark_mode_toggle', defer: true %>
     <%= javascript_include_tag 'creatives', defer: true %>
     <%= javascript_importmap_tags %>
   </head>
-  <body>
+  <body data-theme="<%= Current.theme %>">
     <div class="notice"><%= notice %></div>
 
     <nav style="display: flex; flex-wrap: wrap;">

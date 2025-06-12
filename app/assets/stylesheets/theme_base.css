@@ -1,0 +1,27 @@
+/* Base theme styles relying on CSS variables */
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  transition: background 0.3s, color 0.3s;
+}
+nav {
+  background: var(--color-nav-bg);
+}
+a {
+  color: var(--color-link);
+}
+main, section.creative {
+  background: var(--color-section-bg);
+}
+
+button, input[type="button"], input[type="submit"] {
+  background: var(--color-btn-bg);
+  color: var(--color-btn-text);
+  border: none;
+  border-radius: 1px;
+  padding: 2px 4px;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* 기타 요소도 필요에 따라 추가 가능 */
