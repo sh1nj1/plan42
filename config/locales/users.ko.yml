@@ -9,12 +9,13 @@ ko:
       confirm_your_password: "비밀번호를 다시 입력하세요"
       sign_up: "회원가입"
       back_to_sign_in: "로그인 화면으로 돌아가기"
-      success_sign_up: "회원가입이 완료되었습니다. 로그인해주세요."
+      success_sign_up: "회원가입이 완료되었습니다. 이메일을 확인해 인증해주세요."
     sessions:
       new:
         forgot_password: "비밀번호를 잊으셨나요?"
         try_again_later: "잠시 후 다시 시도하세요."
         try_another_email_or_password: "이메일 주소나 비밀번호를 다시 확인하세요."
+        email_not_verified: "이메일 인증 후에 로그인할 수 있습니다."
     details: "사용자 정보"
     email: "이메일"
     change_password: "비밀번호 변경"
@@ -27,3 +28,8 @@ ko:
     back: "뒤로가기"
     forgot_password: "비밀번호를 잊으셨나요?"
     send_password_reset_instructions: "비밀번호 재설정 이메일 보내기"
+    email_verified: "이메일 인증이 완료되었습니다."
+    verification_invalid: "인증 링크가 유효하지 않거나 만료되었습니다."
+  user_mailer:
+    email_verification:
+      subject: "이메일 인증"

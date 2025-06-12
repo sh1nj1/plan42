@@ -9,12 +9,13 @@ en:
       confirm_your_password: "Confirm your password"
       sign_up: "Sign Up"
       back_to_sign_in: "Back to Sign In"
-      success_sign_up: "Account created successfully! Please sign in."
+      success_sign_up: "Account created successfully! Please check your email to verify."
     sessions:
       new:
         forgot_password: "Forgot password?"
         try_again_later: "Try again later."
         try_another_email_or_password: "Try another email address or password."
+        email_not_verified: "You must verify your email before signing in."
     details: "User Details"
     email: "Email"
     change_password: "Change password"
@@ -27,3 +28,8 @@ en:
     current_password_incorrect: "Current password is incorrect."
     forgot_password: "Forgot your password?"
     send_password_reset_instructions: "Email reset instructions"
+    email_verified: "Email verified successfully."
+    verification_invalid: "Verification link is invalid or has expired."
+  user_mailer:
+    email_verification:
+      subject: "Verify your email"

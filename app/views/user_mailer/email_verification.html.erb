@@ -1,0 +1,3 @@
+<p>
+  Please verify your email by clicking <%= link_to 'here', verify_url(token: @user.generate_token_for(:email_verification)) %>.
+</p>
