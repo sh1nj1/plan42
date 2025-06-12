@@ -105,10 +105,14 @@ class CreativesController < ApplicationController
   end
 
   def update
-    if @creative.update(creative_params)
-      redirect_to @creative
-    else
-      render :edit, status: :unprocessable_entity
+    respond_to do |format|
+      if @creative.update(creative_params)
+        format.html { redirect_to @creative }
+        format.json { head :ok }
+      else
+        format.html { render :edit, status: :unprocessable_entity }
+        format.json { render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity }
+      end
     end
   end
 

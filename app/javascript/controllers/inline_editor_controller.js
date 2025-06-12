@@ -54,8 +54,12 @@ export default class extends Controller {
       if (!form) return
       fetch(this.updateUrlValue, {
         method: "PATCH",
-        headers: { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content },
-        body: new FormData(form)
+        headers: {
+          "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content,
+          "Accept": "application/json"
+        },
+        body: new FormData(form),
+        credentials: "same-origin"
       })
     }, 400)
   }
