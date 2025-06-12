@@ -8,3 +8,4 @@ en:
     delete: "Delete Comment"
     delete_button: "Delete"
     not_owner: "Only the comment owner can delete this."
+    no_permission: "You do not have permission to comment."

@@ -20,9 +20,14 @@ module CreativesHelper
 
   def render_creative_progress(creative)
     content_tag(:div, class: "creative-row-end") do
-      content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress-#{creative.progress == 1 ? "complete" : "incomplete"}") +
+      comment_part = if creative.has_permission?(Current.user, :feedback)
         button_tag("(#{creative.effective_origin.comments.size})", name: "show-comments-btn",
-                   "data-creative-id": creative.id)
+                   "data-creative-id": creative.id,
+                   "data-can-comment": true)
+      else
+        content_tag(:span, "(#{creative.effective_origin.comments.size})", data: { can_comment: false })
+      end
+      content_tag(:span, number_to_percentage(creative.progress * 100, precision: 0), class: "creative-progress-#{creative.progress == 1 ? "complete" : "incomplete"}") + comment_part
     end
   end
 

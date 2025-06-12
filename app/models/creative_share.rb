@@ -4,9 +4,8 @@ class CreativeShare < ApplicationRecord
 
   enum :permission, {
     read: 0,
-    read_tree: 1,
-    write: 2,
-    write_tree: 3
+    feedback: 1,
+    write: 2
   }
 
   validates :creative_id, presence: true

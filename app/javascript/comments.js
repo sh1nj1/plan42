@@ -16,6 +16,7 @@ if (!window.commentsInitialized) {
                         return;
                     }
                     popup.dataset.creativeId = btn.dataset.creativeId;
+                    popup.dataset.canComment = btn.dataset.canComment;
                     // 버튼 위치 계산
                     var rect = btn.getBoundingClientRect();
                     var scrollY = window.scrollY || window.pageYOffset;
@@ -23,6 +24,7 @@ if (!window.commentsInitialized) {
                     popup.style.right = (window.innerWidth - rect.right) + 'px';
                     popup.style.left = '';
                     popup.style.display = 'block';
+                    form.style.display = (popup.dataset.canComment === 'true') ? '' : 'none';
                     fetchComments();
                 };
             });
@@ -88,10 +90,12 @@ if (!window.commentsInitialized) {
                         var rect = btn.getBoundingClientRect();
                         var scrollY = window.scrollY || window.pageYOffset;
                         popup.dataset.creativeId = creativeId;
+                        popup.dataset.canComment = btn.dataset.canComment;
                         popup.style.top = (rect.bottom + scrollY + 4) + 'px';
                         popup.style.right = (window.innerWidth - rect.right) + 'px';
                         popup.style.left = '';
                         popup.style.display = 'block';
+                        form.style.display = (popup.dataset.canComment === 'true') ? '' : 'none';
                         fetchComments(commentId);
                     }
                 }
