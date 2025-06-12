@@ -9,7 +9,7 @@
  * Consider organizing styles into separate files for maintainability.
  */
 body {
-    font-family: var(--font-sans), serif;
+    font-family: var(--font-sans);
     padding: 0;
     line-height: 1.6;
     background: var(--color-bg);
