@@ -84,17 +84,21 @@ class CreativesController < ApplicationController
       @child_creative = Creative.find_by(id: params[:child_id])
     end
 
-    if @creative.save
-      @child_creative.update(parent: @creative) if @child_creative
-      # Propagate all shares from the parent to the new child
-      if @creative.parent
-        CreativeShare.where(creative: @creative.parent).find_each do |parent_share|
-          CreativeShare.create!(creative: @creative, user: parent_share.user, permission: parent_share.permission)
+    respond_to do |format|
+      if @creative.save
+        @child_creative.update(parent: @creative) if @child_creative
+        # Propagate all shares from the parent to the new child
+        if @creative.parent
+          CreativeShare.where(creative: @creative.parent).find_each do |parent_share|
+            CreativeShare.create!(creative: @creative, user: parent_share.user, permission: parent_share.permission)
+          end
         end
+        format.html { redirect_to @creative }
+        format.json { render json: { id: @creative.id } }
+      else
+        format.html { render :new, status: :unprocessable_entity }
+        format.json { render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity }
       end
-      redirect_to @creative
-    else
-      render :new, status: :unprocessable_entity
     end
   end
 
