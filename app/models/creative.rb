@@ -112,7 +112,8 @@ class Creative < ApplicationRecord
     return progress if tag_ids.blank?
 
     tag_ids = Array(tag_ids).map(&:to_s)
-    child_values = children_with_permission(user).map do |child|
+    visible_children = children_with_permission(user)
+    child_values = visible_children.map do |child|
       child.progress_for_tags(tag_ids, user)
     end.compact
 
@@ -120,7 +121,11 @@ class Creative < ApplicationRecord
       child_values.sum.to_f / child_values.size
     else
       own_label_ids = tags.pluck(:label_id).map(&:to_s)
-      (own_label_ids & tag_ids).any? ? progress : nil
+      if (own_label_ids & tag_ids).any?
+        visible_children.any? ? 1.0 : progress
+      else
+        nil
+      end
     end
   end
 

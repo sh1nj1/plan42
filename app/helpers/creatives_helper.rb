@@ -38,6 +38,14 @@ module CreativesHelper
     end
   end
 
+  def render_progress_value(value)
+    content_tag(
+      :span,
+      number_to_percentage(value * 100, precision: 0),
+      class: "creative-progress-#{value == 1 ? 'complete' : 'incomplete'}"
+    )
+  end
+
   def render_creative_tree(creatives, level = 1, select_mode: false)
     safe_join(
       creatives.map do |creative|
