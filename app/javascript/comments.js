@@ -2,6 +2,32 @@ if (!window.commentsInitialized) {
     window.commentsInitialized = true;
 
     document.addEventListener('turbo:load', function() {
+        function isMobile() { return window.innerWidth <= 600; }
+        function openPopup(btn) {
+            popup.dataset.creativeId = btn.dataset.creativeId;
+            popup.dataset.canComment = btn.dataset.canComment;
+            form.style.display = (popup.dataset.canComment === 'true') ? '' : 'none';
+            if (isMobile()) {
+                popup.style.display = 'block';
+                popup.classList.add('open');
+            } else {
+                var rect = btn.getBoundingClientRect();
+                var scrollY = window.scrollY || window.pageYOffset;
+                popup.style.top = (rect.bottom + scrollY + 4) + 'px';
+                popup.style.right = (window.innerWidth - rect.right) + 'px';
+                popup.style.left = '';
+                popup.style.display = 'block';
+            }
+            fetchComments();
+        }
+        function closePopup() {
+            if (isMobile()) {
+                popup.classList.remove('open');
+                setTimeout(function() { popup.style.display = 'none'; }, 300);
+            } else {
+                popup.style.display = 'none';
+            }
+        }
         var popup = document.getElementById('comments-popup');
         var closeBtn = document.getElementById('close-comments-btn');
         var list = document.getElementById('comments-list');
@@ -13,25 +39,11 @@ if (!window.commentsInitialized) {
             const buttons = document.getElementsByName('show-comments-btn');
             buttons.forEach(function(btn) {
                 btn.onclick = function() {
-                    // Toggle: if popup is open, close it; otherwise, open and position
-                    if (popup.style.display === 'block') {
-                        popup.style.display = 'none';
-                        return;
-                    }
-                    popup.dataset.creativeId = btn.dataset.creativeId;
-                    popup.dataset.canComment = btn.dataset.canComment;
-                    // 버튼 위치 계산
-                    var rect = btn.getBoundingClientRect();
-                    var scrollY = window.scrollY || window.pageYOffset;
-                    popup.style.top = (rect.bottom + scrollY + 4) + 'px'; // 버튼 바로 아래에 4px 여유
-                    popup.style.right = (window.innerWidth - rect.right) + 'px';
-                    popup.style.left = '';
-                    popup.style.display = 'block';
-                    form.style.display = (popup.dataset.canComment === 'true') ? '' : 'none';
-                    fetchComments();
+                    if (popup.style.display === 'block') { closePopup(); return; }
+                    openPopup(btn);
                 };
             });
-            closeBtn.onclick = function() { popup.style.display = 'none'; };
+            closeBtn.onclick = closePopup;
             function fetchComments(highlightId) {
                 list.innerHTML = popup.dataset.loadingText;
                 fetch(`/creatives/${popup.dataset.creativeId}/comments`)
@@ -109,15 +121,7 @@ if (!window.commentsInitialized) {
                     var creativeId = match[1];
                     var btn = document.querySelector('[name="show-comments-btn"][data-creative-id="' + creativeId + '"]');
                     if (btn) {
-                        var rect = btn.getBoundingClientRect();
-                        var scrollY = window.scrollY || window.pageYOffset;
-                        popup.dataset.creativeId = creativeId;
-                        popup.dataset.canComment = btn.dataset.canComment;
-                        popup.style.top = (rect.bottom + scrollY + 4) + 'px';
-                        popup.style.right = (window.innerWidth - rect.right) + 'px';
-                        popup.style.left = '';
-                        popup.style.display = 'block';
-                        form.style.display = (popup.dataset.canComment === 'true') ? '' : 'none';
+                        openPopup(btn);
                         fetchComments(commentId);
                     }
                 }
