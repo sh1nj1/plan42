@@ -39,4 +39,19 @@ class CreativeTest < ActiveSupport::TestCase
 
     Current.reset
   end
+
+  test "progress_for_tags returns 1 when children filtered out" do
+    user = users(:one)
+    Current.session = OpenStruct.new(user: user)
+
+    parent = Creative.create!(user: user, description: "Parent", progress: 0.2)
+    Creative.create!(user: user, parent: parent, description: "Child", progress: 0.5)
+
+    label = Label.create!(name: "Tag", owner: user)
+    Tag.create!(creative_id: parent.id, label: label)
+
+    assert_equal 1.0, parent.progress_for_tags([ label.id ], user)
+
+    Current.reset
+  end
 end

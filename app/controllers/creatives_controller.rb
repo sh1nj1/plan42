@@ -42,6 +42,17 @@ class CreativesController < ApplicationController
       ancestor_ids = [ base_creative.id ] + base_creative.ancestors.pluck(:id)
       @shared_list = CreativeShare.where(creative_id: ancestor_ids).includes(:user)
     end
+
+    if params[:tags].present?
+      tag_ids = Array(params[:tags]).map(&:to_s)
+      roots = @creatives || []
+      progress_values = roots.map { |c| c.progress_for_tags(tag_ids) }.compact
+      if progress_values.any?
+        @overall_progress = progress_values.sum.to_f / progress_values.size
+      else
+        @overall_progress = 0
+      end
+    end
   end
 
   def show

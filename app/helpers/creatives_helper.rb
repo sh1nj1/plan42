@@ -34,8 +34,16 @@ module CreativesHelper
       else
         ""
       end
-      content_tag(:span, number_to_percentage(progress_value * 100, precision: 0), class: "creative-progress-#{progress_value == 1 ? "complete" : "incomplete"}") + comment_part
+      render_progress_value(progress_value) + comment_part
     end
+  end
+
+  def render_progress_value(value)
+    content_tag(
+      :span,
+      number_to_percentage(value * 100, precision: 0),
+      class: "creative-progress-#{value == 1 ? 'complete' : 'incomplete'}"
+    )
   end
 
   def render_creative_tree(creatives, level = 1, select_mode: false)
