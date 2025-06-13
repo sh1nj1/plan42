@@ -27,6 +27,7 @@
     <%= javascript_importmap_tags %>
   </head>
   <body>
+    <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
     <div class="notice"><%= notice %></div>
 
     <nav style="display: flex; flex-wrap: wrap;">
@@ -45,7 +46,7 @@
       <% if Current.user %>
         <%= link_to Current.user.email, user_path(Current.user) %>
         <form id="inbox_button_to">
-          <button id="inbox-menu-btn" type="button"><%= t('app.inbox') %><span id="inbox-badge"></span></button>
+          <button id="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user) %></button>
         </form>
       <% end %>
       <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
