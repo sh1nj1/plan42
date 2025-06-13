@@ -28,9 +28,16 @@ module CreativesHelper
 
     content_tag(:div, class: "creative-row-end") do
       comment_part = if creative.has_permission?(Current.user, :feedback)
-        button_tag("(#{creative.effective_origin.comments.size})", name: "show-comments-btn",
-                   "data-creative-id": creative.id,
-                   "data-can-comment": true)
+        comments_count = creative.effective_origin.comments.size
+        btn_text = comments_count.zero? ? "\u{1F4AC}" : "(#{comments_count})"
+        classes = [ "comments-btn" ]
+        classes << "no-comments" if comments_count.zero?
+        button_tag(
+          btn_text,
+          name: "show-comments-btn",
+          data: { creative_id: creative.id, can_comment: true },
+          class: classes.join(" ")
+        )
       else
         ""
       end
