@@ -94,7 +94,9 @@ builder:
 ssh:
   user: ec2-user
   keys_only: true
-  keys: [ "~/.ssh/id2.pem" ]
+  # keys: [ "~/.ssh/id2.pem" ]
+  key_data: ["<%= ENV['KAMAL_SSH_PRIVATE_KEY'].lines.join("\n") %>"]
+
   log_level: fatal
 
 # Use accessory services (secrets come from .kamal/secrets).

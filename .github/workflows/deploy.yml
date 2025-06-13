@@ -8,13 +8,27 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: prod
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.KAMAL_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Write Rails master.key
+        run: |
+          mkdir -p config
+          echo "${{ secrets.RAILS_MASTER_KEY }}" > config/master.key
+
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: .ruby-version
           bundler-cache: true
+
       - name: Deploy with Kamal
         run: ./bin/kamal deploy
