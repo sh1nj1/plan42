@@ -24,6 +24,10 @@ jobs:
           mkdir -p config
           echo "${{ secrets.RAILS_MASTER_KEY }}" > config/master.key
 
+      - name: Inject KAMAL_REGISTRY_PASSWORD into .kamal/secrets
+        run: |
+          sed -i.bak "s|KAMAL_REGISTRY_PASSWORD=.*|KAMAL_REGISTRY_PASSWORD=${{ secrets.KAMAL_REGISTRY_PASSWORD }}|" .kamal/secrets
+
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
