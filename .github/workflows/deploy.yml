@@ -35,4 +35,4 @@ jobs:
           bundler-cache: true
 
       - name: Deploy with Kamal
-        run: ./bin/kamal deploy
+        run: SERVER_VRERV1=${{ secrets.SERVER_VRERV1 }} ./bin/kamal deploy
