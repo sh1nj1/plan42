@@ -64,9 +64,10 @@
   <div class="creative-row" id="creative-markdown-block">
     <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
       <span>
-        <%= t('.creatives') %>
         <% if params[:tags].present? %>
-        (<%= render_tags(params[:tags]&.map { |tag_id| Label.find(tag_id) }, 'unstyled-link') %>)
+          <%= render_tags(params[:tags]&.map { |tag_id| Label.find(tag_id) }, 'unstyled-link') %>
+        <% else %>
+          <%= t('.creatives') %>
         <% end %>
       </span>
     </h1>
