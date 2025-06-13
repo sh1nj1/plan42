@@ -1,4 +1,5 @@
-<div class="comments-list">
+<div class="comments-list" id="comments_list">
+  <%= turbo_stream_from [creative, :comments] %>
   <% if comments.any? %>
     <% comments.each do |comment| %>
       <%= render partial: 'comments/comment', locals: { comment: comment } %>

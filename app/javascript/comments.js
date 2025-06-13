@@ -38,7 +38,7 @@ if (!window.commentsInitialized) {
                     .then(r => r.text()).then(html => {
                         list.innerHTML = html;
                         if (highlightId) {
-                            var el = document.getElementById('comment-' + highlightId);
+                            var el = document.getElementById('comment_' + highlightId);
                             if (el) {
                                 el.classList.add('highlight-flash');
                                 setTimeout(function(){ el.classList.remove('highlight-flash'); }, 2000);

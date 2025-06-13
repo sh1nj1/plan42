@@ -4,7 +4,7 @@ class CommentsController < ApplicationController
 
   def index
     @comments = @creative.comments.order(created_at: :desc)
-    render partial: "comments/list", locals: { comments: @comments }
+    render partial: "comments/list", locals: { comments: @comments, creative: @creative }
   end
 
   def create
