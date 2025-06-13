@@ -44,7 +44,9 @@
       <% end %>
       <% if Current.user %>
         <%= link_to Current.user.email, user_path(Current.user) %>
-        <button id="inbox-menu-btn" type="button"><%= t('app.inbox') %><span id="inbox-badge"></span></button>
+        <form id="inbox_button_to">
+          <button id="inbox-menu-btn" type="button"><%= t('app.inbox') %><span id="inbox-badge"></span></button>
+        </form>
       <% end %>
       <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
       <%= button_to t('app.sign_out'), session_path, method: :delete if authenticated? %>
