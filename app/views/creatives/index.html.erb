@@ -69,10 +69,14 @@
         (<%= render_tags(params[:tags]&.map { |tag_id| Label.find(tag_id) }, 'unstyled-link') %>)
         <% end %>
       </span>
-      <% unless @overall_progress.nil? %>
-        <%= render_progress_value(@overall_progress) %>
-      <% end %>
     </h1>
+    <div>
+      <h1 style="display: flex; align-items: center; gap: 1em;">
+        <% unless @overall_progress.nil? %>
+          <%= render_progress_value(@overall_progress) %>
+        <% end %>
+      </h1>
+    </div>
   </div>
 <% end %>
 
