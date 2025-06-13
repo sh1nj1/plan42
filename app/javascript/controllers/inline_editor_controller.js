@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
   static targets = ["display", "form"]
-  static values = { editUrl: String, updateUrl: String, parentId: Number }
+  static values = { editUrl: String, updateUrl: String, parentId: Number, siblingParentId: Number }
 
   connect() {
     this.isLoaded = false
@@ -79,9 +79,25 @@ export default class extends Controller {
   moveToNext() {
     this.toggleVisibility()
     const next = this.element.nextElementSibling
-    if (!next) return
-    const btn = next.querySelector('[data-action="inline-editor#showForm"]')
-    if (btn) btn.click()
+    if (next) {
+      const btn = next.querySelector('[data-action="inline-editor#showForm"]')
+      if (btn) { btn.click(); return }
+    }
+    fetch('/creatives', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+      },
+      body: JSON.stringify({ creative: { description: 'New Creative', parent_id: this.siblingParentIdValue } })
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.id) {
+          window.location.href = `/creatives/${data.id}?edit=1`
+        }
+      })
   }
 
   addChild() {

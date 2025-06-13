@@ -1,6 +1,6 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 <% if @parent_creative %>
-<div data-controller="inline-editor" data-inline-editor-edit-url-value="<%= edit_creative_path(@parent_creative) %>" data-inline-editor-update-url-value="<%= creative_path(@parent_creative) %>" data-inline-editor-parent-id-value="<%= @parent_creative.id %>">
+<div data-controller="inline-editor" data-inline-editor-edit-url-value="<%= edit_creative_path(@parent_creative) %>" data-inline-editor-update-url-value="<%= creative_path(@parent_creative) %>" data-inline-editor-parent-id-value="<%= @parent_creative.id %>" data-inline-editor-sibling-parent-id-value="<%= @parent_creative.parent_id %>">
 <% end %>
 
 <div class="creative-actions-row">

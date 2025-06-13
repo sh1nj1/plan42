@@ -3,7 +3,7 @@
 
 <section class="creative">
 
-  <section class="creative-info" data-controller="inline-editor" data-inline-editor-edit-url-value="<%= edit_creative_path(@creative) %>" data-inline-editor-update-url-value="<%= creative_path(@creative) %>" data-inline-editor-parent-id-value="<%= @creative.id %>">
+  <section class="creative-info" data-controller="inline-editor" data-inline-editor-edit-url-value="<%= edit_creative_path(@creative) %>" data-inline-editor-update-url-value="<%= creative_path(@creative) %>" data-inline-editor-parent-id-value="<%= @creative.id %>" data-inline-editor-sibling-parent-id-value="<%= @creative.parent_id %>">
     <% cache @creative do %>
       <% if @creative.parent %>
         <h1>
