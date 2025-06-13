@@ -46,14 +46,11 @@ class CreativesController < ApplicationController
     if params[:tags].present?
       tag_ids = Array(params[:tags]).map(&:to_s)
       roots = @creatives || []
-      progress_values = roots.select do |creative|
-        creative_label_ids = creative.tags.pluck(:label_id).map(&:to_s)
-        (creative_label_ids & tag_ids).any?
-      end.map { |c| c.progress_for_tags(tag_ids) }.compact
+      progress_values = roots.map { |c| c.progress_for_tags(tag_ids) }.compact
       if progress_values.any?
         @overall_progress = progress_values.sum.to_f / progress_values.size
       else
-        @overall_progress = nil
+        @overall_progress = 0
       end
     end
   end
