@@ -153,3 +153,17 @@
 .indent3 {
     margin-left: 0.4em;
 }
+
+.comments-btn.no-comments {
+    visibility: hidden;
+}
+
+.creative-row:hover .comments-btn.no-comments {
+    visibility: visible;
+}
+
+@media (max-width: 768px) {
+    .comments-btn.no-comments {
+        visibility: visible;
+    }
+}
