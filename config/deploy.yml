@@ -94,8 +94,8 @@ builder:
 ssh:
   user: ec2-user
   keys_only: true
-  # keys: [ "~/.ssh/id2.pem" ]
-  key_data: ["<%= ENV['KAMAL_SSH_PRIVATE_KEY'].lines.join("\n") %>"]
+  keys: [ "~/.ssh/id_vrerv1.pem" ]
+  # key_data: ["<%= ENV['KAMAL_SSH_PRIVATE_KEY'].lines.join("\n") %>"]
 
   log_level: fatal
 
