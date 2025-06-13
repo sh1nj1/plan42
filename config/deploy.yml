@@ -95,7 +95,8 @@ ssh:
   user: ec2-user
   keys_only: true
   keys: [ "~/.ssh/id_vrerv1.pem" ]
-  # key_data: ["<%= ENV['KAMAL_SSH_PRIVATE_KEY'].lines.join("\n") %>"]
+  # you can set key data as below, be aware it is commented in erb also
+  # key_data: ["<%#= ENV['KAMAL_SSH_PRIVATE_KEY'].lines.join("\n") %>"]
 
   log_level: fatal
 
