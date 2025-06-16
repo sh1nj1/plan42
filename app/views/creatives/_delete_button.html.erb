@@ -1,28 +1,12 @@
-<div class="delete-dropdown" style="display:inline-block;position:relative;">
-  <form id="button_to">
-    <button type="button" class="danger-link" id="delete-dropdown-btn">
-      <%= t('creatives.index.delete') %>
-    </button>
-  </form>
-  <div class="delete-options" id="delete-options-popup">
-    <%= button_to t('creatives.index.delete_only_this'), @parent_creative, method: :delete, form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_only_this') } }, params: {}, class: "danger-link delete-one" %>
-    <%= button_to t('creatives.index.delete_with_children'), @parent_creative, method: :delete, params: { delete_with_children: true }, form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_with_children') } }, class: "danger-link" %>
-  </div>
-</div>
-<script>
-    document.addEventListener('turbo:load', function() {
-        const btn = document.getElementById('delete-dropdown-btn');
-        const popup = document.getElementById('delete-options-popup');
-        if (btn && popup) {
-            btn.onclick = function(e) {
-                popup.style.display = (popup.style.display === 'block') ? 'none' : 'block';
-                e.stopPropagation();
-            };
-            document.addEventListener('click', function(e) {
-                if (!popup.contains(e.target) && e.target !== btn) {
-                    popup.style.display = 'none';
-                }
-            });
-        }
-    });
-</script>
+<%= render PopupMenuComponent.new(
+      button_content: t('creatives.index.delete'),
+      button_classes: 'danger-link',
+      menu_id: 'delete-options-popup') do %>
+  <%= button_to t('creatives.index.delete_only_this'), @parent_creative, method: :delete,
+      form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_only_this') } },
+      params: {}, class: 'danger-link popup-menu-item' %>
+  <%= button_to t('creatives.index.delete_with_children'), @parent_creative, method: :delete,
+      params: { delete_with_children: true },
+      form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_with_children') } },
+      class: 'danger-link' %>
+<% end %>

@@ -45,3 +45,27 @@
   line-height: 1;
   cursor: pointer;
 }
+
+.popup-menu-wrapper {
+  display: inline-block;
+  position: relative;
+}
+
+.popup-menu {
+  display: none;
+  position: absolute;
+  z-index: 1000;
+  background: var(--color-section-bg);
+  border: 1px solid var(--color-border);
+  padding: 0.5em;
+  box-shadow: 0 2px 8px var(--color-border);
+  min-width: 220px;
+  top: calc(100% + 4px);
+  left: 0;
+  transform: translateX(0);
+}
+
+.popup-menu-right {
+  left: auto;
+  right: 0;
+}
