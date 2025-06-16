@@ -42,9 +42,20 @@
         const modal = document.getElementById('share-creative-modal');
         const closeBtn = document.getElementById('close-share-modal');
         if (shareBtn && modal && closeBtn) {
-            shareBtn.onclick = function() { modal.style.display = 'flex'; };
-            closeBtn.onclick = function() { modal.style.display = 'none'; };
-            modal.onclick = function(e) { if (e.target === modal) modal.style.display = 'none'; };
+            shareBtn.onclick = function() {
+                modal.style.display = 'flex';
+                document.body.classList.add('no-scroll');
+            };
+            closeBtn.onclick = function() {
+                modal.style.display = 'none';
+                document.body.classList.remove('no-scroll');
+            };
+            modal.onclick = function(e) {
+                if (e.target === modal) {
+                    modal.style.display = 'none';
+                    document.body.classList.remove('no-scroll');
+                }
+            };
         }
     });
 </script>
