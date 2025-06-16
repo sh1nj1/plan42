@@ -35,7 +35,7 @@
 
     <nav style="display: flex; flex-wrap: wrap;">
       <form action="<%= creatives_path %>" method="get" style="display:inline; margin-right:1em;">
-        <input type="text" name="search" value="<%= params[:search] %>" placeholder="<%= t('app.search_placeholder') %>" style="padding:0.3em; border-radius:4px; border:1px solid var(--color-border);" />
+        <input type="text" id="search" name="search" value="<%= params[:search] %>" placeholder="<%= t('app.search_placeholder') %>" />
       </form>
       <%= link_to t('app.home'), root_path %>
       <% if authenticated? %>

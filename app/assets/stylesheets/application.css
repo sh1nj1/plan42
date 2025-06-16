@@ -8,6 +8,7 @@
  *
  * Consider organizing styles into separate files for maintainability.
  */
+
 body {
     font-family: var(--font-sans);
     padding: 0;
@@ -28,7 +29,7 @@ nav {
     justify-content: flex-end;
     align-items: center;
     font-size: 0.875em;
-    gap: 0.75rem;
+    gap: 0.2rem;
     max-width: 960px;
     margin: 0 auto;
     padding: 1rem;
@@ -36,8 +37,46 @@ nav {
     border-bottom: 1px solid var(--color-border);
 }
 
-nav a {
-    display: inline-block;
+nav a,
+nav button{
+    min-width: 2em;
+    line-height: 2.1;
+    font-size: 1.125em;
+    background: var(--color-bg);
+    color: var(--color-btn-text);
+    text-decoration: none;
+    padding: 0.25em 0.6em;
+    border-radius: 4px;
+    border: 1px solid var(--color-border);
+    transition: background 0.3s;
+}
+
+.creative-actions-row a,
+.creative-actions-row button {
+    line-height: 1.2;
+    font-size: 0.875em;
+    background: var(--color-btn-bg);
+    color: var(--color-btn-text);
+    text-decoration: none;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 0.25em 0.6em;
+    transition: background 0.2s;
+}
+
+nav a:hover,
+nav button:hover,
+.creative-actions-row a:hover,
+.creative-actions-row button:hover {
+    filter: brightness(var(--hover-brightness));
+}
+
+#search {
+    line-height: 2.1;
+    font-size: 1.125em;
+    background: var(--color-bg);
+    color: var(--color-btn-text);
+    padding:0.3em; border-radius:4px; border:1px solid var(--color-border);
 }
 
 main {
@@ -159,6 +198,7 @@ button {
     border-radius: 10px;
     padding: 0 4px;
     font-size: 0.75em;
+    line-height: 1.2;
     margin-left: 4px;
     display: none;
 }

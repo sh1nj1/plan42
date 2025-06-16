@@ -13,6 +13,7 @@
   --color-muted: #666;
   --color-drag-over: #e0e0e0;
   --color-drag-over-edge: #bbb;
+  --hover-brightness: 90%;
 }
 
 body.dark-mode {
@@ -27,6 +28,7 @@ body.dark-mode {
   --color-muted: #aaaaaa;
   --color-drag-over: #383a40;
   --color-drag-over-edge: #777;
+  --hover-brightness: 110%;
 }
 
 body {
