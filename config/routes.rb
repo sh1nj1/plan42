@@ -16,7 +16,7 @@ Rails.application.routes.draw do
 
   root "creatives#index"
 
-  resources :users, only: [ :new, :create, :index, :show ] do
+  resources :users, only: [ :new, :create, :index, :show, :update ] do
     member do
       get :edit_password
       patch :update_password

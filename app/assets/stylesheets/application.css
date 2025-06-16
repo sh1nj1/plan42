@@ -26,6 +26,7 @@ body {
 nav {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
     font-size: 0.875em;
     gap: 0.75rem;
     max-width: 960px;

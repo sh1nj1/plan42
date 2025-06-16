@@ -1,0 +1,11 @@
+.nav-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+#user-menu {
+  display: none;
+  position: absolute;
+  z-index: 1000;
+}
