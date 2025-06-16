@@ -22,10 +22,11 @@
     <%= stylesheet_link_tag :dark_mode %>
     <%= stylesheet_link_tag :print, media: 'print' %>
     <%= stylesheet_link_tag 'user_menu' %>
+    <%= stylesheet_link_tag 'popup' %>
 
     <%= javascript_include_tag 'dark_mode_toggle', defer: true %>
     <%= javascript_include_tag 'creatives', defer: true %>
-    <%= javascript_include_tag 'user_menu', defer: true %>
+    <%= javascript_include_tag 'popup_menu', defer: true %>
     <%= javascript_importmap_tags %>
   </head>
   <body>
@@ -49,15 +50,13 @@
         <form id="inbox_button_to">
           <button id="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user) %></button>
         </form>
-        <form id="user_menu_button_to">
-          <button id="user-menu-btn" type="button">
-            <%= render AvatarComponent.new(user: Current.user, size: 32, classes: 'nav-avatar avatar') %>
-          </button>
-        </form>
-        <div id="user-menu" class="popup-box">
+        <%= render PopupMenuComponent.new(
+          button_content: render(AvatarComponent.new(user: Current.user, size: 32, classes: 'nav-avatar avatar')),
+          menu_id: 'user-menu'
+        ) do %>
           <div><%= link_to t('users.profile'), user_path(Current.user) %></div>
           <div><%= button_to t('app.sign_out'), session_path, method: :delete %></div>
-        </div>
+        <% end %>
       <% end %>
       <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
       <a href="#" id="creative-guide-link" style="margin-left: 1em; font-size: 1.2em; text-decoration: none;">?</a>

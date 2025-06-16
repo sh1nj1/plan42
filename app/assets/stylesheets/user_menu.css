@@ -13,8 +13,3 @@
   margin-right: 0.4em;
 }
 
-#user-menu {
-  display: none;
-  position: absolute;
-  z-index: 1000;
-}
