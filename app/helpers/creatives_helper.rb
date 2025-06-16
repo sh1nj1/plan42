@@ -18,7 +18,15 @@ module CreativesHelper
     end)
   end
 
-  def render_creative_progress(creative)
+  def render_creative_tags(creative)
+    labels = creative.tags.includes(:label).map(&:label)
+    return "" if labels.empty?
+    content_tag(:div, class: "creative-tags") do
+      render_tags(labels, "unstyled-link")
+    end
+  end
+
+  def render_creative_progress(creative, select_mode: false)
     progress_value = if params[:tags].present?
       tag_ids = Array(params[:tags]).map(&:to_s)
       creative.progress_for_tags(tag_ids) || 0
@@ -41,7 +49,8 @@ module CreativesHelper
       else
         ""
       end
-      render_progress_value(progress_value) + comment_part
+      tags_part = select_mode ? render_creative_tags(creative) : ""
+      render_progress_value(progress_value) + comment_part + tags_part
     end
   end
 
@@ -89,7 +98,7 @@ module CreativesHelper
             wrapper.call {
               link_to(creative.effective_description(params[:tags]&.first), creative, class: "unstyled-link")
             }
-          end + render_creative_progress(creative)
+          end + render_creative_progress(creative, select_mode: select_mode)
         }
 
         skip = false
