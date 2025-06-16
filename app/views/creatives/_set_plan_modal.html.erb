@@ -1,6 +1,6 @@
 <div id="set-plan-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
-  <div style="background: var(--color-bg);padding:2em;border-radius:8px;min-width:320px;max-width:90vw;position:relative;">
-    <button id="close-set-plan-modal" style="position:absolute;top:0.5em;right:0.5em;">&times;</button>
+  <div class="popup-box" style="min-width:320px;max-width:90vw;">
+    <button id="close-set-plan-modal" class="popup-close-btn">&times;</button>
     <h2><%= t('creatives.index.set_plan_title', default: 'Set Plan for Selected Creatives') %></h2>
     <form id="set-plan-form" method="post" action="<%= set_plan_creatives_path %>">
       <%= csrf_meta_tags %>
