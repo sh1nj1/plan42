@@ -70,6 +70,14 @@
     white-space: nowrap;
 }
 
+.creative-tags {
+    margin-left: 10px;
+    text-align: right;
+    white-space: nowrap;
+    display: flex;
+    flex-wrap: wrap;
+}
+
 .creative-progress-complete {
     color: green;
     display: none;

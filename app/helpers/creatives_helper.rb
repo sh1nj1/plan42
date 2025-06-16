@@ -4,12 +4,12 @@ module CreativesHelper
     expanded ? "\u25BC" : "\u25B6" # ▼ or ▶
   end
 
-  def render_tags(labels, class_name = nil)
+  def render_tags(labels, class_name = nil, name_only = false)
     return "" if labels&.empty? or labels.nil?
 
     index = 0
     safe_join(labels.map do |label|
-      suffix = " 🗓#{label.target_date}" if label.type == "Plan"
+      suffix = " 🗓#{label.target_date}" if label.type == "Plan" and !name_only
       index += 1
       content_tag(:span, class: "tag") do
         (index == 1 ? "" : " ").html_safe +
@@ -18,7 +18,15 @@ module CreativesHelper
     end)
   end
 
-  def render_creative_progress(creative)
+  def render_creative_tags(creative)
+    labels = creative.tags&.includes(:label)&.map(&:label)&.compact
+    return "" if labels&.empty?
+    content_tag(:div, class: "creative-tags", style: "display: none;") do
+      render_tags(labels, "unstyled-link", true)
+    end
+  end
+
+  def render_creative_progress(creative, select_mode: false)
     progress_value = if params[:tags].present?
       tag_ids = Array(params[:tags]).map(&:to_s)
       creative.progress_for_tags(tag_ids) || 0
@@ -39,9 +47,9 @@ module CreativesHelper
           class: classes.join(" ")
         )
       else
-        ""
+        "".html_safe
       end
-      render_progress_value(progress_value) + comment_part
+      render_progress_value(progress_value) + comment_part + "<br />".html_safe + (creative.tags ? render_creative_tags(creative) : "".html_safe)
     end
   end
 
@@ -89,7 +97,7 @@ module CreativesHelper
             wrapper.call {
               link_to(creative.effective_description(params[:tags]&.first), creative, class: "unstyled-link")
             }
-          end + render_creative_progress(creative)
+          end + render_creative_progress(creative, select_mode: select_mode)
         }
 
         skip = false
