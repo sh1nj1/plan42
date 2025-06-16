@@ -9,9 +9,20 @@ if (!window.isSetPlanModalInitialized) {
         var idsInput = document.getElementById('selected-creative-ids-input');
         var removeBtn = document.getElementById('remove-plan-btn');
         if (setPlanBtn && modal && closeBtn) {
-            setPlanBtn.onclick = function() { modal.style.display = 'flex'; };
-            closeBtn.onclick = function() { modal.style.display = 'none'; };
-            modal.onclick = function(e) { if (e.target === modal) modal.style.display = 'none'; };
+            setPlanBtn.onclick = function() {
+                modal.style.display = 'flex';
+                document.body.classList.add('no-scroll');
+            };
+            closeBtn.onclick = function() {
+                modal.style.display = 'none';
+                document.body.classList.remove('no-scroll');
+            };
+            modal.onclick = function(e) {
+                if (e.target === modal) {
+                    modal.style.display = 'none';
+                    document.body.classList.remove('no-scroll');
+                }
+            };
         }
         if (form && idsInput) {
             form.onsubmit = function() {

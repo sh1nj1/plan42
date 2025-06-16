@@ -18,6 +18,12 @@ body {
     margin: 0;
 }
 
+/* Prevent background scrolling when popups or panels are open */
+.no-scroll {
+    overflow: hidden !important;
+    height: 100%;
+}
+
 nav {
     display: flex;
     justify-content: flex-end;

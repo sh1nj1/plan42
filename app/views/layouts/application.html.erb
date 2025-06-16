@@ -187,12 +187,14 @@
             panel.classList.add('open');
             localStorage.setItem('inboxOpen', '1');
             loadInbox();
+            document.body.classList.add('no-scroll');
           }
 
           function closePanel() {
             if (!panel) return;
             panel.classList.remove('open');
             localStorage.removeItem('inboxOpen');
+            document.body.classList.remove('no-scroll');
           }
 
           if (btn && panel) {

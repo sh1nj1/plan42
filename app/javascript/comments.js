@@ -10,6 +10,7 @@ if (!window.commentsInitialized) {
             if (isMobile()) {
                 popup.style.display = 'block';
                 popup.classList.add('open');
+                document.body.classList.add('no-scroll');
             } else {
                 var rect = btn.getBoundingClientRect();
                 var scrollY = window.scrollY || window.pageYOffset;
@@ -17,6 +18,7 @@ if (!window.commentsInitialized) {
                 popup.style.right = (window.innerWidth - rect.right) + 'px';
                 popup.style.left = '';
                 popup.style.display = 'block';
+                document.body.classList.add('no-scroll');
             }
             fetchComments();
         }
@@ -27,6 +29,7 @@ if (!window.commentsInitialized) {
             } else {
                 popup.style.display = 'none';
             }
+            document.body.classList.remove('no-scroll');
         }
         var popup = document.getElementById('comments-popup');
         var closeBtn = document.getElementById('close-comments-btn');
