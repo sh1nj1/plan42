@@ -32,6 +32,7 @@
 <%#= button_to t('.recalculate_progress'), recalculate_progress_creatives_path, method: :post, form: { data: { turbo_confirm: t('.recalculate_all_parent_progress') } } if authenticated? %>
 
 <%= stylesheet_link_tag 'comments_popup', media: 'all' %>
+<%= stylesheet_link_tag 'mention_menu', media: 'all' %>
 
 <div class="tags">
   <% labels = @parent_creative&.tags&.map { |tag| tag.label } %>
@@ -100,6 +101,7 @@
     <textarea name="comment[content]" rows="2" required></textarea>
     <button type="submit"><%= t('comments.add_comment') %></button>
   </form>
+  <%= render UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <br/>
   <div id="comments-list"><%= t('app.loading') %></div>
 </div>
@@ -111,5 +113,6 @@
 <%= javascript_include_tag 'creatives_expansion', defer: true %>
 <%= javascript_include_tag 'select_mode', defer: true %>
 <%= javascript_include_tag 'comments', defer: true %>
+<%= javascript_include_tag 'mention_menu', defer: true %>
 <%= javascript_include_tag 'action_text_attachment_link', defer: true %>
 <%= javascript_include_tag 'export_to_markdown', defer: true %>
