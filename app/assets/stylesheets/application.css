@@ -95,6 +95,11 @@ button {
     margin: 0.5em auto;
 }
 
+#plans-list-area hr {
+    border: 0;
+    border-top: 1px solid var(--color-border);
+}
+
 #inbox-panel.slide-panel {
     position: fixed;
     top: 0;
