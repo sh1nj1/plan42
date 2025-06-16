@@ -89,12 +89,12 @@
   <% end %>
 </div>
 
-<div id="comments-popup"
+<div id="comments-popup" class="popup-box"
      data-loading-text="<%= t('app.loading') %>"
      data-delete-confirm-text="<%= t("comments.delete_confirm") %>"
      data-add-comment-text="<%= t('comments.add_comment') %>"
      data-update-comment-text="<%= t('comments.update_comment') %>">
-  <button id="close-comments-btn">&times;</button>
+  <button id="close-comments-btn" class="popup-close-btn">&times;</button>
   <h3 style="margin-top:0;"><%= t('comments.comments') %></h3>
   <form id="new-comment-form" style="display:none;">
     <textarea name="comment[content]" rows="2" required></textarea>
