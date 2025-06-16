@@ -3,7 +3,23 @@ if (!window.commentsInitialized) {
 
     document.addEventListener('turbo:load', function() {
         function isMobile() { return window.innerWidth <= 600; }
+        var currentBtn = null;
+        function updatePosition() {
+            if (!currentBtn || isMobile()) return;
+            var rect = currentBtn.getBoundingClientRect();
+            var scrollY = window.scrollY || window.pageYOffset;
+            var top = rect.bottom + scrollY + 4;
+            var bottom = top + popup.offsetHeight;
+            var viewportBottom = scrollY + window.innerHeight;
+            if (bottom > viewportBottom) {
+                top = Math.max(scrollY + 4, viewportBottom - popup.offsetHeight - 4);
+            }
+            popup.style.top = top + 'px';
+            popup.style.right = (window.innerWidth - rect.right) + 'px';
+            popup.style.left = '';
+        }
         function openPopup(btn) {
+            currentBtn = btn;
             popup.dataset.creativeId = btn.dataset.creativeId;
             popup.dataset.canComment = btn.dataset.canComment;
             form.style.display = (popup.dataset.canComment === 'true') ? '' : 'none';
@@ -12,19 +28,9 @@ if (!window.commentsInitialized) {
                 popup.classList.add('open');
                 document.body.classList.add('no-scroll');
             } else {
-                var rect = btn.getBoundingClientRect();
-                var scrollY = window.scrollY || window.pageYOffset;
                 popup.style.display = 'block';
-                var top = rect.bottom + scrollY + 4;
-                var bottom = top + popup.offsetHeight;
-                var viewportBottom = scrollY + window.innerHeight;
-                if (bottom > viewportBottom) {
-                    top = Math.max(scrollY + 4, viewportBottom - popup.offsetHeight - 4);
-                }
-                popup.style.top = top + 'px';
-                popup.style.right = (window.innerWidth - rect.right) + 'px';
-                popup.style.left = '';
                 document.body.classList.add('no-scroll');
+                updatePosition();
             }
             fetchComments();
         }
@@ -58,6 +64,7 @@ if (!window.commentsInitialized) {
                 fetch(`/creatives/${popup.dataset.creativeId}/comments`)
                     .then(r => r.text()).then(html => {
                         list.innerHTML = html;
+                        updatePosition();
                         if (highlightId) {
                             var el = document.getElementById('comment_' + highlightId);
                             if (el) {
