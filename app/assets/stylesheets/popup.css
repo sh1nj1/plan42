@@ -7,6 +7,17 @@
   position: relative;
 }
 
+/* Share popup specific tweaks */
+#share-creative-modal .popup-box {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+#share-creative-modal .share-grid {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
 .share-grid {
   list-style: none;
   padding: 0;
