@@ -74,7 +74,8 @@
     margin-left: 10px;
     text-align: right;
     white-space: nowrap;
-    display: none;
+    display: flex;
+    flex-wrap: wrap;
 }
 
 .creative-progress-complete {

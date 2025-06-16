@@ -4,12 +4,12 @@ module CreativesHelper
     expanded ? "\u25BC" : "\u25B6" # ▼ or ▶
   end
 
-  def render_tags(labels, class_name = nil)
+  def render_tags(labels, class_name = nil, name_only = false)
     return "" if labels&.empty? or labels.nil?
 
     index = 0
     safe_join(labels.map do |label|
-      suffix = " 🗓#{label.target_date}" if label.type == "Plan"
+      suffix = " 🗓#{label.target_date}" if label.type == "Plan" and !name_only
       index += 1
       content_tag(:span, class: "tag") do
         (index == 1 ? "" : " ").html_safe +
@@ -19,10 +19,10 @@ module CreativesHelper
   end
 
   def render_creative_tags(creative)
-    labels = creative.tags.includes(:label).map(&:label)
-    return "" if labels.empty?
-    content_tag(:div, class: "creative-tags") do
-      render_tags(labels, "unstyled-link")
+    labels = creative.tags&.includes(:label)&.map(&:label)&.compact
+    return "" if labels&.empty?
+    content_tag(:div, class: "creative-tags", style: "display: none;") do
+      render_tags(labels, "unstyled-link", true)
     end
   end
 
@@ -47,10 +47,9 @@ module CreativesHelper
           class: classes.join(" ")
         )
       else
-        ""
+        "".html_safe
       end
-      tags_part = select_mode ? render_creative_tags(creative) : ""
-      render_progress_value(progress_value) + comment_part + tags_part
+      render_progress_value(progress_value) + comment_part + "<br />".html_safe + (creative.tags ? render_creative_tags(creative) : "".html_safe)
     end
   end
 
