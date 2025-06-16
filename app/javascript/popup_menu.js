@@ -11,11 +11,11 @@ if (!window.popupMenuInitialized) {
           menu.style.display = 'none';
         } else {
           menu.style.display = 'block';
-          menu.style.left = '0px';
+          menu.style.transform = '';
           var rect = menu.getBoundingClientRect();
           var overflow = rect.right - window.innerWidth;
           if (overflow > 0) {
-            menu.style.left = '-' + (overflow + 4) + 'px';
+            menu.style.transform = 'translateX(-' + (overflow + 4) + 'px)';
           }
         }
         e.stopPropagation();
