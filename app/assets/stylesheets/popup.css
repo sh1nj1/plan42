@@ -57,6 +57,6 @@
   box-shadow: 0 2px 8px var(--color-border);
   min-width: 220px;
   top: calc(100% + 4px);
-  right: 0;
+  left: 0;
   transform: translateX(0);
 }
