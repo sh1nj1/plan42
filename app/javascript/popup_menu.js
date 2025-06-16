@@ -12,11 +12,17 @@ if (!window.popupMenuInitialized) {
         } else {
           menu.style.display = 'block';
           menu.style.transform = '';
-          var rect = menu.getBoundingClientRect();
-          var overflow = rect.right - window.innerWidth;
-          if (overflow > 0) {
-            menu.style.transform = 'translateX(-' + (overflow + 4) + 'px)';
-          }
+          requestAnimationFrame(function() {
+            var rect = menu.getBoundingClientRect();
+            var shift = 0;
+            if (rect.right > window.innerWidth) {
+              shift = rect.right - window.innerWidth + 4;
+              menu.style.transform = 'translateX(-' + shift + 'px)';
+            } else if (rect.left < 0) {
+              shift = -rect.left + 4;
+              menu.style.transform = 'translateX(' + shift + 'px)';
+            }
+          });
         }
         e.stopPropagation();
       });

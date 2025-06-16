@@ -2,7 +2,7 @@
   <button type="button" class="popup-menu-toggle <%= button_classes %>" data-menu-id="<%= menu_id %>">
     <%= raw button_content %>
   </button>
-  <div id="<%= menu_id %>" class="popup-menu">
+  <div id="<%= menu_id %>" class="popup-menu <%= 'popup-menu-right' if align.to_sym == :right %>">
     <%= content %>
   </div>
 </div>

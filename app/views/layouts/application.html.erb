@@ -52,7 +52,8 @@
         </form>
         <%= render PopupMenuComponent.new(
           button_content: render(AvatarComponent.new(user: Current.user, size: 32, classes: 'nav-avatar avatar')),
-          menu_id: 'user-menu'
+          menu_id: 'user-menu',
+          align: :right
         ) do %>
           <div><%= link_to t('users.profile'), user_path(Current.user) %></div>
           <div><%= button_to t('app.sign_out'), session_path, method: :delete %></div>
