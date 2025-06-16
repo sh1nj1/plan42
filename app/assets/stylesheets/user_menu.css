@@ -4,6 +4,15 @@
   border-radius: 50%;
 }
 
+.avatar {
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.comment-avatar {
+  margin-right: 0.4em;
+}
+
 #user-menu {
   display: none;
   position: absolute;

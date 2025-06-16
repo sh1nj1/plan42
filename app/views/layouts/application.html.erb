@@ -51,7 +51,7 @@
         </form>
         <form id="user_menu_button_to">
           <button id="user-menu-btn" type="button">
-            <%= image_tag user_avatar_url(Current.user), class: 'nav-avatar' %>
+            <%= render AvatarComponent.new(user: Current.user, size: 32, classes: 'nav-avatar avatar') %>
           </button>
         </form>
         <div id="user-menu" class="popup-box">

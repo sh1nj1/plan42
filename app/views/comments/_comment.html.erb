@@ -1,5 +1,6 @@
 <div class="comment-item" id="<%= dom_id(comment) %>">
   <div>
+    <%= render AvatarComponent.new(user: comment.user, size: 20, classes: 'avatar comment-avatar') %>
     <strong><%= comment.user&.email || t('comments.anonymous') %></strong>
     <span>· <%= t('datetime.ago', time: time_ago_in_words(comment.created_at)) %></span>
     <% if comment.user == Current.user %>
