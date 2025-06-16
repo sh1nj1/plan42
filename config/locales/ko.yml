@@ -37,3 +37,29 @@ ko:
       subject: "인박스 요약"
       greeting: "읽지 않은 메세지 목록입니다:"
       view: "보기"
+
+  subscribers:
+    subscribed: "구독되었습니다."
+    unsubscribed: "구독이 취소되었습니다."
+
+  passwords:
+    instructions_sent: "해당 이메일 주소가 존재한다면 비밀번호 재설정 안내를 전송했습니다."
+    reset: "비밀번호가 재설정되었습니다."
+    mismatch: "비밀번호가 일치하지 않습니다."
+    invalid_link: "비밀번호 재설정 링크가 유효하지 않거나 만료되었습니다."
+
+  creative_mailer:
+    in_stock:
+      subject: "좋은 소식입니다!"
+      message: "%{description} 이(가) 다시 재고가 있습니다."
+      unsubscribe: "구독 취소"
+
+  invitation_mailer:
+    invite:
+      text: "\"%{description}\" 에 협업 초대를 받았습니다. 다음 링크로 참여하세요:"
+      html: "\"%{description}\" 에 협업 초대를 받았습니다. 15일 이내에 %{link}를 클릭하여 수락하세요."
+
+  user_mailer:
+    email_verification:
+      text: "다음 링크를 방문하여 이메일을 인증해주세요:"
+      html: "%{link}를 클릭하여 이메일을 인증하세요."

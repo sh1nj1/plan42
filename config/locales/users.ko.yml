@@ -10,6 +10,8 @@ ko:
       sign_up: "회원가입"
       back_to_sign_in: "로그인 화면으로 돌아가기"
       success_sign_up: "회원가입이 완료되었습니다. 이메일을 확인해 인증해주세요."
+    index:
+      title: "사용자"
     sessions:
       new:
         forgot_password: "비밀번호를 잊으셨나요?"

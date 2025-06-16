@@ -1,5 +1,5 @@
-<<h1>Good news!</h1>
+<h1><%= t('creative_mailer.in_stock.subject') %></h1>
 
-<p><%= link_to @creative.description, creative_url(@creative) %> is back in stock.</p>
+<p><%= t('creative_mailer.in_stock.message', description: link_to(@creative.description, creative_url(@creative))) %></p>
 
-<%= link_to "Unsubscribe", unsubscribe_url(token: params[:subscriber].generate_token_for(:unsubscribe)) %>
+<%= link_to t('creative_mailer.in_stock.unsubscribe'), unsubscribe_url(token: params[:subscriber].generate_token_for(:unsubscribe)) %>

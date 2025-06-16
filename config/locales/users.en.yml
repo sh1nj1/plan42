@@ -10,6 +10,8 @@ en:
       sign_up: "Sign Up"
       back_to_sign_in: "Back to Sign In"
       success_sign_up: "Account created successfully! Please check your email to verify."
+    index:
+      title: "Users"
     sessions:
       new:
         forgot_password: "Forgot password?"

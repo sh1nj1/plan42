@@ -1,3 +1,2 @@
-You have been invited to collaborate on "<%= @invitation.creative.description.to_plain_text %>".
-Join using this link:
+<%= t('invitation_mailer.invite.text', description: @invitation.creative.description.to_plain_text) %>
 <%= invite_url(token: @invitation.generate_token_for(:invite)) %>

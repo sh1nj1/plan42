@@ -5,6 +5,7 @@ en:
       new_creative: "Add"
       new_sub_creative: "New sub-creative"
       edit: "Edit"
+      edit_creative: "Edit Creative"
       append_as_parent_creative: "New upper-creative"
       delete: "Delete"
       delete_only_this: "Delete only this Creative"
@@ -25,6 +26,7 @@ en:
       drop_or_click_markdown: "Drop or click here to select a markdown file"
       import_markdown: "Import Markdown"
       share_creative: "Share Creative"
+      filter: "Filter"
       shared_with: "Shared With"
       unknown_user: "Unknown user"
       user_email: "User Email"
@@ -60,3 +62,10 @@ en:
       submit: "Save"
     help:
       add_child_creative: "Add child creative"
+    inventory:
+      progress_label: "Progress"
+      completed: "Completed"
+      todo: "Todo"
+      notify_me: "Email me when is progressing."
+      email_placeholder: "you@example.com"
+      submit: "Submit"

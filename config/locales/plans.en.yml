@@ -3,3 +3,4 @@ en:
     add_plan: "Add Plan"
     target_date: "Target Date"
     plan_name: "Plan Name"
+    created: "Plan was successfully created."

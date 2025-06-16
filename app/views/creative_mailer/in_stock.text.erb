@@ -1,6 +1,6 @@
-Good news!
+<%= t('creative_mailer.in_stock.subject') %>
 
-<%= @creative.description %> is back in stock.
+<%= t('creative_mailer.in_stock.message', description: @creative.description) %>
 <%= creative_url(@creative) %>
 
-Unsubscribe: <%= unsubscribe_url(token: params[:subscriber].generate_token_for(:unsubscribe)) %>
+<%= t('creative_mailer.in_stock.unsubscribe') %>: <%= unsubscribe_url(token: params[:subscriber].generate_token_for(:unsubscribe)) %>

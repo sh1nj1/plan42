@@ -4,7 +4,7 @@ class SubscribersController < ApplicationController
 
     def create
       @creative.subscribers.where(subscriber_params).first_or_create
-      redirect_to @creative, notice: "You are now subscribed."
+      redirect_to @creative, notice: t("subscribers.subscribed")
     end
 
     private

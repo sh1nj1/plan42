@@ -66,3 +66,29 @@ en:
       subject: "Your inbox summary"
       greeting: "Here are your unread messages:"
       view: "View"
+
+  subscribers:
+    subscribed: "You are now subscribed."
+    unsubscribed: "Unsubscribed successfully."
+
+  passwords:
+    instructions_sent: "Password reset instructions sent (if user with that email address exists)."
+    reset: "Password has been reset."
+    mismatch: "Passwords did not match."
+    invalid_link: "Password reset link is invalid or has expired."
+
+  creative_mailer:
+    in_stock:
+      subject: "Good news!"
+      message: "%{description} is back in stock."
+      unsubscribe: "Unsubscribe"
+
+  invitation_mailer:
+    invite:
+      text: "You have been invited to collaborate on \"%{description}\". Join using this link:"
+      html: "You have been invited to collaborate on \"%{description}\". Click %{link} to accept within 15 days."
+
+  user_mailer:
+    email_verification:
+      text: "Please verify your email by visiting the following link:"
+      html: "Please verify your email by clicking %{link}."

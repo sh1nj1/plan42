@@ -1,2 +1,2 @@
-Please verify your email by visiting the following link:
+<%= t('user_mailer.email_verification.text') %>
 <%= verify_url(token: @user.generate_token_for(:email_verification)) %>
