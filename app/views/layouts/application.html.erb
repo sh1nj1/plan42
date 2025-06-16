@@ -206,6 +206,22 @@
             document.body.classList.remove('no-scroll');
           }
 
+          var startX = null;
+          if (panel) {
+            panel.addEventListener('touchstart', function(e) {
+              startX = e.touches[0].clientX;
+            });
+            panel.addEventListener('touchend', function(e) {
+              if (startX !== null) {
+                var diffX = e.changedTouches[0].clientX - startX;
+                if (diffX > 50) {
+                  closePanel();
+                }
+              }
+              startX = null;
+            });
+          }
+
           if (btn && panel) {
             btn.addEventListener('click', function() {
               if (panel.classList.contains('open')) {
