@@ -38,6 +38,12 @@ class UsersController < ApplicationController
     render json: { exists: user.present? }
   end
 
+  def search
+    term = params[:q].to_s.strip.downcase
+    users = User.where("email LIKE ?", "#{term}%").limit(5)
+    render json: users.map { |u| { email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
+  end
+
   # List all users
   def index
     @users = User.all

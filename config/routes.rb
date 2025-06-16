@@ -23,6 +23,7 @@ Rails.application.routes.draw do
     end
     collection do
       get :exists
+      get :search
     end
   end
 
