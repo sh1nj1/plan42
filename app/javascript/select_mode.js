@@ -14,6 +14,9 @@ if (!window.isSelectModeInitialized) {
             Array.from(document.getElementsByClassName("creative-tags")).forEach(function(element) {
                 element.style.display = element.style.display === 'none' ? '' : 'none';
             });
+            Array.from(document.getElementsByClassName("comments-btn")).forEach(function(element) {
+                element.style.display = element.style.display === 'none' ? '' : 'none';
+            });
             const selectAllBtn = document.getElementById('select-all-creatives')
             if (selectAllBtn) {
                 selectAllBtn.style.display = selectAllBtn.style.display === 'none' ? '' : 'none';
