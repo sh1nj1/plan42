@@ -11,8 +11,9 @@ if (!window.mentionMenuInitialized) {
 
     function position() {
       var rect = textarea.getBoundingClientRect();
-      menu.style.top = rect.bottom + window.scrollY + 'px';
-      menu.style.left = rect.left + window.scrollX + 'px';
+      var parentRect = menu.offsetParent.getBoundingClientRect();
+      menu.style.top = (rect.bottom - parentRect.top) + 'px';
+      menu.style.left = (rect.left - parentRect.left) + 'px';
     }
 
     function hide() {
@@ -39,8 +40,8 @@ if (!window.mentionMenuInitialized) {
         list.appendChild(li);
       });
       if (users.length > 0) {
-        position();
-        menu.style.display = 'block';
+          menu.style.display = 'block';
+          position();
       } else {
         hide();
       }

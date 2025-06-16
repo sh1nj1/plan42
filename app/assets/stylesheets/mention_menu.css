@@ -1,6 +1,6 @@
 .mention-popup {
   position: absolute;
-  z-index: 1000;
+  z-index: 1100;
   background: var(--color-section-bg);
   border: 1px solid var(--color-border);
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
