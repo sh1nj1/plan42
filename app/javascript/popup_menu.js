@@ -7,7 +7,17 @@ if (!window.popupMenuInitialized) {
       if (!menu) return;
 
       btn.addEventListener('click', function(e) {
-        menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
+        if (menu.style.display === 'block') {
+          menu.style.display = 'none';
+        } else {
+          menu.style.display = 'block';
+          menu.style.left = '0px';
+          var rect = menu.getBoundingClientRect();
+          var overflow = rect.right - window.innerWidth;
+          if (overflow > 0) {
+            menu.style.left = '-' + (overflow + 4) + 'px';
+          }
+        }
         e.stopPropagation();
       });
 
