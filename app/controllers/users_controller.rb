@@ -48,6 +48,15 @@ class UsersController < ApplicationController
     @user = User.find(params[:id])
   end
 
+  def update
+    @user = User.find(params[:id])
+    if @user.update(avatar_params)
+      redirect_to user_path(@user), notice: t("users.avatar_updated")
+    else
+      render :show, status: :unprocessable_entity
+    end
+  end
+
   # GET /users/:id/edit_password
   def edit_password
     @user = User.find(params[:id])
@@ -74,5 +83,9 @@ class UsersController < ApplicationController
   private
   def user_params
     params.require(:user).permit(:email, :password, :password_confirmation)
+  end
+
+  def avatar_params
+    params.require(:user).permit(:avatar, :avatar_url)
   end
 end

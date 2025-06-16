@@ -4,6 +4,8 @@ class User < ApplicationRecord
   has_many :creatives
   has_many :labels, foreign_key: :owner_id
 
+  has_one_attached :avatar
+
   normalizes :email, with: ->(e) { e.strip.downcase }
 
   validates :email, presence: true, uniqueness: true,

@@ -21,9 +21,11 @@
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
     <%= stylesheet_link_tag :dark_mode %>
     <%= stylesheet_link_tag :print, media: 'print' %>
+    <%= stylesheet_link_tag 'user_menu' %>
 
     <%= javascript_include_tag 'dark_mode_toggle', defer: true %>
     <%= javascript_include_tag 'creatives', defer: true %>
+    <%= javascript_include_tag 'user_menu', defer: true %>
     <%= javascript_importmap_tags %>
   </head>
   <body>
@@ -44,13 +46,20 @@
         <%= link_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)) %>
       <% end %>
       <% if Current.user %>
-        <%= link_to Current.user.email, user_path(Current.user) %>
+        <form id="user_menu_button_to">
+          <button id="user-menu-btn" type="button">
+            <%= image_tag user_avatar_url(Current.user), class: 'nav-avatar' %>
+          </button>
+        </form>
+        <div id="user-menu" class="popup-box">
+          <div><%= link_to t('users.profile'), user_path(Current.user) %></div>
+          <div><%= button_to t('app.sign_out'), session_path, method: :delete %></div>
+        </div>
         <form id="inbox_button_to">
           <button id="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user) %></button>
         </form>
       <% end %>
       <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
-      <%= button_to t('app.sign_out'), session_path, method: :delete if authenticated? %>
       <a href="#" id="creative-guide-link" style="margin-left: 1em; font-size: 1.2em; text-decoration: none;">?</a>
     </nav>
 

@@ -5,4 +5,18 @@
   <%= @user.email %>
 </p>
 
+<div>
+  <%= image_tag user_avatar_url(@user, size: 80), style: 'width:80px;height:80px;border-radius:40px;' %>
+</div>
+
+<%= form_with model: @user, url: user_path(@user), method: :patch, local: true, html: { multipart: true } do |f| %>
+  <div>
+    <%= f.file_field :avatar %>
+  </div>
+  <div>
+    <%= f.text_field :avatar_url, placeholder: t('users.avatar_url') %>
+  </div>
+  <%= f.submit t('users.update_avatar') %>
+<% end %>
+
 <%= link_to t('users.change_password'), edit_password_user_path %>
