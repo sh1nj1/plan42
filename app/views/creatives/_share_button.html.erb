@@ -5,19 +5,6 @@
   <div class="popup-box" style="min-width:320px;max-width:90vw;">
     <button id="close-share-modal" class="popup-close-btn">&times;</button>
     <h2><%= t('creatives.index.share_creative') %></h2>
-    <% if @shared_list.any? %>
-      <div style="margin-bottom:1em;">
-        <strong><%= t('creatives.index.shared_with') %>:</strong>
-        <ul style="padding-left:1.5em;">
-          <% @shared_list.each do |share| %>
-            <li>
-              <%= share.user&.email || t('creatives.index.unknown_user') %> - <%= t(".permission_#{share.permission}") %>
-              <%= button_to '×', creative_creative_share_path(@parent_creative || @creative, share), method: :delete, form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_share') } }, class: 'delete-share-btn', style: 'margin-left:0.5em;padding:0 0.5em;' %>
-            </li>
-          <% end %>
-        </ul>
-      </div>
-    <% end %>
     <form id="share-creative-form" action="<%= creative_creative_shares_path(@parent_creative || @creative) %>" method="post" data-controller="share-invite">
       <%= csrf_meta_tags %>
       <div style="margin-bottom:1em;">
@@ -25,7 +12,6 @@
         <input type="email" name="user_email" id="share-user-email" required style="width:100%;" data-share-invite-target="email" data-action="blur->share-invite#check" />
       </div>
       <div style="margin-bottom:1em;">
-        <label for="share-permission"><%= t('creatives.index.permission') %></label>
         <select name="permission" id="share-permission" style="width:100%;">
           <option value="read"><%= t('creatives.index.permission_read') %></option>
           <option value="feedback"><%= t('creatives.index.permission_feedback') %></option>
@@ -34,6 +20,22 @@
       </div>
       <button type="submit" class="btn btn-primary" data-share-invite-target="submit" data-share="<%= t('creatives.index.share') %>" data-invite="<%= t('creatives.index.invite') %>"><%= t('creatives.index.share') %></button>
     </form>
+    <% if @shared_list.any? %>
+      <div style="margin-top:1em;">
+        <strong><%= t('creatives.index.shared_with') %>:</strong>
+        <ul class="share-grid">
+          <% @shared_list.each do |share| %>
+            <li>
+              <span><%= share.user&.email || t('creatives.index.unknown_user') %></span>
+              <span><%= t("creatives.index.permission_#{share.permission}") %></span>
+              <span>
+                <%= button_to '×', creative_creative_share_path(@parent_creative || @creative, share), method: :delete, form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_share') } }, class: 'delete-share-btn', style: 'padding:0 0.5em;' %>
+              </span>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
   </div>
 </div>
 <script>
