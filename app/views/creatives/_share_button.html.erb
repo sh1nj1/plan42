@@ -25,6 +25,9 @@
         <ul class="share-grid">
           <% @shared_list.each do |share| %>
             <li>
+              <span>
+                <%= render AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
+              </span>
               <span><%= share.user&.email || t('creatives.index.unknown_user') %></span>
               <span><%= t("creatives.index.permission_#{share.permission}") %></span>
               <span>
