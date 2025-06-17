@@ -56,7 +56,9 @@ class UsersController < ApplicationController
 
   def update
     @user = User.find(params[:id])
-    if @user.update(profile_params)
+    attrs = profile_params
+    attrs[:display_level] = attrs.delete(:display_depth) if attrs.key?(:display_depth)
+    if @user.update(attrs)
       redirect_to user_path(@user), notice: t("users.profile_updated")
     else
       render :show, status: :unprocessable_entity
@@ -92,6 +94,6 @@ class UsersController < ApplicationController
   end
 
   def profile_params
-    params.require(:user).permit(:avatar, :avatar_url, :display_level)
+    params.require(:user).permit(:avatar, :avatar_url, :display_level, :display_depth)
   end
 end
