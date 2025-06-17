@@ -1,0 +1,25 @@
+<div class="creative-tree" id="creative-<%= creative.id %>" draggable="true" ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondrop="handleDrop(event)">
+  <div class="creative-row">
+    <div class="creative-row-start">
+      <div class="creative-row-actions">
+        <div class="before-link creative-toggle-btn" data-creative-id="<%= creative.id %>" data-load-url="<%= load_url %>">
+          <% if level <= 3 && children.any? %>
+            <%= toggle_button_symbol(expanded: expanded?) %>
+          <% end %>
+        </div>
+        <%= check_box_tag 'selected_creative_ids[]', creative.id, false, class: 'select-creative-checkbox', style: select_mode ? '' : 'display: none' %>
+        <%= link_to '+', new_creative_path(parent_id: creative.id), class: 'add-creative-btn', style: (' visibility: hidden;' unless creative.has_permission?(Current.user, :write)), title: t('creatives.help.add_child_creative') %>
+      </div>
+      <% heading_tag = (level <= 3 && (children.any? || creative.parent.nil?)) ? "h#{level}" : 'div' %>
+      <%= content_tag heading_tag.to_sym, class: "indent#{level}" do %>
+        <%= link_to creative.effective_description(params[:tags]&.first), creative, class: 'unstyled-link' %>
+      <% end %>
+    </div>
+    <%= render_creative_progress(creative, select_mode: select_mode) %>
+  </div>
+  <div id="creative-children-<%= creative.id %>" class="creative-children" data-expanded="<%= expanded? %>" data-loaded="<%= expanded? %>" data-load-url="<%= load_url %>" style="<%= expanded? ? '' : 'display:none;' %>">
+    <% if expanded? %>
+      <%= safe_join(children.map { |c| render CreativeComponent.new(creative: c, level: level + 1, expanded_state_map: expanded_state_map, select_mode: select_mode) }) %>
+    <% end %>
+  </div>
+</div>

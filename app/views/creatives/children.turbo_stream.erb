@@ -1,0 +1,5 @@
+<%= turbo_stream.replace "creative-children-#{@creative.id}" do %>
+  <div id="creative-children-<%= @creative.id %>" class="creative-children" data-expanded="true" data-loaded="true" data-load-url="<%= children_creative_path(@creative, level: @level + 1) %>">
+    <%= safe_join(@children.map { |child| render CreativeComponent.new(creative: child, level: @level, expanded_state_map: @expanded_state_map) }) %>
+  </div>
+<% end %>

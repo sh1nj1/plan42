@@ -130,6 +130,16 @@ class CreativesController < ApplicationController
     end
   end
 
+  def children
+    @creative = Creative.find(params[:id])
+    @children = @creative.children_with_permission(Current.user)
+    @level = params[:level].to_i
+    @expanded_state_map = CreativeExpandedState.where(user_id: Current.user.id, creative_id: @creative.id).first&.expanded_status || {}
+    respond_to do |format|
+      format.turbo_stream
+    end
+  end
+
   def recalculate_progress
     Creative.recalculate_all_progress!
     redirect_to creatives_path, notice: t("creatives.notices.progress_recalculated")

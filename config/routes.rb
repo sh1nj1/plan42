@@ -42,6 +42,7 @@ Rails.application.routes.draw do
     end
     member do
       post :share, to: "creatives#share", as: :share_creative
+      get :children
     end
   end
 

@@ -64,84 +64,12 @@ module CreativesHelper
   def render_creative_tree(creatives, level = 1, select_mode: false)
     safe_join(
       creatives.map do |creative|
-        drag_attrs = {
-          draggable: true,
-          id: "creative-#{creative.id}",
-          ondragstart: "handleDragStart(event)",
-          ondragover: "handleDragOver(event)",
-          ondrop: "handleDrop(event)"
-        }
-        filtered_children = creative.children_with_permission(Current.user)
-        expanded = expanded_from_expanded_state(creative.id, @expanded_state_map)
-        render_next_block = ->(level) {
-          filters = params.to_unsafe_h.except(:id).present?
-          ((filtered_children.any?) ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children", style: "#{filters || expanded ? "" : "display: none;"}", data: { expanded: expanded }) {
-            render_creative_tree(filtered_children, level, select_mode: select_mode)
-          }: "".html_safe)
-        }
-        render_row_content = ->(wrapper) {
-          content_tag(:div, class: "creative-row-start") do
-            content_tag(:div, class: "creative-row-actions") do
-              content_tag(:div, ((level <= 3 and filtered_children.any?) ? toggle_button_symbol(expanded: expanded) : ""),
-                          class: "before-link creative-toggle-btn",
-                          data: { creative_id: creative.id }) +
-                (
-                    check_box_tag("selected_creative_ids[]", creative.id, false, class: "select-creative-checkbox", style: "#{ select_mode ? "" : "display: none"}") +
-                    link_to("+", new_creative_path(parent_id: creative.id),
-                      class: "add-creative-btn",
-                      style: "#{' visibility: hidden;' unless creative.has_permission?(Current.user, :write)}",
-                      title: I18n.t("creatives.help.add_child_creative")
-                    )
-                )
-            end +
-            wrapper.call {
-              link_to(creative.effective_description(params[:tags]&.first), creative, class: "unstyled-link")
-            }
-          end + render_creative_progress(creative, select_mode: select_mode)
-        }
-
-        skip = false
-        if not skip and params[:tags].present?
-          tag_ids = Array(params[:tags]).map(&:to_s)
-          creative_label_ids = creative.tags.pluck(:label_id).map(&:to_s)
-          skip = (creative_label_ids & tag_ids).empty?
-        end
-        if not skip and params[:min_progress].present?
-          min_progress = params[:min_progress].to_f
-          skip = creative.progress < min_progress
-        end
-        if not skip and params[:max_progress].present?
-          max_progress = params[:max_progress].to_f
-          skip = creative.progress > max_progress
-        end
-
-        if skip
-          render_next_block.call level # skip this creative, so decrease level
-        else
-          bullet_starting_level = 3
-          renderer = ->(&block) {
-            if level <= bullet_starting_level
-              heading_tag = (filtered_children.any? or creative.parent.nil?) ? "h#{level}" : "div"
-              content_tag(heading_tag, class: "indent#{level}") do
-                block.call
-              end
-            else # low level creative render as li
-              margin = level > 0 ? "margin-left: #{(level - bullet_starting_level) * 20}px;" : ""
-              content_tag(:div, class: "creative-tree-li", style: "#{margin}") do
-                if creative.effective_description.include?("<li>")
-                  "".html_safe
-                else
-                  content_tag(:div, "", class: "creative-tree-bullet")
-                end + block.call
-              end
-            end
-          }
-          content_tag(:div, class: "creative-tree", **drag_attrs) do
-            content_tag(:div, class: "creative-row") do
-              render_row_content.call(renderer)
-            end
-          end + render_next_block.call(level + 1)
-        end
+        render CreativeComponent.new(
+          creative: creative,
+          level: level,
+          expanded_state_map: @expanded_state_map,
+          select_mode: select_mode
+        )
       end
     )
   end
