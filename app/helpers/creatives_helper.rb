@@ -65,13 +65,6 @@ module CreativesHelper
     return "".html_safe if level > max_level
     safe_join(
       creatives.map do |creative|
-        drag_attrs = {
-          draggable: true,
-          id: "creative-#{creative.id}",
-          ondragstart: "handleDragStart(event)",
-          ondragover: "handleDragOver(event)",
-          ondrop: "handleDrop(event)"
-        }
         filtered_children = creative.children_with_permission(Current.user)
         expanded = expanded_from_expanded_state(creative.id, @expanded_state_map)
         render_next_block = ->(level) {
@@ -79,26 +72,6 @@ module CreativesHelper
           ((filtered_children.any?) ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children", style: "#{filters || expanded ? "" : "display: none;"}", data: { expanded: expanded }) {
             render_creative_tree(filtered_children, level, select_mode: select_mode, max_level: max_level)
           }: "".html_safe)
-        }
-        render_row_content = ->(wrapper) {
-          content_tag(:div, class: "creative-row-start") do
-            content_tag(:div, class: "creative-row-actions") do
-              content_tag(:div, ((level <= 3 and filtered_children.any?) ? toggle_button_symbol(expanded: expanded) : ""),
-                          class: "before-link creative-toggle-btn",
-                          data: { creative_id: creative.id }) +
-                (
-                    check_box_tag("selected_creative_ids[]", creative.id, false, class: "select-creative-checkbox", style: "#{ select_mode ? "" : "display: none"}") +
-                    link_to("+", new_creative_path(parent_id: creative.id),
-                      class: "add-creative-btn",
-                      style: "#{' visibility: hidden;' unless creative.has_permission?(Current.user, :write)}",
-                      title: I18n.t("creatives.help.add_child_creative")
-                    )
-                )
-            end +
-            wrapper.call {
-              link_to(creative.effective_description(params[:tags]&.first), creative, class: "unstyled-link")
-            }
-          end + render_creative_progress(creative, select_mode: select_mode)
         }
 
         skip = false
@@ -137,9 +110,15 @@ module CreativesHelper
               end
             end
           }
-          content_tag(:div, class: "creative-tree", **drag_attrs) do
-            content_tag(:div, class: "creative-row") do
-              render_row_content.call(renderer)
+          render(CreativeComponent.new(
+            creative: creative,
+            filtered_children: filtered_children,
+            level: level,
+            select_mode: select_mode,
+            expanded: expanded
+          )) do
+            renderer.call do
+              link_to(creative.effective_description(params[:tags]&.first), creative, class: "unstyled-link")
             end
           end + render_next_block.call(level + 1)
         end

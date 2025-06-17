@@ -1,0 +1,18 @@
+<%= content_tag :div, class: 'creative-tree', **drag_attrs do %>
+  <div class="creative-row">
+    <div class="creative-row-start">
+      <div class="creative-row-actions">
+        <div class="before-link creative-toggle-btn" data-creative-id="<%= creative.id %>">
+          <%= level <= 3 && filtered_children.any? ? helpers.toggle_button_symbol(expanded: expanded) : '' %>
+        </div>
+        <%= check_box_tag('selected_creative_ids[]', creative.id, false, class: 'select-creative-checkbox', style: select_mode ? '' : 'display: none') %>
+        <%= link_to('+', new_creative_path(parent_id: creative.id),
+                    class: 'add-creative-btn',
+                    style: (' visibility: hidden;' unless creative.has_permission?(Current.user, :write)),
+                    title: t('creatives.help.add_child_creative')) %>
+      </div>
+      <%= content %>
+    </div>
+    <%= helpers.render_creative_progress(creative, select_mode: select_mode) %>
+  </div>
+<% end %>
