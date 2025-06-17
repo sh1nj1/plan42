@@ -132,7 +132,7 @@ class CreativesController < ApplicationController
 
   def children
     @creative = Creative.find(params[:id])
-    @children = @creative.children_with_permission(Current.user)
+    @children = helpers.filter_creatives(@creative.children_with_permission(Current.user))
     @level = params[:level].to_i
     @expanded_state_map = CreativeExpandedState.where(user_id: Current.user.id, creative_id: @creative.id).first&.expanded_status || {}
     respond_to do |format|

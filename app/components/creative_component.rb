@@ -13,7 +13,7 @@ class CreativeComponent < ViewComponent::Base
   attr_reader :creative, :level, :expanded_state_map, :select_mode
 
   def children
-    creative.children_with_permission(Current.user)
+    filter_creatives(creative.children_with_permission(Current.user))
   end
 
   def expanded?

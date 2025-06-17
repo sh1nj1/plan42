@@ -61,9 +61,36 @@ module CreativesHelper
     )
   end
 
+  def filter_creatives(creatives)
+    creatives.flat_map do |creative|
+      children = creative.children_with_permission(Current.user)
+
+      skip = false
+      if params[:tags].present?
+        tag_ids = Array(params[:tags]).map(&:to_s)
+        creative_label_ids = creative.tags.pluck(:label_id).map(&:to_s)
+        skip = (creative_label_ids & tag_ids).empty?
+      end
+      if !skip && params[:min_progress].present?
+        min_progress = params[:min_progress].to_f
+        skip = creative.progress < min_progress
+      end
+      if !skip && params[:max_progress].present?
+        max_progress = params[:max_progress].to_f
+        skip = creative.progress > max_progress
+      end
+
+      if skip
+        filter_creatives(children)
+      else
+        [ creative ]
+      end
+    end
+  end
+
   def render_creative_tree(creatives, level = 1, select_mode: false)
     safe_join(
-      creatives.map do |creative|
+      filter_creatives(creatives).map do |creative|
         render CreativeComponent.new(
           creative: creative,
           level: level,
