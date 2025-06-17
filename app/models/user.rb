@@ -9,7 +9,6 @@ class User < ApplicationRecord
   has_one_attached :avatar
 
   attribute :display_level, :integer, default: DEFAULT_DISPLAY_LEVEL
-  alias_attribute :display_depth, :display_level
 
   normalizes :email, with: ->(e) { e.strip.downcase }
 
