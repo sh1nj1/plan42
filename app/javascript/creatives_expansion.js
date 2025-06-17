@@ -7,7 +7,10 @@ if (!window.creativesExpansionInitialized) {
             if (url) {
                 fetch(url, { headers: { Accept: 'text/vnd.turbo-stream.html' } })
                     .then(r => r.text())
-                    .then(html => { Turbo.renderStreamMessage(html); });
+                    .then(html => {
+                        Turbo.renderStreamMessage(html);
+                        setupCreativeToggles();
+                    });
                 childrenDiv.dataset.loaded = "true";
             }
         }
@@ -26,6 +29,8 @@ if (!window.creativesExpansionInitialized) {
         let match = window.location.pathname.match(/\/creatives\/(\d+)/);
         const currentCreativeId = match ? match[1] : null;
         document.querySelectorAll(".creative-toggle-btn").forEach(function(btn) {
+            if (btn.dataset.initialized === "true") return;
+            btn.dataset.initialized = "true";
             btn.addEventListener("click", function(e) {
                 const creativeId = btn.dataset.creativeId;
                 const childrenDiv = document.getElementById(`creative-children-${creativeId}`);
