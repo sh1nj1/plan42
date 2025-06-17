@@ -16,7 +16,11 @@
   <div>
     <%= f.text_field :avatar_url, placeholder: t('users.avatar_url') %>
   </div>
-  <%= f.submit t('users.update_avatar') %>
+  <div>
+    <%= f.label :display_level, t('users.display_level') %>
+    <%= f.number_field :display_level, min: 1 %>
+  </div>
+  <%= f.submit t('users.update_profile') %>
 <% end %>
 
 <%= link_to t('users.change_password'), edit_password_user_path %>
