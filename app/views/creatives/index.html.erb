@@ -84,7 +84,7 @@
 
 <div id="creatives">
   <% if @creatives %>
-    <%= render_creative_tree(@creatives, 1, select_mode: false) %>
+    <%= render_creative_tree(@creatives, 1, select_mode: false, max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL) %>
   <% else %>
     <p style="text-align: center;"><%= params[:id] ? t('.no_sub_creatives') : t('.no_creatives') %></p>
   <% end %>

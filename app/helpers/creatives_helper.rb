@@ -61,7 +61,8 @@ module CreativesHelper
     )
   end
 
-  def render_creative_tree(creatives, level = 1, select_mode: false)
+  def render_creative_tree(creatives, level = 1, select_mode: false, max_level: User::DEFAULT_DISPLAY_LEVEL)
+    return "".html_safe if level > max_level
     safe_join(
       creatives.map do |creative|
         drag_attrs = {
@@ -76,7 +77,7 @@ module CreativesHelper
         render_next_block = ->(level) {
           filters = params.to_unsafe_h.except(:id).present?
           ((filtered_children.any?) ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children", style: "#{filters || expanded ? "" : "display: none;"}", data: { expanded: expanded }) {
-            render_creative_tree(filtered_children, level, select_mode: select_mode)
+            render_creative_tree(filtered_children, level, select_mode: select_mode, max_level: max_level)
           }: "".html_safe)
         }
         render_row_content = ->(wrapper) {
