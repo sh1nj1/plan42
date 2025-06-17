@@ -10,9 +10,21 @@
         <%= check_box_tag 'selected_creative_ids[]', creative.id, false, class: 'select-creative-checkbox', style: select_mode ? '' : 'display: none' %>
         <%= link_to '+', new_creative_path(parent_id: creative.id), class: 'add-creative-btn', style: (' visibility: hidden;' unless creative.has_permission?(Current.user, :write)), title: t('creatives.help.add_child_creative') %>
       </div>
-      <% heading_tag = (level <= 3 && (children.any? || creative.parent.nil?)) ? "h#{level}" : 'div' %>
-      <%= content_tag heading_tag.to_sym, class: "indent#{level}" do %>
-        <%= link_to creative.effective_description(params[:tags]&.first), creative, class: 'unstyled-link' %>
+      <% bullet_starting_level = 3 %>
+      <% desc = creative.effective_description(params[:tags]&.first) %>
+      <% if level <= bullet_starting_level %>
+        <% heading_tag = (children.any? || creative.parent.nil?) ? "h#{level}" : 'div' %>
+        <%= content_tag heading_tag.to_sym, class: "indent#{level}" do %>
+          <%= link_to desc, creative, class: 'unstyled-link' %>
+        <% end %>
+      <% else %>
+        <% margin = "margin-left: #{(level - bullet_starting_level) * 20}px;" %>
+        <div class="creative-tree-li" style="<%= margin %>">
+          <% unless desc.include?("<li>") %>
+            <div class="creative-tree-bullet"></div>
+          <% end %>
+          <%= link_to desc, creative, class: 'unstyled-link' %>
+        </div>
       <% end %>
     </div>
     <%= render_creative_progress(creative, select_mode: select_mode) %>
