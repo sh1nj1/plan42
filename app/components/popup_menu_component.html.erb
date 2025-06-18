@@ -1,5 +1,5 @@
 <div class="popup-menu-wrapper">
-  <button type="button" class="popup-menu-toggle <%= button_classes %>" data-menu-id="<%= menu_id %>">
+  <button type="button" class="popup-menu-toggle <%= button_classes %>" data-menu-id="<%= menu_id %>" <%= "id=\"#{button_id}\"" if button_id.present? %>>
     <%= raw button_content %>
   </button>
   <div id="<%= menu_id %>" class="popup-menu <%= 'popup-menu-right' if align.to_sym == :right %>">

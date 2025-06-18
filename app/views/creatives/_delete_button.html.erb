@@ -1,7 +1,8 @@
 <%= render PopupMenuComponent.new(
       button_content: t('creatives.index.delete'),
-      button_classes: 'danger-link',
-      menu_id: 'delete-options-popup') do %>
+      button_classes: 'danger-link desktop-only',
+      menu_id: 'delete-options-popup',
+      button_id: 'delete-options-btn') do %>
   <%= button_to t('creatives.index.delete_only_this'), @parent_creative, method: :delete,
       form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_only_this') } },
       params: {}, class: 'danger-link popup-menu-item' %>
