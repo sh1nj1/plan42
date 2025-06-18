@@ -51,6 +51,31 @@ nav button{
     transition: background 0.3s;
 }
 
+/* progress filter button group */
+.progress-filter-group {
+    display: flex;
+}
+
+.progress-filter-btn {
+    border-radius: 0;
+}
+
+.progress-filter-btn:first-child {
+    border-radius: 4px 0 0 4px;
+}
+
+.progress-filter-btn:last-child {
+    border-radius: 0 4px 4px 0;
+}
+
+.progress-filter-btn + .progress-filter-btn {
+    border-left: none;
+}
+
+.progress-filter-btn.active {
+    background: var(--color-btn-bg);
+}
+
 .creative-actions-row a,
 .creative-actions-row button {
     line-height: 1.2;
