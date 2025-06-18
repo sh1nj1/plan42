@@ -13,8 +13,7 @@
 
   <% if authenticated? && @parent_creative && @parent_creative.has_permission?(Current.user, :write) %>
     <%= link_to t('.edit'), edit_creative_path(@parent_creative) %>
-    <%= render 'delete_button' %>
-
+    <%= render 'delete_button', extra_button_classes: 'desktop-only' %>
   <% end %>
   <button id="set-plan-btn" class="set-plan-btn" style="display:none;"><%= t('app.set_plan') %></button>
   <input type="checkbox" id="select-all-creatives" style="display:none;margin-left:1em;vertical-align:middle;" />

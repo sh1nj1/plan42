@@ -4,6 +4,9 @@
         menu_id: 'mobile-actions-menu',
         align: :right
       ) do %>
+    <% if authenticated? && @parent_creative && @parent_creative.has_permission?(Current.user, :write) %>
+      <%= render 'delete_button' %>
+    <% end %>
     <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
       <button type="button" class="popup-menu-item" data-click-target="share-creative-btn"><%= t('creatives.index.share') %></button>
     <% end %>
