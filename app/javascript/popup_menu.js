@@ -32,6 +32,12 @@ if (!window.popupMenuInitialized) {
           menu.style.display = 'none';
         }
       });
+
+      menu.addEventListener('click', function(e) {
+        if (e.target.closest('.popup-menu-item')) {
+          menu.style.display = 'none';
+        }
+      });
     });
   });
 }
