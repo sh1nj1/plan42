@@ -52,13 +52,7 @@
                               else
                                 :all
                               end %>
-          <button id="progress-filter-toggle" class="progress-filter-toggle"
-                  data-state="<%= progress_state %>"
-                  data-complete-text="<%= t('app.filter_complete') %>"
-                  data-incomplete-text="<%= t('app.filter_incomplete') %>"
-                  data-all-text="<%= t('app.filter_all') %>">
-            <%= t("app.filter_#{progress_state}") %>
-          </button>
+          <%= render ProgressFilterComponent.new(progress_state: progress_state) %>
           <%= link_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)) %>
         <% end %>
         <% if Current.user %>
@@ -88,15 +82,7 @@
                               else
                                 :all
                               end %>
-          <div>
-            <button class="progress-filter-toggle"
-                    data-state="<%= progress_state %>"
-                    data-complete-text="<%= t('app.filter_complete') %>"
-                    data-incomplete-text="<%= t('app.filter_incomplete') %>"
-                    data-all-text="<%= t('app.filter_all') %>">
-              <%= t("app.filter_#{progress_state}") %>
-            </button>
-          </div>
+          <%= render ProgressFilterComponent.new(progress_state: progress_state) %>
           <div><%= link_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)) %></div>
         <% end %>
         <% if Current.user %>
