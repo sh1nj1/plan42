@@ -27,6 +27,7 @@
     <%= javascript_include_tag 'dark_mode_toggle', defer: true %>
     <%= javascript_include_tag 'creatives', defer: true %>
     <%= javascript_include_tag 'popup_menu', defer: true %>
+    <%= javascript_include_tag 'progress_filter_toggle', defer: true %>
     <%= javascript_importmap_tags %>
   </head>
   <body>
@@ -42,8 +43,20 @@
         <form id="button_to">
           <button id="plans-menu-btn" type="button"><%= t('app.plans') %></button>
         </form>
-        <%= link_to t('app.filter_complete'), creatives_path(params.permit!.to_h.merge(min_progress: 1, max_progress: 1)) %>
-        <%= link_to t('app.filter_incomplete'), creatives_path(params.permit!.to_h.merge(min_progress: 0, max_progress: 0.99)) %>
+        <% progress_state = if params[:min_progress] == '1' && params[:max_progress] == '1'
+                              :complete
+                            elsif params[:min_progress] == '0' && params[:max_progress] == '0.99'
+                              :incomplete
+                            else
+                              :all
+                            end %>
+        <button id="progress-filter-toggle"
+                data-state="<%= progress_state %>"
+                data-complete-text="<%= t('app.filter_complete') %>"
+                data-incomplete-text="<%= t('app.filter_incomplete') %>"
+                data-all-text="<%= t('app.filter_all') %>">
+          <%= t("app.filter_#{progress_state}") %>
+        </button>
         <%= link_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)) %>
       <% end %>
       <% if Current.user %>
