@@ -24,22 +24,6 @@ body {
     height: 100%;
 }
 
-/* Responsive visibility helpers */
-.desktop-only {
-    display: inline-block;
-}
-.mobile-only {
-    display: none;
-}
-@media (max-width: 768px) {
-    .desktop-only {
-        display: none;
-    }
-    .mobile-only {
-        display: inline-block;
-    }
-}
-
 nav {
     display: flex;
     justify-content: flex-end;
