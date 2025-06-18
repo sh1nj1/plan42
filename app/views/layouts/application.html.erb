@@ -67,7 +67,7 @@
           </form>
         <% end %>
         <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
-        <a href="#" id="creative-guide-link" class="creative-guide-link" style="margin-left: 1em; font-size: 1.2em; text-decoration: none;">?</a>
+        <a href="#" id="creative-guide-link" class="creative-guide-link">?</a>
       </div>
 
       <%= render PopupMenuComponent.new(
@@ -105,7 +105,7 @@
           </div>
         <% end %>
         <div><%= link_to t('app.sign_in'), new_session_path unless authenticated? %></div>
-        <div><a href="#" class="creative-guide-link" style="margin-left: 1em; font-size: 1.2em; text-decoration: none;">?</a></div>
+        <div><a href="#" class="creative-guide-link">?</a></div>
       <% end %>
 
       <% if Current.user %>
