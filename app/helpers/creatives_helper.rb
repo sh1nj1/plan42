@@ -136,7 +136,6 @@ module CreativesHelper
   def render_creative_tree_markdown(creatives, level = 1)
     return "" if creatives.blank?
     md = ""
-    sanitizer = ActionView::Base.full_sanitizer
     creatives.each do |creative|
       desc = creative.effective_description(nil, false)
       if level <= 4
@@ -144,19 +143,19 @@ module CreativesHelper
       else
         html = desc.to_s.gsub(/<!--.*?-->/m, "").strip
         # trix-content 블록에서 내부 div의 텍스트만 추출
-        if html =~ /<div class="trix-content">\s*<div>(.*?)<\/div>\s*<\/div>/m
-          inner = $1.strip
-          md += "<li>#{inner}</li>\n\n"
+        inner = if html =~ /<div class="trix-content">\s*<div>(.*?)<\/div>\s*<\/div>/m
+          $1.strip
         else
-          md += "<li>#{ActionView::Base.full_sanitizer.sanitize(html)}</li>\n\n"
+          ActionView::Base.full_sanitizer.sanitize(html)
         end
+        indent = "  " * (level - 5)
+        md += "#{indent}* #{inner}\n"
       end
       # 하위 노드가 있으면 재귀
-      md += "<ul>\n" if level > 4
       if creative.respond_to?(:children) && creative.children.present?
         md += render_creative_tree_markdown(creative.children, level + 1)
       end
-      md += "</ul>\n\n" if level > 4
+      md += "\n" if level <= 4
     end
     md
   end
