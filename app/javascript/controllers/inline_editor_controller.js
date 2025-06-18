@@ -40,6 +40,7 @@ export default class extends Controller {
     if (editor) {
       editor.addEventListener("keydown", e => this.handleKey(e))
     }
+    this.addMoveButtons(form)
   }
 
   focusEditor() {
@@ -76,12 +77,43 @@ export default class extends Controller {
     }
   }
 
+  saveAndMovePrev() {
+    this.autoSave()
+    this.moveToPrev()
+  }
+
+  saveAndMoveNext() {
+    this.autoSave()
+    this.moveToNext()
+  }
+
+  moveToPrev() {
+    this.toggleVisibility()
+    const prev = this.element.previousElementSibling
+    if (!prev) return
+    const btn = prev.querySelector('[data-action="inline-editor#showForm"]')
+    if (btn) btn.click()
+  }
+
   moveToNext() {
     this.toggleVisibility()
     const next = this.element.nextElementSibling
     if (!next) return
     const btn = next.querySelector('[data-action="inline-editor#showForm"]')
     if (btn) btn.click()
+  }
+
+  addMoveButtons(form) {
+    const toolbar = form.querySelector("trix-toolbar")
+    if (!toolbar || toolbar.dataset.navAdded) return
+    toolbar.dataset.navAdded = true
+    const row = toolbar.querySelector(".trix-button-row") || toolbar
+    const group = document.createElement("span")
+    group.className = "trix-button-group"
+    group.innerHTML =
+      '<button type="button" class="trix-button" data-action="inline-editor#saveAndMovePrev">\u2191</button>' +
+      '<button type="button" class="trix-button" data-action="inline-editor#saveAndMoveNext">\u2193</button>'
+    row.appendChild(group)
   }
 
   addChild() {
