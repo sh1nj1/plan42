@@ -73,7 +73,8 @@
       <%= render PopupMenuComponent.new(
             button_content: '...',
             button_classes: 'mobile-only',
-            menu_id: 'mobile-more-menu'
+            menu_id: 'mobile-more-menu',
+            align: :right
           ) do %>
         <div><%= link_to t('app.home'), root_path %></div>
         <% if authenticated? %>
