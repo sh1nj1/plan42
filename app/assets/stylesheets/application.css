@@ -218,3 +218,21 @@ button {
     margin-left: 4px;
     display: none;
 }
+
+/* Responsive visibility helpers */
+.mobile-only {
+    display: none;
+}
+
+.desktop-only {
+    display: inline-block;
+}
+
+@media (max-width: 768px) {
+    .desktop-only {
+        display: none !important;
+    }
+    .mobile-only {
+        display: inline-block !important;
+    }
+}

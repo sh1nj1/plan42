@@ -49,6 +49,7 @@ en:
     save: "Save"
     filter_comments: "Comments"
     inbox: "Inbox"
+    more: "More"
 
   inbox:
     mark_read: "Read"

@@ -20,6 +20,7 @@ ko:
     save: "저장"
     filter_comments: "코멘트"
     inbox: "인박스"
+    more: "더보기"
 
   inbox:
     mark_read: "읽음"

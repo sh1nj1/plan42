@@ -38,31 +38,76 @@
       <form action="<%= creatives_path %>" method="get" style="display:inline; margin-right:1em;">
         <input type="text" id="search" name="search" value="<%= params[:search] %>" placeholder="<%= t('app.search_placeholder') %>" />
       </form>
-      <%= link_to t('app.home'), root_path %>
-      <% if authenticated? %>
-        <form id="button_to">
-          <button id="plans-menu-btn" type="button"><%= t('app.plans') %></button>
-        </form>
-        <% progress_state = if params[:min_progress] == '1' && params[:max_progress] == '1'
-                              :complete
-                            elsif params[:min_progress] == '0' && params[:max_progress] == '0.99'
-                              :incomplete
-                            else
-                              :all
-                            end %>
-        <button id="progress-filter-toggle"
-                data-state="<%= progress_state %>"
-                data-complete-text="<%= t('app.filter_complete') %>"
-                data-incomplete-text="<%= t('app.filter_incomplete') %>"
-                data-all-text="<%= t('app.filter_all') %>">
-          <%= t("app.filter_#{progress_state}") %>
-        </button>
-        <%= link_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)) %>
+
+      <div class="desktop-only">
+        <%= link_to t('app.home'), root_path %>
+        <% if authenticated? %>
+          <form id="button_to">
+            <button id="plans-menu-btn" class="plans-menu-btn" type="button"><%= t('app.plans') %></button>
+          </form>
+          <% progress_state = if params[:min_progress] == '1' && params[:max_progress] == '1'
+                                :complete
+                              elsif params[:min_progress] == '0' && params[:max_progress] == '0.99'
+                                :incomplete
+                              else
+                                :all
+                              end %>
+          <button id="progress-filter-toggle" class="progress-filter-toggle"
+                  data-state="<%= progress_state %>"
+                  data-complete-text="<%= t('app.filter_complete') %>"
+                  data-incomplete-text="<%= t('app.filter_incomplete') %>"
+                  data-all-text="<%= t('app.filter_all') %>">
+            <%= t("app.filter_#{progress_state}") %>
+          </button>
+          <%= link_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)) %>
+        <% end %>
+        <% if Current.user %>
+          <form id="inbox_button_to">
+            <button id="inbox-menu-btn" class="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user) %></button>
+          </form>
+        <% end %>
+        <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
+        <a href="#" id="creative-guide-link" class="creative-guide-link" style="margin-left: 1em; font-size: 1.2em; text-decoration: none;">?</a>
+      </div>
+
+      <%= render PopupMenuComponent.new(
+            button_content: '...',
+            button_classes: 'mobile-only',
+            menu_id: 'mobile-more-menu'
+          ) do %>
+        <div><%= link_to t('app.home'), root_path %></div>
+        <% if authenticated? %>
+          <div>
+            <button class="plans-menu-btn" type="button"><%= t('app.plans') %></button>
+          </div>
+          <% progress_state = if params[:min_progress] == '1' && params[:max_progress] == '1'
+                                :complete
+                              elsif params[:min_progress] == '0' && params[:max_progress] == '0.99'
+                                :incomplete
+                              else
+                                :all
+                              end %>
+          <div>
+            <button class="progress-filter-toggle"
+                    data-state="<%= progress_state %>"
+                    data-complete-text="<%= t('app.filter_complete') %>"
+                    data-incomplete-text="<%= t('app.filter_incomplete') %>"
+                    data-all-text="<%= t('app.filter_all') %>">
+              <%= t("app.filter_#{progress_state}") %>
+            </button>
+          </div>
+          <div><%= link_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)) %></div>
+        <% end %>
+        <% if Current.user %>
+          <div>
+            <button class="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user) %></button>
+          </div>
+        <% end %>
+        <div><%= link_to t('app.sign_in'), new_session_path unless authenticated? %></div>
+        <div><a href="#" class="creative-guide-link" style="margin-left: 1em; font-size: 1.2em; text-decoration: none;">?</a></div>
       <% end %>
+
       <% if Current.user %>
-        <form id="inbox_button_to">
-          <button id="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user) %></button>
-        </form>
         <%= render PopupMenuComponent.new(
           button_content: render(AvatarComponent.new(user: Current.user, size: 32, classes: 'nav-avatar avatar')),
           menu_id: 'user-menu',
@@ -72,8 +117,6 @@
           <div><%= button_to t('app.sign_out'), session_path, method: :delete %></div>
         <% end %>
       <% end %>
-      <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
-      <a href="#" id="creative-guide-link" style="margin-left: 1em; font-size: 1.2em; text-decoration: none;">?</a>
     </nav>
 
     <div id="plans-list-area" style="display:none;">
@@ -120,10 +163,12 @@
       if (!window.isPlansMenuInitialized) {
         window.isPlansMenuInitialized = true;
         document.addEventListener('turbo:load', function() {
-          var btn = document.getElementById('plans-menu-btn');
+          var btns = document.querySelectorAll('.plans-menu-btn');
           var area = document.getElementById('plans-list-area');
-          btn.addEventListener('click', function() {
-            area.style.display = (area.style.display === 'none') ? 'block' : 'none';
+          btns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+              area.style.display = (area.style.display === 'none') ? 'block' : 'none';
+            });
           });
         });
       }
@@ -133,7 +178,7 @@
       if (!window.isInboxMenuInitialized) {
         window.isInboxMenuInitialized = true;
         document.addEventListener('turbo:load', function() {
-          var btn = document.getElementById('inbox-menu-btn');
+          var btns = document.querySelectorAll('.inbox-menu-btn');
           var panel = document.getElementById('inbox-panel');
           var list = document.getElementById('inbox-list');
           var closeBtn = document.getElementById('close-inbox');
@@ -235,24 +280,26 @@
             });
           }
 
-          if (btn && panel) {
-            btn.addEventListener('click', function() {
-              if (panel.classList.contains('open')) {
-                closePanel();
-              } else {
-                openPanel();
-              }
-            });
-          }
+          btns.forEach(function(btn) {
+            if (panel) {
+              btn.addEventListener('click', function() {
+                if (panel.classList.contains('open')) {
+                  closePanel();
+                } else {
+                  openPanel();
+                }
+              });
+            }
+          });
           if (closeBtn) { closeBtn.addEventListener('click', closePanel); }
           if (toggle) { toggle.addEventListener('change', loadInbox); }
 
           updateInboxBadge();
 
-          if (panel && btn && localStorage.getItem('inboxOpen') === '1') {
+          if (panel && btns.length > 0 && localStorage.getItem('inboxOpen') === '1') {
             panel.classList.add('open');
             loadInbox();
-          } else if (!btn) {
+          } else if (btns.length === 0) {
             localStorage.removeItem('inboxOpen');
           }
         });
@@ -265,19 +312,21 @@
 
     <script>
       document.addEventListener('turbo:load', function() {
-        var link = document.getElementById('creative-guide-link');
+        var links = document.querySelectorAll('.creative-guide-link');
         var popover = document.getElementById('creative-guide-popover');
         var close = document.getElementById('close-creative-guide');
-        if (link && popover && close) {
-          link.addEventListener('click', function(e) {
-            e.preventDefault();
-            popover.style.display = 'block';
+        if (links.length && popover && close) {
+          links.forEach(function(link) {
+            link.addEventListener('click', function(e) {
+              e.preventDefault();
+              popover.style.display = 'block';
+            });
           });
           close.addEventListener('click', function() {
             popover.style.display = 'none';
           });
           document.addEventListener('click', function(e) {
-            if (!popover.contains(e.target) && e.target !== link) {
+            if (!popover.contains(e.target) && !Array.from(links).includes(e.target)) {
               popover.style.display = 'none';
             }
           });
