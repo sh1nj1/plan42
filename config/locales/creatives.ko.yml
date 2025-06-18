@@ -2,7 +2,7 @@ ko:
   creatives:
     index:
       up: "위로"
-      new_creative: "새 크리에이티브"
+      new_creative: "추가"
       new_sub_creative: "하위에 추가"
       edit: "수정"
       append_as_parent_creative: "상위에 추가"
