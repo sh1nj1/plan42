@@ -1,0 +1,11 @@
+<%= render PopupMenuComponent.new(
+      button_content: t('creatives.index.new_creative'),
+      menu_id: 'add-creative-menu') do %>
+  <% if authenticated? && !params[:id] %>
+    <%= link_to t('creatives.index.new_creative'), new_creative_path, class: 'popup-menu-item' %>
+  <% end %>
+  <% if authenticated? && @parent_creative && @parent_creative.has_permission?(Current.user, :write) %>
+    <%= link_to t('creatives.index.new_sub_creative'), new_creative_path(parent_id: @parent_creative.id), class: 'popup-menu-item' %>
+    <%= link_to t('creatives.index.append_as_parent_creative'), append_as_parent_creative_creatives_path(parent_id: @parent_creative.id), class: 'popup-menu-item' %>
+  <% end %>
+<% end %>

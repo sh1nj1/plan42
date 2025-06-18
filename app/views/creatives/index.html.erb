@@ -6,16 +6,13 @@
     <%= link_to t('.up'), creatives_path, class: "up-link" %>
   <% end %>
   
-  <%= link_to t('.new_creative'), new_creative_path if authenticated? and not params[:id] %>
+  <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
   <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
     <%= render 'share_button' %>
   <% end %>
-  
-  <% if authenticated? && @parent_creative && @parent_creative.has_permission?(Current.user, :write) %>
-    <%= link_to t('.new_sub_creative'), @parent_creative&.id ? new_creative_path(parent_id: @parent_creative.id) : new_creative_path %>
-    <%= link_to t('.edit'), edit_creative_path(@parent_creative) %>
-    <%= link_to t('.append_as_parent_creative'), append_as_parent_creative_creatives_path(parent_id: @parent_creative&.id), class: 'btn btn-secondary' %>
 
+  <% if authenticated? && @parent_creative && @parent_creative.has_permission?(Current.user, :write) %>
+    <%= link_to t('.edit'), edit_creative_path(@parent_creative) %>
     <%= render 'delete_button' %>
 
   <% end %>
