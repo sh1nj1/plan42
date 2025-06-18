@@ -62,7 +62,11 @@ if (!window.commentsInitialized) {
             var startY = null;
             popup.addEventListener('touchstart', function(e) {
                 if (isMobile()) {
-                    startY = e.touches[0].clientY;
+                    if (!e.target.closest('#comments-list')) {
+                        startY = e.touches[0].clientY;
+                    } else {
+                        startY = null;
+                    }
                 }
             });
             popup.addEventListener('touchend', function(e) {
