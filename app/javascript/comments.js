@@ -59,6 +59,21 @@ if (!window.commentsInitialized) {
                 };
             });
             closeBtn.onclick = closePopup;
+            var startY = null;
+            popup.addEventListener('touchstart', function(e) {
+                if (isMobile()) {
+                    startY = e.touches[0].clientY;
+                }
+            });
+            popup.addEventListener('touchend', function(e) {
+                if (startY !== null) {
+                    var diffY = e.changedTouches[0].clientY - startY;
+                    if (diffY > 50) {
+                        closePopup();
+                    }
+                }
+                startY = null;
+            });
             function fetchComments(highlightId) {
                 list.innerHTML = popup.dataset.loadingText;
                 fetch(`/creatives/${popup.dataset.creativeId}/comments`)
