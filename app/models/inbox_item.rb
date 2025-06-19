@@ -10,6 +10,7 @@ class InboxItem < ApplicationRecord
   scope :new_items, -> { where(state: "new") }
   scope :read_items, -> { where(state: "read") }
 
+
   def read?
     state == "read"
   end

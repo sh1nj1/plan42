@@ -40,7 +40,7 @@
       </form>
 
       <div class="desktop-only">
-        <%= link_to t('app.home'), root_path %>
+        <%= button_to t('app.home'), root_path, method: :get %>
         <% if authenticated? %>
           <form id="button_to">
             <button id="plans-menu-btn" class="plans-menu-btn" type="button"><%= t('app.plans') %></button>
@@ -53,15 +53,15 @@
                                 :all
                               end %>
           <%= render ProgressFilterComponent.new(progress_state: progress_state) %>
-          <%= link_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)) %>
+          <%= button_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)), method: :get %>
         <% end %>
         <% if Current.user %>
           <form id="inbox_button_to">
             <button id="inbox-menu-btn" class="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user) %></button>
           </form>
         <% end %>
-        <%= link_to t('app.sign_in'), new_session_path unless authenticated? %>
-        <a href="#" id="creative-guide-link" class="creative-guide-link">?</a>
+        <%= button_to t('app.sign_in'), new_session_path, method: :get unless authenticated? %>
+        <%= button_tag "?", id: "creative-guide-link", class: "creative-guide-link" %>
       </div>
 
       <%= render PopupMenuComponent.new(
@@ -70,7 +70,7 @@
             menu_id: 'mobile-more-menu',
             align: :right
           ) do %>
-        <div><%= link_to t('app.home'), root_path %></div>
+        <div><%= button_to t('app.home'), root_path, method: :get %></div>
         <% if authenticated? %>
           <div>
             <button class="plans-menu-btn" type="button"><%= t('app.plans') %></button>
@@ -83,15 +83,15 @@
                                 :all
                               end %>
           <%= render ProgressFilterComponent.new(progress_state: progress_state) %>
-          <div><%= link_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)) %></div>
+          <div><%= button_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)), method: :get %></div>
         <% end %>
         <% if Current.user %>
           <div>
             <button class="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user) %></button>
           </div>
         <% end %>
-        <div><%= link_to t('app.sign_in'), new_session_path unless authenticated? %></div>
-        <div><a href="#" class="creative-guide-link">?</a></div>
+        <div><%= button_to t('app.sign_in'), new_session_path, method: :get unless authenticated? %></div>
+        <div><%= button_tag "?", id: "creative-guide-link", class: "creative-guide-link" %></div>
       <% end %>
 
       <% if Current.user %>
@@ -100,7 +100,7 @@
           menu_id: 'user-menu',
           align: :right
         ) do %>
-          <div><%= link_to t('users.profile'), user_path(Current.user) %></div>
+          <div><%= button_to t('users.profile'), user_path(Current.user), method: :get %></div>
           <div><%= button_to t('app.sign_out'), session_path, method: :delete %></div>
         <% end %>
       <% end %>

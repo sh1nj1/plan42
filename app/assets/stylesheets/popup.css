@@ -70,9 +70,13 @@
   right: 0;
 }
 @media (max-width: 768px) {
-  #mobile-more-menu button,
-  #mobile-more-menu a {
-    display: block;
-    width: 100%;
-  }
+    #mobile-more-menu button,
+    #mobile-more-menu a {
+        display: block;
+        min-width: 100%;
+    }
+    #user-menu button {
+        display: block;
+        min-width: 100%;
+    }
 }
