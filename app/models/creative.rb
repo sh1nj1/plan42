@@ -68,6 +68,13 @@ class Creative < ApplicationRecord
     origin
   end
 
+  # Compatibility helper: ancestry gem exposes `subtree_ids`, while
+  # closure_tree typically uses `self_and_descendants`.
+  # Provide `subtree_ids` so call sites (e.g., controller search) work.
+  def subtree_ids
+    self_and_descendants.pluck(:id)
+  end
+
   # Linked Creative의 description을 안전하게 반환
   # variation_id가 주어지면 해당 Variation의 Tag value를 반환, 없으면 기존 description 반환
   def effective_description(variation_id = nil, html = true)

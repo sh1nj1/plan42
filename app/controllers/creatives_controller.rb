@@ -18,12 +18,29 @@ class CreativesController < ApplicationController
       @creatives = @creatives.sort_by { |c| c.comments.maximum(:updated_at) || c.updated_at }.reverse
       @parent_creative = nil
     elsif params[:search].present?
-      @creatives = Creative.joins(:rich_text_description)
-                           .left_joins(:comments) # Include comments to allow searching in them
-                           .where("action_text_rich_texts.body LIKE :q OR comments.content LIKE :q", q: "%#{params[:search]}%")
-                           .where(origin_id: nil)
-                           .select { |c| c.user == Current.user || c.has_permission?(Current.user, :read) }
-      @parent_creative = nil
+      if params[:id].present?
+        base_creative = Creative.find_by(id: params[:id])
+        if base_creative
+          subtree_ids = base_creative.subtree_ids
+          @creatives = Creative
+                        .joins(:rich_text_description)
+                        .left_joins(:comments) # Include comments to allow searching in them
+                        .where(id: subtree_ids)
+                        .where("action_text_rich_texts.body LIKE :q OR comments.content LIKE :q", q: "%#{params[:search]}%")
+                        .select { |c| c.user == Current.user || c.has_permission?(Current.user, :read) }
+          @parent_creative = base_creative
+        else
+          @creatives = []
+          @parent_creative = nil
+        end
+      else
+        @creatives = Creative.joins(:rich_text_description)
+                             .left_joins(:comments) # Include comments to allow searching in them
+                             .where("action_text_rich_texts.body LIKE :q OR comments.content LIKE :q", q: "%#{params[:search]}%")
+                             .where(origin_id: nil)
+                             .select { |c| c.user == Current.user || c.has_permission?(Current.user, :read) }
+        @parent_creative = nil
+      end
     elsif params[:id]
       creative = Creative.where(id: params[:id])
                    .order(:sequence)
