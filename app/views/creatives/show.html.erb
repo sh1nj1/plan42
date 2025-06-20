@@ -20,7 +20,7 @@
 
     <div class="creative-actions-row">
       <% if authenticated? %>
-        <%= link_to "New sub-creative", @creative&.id ? new_creative_path(parent_id: @creative.id) : new_creative_path %>
+        <%= link_to "New sub-creative", @creative&.id ? new_creative_path(parent_id: @creative.id, tags: params[:tags]) : new_creative_path(tags: params[:tags]) %>
         <%= link_to "Edit", edit_creative_path(@creative), data: { action: "inline-editor#showForm" } %>
         <%= button_to "Delete", @creative, method: :delete, data: { turbo_confirm: "Are you sure?" } %>
       <% end %>
