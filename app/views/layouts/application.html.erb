@@ -53,7 +53,10 @@
                                 :all
                               end %>
           <%= render ProgressFilterComponent.new(progress_state: progress_state) %>
-          <%= button_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)), method: :get %>
+          <%= button_to t('app.filter_comments'),
+                        creatives_path,
+                        method: :get,
+                        params: params.permit!.to_h.except(:controller, :action).merge(comment: true) %>
         <% end %>
         <% if Current.user %>
           <form id="inbox_button_to">
@@ -83,7 +86,10 @@
                                 :all
                               end %>
           <%= render ProgressFilterComponent.new(progress_state: progress_state) %>
-          <div><%= button_to t('app.filter_comments'), creatives_path(params.permit!.to_h.merge(comment: true)), method: :get %></div>
+          <div><%= button_to t('app.filter_comments'),
+                             creatives_path,
+                             method: :get,
+                             params: params.permit!.to_h.except(:controller, :action).merge(comment: true) %></div>
         <% end %>
         <% if Current.user %>
           <div>
