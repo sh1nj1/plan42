@@ -36,7 +36,7 @@
 <%= stylesheet_link_tag 'mention_menu', media: 'all' %>
 
 <div class="tags">
-  <% labels = @parent_creative&.tags&.map { |tag| tag.label } %>
+  <% labels = @parent_creative&.tags&.map { |tag| tag.label }&.compact %>
   <% labels&.each do |label| %>
     <input type="checkbox" class="tag-checkbox"
            <%= "checked" unless params[:tags].present? && params[:tags].include?(label.id.to_s) %>
