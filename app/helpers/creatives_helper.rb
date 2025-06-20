@@ -138,16 +138,18 @@ module CreativesHelper
     md = ""
     creatives.each do |creative|
       desc = creative.effective_description(nil, false)
+      html = desc.to_s.gsub(/<!--.*?-->/m, "").strip
+      html = html_links_to_markdown(html)
       if level <= 4
-        md += "#{'#' * level} #{desc.to_plain_text}\n\n"
+        md += "#{'#' * level} #{ActionView::Base.full_sanitizer.sanitize(html)}\n\n"
       else
-        html = desc.to_s.gsub(/<!--.*?-->/m, "").strip
         # trix-content 블록에서 내부 div의 텍스트만 추출
-        inner = if html =~ /<div class="trix-content">\s*<div>(.*?)<\/div>\s*<\/div>/m
+        inner_html = if html =~ /<div class="trix-content">\s*<div>(.*?)<\/div>\s*<\/div>/m
           $1.strip
         else
-          ActionView::Base.full_sanitizer.sanitize(html)
+          html
         end
+        inner = ActionView::Base.full_sanitizer.sanitize(inner_html)
         indent = "  " * (level - 5)
         md += "#{indent}* #{inner}\n"
       end
@@ -158,5 +160,18 @@ module CreativesHelper
       md += "\n" if level <= 4
     end
     md
+  end
+
+  def markdown_links_to_html(text)
+    return "" if text.nil?
+    text.gsub(/\[([^\]]+)\]\(([^)]+)\)/) { "<a href=\"#{$2}\">#{$1}\</a>" }
+  end
+
+  def html_links_to_markdown(text)
+    return "" if text.nil?
+    text.gsub(/<a [^>]*href=['"]([^'"]+)['"][^>]*>(.*?)<\/a>/m) do
+      inner = ActionView::Base.full_sanitizer.sanitize($2)
+      "[#{inner}](#{$1})"
+    end
   end
 end

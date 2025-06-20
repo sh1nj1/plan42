@@ -221,7 +221,7 @@ class CreativesController < ApplicationController
       line = lines[i]
       if line =~ /^(#+)\s+(.*)$/ # Heading
         level = $1.length # 1 for h1, 2 for h2, etc.
-        desc = $2.strip
+        desc = helpers.markdown_links_to_html($2.strip)
         while stack.any? && stack.last[0] >= level
           stack.pop
         end
@@ -232,7 +232,7 @@ class CreativesController < ApplicationController
         i += 1
       elsif line =~ /^([ \t]*)([-*+])\s+(.*)$/ # Bullet list
         indent = $1.length
-        desc = $3.strip
+        desc = helpers.markdown_links_to_html($3.strip)
         bullet_level = 10 + indent / 2
         while stack.any? && stack.last[0] >= bullet_level
           stack.pop
@@ -243,7 +243,7 @@ class CreativesController < ApplicationController
         stack << [ bullet_level, c ]
         i += 1
       elsif !line.strip.empty? # Paragraph/content under a heading
-        desc = line.strip
+        desc = helpers.markdown_links_to_html(line.strip)
         new_parent = stack.any? ? stack.last[1] : root_creative
         c = Creative.create(user: Current.user, parent: new_parent, description: desc)
         created << c
