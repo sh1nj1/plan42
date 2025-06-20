@@ -66,3 +66,9 @@ en:
       subject: "Your inbox summary"
       greeting: "Here are your unread messages:"
       view: "View"
+
+  emails:
+    index_title: "Emails"
+    event:
+      invitation: "Invitation"
+      inbox_summary: "Inbox summary"
