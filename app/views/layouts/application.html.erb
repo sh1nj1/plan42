@@ -52,11 +52,21 @@
                               else
                                 :all
                               end %>
-          <%= render ProgressFilterComponent.new(progress_state: progress_state) %>
-          <%= button_to t('app.filter_comments'),
-                        creatives_path,
-                        method: :get,
-                        params: params.permit(:min_progress, :max_progress, :tags, :search, :comment, :select_mode).to_h.except(:controller, :action).merge(comment: true) %>
+          <% comment_state = params[:comment] == 'true' ? :comment : nil %>
+          <%= render ProgressFilterComponent.new(
+                current_state: progress_state,
+                states: [
+                  { name: t('app.filter_complete'), value: :complete },
+                  { name: t('app.filter_incomplete'), value: :incomplete },
+                  { name: t('app.filter_all'), value: :all }
+                ]
+              ) %>
+          <%= render ProgressFilterComponent.new(
+                current_state: comment_state,
+                states: [
+                  { name: t('app.filter_comments'), value: :comment }
+                ]
+              ) %>
         <% end %>
         <% if Current.user %>
           <form id="inbox_button_to">
@@ -85,11 +95,21 @@
                               else
                                 :all
                               end %>
-          <%= render ProgressFilterComponent.new(progress_state: progress_state) %>
-          <div><%= button_to t('app.filter_comments'),
-                             creatives_path,
-                             method: :get,
-                             params: params.permit(:min_progress, :max_progress, :tags, :search, :comment, :select_mode).to_h.except(:controller, :action).merge(comment: true) %></div>
+          <% comment_state = params[:comment] == 'true' ? :comment : nil %>
+          <%= render ProgressFilterComponent.new(
+                current_state: progress_state,
+                states: [
+                  { name: t('app.filter_complete'), value: :complete },
+                  { name: t('app.filter_incomplete'), value: :incomplete },
+                  { name: t('app.filter_all'), value: :all }
+                ]
+              ) %>
+          <%= render ProgressFilterComponent.new(
+                current_state: comment_state,
+                states: [
+                  { name: t('app.filter_comments'), value: :comment }
+                ]
+              ) %>
         <% end %>
         <% if Current.user %>
           <div>
