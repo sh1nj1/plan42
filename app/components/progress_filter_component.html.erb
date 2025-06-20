@@ -1,5 +1,5 @@
 <div class="progress-filter-group">
-  <button class="progress-filter-btn<%= ' active' if progress_state == :complete %>" data-filter="complete"><%= t('app.filter_complete') %></button>
-  <button class="progress-filter-btn<%= ' active' if progress_state == :incomplete %>" data-filter="incomplete"><%= t('app.filter_incomplete') %></button>
-  <button class="progress-filter-btn<%= ' active' if progress_state == :all %>" data-filter="all"><%= t('app.filter_all') %></button>
+  <% states.each do |state| %>
+    <button class="progress-filter-btn<%= ' active' if current_state.to_s == state[:value].to_s %>" data-filter="<%= state[:value] %>"><%= state[:name] %></button>
+  <% end %>
 </div>
