@@ -1,7 +1,8 @@
 class ProgressFilterComponent < ViewComponent::Base
-  def initialize(progress_state: :all)
-    @progress_state = progress_state.to_sym
+  def initialize(current_state:, states: [])
+    @current_state = current_state&.to_sym
+    @states = states
   end
 
-  attr_reader :progress_state
+  attr_reader :current_state, :states
 end
