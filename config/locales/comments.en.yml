@@ -11,3 +11,6 @@ en:
     delete_button: "Delete"
     not_owner: "Only the comment owner can modify this."
     no_permission: "You do not have permission to comment."
+
+    new_comment_notice_html: "A new comment has been added. %{link}"
+    go_to_comment: "Go to comment"

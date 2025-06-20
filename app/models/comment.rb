@@ -6,7 +6,7 @@ class Comment < ApplicationRecord
 
   validates :content, presence: true
 
-  after_create_commit :broadcast_create, :notify_write_users, :notify_mentions
+  after_create_commit :broadcast_create, :notify_write_users, :notify_mentions, :broadcast_new_comment_notice
   after_update_commit :broadcast_update
   after_destroy_commit :broadcast_destroy
 
@@ -69,6 +69,15 @@ class Comment < ApplicationRecord
         { user: user.display_name, comment: content }
       )
     end
+  end
+
+  def broadcast_new_comment_notice
+    Turbo::StreamsChannel.broadcast_replace_to(
+      [ creative, :comments_notice ],
+      target: "notice-box",
+      partial: "comments/new_comment_notice",
+      locals: { creative: creative, comment: self }
+    )
   end
 
   def notify_mentions

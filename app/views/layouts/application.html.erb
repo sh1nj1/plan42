@@ -39,11 +39,12 @@
     <%= javascript_include_tag 'progress_filter_toggle', defer: true %>
     <%= javascript_include_tag 'plans_timeline', defer: true %>
     <%= javascript_include_tag 'actioncable', defer: true %>
+    <%= javascript_include_tag 'notice', defer: true %>
     <%= javascript_importmap_tags %>
   </head>
   <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>">
     <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
-    <div class="notice"><%= notice %></div>
+    <div class="notice" id="notice-box"><%= notice %></div>
 
     <nav>
       <form action="<%= creatives_path %>" method="get">
