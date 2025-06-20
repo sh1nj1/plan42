@@ -56,7 +56,7 @@
           <%= button_to t('app.filter_comments'),
                         creatives_path,
                         method: :get,
-                        params: params.permit!.to_h.except(:controller, :action).merge(comment: true) %>
+                        params: params.permit(:min_progress, :max_progress, :tags, :search, :comment, :select_mode).to_h.except(:controller, :action).merge(comment: true) %>
         <% end %>
         <% if Current.user %>
           <form id="inbox_button_to">
@@ -89,7 +89,7 @@
           <div><%= button_to t('app.filter_comments'),
                              creatives_path,
                              method: :get,
-                             params: params.permit!.to_h.except(:controller, :action).merge(comment: true) %></div>
+                             params: params.permit(:min_progress, :max_progress, :tags, :search, :comment, :select_mode).to_h.except(:controller, :action).merge(comment: true) %></div>
         <% end %>
         <% if Current.user %>
           <div>
