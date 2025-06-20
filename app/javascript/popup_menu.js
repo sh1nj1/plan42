@@ -33,8 +33,9 @@ if (!window.popupMenuInitialized) {
         }
       });
 
+      /* Close menu on button click */
       menu.addEventListener('click', function(e) {
-        if (e.target.closest('.popup-menu-item')) {
+        if (e.target.closest('button[type="button"]')) {
           menu.style.display = 'none';
         }
       });
