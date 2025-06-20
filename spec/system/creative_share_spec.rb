@@ -9,7 +9,7 @@ RSpec.describe 'Creative 공유 리스트', type: :system do
     visit new_session_path
     fill_in placeholder: I18n.t('users.new.enter_your_email'), with: user.email
     fill_in placeholder: I18n.t('users.new.enter_your_password'), with: 'password'
-    click_button I18n.t('app.sign_in')
+    find('#sign-in-submit').click
     expect(page).not_to have_content(I18n.t('users.sessions.new.try_another_email_or_password'))
     visit creative_path(creative)
     click_button I18n.t('creatives.index.share')
