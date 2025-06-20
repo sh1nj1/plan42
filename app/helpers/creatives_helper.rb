@@ -147,7 +147,7 @@ module CreativesHelper
         inner_html = if html =~ /<div class="trix-content">\s*<div>(.*?)<\/div>\s*<\/div>/m
           $1.strip
         else
-          html
+          ActionView::Base.full_sanitizer.sanitize(html).strip
         end
         inner = ActionView::Base.full_sanitizer.sanitize(inner_html)
         indent = "  " * (level - 5)
