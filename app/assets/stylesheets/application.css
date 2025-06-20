@@ -247,3 +247,7 @@ button {
         display: inline-block !important;
     }
 }
+
+input[type="password"] {
+    max-width: 80%;
+}
