@@ -83,8 +83,8 @@
         min-width: 100%;
         text-align: left;
     }
-    #mobile-more-menu .progress-filter-group button {
+    #mobile-more-menu .progress-filter-group {
         display: block;
-        min-width: 33%;
+        min-width: 100%;
     }
 }
