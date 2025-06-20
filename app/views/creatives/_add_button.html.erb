@@ -1,13 +1,13 @@
 <%
   menu_items = []
   if authenticated? && !params[:id]
-    new_creative_link = link_to(t('creatives.index.new_creative'), new_creative_path)
-    menu_items << link_to(t('creatives.index.new_creative'), new_creative_path, class: 'popup-menu-item')
+    new_creative_link = link_to(t('creatives.index.new_creative'), new_creative_path(tags: params[:tags]))
+    menu_items << link_to(t('creatives.index.new_creative'), new_creative_path(tags: params[:tags]), class: 'popup-menu-item')
   end
 
   if authenticated? && @parent_creative && @parent_creative.has_permission?(Current.user, :write)
-    menu_items << link_to(t('creatives.index.new_sub_creative'), new_creative_path(parent_id: @parent_creative.id), class: 'popup-menu-item')
-    menu_items << link_to(t('creatives.index.append_as_parent_creative'), append_as_parent_creative_creatives_path(parent_id: @parent_creative.id), class: 'popup-menu-item')
+    menu_items << link_to(t('creatives.index.new_sub_creative'), new_creative_path(parent_id: @parent_creative.id, tags: params[:tags]), class: 'popup-menu-item')
+    menu_items << link_to(t('creatives.index.append_as_parent_creative'), append_as_parent_creative_creatives_path(parent_id: @parent_creative.id, tags: params[:tags]), class: 'popup-menu-item')
   end
 %>
 

@@ -22,6 +22,12 @@
     <%= hidden_field_tag :child_id, params[:child_id] %>
   <% end %>
 
+  <% if params[:tags].present? %>
+    <% Array(params[:tags]).each do |tag_id| %>
+      <%= hidden_field_tag 'tags[]', tag_id %>
+    <% end %>
+  <% end %>
+
   <div>
     <%= form.label :description, t('.description'), style: "display: block" %>
     <%= form.rich_text_area :description %>
