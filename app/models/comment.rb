@@ -2,6 +2,8 @@ class Comment < ApplicationRecord
   belongs_to :creative
   belongs_to :user, optional: true
 
+  before_validation :assign_default_user, on: :create
+
   validates :content, presence: true
 
   after_create_commit :broadcast_create, :notify_creative_owner, :notify_mentions
@@ -44,5 +46,9 @@ class Comment < ApplicationRecord
         link: Rails.application.routes.url_helpers.creative_comment_path(creative, self)
       )
     end
+  end
+
+  def assign_default_user
+    self.user ||= Current.user
   end
 end
