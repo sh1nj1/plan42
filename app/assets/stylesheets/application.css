@@ -217,7 +217,8 @@ button {
     position: relative;
 }
 
-#inbox-badge {
+#inbox-badge,
+.badge {
     background: red;
     color: white;
     border-radius: 10px;
