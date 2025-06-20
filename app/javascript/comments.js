@@ -84,6 +84,7 @@ if (!window.commentsInitialized) {
                     .then(r => r.text()).then(html => {
                         list.innerHTML = html;
                         updatePosition();
+                        list.scrollTop = list.scrollHeight;
                         if (highlightId) {
                             var el = document.getElementById('comment_' + highlightId);
                             if (el) {
@@ -114,9 +115,9 @@ if (!window.commentsInitialized) {
                     body: formData
                 })
                     .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.errors.join(', ')); }))
-                    .then(html => {
+                    .then(() => {
                         resetForm();
-                        fetchComments(editingId);
+                        setTimeout(function() { list.scrollTop = list.scrollHeight; }, 100);
                     })
                     .catch(e => { alert(e.message); });
             };
@@ -133,7 +134,7 @@ if (!window.commentsInitialized) {
                         headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }
                     }).then(function(r) {
                         if (r.ok) {
-                            fetchComments();
+                            setTimeout(function() { list.scrollTop = list.scrollHeight; }, 100);
                         } else {
                             // TODO: handle error
                         }

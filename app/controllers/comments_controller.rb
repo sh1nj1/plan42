@@ -3,7 +3,7 @@ class CommentsController < ApplicationController
   before_action :set_comment, only: [ :destroy, :show, :update ]
 
   def index
-    @comments = @creative.comments.order(created_at: :desc)
+    @comments = @creative.comments.order(created_at: :asc)
     render partial: "comments/list", locals: { comments: @comments, creative: @creative }
   end
 

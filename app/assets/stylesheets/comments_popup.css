@@ -6,12 +6,15 @@
   z-index: 1000;
   width: 350px;
   max-height: 400px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   transition: all 0.2s;
 }
 
 #comments-list {
   margin-top: 0.5em;
+  overflow-y: auto;
+  flex-grow: 1;
 }
 
 #new-comment-form textarea {
@@ -73,6 +76,8 @@
         border-radius: 10px 10px 0 0;
         transform: translateY(100%);
         transition: transform 0.3s;
+        display: flex;
+        flex-direction: column;
     }
 
     #comments-popup.open {
