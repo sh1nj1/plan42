@@ -1,2 +1,4 @@
-<%= t('comments.new_comment_notice_html',
-       link: link_to(t('comments.go_to_comment'), creative_comment_path(creative, comment))) %>
+<div data-creative-id="<%= creative.id %>">
+  <%= t('comments.new_comment_notice_html',
+         link: link_to(t('comments.go_to_comment'), creative_comment_path(creative, comment))) %>
+</div>

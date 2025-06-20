@@ -1,4 +1,5 @@
 <%= content_tag :div, class: 'creative-tree', data: { id: creative.id, parent_id: creative.parent_id }, **drag_attrs do %>
+  <%= helpers.turbo_stream_from [creative, :comments_notice] %>
   <div class="creative-row">
     <div class="creative-row-start">
       <div class="creative-row-actions">

@@ -37,7 +37,7 @@ module CreativesHelper
       creative.progress
     end
 
-    row = content_tag(:div, class: "creative-row-end") do
+    content_tag(:div, class: "creative-row-end") do
       comment_part = if creative.has_permission?(Current.user, :feedback)
         origin = creative.effective_origin
         comments_count = origin.comments.size
@@ -71,8 +71,6 @@ module CreativesHelper
       end
       render_progress_value(progress_value) + comment_part + "<br />".html_safe + (creative.tags ? render_creative_tags(creative) : "".html_safe)
     end
-
-    safe_join([ row, turbo_stream_from([ creative, :comments_notice ]) ])
   end
 
   def render_progress_value(value)
