@@ -93,6 +93,11 @@ class CreativesController < ApplicationController
             CreativeShare.create!(creative: @creative, user: parent_share.user, permission: parent_share.permission)
           end
         end
+        if params[:tags].present?
+          Array(params[:tags]).each do |tag_id|
+            @creative.tags.create(label_id: tag_id)
+          end
+        end
         format.html { redirect_to @creative }
         format.json { render json: { id: @creative.id } }
       else
@@ -259,10 +264,10 @@ class CreativesController < ApplicationController
     end
   end
 
-  def append_as_parent
-    @parent_creative = Creative.find_by(id: params[:parent_id]).parent
-    redirect_to new_creative_path(parent_id: @parent_creative&.id, child_id: params[:parent_id])
-  end
+    def append_as_parent
+      @parent_creative = Creative.find_by(id: params[:parent_id]).parent
+      redirect_to new_creative_path(parent_id: @parent_creative&.id, child_id: params[:parent_id], tags: params[:tags])
+    end
 
   def set_plan
     plan_id = params[:plan_id]
