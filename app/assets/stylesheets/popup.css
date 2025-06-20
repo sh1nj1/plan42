@@ -69,14 +69,22 @@
   left: auto;
   right: 0;
 }
+
+#user-menu button {
+    display: block;
+    text-align: left;
+    min-width: 100%;
+}
+
 @media (max-width: 768px) {
     #mobile-more-menu button,
     #mobile-more-menu a {
         display: block;
         min-width: 100%;
+        text-align: left;
     }
-    #user-menu button {
+    #mobile-more-menu .progress-filter-group button {
         display: block;
-        min-width: 100%;
+        min-width: 33%;
     }
 }
