@@ -166,11 +166,10 @@ module CreativesHelper
     md
   end
 
-  def markdown_links_to_html(text)
+  def markdown_links_to_html(text, image_refs = {})
     return "" if text.nil?
     html = text.dup
 
-    image_refs = {}
     html.gsub!(/^\s*\[([^\]]+)\]:\s*<\s*(data:image\/[^>]+)\s*>\s*$/) do
       image_refs[$1] = $2.strip
       ""

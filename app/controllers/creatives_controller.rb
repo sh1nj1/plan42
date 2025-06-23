@@ -203,6 +203,15 @@ class CreativesController < ApplicationController
     file = params[:markdown]
     content = file.read.force_encoding("UTF-8")
     lines = content.lines
+    image_refs = {}
+    lines.reject! do |ln|
+      if ln =~ /^\s*\[([^\]]+)\]:\s*<\s*(data:image\/[^>]+)\s*>\s*$/
+        image_refs[$1] = $2.strip
+        true
+      else
+        false
+      end
+    end
     created = []
 
     # Find page title (first non-empty, non-heading, non-list line)
@@ -226,7 +235,7 @@ class CreativesController < ApplicationController
       line = lines[i]
       if line =~ /^(#+)\s+(.*)$/ # Heading
         level = $1.length # 1 for h1, 2 for h2, etc.
-        desc = helpers.markdown_links_to_html($2.strip)
+        desc = helpers.markdown_links_to_html($2.strip, image_refs)
         while stack.any? && stack.last[0] >= level
           stack.pop
         end
@@ -237,7 +246,7 @@ class CreativesController < ApplicationController
         i += 1
       elsif line =~ /^([ \t]*)([-*+])\s+(.*)$/ # Bullet list
         indent = $1.length
-        desc = helpers.markdown_links_to_html($3.strip)
+        desc = helpers.markdown_links_to_html($3.strip, image_refs)
         bullet_level = 10 + indent / 2
         while stack.any? && stack.last[0] >= bullet_level
           stack.pop
@@ -248,7 +257,7 @@ class CreativesController < ApplicationController
         stack << [ bullet_level, c ]
         i += 1
       elsif !line.strip.empty? # Paragraph/content under a heading
-        desc = helpers.markdown_links_to_html(line.strip)
+        desc = helpers.markdown_links_to_html(line.strip, image_refs)
         new_parent = stack.any? ? stack.last[1] : root_creative
         c = Creative.create(user: Current.user, parent: new_parent, description: desc)
         created << c
