@@ -439,3 +439,17 @@ trix-editor .attachment__metadata {
   padding: 0 !important;
   max-width: 100% !important;
 }
+
+/* Custom color pickers */
+trix-toolbar input.trix-color-input,
+trix-toolbar input.trix-bgcolor-input {
+  width: 2em;
+  height: 1.6em;
+  padding: 0;
+  border: none;
+  background: none;
+}
+trix-toolbar input.trix-color-input::-webkit-color-swatch-wrapper,
+trix-toolbar input.trix-bgcolor-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
