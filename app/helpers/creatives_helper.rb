@@ -192,7 +192,7 @@ module CreativesHelper
     html.gsub!(/(?<!\\)(\*\*|__)(.+?)\1/) do
       "<strong>#{$2}</strong>"
     end
-    html.gsub!(/\\([\\*_\[\]()!#~\-])/, '\\1')
+    html.gsub!(/\\([\\*_\[\]()!#~+\-])/, '\\1')
     html.gsub!(/\\\\/, "\\")
     html.strip!
     html
@@ -237,7 +237,7 @@ module CreativesHelper
       placeholders[token] = "**#{$2.strip}**"
       token
     end
-    markdown.gsub!(/([\\*\[\]()!#~-])/) { "\\#{$1}" }
+    markdown.gsub!(/([\\*\[\]()!#~+\-])/) { "\\#{$1}" }
     placeholders.each { |k, v| markdown.gsub!(k, v) }
     markdown
   end
