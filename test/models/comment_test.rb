@@ -5,9 +5,13 @@ class CommentTest < ActiveSupport::TestCase
     creative = creatives(:tshirt)
     commenter = users(:two)
 
+    comment = nil
+    Comment.skip_callback(:commit, :after, :initialize_comment_reads, on: :create)
     assert_difference("InboxItem.count", 1) do
-      Comment.create!(creative: creative, user: commenter, content: "hi")
+      comment = Comment.create!(creative: creative, user: commenter, content: "hi")
+      comment.send(:initialize_comment_reads)
     end
+    Comment.set_callback(:commit, :after, :initialize_comment_reads, on: :create)
 
     item = InboxItem.last
     assert_equal creative.user, item.owner
@@ -18,5 +22,9 @@ class CommentTest < ActiveSupport::TestCase
       host: "example.com"
     )
     assert_equal expected_link, item.link
+    read_for_owner = CommentRead.find_by(comment: comment, user: creative.user)
+    assert_not read_for_owner.read
+    read_for_commenter = CommentRead.find_by(comment: comment, user: commenter)
+    assert read_for_commenter.read
   end
 end

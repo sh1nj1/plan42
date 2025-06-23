@@ -11,3 +11,4 @@ en:
     delete_button: "Delete"
     not_owner: "Only the comment owner can modify this."
     no_permission: "You do not have permission to comment."
+    unread: "new"

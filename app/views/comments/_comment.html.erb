@@ -3,6 +3,9 @@
     <%= render AvatarComponent.new(user: comment.user, size: 20, classes: 'avatar comment-avatar') %>
     <strong><%= comment.user&.email || t('comments.anonymous') %></strong>
     <span>· <%= t('datetime.ago', time: time_ago_in_words(comment.created_at)) %></span>
+    <% if comment.unread_by?(Current.user) %>
+      <span class="comment-unread"><%= t('comments.unread') %></span>
+    <% end %>
     <% if comment.user == Current.user %>
       <button class="edit-comment-btn" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" title="<%= t('comments.update_comment') %>">
         <%= t('comments.edit_button') %>

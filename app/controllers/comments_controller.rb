@@ -11,6 +11,7 @@ class CommentsController < ApplicationController
     scope = @creative.comments.order(created_at: :desc)
     @comments = scope.offset((page - 1) * per_page).limit(per_page).to_a
 
+    CommentRead.where(comment: @comments, user: Current.user).update_all(read: true)
     if page <= 1
       render partial: "comments/list", locals: { comments: @comments.reverse, creative: @creative }
     else

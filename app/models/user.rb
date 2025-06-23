@@ -4,6 +4,7 @@ class User < ApplicationRecord
   has_secure_password
   has_many :sessions, dependent: :destroy
   has_many :creatives
+  has_many :comment_reads, dependent: :destroy
   has_many :labels, foreign_key: :owner_id
 
   has_one_attached :avatar

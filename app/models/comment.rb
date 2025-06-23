@@ -1,12 +1,13 @@
 class Comment < ApplicationRecord
   belongs_to :creative
   belongs_to :user, optional: true
+  has_many :comment_reads, dependent: :destroy
 
   before_validation :assign_default_user, on: :create
 
   validates :content, presence: true
 
-  after_create_commit :broadcast_create, :notify_creative_owner, :notify_mentions
+  after_create_commit :broadcast_create, :notify_creative_owner, :notify_mentions, :initialize_comment_reads
   after_update_commit :broadcast_update
   after_destroy_commit :broadcast_destroy
 
@@ -36,6 +37,15 @@ class Comment < ApplicationRecord
     return [] unless user
     emails = mentioned_emails - [ user.email.downcase ]
     User.where(email: emails)
+  end
+
+  def initialize_comment_reads
+    origin = creative.effective_origin
+    user_ids = [ origin.user_id, user_id ]
+    user_ids += origin.creative_shares.where(permission: %i[feedback write]).pluck(:user_id)
+    user_ids.compact.uniq.each do |uid|
+      CommentRead.create!(comment: self, user_id: uid, read: uid == user_id)
+    end
   end
 
   def broadcast_create
@@ -69,5 +79,15 @@ class Comment < ApplicationRecord
 
   def assign_default_user
     self.user ||= Current.user
+  end
+
+  public
+
+  def read_by?(user)
+    comment_reads.exists?(user: user, read: true)
+  end
+
+  def unread_by?(user)
+    !read_by?(user)
   end
 end

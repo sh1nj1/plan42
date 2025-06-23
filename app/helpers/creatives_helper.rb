@@ -39,11 +39,11 @@ module CreativesHelper
 
     content_tag(:div, class: "creative-row-end") do
       comment_part = if creative.has_permission?(Current.user, :feedback)
-        comments_count = creative.effective_origin.comments.size
+        unread_count = creative.effective_origin.comments.joins(:comment_reads).where(comment_reads: { user_id: Current.user.id, read: false }).count
         classes = [ "comments-btn" ]
-        classes << "no-comments" if comments_count.zero?
-        comment_label = comments_count.zero? ? "\u{1F4AC}" : ""
-        badge = render(Inbox::BadgeComponent.new(count: comments_count, badge_id: "comment-badge-#{creative.id}"))
+        classes << "no-comments" if unread_count.zero?
+        comment_label = unread_count.zero? ? "\u{1F4AC}" : ""
+        badge = render(Inbox::BadgeComponent.new(count: unread_count, badge_id: "comment-badge-#{creative.id}"))
         button_tag(
           comment_label.html_safe + badge,
           name: "show-comments-btn",

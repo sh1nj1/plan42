@@ -49,6 +49,17 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_20_004558) do
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
   end
 
+  create_table "comment_reads", force: :cascade do |t|
+    t.integer "comment_id", null: false
+    t.integer "user_id", null: false
+    t.boolean "read", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["comment_id", "user_id"], name: "index_comment_reads_on_comment_id_and_user_id", unique: true
+    t.index ["comment_id"], name: "index_comment_reads_on_comment_id"
+    t.index ["user_id"], name: "index_comment_reads_on_user_id"
+  end
+
   create_table "comments", force: :cascade do |t|
     t.integer "creative_id", null: false
     t.integer "user_id"
@@ -332,6 +343,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_20_004558) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "comment_reads", "comments"
+  add_foreign_key "comment_reads", "users"
   add_foreign_key "comments", "creatives"
   add_foreign_key "comments", "users"
   add_foreign_key "creative_expanded_states", "creatives"
