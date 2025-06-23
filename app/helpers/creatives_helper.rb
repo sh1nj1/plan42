@@ -169,6 +169,21 @@ module CreativesHelper
   def markdown_links_to_html(text)
     return "" if text.nil?
     html = text.dup
+
+    image_refs = {}
+    html.gsub!(/^\s*\[([^\]]+)\]:\s*<\s*(data:image\/[^>]+)\s*>\s*$/) do
+      image_refs[$1] = $2.strip
+      ""
+    end
+
+    html.gsub!(/(?<!\\)!\[([^\]]*)\]\[([^\]]+)\]/) do
+      if (data_url = image_refs[$2])
+        convert_data_image_to_attachment(data_url, $1)
+      else
+        "![#{$1}][#{$2}]"
+      end
+    end
+
     html.gsub!(/(?<!\\)!\[([^\]]*)\]\((data:image\/[^)]+)\)/) do
       convert_data_image_to_attachment($2, $1)
     end
@@ -178,8 +193,10 @@ module CreativesHelper
     html.gsub!(/(?<!\\)(\*\*|__)(.+?)\1/) do
       "<strong>#{$2}</strong>"
     end
-    html.gsub!(/\\([\\*_\[\]()!#~\-])/, '\1')
-    html.gsub(/\\\\/, "\\")
+    html.gsub!(/\\([\\*_\[\]()!#~\-])/, '\\1')
+    html.gsub!(/\\\\/, "\\")
+    html.strip!
+    html
   end
 
   def html_links_to_markdown(text)

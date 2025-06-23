@@ -44,4 +44,12 @@ class CreativesHelperTest < ActionView::TestCase
     back = html_links_to_markdown(html)
     assert_equal md, back
   end
+
+  test "reference style base64 image converts" do
+    md = "Look ![][img1]\n\n[img1]: <data:image/png;base64,aGk=>"
+    html = markdown_links_to_html(md)
+    assert_match(/<action-text-attachment[^>]+content-type=\"image\/png\"[^>]*>/, html)
+    back = html_links_to_markdown(html)
+    assert_equal "Look ![](data:image/png;base64,aGk=)", back
+  end
 end
