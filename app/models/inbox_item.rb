@@ -26,7 +26,7 @@ class InboxItem < ApplicationRecord
       [ "inbox", owner ],
       target: "inbox-badge",
       partial: "inbox/badge_component/count",
-      locals: { count: new_count }
+      locals: { count: new_count, badge_id: "inbox-badge" }
     )
   end
 end
