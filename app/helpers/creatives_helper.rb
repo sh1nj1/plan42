@@ -165,14 +165,48 @@ module CreativesHelper
 
   def markdown_links_to_html(text)
     return "" if text.nil?
-    text.gsub(/\[([^\]]+)\]\(([^)]+)\)/) { "<a href=\"#{$2}\">#{$1}\</a>" }
+    html = text.dup
+    html.gsub!(/(?<!\\)!\[([^\]]*)\]\((data:[^)]+)\)/) do
+      "<img src=\"#{$2}\" alt=\"#{$1}\" />"
+    end
+    html.gsub!(/(?<!\\)\[([^\]]+)\]\(([^)]+)\)/) do
+      "<a href=\"#{$2}\">#{$1}</a>"
+    end
+    html.gsub!(/(?<!\\)(\*\*|__)(.+?)\1/) do
+      "<strong>#{$2}</strong>"
+    end
+    html.gsub!(/\\([\\*_\[\]()!])/, '\1')
+    html.gsub(/\\\\/, "\\")
   end
 
   def html_links_to_markdown(text)
     return "" if text.nil?
-    text.gsub(/<a [^>]*href=['"]([^'"]+)['"][^>]*>(.*?)<\/a>/m) do
-      inner = ActionView::Base.full_sanitizer.sanitize($2)
-      "[#{inner}](#{$1})"
+    markdown = text.dup
+    placeholders = {}
+    index = 0
+    markdown.gsub!(/<img [^>]*src=['"](data:[^'"]+)['"][^>]*alt=['"]([^'"]*)['"][^>]*>/) do
+      token = "__IMG#{index}__"; index += 1
+      placeholders[token] = "![#{$2}](#{$1})"
+      token
     end
+    markdown.gsub!(/<img [^>]*alt=['"]([^'"]*)['"][^>]*src=['"](data:[^'"]+)['"][^>]*>/) do
+      token = "__IMG#{index}__"; index += 1
+      placeholders[token] = "![#{$1}](#{$2})"
+      token
+    end
+    markdown.gsub!(/<a [^>]*href=['"]([^'"]+)['"][^>]*>(.*?)<\/a>/m) do
+      inner = ActionView::Base.full_sanitizer.sanitize($2)
+      token = "__LINK#{index}__"; index += 1
+      placeholders[token] = "[#{inner}](#{$1})"
+      token
+    end
+    markdown.gsub!(/<(strong|b)>(.*?)<\/\1>/m) do
+      token = "__BOLD#{index}__"; index += 1
+      placeholders[token] = "**#{$2.strip}**"
+      token
+    end
+    markdown.gsub!(/([\\*\[\]()!])/) { "\\#{$1}" }
+    placeholders.each { |k, v| markdown.gsub!(k, v) }
+    markdown
   end
 end

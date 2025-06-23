@@ -20,4 +20,28 @@ class CreativesHelperTest < ActionView::TestCase
     markdown = render_creative_tree_markdown([ creative ], 5)
     assert_equal "* Item\n", markdown
   end
+
+  test "bold markdown converts to html and back" do
+    md = "This is **bold** text"
+    html = markdown_links_to_html(md)
+    assert_equal "This is <strong>bold</strong> text", html
+    back = html_links_to_markdown(html)
+    assert_equal "This is **bold** text", back
+  end
+
+  test "escaped characters round trip" do
+    md = "A \\*star\\* example"
+    html = markdown_links_to_html(md)
+    assert_equal "A *star* example", html
+    back = html_links_to_markdown(html)
+    assert_equal "A \\*star\\* example", back
+  end
+
+  test "base64 image link converts" do
+    md = "Image: ![alt](data:image/png;base64,AAA)"
+    html = markdown_links_to_html(md)
+    assert_equal "Image: <img src=\"data:image/png;base64,AAA\" alt=\"alt\" />", html
+    back = html_links_to_markdown(html)
+    assert_equal "Image: ![alt](data:image/png;base64,AAA)", back
+  end
 end
