@@ -30,11 +30,11 @@ class CreativesHelperTest < ActionView::TestCase
   end
 
   test "escaped characters round trip" do
-    md = "A \\*star\\* example"
+    md = "A \\*star\\* \\-dash\\- \\#hash\\# \\~tilde\\~ example"
     html = markdown_links_to_html(md)
-    assert_equal "A *star* example", html
+    assert_equal "A *star* -dash- #hash# ~tilde~ example", html
     back = html_links_to_markdown(html)
-    assert_equal "A \\*star\\* example", back
+    assert_equal md, back
   end
 
   test "base64 image link converts" do
