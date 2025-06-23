@@ -1,3 +1,6 @@
+require "base64"
+require "securerandom"
+
 module CreativesHelper
   # Shared toggle button symbol helper
   def toggle_button_symbol(expanded: false)
@@ -166,8 +169,8 @@ module CreativesHelper
   def markdown_links_to_html(text)
     return "" if text.nil?
     html = text.dup
-    html.gsub!(/(?<!\\)!\[([^\]]*)\]\((data:[^)]+)\)/) do
-      "<img src=\"#{$2}\" alt=\"#{$1}\" />"
+    html.gsub!(/(?<!\\)!\[([^\]]*)\]\((data:image\/[^)]+)\)/) do
+      convert_data_image_to_attachment($2, $1)
     end
     html.gsub!(/(?<!\\)\[([^\]]+)\]\(([^)]+)\)/) do
       "<a href=\"#{$2}\">#{$1}</a>"
@@ -184,6 +187,19 @@ module CreativesHelper
     markdown = text.dup
     placeholders = {}
     index = 0
+    markdown.gsub!(%r{<action-text-attachment ([^>]+)>(?:</action-text-attachment>)?}) do |match|
+      attrs = Hash[$1.scan(/(\S+?)="([^"]*)"/)]
+      sgid = attrs["sgid"]
+      caption = attrs["caption"] || ""
+      if (blob = GlobalID::Locator.locate_signed(sgid, for: "attachable"))
+        data = Base64.strict_encode64(blob.download)
+        token = "__IMG#{index}__"; index += 1
+        placeholders[token] = "![#{caption}](data:#{blob.content_type};base64,#{data})"
+        token
+      else
+        ""
+      end
+    end
     markdown.gsub!(/<img [^>]*src=['"](data:[^'"]+)['"][^>]*alt=['"]([^'"]*)['"][^>]*>/) do
       token = "__IMG#{index}__"; index += 1
       placeholders[token] = "![#{$2}](#{$1})"
@@ -208,5 +224,20 @@ module CreativesHelper
     markdown.gsub!(/([\\*\[\]()!#~-])/) { "\\#{$1}" }
     placeholders.each { |k, v| markdown.gsub!(k, v) }
     markdown
+  end
+
+  private
+
+  def convert_data_image_to_attachment(data_url, alt)
+    if data_url =~ %r{\Adata:(image/[\w.+-]+);base64,(.+)\z}
+      content_type = Regexp.last_match(1)
+      data = Base64.decode64(Regexp.last_match(2))
+      ext = Mime::Type.lookup(content_type).symbol.to_s
+      filename = "import-#{SecureRandom.hex}.#{ext}"
+      blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new(data), filename: filename, content_type: content_type)
+      ActionText::Attachment.from_attachable(blob, caption: alt).to_html
+    else
+      "<img src=\"#{data_url}\" alt=\"#{alt}\" />"
+    end
   end
 end

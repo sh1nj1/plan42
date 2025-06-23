@@ -38,10 +38,10 @@ class CreativesHelperTest < ActionView::TestCase
   end
 
   test "base64 image link converts" do
-    md = "Image: ![alt](data:image/png;base64,AAA)"
+    md = "Image: ![alt](data:image/png;base64,aGk=)"
     html = markdown_links_to_html(md)
-    assert_equal "Image: <img src=\"data:image/png;base64,AAA\" alt=\"alt\" />", html
+    assert_match(/<action-text-attachment[^>]+content-type=\"image\/png\"[^>]+caption=\"alt\"[^>]*>/, html)
     back = html_links_to_markdown(html)
-    assert_equal "Image: ![alt](data:image/png;base64,AAA)", back
+    assert_equal md, back
   end
 end
