@@ -1,4 +1,8 @@
 ko:
+  time:
+    formats:
+      long: "%Y년 %m월 %d일 %H:%M:%S"
+      short: "%Y-%m-%d %H:%M:%S"
   datetime:
     ago: "%{time} 전"
     distance_in_words:

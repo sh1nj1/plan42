@@ -37,3 +37,15 @@ ko:
       subject: "인박스 요약"
       greeting: "읽지 않은 메세지 목록입니다:"
       view: "보기"
+
+  emails:
+    index_title: "이메일"
+    list:
+      title:
+        to: "받는 사람"
+        event: "이벤트"
+        subject: "제목"
+        sent_at: "보내신 시간"
+    event:
+      invitation: "초대"
+      inbox_summary: "인박스 요약"

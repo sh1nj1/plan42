@@ -52,6 +52,8 @@ Rails.application.routes.draw do
     get :count, on: :collection
   end
 
+  resources :emails, only: [ :index, :show ]
+
   resource :unsubscribe, only: [ :show ]
   resource :invite, only: [ :show ]
   resource :verify, controller: "email_verifications", only: [ :show ]
