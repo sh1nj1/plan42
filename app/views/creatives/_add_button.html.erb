@@ -6,8 +6,10 @@
   end
 
   if authenticated? && @parent_creative && @parent_creative.has_permission?(Current.user, :write)
-    menu_items << link_to(t('creatives.index.new_sub_creative'), new_creative_path(parent_id: @parent_creative.id, tags: params[:tags]), class: 'popup-menu-item')
     menu_items << link_to(t('creatives.index.append_as_parent_creative'), append_as_parent_creative_creatives_path(parent_id: @parent_creative.id, tags: params[:tags]), class: 'popup-menu-item')
+    menu_items << link_to(t('creatives.index.append_below_creative'), append_below_creative_creatives_path(creative_id: @parent_creative.id, tags: params[:tags]), class: 'popup-menu-item')
+    menu_items << tag.br
+    menu_items << link_to(t('creatives.index.new_sub_creative'), new_creative_path(parent_id: @parent_creative.id, tags: params[:tags]), class: 'popup-menu-item')
   end
 %>
 
