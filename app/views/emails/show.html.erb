@@ -1,5 +1,5 @@
 <h1><%= @email.subject %></h1>
-<p><strong>To:</strong> <%= @email.email %></p>
-<p><strong>Event:</strong> <%= t("emails.event.#{@email.event}") %></p>
-<p><strong>Sent:</strong> <%= l(@email.created_at, format: :long) %></p>
+<p><strong><%= t('emails.list.title.to') %>:</strong> <%= @email.email %></p>
+<p><strong><%= t('emails.list.title.event') %>:</strong> <%= t("emails.event.#{@email.event}") %></p>
+<p><strong><%= t('emails.list.title.sent_at') %>:</strong> <%= l(@email.created_at, format: :long) %></p>
 <pre><%= @email.body %></pre>

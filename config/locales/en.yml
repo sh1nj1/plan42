@@ -69,6 +69,12 @@ en:
 
   emails:
     index_title: "Emails"
+    list:
+      title:
+        to: "To"
+        event: "Event"
+        subject: "Subject"
+        sent_at: "Sent at"
     event:
       invitation: "Invitation"
       inbox_summary: "Inbox summary"
