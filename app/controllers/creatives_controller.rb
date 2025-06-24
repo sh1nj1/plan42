@@ -69,6 +69,9 @@ class CreativesController < ApplicationController
     if params[:child_id].present?
       @child_creative = Creative.find_by(id: params[:child_id])
     end
+    if params[:after_id].present?
+      @after_creative = Creative.find_by(id: params[:after_id])
+    end
   end
 
   def create
@@ -87,6 +90,16 @@ class CreativesController < ApplicationController
     respond_to do |format|
       if @creative.save
         @child_creative.update(parent: @creative) if @child_creative
+        if params[:after_id].present?
+          after_creative = Creative.find_by(id: params[:after_id])
+          if after_creative && after_creative.parent_id == @creative.parent_id
+            siblings = @creative.parent ? @creative.parent.children.order(:sequence).to_a : Creative.roots.order(:sequence).to_a
+            siblings.delete(@creative)
+            index = siblings.index(after_creative) || -1
+            siblings.insert(index + 1, @creative)
+            siblings.each_with_index { |c, idx| c.update_column(:sequence, idx) }
+          end
+        end
         # Propagate all shares from the parent to the new child
         if @creative.parent
           CreativeShare.where(creative: @creative.parent).find_each do |parent_share|
@@ -273,10 +286,15 @@ class CreativesController < ApplicationController
     end
   end
 
-    def append_as_parent
-      @parent_creative = Creative.find_by(id: params[:parent_id]).parent
-      redirect_to new_creative_path(parent_id: @parent_creative&.id, child_id: params[:parent_id], tags: params[:tags])
-    end
+  def append_as_parent
+    @parent_creative = Creative.find_by(id: params[:parent_id]).parent
+    redirect_to new_creative_path(parent_id: @parent_creative&.id, child_id: params[:parent_id], tags: params[:tags])
+  end
+
+  def append_below
+    target = Creative.find_by(id: params[:creative_id])
+    redirect_to new_creative_path(parent_id: target&.parent_id, after_id: target&.id, tags: params[:tags])
+  end
 
   def set_plan
     plan_id = params[:plan_id]

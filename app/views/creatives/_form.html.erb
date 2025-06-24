@@ -22,6 +22,10 @@
     <%= hidden_field_tag :child_id, params[:child_id] %>
   <% end %>
 
+  <% if params[:after_id].present? %>
+    <%= hidden_field_tag :after_id, params[:after_id] %>
+  <% end %>
+
   <% if params[:tags].present? %>
     <% Array(params[:tags]).each do |tag_id| %>
       <%= hidden_field_tag 'tags[]', tag_id %>

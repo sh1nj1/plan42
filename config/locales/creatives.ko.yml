@@ -6,6 +6,7 @@ ko:
       new_sub_creative: "하위에 추가"
       edit: "수정"
       append_as_parent_creative: "상위에 추가"
+      append_below_creative: "아래에 추가"
       delete: "삭제"
       delete_only_this: "이 항목만 삭제"
       delete_with_children: "이 항목과 모든 하위 항목 삭제"
