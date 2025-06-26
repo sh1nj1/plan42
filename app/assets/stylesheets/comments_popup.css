@@ -95,3 +95,15 @@
     to { background: transparent; }
 }
 
+#comment-participants {
+  margin-bottom: 0.3em;
+}
+
+.comment-presence-avatar {
+  margin-right: 0.2em;
+}
+
+.comment-presence-avatar.inactive {
+  opacity: 0.4;
+  filter: grayscale(1);
+}

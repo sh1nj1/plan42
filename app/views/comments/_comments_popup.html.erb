@@ -6,6 +6,7 @@
      data-update-comment-text="<%= t('comments.update_comment') %>">
   <button id="close-comments-btn" class="popup-close-btn">&times;</button>
   <h3 style="margin-top:0;"><%= t('comments.comments') %></h3>
+  <div id="comment-participants"></div>
   <%= render UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <br/>
   <div id="comments-list"><%= t('app.loading') %></div>

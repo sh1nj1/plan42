@@ -1,0 +1,8 @@
+<div id="comment-participants">
+  <% accessible_users = [creative.user].compact + creative.all_shared_users(:feedback).map(&:user) %>
+  <% accessible_users.uniq.each do |u| %>
+    <% classes = 'avatar comment-presence-avatar' %>
+    <% classes += ' inactive' unless present_ids.include?(u.id) %>
+    <%= render AvatarComponent.new(user: u, size: 20, classes: classes) %>
+  <% end %>
+</div>

@@ -148,6 +148,14 @@ class Creative < ApplicationRecord
     parent.update(progress: new_progress)
   end
 
+  def all_shared_users(required_permission = :read)
+    base_creative = effective_origin
+    ancestor_ids = [ base_creative.id ] + base_creative.ancestors.pluck(:id)
+    CreativeShare.where(creative_id: ancestor_ids)
+                 .where("permission >= ?", CreativeShare.permissions[required_permission.to_s])
+                 .includes(:user)
+  end
+
   private
 
   def assign_default_user
