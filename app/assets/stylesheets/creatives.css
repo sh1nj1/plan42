@@ -81,8 +81,6 @@
 .creative-row-start {
     display: flex;
     align-items: center;
-    width: 100%;
-    /* background-color: var(--color-btn-bg); */
 }
 
 .creative-toggle-btn {
