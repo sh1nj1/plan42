@@ -7,7 +7,7 @@ class InboxMailer < ApplicationMailer
       user: @user,
       email: @user.email,
       subject: email.subject,
-      body: email.body.raw_source,
+      body: extract_body(email),
       event: :inbox_summary
     )
   end
