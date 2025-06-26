@@ -32,6 +32,7 @@ if (!window.commentsInitialized) {
                 document.body.classList.add('no-scroll');
                 updatePosition();
             }
+            subscribePresence();
             loadInitialComments();
         }
         function closePopup() {
@@ -42,14 +43,30 @@ if (!window.commentsInitialized) {
                 popup.style.display = 'none';
             }
             document.body.classList.remove('no-scroll');
+            unsubscribePresence();
         }
         var popup = document.getElementById('comments-popup');
         var closeBtn = document.getElementById('close-comments-btn');
         var list = document.getElementById('comments-list');
         var form = document.getElementById('new-comment-form');
+        var participants = document.getElementById('comment-participants');
         var submitBtn = form.querySelector('button[type="submit"]');
         var textarea = form.querySelector('textarea');
         var editingId = null;
+        var presenceSubscription = null;
+
+        function subscribePresence() {
+            if (!popup.dataset.creativeId) return;
+            if (presenceSubscription) { presenceSubscription.unsubscribe(); }
+            presenceSubscription = ActionCable.createConsumer().subscriptions.create(
+                { channel: 'CommentsPresenceChannel', creative_id: popup.dataset.creativeId },
+                { received: function(data) { if (data.html && participants) { participants.innerHTML = data.html; } } }
+            );
+        }
+
+        function unsubscribePresence() {
+            if (presenceSubscription) { presenceSubscription.unsubscribe(); presenceSubscription = null; }
+        }
         if (popup) {
             function adjustForKeyboard() {
                 if (!isMobile()) return;
