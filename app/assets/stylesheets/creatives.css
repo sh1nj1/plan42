@@ -132,20 +132,25 @@
 }
 
 /* to prevent border height from affecting layout, add virtual border */
-.creative-divider::before,
-.creative-divider::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    width: 100%;
-    height: 6px; /* border thickness */
-    background: var(--color-bg);
-}
-.creative-divider::before {
-    top: 0;
-}
-.creative-divider::after {
-    bottom: 0;
+@media (max-width: 768px) {
+
+    .creative-divider::before,
+    .creative-divider::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        width: 100%;
+        height: 6px; /* border thickness */
+        background: var(--color-bg);
+    }
+
+    .creative-divider::before {
+        top: 0;
+    }
+
+    .creative-divider::after {
+        bottom: 0;
+    }
 }
 
 .select-creative-checkbox {
@@ -160,6 +165,10 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+}
+
+.creative-row:hover {
+    background-color: var(--color-border);
 }
 
 .creative-progress {
