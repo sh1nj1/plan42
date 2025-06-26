@@ -12,6 +12,10 @@
   margin-top: 0.5em;
     overflow-y: auto;
     height: 380px;
+    /* align to vertical bottom */
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
 }
 
 #new-comment-form {
