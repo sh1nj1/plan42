@@ -15,6 +15,8 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
     InvitationMailer.with(invitation: invitation).invite.deliver_now
 
     mail = ActionMailer::Base.deliveries.last
+    email_record = Email.order(:created_at).last
+    assert email_record.body.present?, "email body should be saved"
     body = mail.text_part ? mail.text_part.body.decoded : mail.body.decoded
     token = CGI.unescape(body[/token=([^"\s]+)/, 1])
     assert token.present?, "token should be present in email"

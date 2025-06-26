@@ -14,6 +14,7 @@ class InboxSummaryJobTest < ActiveJob::TestCase
     assert_emails 1 do
       InboxSummaryJob.perform_now
     end
+    assert Email.order(:created_at).last.body.present?, "email body should be saved"
   end
 
   test "does not send email when user has no new items" do

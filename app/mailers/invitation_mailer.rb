@@ -5,7 +5,7 @@ class InvitationMailer < ApplicationMailer
     Email.create!(
       email: @invitation.email,
       subject: email.subject,
-      body: email.body.raw_source,
+      body: extract_body(email),
       event: :invitation
     )
   end
