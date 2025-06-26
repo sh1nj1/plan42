@@ -1,5 +1,5 @@
 <div id="comment-participants">
-  <% accessible_users = [creative.user].compact + creative.creative_shares.includes(:user).map(&:user) %>
+  <% accessible_users = [creative.user].compact + creative.all_shared_users(:feedback).map(&:user) %>
   <% accessible_users.uniq.each do |u| %>
     <% classes = 'avatar comment-presence-avatar' %>
     <% classes += ' inactive' unless present_ids.include?(u.id) %>

@@ -37,10 +37,7 @@ class CreativesController < ApplicationController
     end
     # 공유 리스트 로직: 자신과 모든 ancestor에서 공유된 사용자 수집
     if (@shared_creative = @parent_creative || @creatives&.first)
-      # linked creative(복제본)이면 origin 사용
-      base_creative = @shared_creative.origin_id.present? ? @shared_creative.origin : @shared_creative
-      ancestor_ids = [ base_creative.id ] + base_creative.ancestors.pluck(:id)
-      @shared_list = CreativeShare.where(creative_id: ancestor_ids).includes(:user)
+      @shared_list = @shared_creative.all_shared_users
     end
 
     if params[:tags].present?
