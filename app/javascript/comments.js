@@ -87,10 +87,17 @@ if (!window.commentsInitialized) {
                         if (highlightId) {
                             var el = document.getElementById('comment_' + highlightId);
                             if (el) {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                                 el.classList.add('highlight-flash');
                                 setTimeout(function(){ el.classList.remove('highlight-flash'); }, 2000);
                             }
+                        } else {
+                            var commentsList = document.getElementById('comments-list');
+                            if (commentsList) {
+                                commentsList.scrollTop = commentsList.scrollHeight;
+                            }
                         }
+                        textarea.focus();
                     });
             }
             function resetForm() {

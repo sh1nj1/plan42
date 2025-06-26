@@ -5,13 +5,17 @@
   /* top: 10em; */
   z-index: 1000;
   width: 350px;
-  max-height: 400px;
-  overflow-y: auto;
   transition: all 0.2s;
 }
 
 #comments-list {
   margin-top: 0.5em;
+    overflow-y: auto;
+    height: 380px;
+}
+
+#new-comment-form {
+    margin-top: auto;
 }
 
 #new-comment-form textarea {
