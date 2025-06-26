@@ -2,16 +2,25 @@
   display: none;
   position: absolute;
   right: 2em;
-  /* top: 10em; */
   z-index: 1000;
   width: 350px;
   max-height: 400px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   transition: all 0.2s;
 }
 
 #comments-list {
   margin-top: 0.5em;
+  flex-grow: 1;
+  overflow-y: auto;
+}
+
+#new-comment-form {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.5em;
+  background: var(--color-section-bg);
 }
 
 #new-comment-form textarea {
@@ -69,6 +78,9 @@
         min-width: 0;
         max-width: none;
         max-height: 70vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
         padding: 0.5em;
         border-radius: 10px 10px 0 0;
         transform: translateY(100%);
