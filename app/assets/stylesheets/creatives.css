@@ -1,16 +1,6 @@
-.creative-row-actions {
-  visibility: hidden;
-  display: flex;
-  align-items: center;
-}
+
 .creative-row:hover .creative-row-actions {
   visibility: visible;
-}
-
-@media (max-width: 768px) {
-  .creative-row-actions {
-    visibility: visible !important;
-  }
 }
 
 .creative-actions-row {
@@ -91,6 +81,8 @@
 .creative-row-start {
     display: flex;
     align-items: center;
+    width: 100%;
+    /* background-color: var(--color-btn-bg); */
 }
 
 .creative-toggle-btn {
@@ -112,6 +104,46 @@
     font-weight: bold;
     text-decoration: none;
     cursor: pointer;
+}
+
+.creative-row-actions {
+    visibility: hidden;
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+}
+
+@media (max-width: 768px) {
+    .creative-row-actions {
+        visibility: visible !important;
+    }
+}
+
+.creative-divider {
+    position: relative;
+    /* width: 6px; */
+    margin-right: 2px;
+    background-color: var(--color-border);
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+}
+
+/* to prevent border height from affecting layout, add virtual border */
+.creative-divider::before,
+.creative-divider::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 6px; /* border thickness */
+    background: var(--color-bg);
+}
+.creative-divider::before {
+    top: 0;
+}
+.creative-divider::after {
+    bottom: 0;
 }
 
 .select-creative-checkbox {
