@@ -51,6 +51,27 @@ if (!window.commentsInitialized) {
         var textarea = form.querySelector('textarea');
         var editingId = null;
         if (popup) {
+            function adjustForKeyboard() {
+                if (!isMobile()) return;
+                var inset = 0;
+                if (window.visualViewport) {
+                    inset = window.innerHeight - window.visualViewport.height;
+                    if (inset < 0) inset = 0;
+                }
+                popup.style.bottom = inset + 'px';
+            }
+            textarea.addEventListener('focus', function() {
+                adjustForKeyboard();
+                if (window.visualViewport) {
+                    window.visualViewport.addEventListener('resize', adjustForKeyboard);
+                }
+            });
+            textarea.addEventListener('blur', function() {
+                popup.style.bottom = '';
+                if (window.visualViewport) {
+                    window.visualViewport.removeEventListener('resize', adjustForKeyboard);
+                }
+            });
             const buttons = document.getElementsByName('show-comments-btn');
             buttons.forEach(function(btn) {
                 btn.onclick = function() {
