@@ -3,8 +3,19 @@ class CommentsController < ApplicationController
   before_action :set_comment, only: [ :destroy, :show, :update ]
 
   def index
-    @comments = @creative.comments
-    render partial: "comments/list", locals: { comments: @comments, creative: @creative }
+    per_page = params[:per_page].to_i
+    per_page = 10 if per_page <= 0
+    page = params[:page].to_i
+    page = 1 if page <= 0
+
+    scope = @creative.comments.order(created_at: :desc)
+    @comments = scope.offset((page - 1) * per_page).limit(per_page).to_a
+
+    if page <= 1
+      render partial: "comments/list", locals: { comments: @comments.reverse, creative: @creative }
+    else
+      render partial: "comments/comment", collection: @comments, as: :comment
+    end
   end
 
   def create

@@ -32,7 +32,7 @@ if (!window.commentsInitialized) {
                 document.body.classList.add('no-scroll');
                 updatePosition();
             }
-            fetchComments();
+            loadInitialComments();
         }
         function closePopup() {
             if (isMobile()) {
@@ -99,23 +99,62 @@ if (!window.commentsInitialized) {
                 }
                 startY = null;
             });
-            function fetchComments(highlightId) {
-                list.innerHTML = popup.dataset.loadingText;
-                fetch(`/creatives/${popup.dataset.creativeId}/comments`)
-                    .then(r => r.text()).then(html => {
-                        list.innerHTML = html;
-                        updatePosition();
-                        if (highlightId) {
-                            var el = document.getElementById('comment_' + highlightId);
-                            if (el) {
-                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                el.classList.add('highlight-flash');
-                                setTimeout(function(){ el.classList.remove('highlight-flash'); }, 2000);
-                            }
-                        }
 
-                        textarea.focus();
-                    });
+            list.addEventListener('scroll', function() {
+                const pos = list.scrollHeight - list.clientHeight + list.scrollTop;
+                if (pos < 50) {
+                    loadMoreComments();
+                }
+                console.log("scrollTop:", list.scrollTop, "scrollHeight:", list.scrollHeight, "clientHeight:", list.clientHeight, "pos:", pos);
+            });
+            var currentPage = 1;
+            var loadingMore = false;
+            var allLoaded = false;
+
+            function fetchCommentsPage(page) {
+                return fetch(`/creatives/${popup.dataset.creativeId}/comments?page=${page}`)
+                    .then(r => r.text());
+            }
+
+            function loadInitialComments(highlightId) {
+                currentPage = 1;
+                allLoaded = false;
+                list.innerHTML = popup.dataset.loadingText;
+                fetchCommentsPage(1).then(function(html) {
+                    list.innerHTML = html;
+                    updatePosition();
+                    if (highlightId) {
+                        var el = document.getElementById('comment_' + highlightId);
+                        if (el) {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            el.classList.add('highlight-flash');
+                            setTimeout(function(){ el.classList.remove('highlight-flash'); }, 2000);
+                        }
+                    }
+                    textarea.focus();
+                    if ((html.match(/class="comment-item"/g) || []).length < 10) {
+                        allLoaded = true;
+                    }
+                });
+            }
+
+            function loadMoreComments() {
+                if (loadingMore || allLoaded) return;
+                console.log("Loading more comments...");
+                loadingMore = true;
+                fetchCommentsPage(currentPage + 1).then(function(html) {
+                    if (html.trim() === '') {
+                        allLoaded = true;
+                    } else {
+                        list.insertAdjacentHTML('beforeend', html);
+                        currentPage += 1;
+                        if ((html.match(/class="comment-item"/g) || []).length < 10) {
+                            allLoaded = true;
+                        }
+                    }
+                }).finally(function(){
+                    loadingMore = false;
+                });
             }
 
             function resetForm() {
@@ -141,7 +180,7 @@ if (!window.commentsInitialized) {
                     .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.errors.join(', ')); }))
                     .then(html => {
                         resetForm();
-                        fetchComments(editingId);
+                        loadInitialComments(editingId);
                     })
                     .catch(e => { alert(e.message); });
             };
@@ -158,7 +197,7 @@ if (!window.commentsInitialized) {
                         headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }
                     }).then(function(r) {
                         if (r.ok) {
-                            fetchComments();
+                            loadInitialComments();
                         } else {
                             // TODO: handle error
                         }
@@ -182,7 +221,7 @@ if (!window.commentsInitialized) {
                     var btn = document.querySelector('[name="show-comments-btn"][data-creative-id="' + creativeId + '"]');
                     if (btn) {
                         openPopup(btn);
-                        fetchComments(commentId);
+                        loadInitialComments(commentId);
                     }
                 }
             }
