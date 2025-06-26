@@ -91,15 +91,12 @@ if (!window.commentsInitialized) {
                                 el.classList.add('highlight-flash');
                                 setTimeout(function(){ el.classList.remove('highlight-flash'); }, 2000);
                             }
-                        } else {
-                            var commentsList = document.getElementById('comments-list');
-                            if (commentsList) {
-                                commentsList.scrollTop = commentsList.scrollHeight;
-                            }
                         }
+
                         textarea.focus();
                     });
             }
+
             function resetForm() {
                 form.reset();
                 editingId = null;

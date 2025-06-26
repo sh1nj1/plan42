@@ -35,7 +35,7 @@ class Comment < ApplicationRecord
   end
 
   def broadcast_create
-    broadcast_prepend_later_to([ creative, :comments ], target: "comments_list")
+    broadcast_append_later_to([ creative, :comments ], target: "comments_list")
   end
 
   def broadcast_update
