@@ -308,7 +308,7 @@ class CreativesController < ApplicationController
     else
       flash[:alert] = t("creatives.index.plan_tag_failed", default: "Please select a plan and at least one creative.")
     end
-    redirect_to creatives_path(select_mode: 1)
+    redirect_back fallback_location: creatives_path(select_mode: 1)
   end
 
   def remove_plan
@@ -324,7 +324,7 @@ class CreativesController < ApplicationController
     else
       flash[:alert] = t("creatives.index.plan_tag_remove_failed", default: "Please select a plan and at least one creative.")
     end
-    redirect_to creatives_path(select_mode: 1)
+    redirect_back fallback_location: creatives_path(select_mode: 1)
   end
 
   def export_markdown
