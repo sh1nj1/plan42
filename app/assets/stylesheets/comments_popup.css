@@ -36,7 +36,7 @@
 
 .comment-item {
     border-top: 1px solid var(--color-border);
-    padding: 0.5em 0;
+    padding: 0.5em 0 1.5em 0;
     position: relative;
 }
 
@@ -51,7 +51,7 @@
 
 .delete-comment-btn {
     position: absolute;
-    top: 0.2em;
+    bottom: 0.2em;
     right: 0.2em;
     border: none;
     background: none;
@@ -61,7 +61,7 @@
 
 .edit-comment-btn {
     position: absolute;
-    top: 0.2em;
+    bottom: 0.2em;
     right: 2.5em;
     border: none;
     background: none;
