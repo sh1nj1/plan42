@@ -18,7 +18,7 @@ ko:
     collapse_all: "모두 접기"
     expand_all: "모두 펼치기"
     save: "저장"
-    filter_comments: "코멘트"
+    filter_comments: "채팅"
     inbox: "인박스"
     more: "더보기"
     light_mode: "라이트모드"
