@@ -79,7 +79,7 @@ class Creative < ApplicationRecord
       description = origin.rich_text_description&.body
     end
     if html
-      description&.respond_to?(:to_html) ? description.to_html : description.to_s
+      description&.to_s || ""
     else
       description
     end
