@@ -146,6 +146,12 @@ if (!window.commentsInitialized) {
                 });
             }
 
+            function checkAllLoaded(html) {
+                if ((html.match(/class="comment-item /g) || []).length < 10) {
+                    allLoaded = true;
+                }
+            }
+
             function loadInitialComments(highlightId) {
                 currentPage = 1;
                 allLoaded = false;
@@ -162,9 +168,7 @@ if (!window.commentsInitialized) {
                         }
                     }
                     textarea.focus();
-                    if ((html.match(/class="comment-item"/g) || []).length < 10) {
-                        allLoaded = true;
-                    }
+                    checkAllLoaded(html);
                     markCommentsRead();
                 });
             }
@@ -179,9 +183,7 @@ if (!window.commentsInitialized) {
                     } else {
                         list.insertAdjacentHTML('beforeend', html);
                         currentPage += 1;
-                        if ((html.match(/class="comment-item"/g) || []).length < 10) {
-                            allLoaded = true;
-                        }
+                        checkAllLoaded(html);
                     }
                 }).finally(function(){
                     loadingMore = false;
