@@ -18,7 +18,7 @@ class CreativeMarkdownService
         i += 1
       end
       root_creative = nil
-      if i < lines.size && lines[i] !~ /^\s*#/ && lines[i] !~ /^\s*[-*+]/
+      if i < lines.size && lines[i] !~ /^\s*#/ && lines[i] !~ /^\s*[-*+]/ && lines[i] !~ /^\s*\|.*\|\s*$/
         page_title = lines[i].strip
         root_creative = Creative.create(user: user, parent: parent, description: page_title)
         created << root_creative
@@ -85,11 +85,13 @@ class CreativeMarkdownService
       return nil unless lines[index] =~ /^\s*\|.*\|\s*$/
       return nil if index + 1 >= lines.size
       return nil unless lines[index + 1] =~ /^\s*\|[-:| ]+\|\s*$/
-      headers = lines[index].strip.split("|")[1..-1].map { |h| h.strip }
+      header_line = lines[index].strip.sub(/^\|/, "").sub(/\|$/, "")
+      headers = header_line.split("|").map { |h| h.strip }
       i = index + 2
       rows = []
       while i < lines.size && lines[i] =~ /^\s*\|.*\|\s*$/
-        rows << lines[i].strip.split("|")[1..-1].map { |c| c.strip }
+        row_line = lines[i].strip.sub(/^\|/, "").sub(/\|$/, "")
+        rows << row_line.split("|").map { |c| c.strip }
         i += 1
       end
       html = "<table><thead><tr>" +
