@@ -12,7 +12,11 @@ class CommentTest < ActiveSupport::TestCase
     item = InboxItem.last
     assert_equal creative.user, item.owner
     assert_includes item.message, commenter.email
-    expected_link = Rails.application.routes.url_helpers.creative_comment_path(creative, Comment.last)
+    expected_link = Rails.application.routes.url_helpers.creative_comment_url(
+      creative,
+      Comment.last,
+      host: "example.com"
+    )
     assert_equal expected_link, item.link
   end
 end

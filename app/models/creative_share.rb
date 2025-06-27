@@ -25,7 +25,10 @@ class CreativeShare < ApplicationRecord
     InboxItem.create!(
       owner: user,
       message: I18n.t("inbox.creative_shared", user: Current.user.email, short_title: short_title),
-      link: Rails.application.routes.url_helpers.creative_path(creative)
+      link: Rails.application.routes.url_helpers.creative_url(
+        creative,
+        Rails.application.config.action_mailer.default_url_options
+      )
     )
   end
 
