@@ -16,7 +16,11 @@ class Comment < ApplicationRecord
     InboxItem.create!(
       owner: owner,
       message: message,
-      link: Rails.application.routes.url_helpers.creative_comment_path(creative, self)
+      link: Rails.application.routes.url_helpers.creative_comment_url(
+        creative,
+        self,
+        Rails.application.config.action_mailer.default_url_options
+      )
     )
   end
 
