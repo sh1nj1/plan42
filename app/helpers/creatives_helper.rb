@@ -44,6 +44,9 @@ module CreativesHelper
         pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
         last_read_id = pointer&.last_read_comment_id
         unread_count = last_read_id ? origin.comments.where("id > ?", last_read_id).count : comments_count
+        if CommentPresenceStore.list(origin.id).include?(Current.user.id)
+          unread_count = 0
+        end
         classes = [ "comments-btn" ]
         classes << "no-comments" if comments_count.zero?
         comment_label = comments_count.zero? ? "\u{1F4AC}" : ""
