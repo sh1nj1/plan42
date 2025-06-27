@@ -20,6 +20,10 @@
     <%= f.label :display_level, t('users.display_level') %>
     <%= f.number_field :display_level, min: 1 %>
   </div>
+  <div>
+    <%= f.label :completion_mark, t('users.completion_mark') %>
+    <%= f.text_field :completion_mark %>
+  </div>
   <%= f.submit t('users.update_profile') %>
 <% end %>
 

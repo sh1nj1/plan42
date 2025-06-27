@@ -24,6 +24,7 @@ ko:
     update_profile: "프로파일 업데이트"
     index_title: "사용자 목록"
     display_level: "최대 표시 레벨"
+    completion_mark: "완료 표시 문자"
     profile_updated: "프로파일이 업데이트되었습니다."
     avatar_updated: "아바타가 변경되었습니다."
     password_updated: "비밀번호가 성공적으로 변경되었습니다."

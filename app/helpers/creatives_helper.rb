@@ -65,9 +65,13 @@ module CreativesHelper
   end
 
   def render_progress_value(value)
+    text = number_to_percentage(value * 100, precision: 0)
+    if value == 1 && Current.user&.completion_mark.present?
+      text += " #{Current.user.completion_mark}"
+    end
     content_tag(
       :span,
-      number_to_percentage(value * 100, precision: 0),
+      text,
       class: "creative-progress-#{value == 1 ? 'complete' : 'incomplete'}"
     )
   end
