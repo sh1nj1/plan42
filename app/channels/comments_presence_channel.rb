@@ -12,6 +12,10 @@ class CommentsPresenceChannel < ApplicationCable::Channel
   def unsubscribed
     if @creative_id && current_user
       CommentPresenceStore.remove(@creative_id, current_user.id)
+      creative = Creative.find(@creative_id)
+      pointer = CommentReadPointer.find_or_initialize_by(user: current_user, creative: creative)
+      pointer.last_read_comment_id = creative.comments.maximum(:id)
+      pointer.save!
       broadcast_presence
     end
   end

@@ -43,6 +43,7 @@ if (!window.commentsInitialized) {
                 popup.style.display = 'none';
             }
             document.body.classList.remove('no-scroll');
+            markCommentsRead();
             unsubscribePresence();
         }
         var popup = document.getElementById('comments-popup');
