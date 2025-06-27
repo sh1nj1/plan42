@@ -72,7 +72,8 @@ if (!window.commentsInitialized) {
                 if (!isMobile()) return;
                 var inset = 0;
                 if (window.visualViewport) {
-                    inset = window.innerHeight - window.visualViewport.height;
+                    var vv = window.visualViewport;
+                    inset = window.innerHeight - (vv.height + vv.offsetTop);
                     if (inset < 0) inset = 0;
                 }
                 popup.style.bottom = inset + 'px';
