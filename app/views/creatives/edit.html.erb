@@ -1,4 +1,4 @@
-<h1>Edit creative</h1>
+<h1><%= t('creatives.edit_title') %></h1>
 
 <%= render "form", creative: @creative %>
-<%= link_to "Cancel", @creative %>
+<%= link_to t('app.cancel'), @creative %>

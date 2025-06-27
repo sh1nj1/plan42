@@ -1,0 +1,5 @@
+en:
+  subscribers:
+    subscribed: "You are now subscribed."
+  unsubscribes:
+    success: "Unsubscribed successfully."

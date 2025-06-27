@@ -1,3 +1,4 @@
 <p>
-  Please verify your email by clicking <%= link_to 'here', verify_url(token: @user.generate_token_for(:email_verification)) %>.
+  <%= t('user_mailer.email_verification.message_html',
+         link: link_to(t('app.here'), verify_url(token: @user.generate_token_for(:email_verification)))) %>
 </p>

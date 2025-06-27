@@ -10,7 +10,7 @@ if (!window.isExportMarkdownEnabled) {
                 fetch('/creatives/export_markdown' + (exportBtn.dataset.parentCreativeId ? ('?parent_id=' + exportBtn.dataset.parentCreativeId) : ''), {
                     headers: {'Accept': 'text/markdown'}
                 })
-                    .then(resp => resp.ok ? resp.text() : Promise.reject('Failed to export'))
+                    .then(resp => resp.ok ? resp.text() : Promise.reject(exportBtn.dataset.error))
                     .then(md => {
                         const blob = new Blob([md], {type: 'text/markdown'});
                         const url = URL.createObjectURL(blob);
@@ -23,7 +23,8 @@ if (!window.isExportMarkdownEnabled) {
                             document.body.removeChild(a);
                             URL.revokeObjectURL(url);
                         }, 0);
-                    });
+                    })
+                    .catch(err => alert(err));
             });
         }
     });

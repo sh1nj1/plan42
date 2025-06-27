@@ -22,6 +22,7 @@ en:
       import_success: "Import successful! Reloading..."
       import_failed: "Import failed."
       export_markdown: "Export to Markdown"
+      export_failed: "Failed to export"
       only_markdown: "Only markdown (.md) files are allowed."
       drop_or_click_markdown: "Drop or click here to select a markdown file"
       import_markdown: "Import Markdown"
@@ -45,6 +46,8 @@ en:
       set_plan_title: "Set Plan for Selected Creative"
       are_you_sure_delete_share: "Are you sure delete share?"
       share_deleted: "The share are deleted."
+      select_one_creative: "Please select at least one Creative."
+      select_plan_to_remove: "Please select a Plan to remove."
     share:
       shared: "Creative shared successfully."
       already_shared_in_parent: "Creative already shared in parent creative."
@@ -59,5 +62,18 @@ en:
       sequence: "Sequence"
       progress: "Progress"
       submit: "Save"
+    edit_title: "Edit creative"
     help:
       add_child_creative: "Add child creative"
+    inventory:
+      progress: "%{value} Progress"
+      completed: "Completed"
+      todo: "Todo"
+      notify_me: "Email me when is progressing."
+      placeholder_email: "you@example.com"
+      submit: "Submit"
+  creative_mailer:
+    in_stock:
+      subject: "Good news!"
+      message_html: "%{creative} is back in stock."
+      unsubscribe: "Unsubscribe"

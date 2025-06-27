@@ -21,6 +21,10 @@ ko:
     filter_comments: "코멘트"
     inbox: "인박스"
     more: "더보기"
+    light_mode: "라이트모드"
+    dark_mode: "다크모드"
+    apply_tags: "필터"
+    here: "여기"
 
   inbox:
     mark_read: "읽음"

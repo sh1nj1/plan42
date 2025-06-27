@@ -22,6 +22,7 @@ en:
     profile: "Profile"
     avatar_url: "Avatar URL"
     update_profile: "Update Profile"
+    index_title: "Users"
     display_level: "Max Display Level"
     profile_updated: "Profile updated successfully."
     avatar_updated: "Avatar updated successfully."
@@ -39,3 +40,5 @@ en:
   user_mailer:
     email_verification:
       subject: "Verify your email"
+      message_html: "Please verify your email by clicking %{link}."
+      message_text: "Please verify your email by visiting the following link: %{link}"

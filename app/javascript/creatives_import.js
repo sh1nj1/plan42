@@ -10,10 +10,10 @@ if (!window.creativesImportInitialized) {
         const progress = document.getElementById('import-markdown-progress');
         if (!importBtn || !importArea) return;
 
-        const uploadingText = dropZone.dataset.uploading || 'Uploading...';
-        const successText = dropZone.dataset.success || 'Import successful! Reloading...';
-        const failedText = dropZone.dataset.failed || 'Import failed.';
-        const onlyMarkdownText = dropZone.dataset.onlyMarkdown || 'Only markdown (.md) files are allowed.';
+        const uploadingText = dropZone.dataset.uploading;
+        const successText = dropZone.dataset.success;
+        const failedText = dropZone.dataset.failed;
+        const onlyMarkdownText = dropZone.dataset.onlyMarkdown;
 
         function showProgress(message) {
             if (progress) {

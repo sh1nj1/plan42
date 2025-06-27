@@ -4,6 +4,8 @@ if (!window.isSetPlanModalInitialized) {
     document.addEventListener('turbo:load', function() {
         var setPlanBtn = document.getElementById('set-plan-btn');
         var modal = document.getElementById('set-plan-modal');
+        var selectOneText = modal ? modal.dataset.selectOne : '';
+        var selectPlanText = modal ? modal.dataset.selectPlan : '';
         var closeBtn = document.getElementById('close-set-plan-modal');
         var form = document.getElementById('set-plan-form');
         var idsInput = document.getElementById('selected-creative-ids-input');
@@ -24,13 +26,13 @@ if (!window.isSetPlanModalInitialized) {
                 }
             };
         }
-        if (form && idsInput) {
+       if (form && idsInput) {
             form.onsubmit = function() {
                 var checked = Array.from(document.querySelectorAll('.select-creative-checkbox:checked'));
                 var ids = checked.map(cb => cb.value);
                 idsInput.value = ids.join(',');
                 if (ids.length === 0) {
-                    alert('Please select at least one Creative.');
+                    alert(selectOneText);
                     return false;
                 }
                 return true;
@@ -43,12 +45,12 @@ if (!window.isSetPlanModalInitialized) {
                 var ids = checked.map(cb => cb.value);
                 idsInput.value = ids.join(',');
                 if (ids.length === 0) {
-                    alert('Please select at least one Creative.');
+                    alert(selectOneText);
                     return;
                 }
                 var planId = document.getElementById('plan-id-select').value;
                 if (!planId) {
-                    alert('Please select a Plan to remove.');
+                    alert(selectPlanText);
                     return;
                 }
                 // Submit via POST to /creatives/remove_plan

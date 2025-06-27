@@ -1,5 +1,5 @@
 <%#= TODO: remove this later, currently show uses index template, see controller %>
-<p><%= link_to "Back", creatives_path %></p>
+<p><%= link_to t('users.back'), creatives_path %></p>
 
 <section class="creative">
 
@@ -20,9 +20,9 @@
 
     <div class="creative-actions-row">
       <% if authenticated? %>
-        <%= link_to "New sub-creative", @creative&.id ? new_creative_path(parent_id: @creative.id, tags: params[:tags]) : new_creative_path(tags: params[:tags]) %>
-        <%= link_to "Edit", edit_creative_path(@creative), data: { action: "inline-editor#showForm" } %>
-        <%= button_to "Delete", @creative, method: :delete, data: { turbo_confirm: "Are you sure?" } %>
+        <%= link_to t('creatives.index.new_sub_creative'), @creative&.id ? new_creative_path(parent_id: @creative.id, tags: params[:tags]) : new_creative_path(tags: params[:tags]) %>
+        <%= link_to t('creatives.index.edit'), edit_creative_path(@creative), data: { action: "inline-editor#showForm" } %>
+        <%= button_to t('creatives.index.delete'), @creative, method: :delete, data: { turbo_confirm: t('creatives.index.are_you_sure') } %>
       <% end %>
     </div>
 
