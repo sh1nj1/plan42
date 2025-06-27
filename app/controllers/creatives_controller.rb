@@ -210,76 +210,11 @@ class CreativesController < ApplicationController
       render json: { error: "Invalid file type" }, status: :unprocessable_entity and return
     end
     parent = params[:parent_id].present? ? Creative.find_by(id: params[:parent_id]) : nil
-    file = params[:markdown]
-    content = file.read.force_encoding("UTF-8")
-    lines = content.lines
-    image_refs = {}
-    lines.reject! do |ln|
-      if ln =~ /^\s*\[([^\]]+)\]:\s*<\s*(data:image\/[^>]+)\s*>\s*$/
-        image_refs[$1] = $2.strip
-        true
-      else
-        false
-      end
-    end
-    created = []
-
-    # Find page title (first non-empty, non-heading, non-list line)
-    i = 0
-    while i < lines.size && lines[i].strip.empty?
-      i += 1
-    end
-    root_creative = nil
-    if i < lines.size && lines[i] !~ /^\s*#/ && lines[i] !~ /^\s*[-*+]/
-      page_title = lines[i].strip
-      root_creative = Creative.create(user: Current.user, parent: parent, description: page_title)
-      created << root_creative
-      i += 1
-    end
-    # If no page title, use parent as root
-    root_creative ||= parent
-
-    # Now, stack always starts with root_creative
-    stack = [ [ 0, root_creative ] ]
-    while i < lines.size
-      line = lines[i]
-      if line =~ /^(#+)\s+(.*)$/ # Heading
-        level = $1.length # 1 for h1, 2 for h2, etc.
-        desc = helpers.markdown_links_to_html($2.strip, image_refs)
-        while stack.any? && stack.last[0] >= level
-          stack.pop
-        end
-        new_parent = stack.any? ? stack.last[1] : root_creative
-        c = Creative.create(user: Current.user, parent: new_parent, description: desc)
-        created << c
-        stack << [ level, c ]
-        i += 1
-      elsif line =~ /^([ \t]*)([-*+])\s+(.*)$/ # Bullet list
-        indent = $1.length
-        desc = helpers.markdown_links_to_html($3.strip, image_refs)
-        bullet_level = 10 + indent / 2
-        while stack.any? && stack.last[0] >= bullet_level
-          stack.pop
-        end
-        new_parent = stack.any? ? stack.last[1] : root_creative
-        c = Creative.create(user: Current.user, parent: new_parent, description: desc)
-        created << c
-        stack << [ bullet_level, c ]
-        i += 1
-      elsif !line.strip.empty? # Paragraph/content under a heading
-        desc = helpers.markdown_links_to_html(line.strip, image_refs)
-        new_parent = stack.any? ? stack.last[1] : root_creative
-        c = Creative.create(user: Current.user, parent: new_parent, description: desc)
-        created << c
-        i += 1
-      else
-        i += 1
-      end
-    end
-    if created.any?
-      render json: { success: true, created: created.map(&:id) }
+    result = CreativeMarkdownService.import(file: params[:markdown], parent: parent, user: Current.user)
+    if result[:success]
+      render json: result
     else
-      render json: { error: "No creatives created" }, status: :unprocessable_entity
+      render json: result, status: :unprocessable_entity
     end
   end
 
@@ -325,12 +260,7 @@ class CreativesController < ApplicationController
   end
 
   def export_markdown
-    creatives = if params[:parent_id]
-      Creative.where(id: params[:parent_id])&.map(&:effective_origin) || []
-    else
-      Creative.where(parent_id: nil)
-    end
-    markdown = helpers.render_creative_tree_markdown(creatives)
+    markdown = CreativeMarkdownService.export(parent_id: params[:parent_id])
     send_data markdown, filename: "creatives.md", type: "text/markdown"
   end
 

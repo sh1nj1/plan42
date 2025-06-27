@@ -203,6 +203,11 @@ module CreativesHelper
     markdown = text.dup
     placeholders = {}
     index = 0
+    markdown.gsub!(%r{<table[\s\S]*?<\/table>}) do |match|
+      token = "__TABLE#{index}__"; index += 1
+      placeholders[token] = html_table_to_markdown(match)
+      token
+    end
     markdown.gsub!(%r{<action-text-attachment ([^>]+)>(?:</action-text-attachment>)?}) do |match|
       attrs = Hash[$1.scan(/(\S+?)="([^"]*)"/)]
       sgid = attrs["sgid"]
@@ -243,6 +248,22 @@ module CreativesHelper
   end
 
   private
+
+  def html_table_to_markdown(table_html)
+    doc = Nokogiri::HTML.fragment(table_html)
+    table = doc.at("table")
+    return "" unless table
+    headers = table.css("thead tr th").map { |th| html_links_to_markdown(th.inner_html.strip) }
+    rows = table.css("tbody tr").map do |tr|
+      tr.css("td").map { |td| html_links_to_markdown(td.inner_html.strip) }
+    end
+    md = "|" + headers.join(" | ") + "|\n"
+    md += "|" + headers.map { "---" }.join(" | ") + "|\n"
+    rows.each do |r|
+      md += "|" + r.join(" | ") + "|\n"
+    end
+    md
+  end
 
   def convert_data_image_to_attachment(data_url, alt)
     if data_url =~ %r{\Adata:(image/[\w.+-]+);base64,(.+)\z}
