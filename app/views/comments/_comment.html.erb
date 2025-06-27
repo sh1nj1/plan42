@@ -1,4 +1,4 @@
-<div class="comment-item" id="<%= dom_id(comment) %>">
+<div class="comment-item <%= 'last-read' if defined?(last_read_comment_id) && last_read_comment_id && comment.id == last_read_comment_id %>" id="<%= dom_id(comment) %>">
   <div>
     <%= render AvatarComponent.new(user: comment.user, size: 20, classes: 'avatar comment-avatar') %>
     <strong><%= comment.user&.email || t('comments.anonymous') %></strong>

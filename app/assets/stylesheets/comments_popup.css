@@ -40,6 +40,10 @@
     position: relative;
 }
 
+.comment-item.last-read {
+    border-bottom: 2px solid var(--color-border);
+}
+
 .comment-content {
     margin-top:0.2em;
     white-space:pre-line;
