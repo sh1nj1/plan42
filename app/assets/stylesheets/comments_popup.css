@@ -71,7 +71,7 @@
         right: 0;
         left: 0;
         top: auto;
-        bottom: env(keyboard-inset-height, 0);
+        bottom: 0;
         width: auto;
         min-width: 0;
         max-width: none;
