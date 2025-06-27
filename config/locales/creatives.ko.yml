@@ -22,6 +22,7 @@ ko:
       import_success: "가져오기 성공! 새로고침 중..."
       import_failed: "가져오기 실패"
       export_markdown: "마크다운 내보내기"
+      export_failed: "내보내기에 실패했습니다"
       only_markdown: "마크다운(.md) 파일만 가능합니다."
       drop_or_click_markdown: "여기에 파일을 드롭하거나 클릭하여 마크다운 파일을 선택하세요"
       import_markdown: "마크다운 가져오기"
@@ -45,6 +46,8 @@ ko:
       set_plan_title: "선택된 크리에이티브에 대한 계획 설정"
       are_you_sure_delete_share: "공유를 삭제하시겠습니까?"
       share_deleted: "공유가 삭제 되었습니다."
+      select_one_creative: "하나 이상의 크리에이티브를 선택하세요."
+      select_plan_to_remove: "제거할 플랜을 선택하세요."
     share:
       shared: "크리에이티브가 성공적으로 공유되었습니다."
       already_shared_in_parent: "크리에이티브가 상위 크리에이티브에 이미 공유되었습니다."
@@ -59,5 +62,18 @@ ko:
       sequence: "순서"
       progress: "진행률"
       submit: "저장"
+    edit_title: "크리에이티브 수정"
     help:
       add_child_creative: "하위 크리에이티브 추가"
+    inventory:
+      progress: "%{value} 진행률"
+      completed: "완료됨"
+      todo: "할 일"
+      notify_me: "진행 상황을 이메일로 알려주세요."
+      placeholder_email: "you@example.com"
+      submit: "제출"
+  creative_mailer:
+    in_stock:
+      subject: "좋은 소식!"
+      message_html: "%{creative} 이 다시 이용 가능합니다."
+      unsubscribe: "구독 취소"

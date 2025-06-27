@@ -50,6 +50,10 @@ en:
     filter_comments: "Comments"
     inbox: "Inbox"
     more: "More"
+    light_mode: "Light Mode"
+    dark_mode: "Dark Mode"
+    apply_tags: "Filter"
+    here: "here"
 
   inbox:
     mark_read: "Read"

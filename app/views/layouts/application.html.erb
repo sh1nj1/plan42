@@ -31,7 +31,7 @@
     <%= javascript_include_tag 'actioncable', defer: true %>
     <%= javascript_importmap_tags %>
   </head>
-  <body>
+  <body data-light-text='<%= t("app.light_mode") %>' data-dark-text='<%= t("app.dark_mode") %>'>
     <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
     <div class="notice"><%= notice %></div>
 

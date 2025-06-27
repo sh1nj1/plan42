@@ -1,13 +1,13 @@
-<% if creative.progress > 0 and creative.progress < 1 %>
-  <p><%= creative.progress %> Progress</p>
+<% if creative.progress > 0 && creative.progress < 1 %>
+  <p><%= t('creatives.inventory.progress', value: creative.progress) %></p>
 <% elsif creative.progress == 1 %>
-  <p>Completed</p>
+  <p><%= t('creatives.inventory.completed') %></p>
 <% else %>
-  <p>Todo</p>
-  <p>Email me when is progressing.</p>
+  <p><%= t('creatives.inventory.todo') %></p>
+  <p><%= t('creatives.inventory.notify_me') %></p>
 
   <%= form_with model: [creative, Subscriber.new] do |form| %>
-    <%= form.email_field :email, placeholder: "you@example.com", required: true %>
-    <%= form.submit "Submit" %>
+    <%= form.email_field :email, placeholder: t('creatives.inventory.placeholder_email'), required: true %>
+    <%= form.submit t('creatives.inventory.submit') %>
   <% end %>
 <% end %>

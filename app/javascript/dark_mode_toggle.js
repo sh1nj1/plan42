@@ -15,7 +15,9 @@ function setupDarkModeToggle() {
   if (!document.getElementById('dark-mode-toggle')) {
     const btn = document.createElement('button');
     btn.id = 'dark-mode-toggle';
-    btn.textContent = isDark ? '☀️ 라이트모드' : '🌙 다크모드';
+    const lightText = document.body.dataset.lightText || 'Light';
+    const darkText = document.body.dataset.darkText || 'Dark';
+    btn.textContent = isDark ? `☀️ ${lightText}` : `🌙 ${darkText}`;
     btn.style.position = 'fixed';
     btn.style.bottom = '20px';
     btn.style.right = '20px';
@@ -32,7 +34,7 @@ function setupDarkModeToggle() {
     btn.addEventListener('click', () => {
       const isDarkNow = document.body.classList.toggle('dark-mode');
       localStorage.setItem('darkMode', isDarkNow);
-      btn.textContent = isDarkNow ? '☀️ 라이트모드' : '🌙 다크모드';
+      btn.textContent = isDarkNow ? `☀️ ${lightText}` : `🌙 ${darkText}`;
       btn.style.background = isDarkNow ? '#fff' : '#444';
       btn.style.color = isDarkNow ? '#222' : '#fff';
     });

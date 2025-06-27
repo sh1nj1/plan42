@@ -3,7 +3,7 @@ class PlansController < ApplicationController
     @plan = Plan.new(plan_params)
     @plan.owner = Current.user
     if @plan.save
-      redirect_back fallback_location: root_path, notice: "Plan was successfully created."
+      redirect_back fallback_location: root_path, notice: t("plans.created")
     else
       flash[:alert] = @plan.errors.full_messages.join(", ")
       redirect_back fallback_location: root_path
