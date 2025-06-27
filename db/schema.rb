@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_06_20_004558) do
+ActiveRecord::Schema[8.0].define(version: 2025_06_21_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -47,6 +47,17 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_20_004558) do
     t.bigint "blob_id", null: false
     t.string "variation_digest", null: false
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
+  end
+
+  create_table "comment_read_pointers", force: :cascade do |t|
+    t.integer "user_id", null: false
+    t.integer "creative_id", null: false
+    t.integer "last_read_comment_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["creative_id"], name: "index_comment_read_pointers_on_creative_id"
+    t.index ["user_id", "creative_id"], name: "index_comment_read_pointers_on_user_id_and_creative_id", unique: true
+    t.index ["user_id"], name: "index_comment_read_pointers_on_user_id"
   end
 
   create_table "comments", force: :cascade do |t|
@@ -332,6 +343,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_20_004558) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "comment_read_pointers", "creatives"
+  add_foreign_key "comment_read_pointers", "users"
   add_foreign_key "comments", "creatives"
   add_foreign_key "comments", "users"
   add_foreign_key "creative_expanded_states", "creatives"

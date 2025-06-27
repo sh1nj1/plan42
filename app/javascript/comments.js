@@ -134,6 +134,17 @@ if (!window.commentsInitialized) {
                     .then(r => r.text());
             }
 
+            function markCommentsRead() {
+                fetch('/comment_read_pointers/update', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ creative_id: popup.dataset.creativeId })
+                });
+            }
+
             function loadInitialComments(highlightId) {
                 currentPage = 1;
                 allLoaded = false;
@@ -153,6 +164,7 @@ if (!window.commentsInitialized) {
                     if ((html.match(/class="comment-item"/g) || []).length < 10) {
                         allLoaded = true;
                     }
+                    markCommentsRead();
                 });
             }
 
