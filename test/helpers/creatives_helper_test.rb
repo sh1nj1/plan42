@@ -52,4 +52,10 @@ class CreativesHelperTest < ActionView::TestCase
     back = html_links_to_markdown(html)
     assert_equal "Look ![](data:image/png;base64,aGk=)", back
   end
+
+  test "html table converts to markdown" do
+    html = "<table><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>"
+    expected = "|A | B|\n|--- | ---|\n|1 | 2|\n"
+    assert_equal expected, html_table_to_markdown(html)
+  end
 end

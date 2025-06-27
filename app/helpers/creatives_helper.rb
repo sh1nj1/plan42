@@ -141,7 +141,7 @@ module CreativesHelper
     return "" if creatives.blank?
     md = ""
     creatives.each do |creative|
-      desc = creative.effective_description(nil, false)
+      desc = creative.effective_description(nil, true)
       html = desc.to_s.gsub(/<!--.*?-->/m, "").strip
       html = html_links_to_markdown(html)
       if level <= 4
