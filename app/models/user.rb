@@ -9,6 +9,7 @@ class User < ApplicationRecord
   has_one_attached :avatar
 
   attribute :display_level, :integer, default: DEFAULT_DISPLAY_LEVEL
+  attribute :completion_mark, :string, default: ""
 
   normalizes :email, with: ->(e) { e.strip.downcase }
 
