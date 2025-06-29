@@ -157,7 +157,7 @@ module CreativesHelper
       html = desc.to_s.gsub(/<!--.*?-->/m, "").strip
       html = html_links_to_markdown(html)
       if level <= 4
-        md += "#{'#' * level} #{ActionView::Base.full_sanitizer.sanitize(html)}\n\n"
+        md += "#{'#' * level} #{ActionView::Base.full_sanitizer.sanitize(html).strip}\n\n"
       else
         # trix-content 블록에서 내부 div의 텍스트만 추출
         inner_html = if html =~ /<div class="trix-content">\s*<div>(.*?)<\/div>\s*<\/div>/m
