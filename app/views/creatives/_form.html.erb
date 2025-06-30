@@ -34,7 +34,8 @@
 
   <div>
     <%= form.label :description, t('.description'), style: "display: block" %>
-    <%= form.rich_text_area :description %>
+    <% value = creative.effective_origin.rich_text_description %>
+    <%= form.rich_text_area :description, value: value %>
   </div>
 
   <br/>
