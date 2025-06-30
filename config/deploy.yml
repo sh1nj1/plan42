@@ -1,8 +1,8 @@
 # Name of your application. Used to uniquely configure containers.
-service: plan42
+service: collavre
 
 # Name of the container image.
-image: soonoh/plan42
+image: soonoh/collavre
 
 # Deploy to these servers.
 servers:

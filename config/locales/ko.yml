@@ -1,6 +1,6 @@
 ko:
   app:
-    name: "플랜42"
+    name: "콜라브"
     home: "홈"
     sign_in: "로그인"
     sign_out: "로그아웃"

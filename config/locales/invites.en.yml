@@ -4,6 +4,6 @@ en:
     invite_sent: "Invitation email sent."
   invitation_mailer:
     invite:
-      subject: "You're invited to Plan42"
+      subject: "You're invited to Collavre"
       message_html: "You have been invited to collaborate on \"%{creative}\". Click %{link} to accept within 15 days."
       message_text: "You have been invited to collaborate on \"%{creative}\". Join using this link: %{link}"

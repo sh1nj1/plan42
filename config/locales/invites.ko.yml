@@ -4,6 +4,6 @@ ko:
     invite_sent: "초대 이메일을 보냈습니다."
   invitation_mailer:
     invite:
-      subject: "Plan42에 초대되었습니다"
+      subject: "콜라브에 초대되었습니다"
       message_html: "\"%{creative}\" 협업에 초대되었습니다. %{link} 링크를 클릭해 15일 이내에 수락하세요."
       message_text: "\"%{creative}\" 협업에 초대되었습니다. 이 링크로 참여하세요: %{link}"
