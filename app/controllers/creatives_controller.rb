@@ -125,7 +125,7 @@ class CreativesController < ApplicationController
 
   def update
     respond_to do |format|
-      if @creative.update(creative_params)
+      if @creative.effective_origin.update(creative_params)
         format.html { redirect_to @creative }
         format.json { head :ok }
       else
