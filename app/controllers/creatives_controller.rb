@@ -1,5 +1,5 @@
 class CreativesController < ApplicationController
-  # TODO: for not for security reasons for this Plan42 app, we don't expose to public, later it should be controlled by roles for each Creatives
+  # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
   # Removed unauthenticated access to index and show actions
   # allow_unauthenticated_access only: %i[ index show ]
   before_action :set_creative, only: %i[ show edit update destroy ]

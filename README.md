@@ -1,4 +1,4 @@
-# Plan42
+# Collavre
 
 A tracker of your creatives.
 

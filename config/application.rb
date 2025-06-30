@@ -6,7 +6,7 @@ require "rails/all"
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
 
-module Plan42
+module Collavre
   class Application < Rails::Application
     # closure_tree uses lock file if db is not MySQL or PostgreSQL. set FLOCK_DIR to tmp dir.
     config.before_initialize do

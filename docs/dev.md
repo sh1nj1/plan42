@@ -19,7 +19,7 @@
 
 ### show docker volume path
 
-`docker volume inspect plan42_storage`
+`docker volume inspect collavre_storage`
 
 ### send data to javascript
 
