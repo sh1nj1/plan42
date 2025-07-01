@@ -1,11 +1,12 @@
 class AvatarComponent < ViewComponent::Base
-  def initialize(user:, size: 32, classes: "")
+  def initialize(user:, size: 32, classes: "", data: {})
     @user = user
     @size = size
     @classes = classes
+    @data = data
   end
 
-  attr_reader :size, :classes
+  attr_reader :size, :classes, :data
 
   def avatar_url
     if @user

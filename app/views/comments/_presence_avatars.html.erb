@@ -3,6 +3,6 @@
   <% accessible_users.uniq.each do |u| %>
     <% classes = 'avatar comment-presence-avatar' %>
     <% classes += ' inactive' unless present_ids.include?(u.id) %>
-    <%= render AvatarComponent.new(user: u, size: 20, classes: classes) %>
+    <%= render AvatarComponent.new(user: u, size: 20, classes: classes, data: { email: u.email }) %>
   <% end %>
 </div>
