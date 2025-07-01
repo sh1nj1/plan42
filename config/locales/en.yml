@@ -52,6 +52,7 @@ en:
     more: "More"
     light_mode: "Light Mode"
     dark_mode: "Dark Mode"
+    system_mode: "System Default"
     apply_tags: "Filter"
     here: "here"
 
