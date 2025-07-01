@@ -22,7 +22,7 @@ if (!window.mentionMenuInitialized) {
 
     function insert(email) {
       var pos = textarea.selectionStart;
-      var before = textarea.value.slice(0, pos).replace(/@[^@\s]*$/, '@' + email);
+      var before = textarea.value.slice(0, pos).replace(/@[^@\s]*$/, `@${email} `);
       textarea.value = before + textarea.value.slice(pos);
     }
 

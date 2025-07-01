@@ -56,6 +56,26 @@ if (!window.commentsInitialized) {
         var editingId = null;
         var presenceSubscription = null;
 
+        function insertMention(email) {
+            var start = textarea.selectionStart;
+            var end = textarea.selectionEnd;
+            var mentionText = `@${email} `;
+            
+            if (start !== end) {
+                // 선택영역이 있는 경우: 선택영역을 '@' + email로 바꿈
+                var before = textarea.value.slice(0, start);
+                var after = textarea.value.slice(end);
+                textarea.value = before + mentionText + after;
+                textarea.setSelectionRange(start + mentionText.length, start + mentionText.length);
+            } else {
+                // 선택영역이 없는 경우: '@' + email을 현재 커서에 삽입
+                var before = textarea.value.slice(0, start);
+                var after = textarea.value.slice(start);
+                textarea.value = before + mentionText + after;
+                textarea.setSelectionRange(start + mentionText.length, start + mentionText.length);
+            }
+        }
+
         function subscribePresence() {
             if (!popup.dataset.creativeId) return;
             if (presenceSubscription) { presenceSubscription.unsubscribe(); }
@@ -117,6 +137,14 @@ if (!window.commentsInitialized) {
                     }
                 }
                 startY = null;
+            });
+
+            participants.addEventListener('click', function(e) {
+                var avatar = e.target.closest('.comment-presence-avatar');
+                if (avatar && avatar.dataset.email) {
+                    insertMention(avatar.dataset.email);
+                    textarea.focus();
+                }
             });
 
             list.addEventListener('scroll', function() {
