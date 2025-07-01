@@ -5,6 +5,7 @@ class Creative < ApplicationRecord
   has_many :subscribers, dependent: :destroy
   has_rich_text :description
   has_many :comments, dependent: :destroy
+  has_many :comment_read_pointers, dependent: :delete_all
 
   has_closure_tree order: :sequence, name_column: :description
 
