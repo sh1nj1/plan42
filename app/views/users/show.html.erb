@@ -24,6 +24,10 @@
     <%= f.label :completion_mark, t('users.completion_mark') %>
     <%= f.text_field :completion_mark %>
   </div>
+  <div>
+    <%= f.label :theme, t('users.theme') %>
+    <%= f.select :theme, options_for_select([[t('app.light_mode'), 'light'], [t('app.dark_mode'), 'dark']], @user.theme) %>
+  </div>
   <%= f.submit t('users.update_profile') %>
 <% end %>
 
