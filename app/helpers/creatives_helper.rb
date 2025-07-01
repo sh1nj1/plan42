@@ -84,7 +84,7 @@ module CreativesHelper
         filtered_children = params[:comment] == "true" ? [] : creative.children_with_permission(Current.user)
         expanded = expanded_from_expanded_state(creative.id, @expanded_state_map)
         render_next_block = ->(level) {
-          filters = params.to_unsafe_h.except(:id).present?
+          filters = params.to_unsafe_h.except(:id, :controller, :action).present?
           if filtered_children.any?
             content_tag(
               :div,
