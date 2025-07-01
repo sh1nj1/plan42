@@ -324,6 +324,21 @@ class CreativesController < ApplicationController
     redirect_back fallback_location: creatives_path(select_mode: 1)
   end
 
+  def children
+    parent = Creative.find(params[:id])
+    @expanded_state_map = CreativeExpandedState
+                              .where(user_id: Current.user.id, creative_id: parent.id)
+                              .first&.expanded_status || {}
+    children = parent.children_with_permission(Current.user)
+    level = params[:level].to_i
+    render html: helpers.render_creative_tree(
+      children,
+      level,
+      select_mode: params[:select_mode] == "1",
+      max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL
+    ).html_safe
+  end
+
   def export_markdown
     creatives = if params[:parent_id]
       Creative.where(id: params[:parent_id])&.map(&:effective_origin) || []

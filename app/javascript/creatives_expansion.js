@@ -2,6 +2,14 @@ if (!window.creativesExpansionInitialized) {
     window.creativesExpansionInitialized = true;
 
     function expand(childrenDiv, btn) {
+        if (childrenDiv.dataset.loaded !== "true") {
+            fetch(childrenDiv.dataset.loadUrl)
+                .then(r => r.text())
+                .then(html => {
+                    childrenDiv.innerHTML = html;
+                    childrenDiv.dataset.loaded = "true";
+                });
+        }
         childrenDiv.style.display = "";
         btn.textContent = "▼";
     }
@@ -22,8 +30,11 @@ if (!window.creativesExpansionInitialized) {
                 const childrenDiv = document.getElementById(`creative-children-${creativeId}`);
                 if (childrenDiv) {
                     const isHidden = childrenDiv.style.display === "none";
-                    childrenDiv.style.display = isHidden ? "" : "none";
-                    btn.textContent = isHidden ? "▼" : "▶";
+                    if (isHidden) {
+                        expand(childrenDiv, btn);
+                    } else {
+                        collapse(childrenDiv, btn);
+                    }
                     // Store expansion state in DB, scoped by currentCreativeId and node_id
                     let url = `/creative_expanded_states/toggle`;
                     fetch(url, {
