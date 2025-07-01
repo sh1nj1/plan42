@@ -31,6 +31,23 @@ body.dark-mode {
   --hover-brightness: 110%;
 }
 
+@media (prefers-color-scheme: dark) {
+  body:not(.light-mode):not(.dark-mode) {
+    --color-bg: #212121;
+    --color-text: #eaeaea;
+    --color-link: #6a9eff;
+    --color-nav-bg: #181818;
+    --color-section-bg: #181818;
+    --color-btn-bg: #333543;
+    --color-btn-text: #eaeaea;
+    --color-border: #333333;
+    --color-muted: #aaaaaa;
+    --color-drag-over: #383a40;
+    --color-drag-over-edge: #777;
+    --hover-brightness: 110%;
+  }
+}
+
 body {
   background: var(--color-bg);
   color: var(--color-text);

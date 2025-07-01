@@ -23,6 +23,7 @@ ko:
     more: "더보기"
     light_mode: "라이트모드"
     dark_mode: "다크모드"
+    system_mode: "시스템 기본값"
     apply_tags: "필터"
     here: "여기"
 

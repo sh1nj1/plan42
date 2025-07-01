@@ -339,7 +339,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_23_000000) do
     t.string "avatar_url"
     t.integer "display_level", default: 6, null: false
     t.string "completion_mark", default: "", null: false
-    t.string "theme", default: "light", null: false
+    t.string "theme"
     t.index ["email"], name: "index_users_on_email", unique: true
   end
 
