@@ -25,6 +25,7 @@ en:
     index_title: "Users"
     display_level: "Max Display Level"
     completion_mark: "Completion Mark"
+    theme: "Theme"
     profile_updated: "Profile updated successfully."
     avatar_updated: "Avatar updated successfully."
     password_updated: "Password updated successfully."

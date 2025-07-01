@@ -92,6 +92,6 @@ class UsersController < ApplicationController
   end
 
   def profile_params
-    params.require(:user).permit(:avatar, :avatar_url, :display_level, :completion_mark)
+    params.require(:user).permit(:avatar, :avatar_url, :display_level, :completion_mark, :theme)
   end
 end

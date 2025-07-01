@@ -10,12 +10,14 @@ class User < ApplicationRecord
 
   attribute :display_level, :integer, default: DEFAULT_DISPLAY_LEVEL
   attribute :completion_mark, :string, default: ""
+  attribute :theme, :string, default: "light"
 
   normalizes :email, with: ->(e) { e.strip.downcase }
 
   validates :email, presence: true, uniqueness: true,
                     format: { with: URI::MailTo::EMAIL_REGEXP }
   validates :display_level, numericality: { only_integer: true, greater_than: 0 }
+  validates :theme, inclusion: { in: %w[light dark] }
 
   generates_token_for :email_verification, expires_in: 1.day do
     email
