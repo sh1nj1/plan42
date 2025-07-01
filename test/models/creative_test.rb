@@ -54,4 +54,21 @@ class CreativeTest < ActiveSupport::TestCase
 
     Current.reset
   end
+
+  test "destroying creative removes comment read pointers" do
+    user = users(:one)
+    Current.session = OpenStruct.new(user: user)
+
+    creative = Creative.create!(user: user, description: "Parent")
+    Comment.create!(creative: creative, user: user, content: "hi")
+    CommentReadPointer.create!(user: user, creative: creative)
+
+    assert_difference("Creative.count", -1) do
+      assert_nothing_raised { creative.destroy }
+    end
+
+    assert_empty CommentReadPointer.where(creative_id: creative.id)
+
+    Current.reset
+  end
 end
