@@ -85,9 +85,27 @@ module CreativesHelper
         expanded = expanded_from_expanded_state(creative.id, @expanded_state_map)
         render_next_block = ->(level) {
           filters = params.to_unsafe_h.except(:id).present?
-          ((filtered_children.any?) ? content_tag(:div, id: "creative-children-#{creative.id}", class: "creative-children", style: "#{filters || expanded ? "" : "display: none;"}", data: { expanded: expanded }) {
-            render_creative_tree(filtered_children, level, select_mode: select_mode, max_level: max_level)
-          }: "".html_safe)
+          if filtered_children.any?
+            content_tag(
+              :div,
+              id: "creative-children-#{creative.id}",
+              class: "creative-children",
+              style: "#{filters || expanded ? "" : "display: none;"}",
+              data: {
+                expanded: expanded,
+                loaded: (filters || expanded),
+                load_url: children_creative_path(creative, level: level, select_mode: select_mode ? 1 : 0)
+              }
+            ) do
+              if filters || expanded
+                render_creative_tree(filtered_children, level, select_mode: select_mode, max_level: max_level)
+              else
+                "".html_safe
+              end
+            end
+          else
+            "".html_safe
+          end
         }
 
         skip = false

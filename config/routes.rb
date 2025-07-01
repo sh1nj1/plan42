@@ -42,6 +42,7 @@ Rails.application.routes.draw do
       get :export_markdown
     end
     member do
+      get :children
       post :share, to: "creatives#share", as: :share_creative
     end
   end
