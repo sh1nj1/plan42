@@ -171,6 +171,43 @@ button {
     border-top: 1px solid var(--color-border);
 }
 
+.timeline {
+    position: relative;
+    padding-left: 1.5em;
+}
+
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: 0.5em;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--color-border);
+}
+
+.timeline-date {
+    font-weight: bold;
+    margin: 0.5em 0 0.25em;
+}
+
+.timeline-item {
+    position: relative;
+    margin-bottom: 0.5em;
+    padding-left: 1em;
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -0.5em;
+    top: 0.45em;
+    width: 0.6em;
+    height: 0.6em;
+    background: var(--color-btn-bg);
+    border-radius: 50%;
+}
+
 #inbox-panel.slide-panel {
     position: fixed;
     top: 0;

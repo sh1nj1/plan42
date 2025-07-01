@@ -1,4 +1,7 @@
 ko:
+  date:
+    formats:
+      default: "%Y-%m-%d"
   time:
     formats:
       long: "%Y년 %m월 %d일 %H:%M:%S"

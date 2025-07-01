@@ -134,28 +134,7 @@
     </nav>
 
     <div id="plans-list-area" style="display:none;">
-      <% Plan.where(owner: Current.user).or(Plan.where(owner: nil)).each do |plan| %>
-        <div style="padding: 4px 0;">
-          <% path = params[:id].present? ? creatives_path(params[:id], tags: [plan.id]) : creatives_path(tags: [plan.id]) %>
-          <%= link_to (plan.name.presence || plan.target_date), path %>
-          <%= plan.target_date %>
-          <% if plan.owner == Current.user %>
-            <%= button_to 'X', plan_path(plan), method: :delete, data: { confirm: t('plans.delete_confirm', default: 'Are you sure?') }, form: { style: 'display:inline;' }, class: 'delete-plan-btn' %>
-          <% end %>
-        </div>
-      <% end %>
-      <hr>
-      <%= form_with(model: Plan.new, url: plans_path, local: true) do |form| %>
-        <div>
-          <%= form.text_field :name, placeholder: t("plans.plan_name") %>
-        </div>
-        <div>
-          <%= form.date_field :target_date, placeholder: t("plans.target_date") %>
-        </div>
-        <div>
-          <%= form.submit t("plans.add_plan") %>
-        </div>
-      <% end %>
+      <%= render PlansTimelineComponent.new(plans: Plan.where(owner: Current.user).or(Plan.where(owner: nil))) %>
     </div>
 
     <div id="inbox-panel" class="slide-panel">
