@@ -45,10 +45,10 @@ if (!window.creativeRowEditorInitialized) {
 
     function move(delta) {
       if (!currentTree) return;
-      let target = delta < 0 ? currentTree.previousElementSibling : currentTree.nextElementSibling;
-      while (target && !target.classList.contains('creative-tree')) {
-        target = delta < 0 ? target.previousElementSibling : target.nextElementSibling;
-      }
+      const trees = Array.from(document.querySelectorAll('.creative-tree'));
+      const index = trees.indexOf(currentTree);
+      if (index === -1) return;
+      const target = trees[index + delta];
       if (!target) return;
       currentTree = target;
       target.appendChild(template);
