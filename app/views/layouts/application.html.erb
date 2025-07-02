@@ -237,6 +237,18 @@
             document.querySelectorAll('.inbox-item .item-link').forEach(function(a) {
               a.addEventListener('click', function() {
                 localStorage.setItem('inboxOpen', '1');
+                var item = a.closest('.inbox-item');
+                if (item && item.dataset.id) {
+                  fetch('/inbox/' + item.dataset.id, {
+                    method: 'PATCH',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content
+                    },
+                    body: JSON.stringify({ state: 'read' }),
+                    keepalive: true
+                  });
+                }
               });
             });
           }
