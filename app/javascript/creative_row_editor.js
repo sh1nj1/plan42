@@ -15,6 +15,7 @@ if (!window.creativeRowEditorInitialized) {
 
     let currentTree = null;
     let saveTimer = null;
+    let pendingSave = false;
 
     function attachButtons() {
       document.querySelectorAll('.edit-inline-btn').forEach(function(btn) {
@@ -56,12 +57,14 @@ if (!window.creativeRowEditorInitialized) {
     }
 
     function scheduleSave() {
+      pendingSave = true;
       clearTimeout(saveTimer);
       saveTimer = setTimeout(saveForm, 5000);
     }
 
     function saveForm() {
       clearTimeout(saveTimer);
+      pendingSave = false;
       if (!form.action) return;
       fetch(form.action, {
         method: 'PATCH',
@@ -81,11 +84,11 @@ if (!window.creativeRowEditorInitialized) {
     editor.addEventListener('trix-change', scheduleSave);
 
     upBtn.addEventListener('click', function() {
-      scheduleSave();
+      if (pendingSave) saveForm();
       move(-1);
     });
     downBtn.addEventListener('click', function() {
-      scheduleSave();
+      if (pendingSave) saveForm();
       move(1);
     });
 
