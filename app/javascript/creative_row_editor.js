@@ -102,6 +102,7 @@ if (!window.creativeRowEditorInitialized) {
           editor.editor.loadHTML(data.description || '');
           progressInput.value = data.progress || 0;
           progressValue.textContent = data.progress || 0;
+          editor.focus();
         });
     }
 
@@ -147,7 +148,7 @@ if (!window.creativeRowEditorInitialized) {
         e.preventDefault();
         if (pendingSave) saveForm();
         move(-1);
-      } else if (e.key === 'ArrowDown' && start === length && end === length) {
+      } else if (e.key === 'ArrowDown' && start >= length - 1 && end >= length - 1) {
         e.preventDefault();
         if (pendingSave) saveForm();
         move(1);
