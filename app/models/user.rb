@@ -12,6 +12,8 @@ class User < ApplicationRecord
   attribute :completion_mark, :string, default: ""
   attribute :theme, :string
 
+  validates :google_uid, uniqueness: true, allow_nil: true
+
   normalizes :email, with: ->(e) { e.strip.downcase }
 
   validates :email, presence: true, uniqueness: true,
@@ -21,6 +23,16 @@ class User < ApplicationRecord
 
   generates_token_for :email_verification, expires_in: 1.day do
     email
+  end
+
+  def self.find_or_create_from_google(auth)
+    find_or_initialize_by(google_uid: auth.uid).tap do |user|
+      user.email = auth.info.email
+      user.email_verified_at ||= Time.current
+      user.password = SecureRandom.hex(16) if user.new_record?
+      user.avatar_url = auth.info.image if auth.info.image.present?
+      user.save!
+    end
   end
 
   def email_verified?

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_06_23_000000) do
+ActiveRecord::Schema[8.0].define(version: 2025_06_24_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -340,7 +340,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_23_000000) do
     t.integer "display_level", default: 6, null: false
     t.string "completion_mark", default: "", null: false
     t.string "theme"
+    t.string "google_uid"
     t.index ["email"], name: "index_users_on_email", unique: true
+    t.index ["google_uid"], name: "index_users_on_google_uid", unique: true
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"

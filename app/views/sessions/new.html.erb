@@ -9,4 +9,6 @@
 
 <%= link_to t('users.sessions.new.forgot_password'), new_password_path %>
 <br>
+<%= link_to t('app.sign_in_with_google'), '/auth/google_oauth2', id: 'google-sign-in' %>
+<br>
 <%= link_to t("users.new.sign_up"), new_user_path, class: "sign-up-link" %>
