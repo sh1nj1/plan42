@@ -11,6 +11,9 @@
                     class: 'add-creative-btn',
                     style: (' visibility: hidden;' unless creative.has_permission?(Current.user, :write)),
                     title: t('creatives.help.add_child_creative')) %>
+        <% if creative.has_permission?(Current.user, :write) %>
+          <button type="button" class="edit-inline-btn" data-creative-id="<%= creative.id %>">✎</button>
+        <% end %>
         </div>
       </div>
       <%= content %>

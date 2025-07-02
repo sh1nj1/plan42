@@ -1,0 +1,16 @@
+<div id="inline-edit-form" style="display:none;">
+  <form id="inline-edit-form-element" method="post">
+    <input type="hidden" name="_method" value="patch" />
+    <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>" />
+    <input type="hidden" id="inline-creative-description" name="creative[description]" />
+    <trix-editor input="inline-creative-description"></trix-editor>
+    <div style="margin-top:0.5em;display:flex;align-items:center;gap:0.5em;">
+      <input type="range" id="inline-creative-progress" name="creative[progress]" min="0" max="1" step="0.01">
+      <span id="inline-progress-value">0</span>
+    </div>
+    <div style="margin-top:0.5em;">
+      <button type="button" id="inline-move-up">▲</button>
+      <button type="button" id="inline-move-down">▼</button>
+    </div>
+  </form>
+</div>

@@ -54,7 +54,16 @@ class CreativesController < ApplicationController
 
   def show
     index
-    render :index
+    respond_to do |format|
+      format.html { render :index }
+      format.json do
+        render json: {
+          id: @creative.id,
+          description: @creative.effective_description,
+          progress: @creative.progress
+        }
+      end
+    end
   end
 
   def new
