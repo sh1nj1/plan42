@@ -136,6 +136,24 @@ if (!window.creativeRowEditorInitialized) {
     });
     editor.addEventListener('trix-change', scheduleSave);
 
+    editor.addEventListener('keydown', function(e) {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      const range = editor.editor.getSelectedRange();
+      if (!range) return;
+      const start = range[0];
+      const end = range[1];
+      const length = editor.editor.getDocument().toString().length;
+      if (e.key === 'ArrowUp' && start === 0 && end === 0) {
+        e.preventDefault();
+        if (pendingSave) saveForm();
+        move(-1);
+      } else if (e.key === 'ArrowDown' && start === length && end === length) {
+        e.preventDefault();
+        if (pendingSave) saveForm();
+        move(1);
+      }
+    });
+
     if (closeBtn) {
       closeBtn.addEventListener('click', hideCurrent);
     }
