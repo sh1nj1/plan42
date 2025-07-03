@@ -1,15 +1,13 @@
-<div class="horizontal-timeline">
-  <div id="plans-timeline" data-plans="<%= raw plan_data.to_json %>"></div>
-  <hr>
-  <%= form_with(model: Plan.new, url: plans_path, local: true) do |form| %>
-    <div>
-      <%= form.text_field :name, placeholder: t('plans.plan_name') %>
-    </div>
-    <div>
-      <%= form.date_field :target_date, placeholder: t('plans.target_date') %>
-    </div>
-    <div>
-      <%= form.submit t('plans.add_plan') %>
-    </div>
-  <% end %>
-</div>
+<div id="plans-timeline" class="horizontal-timeline" data-plans="<%= raw plan_data.to_json %>"></div>
+<hr>
+<%= form_with(model: Plan.new, url: plans_path, local: true) do |form| %>
+  <div>
+    <%= form.text_field :name, placeholder: t('plans.plan_name') %>
+  </div>
+  <div>
+    <%= form.date_field :target_date, placeholder: t('plans.target_date') %>
+  </div>
+  <div>
+    <%= form.submit t('plans.add_plan') %>
+  </div>
+<% end %>
