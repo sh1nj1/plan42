@@ -4,7 +4,7 @@
 </div>
 <hr>
 <div class="plan-form-container">
-<%= form_with(model: Plan.new, url: plans_path, local: true) do |form| %>
+<%= form_with(model: Plan.new, url: plans_path, local: true, id: 'new-plan-form') do |form| %>
   <div>
     <%= form.text_field :name, placeholder: t('plans.plan_name') %>
   </div>

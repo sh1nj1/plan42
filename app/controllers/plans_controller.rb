@@ -3,10 +3,24 @@ class PlansController < ApplicationController
     @plan = Plan.new(plan_params)
     @plan.owner = Current.user
     if @plan.save
-      redirect_back fallback_location: root_path, notice: t("plans.created")
+      respond_to do |format|
+        format.html do
+          redirect_back fallback_location: root_path, notice: t("plans.created")
+        end
+        format.json do
+          render json: plan_json(@plan), status: :created
+        end
+      end
     else
-      flash[:alert] = @plan.errors.full_messages.join(", ")
-      redirect_back fallback_location: root_path
+      respond_to do |format|
+        format.html do
+          flash[:alert] = @plan.errors.full_messages.join(", ")
+          redirect_back fallback_location: root_path
+        end
+        format.json do
+          render json: { errors: @plan.errors.full_messages }, status: :unprocessable_entity
+        end
+      end
     end
   end
 
@@ -26,5 +40,25 @@ class PlansController < ApplicationController
 
   def plan_params
     params.require(:plan).permit(:name, :target_date)
+  end
+
+  def plan_json(plan)
+    {
+      id: plan.id,
+      name: plan.name.presence || I18n.l(plan.target_date),
+      created_at: plan.created_at.to_date,
+      target_date: plan.target_date,
+      progress: plan.progress,
+      path: plan_creatives_path(plan),
+      deletable: plan.owner_id == Current.user&.id
+    }
+  end
+
+  def plan_creatives_path(plan)
+    if params[:id].present?
+      creative_path(params[:id], tags: [ plan.id ])
+    else
+      creatives_path(tags: [ plan.id ])
+    end
   end
 end
