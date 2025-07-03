@@ -1,8 +1,7 @@
-if (!window.plansTimelineInitialized) {
-  window.plansTimelineInitialized = true;
+if (!window.plansTimelineScriptInitialized) {
+  window.plansTimelineScriptInitialized = true;
 
-  document.addEventListener('turbo:load', function() {
-    var container = document.getElementById('plans-timeline');
+  function initPlansTimeline(container) {
     if (!container) return;
 
     var plans = [];
@@ -230,5 +229,11 @@ if (!window.plansTimelineInitialized) {
         });
       });
     }
+  }
+
+  window.initPlansTimeline = initPlansTimeline;
+
+  document.addEventListener('turbo:load', function() {
+    initPlansTimeline(document.getElementById('plans-timeline'));
   });
 }

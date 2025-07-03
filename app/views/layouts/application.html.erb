@@ -133,9 +133,7 @@
       <% end %>
     </nav>
 
-    <div id="plans-list-area" style="display:none;">
-      <%= render PlansTimelineComponent.new(plans: Plan.where(owner: Current.user).or(Plan.where(owner: nil))) %>
-    </div>
+    <div id="plans-list-area" style="display:none;"></div>
 
     <div id="inbox-panel" class="slide-panel">
       <div class="inbox-panel-header">
@@ -158,9 +156,25 @@
         document.addEventListener('turbo:load', function() {
           var btns = document.querySelectorAll('.plans-menu-btn');
           var area = document.getElementById('plans-list-area');
+          var loaded = false;
           btns.forEach(function(btn) {
             btn.addEventListener('click', function() {
-              area.style.display = (area.style.display === 'none') ? 'block' : 'none';
+              if (area.style.display === 'none') {
+                area.style.display = 'block';
+                if (!loaded) {
+                  fetch('/plans', { headers: { Accept: 'text/html' } })
+                    .then(function(r) { return r.text(); })
+                    .then(function(html) {
+                      area.innerHTML = html;
+                      if (window.initPlansTimeline) {
+                        window.initPlansTimeline(document.getElementById('plans-timeline'));
+                      }
+                      loaded = true;
+                    });
+                }
+              } else {
+                area.style.display = 'none';
+              }
             });
           });
         });
