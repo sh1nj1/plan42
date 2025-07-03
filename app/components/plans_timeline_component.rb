@@ -16,8 +16,20 @@ class PlansTimelineComponent < ViewComponent::Base
         name: plan.name.presence || I18n.l(plan.target_date),
         created_at: plan.created_at.to_date,
         target_date: plan.target_date,
-        progress: plan.progress
+        progress: plan.progress,
+        path: plan_creatives_path(plan),
+        deletable: plan.owner_id == Current.user&.id
       }
+    end
+  end
+
+  private
+
+  def plan_creatives_path(plan)
+    if helpers.params[:id].present?
+      helpers.creative_path(helpers.params[:id], tags: [ plan.id ])
+    else
+      helpers.creatives_path(tags: [ plan.id ])
     end
   end
 end
