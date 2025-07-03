@@ -13,7 +13,13 @@ class PlansController < ApplicationController
   def destroy
     @plan = Plan.find(params[:id])
     @plan.destroy
-    redirect_back fallback_location: root_path, notice: t("plans.deleted", default: "Plan deleted.")
+    respond_to do |format|
+      format.html do
+        redirect_back fallback_location: root_path,
+                      notice: t("plans.deleted", default: "Plan deleted.")
+      end
+      format.json { head :no_content }
+    end
   end
 
   private

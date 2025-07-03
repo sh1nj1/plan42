@@ -81,8 +81,23 @@ if (!window.plansTimelineInitialized) {
             if (!confirm(container.dataset.deleteConfirm)) return;
             fetch('/plans/' + plan.id, {
               method: 'DELETE',
-              headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content }
-            }).then(function() { window.location.reload(); });
+              headers: {
+                'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+                Accept: 'application/json'
+              }
+            }).then(function(r) {
+              if (r.ok) {
+                var idx = planEls.findIndex(function(item) { return item.plan.id === plan.id; });
+                if (idx > -1) {
+                  planEls[idx].el.remove();
+                  planEls.splice(idx, 1);
+                }
+                plans = plans.filter(function(p) { return p.id !== plan.id; });
+                updatePlanPositions();
+              } else {
+                window.location.reload();
+              }
+            });
           });
         }
 
