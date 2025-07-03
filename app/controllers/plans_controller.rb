@@ -7,7 +7,7 @@ class PlansController < ApplicationController
                  .order(:created_at)
     respond_to do |format|
       format.html do
-        render html: render_to_string(PlansTimelineComponent.new(plans: @plans)).html_safe
+        render html: render_to_string(PlansTimelineComponent.new(plans: @plans), layout: false)
       end
       format.json do
         render json: @plans.map { |p| plan_json(p) }
