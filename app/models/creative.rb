@@ -130,6 +130,20 @@ class Creative < ApplicationRecord
     end
   end
 
+  # Calculate progress for the subtree ignoring permission checks.
+  # `tagged_ids` should be a Set of creative IDs that are tagged with the plan.
+  def progress_for_plan(tagged_ids)
+    child_values = children.map { |child| child.progress_for_plan(tagged_ids) }.compact
+
+    if child_values.any?
+      child_values.sum.to_f / child_values.size
+    elsif tagged_ids.include?(id)
+      children.any? ? 1.0 : progress
+    else
+      nil
+    end
+  end
+
   # 공유 대상 사용자를 위해 Linked Creative를 생성합니다.
   # 이미 존재하거나 원본 작성자에게는 생성하지 않습니다.
   def create_linked_creative_for_user(user)

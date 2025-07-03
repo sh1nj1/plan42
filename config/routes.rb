@@ -47,7 +47,7 @@ Rails.application.routes.draw do
     end
   end
 
-  resources :plans, only: [ :create, :destroy ]
+  resources :plans, only: [ :create, :destroy, :index ]
 
   resources :inbox_items, path: "inbox", only: [ :index, :update, :destroy ] do
     get :count, on: :collection

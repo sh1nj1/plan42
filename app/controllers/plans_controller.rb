@@ -1,4 +1,19 @@
 class PlansController < ApplicationController
+  def index
+    start_date = Date.current - 30
+    end_date = Date.current + 30
+    @plans = Plan.where(owner: Current.user).or(Plan.where(owner: nil))
+                 .where("target_date >= ? AND created_at <= ?", start_date, end_date)
+                 .order(:created_at)
+    respond_to do |format|
+      format.html do
+        render html: render_to_string(PlansTimelineComponent.new(plans: @plans)).html_safe
+      end
+      format.json do
+        render json: @plans.map { |p| plan_json(p) }
+      end
+    end
+  end
   def create
     @plan = Plan.new(plan_params)
     @plan.owner = Current.user
