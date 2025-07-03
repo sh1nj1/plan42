@@ -5,3 +5,4 @@ ko:
     plan_name: "계획 이름"
     created: "계획이 성공적으로 생성되었습니다."
     deleted: "계획이 삭제되었습니다."
+    today: "오늘"
