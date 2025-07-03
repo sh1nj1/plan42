@@ -12,7 +12,12 @@ if (!window.creativeRowEditorInitialized) {
     const progressValue = document.getElementById('inline-progress-value');
     const upBtn = document.getElementById('inline-move-up');
     const downBtn = document.getElementById('inline-move-down');
+    const addBtn = document.getElementById('inline-add');
     const closeBtn = document.getElementById('inline-close');
+
+    const methodInput = document.getElementById('inline-method');
+    const parentInput = document.getElementById('inline-parent-id');
+    const afterInput = document.getElementById('inline-after-id');
 
     let currentTree = null;
     let saveTimer = null;
@@ -44,29 +49,64 @@ if (!window.creativeRowEditorInitialized) {
         });
     }
 
+    function refreshChildren(tree) {
+      const container = tree.querySelector('.creative-children');
+      if (!container) { location.reload(); return; }
+      const url = container.dataset.loadUrl;
+      if (!url) { location.reload(); return; }
+      fetch(url)
+        .then(r => r.text())
+        .then(html => {
+          container.innerHTML = html;
+          attachButtons();
+        });
+    }
+
     function saveForm() {
       clearTimeout(saveTimer);
+      const method = methodInput.value === 'patch' ? 'PATCH' : 'POST';
       pendingSave = false;
       if (!form.action) return Promise.resolve();
       return fetch(form.action, {
-        method: 'PATCH',
+        method: method,
         headers: {
           'Accept': 'application/json',
           'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
         },
         body: new FormData(form),
         credentials: 'same-origin'
+      }).then(function(r) {
+        if (!r.ok) return r;
+        return r.json().then(function(data) {
+          if (method === 'POST' && data.id) {
+            form.action = `/creatives/${data.id}`;
+            methodInput.value = 'patch';
+            form.dataset.creativeId = data.id;
+            if (currentTree) currentTree.id = `creative-${data.id}`;
+            const parentTree = parentInput.value ? document.getElementById(`creative-${parentInput.value}`) : null;
+            if (parentTree) refreshChildren(parentTree); else location.reload();
+          } else if (method === 'PATCH') {
+            const tree = document.getElementById(`creative-${form.dataset.creativeId}`);
+            if (tree) refreshRow(tree);
+          }
+        });
       });
     }
 
     function hideCurrent() {
       if (!currentTree) return;
       const tree = currentTree;
+      const wasNew = !form.dataset.creativeId;
       currentTree = null;
       template.style.display = 'none';
-      saveForm().then(() => {
-        showRow(tree);
-        refreshRow(tree);
+      const p = pendingSave ? saveForm() : Promise.resolve();
+      p.then(() => {
+        if (wasNew && !form.dataset.creativeId) {
+          tree.remove();
+        } else {
+          showRow(tree);
+          refreshRow(tree);
+        }
       });
     }
 
@@ -118,11 +158,57 @@ if (!window.creativeRowEditorInitialized) {
       hideRow(target);
       target.appendChild(template);
       template.style.display = 'block';
-      saveForm().then(() => {
+      const wasNew = !form.dataset.creativeId;
+      const p = pendingSave ? saveForm() : Promise.resolve();
+      p.then(() => {
+        if (wasNew && !form.dataset.creativeId) {
+          prev.remove();
+        } else {
+          showRow(prev);
+          refreshRow(prev);
+        }
+      });
+      loadCreative(target.id.replace('creative-', ''));
+    }
+
+    function addNew() {
+      if (!currentTree) return;
+      const prev = currentTree;
+      const childContainer = prev.querySelector('.creative-children');
+      const firstChild = childContainer && childContainer.querySelector('.creative-tree');
+      let parentTree, container, insertBefore, afterId = '';
+      if (firstChild) {
+        parentTree = prev;
+        container = childContainer;
+        insertBefore = firstChild;
+      } else {
+        parentTree = prev.parentElement.closest('.creative-tree');
+        container = prev.parentNode;
+        afterId = prev.id.replace('creative-', '');
+        insertBefore = prev.nextSibling;
+      }
+      const p = pendingSave ? saveForm() : Promise.resolve();
+      p.then(() => {
         showRow(prev);
         refreshRow(prev);
       });
-      loadCreative(target.id.replace('creative-', ''));
+      const newTree = document.createElement('div');
+      newTree.className = 'creative-tree';
+      if (insertBefore) container.insertBefore(newTree, insertBefore); else container.appendChild(newTree);
+      currentTree = newTree;
+      newTree.appendChild(template);
+      template.style.display = 'block';
+      form.action = '/creatives';
+      methodInput.value = '';
+      form.dataset.creativeId = '';
+      parentInput.value = parentTree ? parentTree.id.replace('creative-', '') : '';
+      afterInput.value = afterId;
+      descriptionInput.value = '';
+      editor.editor.loadHTML('');
+      progressInput.value = 0;
+      progressValue.textContent = 0;
+      pendingSave = false;
+      editor.focus();
     }
 
     function scheduleSave() {
@@ -167,6 +253,10 @@ if (!window.creativeRowEditorInitialized) {
       if (pendingSave) saveForm();
       move(1);
     });
+
+    if (addBtn) {
+      addBtn.addEventListener('click', addNew);
+    }
 
     attachButtons();
   });

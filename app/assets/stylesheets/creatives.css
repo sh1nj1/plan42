@@ -109,6 +109,13 @@
     background: none;
     border: none;
 }
+#inline-add {
+    margin-left: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    background: none;
+    border: none;
+}
 
 .creative-row-actions {
     visibility: hidden;
