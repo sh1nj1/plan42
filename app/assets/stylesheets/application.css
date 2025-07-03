@@ -262,7 +262,7 @@ button {
     left: 2px;
     top: 2px;
     font-size: 0.75em;
-    color: var(--color-bg);
+    color: var(--color-text);
 }
 
 #inbox-panel.slide-panel {
