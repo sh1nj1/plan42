@@ -113,21 +113,39 @@ class Creative < ApplicationRecord
     return progress if tag_ids.blank?
 
     tag_ids = Array(tag_ids).map(&:to_s)
-    visible_children = children_with_permission(user)
-    child_values = visible_children.map do |child|
-      child.progress_for_tags(tag_ids, user)
-    end.compact
 
-    if child_values.any?
-      child_values.sum.to_f / child_values.size
-    else
-      own_label_ids = tags.pluck(:label_id).map(&:to_s)
-      if (own_label_ids & tag_ids).any?
-        visible_children.any? ? 1.0 : progress
+    nodes = self_and_descendants.includes(:tags, :children)
+    nodes_by_id = nodes.index_by(&:id)
+    child_map = {}
+    depth_map = {}
+
+    stack = [ [ nodes_by_id[id], 0 ] ]
+    until stack.empty?
+      node, depth = stack.pop
+      depth_map[node.id] = depth
+      child_map[node.id] = node.children.to_a
+      node.children.each { |child| stack.push([ child, depth + 1 ]) }
+    end
+
+    progress_map = {}
+    depth_map.keys.sort_by { |nid| -depth_map[nid] }.each do |nid|
+      node = nodes_by_id[nid]
+      visible_children = child_map[nid].select { |child| child.has_permission?(user) }
+      child_values = visible_children.map { |child| progress_map[child.id] }.compact
+
+      progress_map[nid] = if child_values.any?
+        child_values.sum.to_f / child_values.size
       else
-        nil
+        own_label_ids = node.tags.map { |t| t.label_id.to_s }
+        if (own_label_ids & tag_ids).any?
+          visible_children.any? ? 1.0 : node.progress
+        else
+          nil
+        end
       end
     end
+
+    progress_map[id]
   end
 
   # 공유 대상 사용자를 위해 Linked Creative를 생성합니다.
