@@ -265,6 +265,17 @@ button {
     color: var(--color-text);
 }
 
+.plan-bar .delete-plan-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    border: none;
+    background: none;
+    font-weight: bold;
+    cursor: pointer;
+    color: var(--color-bg);
+}
+
 #inbox-panel.slide-panel {
     position: fixed;
     top: 0;

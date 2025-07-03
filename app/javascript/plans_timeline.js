@@ -52,6 +52,8 @@ if (!window.plansTimelineInitialized) {
       plans.forEach(function(plan, idx) {
         var el = document.createElement('div');
         el.className = 'plan-bar';
+        el.dataset.path = plan.path;
+        el.dataset.id = plan.id;
         var left = dayDiff(plan.created_at, startDate) * dayWidth;
         var width = (dayDiff(plan.target_date, plan.created_at) + 1) * dayWidth;
         el.style.left = left + 'px';
@@ -67,6 +69,28 @@ if (!window.plansTimelineInitialized) {
         label.className = 'plan-label';
         label.textContent = plan.name + ' ' + Math.round(plan.progress * 100) + '%';
         el.appendChild(label);
+
+        if (plan.deletable) {
+          var del = document.createElement('button');
+          del.type = 'button';
+          del.textContent = '×';
+          del.className = 'delete-plan-btn';
+          el.appendChild(del);
+          del.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (!confirm(container.dataset.deleteConfirm)) return;
+            fetch('/plans/' + plan.id, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content }
+            }).then(function() { window.location.reload(); });
+          });
+        }
+
+        el.addEventListener('click', function() {
+          if (plan.path) {
+            window.location.href = plan.path;
+          }
+        });
 
         scroll.appendChild(el);
         planEls.push({ el: el, plan: plan });
