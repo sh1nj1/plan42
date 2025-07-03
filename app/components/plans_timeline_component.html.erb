@@ -1,16 +1,5 @@
-<div class="timeline">
-  <% grouped_plans.each do |date, date_plans| %>
-    <div class="timeline-date"><%= l date %></div>
-    <% date_plans.each do |plan| %>
-      <div class="timeline-item">
-        <% path = params[:id].present? ? creatives_path(params[:id], tags: [plan.id]) : creatives_path(tags: [plan.id]) %>
-        <%= link_to(plan.name.presence || l(plan.target_date), path) %>
-        <% if plan.owner == Current.user %>
-          <%= button_to 'X', plan_path(plan), method: :delete, data: { confirm: t('plans.delete_confirm', default: 'Are you sure?') }, form: { style: 'display:inline;' }, class: 'delete-plan-btn' %>
-        <% end %>
-      </div>
-    <% end %>
-  <% end %>
+<div class="horizontal-timeline">
+  <div id="plans-timeline" data-plans="<%= raw plan_data.to_json %>"></div>
   <hr>
   <%= form_with(model: Plan.new, url: plans_path, local: true) do |form| %>
     <div>

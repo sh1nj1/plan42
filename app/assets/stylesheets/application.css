@@ -208,6 +208,48 @@ button {
     border-radius: 50%;
 }
 
+.horizontal-timeline {
+    overflow-x: auto;
+    position: relative;
+    padding-bottom: 1em;
+}
+
+.horizontal-timeline .timeline-scroll {
+    position: relative;
+    white-space: nowrap;
+    height: 120px;
+}
+
+.horizontal-timeline .timeline-day {
+    display: inline-block;
+    width: 80px;
+    box-sizing: border-box;
+    border-right: 1px solid var(--color-border);
+    text-align: center;
+    font-size: 0.8em;
+}
+
+.plan-bar {
+    position: absolute;
+    height: 20px;
+    background: var(--color-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.plan-bar .plan-progress {
+    background: var(--color-btn-bg);
+    height: 100%;
+}
+
+.plan-bar .plan-label {
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    font-size: 0.75em;
+    color: var(--color-bg);
+}
+
 #inbox-panel.slide-panel {
     position: fixed;
     top: 0;
