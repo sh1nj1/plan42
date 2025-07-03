@@ -229,6 +229,9 @@ button {
     font-size: 0.8em;
 }
 
+.plan-form-container {
+    padding: 0.5em;
+}
 .plan-bar {
     position: absolute;
     height: 20px;

@@ -1,5 +1,6 @@
-<div id="plans-timeline" class="horizontal-timeline" data-plans="<%= raw plan_data.to_json %>" data-start-date="<%= @start_date %>" data-end-date="<%= @end_date %>"></div>
+<div id="plans-timeline" class="horizontal-timeline" data-plans='<%= raw plan_data.to_json %>' data-start-date="<%= @start_date %>" data-end-date="<%= @end_date %>"></div>
 <hr>
+<div class="plan-form-container">
 <%= form_with(model: Plan.new, url: plans_path, local: true) do |form| %>
   <div>
     <%= form.text_field :name, placeholder: t('plans.plan_name') %>
@@ -11,3 +12,4 @@
     <%= form.submit t('plans.add_plan') %>
   </div>
 <% end %>
+</div>
