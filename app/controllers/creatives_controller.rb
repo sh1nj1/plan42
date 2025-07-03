@@ -96,7 +96,16 @@ class CreativesController < ApplicationController
     respond_to do |format|
       if @creative.save
         @child_creative.update(parent: @creative) if @child_creative
-        if params[:after_id].present?
+        if params[:before_id].present?
+          before_creative = Creative.find_by(id: params[:before_id])
+          if before_creative && before_creative.parent_id == @creative.parent_id
+            siblings = @creative.parent ? @creative.parent.children.order(:sequence).to_a : Creative.roots.order(:sequence).to_a
+            siblings.delete(@creative)
+            index = siblings.index(before_creative) || 0
+            siblings.insert(index, @creative)
+            siblings.each_with_index { |c, idx| c.update_column(:sequence, idx) }
+          end
+        elsif params[:after_id].present?
           after_creative = Creative.find_by(id: params[:after_id])
           if after_creative && after_creative.parent_id == @creative.parent_id
             siblings = @creative.parent ? @creative.parent.children.order(:sequence).to_a : Creative.roots.order(:sequence).to_a

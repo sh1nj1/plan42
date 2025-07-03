@@ -17,6 +17,7 @@ if (!window.creativeRowEditorInitialized) {
 
     const methodInput = document.getElementById('inline-method');
     const parentInput = document.getElementById('inline-parent-id');
+    const beforeInput = document.getElementById('inline-before-id');
     const afterInput = document.getElementById('inline-after-id');
 
     let currentTree = null;
@@ -147,6 +148,8 @@ if (!window.creativeRowEditorInitialized) {
           editor.editor.loadHTML(data.description || '');
           progressInput.value = data.progress || 0;
           progressValue.textContent = data.progress || 0;
+          beforeInput.value = '';
+          afterInput.value = '';
           editor.focus();
         });
     }
@@ -184,11 +187,13 @@ if (!window.creativeRowEditorInitialized) {
       const prevParent = parentInput.value;
       const childContainer = prev.querySelector('.creative-children');
       const firstChild = childContainer && childContainer.querySelector('.creative-tree');
-      let parentTree, container, insertBefore, afterId = '';
+      let parentTree, container, insertBefore,
+          beforeId = '', afterId = '';
       if (firstChild) {
         parentTree = prev;
         container = childContainer;
         insertBefore = firstChild;
+        beforeId = firstChild.id.replace('creative-', '');
       } else {
         parentTree = prev.parentElement.closest('.creative-tree');
         container = prev.parentNode;
@@ -214,6 +219,7 @@ if (!window.creativeRowEditorInitialized) {
       methodInput.value = '';
       form.dataset.creativeId = '';
       parentInput.value = parentTree ? parentTree.id.replace('creative-', '') : '';
+      beforeInput.value = beforeId;
       afterInput.value = afterId;
       descriptionInput.value = '';
       editor.editor.loadHTML('');
