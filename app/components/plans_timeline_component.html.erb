@@ -1,4 +1,4 @@
-<div id="plans-timeline" class="horizontal-timeline" data-plans="<%= raw plan_data.to_json %>"></div>
+<div id="plans-timeline" class="horizontal-timeline" data-plans="<%= raw plan_data.to_json %>" data-start-date="<%= @start_date %>" data-end-date="<%= @end_date %>"></div>
 <hr>
 <%= form_with(model: Plan.new, url: plans_path, local: true) do |form| %>
   <div>

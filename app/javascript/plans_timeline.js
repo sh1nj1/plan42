@@ -15,15 +15,8 @@ if (!window.plansTimelineInitialized) {
 
     var dayWidth = 80; // pixels per day
     var rowHeight = 26;
-    var startDate = new Date();
-    if (plans.length) {
-      startDate = plans.reduce(function(min, p) {
-        return p.created_at < min ? p.created_at : min;
-      }, plans[0].created_at);
-    }
-    startDate.setDate(startDate.getDate() - 30);
-    var endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + 60);
+    var startDate = new Date(container.dataset.startDate || new Date());
+    var endDate = new Date(container.dataset.endDate || new Date());
 
     var scroll = document.createElement('div');
     scroll.className = 'timeline-scroll';
@@ -81,9 +74,27 @@ if (!window.plansTimelineInitialized) {
     }
 
     function updatePlanPositions() {
+      var visibleWidth = dayDiff(endDate, startDate) * dayWidth;
       planEls.forEach(function(item, idx) {
-        var left = dayDiff(item.plan.created_at, startDate) * dayWidth;
+        var plan = item.plan;
+        var left = dayDiff(plan.created_at, startDate) * dayWidth;
+        var width = (dayDiff(plan.target_date, plan.created_at) + 1) * dayWidth;
+        var right = left + width;
+
+        if (right < 0 || left > visibleWidth) {
+          item.el.style.display = 'none';
+          return;
+        }
+
+        item.el.style.display = '';
         item.el.style.left = left + 'px';
+        item.el.style.top = (idx * rowHeight + 40) + 'px';
+        item.el.style.width = width + 'px';
+
+        var label = item.el.querySelector('.plan-label');
+        var viewLeft = container.scrollLeft;
+        var labelLeft = Math.max(viewLeft, left) - left + 2;
+        label.style.left = labelLeft + 'px';
       });
     }
 
@@ -98,10 +109,12 @@ if (!window.plansTimelineInitialized) {
       var from = new Date(endDate.getTime() + 86400000);
       endDate.setDate(endDate.getDate() + n);
       renderDays(from, endDate, false);
+      updatePlanPositions();
     }
 
     renderDays(startDate, endDate, false);
     renderPlans();
+    updatePlanPositions();
 
     container.addEventListener('scroll', function() {
       if (container.scrollLeft < 50) {
@@ -110,6 +123,7 @@ if (!window.plansTimelineInitialized) {
       if (container.scrollLeft + container.clientWidth > scroll.scrollWidth - 50) {
         extendRight(30);
       }
+      updatePlanPositions();
     });
   });
 }
