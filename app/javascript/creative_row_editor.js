@@ -148,6 +148,7 @@ if (!window.creativeRowEditorInitialized) {
           editor.editor.loadHTML(data.description || '');
           progressInput.value = data.progress || 0;
           progressValue.textContent = data.progress || 0;
+          parentInput.value = data.parent_id || '';
           beforeInput.value = '';
           afterInput.value = '';
           editor.focus();
@@ -185,17 +186,18 @@ if (!window.creativeRowEditorInitialized) {
       const prev = currentTree;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
-      const childContainer = prev.querySelector('.creative-children');
+        const prevCreativeId = prev.id.replace('creative-', '')
+      const childContainer = prev.parentElement.querySelector('#creative-children-' + prevCreativeId);
       const firstChild = childContainer && childContainer.querySelector('.creative-tree');
-      let parentTree, container, insertBefore,
+      let parentId, container, insertBefore,
           beforeId = '', afterId = '';
       if (firstChild) {
-        parentTree = prev;
+        parentId = prevCreativeId;
         container = childContainer;
         insertBefore = firstChild;
         beforeId = firstChild.id.replace('creative-', '');
       } else {
-        parentTree = prev.parentElement.closest('.creative-tree');
+        parentId = prev.parentElement ? prev.parentElement.id.replace('creative-children-', '') : null;
         container = prev.parentNode;
         afterId = prev.id.replace('creative-', '');
         insertBefore = prev.nextSibling;
@@ -218,7 +220,7 @@ if (!window.creativeRowEditorInitialized) {
       form.action = '/creatives';
       methodInput.value = '';
       form.dataset.creativeId = '';
-      parentInput.value = parentTree ? parentTree.id.replace('creative-', '') : '';
+      parentInput.value = parentId;
       beforeInput.value = beforeId;
       afterInput.value = afterId;
       descriptionInput.value = '';
