@@ -2,7 +2,8 @@ if (!window.plansTimelineScriptInitialized) {
   window.plansTimelineScriptInitialized = true;
 
   function initPlansTimeline(container) {
-    if (!container) return;
+    if (!container || container.dataset.initialized) return;
+    container.dataset.initialized = 'true';
 
     var plans = [];
     try { plans = JSON.parse(container.dataset.plans || '[]'); } catch(e) {}
@@ -232,8 +233,4 @@ if (!window.plansTimelineScriptInitialized) {
   }
 
   window.initPlansTimeline = initPlansTimeline;
-
-  document.addEventListener('turbo:load', function() {
-    initPlansTimeline(document.getElementById('plans-timeline'));
-  });
 }
