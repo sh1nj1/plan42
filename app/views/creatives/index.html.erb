@@ -1,7 +1,4 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
-<% if @parent_creative %>
-<div data-controller="inline-editor" data-inline-editor-edit-url-value="<%= edit_creative_path(@parent_creative) %>" data-inline-editor-update-url-value="<%= creative_path(@parent_creative) %>" data-inline-editor-parent-id-value="<%= @parent_creative.id %>">
-<% end %>
 
 <div class="creative-actions-row">
   <% if @parent_creative&.parent_id.present? %>
@@ -16,7 +13,6 @@
   <% end %>
 
   <% if authenticated? && @parent_creative && @parent_creative.has_permission?(Current.user, :write) %>
-    <%= link_to t('.edit'), edit_creative_path(@parent_creative), data: { action: "inline-editor#showForm" } %>
     <%= render 'delete_button', extra_button_classes: 'desktop-only' %>
   <% end %>
   <button id="set-plan-btn" class="set-plan-btn" style="display:none;"><%= t('app.set_plan') %></button>
@@ -53,10 +49,9 @@
 
 <% if @parent_creative %>
   <div class="creative-row" id="creative-markdown-block">
-    <h1 class="page-title" style="display:flex;align-items:center;gap:1em;" data-inline-editor-target="display">
+    <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
       <%= @parent_creative.effective_description %>
     </h1>
-    <div data-inline-editor-target="form" style="display:none"></div>
     <div>
       <h1 style="display: flex; align-items: center; gap: 1em;">
         <%= render_creative_progress(@parent_creative) %>
@@ -82,9 +77,6 @@
       </h1>
     </div>
   </div>
-<% end %>
-<% if @parent_creative %>
-</div>
 <% end %>
 
 <div id="creatives">

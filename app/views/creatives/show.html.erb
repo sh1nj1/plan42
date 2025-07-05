@@ -3,17 +3,16 @@
 
 <section class="creative">
 
-  <section class="creative-info" data-controller="inline-editor" data-inline-editor-edit-url-value="<%= edit_creative_path(@creative) %>" data-inline-editor-update-url-value="<%= creative_path(@creative) %>" data-inline-editor-parent-id-value="<%= @creative.id %>">
+  <section class="creative-info">
     <% cache @creative do %>
       <% if @creative.parent %>
         <h1>
           <%= @creative.parent.description %>
         </h1>
       <% end %>
-      <div data-inline-editor-target="display">
+      <div>
         <%= @creative.description %>
       </div>
-      <div data-inline-editor-target="form" style="display:none"></div>
     <% end %>
 
     <%= render "inventory", creative: @creative %>
@@ -21,18 +20,9 @@
     <div class="creative-actions-row">
       <% if authenticated? %>
         <%= link_to t('creatives.index.new_sub_creative'), @creative&.id ? new_creative_path(parent_id: @creative.id, tags: params[:tags]) : new_creative_path(tags: params[:tags]) %>
-        <%= link_to t('creatives.index.edit'), edit_creative_path(@creative), data: { action: "inline-editor#showForm" } %>
         <%= button_to t('creatives.index.delete'), @creative, method: :delete, data: { turbo_confirm: t('creatives.index.are_you_sure') } %>
       <% end %>
     </div>
 
-    <% if params[:edit] %>
-      <script>
-        document.addEventListener('turbo:load', function() {
-          const btn = document.querySelector('[data-action="inline-editor#showForm"]');
-          if (btn) { btn.click(); }
-        });
-      </script>
-    <% end %>
   </section>
 </section>
