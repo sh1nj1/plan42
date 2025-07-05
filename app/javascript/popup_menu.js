@@ -33,9 +33,9 @@ if (!window.popupMenuInitialized) {
         }
       });
 
-      /* Close menu on button click */
+      /* Close menu when interacting with menu items */
       menu.addEventListener('click', function(e) {
-        if (e.target.closest('button[type="button"]')) {
+        if (e.target.closest('button, a')) {
           menu.style.display = 'none';
         }
       });

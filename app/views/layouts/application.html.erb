@@ -127,7 +127,7 @@
           menu_id: 'user-menu',
           align: :right
         ) do %>
-          <div><%= button_to t('users.profile'), user_path(Current.user), method: :get %></div>
+          <div><%= link_to t('users.profile'), user_path(Current.user), class: 'popup-menu-item' %></div>
           <div><%= button_to t('app.sign_out'), session_path, method: :delete %></div>
         <% end %>
       <% end %>
