@@ -22,6 +22,25 @@ if (!window.plansTimelineScriptInitialized) {
     scroll.className = 'timeline-scroll';
     container.appendChild(scroll);
 
+    function getScrollbarSize() {
+      var div = document.createElement('div');
+      div.style.visibility = 'hidden';
+      div.style.overflow = 'scroll';
+      div.style.position = 'absolute';
+      div.style.width = '100px';
+      div.style.height = '100px';
+      document.body.appendChild(div);
+      var size = div.offsetHeight - div.clientHeight;
+      document.body.removeChild(div);
+      return size;
+    }
+
+    var scrollbarHeight = getScrollbarSize();
+    var scrollHeight = parseFloat(window.getComputedStyle(scroll).height) || 0;
+    var paddingBottom = parseFloat(window.getComputedStyle(container).paddingBottom) || 0;
+    container.style.height = scrollHeight + scrollbarHeight + 'px';
+    container.style.paddingBottom = paddingBottom + scrollbarHeight + 'px';
+
     function dayDiff(d1, d2) {
       return Math.round((d1 - d2) / 86400000);
     }
