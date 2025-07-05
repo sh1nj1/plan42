@@ -70,7 +70,7 @@
 }
 
 .creative-progress-complete {
-    color: green;
+    color: var(--color-complete);
 }
 
 .creative-progress-incomplete {

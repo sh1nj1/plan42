@@ -11,6 +11,7 @@
   --color-btn-text: #202123;
   --color-border: #e0e0e0;
   --color-muted: #666;
+  --color-complete: green;
   --color-drag-over: #e0e0e0;
   --color-drag-over-edge: #bbb;
   --hover-brightness: 90%;
@@ -26,6 +27,7 @@ body.dark-mode {
   --color-btn-text: #eaeaea;
   --color-border: #333333;
   --color-muted: #aaaaaa;
+  --color-complete: green;
   --color-drag-over: #383a40;
   --color-drag-over-edge: #777;
   --hover-brightness: 110%;
@@ -42,6 +44,7 @@ body.dark-mode {
     --color-btn-text: #eaeaea;
     --color-border: #333333;
     --color-muted: #aaaaaa;
+    --color-complete: green;
     --color-drag-over: #383a40;
     --color-drag-over-edge: #777;
     --hover-brightness: 110%;

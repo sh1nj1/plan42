@@ -265,7 +265,7 @@ button {
 }
 
 .plan-bar .plan-progress {
-    background: var(--color-btn-bg);
+    background: var(--color-complete);
     height: 100%;
 }
 
