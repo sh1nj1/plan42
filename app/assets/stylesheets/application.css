@@ -279,14 +279,16 @@ button {
 #inbox-panel.slide-panel {
     position: fixed;
     top: 0;
-    right: -300px;
-    width: 300px;
+    right: -360px;
+    width: 360px;
     height: 100%;
     background: var(--color-section-bg);
-    box-shadow: -2px 0 5px rgba(0,0,0,0.2);
+    border-left: 1px solid var(--color-border);
+    box-shadow: -2px 0 8px rgba(0,0,0,0.15);
     overflow-y: auto;
     transition: right 0.3s;
     z-index: 1000;
+    border-radius: 8px 0 0 8px;
 }
 
 #inbox-panel.open {
@@ -297,7 +299,8 @@ button {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.5em;
+    padding: 0.75em;
+    background: var(--color-nav-bg);
     border-bottom: 1px solid var(--color-border);
 }
 
@@ -311,7 +314,11 @@ button {
 
 .inbox-item {
     border-bottom: 1px solid var(--color-border);
-    padding: 0.5em;
+    padding: 0.75em;
+}
+
+.inbox-item:last-child {
+    border-bottom: none;
 }
 
 .inbox-item .actions button {
