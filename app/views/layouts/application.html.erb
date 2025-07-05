@@ -254,7 +254,7 @@
             });
             document.querySelectorAll('.inbox-item .item-link').forEach(function(a) {
               a.addEventListener('click', function() {
-                localStorage.setItem('inboxOpen', '1');
+                closePanel();
                 var item = a.closest('.inbox-item');
                 if (item && item.dataset.id) {
                   fetch('/inbox/' + item.dataset.id, {
