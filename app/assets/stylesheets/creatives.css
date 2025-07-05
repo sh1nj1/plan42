@@ -95,12 +95,26 @@
 }
 
 .add-creative-btn {
-    margin-left: 6px;
+    margin-left: 0px;
     font-size: 12px;
     width: 12px;
     font-weight: bold;
     text-decoration: none;
     cursor: pointer;
+}
+.edit-inline-btn {
+    margin-left: 0px;
+    font-size: 12px;
+    cursor: pointer;
+    background: none;
+    border: none;
+}
+#inline-add {
+    margin-left: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    background: none;
+    border: none;
 }
 
 .creative-row-actions {

@@ -6,11 +6,15 @@
           <%= level <= 3 && filtered_children.any? ? helpers.toggle_button_symbol(expanded: expanded) : '' %>
         </div>
         <%= check_box_tag('selected_creative_ids[]', creative.id, false, class: 'select-creative-checkbox', style: select_mode ? '' : 'display: none') %>
-        <div class="creative-divider">
+
         <%= link_to('+', new_creative_path(parent_id: creative.id, tags: params[:tags]),
                     class: 'add-creative-btn',
                     style: (' visibility: hidden;' unless creative.has_permission?(Current.user, :write)),
                     title: t('creatives.help.add_child_creative')) %>
+        <% if creative.has_permission?(Current.user, :write) %>
+          <button type="button" class="edit-inline-btn" data-creative-id="<%= creative.id %>">✎</button>
+        <% end %>
+        <div class="creative-divider" style="width: 6px;">
         </div>
       </div>
       <%= content %>
