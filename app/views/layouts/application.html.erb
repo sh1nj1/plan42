@@ -193,6 +193,9 @@
           var list = document.getElementById('inbox-list');
           var closeBtn = document.getElementById('close-inbox');
           var toggle = document.getElementById('toggle-inbox-read');
+          if (toggle && localStorage.getItem('inboxShowRead') === '1') {
+            toggle.checked = true;
+          }
           var badge = document.getElementById('inbox-badge');
 
           function updateInboxBadge() {
@@ -314,7 +317,12 @@
             }
           });
           if (closeBtn) { closeBtn.addEventListener('click', closePanel); }
-          if (toggle) { toggle.addEventListener('change', loadInbox); }
+          if (toggle) {
+            toggle.addEventListener('change', function() {
+              localStorage.setItem('inboxShowRead', toggle.checked ? '1' : '0');
+              loadInbox();
+            });
+          }
 
           updateInboxBadge();
 
