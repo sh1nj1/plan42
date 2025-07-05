@@ -343,13 +343,13 @@ button {
 
 #inbox-badge,
 .badge {
-    background: red;
-    color: white;
+    background: var(--color-badge-bg, red);
+    color: var(--color-badge-text, white);
     border-radius: 10px;
     padding: 0 4px;
     font-size: 0.75em;
     line-height: 1.2;
-    margin-left: 0px;
+    margin-left: 0;
     display: none;
 }
 
