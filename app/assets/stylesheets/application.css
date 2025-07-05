@@ -104,6 +104,18 @@ nav button:hover,
     padding:0.3em; border-radius:4px; border:1px solid var(--color-border);
 }
 
+input[type="text"],
+input[type="number"],
+input[type="url"],
+input[type="date"],
+textarea {
+    background: var(--color-bg);
+    color: var(--color-btn-text);
+    padding: 0.3em;
+    border-radius: 4px;
+    border: 1px solid var(--color-border);
+}
+
 main {
     max-width: 960px;
     margin: 0rem auto;
