@@ -186,7 +186,7 @@ if (!window.creativeRowEditorInitialized) {
       const prev = currentTree;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
-        const prevCreativeId = prev.id.replace('creative-', '')
+      const prevCreativeId = prev.id.replace('creative-', '')
       const childContainer = prev.parentElement.querySelector('#creative-children-' + prevCreativeId);
       const firstChild = childContainer && childContainer.querySelector('.creative-tree');
       let parentId, container, insertBefore,
@@ -197,7 +197,7 @@ if (!window.creativeRowEditorInitialized) {
         insertBefore = firstChild;
         beforeId = firstChild.id.replace('creative-', '');
       } else {
-        parentId = prev.parentElement ? prev.parentElement.id.replace('creative-children-', '') : null;
+        parentId = prev.parentElement?.id?.startsWith("creative-children-") ? prev.parentElement.id.replace('creative-children-', '') : null;
         container = prev.parentNode;
         afterId = prev.id.replace('creative-', '');
         insertBefore = prev.nextSibling;

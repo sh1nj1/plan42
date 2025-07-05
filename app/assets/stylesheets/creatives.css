@@ -95,7 +95,7 @@
 }
 
 .add-creative-btn {
-    margin-left: 6px;
+    margin-left: 2px;
     font-size: 12px;
     width: 12px;
     font-weight: bold;
@@ -103,7 +103,7 @@
     cursor: pointer;
 }
 .edit-inline-btn {
-    margin-left: 6px;
+    margin-left: 2px;
     font-size: 12px;
     cursor: pointer;
     background: none;
