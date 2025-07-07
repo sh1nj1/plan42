@@ -10,12 +10,16 @@ class CreativeComponent < ViewComponent::Base
   attr_reader :creative, :filtered_children, :level, :select_mode, :expanded
 
   def drag_attrs
-    {
-      draggable: true,
-      id: "creative-#{creative.id}",
-      ondragstart: "handleDragStart(event)",
-      ondragover: "handleDragOver(event)",
-      ondrop: "handleDrop(event)"
-    }
+    if select_mode
+      { id: "creative-#{creative.id}" }
+    else
+      {
+        draggable: true,
+        id: "creative-#{creative.id}",
+        ondragstart: "handleDragStart(event)",
+        ondragover: "handleDragOver(event)",
+        ondrop: "handleDrop(event)"
+      }
+    end
   end
 end
