@@ -2,7 +2,7 @@ if (!window.isSelectModeInitialized) {
     window.isSelectModeInitialized = true;
     let selectModeActive = false;
     let dragging = false;
-    let dragMode = 'replace';
+    let dragMode = 'toggle';
 
     function applySelection(row) {
         var cb = row.querySelector('.select-creative-checkbox');
@@ -10,9 +10,12 @@ if (!window.isSelectModeInitialized) {
         if (dragMode === 'remove') {
             cb.checked = false;
             row.classList.remove('selected');
-        } else {
+        } else if (dragMode === 'add') {
             cb.checked = true;
             row.classList.add('selected');
+        } else {
+            cb.checked = !cb.checked;
+            row.classList.toggle('selected');
         }
     }
 
@@ -31,8 +34,7 @@ if (!window.isSelectModeInitialized) {
             row.addEventListener('mousedown', function(e) {
                 if (!selectModeActive) return;
                 dragging = true;
-                dragMode = e.altKey ? 'remove' : (e.shiftKey ? 'add' : 'replace');
-                if (dragMode === 'replace') clearAllSelection();
+                dragMode = e.altKey ? 'remove' : (e.shiftKey ? 'add' : 'toggle');
                 applySelection(row);
                 e.preventDefault();
             });
