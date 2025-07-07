@@ -94,45 +94,41 @@ class CreativesController < ApplicationController
       @child_creative = Creative.find_by(id: params[:child_id])
     end
 
-    respond_to do |format|
-      if @creative.save
-        @child_creative.update(parent: @creative) if @child_creative
-        if params[:before_id].present?
-          before_creative = Creative.find_by(id: params[:before_id])
-          if before_creative && before_creative.parent_id == @creative.parent_id
-            siblings = @creative.parent ? @creative.parent.children.order(:sequence).to_a : Creative.roots.order(:sequence).to_a
-            siblings.delete(@creative)
-            index = siblings.index(before_creative) || 0
-            siblings.insert(index, @creative)
-            siblings.each_with_index { |c, idx| c.update_column(:sequence, idx) }
-          end
-        elsif params[:after_id].present?
-          after_creative = Creative.find_by(id: params[:after_id])
-          if after_creative && after_creative.parent_id == @creative.parent_id
-            siblings = @creative.parent ? @creative.parent.children.order(:sequence).to_a : Creative.roots.order(:sequence).to_a
-            siblings.delete(@creative)
-            index = siblings.index(after_creative) || -1
-            siblings.insert(index + 1, @creative)
-            siblings.each_with_index { |c, idx| c.update_column(:sequence, idx) }
-          end
+    if @creative.save
+      @child_creative.update(parent: @creative) if @child_creative
+      if params[:before_id].present?
+        before_creative = Creative.find_by(id: params[:before_id])
+        if before_creative && before_creative.parent_id == @creative.parent_id
+          siblings = @creative.parent ? @creative.parent.children.order(:sequence).to_a : Creative.roots.order(:sequence).to_a
+          siblings.delete(@creative)
+          index = siblings.index(before_creative) || 0
+          siblings.insert(index, @creative)
+          siblings.each_with_index { |c, idx| c.update_column(:sequence, idx) }
         end
-        # Propagate all shares from the parent to the new child
-        if @creative.parent
-          CreativeShare.where(creative: @creative.parent).find_each do |parent_share|
-            CreativeShare.create!(creative: @creative, user: parent_share.user, permission: parent_share.permission)
-          end
+      elsif params[:after_id].present?
+        after_creative = Creative.find_by(id: params[:after_id])
+        if after_creative && after_creative.parent_id == @creative.parent_id
+          siblings = @creative.parent ? @creative.parent.children.order(:sequence).to_a : Creative.roots.order(:sequence).to_a
+          siblings.delete(@creative)
+          index = siblings.index(after_creative) || -1
+          siblings.insert(index + 1, @creative)
+          siblings.each_with_index { |c, idx| c.update_column(:sequence, idx) }
         end
-        if params[:tags].present?
-          Array(params[:tags]).each do |tag_id|
-            @creative.tags.create(label_id: tag_id)
-          end
-        end
-        format.html { redirect_to @creative }
-        format.json { render json: { id: @creative.id } }
-      else
-        format.html { render :new, status: :unprocessable_entity }
-        format.json { render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity }
       end
+      # Propagate all shares from the parent to the new child
+      if @creative.parent
+        CreativeShare.where(creative: @creative.parent).find_each do |parent_share|
+          CreativeShare.create!(creative: @creative, user: parent_share.user, permission: parent_share.permission)
+        end
+      end
+      if params[:tags].present?
+        Array(params[:tags]).each do |tag_id|
+          @creative.tags.create(label_id: tag_id)
+        end
+      end
+      render json: { id: @creative.id }
+    else
+      render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity
     end
   end
 

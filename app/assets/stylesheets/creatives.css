@@ -101,6 +101,8 @@
     font-weight: bold;
     text-decoration: none;
     cursor: pointer;
+    background: none;
+    border: none;
 }
 .edit-inline-btn {
     margin-left: 0px;
