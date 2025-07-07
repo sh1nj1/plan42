@@ -33,6 +33,7 @@ if (!window.isSelectModeInitialized) {
             row.dataset.selectHandlerAttached = 'true';
             row.addEventListener('mousedown', function(e) {
                 if (!selectModeActive) return;
+                if (e.target.closest('.select-creative-checkbox')) return;
                 dragging = true;
                 dragMode = e.altKey ? 'remove' : (e.shiftKey ? 'add' : 'toggle');
                 applySelection(row);
