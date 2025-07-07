@@ -19,6 +19,7 @@ if (!window.creativeRowEditorInitialized) {
     const parentInput = document.getElementById('inline-parent-id');
     const beforeInput = document.getElementById('inline-before-id');
     const afterInput = document.getElementById('inline-after-id');
+    const childInput = document.getElementById('inline-child-id');
 
     let currentTree = null;
     let saveTimer = null;
@@ -136,6 +137,90 @@ if (!window.creativeRowEditorInitialized) {
           loadCreative(tree.id.replace('creative-', ''));
         });
       });
+
+      document.querySelectorAll('.add-creative-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          const tree = btn.closest('.creative-tree');
+          let parentId, container, insertBefore, beforeId = '';
+          if (tree) {
+            parentId = tree.id.replace('creative-', '');
+            container = tree.querySelector('.creative-children');
+            if (!container) {
+              container = document.createElement('div');
+              container.className = 'creative-children';
+              container.id = 'creative-children-' + parentId;
+              tree.appendChild(container);
+            }
+            insertBefore = container.firstElementChild;
+            beforeId = insertBefore ? insertBefore.id.replace('creative-', '') : '';
+          } else {
+            parentId = btn.dataset.parentId || '';
+            const parentTree = parentId ? document.getElementById('creative-' + parentId) : null;
+            container = parentId ? document.getElementById('creative-children-' + parentId) : document.getElementById('creatives');
+            if (!container) {
+              container = document.createElement('div');
+              container.className = parentTree ? 'creative-children' : '';
+              if (parentTree) {
+                container.id = 'creative-children-' + parentId;
+                parentTree.appendChild(container);
+              } else {
+                document.getElementById('creatives').appendChild(container);
+              }
+            }
+            insertBefore = container.firstElementChild;
+            beforeId = insertBefore ? insertBefore.id.replace('creative-', '') : '';
+          }
+          startNew(parentId, container, insertBefore, beforeId);
+        });
+      });
+
+      document.querySelectorAll('.new-root-creative-btn').forEach(function(btn) {
+        const container = document.getElementById('creatives');
+        if (!container) return;
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          const insertBefore = container.firstElementChild;
+          const beforeId = insertBefore ? insertBefore.id.replace('creative-', '') : '';
+          startNew('', container, insertBefore, beforeId);
+        });
+      });
+
+      document.querySelectorAll('.append-below-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          const targetId = btn.dataset.targetId;
+          const target = document.getElementById('creative-' + targetId);
+          if (!target) return;
+          const container = target.parentNode;
+          const insertBefore = target.nextSibling;
+          startNew(
+            target.parentNode.id.startsWith('creative-children-') ? target.parentNode.id.replace('creative-children-', '') : '',
+            container,
+            insertBefore,
+            '',
+            targetId
+          );
+        });
+      });
+
+      document.querySelectorAll('.append-parent-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          const targetId = btn.dataset.childId;
+          const target = document.getElementById('creative-' + targetId);
+          if (!target) return;
+          const container = target.parentNode;
+          startNew(
+            container.id.startsWith('creative-children-') ? container.id.replace('creative-children-', '') : '',
+            container,
+            target,
+            targetId,
+            '',
+            targetId
+          );
+        });
+      });
     }
 
     function loadCreative(id) {
@@ -151,6 +236,7 @@ if (!window.creativeRowEditorInitialized) {
           parentInput.value = data.parent_id || '';
           beforeInput.value = '';
           afterInput.value = '';
+          if (childInput) childInput.value = '';
           editor.focus();
         });
     }
@@ -223,6 +309,30 @@ if (!window.creativeRowEditorInitialized) {
       parentInput.value = parentId;
       beforeInput.value = beforeId;
       afterInput.value = afterId;
+      if (childInput) childInput.value = '';
+      descriptionInput.value = '';
+      editor.editor.loadHTML('');
+      progressInput.value = 0;
+      progressValue.textContent = 0;
+      pendingSave = false;
+      editor.focus();
+    }
+
+    function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
+      if (currentTree) hideCurrent();
+      const newTree = document.createElement('div');
+      newTree.className = 'creative-tree';
+      if (insertBefore) container.insertBefore(newTree, insertBefore); else container.appendChild(newTree);
+      currentTree = newTree;
+      newTree.appendChild(template);
+      template.style.display = 'block';
+      form.action = '/creatives';
+      methodInput.value = '';
+      form.dataset.creativeId = '';
+      parentInput.value = parentId || '';
+      beforeInput.value = beforeId || '';
+      afterInput.value = afterId || '';
+      if (childInput) childInput.value = childId || '';
       descriptionInput.value = '';
       editor.editor.loadHTML('');
       progressInput.value = 0;
