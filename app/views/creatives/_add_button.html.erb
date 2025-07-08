@@ -1,24 +1,7 @@
 <%
-  menu_items = []
   if authenticated? && !params[:id]
-    new_creative_button = button_tag(t('creatives.index.new_creative'), type: 'button', class: 'popup-menu-item new-root-creative-btn')
-    menu_items << new_creative_button
-  end
-
-  if authenticated? && @parent_creative && @parent_creative.has_permission?(Current.user, :write)
-    menu_items << button_tag(t('creatives.index.append_as_parent_creative'), type: 'button', class: 'popup-menu-item append-parent-btn', data: { child_id: @parent_creative.id })
-    menu_items << button_tag(t('creatives.index.append_below_creative'), type: 'button', class: 'popup-menu-item append-below-btn', data: { target_id: @parent_creative.id })
-    menu_items << tag.br
-    menu_items << button_tag(t('creatives.index.new_sub_creative'), type: 'button', class: 'popup-menu-item add-creative-btn', data: { parent_id: @parent_creative.id })
+%>
+  <%= button_tag(t('creatives.index.new_creative'), type: 'button', class: 'popup-menu-item new-root-creative-btn') %>
+<%
   end
 %>
-
-<% if menu_items.one? %>
-  <%= new_creative_button %>
-<% elsif menu_items.any? %>
-  <%= render PopupMenuComponent.new(
-        button_content: t('creatives.index.new_creative'),
-        menu_id: 'add-creative-menu') do %>
-    <%= safe_join(menu_items) %>
-  <% end %>
-<% end %>
