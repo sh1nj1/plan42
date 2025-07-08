@@ -140,7 +140,18 @@ class CreativesController < ApplicationController
 
   def update
     respond_to do |format|
-      if @creative.effective_origin.update(creative_params)
+      permitted = creative_params.to_h
+      base = @creative.effective_origin
+      success = true
+
+      if @creative.origin_id.present? && permitted.key?("parent_id")
+        parent_id = permitted.delete("parent_id")
+        success &&= @creative.update(parent_id: parent_id)
+      end
+
+      success &&= base.update(permitted)
+
+      if success
         format.html { redirect_to @creative }
         format.json { head :ok }
       else
