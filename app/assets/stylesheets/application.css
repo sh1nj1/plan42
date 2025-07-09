@@ -314,6 +314,9 @@ button {
         right: -100vw;
         width: 100vw;
     }
+    #inbox-panel.slide-panel.open {
+        right: 0;
+    }
 }
 
 .inbox-panel-header {

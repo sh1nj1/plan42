@@ -19,9 +19,8 @@ RSpec.describe 'Creative 공유 리스트', type: :system do
     find('#sign-in-submit').click
     expect(page).not_to have_content(I18n.t('users.sessions.new.try_another_email_or_password'))
     visit creative_path(creative)
-    click_button I18n.t('creatives.index.share')
-    expect(page).to have_content(I18n.t('creatives.index.shared_with'))
-    expect(page).to have_content('user1@example.com')
-    expect(page).to have_content("user1@example.com\nRead")
+    expect(page).to have_css('#share-creative-modal', text: I18n.t('creatives.index.shared_with'), visible: :all)
+    expect(page).to have_css('#share-creative-modal', text: 'user1@example.com', visible: :all)
+    expect(page).to have_css('#share-creative-modal', text: 'Read', visible: :all)
   end
 end
