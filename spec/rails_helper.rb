@@ -9,7 +9,10 @@ abort("The Rails environment is running in production mode!") if Rails.env.produ
 # return unless Rails.env.test?
 require 'rspec/rails'
 if defined?(Selenium::WebDriver::Chrome)
-  Selenium::WebDriver::Chrome::Service.driver_path = '/usr/bin/chromedriver'
+  chromedriver_path = ENV['CHROMEDRIVER_PATH'] || `which chromedriver`.strip
+  if File.exist?(chromedriver_path)
+    Selenium::WebDriver::Chrome::Service.driver_path = chromedriver_path
+  end
 end
 # Add additional requires below this line. Rails is not loaded until this point!
 
