@@ -297,25 +297,7 @@ if (!window.creativeRowEditorInitialized) {
           refreshRow(prev);
         }
       });
-      const newTree = document.createElement('div');
-      newTree.className = 'creative-tree';
-      if (insertBefore) container.insertBefore(newTree, insertBefore); else container.appendChild(newTree);
-      currentTree = newTree;
-      newTree.appendChild(template);
-      template.style.display = 'block';
-      form.action = '/creatives';
-      methodInput.value = '';
-      form.dataset.creativeId = '';
-      parentInput.value = parentId;
-      beforeInput.value = beforeId;
-      afterInput.value = afterId;
-      if (childInput) childInput.value = '';
-      descriptionInput.value = '';
-      editor.editor.loadHTML('');
-      progressInput.value = 0;
-      progressValue.textContent = 0;
-      pendingSave = false;
-      editor.focus();
+      startNew(parentId, container, insertBefore, beforeId, afterId);
     }
 
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
