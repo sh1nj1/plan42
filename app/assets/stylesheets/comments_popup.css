@@ -62,7 +62,7 @@
 .edit-comment-btn {
     position: absolute;
     bottom: 0.2em;
-    right: 2.5em;
+    right: 5em; /* ensure enough spacing for translated text */
     border: none;
     background: none;
     font-weight: bold;
