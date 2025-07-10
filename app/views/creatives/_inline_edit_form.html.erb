@@ -18,5 +18,15 @@
       <button type="button" id="inline-add">＋</button>
       <button type="button" id="inline-close">✖</button>
     </div>
+    <div style="margin-top:0.5em;">
+      <button type="button" id="inline-delete"
+              data-confirm="<%= t('creatives.index.are_you_sure_delete_only_this') %>">
+        <%= t('creatives.index.delete_only_this') %>
+      </button>
+      <button type="button" id="inline-delete-with-children"
+              data-confirm="<%= t('creatives.index.are_you_sure_delete_with_children') %>">
+        <%= t('creatives.index.delete_with_children') %>
+      </button>
+    </div>
   </form>
 </div>

@@ -14,6 +14,8 @@ if (!window.creativeRowEditorInitialized) {
     const downBtn = document.getElementById('inline-move-down');
     const addBtn = document.getElementById('inline-add');
     const closeBtn = document.getElementById('inline-close');
+    const deleteBtn = document.getElementById('inline-delete');
+    const deleteChildrenBtn = document.getElementById('inline-delete-with-children');
 
     const methodInput = document.getElementById('inline-method');
     const parentInput = document.getElementById('inline-parent-id');
@@ -229,6 +231,8 @@ if (!window.creativeRowEditorInitialized) {
         .then(data => {
           form.action = `/creatives/${data.id}`;
           form.dataset.creativeId = data.id;
+          if (deleteBtn) deleteBtn.style.display = '';
+          if (deleteChildrenBtn) deleteChildrenBtn.style.display = '';
           descriptionInput.value = data.description || '';
           editor.editor.loadHTML(data.description || '');
           progressInput.value = data.progress || 0;
@@ -329,6 +333,8 @@ if (!window.creativeRowEditorInitialized) {
       form.action = '/creatives';
       methodInput.value = '';
       form.dataset.creativeId = '';
+      if (deleteBtn) deleteBtn.style.display = 'none';
+      if (deleteChildrenBtn) deleteChildrenBtn.style.display = 'none';
       parentInput.value = parentId || '';
       beforeInput.value = beforeId || '';
       afterInput.value = afterId || '';
@@ -386,6 +392,28 @@ if (!window.creativeRowEditorInitialized) {
 
     if (addBtn) {
       addBtn.addEventListener('click', addNew);
+    }
+
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', function() {
+        if (!form.dataset.creativeId) return;
+        if (!confirm(deleteBtn.dataset.confirm)) return;
+        fetch(`/creatives/${form.dataset.creativeId}`, {
+          method: 'DELETE',
+          headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content }
+        }).then(function() { location.reload(); });
+      });
+    }
+
+    if (deleteChildrenBtn) {
+      deleteChildrenBtn.addEventListener('click', function() {
+        if (!form.dataset.creativeId) return;
+        if (!confirm(deleteChildrenBtn.dataset.confirm)) return;
+        fetch(`/creatives/${form.dataset.creativeId}?delete_with_children=true`, {
+          method: 'DELETE',
+          headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content }
+        }).then(function() { location.reload(); });
+      });
     }
 
     attachButtons();
