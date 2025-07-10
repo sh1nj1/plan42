@@ -4,6 +4,7 @@ en:
       your_creativeness_is_coming: "Your Creativeness Is Coming!"
       a_tracker_of_your_creatives: "Document the specs. Watch progress unfold."
     new:
+      enter_your_name: "Enter your name"
       enter_your_email: "Enter your email"
       enter_your_password: "Enter your password"
       confirm_your_password: "Confirm your password"
@@ -17,6 +18,7 @@ en:
         try_another_email_or_password: "Try another email address or password."
         email_not_verified: "You must verify your email before signing in."
     details: "User Details"
+    name: "Name"
     email: "Email"
     change_password: "Change password"
     profile: "Profile"

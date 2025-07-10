@@ -54,7 +54,7 @@ class Comment < ApplicationRecord
     return unless creative.user && user && creative.user != user
     create_inbox_item(
       creative.user,
-      I18n.t("inbox.comment_added", user: user.email, comment: content)
+      I18n.t("inbox.comment_added", user: user.display_name, comment: content)
     )
   end
 
@@ -62,7 +62,7 @@ class Comment < ApplicationRecord
     mentioned_users.each do |mentioned|
       create_inbox_item(
         mentioned,
-        I18n.t("inbox.user_mentioned", user: user.email, comment: content)
+        I18n.t("inbox.user_mentioned", user: user.display_name, comment: content)
       )
     end
   end

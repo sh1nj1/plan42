@@ -1,6 +1,9 @@
+<%= form.text_field :name,
+                    autofocus: true,
+                    required: true,
+                    placeholder: t('users.new.enter_your_name') %><br/>
 <%= form.email_field :email,
                      required: true,
-                     autofocus: true,
                      autocomplete: "username",
                      placeholder: t('users.new.enter_your_email'),
                      value: (form.object.respond_to?(:email) && form.object.email.presence) || params[:email],

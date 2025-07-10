@@ -17,6 +17,10 @@ class AvatarComponent < ViewComponent::Base
   end
 
   def email
-    @user&.email || I18n.t("comments.anonymous")
+    if @user
+      @user.display_name
+    else
+      I18n.t("comments.anonymous")
+    end
   end
 end

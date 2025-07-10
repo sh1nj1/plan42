@@ -3,7 +3,9 @@
 one:
   email: one@example.com
   password_digest: <%= password_digest %>
+  name: One
 
 two:
   email: two@example.com
   password_digest: <%= password_digest %>
+  name: Two

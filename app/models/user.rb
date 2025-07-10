@@ -11,11 +11,13 @@ class User < ApplicationRecord
   attribute :display_level, :integer, default: DEFAULT_DISPLAY_LEVEL
   attribute :completion_mark, :string, default: ""
   attribute :theme, :string
+  attribute :name, :string
 
   normalizes :email, with: ->(e) { e.strip.downcase }
 
   validates :email, presence: true, uniqueness: true,
                     format: { with: URI::MailTo::EMAIL_REGEXP }
+  validates :name, presence: true
   validates :display_level, numericality: { only_integer: true, greater_than: 0 }
   validates :theme, inclusion: { in: [ "", "light", "dark" ] }, allow_nil: true
 
@@ -25,5 +27,9 @@ class User < ApplicationRecord
 
   def email_verified?
     email_verified_at.present?
+  end
+
+  def display_name
+    name.presence || email
   end
 end
