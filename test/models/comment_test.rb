@@ -11,7 +11,7 @@ class CommentTest < ActiveSupport::TestCase
 
     item = InboxItem.last
     assert_equal creative.user, item.owner
-    assert_includes item.message, commenter.email
+    assert_includes item.message, commenter.name
     expected_link = Rails.application.routes.url_helpers.creative_comment_url(
       creative,
       Comment.last,

@@ -14,7 +14,7 @@ class CreativeShareTest < ActiveSupport::TestCase
 
     item = InboxItem.last
     assert_equal recipient, item.owner
-    assert_includes item.message, sharer.email
+    assert_includes item.message, sharer.name
     assert_includes item.message, "T-Shirt"
     expected_link = Rails.application.routes.url_helpers.creative_url(
       creative,

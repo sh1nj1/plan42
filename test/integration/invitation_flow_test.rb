@@ -3,7 +3,7 @@ require "cgi"
 
 class InvitationFlowTest < ActionDispatch::IntegrationTest
   test "invitation link resolves to invitation" do
-    inviter = User.create!(email: "inviter@example.com", password: "secret")
+    inviter = User.create!(email: "inviter@example.com", password: "secret", name: "Inviter")
     creative = Creative.create!(user: inviter, description: "Test creative")
 
     invitation = Invitation.create!(email: "invitee@example.com",

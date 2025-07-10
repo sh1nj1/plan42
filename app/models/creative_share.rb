@@ -24,7 +24,7 @@ class CreativeShare < ApplicationRecord
     short_title = ActionController::Base.helpers.truncate(title, length: 30)
     InboxItem.create!(
       owner: user,
-      message: I18n.t("inbox.creative_shared", user: Current.user.email, short_title: short_title),
+      message: I18n.t("inbox.creative_shared", user: Current.user.display_name, short_title: short_title),
       link: Rails.application.routes.url_helpers.creative_url(
         creative,
         Rails.application.config.action_mailer.default_url_options
