@@ -2,8 +2,8 @@ require 'rails_helper'
 require 'ostruct'
 
 RSpec.describe 'Linked Creative parent update', type: :request do
-  let(:owner) { User.create!(email: 'owner@example.com', password: 'pw') }
-  let(:shared_user) { User.create!(email: 'shared@example.com', password: 'pw') }
+  let(:owner) { User.create!(email: 'owner@example.com', password: 'pw', name: 'Owner') }
+  let(:shared_user) { User.create!(email: 'shared@example.com', password: 'pw', name: 'Shared') }
   let(:parent) { Creative.create!(user: owner, description: 'Parent') }
   let(:creative) { Creative.create!(user: owner, parent: parent, description: 'Original') }
   let(:new_parent) { Creative.create!(user: shared_user, description: 'New Parent') }
