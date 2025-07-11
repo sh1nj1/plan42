@@ -259,7 +259,8 @@ if (!window.creativeRowEditorInitialized) {
       hideRow(target);
       target.appendChild(template);
       template.style.display = 'block';
-      const p = pendingSave ? saveForm(prev, prevParent) : Promise.resolve();
+      const needsSave = pendingSave || wasNew;
+      const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
       p.then(() => {
         if (wasNew && !form.dataset.creativeId) {
           prev.remove();
@@ -292,7 +293,8 @@ if (!window.creativeRowEditorInitialized) {
         afterId = prev.id.replace('creative-', '');
         insertBefore = prev.nextSibling;
       }
-      const p = pendingSave ? saveForm(prev, prevParent) : Promise.resolve();
+      const needsSave = pendingSave || wasNew;
+      const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
       p.then(() => {
         if (wasNew && !form.dataset.creativeId) {
           prev.remove();
