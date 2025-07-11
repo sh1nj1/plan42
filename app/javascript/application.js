@@ -4,3 +4,4 @@ import "controllers"
 
 import "trix"
 import "@rails/actiontext"
+import "register_service_worker"
