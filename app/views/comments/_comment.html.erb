@@ -4,12 +4,14 @@
     <strong><%= comment.user&.display_name || t('comments.anonymous') %></strong>
     <span>· <%= t('datetime.ago', time: time_ago_in_words(comment.created_at)) %></span>
     <% if comment.user == Current.user %>
-      <button class="edit-comment-btn" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" title="<%= t('comments.update_comment') %>">
-        <%= t('comments.edit_button') %>
-      </button>
-      <button class="delete-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.delete') %>">
-        <%= t('comments.delete_button') %>
-      </button>
+      <div class="comment-action-container">
+        <button class="edit-comment-btn" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" title="<%= t('comments.update_comment') %>">
+          <%= t('comments.edit_button') %>
+        </button>
+        <button class="delete-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.delete') %>">
+          <%= t('comments.delete_button') %>
+        </button>
+      </div>
     <% end %>
   </div>
   <div class="comment-content">
