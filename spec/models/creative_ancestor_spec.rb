@@ -2,7 +2,7 @@ require 'rails_helper'
 require 'ostruct'
 
 RSpec.describe 'Creative ancestor updates', type: :model do
-  let(:user) { User.create!(email: 'owner1@example.com', password: 'pw') }
+  let(:user) { User.create!(email: 'owner1@example.com', password: 'pw', name: 'Owner1') }
 
   before do
     Current.session = OpenStruct.new(user: user)

@@ -3,7 +3,7 @@ require 'ostruct'
 
 RSpec.describe Creative, type: :model do
   let(:owner) do
-    user = User.create!(email: 'owner@example.com', password: 'pw')
+    user = User.create!(email: 'owner@example.com', password: 'pw', name: 'Owner')
     Current.session = OpenStruct.new(user: user)
     user
   end
@@ -14,7 +14,7 @@ RSpec.describe Creative, type: :model do
 
   it 'assigns parent user when parent_id is present' do
     parent = Creative.create!(user: owner, description: 'Parent')
-    other_user = User.create!(email: 'other@example.com', password: 'pw')
+    other_user = User.create!(email: 'other@example.com', password: 'pw', name: 'Other')
     Current.session = OpenStruct.new(user: other_user)
     child = Creative.create!(parent: parent, description: 'Child')
     expect(child.user).to eq(parent.user)

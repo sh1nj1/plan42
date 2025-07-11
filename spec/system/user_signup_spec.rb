@@ -3,6 +3,7 @@ require 'rails_helper'
 describe 'User sign up', type: :system do
   it 'creates a new user' do
     visit new_user_path
+    fill_in placeholder: I18n.t('users.new.enter_your_name'), with: 'Test User'
     fill_in placeholder: I18n.t('users.new.enter_your_email'), with: 'testuser@example.com'
     fill_in placeholder: I18n.t('users.new.enter_your_password'), with: 'password123'
     fill_in placeholder: I18n.t('users.new.confirm_your_password'), with: 'password123'

@@ -2,11 +2,11 @@ require 'rails_helper'
 require 'ostruct'
 
 RSpec.describe 'Linked Creative', type: :model do
-  let(:owner) { user = User.create!(email: 'owner@example.com', password: 'pw')
+  let(:owner) { user = User.create!(email: 'owner@example.com', password: 'pw', name: 'Owner')
     Current.session = OpenStruct.new(user: user)
     user
   }
-  let(:shared_user) { User.create!(email: 'shared@example.com', password: 'pw') }
+  let(:shared_user) { User.create!(email: 'shared@example.com', password: 'pw', name: 'Shared') }
   let(:parent) { Creative.create!(user: owner, description: 'Parent') }
   let(:creative) { Creative.create!(user: owner, parent: parent, description: 'Original', progress: 1.0) }
 
@@ -43,7 +43,7 @@ RSpec.describe 'Linked Creative', type: :model do
     it 'owner 또는 CreativeShare가 있으면 has_permission?이 true' do
       expect(creative.has_permission?(owner)).to be true
       expect(creative.has_permission?(shared_user)).to be true
-      expect(creative.has_permission?(User.new(email: 'other@example.com', password: 'pw'))).to be false
+      expect(creative.has_permission?(User.new(email: 'other@example.com', password: 'pw', name: 'Other'))).to be false
     end
   end
 end
