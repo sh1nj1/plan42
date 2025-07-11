@@ -88,11 +88,7 @@ if (!window.creativeRowEditorInitialized) {
             form.dataset.creativeId = data.id;
             if (tree) tree.id = `creative-${data.id}`;
             const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
-            if (parentTree) {
-              refreshChildren(parentTree);
-            } else {
-              location.reload();
-            }
+            if (parentTree) refreshRow(parentTree);
           } else if (method === 'PATCH') {
             if (tree) refreshRow(tree);
           }
@@ -103,6 +99,7 @@ if (!window.creativeRowEditorInitialized) {
     function hideCurrent() {
       if (!currentTree) return;
       const tree = currentTree;
+      const parentId = parentInput.value;
       const wasNew = !form.dataset.creativeId;
       currentTree = null;
       template.style.display = 'none';
@@ -110,6 +107,13 @@ if (!window.creativeRowEditorInitialized) {
       p.then(() => {
         if (wasNew && !form.dataset.creativeId) {
           tree.remove();
+        } else if (!tree.querySelector('.creative-row')) {
+          const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
+          if (parentTree) {
+            refreshChildren(parentTree);
+          } else {
+            location.reload();
+          }
         } else {
           showRow(tree);
           refreshRow(tree);
