@@ -49,20 +49,16 @@
     white-space:pre-line;
 }
 
-.delete-comment-btn {
+.comment-action-container {
     position: absolute;
     bottom: 0.2em;
     right: 0.2em;
-    border: none;
-    background: none;
-    font-weight: bold;
-    cursor: pointer;
+    display: flex;
+    gap: 0.2em;
 }
 
+.delete-comment-btn,
 .edit-comment-btn {
-    position: absolute;
-    bottom: 0.2em;
-    right: 5em; /* ensure enough spacing for translated text */
     border: none;
     background: none;
     font-weight: bold;
