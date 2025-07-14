@@ -1,7 +1,9 @@
-<%= form.text_field :name,
-                    autofocus: true,
-                    required: true,
-                    placeholder: t('users.new.enter_your_name') %><br/>
+<% unless local_assigns[:skip_name_field] %>
+  <%= form.text_field :name,
+                      autofocus: true,
+                      required: true,
+                      placeholder: t('users.new.enter_your_name') %><br/>
+<% end %>
 <%= form.email_field :email,
                      required: true,
                      autocomplete: "username",
