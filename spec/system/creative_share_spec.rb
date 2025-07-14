@@ -14,6 +14,7 @@ RSpec.describe 'Creative 공유 리스트', type: :system do
   it '공유 리스트가 정상적으로 표시된다' do
     resize_window_to_pc
     visit new_session_path
+    expect(page).not_to have_field(placeholder: I18n.t('users.new.enter_your_name'))
     fill_in placeholder: I18n.t('users.new.enter_your_email'), with: user.email
     fill_in placeholder: I18n.t('users.new.enter_your_password'), with: 'password'
     find('#sign-in-submit').click
