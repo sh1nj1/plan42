@@ -1,5 +1,6 @@
 Rails.application.routes.draw do
   resource :session
+  match "/auth/:provider/callback", to: "google_auth#callback", via: [ :get, :post ]
   resources :passwords, param: :token
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 
