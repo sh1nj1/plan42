@@ -54,6 +54,8 @@ Rails.application.routes.draw do
     get :count, on: :collection
   end
 
+  resources :devices, only: [ :create ]
+
   resources :emails, only: [ :index, :show ]
 
   resource :unsubscribe, only: [ :show ]

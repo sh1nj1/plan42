@@ -1,0 +1,14 @@
+class DevicesController < ApplicationController
+  def create
+    device = Current.user.devices.find_or_initialize_by(client_id: device_params[:client_id])
+    device.assign_attributes(device_params)
+    device.save!
+    head :no_content
+  end
+
+  private
+
+  def device_params
+    params.require(:device).permit(:client_id, :device_type, :app_id, :app_version, :fcm_token)
+  end
+end

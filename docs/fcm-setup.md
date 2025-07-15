@@ -71,3 +71,33 @@ response = fcm.send(registration_ids, {
 ```
 
 이렇게 설정하면 Inbox에서 알림이 발생할 때 웹 또는 PWA 사용자에게 FCM을 통해 푸시 메시지를 전달할 수 있습니다.
+
+## 6. 디바이스 등록과 푸시 전송
+
+PWA 앱에서 획득한 FCM 토큰을 다음과 같이 서버로 전송하여 저장합니다.
+
+```javascript
+fetch('/devices', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    device: {
+      client_id: navigator.userAgent,
+      device_type: 'pwa',
+      app_id: '<YOUR_APP_ID>',
+      app_version: '<APP_VERSION>',
+      fcm_token: currentToken
+    }
+  })
+});
+```
+
+서버는 전달받은 정보를 `devices` 테이블에 저장하며, 컬럼은 다음과 같습니다.
+
+- `client_id`: 브라우저나 디바이스를 구분하기 위한 ID
+- `device_type`: `web`, `pwa`, `android`, `ios` 중 하나
+- `app_id`: 애플리케이션 ID
+- `app_version`: 애플리케이션 버전
+- `fcm_token`: FCM에서 발급받은 토큰
+
+새로운 InboxItem이 생성될 때마다 해당 사용자의 모든 디바이스로 푸시 알림이 전송됩니다.

@@ -2,6 +2,7 @@ class InboxItem < ApplicationRecord
   belongs_to :owner, class_name: "User"
 
   after_commit :broadcast_badge_update, on: %i[create update destroy] # adjust callbacks as needed
+  after_create_commit :enqueue_push_notification
 
   attribute :state, :string, default: "new"
   validates :state, inclusion: { in: %w[new read archived] }
@@ -28,5 +29,9 @@ class InboxItem < ApplicationRecord
       partial: "inbox/badge_component/count",
       locals: { count: new_count, badge_id: "inbox-badge", show_zero: false }
     )
+  end
+
+  def enqueue_push_notification
+    PushNotificationJob.perform_later(owner_id, message: message, link: link)
   end
 end
