@@ -12,14 +12,20 @@
 1. **Cloud Messaging** 탭에서 `웹 푸시 인증서` 섹션의 **키 생성** 버튼을 눌러 VAPID 키 쌍을 발급받습니다.
 2. 생성된 `공개 키`를 프론트엔드 애플리케이션에서 사용하도록 저장합니다.
 
-## 3. 백엔드 환경 변수 설정
+## 3. 백엔드 설정
 
-Rails 애플리케이션에서 FCM을 사용하려면 환경 변수에 다음 값을 등록합니다.
+Rails 애플리케이션에서 FCM을 사용하려면 `rails credentials:edit` 명령어로 다음 값들을 추가합니다.
 
-```bash
-FCM_SERVER_KEY=your_server_key
-FCM_SENDER_ID=your_sender_id
-FCM_VAPID_KEY=generated_vapid_public_key
+```yaml
+firebase:
+  api_key: your_api_key
+  auth_domain: your_auth_domain
+  project_id: your_project_id
+  app_id: your_app_id
+fcm:
+  server_key: your_server_key
+  sender_id: your_sender_id
+  vapid_key: generated_vapid_public_key
 ```
 
 ## 4. 클라이언트 설정
@@ -30,18 +36,12 @@ FCM_VAPID_KEY=generated_vapid_public_key
 import { initializeApp } from "firebase/app";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
-const firebaseConfig = {
-  apiKey: "<YOUR_API_KEY>",
-  authDomain: "<YOUR_AUTH_DOMAIN>",
-  projectId: "<YOUR_PROJECT_ID>",
-  messagingSenderId: process.env.FCM_SENDER_ID,
-  appId: "<YOUR_APP_ID>"
-};
+const firebaseConfig = window.firebaseConfig;
 
 const app = initializeApp(firebaseConfig);
 const messaging = getMessaging(app);
 
-getToken(messaging, { vapidKey: process.env.FCM_VAPID_KEY }).then((currentToken) => {
+getToken(messaging, { vapidKey: firebaseConfig.vapidKey }).then((currentToken) => {
   if (currentToken) {
     // 서버로 토큰 전송
   }
@@ -59,7 +59,7 @@ FCM 서버 키를 사용하여 알림을 전송할 수 있습니다. `fcm` gem�
 ```ruby
 require "fcm"
 
-fcm = FCM.new(ENV.fetch("FCM_SERVER_KEY"))
+fcm = FCM.new(Rails.application.credentials.dig(:fcm, :server_key))
 
 response = fcm.send(registration_ids, {
   notification: {

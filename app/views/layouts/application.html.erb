@@ -9,6 +9,12 @@
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
 
+    <% if Rails.application.config.x.firebase_config.present? %>
+      <script>
+        window.firebaseConfig = <%= Rails.application.config.x.firebase_config.to_json.html_safe %>
+      </script>
+    <% end %>
+
     <%= yield :head %>
 
     <%# Enable PWA manifest for installable apps (make sure to enable in config/routes.rb too!) %>
