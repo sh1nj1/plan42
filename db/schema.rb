@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_06_24_000000) do
+ActiveRecord::Schema[8.0].define(version: 2025_07_14_190000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -113,6 +113,20 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_24_000000) do
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
+  end
+
+  create_table "devices", force: :cascade do |t|
+    t.integer "user_id", null: false
+    t.string "client_id", null: false
+    t.integer "device_type", null: false
+    t.string "app_id"
+    t.string "app_version"
+    t.string "fcm_token", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["client_id"], name: "index_devices_on_client_id", unique: true
+    t.index ["fcm_token"], name: "index_devices_on_fcm_token"
+    t.index ["user_id"], name: "index_devices_on_user_id"
   end
 
   create_table "emails", force: :cascade do |t|
@@ -357,6 +371,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_24_000000) do
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
+  add_foreign_key "devices", "users"
   add_foreign_key "emails", "users"
   add_foreign_key "inbox_items", "users", column: "owner_id"
   add_foreign_key "invitations", "creatives"
