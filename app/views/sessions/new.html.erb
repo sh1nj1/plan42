@@ -5,7 +5,7 @@
   <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
   <%= form.submit t('app.sign_in'), id: 'sign-in-submit' %>
 <% end %>
-<%= button_to t('users.sessions.new.sign_in_with_google'), '/auth/google_oauth2', method: :post %>
+<%= button_to t('users.sessions.new.sign_in_with_google'), '/auth/google_oauth2', method: :post, data: { turbo: false} %>
 <br>
 
 <%= link_to t('users.sessions.new.forgot_password'), new_password_path %>
