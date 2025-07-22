@@ -45,6 +45,7 @@ gem "image_processing", "~> 1.14"
 
 gem "closure_tree"
 gem "fcm"
+gem "google-apis-fcm_v1"
 
 # Google OAuth
 gem "omniauth-google-oauth2"
