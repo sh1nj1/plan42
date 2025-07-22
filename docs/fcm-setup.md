@@ -101,3 +101,126 @@ fetch('/devices', {
 - `fcm_token`: FCM에서 발급받은 토큰
 
 새로운 InboxItem이 생성될 때마다 해당 사용자의 모든 디바이스로 푸시 알림이 전송됩니다.
+
+## FCM with AWS Workload Identity Federation
+
+### AWS and GCP Federation Setup
+
+#### Create AWS Role
+
+1. create policy named "AllowSTSForGCPFederation" for Role
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "sts:AssumeRoleWithWebIdentity",
+                "sts:GetCallerIdentity"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+2. create a role named "AllowSTSForGCPFederation" with created policy and trusted entity as below
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "ec2.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+3. attach role to EC2 instance
+    - IAM role name: "AllowSTSForGCPFederation"
+    - No need to restart instance, select instance, click Actions > Security > Modify IAM role, select AllowSTSForGCPFederation
+
+### Check EC2 instance IAM role
+
+run this in the EC2 instance
+
+Step-by-Step: Use IMDSv2 from Terminal (Manual Test)
+1. Get metadata token
+   ```bash
+   TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" \
+   -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+   ```
+2. Use that token to fetch IAM role name
+   ```bash
+   curl -H "X-aws-ec2-metadata-token: $TOKEN" \
+   http://169.254.169.254/latest/meta-data/iam/security-credentials/
+   ```
+3. Use that token to fetch temporary AWS credentials
+   ```bash
+   ROLE_NAME=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" \
+   http://169.254.169.254/latest/meta-data/iam/security-credentials/)
+
+   curl -H "X-aws-ec2-metadata-token: $TOKEN" \
+   http://169.254.169.254/latest/meta-data/iam/security-credentials/$ROLE_NAME
+   ```
+
+Or use ruby script.
+
+```ruby
+require 'net/http'
+require 'uri'
+require 'json'
+
+METADATA_BASE = 'http://169.254.169.254/latest'
+
+def fetch_token
+  uri = URI("#{METADATA_BASE}/api/token")
+  req = Net::HTTP::Put.new(uri)
+  req['X-aws-ec2-metadata-token-ttl-seconds'] = "21600"
+
+  res = Net::HTTP.start(uri.hostname, uri.port) { |http| http.request(req) }
+  raise "Token fetch failed: #{res.code}" unless res.is_a?(Net::HTTPSuccess)
+  res.body
+end
+
+def fetch_metadata(path, token)
+  uri = URI("#{METADATA_BASE}/meta-data/#{path}")
+  req = Net::HTTP::Get.new(uri)
+  req['X-aws-ec2-metadata-token'] = token
+
+  res = Net::HTTP.start(uri.hostname, uri.port) { |http| http.request(req) }
+  raise "Metadata fetch failed: #{res.code}" unless res.is_a?(Net::HTTPSuccess)
+  res.body
+end
+
+token = fetch_token
+role_name = fetch_metadata("iam/security-credentials/", token)
+credentials = fetch_metadata("iam/security-credentials/#{role_name}", token)
+
+puts "[INFO] IAM Role: #{role_name}"
+puts "[INFO] Temporary Credentials:"
+puts JSON.pretty_generate(JSON.parse(credentials))
+```
+
+### Configure GCP
+
+```shell
+gcloud iam workload-identity-pools create aws-pool \
+  --location="global" \
+  --display-name="AWS Federation Pool"
+
+gcloud iam workload-identity-pools providers create-aws aws-provider \
+  --workload-identity-pool="aws-pool" \
+  --account-id="[YOUR_AWS_ACCOUNT_ID]" \
+  --location="global" \
+  --display-name="AWS EC2 Identity Provider"
+
+gcloud projects describe [PROJECT_ID] --format="value(projectNumber)"
+
+gcloud iam service-accounts add-iam-policy-binding firebase-adminsdk-fbsvc@[PROJECT_ID].iam.gserviceaccount.com \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/[PROJECT_NUMBER]/locations/global/workloadIdentityPools/aws-pool/attribute.aws_role/arn:aws:iam::762305182084:role/AllowSTSForGCPFederation"
+```
