@@ -5,6 +5,7 @@ class User < ApplicationRecord
   has_many :sessions, dependent: :destroy
   has_many :creatives
   has_many :labels, foreign_key: :owner_id
+  has_many :devices, dependent: :destroy
 
   has_one_attached :avatar
 
