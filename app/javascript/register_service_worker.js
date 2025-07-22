@@ -30,7 +30,10 @@ if ('serviceWorker' in navigator) {
         }
 
         const config = window.firebaseConfig
-        if (!config) return
+        if (!config) {
+            console.warn('No firebase config found')
+            return
+        }
 
         const app = initializeApp(config)
         const messaging = getMessaging(app)
