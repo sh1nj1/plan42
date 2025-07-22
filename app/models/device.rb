@@ -1,5 +1,5 @@
 class Device < ApplicationRecord
-  enum device_type: { web: 0, pwa: 1, android: 2, ios: 3 }
+  enum :device_type, { web: 0, pwa: 1, android: 2, ios: 3 }
 
   belongs_to :user
 

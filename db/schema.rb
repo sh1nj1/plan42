@@ -169,9 +169,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_14_190000) do
     t.string "type"
     t.string "name"
     t.string "value"
+    t.date "target_date"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.date "target_date"
     t.integer "owner_id"
     t.index ["owner_id"], name: "index_labels_on_owner_id"
   end
