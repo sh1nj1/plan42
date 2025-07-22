@@ -16,8 +16,9 @@ if project_id.present?
       region_url: "http://169.254.169.254/latest/meta-data/placement/region",
       url: "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
       regional_cred_verification_url: "https://sts.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
-      imds_v2_session_token_url: "http://169.254.169.254/latest/api/token"
-    }
+      imdsv2_session_token_url: "http://169.254.169.254/latest/api/token",
+    },
+    service_account_impersonation_url: "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/firebase-adminsdk-fbsvc@collavre.iam.gserviceaccount.com:generateAccessToken"
   )
 
   service = Google::Apis::FcmV1::FirebaseCloudMessagingService.new
