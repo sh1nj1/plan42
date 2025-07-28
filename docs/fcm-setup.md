@@ -220,7 +220,14 @@ gcloud iam workload-identity-pools providers create-aws aws-provider \
 
 gcloud projects describe [PROJECT_ID] --format="value(projectNumber)"
 
+# I guess use by pool strategy is better for not being got error. like aws-pool/* but not sure it works.
+# see - https://cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds#console_3
 gcloud iam service-accounts add-iam-policy-binding firebase-adminsdk-fbsvc@[PROJECT_ID].iam.gserviceaccount.com \
   --role="roles/iam.workloadIdentityUser" \
   --member="principalSet://iam.googleapis.com/projects/[PROJECT_NUMBER]/locations/global/workloadIdentityPools/aws-pool/attribute.aws_role/arn:aws:iam::762305182084:role/AllowSTSForGCPFederation"
+```
+
+```shell
+gcloud iam workload-identity-pools create-cred-config projects/618782485139/locations/global/workloadIdentityPools/aws-pool/providers/aws-provider \
+--service-account=firebase-admin-fbsvc@collavre.iam.gserviceaccount.com --aws --enable-imdsv2 --output-file=output.json
 ```
