@@ -6,8 +6,7 @@ module Google
   module Auth
     module ExternalAccount
       module BaseCredentials
-
-        def log_impersonated_token_request original_token
+        def log_impersonated_token_request(original_token)
             digest = Digest::SHA256.hexdigest original_token
             msg = Google::Logging::Message.from(
               message: "Requesting impersonated access token with original token (sha256:#{digest})",
@@ -15,7 +14,7 @@ module Google
             )
             Rails.logger.info("[IMPERSONATION] >>> token: #{msg}")
         end
-        def get_impersonated_access_token token, _options = {}
+        def get_impersonated_access_token(token, _options = {})
           log_impersonated_token_request token
           response = connection.post @service_account_impersonation_url do |req|
             req.headers["Authorization"] = "Bearer #{token}"
@@ -41,8 +40,8 @@ module Google
     end
     module OAuth2
       class STSClient
-        def exchange_token options = {}
-          missing_required_opts = [:grant_type, :subject_token, :subject_token_type] - options.keys
+        def exchange_token(options = {})
+          missing_required_opts = [ :grant_type, :subject_token, :subject_token_type ] - options.keys
           unless missing_required_opts.empty?
             raise ArgumentError, "Missing required options: #{missing_required_opts.join(', ')}"
           end
