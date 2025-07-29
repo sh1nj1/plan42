@@ -127,6 +127,9 @@ main {
     main {
         padding: 0 0.3rem;
     }
+    #search {
+        width: 8em;
+    }
 }
 
 .notice {
