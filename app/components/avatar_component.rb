@@ -16,6 +16,14 @@ class AvatarComponent < ViewComponent::Base
     end
   end
 
+  def default_avatar?
+    @user && !@user.avatar.attached? && @user.avatar_url.blank?
+  end
+
+  def initial
+    @user.display_name[0].upcase
+  end
+
   def email
     if @user
       @user.display_name
