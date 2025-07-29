@@ -47,7 +47,7 @@
         <input type="text" id="search" name="search" value="<%= params[:search] %>" placeholder="<%= t('app.search_placeholder') %>" />
       </form>
 
-      <div class="desktop-only">
+        <div class="desktop-only">
         <%= button_to t('app.home'), root_path, method: :get %>
         <% if authenticated? %>
           <form id="button_to">
@@ -83,50 +83,13 @@
         <% end %>
         <%= button_to t('app.sign_in'), new_session_path, method: :get unless authenticated? %>
         <%= button_tag "?", id: "creative-guide-link", class: "creative-guide-link" %>
-      </div>
-
-      <%= render PopupMenuComponent.new(
-            button_content: '...',
-            button_classes: 'mobile-only',
-            menu_id: 'mobile-more-menu',
-            align: :right
-          ) do %>
-        <div><%= button_to t('app.home'), root_path, method: :get %></div>
+        </div>
         <% if authenticated? %>
-          <div>
+          <form class="mobile-only">
             <button class="plans-menu-btn" type="button"><%= t('app.plans') %></button>
-          </div>
-          <% progress_state = if params[:min_progress] == '1' && params[:max_progress] == '1'
-                                :complete
-                              elsif params[:min_progress] == '0' && params[:max_progress] == '0.99'
-                                :incomplete
-                              else
-                                :all
-                              end %>
-          <% comment_state = params[:comment] == 'true' ? :comment : nil %>
-          <%= render ProgressFilterComponent.new(
-                current_state: progress_state,
-                states: [
-                  { name: t('app.filter_complete'), value: :complete },
-                  { name: t('app.filter_incomplete'), value: :incomplete },
-                  { name: t('app.filter_all'), value: :all }
-                ]
-              ) %>
-          <%= render ProgressFilterComponent.new(
-                current_state: comment_state,
-                states: [
-                  { name: t('app.filter_comments'), value: :comment }
-                ]
-              ) %>
+          </form>
         <% end %>
-        <% if Current.user %>
-          <div>
-            <button class="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user) %></button>
-          </div>
-        <% end %>
-        <div><%= button_to t('app.sign_in'), new_session_path, method: :get unless authenticated? %></div>
-        <div><%= button_tag "?", id: "creative-guide-link", class: "creative-guide-link" %></div>
-      <% end %>
+
 
       <% if Current.user %>
         <%= render PopupMenuComponent.new(
