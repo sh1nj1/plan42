@@ -1,8 +1,15 @@
-<%= image_tag avatar_url,
-              alt: '',
-              width: size,
-              height: size,
-              class: classes,
-              title: email,
-              style: 'border-radius:50%;vertical-align:middle;',
-              data: data %>
+<div class="avatar-wrapper" style="width: <%= size %>px; height: <%= size %>px;">
+  <%= image_tag avatar_url,
+                alt: '',
+                width: size,
+                height: size,
+                class: classes,
+                title: email,
+                style: 'border-radius:50%;vertical-align:middle;',
+                data: data %>
+  <% if default_avatar? %>
+    <span class="avatar-initial" style="font-size: <%= (size / 2.0).round %>px;">
+      <%= initial %>
+    </span>
+  <% end %>
+</div>
