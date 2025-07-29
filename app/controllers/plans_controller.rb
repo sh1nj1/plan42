@@ -1,7 +1,12 @@
 class PlansController < ApplicationController
   def index
-    start_date = Date.current - 30
-    end_date = Date.current + 30
+    center = if params[:date].present?
+                Date.parse(params[:date]) rescue Date.current
+    else
+                Date.current
+    end
+    start_date = center - 30
+    end_date = center + 30
     @plans = Plan.where(owner: Current.user).or(Plan.where(owner: nil))
                  .where("target_date >= ? AND created_at <= ?", start_date, end_date)
                  .order(:created_at)

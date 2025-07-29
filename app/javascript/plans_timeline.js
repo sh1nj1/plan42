@@ -17,6 +17,7 @@ if (!window.plansTimelineScriptInitialized) {
     var rowHeight = 26;
     var startDate = new Date(container.dataset.startDate || new Date());
     var endDate = new Date(container.dataset.endDate || new Date());
+    container.dataset.lastLoadedDate = new Date().toISOString().slice(0, 10);
 
     var scroll = document.createElement('div');
     scroll.className = 'timeline-scroll';
@@ -169,6 +170,25 @@ if (!window.plansTimelineScriptInitialized) {
     renderPlans();
     updatePlanPositions();
 
+    function loadPlans(centerDate) {
+      var dateStr = centerDate.toISOString().slice(0, 10);
+      if (container.dataset.lastLoadedDate === dateStr) return;
+      container.dataset.lastLoadedDate = dateStr;
+      fetch('/plans.json?date=' + dateStr)
+        .then(function(r) { return r.json(); })
+        .then(function(newPlans) {
+          plans = newPlans.map(function(p) {
+            p.created_at = new Date(p.created_at);
+            p.target_date = new Date(p.target_date);
+            return p;
+          });
+          planEls.forEach(function(item) { item.el.remove(); });
+          planEls = [];
+          renderPlans();
+          updatePlanPositions();
+        });
+    }
+
     function ensureDateVisible(date) {
       if (date < startDate) {
         extendLeft(dayDiff(startDate, date));
@@ -191,6 +211,7 @@ if (!window.plansTimelineScriptInitialized) {
 
     scrollToDate(new Date());
 
+    var scrollTimer;
     container.addEventListener('scroll', function() {
       if (container.scrollLeft < 50) {
         extendLeft(30);
@@ -199,6 +220,13 @@ if (!window.plansTimelineScriptInitialized) {
         extendRight(30);
       }
       updatePlanPositions();
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(function() {
+        var centerOffset = container.scrollLeft + container.clientWidth / 2;
+        var daysFromStart = centerOffset / dayWidth;
+        var centerDate = new Date(startDate.getTime() + Math.round(daysFromStart) * 86400000);
+        loadPlans(centerDate);
+      }, 200);
     });
 
     var planForm = document.getElementById('new-plan-form');
