@@ -24,7 +24,9 @@ if (!window.plansTimelineScriptInitialized) {
     container.appendChild(scroll);
 
     function dayDiff(d1, d2) {
-      return Math.round((d1 - d2) / 86400000);
+      var t1 = Date.UTC(d1.getFullYear(), d1.getMonth(), d1.getDate());
+      var t2 = Date.UTC(d2.getFullYear(), d2.getMonth(), d2.getDate());
+      return Math.round((t1 - t2) / 86400000);
     }
 
     function createDay(date) {
