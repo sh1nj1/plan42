@@ -37,14 +37,21 @@ if (!window.plansTimelineScriptInitialized) {
 
     function renderDays(from, to, prepend) {
       var date = new Date(from);
-      while (date <= to) {
-        var el = createDay(new Date(date));
-        if (prepend) {
-          scroll.insertBefore(el, scroll.firstChild);
-        } else {
-          scroll.appendChild(el);
+      if (prepend) {
+        var days = [];
+        while (date <= to) {
+          days.push(createDay(new Date(date)));
+          date.setDate(date.getDate() + 1);
         }
-        date.setDate(date.getDate() + 1);
+        for (var i = days.length - 1; i >= 0; i--) {
+          scroll.insertBefore(days[i], scroll.firstChild);
+        }
+      } else {
+        while (date <= to) {
+          var el = createDay(new Date(date));
+          scroll.appendChild(el);
+          date.setDate(date.getDate() + 1);
+        }
       }
     }
 
