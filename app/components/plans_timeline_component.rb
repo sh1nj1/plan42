@@ -1,13 +1,14 @@
 class PlansTimelineComponent < ViewComponent::Base
-  def initialize(plans:)
-    @start_date = Date.current - 30
-    @end_date = Date.current + 30
+  def initialize(plans:, center_date: Date.current)
+    @center_date = center_date.to_date
+    @start_date = @center_date - 30
+    @end_date = @center_date + 30
     @plans = plans
       .where("target_date >= ? AND created_at <= ?", @start_date, @end_date)
       .order(:created_at)
   end
 
-  attr_reader :plans, :start_date, :end_date
+  attr_reader :plans, :start_date, :end_date, :center_date
 
   def plan_data
     @plan_data ||= @plans.map do |plan|

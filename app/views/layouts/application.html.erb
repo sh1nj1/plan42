@@ -172,7 +172,13 @@
               if (area.style.display === 'none') {
                 area.style.display = 'block';
                 if (!loaded) {
-                  fetch('/plans.json')
+                  var center = new Date();
+                  if (timeline) {
+                    timeline.dataset.centerDate = center.toISOString().slice(0,10);
+                    timeline.dataset.startDate = new Date(center.getTime() - 30*86400000).toISOString().slice(0,10);
+                    timeline.dataset.endDate = new Date(center.getTime() + 30*86400000).toISOString().slice(0,10);
+                  }
+                  fetch('/plans.json?center_date=' + center.toISOString().slice(0,10))
                     .then(function(r) { return r.json(); })
                     .then(function(plans) {
                       if (timeline) { timeline.dataset.plans = JSON.stringify(plans); }

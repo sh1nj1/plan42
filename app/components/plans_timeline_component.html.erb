@@ -1,6 +1,6 @@
 <div class="plans-timeline-wrapper">
   <button id="timeline-today-btn" type="button"><%= t('plans.today', default: '오늘') %></button>
-  <div id="plans-timeline" class="horizontal-timeline" data-plans='<%= raw plan_data.to_json %>' data-start-date="<%= @start_date %>" data-end-date="<%= @end_date %>" data-delete-confirm="<%= t('plans.delete_confirm', default: 'Are you sure?') %>"></div>
+  <div id="plans-timeline" class="horizontal-timeline" data-plans='<%= raw plan_data.to_json %>' data-start-date="<%= @start_date %>" data-end-date="<%= @end_date %>" data-center-date="<%= @center_date %>" data-delete-confirm="<%= t('plans.delete_confirm', default: 'Are you sure?') %>"></div>
 </div>
 <hr>
 <div class="plan-form-container">

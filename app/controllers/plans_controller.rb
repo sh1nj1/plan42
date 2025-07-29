@@ -1,13 +1,24 @@
 class PlansController < ApplicationController
   def index
-    start_date = Date.current - 30
-    end_date = Date.current + 30
+    center_date =
+      begin
+        params[:center_date].present? ? Date.parse(params[:center_date]) : Date.current
+      rescue ArgumentError
+        Date.current
+      end
+
+    start_date = center_date - 30
+    end_date = center_date + 30
+
     @plans = Plan.where(owner: Current.user).or(Plan.where(owner: nil))
                  .where("target_date >= ? AND created_at <= ?", start_date, end_date)
                  .order(:created_at)
     respond_to do |format|
       format.html do
-        render html: render_to_string(PlansTimelineComponent.new(plans: @plans), layout: false)
+        render html: render_to_string(
+          PlansTimelineComponent.new(plans: @plans, center_date: center_date),
+          layout: false
+        )
       end
       format.json do
         render json: @plans.map { |p| plan_json(p) }

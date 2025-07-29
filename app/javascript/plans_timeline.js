@@ -15,8 +15,12 @@ if (!window.plansTimelineScriptInitialized) {
 
     var dayWidth = 80; // pixels per day
     var rowHeight = 26;
-    var startDate = new Date(container.dataset.startDate || new Date());
-    var endDate = new Date(container.dataset.endDate || new Date());
+    var centerDate = new Date(container.dataset.centerDate || new Date());
+    var startDate = new Date(container.dataset.startDate || new Date(centerDate.getTime() - 30 * 86400000));
+    var endDate = new Date(container.dataset.endDate || new Date(centerDate.getTime() + 30 * 86400000));
+    container.dataset.centerDate = centerDate.toISOString().slice(0,10);
+    container.dataset.startDate = startDate.toISOString().slice(0,10);
+    container.dataset.endDate = endDate.toISOString().slice(0,10);
 
     var scroll = document.createElement('div');
     scroll.className = 'timeline-scroll';
@@ -165,6 +169,31 @@ if (!window.plansTimelineScriptInitialized) {
       updatePlanPositions();
     }
 
+    function reloadPlans(date) {
+      fetch('/plans.json?center_date=' + date.toISOString().slice(0,10))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          plans = data.map(function(p) {
+            p.created_at = new Date(p.created_at);
+            p.target_date = new Date(p.target_date);
+            return p;
+          });
+          planEls.forEach(function(item) { item.el.remove(); });
+          planEls = [];
+          scroll.innerHTML = '';
+          centerDate = date;
+          container.dataset.centerDate = centerDate.toISOString().slice(0,10);
+          startDate = new Date(centerDate.getTime() - 30 * 86400000);
+          endDate = new Date(centerDate.getTime() + 30 * 86400000);
+          container.dataset.startDate = startDate.toISOString().slice(0,10);
+          container.dataset.endDate = endDate.toISOString().slice(0,10);
+          renderDays(startDate, endDate, false);
+          renderPlans();
+          updatePlanPositions();
+          scrollToDate(centerDate);
+        });
+    }
+
     renderDays(startDate, endDate, false);
     renderPlans();
     updatePlanPositions();
@@ -189,8 +218,9 @@ if (!window.plansTimelineScriptInitialized) {
       todayBtn.addEventListener('click', function() { scrollToDate(new Date()); });
     }
 
-    scrollToDate(new Date());
+    scrollToDate(centerDate);
 
+    var scrollTimer;
     container.addEventListener('scroll', function() {
       if (container.scrollLeft < 50) {
         extendLeft(30);
@@ -199,6 +229,12 @@ if (!window.plansTimelineScriptInitialized) {
         extendRight(30);
       }
       updatePlanPositions();
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(function() {
+        var offsetDays = (container.scrollLeft + container.clientWidth / 2) / dayWidth;
+        var date = new Date(startDate.getTime() + Math.round(offsetDays) * 86400000);
+        reloadPlans(date);
+      }, 300);
     });
 
     var planForm = document.getElementById('new-plan-form');
