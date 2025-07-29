@@ -231,9 +231,15 @@ if (!window.plansTimelineScriptInitialized) {
       updatePlanPositions();
       clearTimeout(scrollTimer);
       scrollTimer = setTimeout(function() {
-        var offsetDays = (container.scrollLeft + container.clientWidth / 2) / dayWidth;
-        var date = new Date(startDate.getTime() + Math.round(offsetDays) * 86400000);
-        reloadPlans(date);
+        var offsetDays =
+          (container.scrollLeft + container.clientWidth / 2 - dayWidth / 2) /
+          dayWidth;
+        var date = new Date(
+          startDate.getTime() + Math.round(offsetDays) * 86400000
+        );
+        if (date.toISOString().slice(0, 10) !== container.dataset.centerDate) {
+          reloadPlans(date);
+        }
       }, 300);
     });
 
