@@ -107,3 +107,7 @@
   opacity: 0.4;
   filter: grayscale(1);
 }
+.comment-presence-avatar.inactive + .avatar-initial {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
