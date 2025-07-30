@@ -24,6 +24,7 @@ if (!window.creativeRowEditorInitialized) {
     let currentTree = null;
     let saveTimer = null;
     let pendingSave = false;
+    let needsReload = false;
 
     function hideRow(tree) {
       const row = tree.querySelector('.creative-row');
@@ -91,7 +92,7 @@ if (!window.creativeRowEditorInitialized) {
             if (parentTree) {
               refreshChildren(parentTree);
             } else {
-              location.reload();
+              needsReload = true;
             }
           } else if (method === 'PATCH') {
             if (tree) refreshRow(tree);
@@ -100,7 +101,7 @@ if (!window.creativeRowEditorInitialized) {
       });
     }
 
-    function hideCurrent() {
+    function hideCurrent(reload = false) {
       if (!currentTree) return;
       const tree = currentTree;
       const wasNew = !form.dataset.creativeId;
@@ -113,6 +114,9 @@ if (!window.creativeRowEditorInitialized) {
         } else {
           showRow(tree);
           refreshRow(tree);
+        }
+        if (reload && needsReload) {
+          location.reload();
         }
       });
     }
@@ -354,7 +358,7 @@ if (!window.creativeRowEditorInitialized) {
     });
 
     if (closeBtn) {
-      closeBtn.addEventListener('click', hideCurrent);
+      closeBtn.addEventListener('click', function() { hideCurrent(true); });
     }
 
     upBtn.addEventListener('click', function() {
