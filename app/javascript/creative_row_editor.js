@@ -101,13 +101,13 @@ if (!window.creativeRowEditorInitialized) {
     }
 
     function hideCurrent() {
-      if (!currentTree) return;
+      if (!currentTree) return Promise.resolve();
       const tree = currentTree;
       const wasNew = !form.dataset.creativeId;
       currentTree = null;
       template.style.display = 'none';
       const p = pendingSave ? saveForm() : Promise.resolve();
-      p.then(() => {
+      return p.then(() => {
         if (wasNew && !form.dataset.creativeId) {
           tree.remove();
         } else {
@@ -123,18 +123,22 @@ if (!window.creativeRowEditorInitialized) {
         if (!tree) return;
         btn.addEventListener('click', function(e) {
           e.preventDefault();
+          const openEditor = function() {
+            currentTree = tree;
+            hideRow(tree);
+            tree.appendChild(template);
+            template.style.display = 'block';
+            loadCreative(tree.id.replace('creative-', ''));
+          };
           if (currentTree === tree) {
             hideCurrent();
             return;
           }
           if (currentTree) {
-            hideCurrent();
+            hideCurrent().then(openEditor);
+          } else {
+            openEditor();
           }
-          currentTree = tree;
-          hideRow(tree);
-          tree.appendChild(template);
-          template.style.display = 'block';
-          loadCreative(tree.id.replace('creative-', ''));
         });
       });
 
@@ -263,8 +267,8 @@ if (!window.creativeRowEditorInitialized) {
           showRow(prev);
           refreshRow(prev);
         }
+        loadCreative(target.id.replace('creative-', ''));
       });
-      loadCreative(target.id.replace('creative-', ''));
     }
 
     function addNew() {
@@ -296,31 +300,37 @@ if (!window.creativeRowEditorInitialized) {
           showRow(prev);
           refreshRow(prev);
         }
+        startNew(parentId, container, insertBefore, beforeId, afterId);
       });
-      startNew(parentId, container, insertBefore, beforeId, afterId);
     }
 
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
-      if (currentTree) hideCurrent();
-      const newTree = document.createElement('div');
-      newTree.className = 'creative-tree';
-      if (insertBefore) container.insertBefore(newTree, insertBefore); else container.appendChild(newTree);
-      currentTree = newTree;
-      newTree.appendChild(template);
-      template.style.display = 'block';
-      form.action = '/creatives';
-      methodInput.value = '';
-      form.dataset.creativeId = '';
-      parentInput.value = parentId || '';
-      beforeInput.value = beforeId || '';
-      afterInput.value = afterId || '';
-      if (childInput) childInput.value = childId || '';
-      descriptionInput.value = '';
-      editor.editor.loadHTML('');
-      progressInput.value = 0;
-      progressValue.textContent = 0;
-      pendingSave = false;
-      editor.focus();
+      const openForm = function() {
+        const newTree = document.createElement('div');
+        newTree.className = 'creative-tree';
+        if (insertBefore) container.insertBefore(newTree, insertBefore); else container.appendChild(newTree);
+        currentTree = newTree;
+        newTree.appendChild(template);
+        template.style.display = 'block';
+        form.action = '/creatives';
+        methodInput.value = '';
+        form.dataset.creativeId = '';
+        parentInput.value = parentId || '';
+        beforeInput.value = beforeId || '';
+        afterInput.value = afterId || '';
+        if (childInput) childInput.value = childId || '';
+        descriptionInput.value = '';
+        editor.editor.loadHTML('');
+        progressInput.value = 0;
+        progressValue.textContent = 0;
+        pendingSave = false;
+        editor.focus();
+      };
+      if (currentTree) {
+        hideCurrent().then(openForm);
+      } else {
+        openForm();
+      }
     }
 
     function scheduleSave() {
