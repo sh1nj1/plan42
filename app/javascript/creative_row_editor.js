@@ -36,7 +36,7 @@ if (!window.creativeRowEditorInitialized) {
     }
 
     function refreshRow(tree) {
-      const id = tree.id.replace('creative-', '');
+      const id = tree.dataset.id;
       fetch(`/creatives/${id}.json`)
         .then(r => r.json())
         .then(data => {
@@ -138,7 +138,7 @@ if (!window.creativeRowEditorInitialized) {
           hideRow(tree);
           tree.appendChild(template);
           template.style.display = 'block';
-          loadCreative(tree.id.replace('creative-', ''));
+          loadCreative(tree.dataset.id);
         });
       });
 
@@ -148,7 +148,7 @@ if (!window.creativeRowEditorInitialized) {
           const tree = btn.closest('.creative-tree');
           let parentId, container, insertBefore, beforeId = '';
           if (tree) {
-            parentId = tree.id.replace('creative-', '');
+            parentId = tree.dataset.id;
             container = tree.querySelector('.creative-children');
             if (!container) {
               container = document.createElement('div');
@@ -157,7 +157,7 @@ if (!window.creativeRowEditorInitialized) {
               tree.appendChild(container);
             }
             insertBefore = container.firstElementChild;
-            beforeId = insertBefore ? insertBefore.id.replace('creative-', '') : '';
+            beforeId = insertBefore ? insertBefore.dataset.id : '';
           } else {
             parentId = btn.dataset.parentId || '';
             const parentTree = parentId ? document.getElementById('creative-' + parentId) : null;
@@ -173,7 +173,7 @@ if (!window.creativeRowEditorInitialized) {
               }
             }
             insertBefore = container.firstElementChild;
-            beforeId = insertBefore ? insertBefore.id.replace('creative-', '') : '';
+            beforeId = insertBefore ? insertBefore.dataset.id : '';
           }
           startNew(parentId, container, insertBefore, beforeId);
         });
@@ -185,7 +185,7 @@ if (!window.creativeRowEditorInitialized) {
         btn.addEventListener('click', function(e) {
           e.preventDefault();
           const insertBefore = container.firstElementChild;
-          const beforeId = insertBefore ? insertBefore.id.replace('creative-', '') : '';
+          const beforeId = insertBefore ? insertBefore.dataset.id : '';
           startNew('', container, insertBefore, beforeId);
         });
       });
@@ -269,7 +269,7 @@ if (!window.creativeRowEditorInitialized) {
           refreshRow(prev);
         }
       });
-      loadCreative(target.id.replace('creative-', ''));
+      loadCreative(target.dataset.id);
     }
 
     function addNew() {
@@ -277,7 +277,7 @@ if (!window.creativeRowEditorInitialized) {
       const prev = currentTree;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
-      const prevCreativeId = prev.id.replace('creative-', '')
+      const prevCreativeId = prev.dataset.id;
       const childContainer = prev.parentElement.querySelector('#creative-children-' + prevCreativeId);
       const firstChild = childContainer && childContainer.querySelector('.creative-tree');
       let parentId, container, insertBefore,
@@ -286,11 +286,11 @@ if (!window.creativeRowEditorInitialized) {
         parentId = prevCreativeId;
         container = childContainer;
         insertBefore = firstChild;
-        beforeId = firstChild.id.replace('creative-', '');
+        beforeId = firstChild.dataset.id;
       } else {
-        parentId = prev.parentElement?.id?.startsWith("creative-children-") ? prev.parentElement.id.replace('creative-children-', '') : null;
+        parentId = prev.dataset.parentId;
         container = prev.parentNode;
-        afterId = prev.id.replace('creative-', '');
+        afterId = prev.dataset.id;
         insertBefore = prev.nextSibling;
       }
       const needsSave = pendingSave || wasNew;
