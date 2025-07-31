@@ -53,10 +53,10 @@ if (!window.creativeRowEditorInitialized) {
 
     function refreshChildren(tree) {
       const container = tree.querySelector('.creative-children');
-      if (!container) { location.reload(); return; }
+      if (!container) { location.reload(); return Promise.resolve(); }
       const url = container.dataset.loadUrl;
-      if (!url) { location.reload(); return; }
-      fetch(url)
+      if (!url) { location.reload(); return Promise.resolve(); }
+      return fetch(url)
         .then(r => r.text())
         .then(html => {
           container.innerHTML = html;
@@ -86,9 +86,21 @@ if (!window.creativeRowEditorInitialized) {
             form.action = `/creatives/${data.id}`;
             methodInput.value = 'patch';
             form.dataset.creativeId = data.id;
-            if (tree) tree.id = `creative-${data.id}`;
             const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
-            if (parentTree) refreshRow(parentTree);
+            if (parentTree) {
+              return refreshChildren(parentTree).then(function() {
+                const newTree = document.getElementById(`creative-${data.id}`);
+                if (newTree) {
+                  hideRow(newTree);
+                  newTree.appendChild(template);
+                  currentTree = newTree;
+                }
+              });
+            } else if (tree) {
+              tree.id = `creative-${data.id}`;
+            } else {
+              location.reload();
+            }
           } else if (method === 'PATCH') {
             if (tree) refreshRow(tree);
           }
