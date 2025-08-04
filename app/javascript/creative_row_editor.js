@@ -245,6 +245,19 @@ if (!window.creativeRowEditorInitialized) {
         });
     }
 
+    function beforeNewOrMove(wasNew, prev, prevParent) {
+        const needsSave = pendingSave || wasNew;
+        const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
+        p.then(() => {
+            if (wasNew && !form.dataset.creativeId) {
+                prev.remove();
+            } else {
+                showRow(prev);
+                refreshRow(prev);
+            }
+        });
+    }
+
     function move(delta) {
       if (!currentTree) return;
       const trees = Array.from(document.querySelectorAll('.creative-tree'));
@@ -259,16 +272,7 @@ if (!window.creativeRowEditorInitialized) {
       hideRow(target);
       target.appendChild(template);
       template.style.display = 'block';
-      const needsSave = pendingSave || wasNew;
-      const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
-      p.then(() => {
-        if (wasNew && !form.dataset.creativeId) {
-          prev.remove();
-        } else {
-          showRow(prev);
-          refreshRow(prev);
-        }
-      });
+      beforeNewOrMove(wasNew, prev, prevParent);
       loadCreative(target.dataset.id);
     }
 
@@ -293,16 +297,9 @@ if (!window.creativeRowEditorInitialized) {
         afterId = prev.dataset.id;
         insertBefore = prev.nextSibling;
       }
-      const needsSave = pendingSave || wasNew;
-      const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
-      p.then(() => {
-        if (wasNew && !form.dataset.creativeId) {
-          prev.remove();
-        } else {
-          showRow(prev);
-          refreshRow(prev);
-        }
-      });
+      console.log("addNew", prevCreativeId, container, childContainer, firstChild);
+
+      beforeNewOrMove(wasNew, prev, prevParent);
       startNew(parentId, container, insertBefore, beforeId, afterId);
     }
 
