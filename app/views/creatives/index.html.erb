@@ -83,7 +83,14 @@
   <% if @creatives %>
     <%= render_creative_tree(@creatives, 1, select_mode: false, max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL) %>
   <% else %>
-    <p style="text-align: center;"><%= params[:id] ? t('.no_sub_creatives') : t('.no_creatives') %></p>
+    <% if params[:id] && @creative && !@creative.has_permission?(Current.user, :read) %>
+      <p style="text-align: center;"><%= t('.no_permission') %></p>
+      <div style="text-align: center;">
+        <%= button_to t('.request_permission'), request_permission_creative_path(@creative), method: :post %>
+      </div>
+    <% else %>
+      <p style="text-align: center;"><%= params[:id] ? t('.no_sub_creatives') : t('.no_creatives') %></p>
+    <% end %>
   <% end %>
 </div>
 

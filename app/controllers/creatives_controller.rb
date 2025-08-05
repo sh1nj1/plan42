@@ -2,7 +2,7 @@ class CreativesController < ApplicationController
   # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
   # Removed unauthenticated access to index and show actions
   # allow_unauthenticated_access only: %i[ index show ]
-  before_action :set_creative, only: %i[ show edit update destroy ]
+  before_action :set_creative, only: %i[ show edit update destroy request_permission ]
 
   def index
     # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
@@ -180,6 +180,26 @@ class CreativesController < ApplicationController
     else
       redirect_to creatives_path
     end
+  end
+
+  def request_permission
+    creative = @creative.effective_origin
+    if creative.user == Current.user || creative.has_permission?(Current.user, :read)
+      return head :unprocessable_entity
+    end
+
+    short_title = creative.effective_origin.description.to_plain_text.truncate(10)
+
+    InboxItem.create!(
+      owner: creative.user,
+      message: I18n.t("inbox.permission_requested", user: Current.user.display_name, short_title: short_title),
+      link: Rails.application.routes.url_helpers.creative_url(
+        creative,
+        Rails.application.config.action_mailer.default_url_options.merge(share_request: Current.user.email)
+      )
+    )
+
+    head :ok
   end
 
   def recalculate_progress
