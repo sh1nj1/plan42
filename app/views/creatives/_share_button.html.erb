@@ -45,6 +45,7 @@
         const shareBtn = document.getElementById('share-creative-btn');
         const modal = document.getElementById('share-creative-modal');
         const closeBtn = document.getElementById('close-share-modal');
+        const emailInput = document.getElementById('share-user-email');
         if (shareBtn && modal && closeBtn) {
             shareBtn.onclick = function() {
                 modal.style.display = 'flex';
@@ -60,6 +61,15 @@
                     document.body.classList.remove('no-scroll');
                 }
             };
+            const params = new URLSearchParams(window.location.search);
+            const reqEmail = params.get('share_request');
+            if (reqEmail) {
+                shareBtn.click();
+                if (emailInput) {
+                    emailInput.value = reqEmail;
+                    emailInput.dispatchEvent(new Event('blur'));
+                }
+            }
         }
     });
 </script>

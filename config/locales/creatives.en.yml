@@ -26,6 +26,8 @@ en:
       only_markdown: "Only markdown (.md) files are allowed."
       drop_or_click_markdown: "Drop or click here to select a markdown file"
       import_markdown: "Import Markdown"
+      request_permission: "Request Access"
+      no_permission: "You do not have permission to view this Creative."
       share_creative: "Share Creative"
       shared_with: "Shared With"
       unknown_user: "Unknown user"
