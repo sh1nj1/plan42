@@ -46,7 +46,7 @@ class UsersController < ApplicationController
 
   # List all users
   def index
-    @users = User.all
+    @users = User.includes(:sessions)
   end
 
   # Show a single user

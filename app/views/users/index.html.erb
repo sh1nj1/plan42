@@ -1,7 +1,21 @@
+<% content_for :head do %>
+  <%= stylesheet_link_tag 'comments_popup', media: 'all' %>
+<% end %>
+
 <h1><%= t('users.index_title') %></h1>
 
 <ul>
   <% @users.each do |user| %>
-    <li><%= user.display_name %> (<%= user.email %>)</li>
+    <% last_login_at = user.sessions.max_by(&:created_at)&.created_at %>
+    <li>
+      <%= render AvatarComponent.new(
+            user: user,
+            size: 20,
+            classes: "avatar comment-presence-avatar#{' inactive' if user.sessions.empty?}" ) %>
+      <%= user.display_name %> (<%= user.email %>)
+      <% if last_login_at %>
+        - <%= t('users.last_login_at', time: I18n.l(last_login_at, format: :short)) %>
+      <% end %>
+    </li>
   <% end %>
 </ul>
