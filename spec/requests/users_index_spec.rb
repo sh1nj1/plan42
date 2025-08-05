@@ -10,4 +10,15 @@ RSpec.describe 'Users index', type: :request do
     get users_path
     expect(response.body).to include(user.email)
   end
+
+  it 'shows last login time and avatar state' do
+    active = User.create!(email: 'active@example.com', password: 'pw', name: 'Active User')
+    session = active.sessions.create!(ip_address: '127.0.0.1', user_agent: 'test')
+    _inactive = User.create!(email: 'inactive@example.com', password: 'pw', name: 'Inactive User')
+
+    get users_path
+
+    expect(response.body).to include(I18n.l(session.created_at, format: :short))
+    expect(response.body.scan('comment-presence-avatar inactive').size).to eq(1)
+  end
 end

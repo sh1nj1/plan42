@@ -26,6 +26,7 @@ en:
     avatar_url: "Avatar URL"
     update_profile: "Update Profile"
     index_title: "Users"
+    last_login_at: "Last login: %{time}"
     display_level: "Max Display Level"
     completion_mark: "Completion Mark"
     theme: "Theme"
