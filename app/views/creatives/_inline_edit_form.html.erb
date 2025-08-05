@@ -2,7 +2,7 @@
   <form id="inline-edit-form-element" method="post">
     <input type="hidden" id="inline-method" name="_method" value="patch" />
     <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>" />
-    <input type="hidden" id="inline-creative-description" name="creative[description]" />
+    <input type="hidden" id="inline-creative-description" name="creative[description]" data-direct-upload-url="<%= rails_direct_uploads_url %>" />
     <input type="hidden" id="inline-parent-id" name="creative[parent_id]" />
     <input type="hidden" id="inline-before-id" name="before_id" />
     <input type="hidden" id="inline-after-id" name="after_id" />
