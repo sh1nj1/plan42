@@ -13,13 +13,15 @@ class PushNotificationJob < ApplicationJob
         send_v1(service, project_id, token, message, link)
       end
     elsif (client = Rails.application.config.x.fcm_client)
-      client.send(tokens, {
+      payload = {
         notification: {
           title: "새 알림",
           body: message,
           click_action: link
         }
-      })
+      }
+      payload[:data] = { path: link } if link
+      client.send(tokens, payload)
     end
   end
 
@@ -35,10 +37,13 @@ class PushNotificationJob < ApplicationJob
       fcm_options: Google::Apis::FcmV1::WebpushFcmOptions.new(link: link)
     )
 
+    data = link ? { path: link } : nil
+
     msg = Google::Apis::FcmV1::Message.new(
       token: token,
       notification: notification,
-      webpush: webpush
+      webpush: webpush,
+      data: data
     )
 
     request = Google::Apis::FcmV1::SendMessageRequest.new(message: msg)

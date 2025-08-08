@@ -7,7 +7,7 @@ self.addEventListener('push', async (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      data: payload.notification.data || {}
+      data: payload.data || {}
     })
   )
 })
@@ -15,6 +15,7 @@ self.addEventListener('push', async (event) => {
 self.addEventListener('notificationclick', function(event) {
   event.notification.close()
   const path = event.notification.data.path
+  if (!path) return
   event.waitUntil(
     clients.matchAll({ type: 'window' }).then((clientList) => {
       for (let i = 0; i < clientList.length; i++) {

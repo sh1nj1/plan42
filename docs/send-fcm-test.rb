@@ -112,11 +112,13 @@ def send_v1(service, project_id, token, message, link)
   webpush = Google::Apis::FcmV1::WebpushConfig.new(
     fcm_options: Google::Apis::FcmV1::WebpushFcmOptions.new(link: link)
   )
+  data = link ? { path: link } : nil
 
   msg = Google::Apis::FcmV1::Message.new(
     token: token,
     notification: notification,
-    webpush: webpush
+    webpush: webpush,
+    data: data
   )
 
   request = Google::Apis::FcmV1::SendMessageRequest.new(message: msg)
