@@ -16,7 +16,7 @@ RSpec.describe 'Users index', type: :request do
     initial_inactive_count = User.joins("LEFT JOIN sessions ON users.id = sessions.user_id")
                                 .where(sessions: { id: nil })
                                 .count
-    
+
     active = User.create!(email: 'active@example.com', password: 'pw', name: 'Active User')
     session = active.sessions.create!(ip_address: '127.0.0.1', user_agent: 'test')
     _inactive = User.create!(email: 'inactive@example.com', password: 'pw', name: 'Inactive User')
