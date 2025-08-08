@@ -9,10 +9,11 @@ servers:
   web:
     hosts:
       - <%= ENV['SERVER_VRERV1'] || 'vrerv1' %>
-    proxy: false
-    options:
-      publish:
-        - "80:80"   # host:container
+    proxy: true
+    # turn this off when using proxy true
+#    options:
+#      publish:
+#        - "80:80"   # host:container
   # job:
   #   hosts:
   #     - 192.168.0.1
