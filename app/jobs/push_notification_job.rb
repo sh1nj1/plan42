@@ -38,8 +38,10 @@ class PushNotificationJob < ApplicationJob
     msg = Google::Apis::FcmV1::Message.new(
       token: token,
       notification: notification,
-      webpush: webpush
+      webpush: webpush,
+      data: { path: link }
     )
+    Rails.logger.info("Sending push to token: #{token} with message: #{message} and link: #{link}")
 
     request = Google::Apis::FcmV1::SendMessageRequest.new(message: msg)
     response = service.send_message("projects/#{project_id}", request)
