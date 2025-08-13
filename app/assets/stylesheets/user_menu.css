@@ -28,7 +28,7 @@
   align-items: center;
   justify-content: center;
   font-weight: bold;
-  color: #fff;
+  color: var(--color-text);
   pointer-events: none;
 }
 
