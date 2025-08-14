@@ -1,23 +1,30 @@
 // Handle background messages from Firebase Cloud Messaging
-self.addEventListener('push', async (event) => {
-  if (!event.data) return
-  const payload = await event.data.json()
-  if (!payload.notification) return
-  const { title, body } = payload.notification
+self.addEventListener('push', (event) => {
+    console.log('notification, event=', JSON.stringify(event))
+    // if (!event.data) return
+    const payload = event.data.json()
+    if (!payload.notification) return
+    const {title, body} = payload.notification
 
-    console.log('notification', JSON.stringify(payload.notification))
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      data: payload.notification.data || {}
-    })
-  )
+    const options = {
+        body,
+        data: payload.notification.data || {
+            path: payload.notification.click_action
+        }
+    }
+    event.waitUntil(
+        self.registration.showNotification(title, options).then(() => {
+            console.log('notification showed')
+        }).catch((error) => {
+            console.error('notification error', error)
+        })
+    )
 })
 
 self.addEventListener('notificationclick', function(event) {
+  console.log('notificationclick, event=', JSON.stringify(event))
   event.notification.close()
   const path = event.notification.data.path
-    console.log('notification 2', path, JSON.stringify(event.notification))
   event.waitUntil(
     clients.matchAll({ type: 'window' }).then((clientList) => {
       for (let i = 0; i < clientList.length; i++) {

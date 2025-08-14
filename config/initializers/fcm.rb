@@ -1,10 +1,28 @@
 server_key = Rails.application.credentials.dig(:fcm, :server_key) || ENV["FCM_SERVER_KEY"]
-project_id = Rails.application.credentials.dig(:firebase, :project_id)
+project_id = Rails.application.credentials.dig(:firebase, :project_id) || ENV["FIREBASE_PROJECT_ID"]
 project_number = Rails.application.credentials.dig(:fcm, :sender_id)
 service_account = "firebase-adminsdk-fbsvc@collavre.iam.gserviceaccount.com"
 
-if project_id.present?
-  require "google/apis/fcm_v1"
+# Use service account JSON for local development
+FCM_CREDENTIALS = ENV["GOOGLE_APPLICATION_CREDENTIALS"]
+if FCM_CREDENTIALS.present? && File.exist?(FCM_CREDENTIALS)
+  
+  # Use default application credentials (reads from GOOGLE_APPLICATION_CREDENTIALS env var)
+  credentials = Google::Auth.get_application_default(
+    scope: [ Google::Apis::FcmV1::AUTH_FIREBASE_MESSAGING ]
+  )
+  
+  service = Google::Apis::FcmV1::FirebaseCloudMessagingService.new
+  service.authorization = credentials
+  
+  Rails.application.config.x.fcm_service = service
+  Rails.application.config.x.fcm_project_id = project_id
+
+  Rails.logger.info "FCM initialized with service account credentials from #{FCM_CREDENTIALS}"
+  puts "FCM initialized with service account credentials from #{FCM_CREDENTIALS}"
+  
+elsif project_id.present? && Rails.env.production?
+  # Use Workload Identity Federation for production (AWS EC2)
   audience = "//iam.googleapis.com/projects/#{project_number}/locations/global/workloadIdentityPools/aws-pool/providers/aws-provider"
 
   credentials = Google::Auth::ExternalAccount::AwsCredentials.new(
