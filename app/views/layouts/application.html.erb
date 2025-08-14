@@ -8,6 +8,9 @@
     <meta name="app-version" content="<%= Rails.application.config.app_version %>">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
+    <% if Current.user %>
+      <meta name="notifications-enabled" content="<%= Current.user.notifications_enabled %>">
+    <% end %>
 
     <% if Rails.application.config.x.firebase_config.present? %>
       <script>
@@ -156,6 +159,16 @@
       <span style="float:right; cursor:pointer; font-weight:bold;" id="close-creative-guide">&times;</span>
       <div style="margin-top:0.5em; color:#444; font-size:1em; line-height:1.5;">
         <%= t('app.creative_guide') %>
+      </div>
+    </div>
+
+    <div id="notification-permission-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
+      <div class="popup-box" style="max-width:400px;">
+        <p><%= t('notifications.permission_prompt') %></p>
+        <div style="margin-top:1em;text-align:right;">
+          <button id="deny-notifications" data-confirm-message="<%= t('notifications.confirm_deny') %>"><%= t('notifications.deny') %></button>
+          <button id="allow-notifications"><%= t('notifications.allow') %></button>
+        </div>
       </div>
     </div>
 

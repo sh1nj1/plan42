@@ -1,0 +1,7 @@
+ko:
+  notifications:
+    permission_prompt: "업데이트에 대한 알림을 보내드려도 될까요?"
+    allow: "허용"
+    deny: "허용 안 함"
+    confirm_deny: "알림을 허용하지 않겠습니까?"
+

@@ -37,6 +37,10 @@
     <%= f.label :theme, t('users.theme') %>
     <%= f.select :theme, options_for_select([[t('app.system_mode'), nil], [t('app.light_mode'), 'light'], [t('app.dark_mode'), 'dark']], @user.theme) %>
   </div>
+  <div>
+    <%= f.label :notifications_enabled, t('users.notifications_enabled') %>
+    <%= f.check_box :notifications_enabled %>
+  </div>
   <%= f.submit t('users.update_profile') %>
 <% end %>
 
