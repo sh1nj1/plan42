@@ -94,15 +94,28 @@ if ('serviceWorker' in navigator) {
         if (!meta) {
           return
         }
-        const enabled = meta.content !== 'false'
-        if (!enabled) {
+        const pref = meta.content
+
+        if (pref === 'false') {
+          return
+        }
+
+        if (pref === 'true') {
+          if (Notification.permission === 'granted') {
+            updatePreference(true)
+            initMessaging(registration)
+          } else if (Notification.permission === 'default') {
+            showPermissionPrompt(registration)
+          }
           return
         }
 
         if (Notification.permission === 'granted') {
           updatePreference(true)
           initMessaging(registration)
-        } else if (Notification.permission === 'default') {
+        } else if (Notification.permission === 'denied') {
+          updatePreference(false)
+        } else {
           showPermissionPrompt(registration)
         }
       })
