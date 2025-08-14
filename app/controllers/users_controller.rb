@@ -63,6 +63,14 @@ class UsersController < ApplicationController
     end
   end
 
+  def notification_settings
+    if Current.user.update(notification_settings_params)
+      head :no_content
+    else
+      render json: { errors: Current.user.errors.full_messages }, status: :unprocessable_entity
+    end
+  end
+
   # GET /users/:id/edit_password
   def edit_password
     @user = User.find(params[:id])
@@ -92,6 +100,10 @@ class UsersController < ApplicationController
   end
 
   def profile_params
-    params.require(:user).permit(:avatar, :avatar_url, :display_level, :completion_mark, :theme, :name)
+    params.require(:user).permit(:avatar, :avatar_url, :display_level, :completion_mark, :theme, :name, :notifications_enabled)
+  end
+
+  def notification_settings_params
+    params.require(:user).permit(:notifications_enabled)
   end
 end

@@ -13,6 +13,7 @@ class User < ApplicationRecord
   attribute :completion_mark, :string, default: ""
   attribute :theme, :string
   attribute :name, :string
+  attribute :notifications_enabled, :boolean, default: true
 
   normalizes :email, with: ->(e) { e.strip.downcase }
 

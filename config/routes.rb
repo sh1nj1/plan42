@@ -25,6 +25,7 @@ Rails.application.routes.draw do
     collection do
       get :exists
       get :search
+      patch :notification_settings
     end
   end
 

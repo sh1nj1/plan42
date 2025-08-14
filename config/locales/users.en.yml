@@ -30,6 +30,7 @@ en:
     display_level: "Max Display Level"
     completion_mark: "Completion Mark"
     theme: "Theme"
+    notifications_enabled: "Enable notifications"
     profile_updated: "Profile updated successfully."
     avatar_updated: "Avatar updated successfully."
     password_updated: "Password updated successfully."
