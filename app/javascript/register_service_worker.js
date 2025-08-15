@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app"
-import { getMessaging, getToken } from "firebase/messaging"
+import { getMessaging, isSupported, getToken } from "firebase/messaging"
 
 function registerDevice(token) {
   fetch('/devices', {
@@ -32,6 +32,10 @@ function updatePreference(enabled) {
 }
 
 function initMessaging(registration) {
+  if (!isSupported()) {
+    console.warn('Notifications not supported')
+    return
+  }
   const config = window.firebaseConfig
   if (!config) {
     console.warn('No firebase config found')
@@ -97,11 +101,13 @@ if ('serviceWorker' in navigator) {
         const pref = meta.content
 
         if (pref === 'false') {
+          console.log('Notifications disabled')
           return
         }
 
         if (pref === 'true') {
           if (Notification.permission === 'granted') {
+            console.log('Notifications granted')
             updatePreference(true)
             initMessaging(registration)
           } else if (Notification.permission === 'default') {
