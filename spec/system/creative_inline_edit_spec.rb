@@ -55,4 +55,20 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
     expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(3) .creative-row", text: 'C')
     expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(4) .creative-row", text: 'D')
   end
+  it 'adds as sibling when current node is collapsed' do
+    child = Creative.create!(description: 'Child', user: user, parent: root_creative)
+    Creative.create!(description: 'Grandchild', user: user, parent: child)
+
+    visit creative_path(root_creative)
+
+    find("#creative-#{child.id} .creative-toggle-btn").click
+    find("#creative-#{child.id} .edit-inline-btn").click
+    find('#inline-add').click
+    fill_in 'inline-creative-description', with: 'Sibling'
+    find('#inline-close').click
+
+    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(1) .creative-row", text: 'Child')
+    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(2) .creative-row", text: 'Sibling')
+    expect(page).not_to have_css("#creative-children-#{child.id} .creative-row", text: 'Sibling', visible: :all)
+  end
 end
