@@ -24,6 +24,8 @@ if (!window.creativeRowEditorInitialized) {
     let currentTree = null;
     let saveTimer = null;
     let pendingSave = false;
+    let saving = false;
+    let savePromise = Promise.resolve();
 
     function hideRow(tree) {
       const row = tree.querySelector('.creative-row');
@@ -84,11 +86,13 @@ if (!window.creativeRowEditorInitialized) {
     }
 
     function saveForm(tree = currentTree, parentId = parentInput.value) {
+      if (saving) return savePromise;
       clearTimeout(saveTimer);
       const method = methodInput.value === 'patch' ? 'PATCH' : 'POST';
       pendingSave = false;
       if (!form.action) return Promise.resolve();
-      return fetch(form.action, {
+      saving = true;
+      savePromise = fetch(form.action, {
         method: method,
         headers: {
           'Accept': 'application/json',
@@ -117,7 +121,10 @@ if (!window.creativeRowEditorInitialized) {
             if (tree) refreshRow(tree);
           }
         });
+      }).finally(function() {
+        saving = false;
       });
+      return savePromise;
     }
 
     function hideCurrent(reload = true) {
@@ -127,7 +134,7 @@ if (!window.creativeRowEditorInitialized) {
       const wasNew = !form.dataset.creativeId;
       currentTree = null;
       template.style.display = 'none';
-      const p = pendingSave ? saveForm() : Promise.resolve();
+      const p = (pendingSave || saving) ? saveForm() : Promise.resolve();
       p.then(() => {
         if (wasNew && !form.dataset.creativeId) {
           tree.remove();
@@ -271,9 +278,9 @@ if (!window.creativeRowEditorInitialized) {
     }
 
     function beforeNewOrMove(wasNew, prev, prevParent) {
-        const needsSave = pendingSave || wasNew;
+        const needsSave = pendingSave || wasNew || saving;
         const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
-        p.then(() => {
+        return p.then(() => {
             if (wasNew && !form.dataset.creativeId) {
                 prev.remove();
             } else {
@@ -297,8 +304,9 @@ if (!window.creativeRowEditorInitialized) {
       hideRow(target);
       target.appendChild(template);
       template.style.display = 'block';
-      beforeNewOrMove(wasNew, prev, prevParent);
-      loadCreative(target.dataset.id);
+      beforeNewOrMove(wasNew, prev, prevParent).then(() => {
+        loadCreative(target.dataset.id);
+      });
     }
 
     function addNew() {
@@ -322,10 +330,9 @@ if (!window.creativeRowEditorInitialized) {
         afterId = prev.dataset.id;
         insertBefore = prev.nextSibling;
       }
-      console.log("addNew", prevCreativeId, container, childContainer, firstChild);
-
-      beforeNewOrMove(wasNew, prev, prevParent);
-      startNew(parentId, container, insertBefore, beforeId, afterId);
+      beforeNewOrMove(wasNew, prev, prevParent).then(() => {
+        startNew(parentId, container, insertBefore, beforeId, afterId);
+      });
     }
 
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
