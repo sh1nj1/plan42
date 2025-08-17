@@ -27,11 +27,13 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
     fill_in 'inline-creative-description', with: 'First child'
     find('#inline-add').click
 
-    expect(page).to have_css("#creative-children-#{root_creative.id} .creative-row", text: 'First child')
+    expect(page).to have_css("#creative-children-#{root_creative.id} .creative-row", text: 'First child', count: 1)
     fill_in 'inline-creative-description', with: 'Second child'
     find('#inline-close').click
 
+    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree", count: 2)
     expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(1) .creative-row", text: 'First child')
     expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(2) .creative-row", text: 'Second child')
+    expect(Creative.where(description: 'First child').count).to eq(1)
   end
 end
