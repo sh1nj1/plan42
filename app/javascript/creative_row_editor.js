@@ -314,23 +314,23 @@ if (!window.creativeRowEditorInitialized) {
       const prev = currentTree;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
-      const prevCreativeId = prev.dataset.id;
-      const childContainer = prev.parentElement.querySelector('#creative-children-' + prevCreativeId);
-      const firstChild = childContainer && childContainer.querySelector('.creative-tree');
-      let parentId, container, insertBefore,
-          beforeId = '', afterId = '';
-      if (firstChild) {
-        parentId = prevCreativeId;
-        container = childContainer;
-        insertBefore = firstChild;
-        beforeId = firstChild.dataset.id;
-      } else {
-        parentId = prev.dataset.parentId;
-        container = prev.parentNode;
-        afterId = prev.dataset.id;
-        insertBefore = prev.nextSibling;
-      }
       beforeNewOrMove(wasNew, prev, prevParent).then(() => {
+        const prevCreativeId = prev.dataset.id;
+        const childContainer = document.getElementById('creative-children-' + prevCreativeId);
+        const firstChild = childContainer && childContainer.querySelector('.creative-tree');
+        let parentId, container, insertBefore,
+            beforeId = '', afterId = '';
+        if (firstChild) {
+          parentId = prevCreativeId;
+          container = childContainer;
+          insertBefore = firstChild;
+          beforeId = firstChild.dataset.id;
+        } else {
+          parentId = prev.dataset.parentId;
+          container = prev.parentNode;
+          afterId = prev.dataset.id;
+          insertBefore = prev.nextSibling;
+        }
         startNew(parentId, container, insertBefore, beforeId, afterId);
       });
     }

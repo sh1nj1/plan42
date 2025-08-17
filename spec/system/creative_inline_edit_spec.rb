@@ -36,4 +36,23 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
     expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(2) .creative-row", text: 'Second child')
     expect(Creative.where(description: 'First child').count).to eq(1)
   end
+
+  it 'maintains order when adding multiple creatives after the last node' do
+    child_a = Creative.create!(description: 'A', user: user, parent: root_creative)
+    child_b = Creative.create!(description: 'B', user: user, parent: root_creative)
+
+    visit creative_path(root_creative)
+
+    find("#creative-#{child_b.id} .edit-inline-btn").click
+    fill_in 'inline-creative-description', with: 'C'
+    find('#inline-add').click
+    fill_in 'inline-creative-description', with: 'D'
+    find('#inline-add').click
+    find('#inline-close').click
+
+    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(1) .creative-row", text: 'A')
+    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(2) .creative-row", text: 'B')
+    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(3) .creative-row", text: 'C')
+    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(4) .creative-row", text: 'D')
+  end
 end
