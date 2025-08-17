@@ -317,10 +317,11 @@ if (!window.creativeRowEditorInitialized) {
       beforeNewOrMove(wasNew, prev, prevParent).then(() => {
         const prevCreativeId = prev.dataset.id;
         const childContainer = document.getElementById('creative-children-' + prevCreativeId);
+        const isCollapsed = childContainer && childContainer.style.display === 'none';
         const firstChild = childContainer && childContainer.querySelector('.creative-tree');
         let parentId, container, insertBefore,
             beforeId = '', afterId = '';
-        if (firstChild) {
+        if (firstChild && !isCollapsed) {
           parentId = prevCreativeId;
           container = childContainer;
           insertBefore = firstChild;
