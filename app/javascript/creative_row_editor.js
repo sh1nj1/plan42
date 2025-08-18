@@ -45,8 +45,8 @@ if (!window.creativeRowEditorInitialized) {
       row.innerHTML = `
   <div class="creative-row-start">
     <div class="creative-row-actions">
-      <button type="button" class="add-creative-btn">+</button>
-      <button type="button" class="edit-inline-btn" data-creative-id="${data.id}">✎</button>
+      <button type="button" class="creative-action-btn add-creative-btn">+</button>
+      <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="${data.id}">✎</button>
       <div class="creative-divider" style="width: 6px;"></div>
     </div>
     <a class="unstyled-link" href="/creatives/${data.id}">${data.description || ''}</a>
