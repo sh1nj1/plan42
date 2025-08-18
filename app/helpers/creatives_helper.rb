@@ -47,7 +47,7 @@ module CreativesHelper
         if CommentPresenceStore.list(origin.id).include?(Current.user.id)
           unread_count = 0
         end
-        classes = [ "comments-btn" ]
+        classes = [ "comments-btn", "creative-action-btn" ]
         classes << "no-comments" if comments_count.zero?
         comment_label = comments_count.zero? ? "\u{1F4AC}" : ""
         badge = render(Inbox::BadgeComponent.new(count: unread_count, badge_id: "comment-badge-#{creative.id}", show_zero: comments_count.positive?))
