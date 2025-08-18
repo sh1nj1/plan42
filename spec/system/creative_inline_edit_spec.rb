@@ -4,18 +4,9 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
   let!(:user) { User.create!(email: 'user@example.com', password: 'password', name: 'User', email_verified_at: Time.current) }
   let!(:root_creative) { Creative.create!(description: 'Root', user: user) }
 
-  def resize_window_to_pc
-    page.current_window.resize_to(1200, 800)
-  rescue Capybara::NotSupportedByDriverError
-  end
-
   before do
     driven_by(:selenium, using: :headless_chrome)
-    resize_window_to_pc
-    visit new_session_path
-    fill_in placeholder: I18n.t('users.new.enter_your_email'), with: user.email
-    fill_in placeholder: I18n.t('users.new.enter_your_password'), with: 'password'
-    find('#sign-in-submit').click
+    sign_in(user)
   end
 
   it 'shows saved row when starting another addition' do
