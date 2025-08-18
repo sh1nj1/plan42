@@ -110,7 +110,7 @@ if ('serviceWorker' in navigator) {
             console.log('Notifications granted')
             updatePreference(true)
             initMessaging(registration)
-          } else if (Notification.permission === 'default') {
+          } else {
             showPermissionPrompt(registration)
           }
           return
