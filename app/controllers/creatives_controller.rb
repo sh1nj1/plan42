@@ -175,11 +175,6 @@ class CreativesController < ApplicationController
     end
     CreativeShare.where(creative: @creative).destroy_all
     @creative.destroy
-    if parent
-      redirect_to creative_path(parent)
-    else
-      redirect_to creatives_path
-    end
   end
 
   def request_permission

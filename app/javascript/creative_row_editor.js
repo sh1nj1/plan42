@@ -374,34 +374,16 @@ if (!window.creativeRowEditorInitialized) {
         credentials: 'same-origin'
       }).then(() => {
         const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
-        tree.remove();
-        if (!withChildren && parentTree) {
+        const childrenTree = document.getElementById("creative-children-" + id)
+        if (!withChildren && childrenTree && parentTree) {
           refreshChildren(parentTree).then(() => {
-            const nextTree = nextId ? document.getElementById(`creative-${nextId}`) : null;
-            if (nextTree) {
-              currentTree = nextTree;
-              hideRow(nextTree);
-              nextTree.appendChild(template);
-              template.style.display = 'block';
-              loadCreative(nextTree.dataset.id);
-            } else {
-              hideCurrent();
-            }
             if (parentTree) refreshRow(parentTree);
           });
         } else {
-          const nextTree = nextId ? document.getElementById(`creative-${nextId}`) : null;
-          if (parentTree) refreshRow(parentTree);
-          if (nextTree) {
-            currentTree = nextTree;
-            hideRow(nextTree);
-            nextTree.appendChild(template);
-            template.style.display = 'block';
-            loadCreative(nextTree.dataset.id);
-          } else {
-            hideCurrent();
-          }
+          document.getElementById("creative-children-" + id)?.remove();
         }
+        move(1);
+        tree.remove();
       });
     }
 
