@@ -38,6 +38,23 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
     expect(Creative.where(description: 'First child').count).to eq(1)
   end
 
+  it 'supports keyboard shortcuts for add and close' do
+    visit creative_path(root_creative)
+
+    find("#creative-#{root_creative.id} .add-creative-btn").click
+    fill_in 'inline-creative-description', with: 'First child'
+    find('trix-editor').send_keys([:shift, :enter])
+
+    expect(page).to have_css("#creative-children-#{root_creative.id} .creative-row", text: 'First child', count: 1)
+
+    fill_in 'inline-creative-description', with: 'Second child'
+    find('trix-editor').send_keys(:escape)
+
+    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree", count: 2)
+    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(1) .creative-row", text: 'First child')
+    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(2) .creative-row", text: 'Second child')
+  end
+
   it 'maintains order when adding multiple creatives after the last node' do
     child_a = Creative.create!(description: 'A', user: user, parent: root_creative)
     child_b = Creative.create!(description: 'B', user: user, parent: root_creative)

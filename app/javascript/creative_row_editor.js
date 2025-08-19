@@ -395,6 +395,16 @@ if (!window.creativeRowEditorInitialized) {
     editor.addEventListener('trix-change', scheduleSave);
 
     editor.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        hideCurrent();
+        return;
+      }
+      if (e.key === 'Enter' && e.shiftKey) {
+        e.preventDefault();
+        addNew();
+        return;
+      }
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
       const range = editor.editor.getSelectedRange();
       if (!range) return;
