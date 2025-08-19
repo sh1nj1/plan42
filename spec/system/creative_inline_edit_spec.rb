@@ -21,7 +21,8 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
   it 'shows saved row when starting another addition' do
     visit creative_path(root_creative)
 
-    find("#creative-#{root_creative.id} .add-creative-btn").click
+    find("#creative-#{root_creative.id} .edit-inline-btn").click
+    find('#inline-add-child').click
     expect(page).not_to have_css("#creative-children-#{root_creative.id} .creative-row")
 
     fill_in 'inline-creative-description', with: 'First child'

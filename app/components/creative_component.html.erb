@@ -7,11 +7,6 @@
         </div>
         <%= check_box_tag('selected_creative_ids[]', creative.id, false, class: 'select-creative-checkbox', style: select_mode ? '' : 'display: none') %>
 
-        <%= button_tag('+', type: 'button',
-                       class: 'creative-action-btn add-creative-btn',
-                       data: { parent_id: creative.id },
-                       style: (' visibility: hidden;' unless creative.has_permission?(Current.user, :write)),
-                       title: t('creatives.help.add_child_creative')) %>
         <% if creative.has_permission?(Current.user, :write) %>
           <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="<%= creative.id %>">✎</button>
         <% end %>
