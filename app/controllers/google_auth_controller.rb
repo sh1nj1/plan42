@@ -1,5 +1,3 @@
-require "open-uri"
-
 class GoogleAuthController < ApplicationController
   allow_unauthenticated_access only: :callback
 
@@ -12,16 +10,13 @@ class GoogleAuthController < ApplicationController
       user.password = random_password
       user.password_confirmation = random_password
       user.email_verified_at = Time.current
-      user.save!
     end
 
-    if auth.info.image.present? && !user.avatar.attached?
-      begin
-        user.avatar.attach(io: URI.open(auth.info.image), filename: "avatar")
-      rescue => e
-        Rails.logger.error("Failed to fetch Google profile image: #{e.message}")
-      end
+    if auth.info.image.present? && !user.avatar.attached? && user.avatar_url.blank?
+      user.avatar_url = auth.info.image
     end
+
+    user.save! if user.new_record? || user.changed?
 
     start_new_session_for(user)
     redirect_to after_authentication_url

@@ -1,12 +1,14 @@
 require 'rails_helper'
-require 'stringio'
 
 RSpec.describe 'Google authentication', type: :request do
   describe 'POST /auth/google_oauth2/callback' do
     before { OmniAuth.config.test_mode = true }
-    after { OmniAuth.config.test_mode = false }
+    after do
+      OmniAuth.config.mock_auth[:google_oauth2] = nil
+      OmniAuth.config.test_mode = false
+    end
 
-    it 'sets avatar from Google when user lacks avatar' do
+    it 'sets avatar_url from Google when user lacks avatar' do
       image_url = 'https://example.com/avatar.jpg'
       auth_hash = OmniAuth::AuthHash.new(
         provider: 'google_oauth2',
@@ -18,12 +20,13 @@ RSpec.describe 'Google authentication', type: :request do
         )
       )
 
-      allow(URI).to receive(:open).with(image_url).and_return(StringIO.new('avatar'))
+      OmniAuth.config.mock_auth[:google_oauth2] = auth_hash
 
-      post '/auth/google_oauth2/callback', env: { 'omniauth.auth' => auth_hash }
+      post '/auth/google_oauth2/callback'
 
       user = User.last
-      expect(user.avatar).to be_attached
+      expect(user.avatar_url).to eq(image_url)
+      expect(user.avatar).not_to be_attached
     end
   end
 end
