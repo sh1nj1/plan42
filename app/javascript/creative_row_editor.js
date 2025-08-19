@@ -14,6 +14,8 @@ if (!window.creativeRowEditorInitialized) {
     const downBtn = document.getElementById('inline-move-down');
     const addBtn = document.getElementById('inline-add');
     const addChildBtn = document.getElementById('inline-add-child');
+    const deleteBtn = document.getElementById('inline-delete');
+    const deleteWithChildrenBtn = document.getElementById('inline-delete-with-children');
     const closeBtn = document.getElementById('inline-close');
 
     const methodInput = document.getElementById('inline-method');
@@ -74,10 +76,10 @@ if (!window.creativeRowEditorInitialized) {
 
     function refreshChildren(tree) {
       const container = tree.querySelector('.creative-children');
-      if (!container) { location.reload(); return; }
+      if (!container) { location.reload(); return Promise.resolve(); }
       const url = container.dataset.loadUrl;
-      if (!url) { location.reload(); return; }
-      fetch(url)
+      if (!url) { location.reload(); return Promise.resolve(); }
+      return fetch(url)
         .then(r => r.text())
         .then(html => {
           container.innerHTML = html;
@@ -358,6 +360,51 @@ if (!window.creativeRowEditorInitialized) {
       });
     }
 
+    function deleteCurrent(withChildren) {
+      if (!currentTree || !form.dataset.creativeId) return;
+      const id = form.dataset.creativeId;
+      const tree = currentTree;
+      const trees = Array.from(document.querySelectorAll('.creative-tree'));
+      const index = trees.indexOf(tree);
+      const nextId = trees[index + 1] ? trees[index + 1].dataset.id : null;
+      const parentId = tree.dataset.parentId;
+      fetch(`/creatives/${id}${withChildren ? '?delete_with_children=true' : ''}`, {
+        method: 'DELETE',
+        headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
+        credentials: 'same-origin'
+      }).then(() => {
+        const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
+        tree.remove();
+        if (!withChildren && parentTree) {
+          refreshChildren(parentTree).then(() => {
+            const nextTree = nextId ? document.getElementById(`creative-${nextId}`) : null;
+            if (nextTree) {
+              currentTree = nextTree;
+              hideRow(nextTree);
+              nextTree.appendChild(template);
+              template.style.display = 'block';
+              loadCreative(nextTree.dataset.id);
+            } else {
+              hideCurrent();
+            }
+            if (parentTree) refreshRow(parentTree);
+          });
+        } else {
+          const nextTree = nextId ? document.getElementById(`creative-${nextId}`) : null;
+          if (parentTree) refreshRow(parentTree);
+          if (nextTree) {
+            currentTree = nextTree;
+            hideRow(nextTree);
+            nextTree.appendChild(template);
+            template.style.display = 'block';
+            loadCreative(nextTree.dataset.id);
+          } else {
+            hideCurrent();
+          }
+        }
+      });
+    }
+
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
       if (currentTree) hideCurrent(false);
       const newTree = document.createElement('div');
@@ -458,6 +505,18 @@ if (!window.creativeRowEditorInitialized) {
 
     if (addChildBtn) {
       addChildBtn.addEventListener('click', addChild);
+    }
+
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', function() {
+        if (confirm(deleteBtn.dataset.confirm)) deleteCurrent(false);
+      });
+    }
+
+    if (deleteWithChildrenBtn) {
+      deleteWithChildrenBtn.addEventListener('click', function() {
+        if (confirm(deleteWithChildrenBtn.dataset.confirm)) deleteCurrent(true);
+      });
     }
 
     attachButtons();

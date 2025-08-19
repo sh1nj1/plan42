@@ -20,6 +20,8 @@
       <button type="button" id="inline-move-down" class="creative-action-btn">▼</button>
       <button type="button" id="inline-add" class="creative-action-btn add-creative-btn">+</button>
       <button type="button" id="inline-add-child" class="creative-action-btn add-creative-btn">↳ +</button>
+      <button type="button" id="inline-delete" class="creative-action-btn danger-link" title="<%= t('creatives.index.delete_only_this') %>" data-confirm="<%= t('creatives.index.are_you_sure_delete_only_this') %>">🗑</button>
+      <button type="button" id="inline-delete-with-children" class="creative-action-btn danger-link" title="<%= t('creatives.index.delete_with_children') %>" data-confirm="<%= t('creatives.index.are_you_sure_delete_with_children') %>">🗑+</button>
       <button type="button" id="inline-close" class="creative-action-btn">✖</button>
     </div>
   </form>

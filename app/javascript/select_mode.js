@@ -61,6 +61,28 @@ if (!window.isSelectModeInitialized) {
     document.addEventListener('turbo:load', function() {
         attachRowHandlers();
         var selectBtn = document.getElementById('select-creative-btn');
+        var deleteSelectedBtn = document.getElementById('delete-selection-btn');
+        if (deleteSelectedBtn) {
+            deleteSelectedBtn.addEventListener('click', function() {
+                var ids = Array.from(document.querySelectorAll('.select-creative-checkbox:checked')).map(cb => cb.value);
+                if (ids.length === 0) return;
+                if (!confirm(deleteSelectedBtn.dataset.confirm)) return;
+                var token = document.querySelector('meta[name="csrf-token"]').content;
+                Promise.all(ids.map(function(id) {
+                    return fetch('/creatives/' + id + '?delete_with_children=true', {
+                        method: 'DELETE',
+                        headers: { 'X-CSRF-Token': token },
+                        credentials: 'same-origin'
+                    });
+                })).then(function() {
+                    ids.forEach(function(id) {
+                        var tree = document.getElementById('creative-' + id);
+                        if (tree) tree.remove();
+                    });
+                    clearAllSelection();
+                });
+            });
+        }
         if (!selectBtn) return;
         selectBtn.addEventListener('click', function() {
             Array.from(document.getElementsByClassName("select-creative-checkbox")).forEach(function(element) {
@@ -82,6 +104,9 @@ if (!window.isSelectModeInitialized) {
             const setPlanBtn = document.getElementById('set-plan-btn');
             if (setPlanBtn) {
                 setPlanBtn.style.display = setPlanBtn.style.display === 'none' ? '' : 'none';
+            }
+            if (deleteSelectedBtn) {
+                deleteSelectedBtn.style.display = deleteSelectedBtn.style.display === 'none' ? '' : 'none';
             }
             selectModeActive = !selectModeActive;
             if (selectModeActive) {
