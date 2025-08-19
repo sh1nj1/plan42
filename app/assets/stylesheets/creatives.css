@@ -84,7 +84,7 @@
 
 .creative-action-btn {
     margin-left: 0px;
-    font-size: 12px;
+    font-size: 16px;
     cursor: pointer;
     background: none;
     border: none;
@@ -95,13 +95,14 @@
 }
 
 .creative-toggle-btn {
-    width: 12px;
-    height: 12px;
-    margin-right: 6px;
+    width: 16px;
+    height: 16px;
+    font-size: 14px;
+    margin-left: 6px;
 }
 
 .add-creative-btn {
-    width: 12px;
+    font-size: 18px;
     font-weight: bold;
     text-decoration: none;
 }
@@ -213,6 +214,9 @@
     margin-left: 0.4em;
 }
 
+.comments-btn {
+    width: 24px;
+}
 .comments-btn.no-comments {
     visibility: hidden;
 }
