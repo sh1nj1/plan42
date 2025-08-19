@@ -88,7 +88,7 @@
     cursor: pointer;
     background: none;
     border: none;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     line-height: 1;
