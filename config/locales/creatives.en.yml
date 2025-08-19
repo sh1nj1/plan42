@@ -13,6 +13,8 @@ en:
       are_you_sure: "Are you sure?"
       are_you_sure_delete_only_this: "Are you sure you want to delete only this Creative? Its children will be preserved and re-linked."
       are_you_sure_delete_with_children: "Are you sure you want to delete this Creative and ALL its children? This cannot be undone."
+      delete_selection: "Delete selected"
+      are_you_sure_delete_selection: "Are you sure you want to delete selected Creatives? This cannot be undone."
       creatives: "Creatives"
       recalculate_progress: "Recalculate Progress"
       recalculate_all_parent_progress: "Recalculate all parent progress?"
