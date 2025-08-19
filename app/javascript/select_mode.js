@@ -69,7 +69,7 @@ if (!window.isSelectModeInitialized) {
                 if (!confirm(deleteSelectedBtn.dataset.confirm)) return;
                 var token = document.querySelector('meta[name="csrf-token"]').content;
                 Promise.all(ids.map(function(id) {
-                    return fetch('/creatives/' + id + '?delete_with_children=true', {
+                    return fetch('/creatives/' + id + '?delete_with_children=false', {
                         method: 'DELETE',
                         headers: { 'X-CSRF-Token': token },
                         credentials: 'same-origin'
