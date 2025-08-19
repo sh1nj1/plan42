@@ -24,18 +24,20 @@ body {
     height: 100%;
 }
 
-nav {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    font-size: 0.875em;
-    gap: 0.2rem;
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 1rem;
-    background: var(--color-nav-bg);
-    border-bottom: 1px solid var(--color-border);
-}
+ nav {
+     display: flex;
+     justify-content: flex-end;
+     align-items: center;
+     flex-wrap: wrap;
+     font-size: 0.875em;
+     gap: 0.2rem;
+     max-width: 960px;
+     margin: 0 auto;
+     padding: 1rem;
+     background: var(--color-nav-bg);
+     border-bottom: 1px solid var(--color-border);
+     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+ }
 
 nav a,
 nav button{
@@ -102,6 +104,7 @@ nav button:hover,
     background: var(--color-bg);
     color: var(--color-btn-text);
     padding:0.3em; border-radius:4px; border:1px solid var(--color-border);
+    margin-right: 0.2em;
 }
 
 input[type="text"],

@@ -45,8 +45,8 @@
     <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
     <div class="notice"><%= notice %></div>
 
-    <nav style="display: flex; flex-wrap: wrap;">
-      <form action="<%= creatives_path %>" method="get" style="display:inline; margin-right:0.2em;">
+    <nav>
+      <form action="<%= creatives_path %>" method="get">
         <input type="text" id="search" name="search" value="<%= params[:search] %>" placeholder="<%= t('app.search_placeholder') %>" />
       </form>
       <% if authenticated? %>
