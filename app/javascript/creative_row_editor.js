@@ -13,6 +13,7 @@ if (!window.creativeRowEditorInitialized) {
     const upBtn = document.getElementById('inline-move-up');
     const downBtn = document.getElementById('inline-move-down');
     const addBtn = document.getElementById('inline-add');
+    const addChildBtn = document.getElementById('inline-add-child');
     const closeBtn = document.getElementById('inline-close');
 
     const methodInput = document.getElementById('inline-method');
@@ -45,7 +46,6 @@ if (!window.creativeRowEditorInitialized) {
       row.innerHTML = `
   <div class="creative-row-start">
     <div class="creative-row-actions">
-      <button type="button" class="creative-action-btn add-creative-btn">+</button>
       <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="${data.id}">✎</button>
       <div class="creative-divider" style="width: 6px;"></div>
     </div>
@@ -174,11 +174,13 @@ if (!window.creativeRowEditorInitialized) {
         });
       });
 
-      document.querySelectorAll('.add-creative-btn').forEach(function(btn) {
-        btn.addEventListener('click', function(e) {
-          e.preventDefault();
-          const tree = btn.closest('.creative-tree');
-          let parentId, container, insertBefore, beforeId = '';
+      document
+        .querySelectorAll('.add-creative-btn:not(#inline-add):not(#inline-add-child)')
+        .forEach(function(btn) {
+          btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const tree = btn.closest('.creative-tree');
+            let parentId, container, insertBefore, beforeId = '';
           if (tree) {
             parentId = tree.dataset.id;
             container = tree.querySelector('.creative-children');
@@ -336,6 +338,26 @@ if (!window.creativeRowEditorInitialized) {
       });
     }
 
+    function addChild() {
+      if (!currentTree) return;
+      const prev = currentTree;
+      const wasNew = !form.dataset.creativeId;
+      const prevParent = parentInput.value;
+      beforeNewOrMove(wasNew, prev, prevParent).then(() => {
+        const parentId = prev.dataset.id;
+        let container = document.getElementById('creative-children-' + parentId);
+        if (!container) {
+          container = document.createElement('div');
+          container.className = 'creative-children';
+          container.id = 'creative-children-' + parentId;
+          prev.appendChild(container);
+        }
+        const insertBefore = container.firstElementChild;
+        const beforeId = insertBefore ? insertBefore.dataset.id : '';
+        startNew(parentId, container, insertBefore, beforeId);
+      });
+    }
+
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
       if (currentTree) hideCurrent(false);
       const newTree = document.createElement('div');
@@ -405,6 +427,10 @@ if (!window.creativeRowEditorInitialized) {
 
     if (addBtn) {
       addBtn.addEventListener('click', addNew);
+    }
+
+    if (addChildBtn) {
+      addChildBtn.addEventListener('click', addChild);
     }
 
     attachButtons();
