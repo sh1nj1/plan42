@@ -60,9 +60,10 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
 
     find("#creative-#{root_creative.id} .add-creative-btn").click
     editor = find('trix-editor')
-    editor.send_keys('http://example.com ')
-
+    editor.send_keys('http://example.com')
     expect(page).to have_css('trix-editor a[href="http://example.com"]', text: 'http://example.com')
+    editor.send_keys('/path')
+    expect(page).to have_css('trix-editor a[href="http://example.com/path"]', text: 'http://example.com/path')
   end
 
   it 'maintains order when adding multiple creatives after the last node' do
