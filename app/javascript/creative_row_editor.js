@@ -388,11 +388,27 @@ if (!window.creativeRowEditorInitialized) {
       saveTimer = setTimeout(saveForm, 5000);
     }
 
+    function autoLinkUrls(event) {
+      const element = event.target;
+      const html = element.innerHTML;
+      const linkedHtml = html.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, function(_match, prefix, url) {
+        return `${prefix}<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
+      });
+      if (linkedHtml !== html) {
+        const selection = element.editor.getSelectedRange();
+        element.editor.loadHTML(linkedHtml);
+        element.editor.setSelectedRange(selection);
+      }
+    }
+
     progressInput.addEventListener('input', function() {
       progressValue.textContent = progressInput.value;
       scheduleSave();
     });
-    editor.addEventListener('trix-change', scheduleSave);
+    editor.addEventListener('trix-change', function(event) {
+      autoLinkUrls(event);
+      scheduleSave();
+    });
 
     editor.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') {
