@@ -16,7 +16,10 @@ if (!window.isExportMarkdownEnabled) {
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = 'creatives.md';
+                        const titleElement = document.querySelector('.page-title');
+                        const pageTitle = titleElement ? titleElement.textContent.trim() : document.title;
+                        const safeTitle = pageTitle.replace(/[\\/:*?"<>|]+/g, '_') || 'creatives';
+                        a.download = safeTitle + '.md';
                         document.body.appendChild(a);
                         a.click();
                         setTimeout(() => {
