@@ -12,6 +12,9 @@ class CommentsController < ApplicationController
     @comments = scope.offset((page - 1) * per_page).limit(per_page).to_a
     pointer = CommentReadPointer.find_by(user: Current.user, creative: @creative)
     last_read_comment_id = pointer&.last_read_comment_id
+    if last_read_comment_id && last_read_comment_id == @creative.comments.maximum(:id)
+      last_read_comment_id = nil
+    end
 
     if page <= 1
       render partial: "comments/list", locals: { comments: @comments.reverse, creative: @creative, last_read_comment_id: last_read_comment_id }
