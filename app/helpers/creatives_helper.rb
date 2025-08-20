@@ -48,10 +48,9 @@ module CreativesHelper
           unread_count = 0
         end
         classes = [ "comments-btn", "creative-action-btn" ]
-        comment_icon = image_tag(
+        classes << "no-comments" if comments_count.zero?
+        comment_icon = svg_tag(
           "comment.svg",
-          size: "16x16",
-          alt: t("comments.comments"),
           class: "comment-icon"
         )
         badge = render(
