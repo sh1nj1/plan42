@@ -88,17 +88,19 @@
     cursor: pointer;
     background: none;
     border: none;
-    display: inline-flex;
     align-items: center;
     justify-content: center;
     line-height: 1;
+    display: inline-flex;
+    flex-shrink: 0;
+    visibility: hidden;
 }
 
 .creative-toggle-btn {
     width: 16px;
     height: 16px;
     font-size: 14px;
-    margin-left: 6px;
+    margin-right: 2px;
 }
 
 .add-creative-btn {
@@ -119,8 +121,15 @@
     visibility: visible;
 }
 
+.creative-row:hover .creative-action-btn {
+    visibility: visible;
+}
+
 @media (max-width: 768px) {
     .creative-row-actions {
+        visibility: visible !important;
+    }
+    .creative-action-btn {
         visibility: visible !important;
     }
 }
@@ -200,6 +209,13 @@
 
 .creative-row-start h3 {
     font-size: 1.1em;
+}
+
+.indent1,
+.indent2,
+.indent3 {
+    display: flex;
+    align-items: center;
 }
 
 .indent1 {

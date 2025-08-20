@@ -128,19 +128,25 @@ module CreativesHelper
         else
           bullet_starting_level = 3
           renderer = ->(&block) {
+            toggle_btn = if filtered_children.any?
+              content_tag(:div, toggle_button_symbol(expanded: expanded), class: "before-link creative-toggle-btn creative-action-btn", data: { creative_id: creative.id })
+            else # dummy for space alignment
+              content_tag(:div, "", class: "before-link creative-toggle-btn creative-action-btn", style: "visibility: hidden;", data: { creative_id: creative.id })
+            end
             if level <= bullet_starting_level
               heading_tag = (filtered_children.any? or creative.parent.nil?) ? "h#{level}" : "div"
               content_tag(heading_tag, class: "indent#{level}") do
-                block.call
+                toggle_btn + block.call
               end
             else # low level creative render as li
               margin = level > 0 ? "margin-left: #{(level - bullet_starting_level) * 20}px;" : ""
               content_tag(:div, class: "creative-tree-li", style: "#{margin}") do
-                if creative.effective_description.include?("<li>")
+                bullet = if creative.effective_description.include?("<li>")
                   "".html_safe
                 else
                   content_tag(:div, "", class: "creative-tree-bullet")
-                end + block.call
+                end
+                toggle_btn + bullet + block.call
               end
             end
           }
