@@ -440,16 +440,24 @@ trix-editor .attachment__metadata {
   max-width: 100% !important;
 }
 
-/* Custom color pickers */
-trix-toolbar input.trix-color-input,
-trix-toolbar input.trix-bgcolor-input {
-  width: 2em;
+/* Custom color buttons */
+trix-toolbar .trix-color-button,
+trix-toolbar .trix-bgcolor-button {
+  width: 2.6em;
   height: 1.6em;
   padding: 0;
-  border: none;
-  background: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-trix-toolbar input.trix-color-input::-webkit-color-swatch-wrapper,
-trix-toolbar input.trix-bgcolor-input::-webkit-color-swatch-wrapper {
-  padding: 0;
+
+trix-toolbar .trix-color-button svg,
+trix-toolbar .trix-bgcolor-button svg {
+  width: 100%;
+  height: 100%;
+}
+
+trix-toolbar input.trix-color-input,
+trix-toolbar input.trix-bgcolor-input {
+  display: none;
 }
