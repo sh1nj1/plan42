@@ -87,7 +87,19 @@ if (!window.trixColorPickerInitialized) {
         return editor.getCurrentAttributes();
       }
       const range = editor.getSelectedRange();
-      return editor.getDocument().getCommonAttributesForRange(range);
+      const doc = editor.getDocument();
+      if (doc) {
+        if (typeof doc.getCommonAttributes === 'function') {
+          return doc.getCommonAttributes(range);
+        }
+        if (typeof doc.getCommonAttributesForRange === 'function') {
+          return doc.getCommonAttributesForRange(range);
+        }
+        if (typeof doc.getCommonAttributesAtRange === 'function') {
+          return doc.getCommonAttributesAtRange(range);
+        }
+      }
+      return {};
     }
 
     function updateButtonStates() {
