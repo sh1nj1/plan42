@@ -33,6 +33,9 @@
 #new-comment-form button[type="submit"] {
   margin-top: 0.5em;
   float: right;
+  background: none;
+  border: none;
+  padding: 0;
 }
 
 .comment-item {

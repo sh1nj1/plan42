@@ -12,6 +12,8 @@
   <div id="comments-list"><%= t('app.loading') %></div>
   <form id="new-comment-form" style="display:none;">
     <textarea name="comment[content]" rows="2" required></textarea>
-    <button type="submit"><%= t('comments.add_comment') %></button>
+    <button type="submit" class="add-comment-btn">
+      <%= image_tag('add_comment_button.svg', alt: t('comments.add_comment')) %>
+    </button>
   </form>
 </div>
