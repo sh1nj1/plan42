@@ -132,6 +132,12 @@
     .creative-toggle-btn {
         visibility: visible !important;
     }
+    .edit-inline-btn {
+        display: none;
+    }
+    .creative-row.show-edit .edit-inline-btn {
+        display: inline-flex;
+    }
 }
 
 .creative-divider {
