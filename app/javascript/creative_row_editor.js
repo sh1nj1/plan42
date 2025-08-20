@@ -63,8 +63,7 @@ if (!window.creativeRowEditorInitialized) {
 
     function refreshRow(tree) {
       const id = tree.dataset.id;
-      fetch(`/creatives/${id}.json`)
-        .then(r => r.json())
+      window.creativesApi.get(id)
         .then(data => {
           const link = tree.querySelector('a.unstyled-link');
           if (link) link.innerHTML = data.description || '';
@@ -82,8 +81,7 @@ if (!window.creativeRowEditorInitialized) {
       if (!container) { location.reload(); return Promise.resolve(); }
       const url = container.dataset.loadUrl;
       if (!url) { location.reload(); return Promise.resolve(); }
-      return fetch(url)
-        .then(r => r.text())
+      return window.creativesApi.loadChildren(url)
         .then(html => {
           container.innerHTML = html;
           attachButtons();
@@ -97,15 +95,7 @@ if (!window.creativeRowEditorInitialized) {
       pendingSave = false;
       if (!form.action) return Promise.resolve();
       saving = true;
-      savePromise = fetch(form.action, {
-        method: method,
-        headers: {
-          'Accept': 'application/json',
-          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
-        },
-        body: new FormData(form),
-        credentials: 'same-origin'
-      }).then(function(r) {
+      savePromise = window.creativesApi.save(form.action, method, form).then(function(r) {
         if (!r.ok) return r;
         return r.text().then(function(text) {
           try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
@@ -267,8 +257,7 @@ if (!window.creativeRowEditorInitialized) {
     }
 
     function loadCreative(id) {
-      fetch(`/creatives/${id}.json`)
-        .then(r => r.json())
+      window.creativesApi.get(id)
         .then(data => {
           form.action = `/creatives/${data.id}`;
           form.dataset.creativeId = data.id;
@@ -371,11 +360,7 @@ if (!window.creativeRowEditorInitialized) {
       const index = trees.indexOf(tree);
       const nextId = trees[index + 1] ? trees[index + 1].dataset.id : null;
       const parentId = tree.dataset.parentId;
-      fetch(`/creatives/${id}${withChildren ? '?delete_with_children=true' : ''}`, {
-        method: 'DELETE',
-        headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
-        credentials: 'same-origin'
-      }).then(() => {
+      window.creativesApi.destroy(id, withChildren).then(() => {
         const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
         const childrenTree = document.getElementById("creative-children-" + id)
         if (!withChildren && childrenTree && parentTree) {
