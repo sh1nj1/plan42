@@ -93,14 +93,14 @@
     line-height: 1;
     display: inline-flex;
     flex-shrink: 0;
-    visibility: hidden;
 }
 
 .creative-toggle-btn {
     width: 16px;
     height: 16px;
     font-size: 14px;
-    margin-right: 2px;
+    margin-right: 4px;
+    visibility: hidden;
 }
 
 .add-creative-btn {
@@ -121,7 +121,7 @@
     visibility: visible;
 }
 
-.creative-row:hover .creative-action-btn {
+.creative-row:hover .creative-toggle-btn {
     visibility: visible;
 }
 
@@ -129,7 +129,7 @@
     .creative-row-actions {
         visibility: visible !important;
     }
-    .creative-action-btn {
+    .creative-toggle-btn {
         visibility: visible !important;
     }
 }
