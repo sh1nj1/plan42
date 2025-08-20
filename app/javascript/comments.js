@@ -221,7 +221,6 @@ if (!window.commentsInitialized) {
             function resetForm() {
                 form.reset();
                 editingId = null;
-                submitBtn.textContent = popup.dataset.addCommentText;
             }
 
             form.onsubmit = function(e) {

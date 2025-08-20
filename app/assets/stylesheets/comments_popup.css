@@ -66,6 +66,12 @@
     cursor: pointer;
 }
 
+.send-icon {
+    width: 28px;
+    height: 28px;
+    color: var(--color-text);
+}
+
 @media (max-width: 600px) {
     #comments-popup {
         position: fixed;
