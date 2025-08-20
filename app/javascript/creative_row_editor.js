@@ -48,7 +48,12 @@ if (!window.creativeRowEditorInitialized) {
       row.innerHTML = `
   <div class="creative-row-start">
     <div class="creative-row-actions">
-      <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="${data.id}">✎</button>
+      <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="${data.id}">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" class="icon-edit">
+          <path d="M12.146.854a.5.5 0 0 1 .708 0l2.292 2.292a.5.5 0 0 1 0 .708L4.207 14.793l-4 1 1-4L12.146.854z" />
+          <path d="M11.207 3L2 12.207V13h.793L13 3.793 11.207 3z" />
+        </svg>
+      </button>
       <div class="creative-divider" style="width: 6px;"></div>
     </div>
     <a class="unstyled-link" href="/creatives/${data.id}">${data.description || ''}</a>
