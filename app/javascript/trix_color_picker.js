@@ -53,6 +53,7 @@ if (!window.trixColorPickerInitialized) {
     colorInput.addEventListener('input', function() {
       editor.activateAttribute('color', this.value);
       underline.setAttribute('stroke', this.value);
+      updateButtonStates();
     });
 
     // create background color picker elements
@@ -78,11 +79,40 @@ if (!window.trixColorPickerInitialized) {
     bgInput.addEventListener('input', function() {
       editor.activateAttribute('backgroundColor', this.value);
       paint.setAttribute('fill', this.value);
+      updateButtonStates();
     });
+
+    function getAttributes() {
+      if (typeof editor.getCurrentAttributes === 'function') {
+        return editor.getCurrentAttributes();
+      }
+      const range = editor.getSelectedRange();
+      return editor.getDocument().getCommonAttributesForRange(range);
+    }
+
+    function updateButtonStates() {
+      const attrs = getAttributes();
+      const color = attrs.color;
+      const background = attrs.backgroundColor;
+      colorButton.classList.toggle('trix-active', !!color);
+      bgButton.classList.toggle('trix-active', !!background);
+      if (color) {
+        underline.setAttribute('stroke', color);
+        colorInput.value = color;
+      }
+      if (background) {
+        paint.setAttribute('fill', background);
+        bgInput.value = background;
+      }
+    }
+
+    event.target.addEventListener('trix-selection-change', updateButtonStates);
+    event.target.addEventListener('trix-change', updateButtonStates);
 
     group.appendChild(colorButton);
     group.appendChild(bgButton);
     group.appendChild(colorInput);
     group.appendChild(bgInput);
+    updateButtonStates();
   });
 }
