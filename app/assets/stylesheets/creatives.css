@@ -133,10 +133,18 @@
         visibility: visible !important;
     }
     .edit-inline-btn {
-        display: none;
+        max-width: 0;
+        opacity: 0;
+        overflow: hidden;
+        pointer-events: none;
+        transform: translateX(10px);
+        transition: max-width 0.3s ease, opacity 0.3s ease, transform 0.3s ease;
     }
     .creative-row.show-edit .edit-inline-btn {
-        display: inline-flex;
+        max-width: 40px;
+        opacity: 1;
+        transform: translateX(0);
+        pointer-events: auto;
     }
 }
 
