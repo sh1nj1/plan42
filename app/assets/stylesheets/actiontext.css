@@ -444,16 +444,23 @@ trix-editor .attachment__metadata {
 trix-toolbar .trix-color-button,
 trix-toolbar .trix-bgcolor-button {
   width: 2.6em;
-  height: 2.6em;
+  height: 1.6em;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+@media (max-width: 768px) {
+  trix-toolbar .trix-color-button,
+  trix-toolbar .trix-bgcolor-button {
+    height: 2em;
+  }
+}
+
 trix-toolbar .trix-color-button svg,
 trix-toolbar .trix-bgcolor-button svg {
-  width: 100%;
+  width: auto;
   height: 100%;
   opacity: 0.6;
 }
