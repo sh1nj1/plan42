@@ -444,7 +444,7 @@ trix-editor .attachment__metadata {
 trix-toolbar .trix-color-button,
 trix-toolbar .trix-bgcolor-button {
   width: 2.6em;
-  height: 1.6em;
+  height: 2.6em;
   padding: 0;
   display: flex;
   align-items: center;
@@ -455,6 +455,12 @@ trix-toolbar .trix-color-button svg,
 trix-toolbar .trix-bgcolor-button svg {
   width: 100%;
   height: 100%;
+  opacity: 0.6;
+}
+
+trix-toolbar .trix-color-button.trix-active svg,
+trix-toolbar .trix-bgcolor-button.trix-active svg {
+  opacity: 1;
 }
 
 trix-toolbar input.trix-color-input,
