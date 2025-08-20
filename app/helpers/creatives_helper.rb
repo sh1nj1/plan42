@@ -48,11 +48,21 @@ module CreativesHelper
           unread_count = 0
         end
         classes = [ "comments-btn", "creative-action-btn" ]
-        classes << "no-comments" if comments_count.zero?
-        comment_label = comments_count.zero? ? "\u{1F4AC}" : ""
-        badge = render(Inbox::BadgeComponent.new(count: unread_count, badge_id: "comment-badge-#{creative.id}", show_zero: comments_count.positive?))
+        comment_icon = image_tag(
+          "comment.svg",
+          size: "16x16",
+          alt: t("comments.comments"),
+          class: "comment-icon"
+        )
+        badge = render(
+          Inbox::BadgeComponent.new(
+            count: unread_count,
+            badge_id: "comment-badge-#{creative.id}",
+            show_zero: comments_count.positive?
+          )
+        )
         button_tag(
-          comment_label.html_safe + badge,
+          comment_icon + badge,
           name: "show-comments-btn",
           data: { creative_id: creative.id, can_comment: true },
           class: classes.join(" ")

@@ -232,17 +232,17 @@
 
 .comments-btn {
     width: 24px;
-}
-.comments-btn.no-comments {
-    visibility: hidden;
-}
-
-.creative-row:hover .comments-btn.no-comments {
-    visibility: visible;
+    height: 24px;
+    position: relative;
 }
 
-@media (max-width: 768px) {
-    .comments-btn.no-comments {
-        visibility: visible;
-    }
+.comment-icon {
+    width: 100%;
+    height: 100%;
+}
+
+.comments-btn .badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
 }
