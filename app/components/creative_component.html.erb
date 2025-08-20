@@ -2,9 +2,6 @@
   <div class="creative-row">
     <div class="creative-row-start">
       <div class="creative-row-actions">
-        <div class="before-link creative-toggle-btn creative-action-btn" data-creative-id="<%= creative.id %>">
-          <%= level <= 3 && filtered_children.any? ? helpers.toggle_button_symbol(expanded: expanded) : '' %>
-        </div>
         <%= check_box_tag('selected_creative_ids[]', creative.id, false, class: 'select-creative-checkbox', style: select_mode ? '' : 'display: none') %>
 
         <% if creative.has_permission?(Current.user, :write) %>
