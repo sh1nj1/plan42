@@ -32,12 +32,12 @@ if (!window.trixColorPickerInitialized) {
     // create text color picker elements
     const colorInput = document.createElement('input');
     colorInput.type = 'color';
-    colorInput.className = 'trix-color-input';
+    colorInput.className = 'trix-toolbar trix-button-icon trix-color-input';
     colorInput.value = '#000000';
 
     const colorButton = document.createElement('button');
     colorButton.type = 'button';
-    colorButton.className = 'trix-button trix-color-button';
+    colorButton.className = 'trix-toolbar trix-button--icon trix-button trix-color-button';
     colorButton.title = 'Text Color';
     colorButton.innerHTML =
       '<svg viewBox="0 0 20 20" class="trix-icon">\
@@ -64,7 +64,7 @@ if (!window.trixColorPickerInitialized) {
 
     const bgButton = document.createElement('button');
     bgButton.type = 'button';
-    bgButton.className = 'trix-button trix-bgcolor-button';
+    bgButton.className = 'trix-toolbar trix-button--icon trix-button trix-bgcolor-button';
     bgButton.title = 'Background Color';
     bgButton.innerHTML =
       '<svg viewBox="0 0 20 20" class="trix-icon">\
