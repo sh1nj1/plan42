@@ -27,26 +27,61 @@ if (!window.trixColorPickerInitialized) {
     if (!group) return;
 
     // prevent duplicates when multiple editors present
-    if (group.querySelector('.trix-color-input')) return;
+    if (group.querySelector('.trix-color-button')) return;
 
-    // create text color picker
+    // create text color picker elements
     const colorInput = document.createElement('input');
     colorInput.type = 'color';
-    colorInput.className = 'trix-button trix-color-input';
-    colorInput.title = 'Text Color';
+    colorInput.className = 'trix-color-input';
+    colorInput.value = '#000000';
+
+    const colorButton = document.createElement('button');
+    colorButton.type = 'button';
+    colorButton.className = 'trix-button trix-color-button';
+    colorButton.title = 'Text Color';
+    colorButton.innerHTML =
+      '<svg viewBox="0 0 20 20" class="trix-icon">\
+         <text x="3" y="14" font-size="14" fill="#000">A</text>\
+         <line class="underline" x1="2" y1="17" x2="18" y2="17" stroke="#000" stroke-width="2"/>\
+       </svg>';
+    const underline = colorButton.querySelector('.underline');
+    underline.setAttribute('stroke', colorInput.value);
+
+    colorButton.addEventListener('click', function() {
+      colorInput.click();
+    });
     colorInput.addEventListener('input', function() {
       editor.activateAttribute('color', this.value);
+      underline.setAttribute('stroke', this.value);
     });
 
-    // create background color picker
+    // create background color picker elements
     const bgInput = document.createElement('input');
     bgInput.type = 'color';
-    bgInput.className = 'trix-button trix-bgcolor-input';
-    bgInput.title = 'Background Color';
+    bgInput.className = 'trix-bgcolor-input';
+    bgInput.value = '#ffff00';
+
+    const bgButton = document.createElement('button');
+    bgButton.type = 'button';
+    bgButton.className = 'trix-button trix-bgcolor-button';
+    bgButton.title = 'Background Color';
+    bgButton.innerHTML =
+      '<svg viewBox="0 0 20 20" class="trix-icon">\
+         <path d="M5 2l8 8-4 4-8-8z" stroke="#000" stroke-width="2" fill="#fff"/>\
+         <path class="paint" d="M14 13c0 1.66 1.34 3 3 3s3-1.34 3-3-1-2.5-3-4.5c-2 2-3 2.84-3 4.5z" fill="#ffff00"/>\
+       </svg>';
+    const paint = bgButton.querySelector('.paint');
+
+    bgButton.addEventListener('click', function() {
+      bgInput.click();
+    });
     bgInput.addEventListener('input', function() {
       editor.activateAttribute('backgroundColor', this.value);
+      paint.setAttribute('fill', this.value);
     });
 
+    group.appendChild(colorButton);
+    group.appendChild(bgButton);
     group.appendChild(colorInput);
     group.appendChild(bgInput);
   });
