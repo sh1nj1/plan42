@@ -17,6 +17,7 @@
   <button id="select-creative-btn" class="select-btn" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>"><%= t('app.select') %></button>
   <button id="delete-selection-btn" class="danger-link" style="display:none;" data-confirm="<%= t('creatives.index.are_you_sure_delete_selection') %>"><%= t('creatives.index.delete_selection') %></button>
   <button id="expand-all-btn" class="expand-btn" data-collapse-text="<%= t('app.collapse_all') %>" data-expand-text="<%= t('app.expand_all') %>" ><%= t('app.expand_all') %></button>
+  <button id="toggle-edit-btn" class="edit-toggle-btn">Edit</button>
   <button id="import-markdown-btn" class="import-btn desktop-only"><%= t('.import_markdown') %></button>
   <button id="export-markdown-btn" class="export-btn desktop-only" data-parent-creative-id="<%= @parent_creative&.id %>" data-error="<%= t('creatives.index.export_failed') %>"><%= t('.export_markdown') %></button>
   <%= render 'mobile_actions_menu' %>
