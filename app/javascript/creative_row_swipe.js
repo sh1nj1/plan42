@@ -4,8 +4,24 @@ if (!window.creativeRowSwipeInitialized) {
   document.addEventListener('turbo:load', function() {
     var startX = null;
     var activeRow = null;
+    var allEditVisible = false;
+
+    var toggleBtn = document.getElementById('toggle-edit-btn');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', function() {
+        allEditVisible = !allEditVisible;
+        document.querySelectorAll('.creative-row').forEach(function(row) {
+          if (allEditVisible) {
+            row.classList.add('show-edit');
+          } else {
+            row.classList.remove('show-edit');
+          }
+        });
+      });
+    }
 
     document.addEventListener('touchstart', function(e) {
+      if (allEditVisible) return;
       activeRow = e.target.closest('.creative-row');
       if (activeRow) {
         startX = e.touches[0].clientX;
@@ -15,7 +31,7 @@ if (!window.creativeRowSwipeInitialized) {
     }, { passive: true });
 
     document.addEventListener('touchend', function(e) {
-      if (!activeRow || startX === null) return;
+      if (allEditVisible || !activeRow || startX === null) return;
       var diffX = e.changedTouches[0].clientX - startX;
       if (diffX > 50) {
         document.querySelectorAll('.creative-row.show-edit').forEach(function(row) {
