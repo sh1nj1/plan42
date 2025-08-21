@@ -1,5 +1,6 @@
 class User < ApplicationRecord
   DEFAULT_DISPLAY_LEVEL = 6
+  ANONYMOUS_EMAIL = "anonymous@example.com"
 
   has_secure_password
   has_many :sessions, dependent: :destroy
@@ -49,5 +50,12 @@ class User < ApplicationRecord
 
   def display_name
     name.presence || email
+  end
+
+  def self.anonymous
+    find_or_create_by!(email: ANONYMOUS_EMAIL) do |user|
+      user.name = "Anonymous"
+      user.password = SecureRandom.hex(16)
+    end
   end
 end

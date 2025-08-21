@@ -1,5 +1,8 @@
 class Current < ActiveSupport::CurrentAttributes
   attribute :session
   attribute :creative_share_cache
-  delegate :user, to: :session, allow_nil: true
+
+  def user
+    session&.user || User.anonymous
+  end
 end

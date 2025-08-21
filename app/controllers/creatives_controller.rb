@@ -1,7 +1,6 @@
 class CreativesController < ApplicationController
   # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
-  # Removed unauthenticated access to index and show actions
-  # allow_unauthenticated_access only: %i[ index show ]
+  allow_unauthenticated_access only: %i[ index show ]
   before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions slide_view ]
 
   def index
@@ -87,34 +86,17 @@ class CreativesController < ApplicationController
 
   def show
     respond_to do |format|
-      redirect_options = { id: @creative.id }
-      redirect_options[:comment_id] = params[:comment_id] if params[:comment_id].present?
-      format.html { redirect_to creatives_path(redirect_options) }
+      format.html { redirect_to creatives_path(id: @creative.id) }
       format.json do
-        root = params[:root_id] ? Creative.find_by(id: params[:root_id]) : nil
-        depth = if root
-                  (@creative.ancestors.count - root.ancestors.count) + 1
-        else
-                  @creative.ancestors.count + 1
-        end
         render json: {
           id: @creative.id,
           description: @creative.effective_description,
           origin_id: @creative.origin_id,
           parent_id: @creative.parent_id,
-          progress: @creative.progress,
-          depth: depth,
-          prompt: @creative.prompt_for(Current.user)
+          progress: @creative.progress
         }
       end
     end
-  end
-
-  def slide_view
-    @slide_ids = []
-    @root_depth = @creative.ancestors.count
-    build_slide_ids(@creative)
-    render layout: "slide"
   end
 
   def new
@@ -212,7 +194,7 @@ class CreativesController < ApplicationController
 
   def destroy
     parent = @creative.parent
-    unless @creative.has_permission?(Current.user, :admin)
+    unless @creative.has_permission?(Current.user, :write)
       redirect_to @creative, alert: t("creatives.errors.no_permission") and return
     end
     if params[:delete_with_children]
@@ -297,23 +279,13 @@ class CreativesController < ApplicationController
     unless authenticated?
       render json: { error: "Unauthorized" }, status: :unauthorized and return
     end
-    if params[:markdown].blank?
+    if params[:markdown].blank? || !params[:markdown].content_type.in?(%w[text/markdown text/x-markdown application/octet-stream])
       render json: { error: "Invalid file type" }, status: :unprocessable_entity and return
     end
     parent = params[:parent_id].present? ? Creative.find_by(id: params[:parent_id]) : nil
     file = params[:markdown]
-    created =
-      case file.content_type
-      when "text/markdown", "text/x-markdown", "application/octet-stream"
-        content = file.read.force_encoding("UTF-8")
-        MarkdownImporter.import(content, parent: parent, user: Current.user, create_root: true)
-      when "application/vnd.ms-powerpoint",
-           "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        PptImporter.import(file.tempfile, parent: parent, user: Current.user,
-                           create_root: true, filename: file.original_filename)
-      else
-        render json: { error: "Invalid file type" }, status: :unprocessable_entity and return
-      end
+    content = file.read.force_encoding("UTF-8")
+    created = MarkdownImporter.import(content, parent: parent, user: Current.user, create_root: true)
     if created.any?
       render json: { success: true, created: created.map(&:id) }
     else
@@ -397,19 +369,9 @@ class CreativesController < ApplicationController
       params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id)
     end
 
-    def build_slide_ids(node)
-      @slide_ids << node.id
-      children = node.children.order(:sequence)
-      if node.origin_id.present?
-        linked_children = node.linked_children
-        children = (children + linked_children).uniq.sort_by(&:sequence)
-      end
-      children.each { |child| build_slide_ids(child) }
-    end
-
     # Recursively destroy all descendants the user can delete
     def destroy_descendants_recursively(creative, user)
-      deletable_children = creative.children_with_permission(user, :admin)
+      deletable_children = creative.children_with_permission(user, :write)
       deletable_children.each do |child|
         destroy_descendants_recursively(child, user)
         CreativeShare.where(creative: child).destroy_all

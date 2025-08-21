@@ -13,3 +13,6 @@ unless User.exists?(email: default_email)
   )
   puts "Created default user with email: #{default_email}"
 end
+
+# Ensure Anonymous user exists
+User.anonymous
