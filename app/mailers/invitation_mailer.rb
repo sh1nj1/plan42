@@ -2,6 +2,7 @@ class InvitationMailer < ApplicationMailer
   def invite
     @invitation = params[:invitation]
     email = mail to: @invitation.email, subject: t("invitation_mailer.invite.subject")
+    return unless email
     Email.create!(
       email: @invitation.email,
       subject: email.subject,

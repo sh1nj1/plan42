@@ -6,6 +6,7 @@ class InboxMailer < ApplicationMailer
     email = I18n.with_locale(locale) do
       mail to: @user.email, subject: t("inbox_mailer.daily_summary.subject")
     end
+    return unless email
     Email.create!(
       user: @user,
       email: @user.email,

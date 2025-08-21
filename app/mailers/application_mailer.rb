@@ -2,6 +2,12 @@ class ApplicationMailer < ActionMailer::Base
   default from: "soonoh.jung@vrerv.com"
   layout "mailer"
 
+  def mail(headers = {}, &block)
+    recipients = Array(headers[:to]).compact - [ User::ANONYMOUS_EMAIL ]
+    return if recipients.empty?
+    super(headers.merge(to: recipients), &block)
+  end
+
   private
 
   # Returns the decoded body of the email. For multipart emails, prefer the text
