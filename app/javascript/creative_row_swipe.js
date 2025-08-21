@@ -22,7 +22,7 @@ if (!window.creativeRowSwipeInitialized) {
           if (row !== activeRow) row.classList.remove('show-edit');
         });
         activeRow.classList.add('show-edit');
-      } else {
+      } else if (diffX < -50) {
         activeRow.classList.remove('show-edit');
       }
       activeRow = null;
