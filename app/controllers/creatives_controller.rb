@@ -30,9 +30,9 @@ class CreativesController < ApplicationController
                           .select { |c| c.user == Current.user || c.has_permission?(Current.user, :read) }
                            .first
       @parent_creative = creative
-      @creatives = creative.children_with_permission(Current.user, :read) if creative
+      @creatives = Creative.tree_for_user(Current.user, parent: creative.effective_origin) if creative
     else
-      @creatives = Creative.where(user: Current.user).roots
+      @creatives = Creative.tree_for_user(Current.user)
       @parent_creative = nil
     end
     # 공유 리스트 로직: 자신과 모든 ancestor에서 공유된 사용자 수집
@@ -370,7 +370,7 @@ class CreativesController < ApplicationController
     @expanded_state_map = CreativeExpandedState
                               .where(user_id: Current.user.id, creative_id: parent.id)
                               .first&.expanded_status || {}
-    children = parent.children_with_permission(Current.user)
+    children = Creative.tree_for_user(Current.user, parent: parent)
     level = params[:level].to_i
     render html: helpers.render_creative_tree(
       children,

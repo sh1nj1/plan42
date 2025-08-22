@@ -50,9 +50,36 @@ class Creative < ApplicationRecord
 
   # Returns only children for which the user has at least the given permission (default: :read)
   def children_with_permission(user = nil, min_permission = :read)
+    return association(:children).target if association(:children).loaded?
+
     user ||= Current.user
     effective_origin.children.select do |child|
       child.has_permission?(user, min_permission)
+    end
+  end
+
+  def self.tree_for_user(user, parent: nil, min_permission: :read)
+    timestamp = Creative.maximum(:updated_at)&.to_i
+    Rails.cache.fetch([ "creative_tree", user.id, parent&.id, timestamp ]) do
+      scope = if parent
+        parent.self_and_descendants
+      else
+        Creative.where(user: user).roots
+      end
+      scope = scope.preload(:rich_text_description, :tags, :comments)
+      tree_hash = parent ? scope.hash_tree[parent] : scope.hash_tree
+      build_tree_from_hash(tree_hash || {}, user, min_permission)
+    end
+  end
+
+  def self.build_tree_from_hash(hash, user, min_permission)
+    hash.each_with_object([]) do |(node, children_hash), arr|
+      next unless node.has_permission?(user, min_permission)
+
+      children = build_tree_from_hash(children_hash, user, min_permission)
+      node.association(:children).target = children
+      node.association(:children).loaded!
+      arr << node
     end
   end
 

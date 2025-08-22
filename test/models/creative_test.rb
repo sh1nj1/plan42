@@ -71,4 +71,22 @@ class CreativeTest < ActiveSupport::TestCase
 
     Current.reset
   end
+
+  test "tree_for_user preloads children" do
+    user = users(:one)
+    Current.session = OpenStruct.new(user: user)
+
+    parent = Creative.create!(user: user, description: "Parent")
+    Creative.create!(user: user, parent: parent, description: "Child 1")
+    Creative.create!(user: user, parent: parent, description: "Child 2")
+
+    tree = Creative.tree_for_user(user)
+    root = tree.find { |c| c == parent }
+
+    assert_queries(0) do
+      root.children_with_permission(user)
+    end
+
+    Current.reset
+  end
 end
