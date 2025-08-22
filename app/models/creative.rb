@@ -167,8 +167,8 @@ class Creative < ApplicationRecord
     base_creative = effective_origin
     ancestor_ids = [ base_creative.id ] + base_creative.ancestors.pluck(:id)
     CreativeShare.where(creative_id: ancestor_ids)
-                 .where("permission >= ?", CreativeShare.permissions[required_permission.to_s])
                  .includes(:user)
+                 .select { |share| base_creative.has_permission?(share.user, required_permission) }
   end
 
   private
@@ -188,7 +188,9 @@ class Creative < ApplicationRecord
     cache = Current.respond_to?(:creative_share_cache) ? Current.creative_share_cache : nil
     ([ self ] + ancestors).each do |node|
       share = cache ? cache[node.id] : CreativeShare.find_by(user: user, creative: node)
-      return true if share && CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
+      next unless share
+      return false if share.permission == "no_access"
+      return CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
     end
     false
   end

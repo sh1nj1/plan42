@@ -38,6 +38,7 @@ en:
       permission_read: "Read"
       permission_write: "Write"
       permission_feedback: "Feedback"
+      permission_no_access: "No access"
       share: "Share"
       invite: "Invite"
       plan_tags_applied: "Plan tags applied to selected creatives."
