@@ -35,6 +35,37 @@
     <%= stylesheet_link_tag 'popup' %>
 
     <%= javascript_include_tag "application", "data-turbo-track": "reload", defer: true, type: "module" %>
+
+    <% if Rails.env.production? && Rails.application.config.x.google_analytics_id.present? %>
+      <!-- Google tag (gtag.js) -->
+      <script async src="https://www.googletagmanager.com/gtag/js?id=<%= Rails.application.config.x.google_analytics_id %>"></script>
+      <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        <% if Current.user %>
+          gtag('config', '<%= Rails.application.config.x.google_analytics_id %>', { 'user_id': '<%= Current.user.id %>' });
+        <% else %>
+          gtag('config', '<%= Rails.application.config.x.google_analytics_id %>');
+        <% end %>
+        document.addEventListener('turbo:load', function() {
+          var buttons = document.querySelectorAll('button, input[type=button], input[type=submit]');
+          buttons.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+              var label = btn.innerText || btn.value || '';
+              var params = {
+                'event_category': 'button',
+                'event_label': label
+              };
+              if (btn.id) {
+                params['event_id'] = btn.id;
+              }
+              gtag('event', 'button_click', params);
+            });
+          });
+        });
+      </script>
+    <% end %>
   </head>
   <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
     <%= render 'shared/link_creative_modal' %>

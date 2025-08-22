@@ -27,3 +27,15 @@
 
   </section>
 </section>
+<% if Rails.env.production? && Rails.application.config.x.google_analytics_id.present? %>
+  <script>
+    document.addEventListener('turbo:load', function() {
+      if (typeof gtag === 'function') {
+        gtag('event', 'creative.description visited', {
+          'event_category': 'creative',
+          'event_label': '<%= j @creative.description.to_plain_text %>'
+        });
+      }
+    });
+  </script>
+<% end %>
