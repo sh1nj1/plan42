@@ -23,6 +23,7 @@ en:
     email: "Email"
     change_password: "Change password"
     profile: "Profile"
+    avatar: "Avatar"
     avatar_url: "Avatar URL"
     update_profile: "Update Profile"
     index_title: "Users"

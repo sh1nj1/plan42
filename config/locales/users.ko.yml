@@ -23,6 +23,7 @@ ko:
     email: "이메일"
     change_password: "비밀번호 변경"
     profile: "프로파일"
+    avatar: "아바타"
     avatar_url: "아바타 URL"
     update_profile: "프로파일 업데이트"
     index_title: "사용자 목록"
