@@ -408,8 +408,7 @@ if (!window.creativeRowEditorInitialized) {
     function autoLinkUrls(event) {
       const element = event.target;
       const html = element.innerHTML;
-      const unlinkedHtml = html.replace(/<a[^>]*>(.*?)<\/a>/g, '$1');
-      const linkedHtml = unlinkedHtml.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, function(_match, prefix, url) {
+      const linkedHtml = html.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, function(_match, prefix, url) {
         return `${prefix}<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
       });
       if (linkedHtml !== html) {
@@ -417,6 +416,11 @@ if (!window.creativeRowEditorInitialized) {
         element.editor.loadHTML(linkedHtml);
         element.editor.setSelectedRange(selection);
       }
+
+      element.querySelectorAll('a').forEach(function(anchor) {
+        anchor.setAttribute('target', '_blank');
+        anchor.setAttribute('rel', 'noopener');
+      });
     }
 
     progressInput.addEventListener('input', function() {

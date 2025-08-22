@@ -66,6 +66,25 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
     expect(page).to have_css('trix-editor a[href="http://example.com/path"]', text: 'http://example.com/path')
   end
 
+  it 'preserves links when link text is edited' do
+    visit creative_path(root_creative)
+
+    find("#creative-#{root_creative.id} .add-creative-btn").click
+    editor = find('trix-editor')
+    editor.send_keys('http://example.com')
+
+    expect(page).to have_css('trix-editor a[href="http://example.com"]', text: 'http://example.com')
+
+    page.execute_script(
+      "var editor = document.querySelector('trix-editor');" +
+      "var a = editor.querySelector('a');" +
+      "a.textContent = 'Example';" +
+      "editor.dispatchEvent(new Event('trix-change'));"
+    )
+
+    expect(page).to have_css('trix-editor a[href="http://example.com"]', text: 'Example')
+  end
+
   it 'maintains order when adding multiple creatives after the last node' do
     child_a = Creative.create!(description: 'A', user: user, parent: root_creative)
     child_b = Creative.create!(description: 'B', user: user, parent: root_creative)
