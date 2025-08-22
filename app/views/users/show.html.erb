@@ -14,8 +14,9 @@
   <%= render AvatarComponent.new(user: @user, size: 80, classes: 'avatar') %>
 </div>
 
-<%= form_with model: @user, url: user_path(@user), method: :patch, local: true, html: { multipart: true } do |f| %>
+<%= form_with model: @user, url: user_path(@user), method: :patch, local: true, html: { multipart: true, class: 'profile-form' } do |f| %>
   <div>
+    <%= f.label :avatar, t('users.avatar') %>
     <%= f.file_field :avatar %>
   </div>
   <div>
@@ -23,6 +24,7 @@
     <%= f.text_field :name, required: true %>
   </div>
   <div>
+    <%= f.label :avatar_url, t('users.avatar_url') %>
     <%= f.text_field :avatar_url, placeholder: t('users.avatar_url') %>
   </div>
   <div>
@@ -37,9 +39,9 @@
     <%= f.label :theme, t('users.theme') %>
     <%= f.select :theme, options_for_select([[t('app.system_mode'), nil], [t('app.light_mode'), 'light'], [t('app.dark_mode'), 'dark']], @user.theme) %>
   </div>
-  <div>
-    <%= f.label :notifications_enabled, t('users.notifications_enabled') %>
+  <div class="checkbox-field">
     <%= f.check_box :notifications_enabled %>
+    <%= f.label :notifications_enabled, t('users.notifications_enabled') %>
   </div>
   <%= f.submit t('users.update_profile') %>
 <% end %>

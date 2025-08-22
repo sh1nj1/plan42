@@ -396,3 +396,33 @@ button {
 input[type="password"] {
     max-width: 80%;
 }
+
+/* Profile form styling */
+.profile-form div {
+    margin-bottom: 0.75em;
+}
+
+.profile-form label {
+    display: block;
+    margin-bottom: 0.25em;
+}
+
+.profile-form .checkbox-field {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.profile-form .checkbox-field label {
+    display: inline;
+    margin: 0;
+}
+
+.profile-form input[type="text"],
+.profile-form input[type="number"],
+.profile-form input[type="url"],
+.profile-form input[type="file"],
+.profile-form select {
+    width: 100%;
+    max-width: 320px;
+}
