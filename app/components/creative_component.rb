@@ -1,5 +1,4 @@
 class CreativeComponent < ViewComponent::Base
-
   include ApplicationHelper
 
   def initialize(creative:, filtered_children:, level:, select_mode:, expanded:)

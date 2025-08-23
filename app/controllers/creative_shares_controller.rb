@@ -12,21 +12,33 @@ class CreativeSharesController < ApplicationController
     permission = params[:permission]
 
     ancestor_ids = @creative.ancestors.pluck(:id)
-    existing_high_share = CreativeShare.where(creative_id: ancestor_ids, user: user)
-      .where("permission >= ?", CreativeShare.permissions[permission])
-      .exists?
+    ancestor_shares = CreativeShare.where(creative_id: ancestor_ids, user: user)
+                                   .where("permission >= ? or permission = ?", CreativeShare.permissions[permission], CreativeShare.permissions[:no_access])
+    closest_parent_share = CreativeShare.closest_parent_share(ancestor_ids, ancestor_shares)
 
-    unless existing_high_share
-      share = CreativeShare.find_or_initialize_by(creative: @creative, user: user)
-      share.permission = permission
-      if share.save
-        @creative.create_linked_creative_for_user(user)
-        flash[:notice] = t("creatives.share.shared")
+    is_param_no_access = permission == :no_access.to_s
+    Rails.logger.debug "### closest_parent_share = #{closest_parent_share.inspect}, is_param_no_access: #{is_param_no_access}"
+    if closest_parent_share.present?
+      if closest_parent_share.permission == :no_access.to_s
+        flash[:alert] = t("creatives.share.can_not_share_by_no_access_in_parent")
+        redirect_back(fallback_location: creatives_path) and return
       else
-        flash[:alert] = share.errors.full_messages.to_sentence
+        if is_param_no_access
+          # can set!
+        else
+          flash[:alert] = t("creatives.share.already_shared_in_parent")
+          redirect_back(fallback_location: creatives_path) and return
+        end
       end
+    end
+
+    share = CreativeShare.find_or_initialize_by(creative: @creative, user: user)
+    share.permission = permission
+    if share.save and not is_param_no_access
+      @creative.create_linked_creative_for_user(user)
+      flash[:notice] = t("creatives.share.shared")
     else
-      flash[:alert] = t("creatives.share.already_shared_in_parent")
+      flash[:alert] = share.errors.full_messages.to_sentence
     end
     redirect_back(fallback_location: creatives_path)
   end

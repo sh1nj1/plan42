@@ -1,4 +1,4 @@
-class AddNoAccessPermission < ActiveRecord::Migration[6.1]
+class AddNoAccessPermission < ActiveRecord::Migration[8.0]
   def up
     execute <<~SQL
       UPDATE creative_shares

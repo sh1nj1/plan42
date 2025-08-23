@@ -56,6 +56,7 @@ ko:
     share:
       shared: "크리에이티브가 성공적으로 공유되었습니다."
       already_shared_in_parent: "크리에이티브가 상위 크리에이티브에 이미 공유되었습니다."
+      can_not_share_by_no_access_in_parent: "상위 크리에이티브에 접근 금지가 있어서 공유할 수 없습니다."
     notices:
       progress_recalculated: "진행률을 다시 계산 했습니다."
     errors:

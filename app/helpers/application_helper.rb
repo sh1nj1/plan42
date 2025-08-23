@@ -20,7 +20,7 @@ module ApplicationHelper
       # Add class or other options if passed
       if options[:class].present?
         # inject class into the <svg ...> tag
-        svg.sub!('<svg', "<svg class=\"#{options[:class]}\"")
+        svg.sub!("<svg", "<svg class=\"#{options[:class]}\"")
       end
 
       raw(svg) # mark as HTML safe

@@ -163,12 +163,17 @@ class Creative < ApplicationRecord
     parent.update(progress: new_progress)
   end
 
-  def all_shared_users(required_permission = :read)
+  def all_shared_users(required_permission = :no_access)
     base_creative = effective_origin
     ancestor_ids = [ base_creative.id ] + base_creative.ancestors.pluck(:id)
-    CreativeShare.where(creative_id: ancestor_ids)
+    # only return users with closest permission, user can have multiple shares in the ancestors
+    shares = CreativeShare.where(creative_id: ancestor_ids)
+                 .where("permission >= ?", CreativeShare.permissions[required_permission.to_s])
                  .includes(:user)
-                 .select { |share| base_creative.has_permission?(share.user, required_permission) }
+    shares_for_user_hash = shares.group_by(&:user_id)
+    shares_for_user_hash.map do |user_id, user_shares|
+      CreativeShare.closest_parent_share(ancestor_ids, user_shares)
+    end
   end
 
   private
@@ -189,7 +194,7 @@ class Creative < ApplicationRecord
     ([ self ] + ancestors).each do |node|
       share = cache ? cache[node.id] : CreativeShare.find_by(user: user, creative: node)
       next unless share
-      return false if share.permission == "no_access"
+      # return false if share.permission == :no_access.to_s
       return CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
     end
     false

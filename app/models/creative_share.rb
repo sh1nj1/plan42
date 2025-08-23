@@ -14,7 +14,13 @@ class CreativeShare < ApplicationRecord
   validates :permission, presence: true
   validates :user_id, uniqueness: { scope: :creative_id }
 
-  after_create_commit :notify_recipient
+  after_create_commit :notify_recipient, unless: :no_access?
+
+  # Given ancestor_ids and ancestor_shares, returns the closest CreativeShare
+  # in the ancestors. If there is no ancestor share, returns nil.
+  def self.closest_parent_share(ancestor_ids, ancestor_shares)
+    ancestor_shares.to_a.min_by { |s| ancestor_ids.index(s.creative_id) || Float::INFINITY }
+  end
 
   private
 

@@ -115,12 +115,6 @@ class CreativesController < ApplicationController
           siblings.each_with_index { |c, idx| c.update_column(:sequence, idx) }
         end
       end
-      # Propagate all shares from the parent to the new child
-      if @creative.parent
-        CreativeShare.where(creative: @creative.parent).find_each do |parent_share|
-          CreativeShare.create!(creative: @creative, user: parent_share.user, permission: parent_share.permission)
-        end
-      end
       if params[:tags].present?
         Array(params[:tags]).each do |tag_id|
           @creative.tags.create(label_id: tag_id)
