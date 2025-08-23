@@ -56,6 +56,7 @@ en:
     share:
       shared: "Creative shared successfully."
       already_shared_in_parent: "Creative already shared in parent creative."
+      can_not_share_by_no_access_in_parent: "You can not share by no access in parent creative."
     notices:
       progress_recalculated: "All parent progress recalculated."
     errors:

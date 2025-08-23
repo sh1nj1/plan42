@@ -24,11 +24,4 @@ RSpec.describe Creative, type: :model do
     expect(child.has_permission?(shared_user, :read)).to be false
     expect(grandchild.has_permission?(shared_user, :read)).to be false
   end
-
-  it 'allows deeper node share overriding ancestor no_access' do
-    CreativeShare.create!(creative: root, user: shared_user, permission: :read)
-    CreativeShare.create!(creative: child, user: shared_user, permission: :no_access)
-    CreativeShare.create!(creative: grandchild, user: shared_user, permission: :read)
-    expect(grandchild.has_permission?(shared_user, :read)).to be true
-  end
 end
