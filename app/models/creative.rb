@@ -18,6 +18,7 @@ class Creative < ApplicationRecord
 
   has_many :creative_shares, dependent: :destroy
   has_many :tags, dependent: :destroy
+  has_many :creative_expanded_states, dependent: :delete_all
 
   validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }, unless: -> { origin_id.present? }
   validates :description, presence: true, unless: -> { origin_id.present? }
