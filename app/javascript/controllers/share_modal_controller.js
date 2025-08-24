@@ -28,8 +28,9 @@ export default class extends Controller {
   }
 
   load() {
-    fetch(`/creatives/${this.creativeIdValue}/creative_shares.json`)
-      .then(r => r.json())
+    const url = `/creatives/${this.creativeIdValue}/creative_shares.json?t=${Date.now()}`
+    fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" })
+      .then(r => (r.ok ? r.json() : []))
       .then(shares => {
         this.listTarget.innerHTML = ""
         shares.forEach(share => {
