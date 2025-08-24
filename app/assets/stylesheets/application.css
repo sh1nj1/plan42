@@ -18,6 +18,13 @@ body {
     margin: 0;
 }
 
+.no-top-margin {
+    margin-block-start: 0;
+    margin-block-end: 0.5em;
+    margin-inline-start: 0;
+    margin-inline-end: 0;
+}
+
 /* Prevent background scrolling when popups or panels are open */
 .no-scroll {
     overflow: hidden !important;
