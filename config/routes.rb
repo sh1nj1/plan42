@@ -31,7 +31,7 @@ Rails.application.routes.draw do
 
   resources :creatives do
     resources :subscribers, only: [ :create ]
-    resources :creative_shares, only: [ :create, :destroy ]
+    resources :creative_shares, only: [ :index, :create, :destroy ]
     resources :comments, only: [ :index, :create, :destroy, :show, :update ]
     collection do
       post :recalculate_progress

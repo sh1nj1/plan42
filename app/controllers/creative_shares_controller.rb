@@ -1,13 +1,24 @@
 class CreativeSharesController < ApplicationController
+  def index
+    creative = Creative.find(params[:creative_id])
+    shares = creative.creative_shares.includes(:user)
+    render json: shares.map { |s| share_json(s) }
+  end
+
   def create
     @creative = Creative.find(params[:creative_id]).effective_origin
     user = User.find_by(email: params[:user_email])
-    unless user
-      invitation = Invitation.create!(email: params[:user_email], inviter: Current.user, creative: @creative, permission: params[:permission])
-      InvitationMailer.with(invitation: invitation).invite.deliver_later
-      flash[:notice] = t("invites.invite_sent")
-      redirect_back(fallback_location: creatives_path) and return
-    end
+    respond_to do |format|
+      unless user
+        invitation = Invitation.create!(email: params[:user_email], inviter: Current.user, creative: @creative, permission: params[:permission])
+        InvitationMailer.with(invitation: invitation).invite.deliver_later
+        format.html do
+          flash[:notice] = t("invites.invite_sent")
+          redirect_back(fallback_location: creatives_path)
+        end
+        format.json { render json: { invited: true, message: t("invites.invite_sent") } }
+        return
+      end
 
     permission = params[:permission]
 
@@ -19,28 +30,36 @@ class CreativeSharesController < ApplicationController
     is_param_no_access = permission == :no_access.to_s
     Rails.logger.debug "### closest_parent_share = #{closest_parent_share.inspect}, is_param_no_access: #{is_param_no_access}"
     if closest_parent_share.present?
-      if closest_parent_share.permission == :no_access.to_s
-        flash[:alert] = t("creatives.share.can_not_share_by_no_access_in_parent")
-        redirect_back(fallback_location: creatives_path) and return
-      else
-        if is_param_no_access
-          # can set!
-        else
-          flash[:alert] = t("creatives.share.already_shared_in_parent")
-          redirect_back(fallback_location: creatives_path) and return
+      msg = if closest_parent_share.permission == :no_access.to_s
+              t("creatives.share.can_not_share_by_no_access_in_parent")
+      elsif !is_param_no_access
+              t("creatives.share.already_shared_in_parent")
+      end
+      if msg
+        format.html do
+          flash[:alert] = msg
+          redirect_back(fallback_location: creatives_path)
         end
+        format.json { render json: { error: msg }, status: :unprocessable_entity }
+        return
       end
     end
 
     share = CreativeShare.find_or_initialize_by(creative: @creative, user: user)
     share.permission = permission
-    if share.save and not is_param_no_access
+    if share.save && !is_param_no_access
       @creative.create_linked_creative_for_user(user)
-      flash[:notice] = t("creatives.share.shared")
+      format.html { flash[:notice] = t("creatives.share.shared") }
+      format.json { render json: share_json(share), status: :created }
+    elsif share.errors.any?
+      format.html { flash[:alert] = share.errors.full_messages.to_sentence }
+      format.json { render json: { error: share.errors.full_messages.to_sentence }, status: :unprocessable_entity }
     else
-      flash[:alert] = share.errors.full_messages.to_sentence
+      format.html { }
+      format.json { render json: share_json(share), status: :ok }
     end
-    redirect_back(fallback_location: creatives_path)
+    format.html { redirect_back(fallback_location: creatives_path) }
+  end
   end
 
   def destroy
@@ -59,5 +78,20 @@ class CreativeSharesController < ApplicationController
 
     def all_descendants(creative)
       creative.children.flat_map { |child| [ child ] + all_descendants(child) }
+    end
+
+    def share_json(share)
+      {
+        id: share.id,
+        user_name: share.user&.display_name || t("creatives.index.unknown_user"),
+        permission: share.permission,
+        permission_name: t("creatives.index.permission_#{share.permission}"),
+        creative: {
+          id: share.creative_id,
+          title: ActionController::Base.helpers.strip_tags(share.creative.effective_description),
+          link: Rails.application.routes.url_helpers.creative_path(share.creative)
+        },
+        created_at: share.created_at
+      }
     end
 end

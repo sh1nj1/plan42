@@ -11,6 +11,10 @@ RSpec.describe 'Creative 공유 리스트', type: :system do
     # ignore if driver does not support resizing
   end
 
+  before do
+    driven_by(:selenium, using: :headless_chrome)
+  end
+
   it '공유 리스트가 정상적으로 표시된다' do
     resize_window_to_pc
     visit new_session_path
@@ -20,8 +24,10 @@ RSpec.describe 'Creative 공유 리스트', type: :system do
     find('#sign-in-submit').click
     expect(page).not_to have_content(I18n.t('users.sessions.new.try_another_email_or_password'))
     visit creative_path(creative)
-    expect(page).to have_css('#share-creative-modal', text: I18n.t('creatives.index.shared_with'), visible: :all)
-    expect(page).to have_css('#share-creative-modal', text: 'User1', visible: :all)
-    expect(page).to have_css('#share-creative-modal', text: 'Read', visible: :all)
+    find('#share-creative-btn').click
+    expect(page).to have_css('#share-list-container', text: I18n.t('creatives.index.shared_with'))
+    expect(page).to have_css('#share-list-container', text: 'User1')
+    expect(page).to have_css('#share-list-container', text: 'Read')
+    expect(page).to have_css('#share-list-container', text: '테스트')
   end
 end

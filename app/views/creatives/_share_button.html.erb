@@ -1,76 +1,31 @@
-<button id="share-creative-btn" class="btn btn-primary desktop-only"><%= t('creatives.index.share') %></button>
-<!-- Share Creative Modal -->
-<div id="share-creative-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
-  <div class="popup-box" style="min-width:320px;max-width:90vw;">
-    <button id="close-share-modal" class="popup-close-btn">&times;</button>
-    <h2><%= t('creatives.index.share_creative') %></h2>
-    <form id="share-creative-form" action="<%= creative_creative_shares_path(@parent_creative || @creative) %>" method="post" data-controller="share-invite">
-      <%= csrf_meta_tags %>
-      <div style="margin-bottom:1em;">
-        <label for="share-user-email"><%= t('creatives.index.user_email') %></label>
-        <input type="email" name="user_email" id="share-user-email" required style="width:100%;" data-share-invite-target="email" data-action="blur->share-invite#check" />
-      </div>
-      <div style="margin-bottom:1em;">
-        <select name="permission" id="share-permission" style="width:100%;">
-          <option value="no_access"><%= t('creatives.index.permission_no_access') %></option>
-          <option value="read"><%= t('creatives.index.permission_read') %></option>
-          <option value="feedback"><%= t('creatives.index.permission_feedback') %></option>
-          <option value="write"><%= t('creatives.index.permission_write') %></option>
-        </select>
-      </div>
-      <button type="submit" class="btn btn-primary" data-share-invite-target="submit" data-share="<%= t('creatives.index.share') %>" data-invite="<%= t('creatives.index.invite') %>"><%= t('creatives.index.share') %></button>
-    </form>
-    <% if @shared_list.any? %>
-      <div style="margin-top:1em;">
+<div data-controller="share-modal" data-share-modal-creative-id="<%= (@parent_creative || @creative).id %>">
+  <button id="share-creative-btn" class="btn btn-primary desktop-only" data-action="share-modal#open"><%= t('creatives.index.share') %></button>
+  <!-- Share Creative Modal -->
+  <div id="share-creative-modal" data-share-modal-target="modal" data-action="click->share-modal#overlay" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
+    <div class="popup-box" style="min-width:320px;max-width:90vw;">
+      <button id="close-share-modal" class="popup-close-btn" data-action="share-modal#close">&times;</button>
+      <h2><%= t('creatives.index.share_creative') %></h2>
+      <form id="share-creative-form" action="<%= creative_creative_shares_path(@parent_creative || @creative) %>" method="post" data-controller="share-invite" data-share-modal-target="form" data-action="submit->share-modal#submit">
+        <%= csrf_meta_tags %>
+        <div style="margin-bottom:1em;">
+          <label for="share-user-email"><%= t('creatives.index.user_email') %></label>
+          <input type="email" name="user_email" id="share-user-email" required style="width:100%;" data-share-invite-target="email" data-share-modal-target="email" data-action="blur->share-invite#check" />
+        </div>
+        <div style="margin-bottom:1em;">
+          <select name="permission" id="share-permission" style="width:100%;" data-share-modal-target="permission">
+            <option value="no_access"><%= t('creatives.index.permission_no_access') %></option>
+            <option value="read"><%= t('creatives.index.permission_read') %></option>
+            <option value="feedback"><%= t('creatives.index.permission_feedback') %></option>
+            <option value="write"><%= t('creatives.index.permission_write') %></option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary" data-share-invite-target="submit" data-share="<%= t('creatives.index.share') %>" data-invite="<%= t('creatives.index.invite') %>"><%= t('creatives.index.share') %></button>
+      </form>
+      <div id="share-list-container" data-share-modal-target="listContainer" style="margin-top:1em;display:none;">
         <strong><%= t('creatives.index.shared_with') %>:</strong>
-        <ul class="share-grid">
-          <% @shared_list.each do |share| %>
-            <li>
-              <span>
-                <%= render AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
-              </span>
-              <span><%= share.user&.display_name || t('creatives.index.unknown_user') %></span>
-              <span><%= t("creatives.index.permission_#{share.permission}") %></span>
-              <span>
-                <%= button_to '×', creative_creative_share_path(@parent_creative || @creative, share), method: :delete, form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_share') } }, class: 'delete-share-btn', style: 'padding:0 0.5em;' %>
-              </span>
-            </li>
-          <% end %>
-        </ul>
+        <ul class="share-grid" data-share-modal-target="list"></ul>
       </div>
-    <% end %>
+    </div>
   </div>
 </div>
-<script>
-    document.addEventListener('turbo:load', function() {
-        const shareBtn = document.getElementById('share-creative-btn');
-        const modal = document.getElementById('share-creative-modal');
-        const closeBtn = document.getElementById('close-share-modal');
-        const emailInput = document.getElementById('share-user-email');
-        if (shareBtn && modal && closeBtn) {
-            shareBtn.onclick = function() {
-                modal.style.display = 'flex';
-                document.body.classList.add('no-scroll');
-            };
-            closeBtn.onclick = function() {
-                modal.style.display = 'none';
-                document.body.classList.remove('no-scroll');
-            };
-            modal.onclick = function(e) {
-                if (e.target === modal) {
-                    modal.style.display = 'none';
-                    document.body.classList.remove('no-scroll');
-                }
-            };
-            const params = new URLSearchParams(window.location.search);
-            const reqEmail = params.get('share_request');
-            if (reqEmail) {
-                shareBtn.click();
-                if (emailInput) {
-                    emailInput.value = reqEmail;
-                    emailInput.dispatchEvent(new Event('blur'));
-                }
-            }
-        }
-    });
-</script>
+
