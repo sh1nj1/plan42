@@ -71,4 +71,20 @@ class CreativeTest < ActiveSupport::TestCase
 
     Current.reset
   end
+
+  test "destroying creative removes expanded states" do
+    user = users(:one)
+    Current.session = OpenStruct.new(user: user)
+
+    creative = Creative.create!(user: user, description: "Parent")
+    CreativeExpandedState.create!(creative: creative, user: user, expanded_status: { "1" => true })
+
+    assert_difference("Creative.count", -1) do
+      assert_nothing_raised { creative.destroy }
+    end
+
+    assert_empty CreativeExpandedState.where(creative_id: creative.id)
+
+    Current.reset
+  end
 end
