@@ -95,6 +95,11 @@
     flex-shrink: 0;
 }
 
+.edit-inline-btn-placeholder {
+    width: 16px;
+    height: 16px;
+}
+
 .creative-toggle-btn {
     width: 16px;
     height: 16px;

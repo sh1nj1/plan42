@@ -6,8 +6,10 @@
 
         <% if creative.has_permission?(Current.user, :write) %>
           <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="<%= creative.id %>">
-            <%= svg_tag 'edit.svg',class: 'icon-edit' %>
+            <%= svg_tag 'edit.svg', class: 'icon-edit' %>
           </button>
+        <% else %>
+          <span class="creative-action-btn edit-inline-btn-placeholder"></span>
         <% end %>
         <div class="creative-divider" style="width: 6px;">
         </div>
