@@ -60,6 +60,11 @@ if (!window.commentsInitialized) {
         var presenceSubscription = null;
         var participantsData = null;
         var currentPresentIds = [];
+        var participantsComponent = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            participantsComponent = Jails.get('comment-participants');
+        });
 
         function insertMention(email) {
             var start = textarea.selectionStart;
@@ -81,50 +86,16 @@ if (!window.commentsInitialized) {
             }
         }
 
-        function renderParticipants(presentIds) {
-            if (!participants || !participantsData) return;
-            participants.innerHTML = '';
-            participantsData.forEach(function(u) {
-                var wrapper = document.createElement('div');
-                wrapper.className = 'avatar-wrapper';
-                wrapper.style.width = '20px';
-                wrapper.style.height = '20px';
-
-                var img = document.createElement('img');
-                img.src = u.avatar_url;
-                img.alt = '';
-                img.width = 20;
-                img.height = 20;
-                var classes = 'avatar comment-presence-avatar';
-                if (presentIds.indexOf(u.id) === -1) {
-                    classes += ' inactive';
-                }
-                img.className = classes;
-                img.title = u.name;
-                img.style.borderRadius = '50%';
-                img.style.verticalAlign = 'middle';
-                if (u.email) { img.dataset.email = u.email; }
-                wrapper.appendChild(img);
-
-                if (u.default_avatar) {
-                    var span = document.createElement('span');
-                    span.className = 'avatar-initial';
-                    span.textContent = u.initial;
-                    span.style.fontSize = Math.round(20 / 2) + 'px';
-                    wrapper.appendChild(span);
-                }
-
-                participants.appendChild(wrapper);
-            });
-        }
-
         function loadParticipants() {
             if (!popup.dataset.creativeId) return;
             fetch(`/creatives/${popup.dataset.creativeId}/comments/participants`)
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     participantsData = data;
-                    renderParticipants(currentPresentIds);
+                    if (participantsComponent) {
+                        participantsComponent.setUsers(participantsData);
+                        participantsComponent.setPresent(currentPresentIds);
+                    }
                 });
         }
 
@@ -136,7 +107,9 @@ if (!window.commentsInitialized) {
                 { received: function(data) {
                     if (data.ids) {
                         currentPresentIds = data.ids.map(function(id) { return parseInt(id, 10); });
-                        renderParticipants(currentPresentIds);
+                        if (participantsComponent) {
+                            participantsComponent.setPresent(currentPresentIds);
+                        }
                     }
                 } }
             );
