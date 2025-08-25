@@ -62,6 +62,22 @@ class CommentsController < ApplicationController
     redirect_to creative_path(@creative, comment_id: @comment.id)
   end
 
+  def participants
+    users = [ @creative.user ].compact + @creative.all_shared_users(:feedback).map(&:user)
+    users = users.uniq
+    data = users.map do |u|
+      {
+        id: u.id,
+        email: u.email,
+        name: u.display_name,
+        avatar_url: view_context.user_avatar_url(u, size: 20),
+        default_avatar: !u.avatar.attached? && u.avatar_url.blank?,
+        initial: u.display_name[0].upcase
+      }
+    end
+    render json: data
+  end
+
   private
 
   def set_creative

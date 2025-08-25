@@ -32,7 +32,11 @@ Rails.application.routes.draw do
   resources :creatives do
     resources :subscribers, only: [ :create ]
     resources :creative_shares, only: [ :create, :destroy ]
-    resources :comments, only: [ :index, :create, :destroy, :show, :update ]
+    resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
+      collection do
+        get :participants
+      end
+    end
     collection do
       post :recalculate_progress
       post :reorder
