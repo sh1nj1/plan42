@@ -95,6 +95,10 @@ if (!window.creativeRowEditorInitialized) {
       pendingSave = false;
       if (!form.action) return Promise.resolve();
       saving = true;
+      const original = descriptionInput.value;
+      descriptionInput.value = original
+            .replace(/data-trix-attachment/g, 'trix-data-attachment')
+            .replace(/data-trix-attributes/g, 'trix-data-attributes');
       savePromise = window.creativesApi.save(form.action, method, form).then(function(r) {
         if (!r.ok) return r;
         return r.text().then(function(text) {
@@ -117,6 +121,7 @@ if (!window.creativeRowEditorInitialized) {
           }
         });
       }).finally(function() {
+        descriptionInput.value = original;
         saving = false;
       });
       return savePromise;
@@ -261,8 +266,12 @@ if (!window.creativeRowEditorInitialized) {
         .then(data => {
           form.action = `/creatives/${data.id}`;
           form.dataset.creativeId = data.id;
-          descriptionInput.value = data.description || '';
-          editor.editor.loadHTML(data.description || '');
+          let content = data.description || '';
+          content = content
+                .replace(/trix-data-attachment/g, 'data-trix-attachment')
+                .replace(/trix-data-attributes/g, 'data-trix-attributes');
+          descriptionInput.value = content;
+          editor.editor.loadHTML(content);
           progressInput.value = data.progress || 0;
           progressValue.textContent = data.progress || 0;
           parentInput.value = data.parent_id || '';
