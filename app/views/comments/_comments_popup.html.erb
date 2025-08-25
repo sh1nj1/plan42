@@ -1,16 +1,8 @@
-
-<div id="comments-popup" class="popup-box"
-     data-loading-text="<%= t('app.loading') %>"
-     data-delete-confirm-text="<%= t("comments.delete_confirm") %>"
-     data-update-comment-text="<%= t('comments.update_comment') %>">
-  <button id="close-comments-btn" class="popup-close-btn">&times;</button>
-  <h3 style="margin-top:0;"><%= t('comments.comments') %></h3>
-  <div id="comment-participants"></div>
-  <%= render UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
-  <br/>
-  <div id="comments-list"><%= t('app.loading') %></div>
-  <form id="new-comment-form" style="display:none;">
-    <textarea name="comment[content]" rows="2" required></textarea>
-    <button class="creative-action-btn" type="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
-  </form>
-</div>
+<comments-popup
+  data-loading-text="<%= t('app.loading') %>"
+  data-delete-confirm-text="<%= t('comments.delete_confirm') %>"
+  data-update-comment-text="<%= t('comments.update_comment') %>"
+  data-comments-title-text="<%= t('comments.comments') %>">
+  <span slot="send-icon"><%= svg_tag 'send.svg', class: 'send-icon' %></span>
+</comments-popup>
+<%= render UserMentionMenuComponent.new(menu_id: 'mention-menu') %>

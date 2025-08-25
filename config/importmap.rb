@@ -12,3 +12,6 @@ pin "firebase/app", to: "https://www.gstatic.com/firebasejs/10.11.1/firebase-app
 pin "firebase/messaging", to: "https://www.gstatic.com/firebasejs/10.11.1/firebase-messaging.js"
 pin "dark_mode_toggle", to: "dark_mode_toggle.js"
 pin "trix_color_picker", to: "trix_color_picker.js"
+pin "lit", to: "https://cdn.jsdelivr.net/npm/lit@2.8.0/+esm"
+pin "livestore", to: "https://cdn.jsdelivr.net/npm/livestore@1.0.0/+esm"
+pin "comments_popup_component", to: "comments_popup_component.js"
