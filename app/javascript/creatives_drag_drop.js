@@ -70,28 +70,32 @@ if (!window.creativesDragDropInitialized) {
     if (childIndicator) childIndicator.remove();
     if (draggedCreativeId && targetId && draggedCreativeId !== targetId) {
       const draggedElem = document.getElementById(draggedCreativeId);
+      const draggedChildren = document.getElementById(`creative-children-${draggedCreativeId.replace('creative-', '')}`);
       const targetElem = document.getElementById(targetId);
       const rect = targetElem.getBoundingClientRect();
       const rightZone = rect.left + rect.width * rightZoneRatio;
       const midpoint = rect.top + rect.height / 2;
       let direction = null;
-      let asChild = false;
       // Save original position
-      const originalNextSibling = draggedElem.nextSibling;
       const originalParent = draggedElem.parentNode;
+      const originalNextSibling = draggedChildren ? draggedChildren.nextSibling : draggedElem.nextSibling;
       if (event.clientX > rightZone) {
         // Append as child
-        let childrenContainer = targetElem.querySelector('.creative-children');
+        const targetNum = targetId.replace('creative-', '');
+        let childrenContainer = document.getElementById(`creative-children-${targetNum}`);
         if (!childrenContainer) {
           childrenContainer = document.createElement('div');
           childrenContainer.className = 'creative-children';
-          targetElem.appendChild(childrenContainer);
+          childrenContainer.id = `creative-children-${targetNum}`;
+          targetElem.parentNode.insertBefore(childrenContainer, targetElem.nextSibling);
         }
         childrenContainer.appendChild(draggedElem);
+        if (draggedChildren) childrenContainer.appendChild(draggedChildren);
         direction = 'child';
       } else if (event.clientY < midpoint) {
         // Insert before target
         targetElem.parentNode.insertBefore(draggedElem, targetElem);
+        if (draggedChildren) targetElem.parentNode.insertBefore(draggedChildren, targetElem);
         direction = 'up';
       } else {
         // Insert after target
@@ -99,6 +103,13 @@ if (!window.creativesDragDropInitialized) {
           targetElem.parentNode.insertBefore(draggedElem, targetElem.nextSibling);
         } else {
           targetElem.parentNode.appendChild(draggedElem);
+        }
+        if (draggedChildren) {
+          if (draggedElem.nextSibling) {
+            draggedElem.parentNode.insertBefore(draggedChildren, draggedElem.nextSibling);
+          } else {
+            draggedElem.parentNode.appendChild(draggedChildren);
+          }
         }
         direction = 'down';
       }
@@ -109,8 +120,10 @@ if (!window.creativesDragDropInitialized) {
         function revert() {
           if (originalNextSibling) {
             originalParent.insertBefore(draggedElem, originalNextSibling);
+            if (draggedChildren) originalParent.insertBefore(draggedChildren, originalNextSibling);
           } else {
             originalParent.appendChild(draggedElem);
+            if (draggedChildren) originalParent.appendChild(draggedChildren);
           }
         }
       );
