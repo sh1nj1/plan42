@@ -1,0 +1,6 @@
+#!/bin/sh
+
+# Clean up unused Docker resources on all hosts after deployment
+for host in $(echo "$KAMAL_HOSTS" | tr ',' ' '); do
+  ssh "$host" "docker system prune -a --volumes --force"
+done
