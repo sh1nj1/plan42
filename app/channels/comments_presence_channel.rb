@@ -29,10 +29,6 @@ class CommentsPresenceChannel < ApplicationCable::Channel
   def broadcast_presence
     ids = CommentPresenceStore.list(@creative_id)
     Rails.logger.info "Broadcasting presence for creative #{@creative_id} to #{stream_name}, users: #{ids.join(', ')}"
-    html = ApplicationController.render(
-      partial: "comments/presence_avatars",
-      locals: { creative: Creative.find(@creative_id), present_ids: ids }
-    )
-    ActionCable.server.broadcast(stream_name, { html: html })
+    ActionCable.server.broadcast(stream_name, { ids: ids })
   end
 end
