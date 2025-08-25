@@ -372,7 +372,8 @@ trix-editor .attachment__metadata {
     font-size: 0.9em;
     padding: 0.5em;
     white-space: pre;
-    background-color: #eee;
+    background-color: var(--color-btn-bg);
+    color: var(--color-text);
     overflow-x: auto; }
   .trix-content img {
     max-width: 100%;
