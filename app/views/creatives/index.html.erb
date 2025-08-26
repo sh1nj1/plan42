@@ -48,17 +48,18 @@
 
 <% if @parent_creative %>
   <div class="creative-row" id="creative-markdown-block">
+    <%= render_creative_progress(@parent_creative) %>
     <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
       <%= trix_view_only(@parent_creative.effective_description(nil, false)) %>
     </h1>
-    <div>
-      <h1 style="display: flex; align-items: center; gap: 1em;">
-        <%= render_creative_progress(@parent_creative) %>
-      </h1>
-    </div>
   </div>
 <% else %>
   <div class="creative-row" id="creative-markdown-block">
+    <% unless @overall_progress.nil? %>
+      <div class="creative-row-end">
+        <%= render_progress_value(@overall_progress) %>
+      </div>
+    <% end %>
     <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
       <span>
         <% if params[:tags].present? %>
@@ -68,13 +69,6 @@
         <% end %>
       </span>
     </h1>
-    <div>
-      <h1 style="display: flex; align-items: center; gap: 1em;">
-        <% unless @overall_progress.nil? %>
-          <%= render_progress_value(@overall_progress) %>
-        <% end %>
-      </h1>
-    </div>
   </div>
 <% end %>
 

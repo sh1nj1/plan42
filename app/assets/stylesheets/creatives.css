@@ -194,6 +194,20 @@
     align-items: center;
 }
 
+#creative-markdown-block {
+    display: block;
+}
+
+#creative-markdown-block::after {
+    content: "";
+    display: block;
+    clear: both;
+}
+
+#creative-markdown-block .creative-row-end {
+    float: right;
+}
+
 .creative-row.selected {
     background-color: var(--color-drag-over);
 }
