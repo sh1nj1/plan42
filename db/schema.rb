@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_08_23_000000) do
+ActiveRecord::Schema[8.0].define(version: 2025_08_26_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -355,6 +355,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_08_23_000000) do
     t.string "completion_mark", default: "", null: false
     t.string "theme"
     t.string "name", null: false
+    t.string "calendar_id"
     t.boolean "notifications_enabled"
     t.index ["email"], name: "index_users_on_email", unique: true
   end

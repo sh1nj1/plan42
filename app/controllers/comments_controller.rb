@@ -30,6 +30,7 @@ class CommentsController < ApplicationController
       render json: { error: I18n.t("comments.no_permission") }, status: :forbidden and return
     end
     if @comment.save
+      handle_comment_commands(@comment)
       render partial: "comments/comment", locals: { comment: @comment }, status: :created
     else
       render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
@@ -90,5 +91,39 @@ class CommentsController < ApplicationController
 
   def comment_params
     params.require(:comment).permit(:content)
+  end
+
+  def handle_comment_commands(comment)
+    content = comment.content.to_s.strip
+    return unless content.start_with?("/calendar")
+
+    args = content.sub("/calendar", "").strip
+    match = args.match(/\A(\d{4}-\d{2}-\d{2})(?:@(\d{2}:\d{2}))?(?:\s+(.*))?\z/)
+    return unless match
+
+    date_str = match[1]
+    time_str = match[2]
+    memo = match[3]
+
+    if time_str
+      start_time = Time.zone.parse("#{date_str} #{time_str}")
+      end_time = start_time + 1.hour
+    else
+      start_time = Date.parse(date_str)
+      end_time = start_time + 1.day
+    end
+
+    base_summary = comment.creative.effective_description(false)
+    summary = memo.presence || base_summary&.to_plain_text
+    calendar_id = comment.user&.calendar_id.presence || "primary"
+
+    GoogleCalendarService.new.create_event(
+      calendar_id: calendar_id,
+      start_time: start_time,
+      end_time: end_time,
+      summary: summary
+    )
+  rescue StandardError => e
+    Rails.logger.error("Calendar command failed: #{e.message}")
   end
 end
