@@ -39,7 +39,13 @@
     align-items: center;
 }
 .creative-content {
-    max-width: min(80vw, calc(var(--max-width) - 120px));
+    max-width: calc(min(100vw, var(--max-width)) - 160px);
+}
+
+@media (max-width: 768px) {
+    .creative-content {
+        max-width: calc(min(100vw, var(--max-width)) - 110px);
+    }
 }
 
 /* make it as same as <li> tag */
