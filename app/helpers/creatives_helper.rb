@@ -29,6 +29,21 @@ module CreativesHelper
     end
   end
 
+  # Render given ActionText content in a read-only Trix editor so that the
+  # formatting matches the editing experience.
+  def trix_view_only(content)
+    html = if content.respond_to?(:to_trix_html)
+      content.to_trix_html
+    else
+      content.to_s
+    end
+    input_id = "trix-view-#{SecureRandom.hex(8)}"
+    safe_join([
+      tag.input(type: "hidden", id: input_id, value: html),
+      content_tag("trix-editor", "", input: input_id, class: "trix-content", toolbar: false, readonly: true)
+    ])
+  end
+
   def render_creative_progress(creative, select_mode: false)
     progress_value = if params[:tags].present?
       tag_ids = Array(params[:tags]).map(&:to_s)
@@ -167,7 +182,9 @@ module CreativesHelper
             expanded: expanded
           )) do
             renderer.call do
-              link_to(creative.effective_description(params[:tags]&.first), creative, class: "unstyled-link")
+              link_to(creative, class: "unstyled-link") do
+                trix_view_only(creative.effective_description(params[:tags]&.first, false))
+              end
             end
           end + render_next_block.call(level + 1)
         end

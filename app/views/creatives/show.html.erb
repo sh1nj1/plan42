@@ -7,11 +7,11 @@
     <% cache @creative do %>
       <% if @creative.parent %>
         <h1>
-          <%= @creative.parent.description %>
+          <%= trix_view_only(@creative.parent.description) %>
         </h1>
       <% end %>
       <div>
-        <%= @creative.description %>
+        <%= trix_view_only(@creative.description) %>
       </div>
     <% end %>
 

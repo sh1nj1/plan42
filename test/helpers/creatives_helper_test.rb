@@ -52,4 +52,11 @@ class CreativesHelperTest < ActionView::TestCase
     back = html_links_to_markdown(html)
     assert_equal "Look ![](data:image/png;base64,aGk=)", back
   end
+
+  test "trix_view_only renders readonly trix editor" do
+    creative = Creative.create!(user: users(:one), description: "<div>Example</div>")
+    html = trix_view_only(creative.effective_description(nil, false))
+    assert_includes html, "<trix-editor"
+    assert_includes html, "readonly"
+  end
 end

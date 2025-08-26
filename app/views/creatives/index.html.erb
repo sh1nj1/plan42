@@ -49,7 +49,7 @@
 <% if @parent_creative %>
   <div class="creative-row" id="creative-markdown-block">
     <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
-      <%= @parent_creative.effective_description %>
+      <%= trix_view_only(@parent_creative.effective_description(nil, false)) %>
     </h1>
     <div>
       <h1 style="display: flex; align-items: center; gap: 1em;">
