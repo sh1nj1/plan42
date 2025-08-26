@@ -82,6 +82,13 @@
     align-items: center;
 }
 
+.creative-row-content {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
 .creative-action-btn {
     margin-left: 0px;
     font-size: 16px;
@@ -189,8 +196,8 @@
 }
 
 .creative-row {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
 }
 
@@ -213,16 +220,22 @@
     font-size: 1.4em;
 }
 
-.creative-row-start h1 {
+.creative-row-content h1 {
     font-size: 1.3em;
 }
 
-.creative-row-start h2 {
+.creative-row-content h2 {
     font-size: 1.2em;
 }
 
-.creative-row-start h3 {
+.creative-row-content h3 {
     font-size: 1.1em;
+}
+
+.creative-row-content pre,
+.creative-row-content img {
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .indent1,

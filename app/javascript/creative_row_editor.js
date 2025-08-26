@@ -54,8 +54,8 @@ if (!window.creativeRowEditorInitialized) {
       </button>
       <div class="creative-divider" style="width: 6px;"></div>
     </div>
-    <a class="unstyled-link" href="/creatives/${data.id}">${data.description || ''}</a>
   </div>
+  <div class="creative-row-content"><a class="unstyled-link" href="/creatives/${data.id}">${data.description || ''}</a></div>
   <div class="creative-row-end"><span class="creative-progress-incomplete">0%</span></div>`;
       tree.insertBefore(row, tree.firstChild);
       attachButtons();
