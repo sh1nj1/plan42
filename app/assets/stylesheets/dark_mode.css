@@ -17,6 +17,7 @@
   --hover-brightness: 90%;
   --color-badge-bg: red;
   --color-badge-text: white;
+  --max-width: 960px;
 }
 
 body.dark-mode {

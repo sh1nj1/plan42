@@ -38,6 +38,9 @@
     display: flex;
     align-items: center;
 }
+.creative-content {
+    max-width: min(80vw, calc(var(--max-width) - 120px));
+}
 
 /* make it as same as <li> tag */
 .creative-tree-bullet {

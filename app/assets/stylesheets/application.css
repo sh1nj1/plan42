@@ -38,7 +38,7 @@ body {
      flex-wrap: wrap;
      font-size: 0.875em;
      gap: 0.2rem;
-     max-width: 960px;
+     max-width: var(--max-width);
      margin: 0 auto;
      padding: 1rem;
      background: var(--color-nav-bg);
@@ -132,7 +132,7 @@ input[type="password"] {
 }
 
 main {
-    max-width: 960px;
+    max-width: var(--max-width);
     margin: 0rem auto;
     padding: 0 1rem;
     background: var(--color-section-bg);

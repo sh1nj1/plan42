@@ -167,7 +167,9 @@ module CreativesHelper
             expanded: expanded
           )) do
             renderer.call do
-              link_to(creative.effective_description(params[:tags]&.first), creative, class: "unstyled-link")
+              content_tag(:div, class: "creative-content") do
+                link_to(creative.effective_description(params[:tags]&.first), creative, class: "unstyled-link")
+              end
             end
           end + render_next_block.call(level + 1)
         end
