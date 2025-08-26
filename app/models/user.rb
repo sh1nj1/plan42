@@ -12,6 +12,7 @@ class User < ApplicationRecord
   attribute :display_level, :integer, default: DEFAULT_DISPLAY_LEVEL
   attribute :completion_mark, :string, default: ""
   attribute :theme, :string
+  attribute :calendar_id, :string
   attribute :name, :string
   attribute :notifications_enabled, :boolean
 

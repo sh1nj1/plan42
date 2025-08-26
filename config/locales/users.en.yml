@@ -31,6 +31,7 @@ en:
     display_level: "Max Display Level"
     completion_mark: "Completion Mark"
     theme: "Theme"
+    calendar_id: "Calendar ID"
     notifications_enabled: "Enable notifications"
     profile_updated: "Profile updated successfully."
     avatar_updated: "Avatar updated successfully."
