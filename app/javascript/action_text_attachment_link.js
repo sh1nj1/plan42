@@ -1,5 +1,3 @@
-
-
 if (!window.isTrixAttachmentDownloadEnabled) {
   window.isTrixAttachmentDownloadEnabled = true;
 
@@ -8,6 +6,9 @@ if (!window.isTrixAttachmentDownloadEnabled) {
     document.addEventListener('click', function (e) {
       const element = e.target.closest('action-text-attachment');
       if (!element) return;
+
+      // Skip attachments inside editors so they can be edited and saved
+      if (element.closest('trix-editor')) return;
 
       const contentType = element.getAttribute('content-type') || '';
       if (contentType.startsWith('image/')) return;
