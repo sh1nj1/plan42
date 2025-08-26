@@ -48,27 +48,29 @@
 
 <% if @parent_creative %>
   <div class="creative-row" id="creative-markdown-block">
-    <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
-      <%= @parent_creative.effective_description %>
-    </h1>
-    <div>
-      <h1 style="display: flex; align-items: center; gap: 1em;">
-        <%= render_creative_progress(@parent_creative) %>
+    <div class="creative-row-start">
+      <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
+        <%= @parent_creative.effective_description %>
       </h1>
     </div>
+    <div class="creative-row-content"></div>
+    <%= render_creative_progress(@parent_creative) %>
   </div>
 <% else %>
   <div class="creative-row" id="creative-markdown-block">
-    <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
-      <span>
-        <% if params[:tags].present? %>
-          <%= render_tags(params[:tags]&.map { |tag_id| Label.find(tag_id) }, 'unstyled-link') %>
-        <% else %>
-          <%= t('.creatives') %>
-        <% end %>
-      </span>
-    </h1>
-    <div>
+    <div class="creative-row-start">
+      <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
+        <span>
+          <% if params[:tags].present? %>
+            <%= render_tags(params[:tags]&.map { |tag_id| Label.find(tag_id) }, 'unstyled-link') %>
+          <% else %>
+            <%= t('.creatives') %>
+          <% end %>
+        </span>
+      </h1>
+    </div>
+    <div class="creative-row-content"></div>
+    <div class="creative-row-end">
       <h1 style="display: flex; align-items: center; gap: 1em;">
         <% unless @overall_progress.nil? %>
           <%= render_progress_value(@overall_progress) %>

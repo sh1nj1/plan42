@@ -189,9 +189,23 @@
 }
 
 .creative-row {
-    display: flex;
-    justify-content: space-between;
+    /* Grid layout: start | content | end */
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
+    column-gap: 0;
+}
+
+.creative-row-content {
+    /* Allow content to shrink without overflow */
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.creative-row-content img {
+    max-width: 100%;
+    height: auto;
+    display: block;
 }
 
 .creative-row.selected {
