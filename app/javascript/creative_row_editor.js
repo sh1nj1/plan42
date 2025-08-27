@@ -17,6 +17,7 @@ if (!window.creativeRowEditorInitialized) {
     const deleteBtn = document.getElementById('inline-delete');
     const deleteWithChildrenBtn = document.getElementById('inline-delete-with-children');
     const closeBtn = document.getElementById('inline-close');
+    const parentSuggestions = document.getElementById('parent-suggestions');
 
     const methodInput = document.getElementById('inline-method');
     const parentInput = document.getElementById('inline-parent-id');
@@ -116,6 +117,16 @@ if (!window.creativeRowEditorInitialized) {
             }
             const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
             if (parentTree) refreshRow(parentTree);
+            if (data.parent_suggestions && data.parent_suggestions.length && parentSuggestions) {
+              parentSuggestions.innerHTML = '';
+              data.parent_suggestions.forEach(function(s) {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.textContent = s.path;
+                parentSuggestions.appendChild(opt);
+              });
+              parentSuggestions.style.display = 'block';
+            }
           } else if (method === 'PATCH') {
             if (tree) refreshRow(tree);
           }
@@ -406,6 +417,10 @@ if (!window.creativeRowEditorInitialized) {
       progressValue.textContent = 0;
       pendingSave = false;
       editor.focus();
+      if (parentSuggestions) {
+        parentSuggestions.style.display = 'none';
+        parentSuggestions.innerHTML = '';
+      }
     }
 
     function scheduleSave() {
@@ -468,6 +483,14 @@ if (!window.creativeRowEditorInitialized) {
         move(1);
       }
     });
+
+    if (parentSuggestions) {
+      parentSuggestions.addEventListener('change', function() {
+        if (!this.value) return;
+        parentInput.value = this.value;
+        saveForm().then(function() { window.location.reload(); });
+      });
+    }
 
     if (closeBtn) {
       closeBtn.addEventListener('click', hideCurrent);
