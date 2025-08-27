@@ -43,6 +43,7 @@ env:
     - RAILS_MASTER_KEY
     - DATABASE_URL
     - PORT
+    - GEMINI_API_KEY
   clear:
     # Run the Solid Queue Supervisor inside the web server's Puma process to do jobs.
     # When you start using multiple servers, you should split out job processing to a dedicated machine.
