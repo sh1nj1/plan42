@@ -16,6 +16,11 @@ class User < ApplicationRecord
   attribute :name, :string
   attribute :notifications_enabled, :boolean
 
+  attribute :google_uid, :string
+  attribute :google_access_token, :string
+  attribute :google_refresh_token, :string
+  attribute :google_token_expires_at, :datetime
+
   normalizes :email, with: ->(e) { e.strip.downcase }
 
   validates :email, presence: true, uniqueness: true,

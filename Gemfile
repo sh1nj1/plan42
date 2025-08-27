@@ -47,6 +47,7 @@ gem "closure_tree"
 gem "fcm"
 gem "google-apis-fcm_v1"
 gem "google-apis-calendar_v3"
+gem "googleauth"
 
 # Google OAuth
 gem "omniauth-google-oauth2"
