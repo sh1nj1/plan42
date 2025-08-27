@@ -16,6 +16,12 @@ class GoogleAuthController < ApplicationController
       user.avatar_url = auth.info.image
     end
 
+    # for personal google service (like google calendar)
+    user.google_uid = auth.uid
+    user.google_access_token = auth.credentials.token
+    user.google_refresh_token = auth.credentials.refresh_token || user.google_refresh_token
+    user.google_token_expires_at = Time.at(auth.credentials.expires_at) if auth.credentials.expires_at
+
     user.save! if user.new_record? || user.changed?
 
     start_new_session_for(user)
