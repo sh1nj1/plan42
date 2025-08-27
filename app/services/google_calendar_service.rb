@@ -23,7 +23,8 @@ class GoogleCalendarService
     recurrence: nil,
     attendees: nil,
     reminders: nil,
-    all_day: false
+    all_day: false,
+    creative: nil
   )
     event_args = { summary: summary, description: description }
 
@@ -74,6 +75,7 @@ class GoogleCalendarService
     result = @service.insert_event(calendar_id, event)
     CalendarEvent.create!(
       user: @user,
+      creative: creative,
       google_event_id: result.id,
       summary: result.summary,
       start_time: result.start.date_time || Time.zone.parse(result.start.date),
