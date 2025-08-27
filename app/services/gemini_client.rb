@@ -13,6 +13,7 @@ class GeminiClient
     lines = categories.map { |c| "#{c[:id]}, \"#{c[:path]}\"" }.join("\n")
     prompt = "#{lines}\n\nGiven the above categories (id, path), which ids are the best parents for \"#{description}\"? " \
              "Reply with up to 5 ids separated by commas in descending order of relevance."
+    Rails.logger.info("### prompt=#{prompt}")
     uri = URI("#{GEMINI_URL}?key=#{@api_key}")
     body = { contents: [ { role: "user", parts: [ { text: prompt } ] } ] }
     response = Net::HTTP.post(uri, body.to_json, "Content-Type" => "application/json")

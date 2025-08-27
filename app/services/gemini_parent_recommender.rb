@@ -16,8 +16,9 @@ class GeminiParentRecommender
     categories = categories.uniq
     paths = {}
     categories.each do |c|
-      path = (c.ancestors + [ c ]).map { |node| node.rich_text_description&.to_plain_text }.join(" > ")
-      paths[c.id] = path
+      path_sequences = c.ancestors.reverse + [c]
+      path = path_sequences.map { |node| node.rich_text_description&.to_plain_text }.join(" > ")
+      paths[path_sequences.last.id] = path unless path_sequences.empty?
     end
     ids = @client.recommend_parent_ids(paths.map { |id, path| { id: id, path: path } },
                                        creative.rich_text_description&.to_plain_text.to_s)
