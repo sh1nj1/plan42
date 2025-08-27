@@ -11,6 +11,7 @@ class PlansController < ApplicationController
                  .where("target_date >= ? AND created_at <= ?", start_date, end_date)
                  .order(:created_at)
       @calendar_events = CalendarEvent.where(user: Current.user)
+                               .includes(:creative)
                                .where("DATE(start_time) <= ? AND DATE(end_time) >= ?", end_date, start_date)
                                .order(:start_time)
     respond_to do |format|
@@ -86,8 +87,8 @@ class PlansController < ApplicationController
       name: event.summary.presence || I18n.l(event.start_time.to_date),
       created_at: event.start_time.to_date,
       target_date: event.end_time.to_date,
-      progress: 1,
-      path: event.html_link,
+      progress: event.creative&.progress || 0,
+      path: event.creative ? creative_path(event.creative) : event.html_link,
       deletable: false
     }
   end

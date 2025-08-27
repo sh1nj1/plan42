@@ -127,14 +127,15 @@ class CommentsController < ApplicationController
     summary = memo.presence || base_summary&.to_plain_text
     calendar_id = comment.user&.calendar_id.presence || "primary"
 
-    event =GoogleCalendarService.new(user: Current.user).create_event(
+    event = GoogleCalendarService.new(user: Current.user).create_event(
       calendar_id: calendar_id,
       start_time: start_time,
       end_time: end_time,
       summary: summary,
       description: creative_url(@creative, comment_id: comment.id),
       timezone: timezone.tzinfo.name,
-      all_day: time_str.nil?
+      all_day: time_str.nil?,
+      creative: @creative
     )
     "event created: #{event.html_link}"
   rescue StandardError => e

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_08_28_000000) do
+ActiveRecord::Schema[8.0].define(version: 2025_08_28_060000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -56,10 +56,12 @@ ActiveRecord::Schema[8.0].define(version: 2025_08_28_000000) do
     t.datetime "start_time", null: false
     t.datetime "end_time", null: false
     t.string "html_link"
+    t.integer "creative_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["google_event_id"], name: "index_calendar_events_on_google_event_id", unique: true
     t.index ["user_id"], name: "index_calendar_events_on_user_id"
+    t.index ["creative_id"], name: "index_calendar_events_on_creative_id"
   end
 
   create_table "comment_read_pointers", force: :cascade do |t|
@@ -380,6 +382,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_08_28_000000) do
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "calendar_events", "users"
+  add_foreign_key "calendar_events", "creatives"
   add_foreign_key "comment_read_pointers", "creatives"
   add_foreign_key "comment_read_pointers", "users"
   add_foreign_key "comments", "creatives"
