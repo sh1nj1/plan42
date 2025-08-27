@@ -94,7 +94,7 @@ class GoogleCalendarService
   end
 
   def create_app_calendar
-    calendar = @service.insert_calendar(Google::Apis::CalendarV3::Calendar.new(summary: "Collavre"))
+    calendar = @service.insert_calendar(Google::Apis::CalendarV3::Calendar.new(summary: @service.client_options.application_name))
     # save calendar id to user profile
     @user.update(calendar_id: calendar.id)
     calendar.id

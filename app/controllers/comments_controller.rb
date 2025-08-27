@@ -100,25 +100,29 @@ class CommentsController < ApplicationController
 
     # Generalize: skip characters until first space; args are whatever follows
     args = content.sub(/\A\S+/, "").strip
-    match = args.match(/\A(\d{4}-\d{2}-\d{2})(?:@(\d{2}:\d{2}))?(?:\s+(.*))?\z/)
+    # Support: 'YYYY-MM-DD@HH:MM memo', 'YYYY-MM-DD memo', or '@HH:MM memo' (date defaults to today)
+    match = args.match(/\A(?:(\d{4}-\d{2}-\d{2}))?(?:@(\d{2}:\d{2}))?(?:\s+(.*))?\z/)
 
     Rails.logger.debug("### Calendar command: #{match}, #{args}")
-    return unless match
+    return unless match && (match[1].present? || match[2].present?)
 
     date_str = match[1]
     time_str = match[2]
     memo = match[3]
 
-    Rails.logger.debug("### Calendar command: #{date_str}, #{time_str}, #{memo}")
+    # TODO: use user's timezone (Time.zone == UTC)
+    timezone = Time.zone
+    Rails.logger.debug("### Calendar command: #{timezone.tzinfo.name} #{date_str}, #{time_str}, #{memo}")
     if time_str
-      start_time = Time.zone.parse("#{date_str} #{time_str}")
+      date_for_time = date_str.presence || timezone.today.to_s
+      start_time = timezone.parse("#{date_for_time} #{time_str}")
       end_time = start_time
     else
-      start_time = Date.parse(date_str)
+      # All-day: date is required; if somehow missing, default to today
+      start_time = Date.parse(date_str.presence || timezone.today.to_s)
       end_time = start_time
     end
 
-    Rails.logger.debug("### Calendar command 2: #{start_time}, #{end_time}")
     base_summary = comment.creative.effective_description(false, false)
     summary = memo.presence || base_summary&.to_plain_text
     calendar_id = comment.user&.calendar_id.presence || "primary"
@@ -129,9 +133,9 @@ class CommentsController < ApplicationController
       end_time: end_time,
       summary: summary,
       description: creative_url(@creative, comment_id: comment.id),
+      timezone: timezone.tzinfo.name,
       all_day: time_str.nil?
     )
-    Rails.logger.debug("### Calendar command 4: #{calendar_id}, #{event.html_link}")
     "event created: #{event.html_link}"
   rescue StandardError => e
     Rails.logger.error("Calendar command failed: #{e.message}")
