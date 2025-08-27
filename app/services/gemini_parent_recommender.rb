@@ -5,10 +5,13 @@ class GeminiParentRecommender
 
   def recommend(creative)
     user = creative.user
-    categories = Creative.where(user: user).joins(:children).distinct
+    categories = Creative
+                   .joins(:children)
+                   .distinct
+                   .select { |c| c.has_permission?(user, :write) }
     paths = {}
     categories.each do |c|
-      path = (c.ancestors.where(user: user) + [ c ]).map(&:description).join(" > ")
+      path = (c.ancestors + [ c ]).map { |node| node.rich_text_description&.to_plain_text }.join(" > ")
       paths[c.id] = path
     end
     ids = @client.recommend_parent_ids(paths.map { |id, path| { id: id, path: path } },
