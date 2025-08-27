@@ -18,6 +18,7 @@ if (!window.creativeRowEditorInitialized) {
     const deleteWithChildrenBtn = document.getElementById('inline-delete-with-children');
     const closeBtn = document.getElementById('inline-close');
     const parentSuggestions = document.getElementById('parent-suggestions');
+    const parentSuggestBtn = document.getElementById('inline-recommend-parent');
 
     const methodInput = document.getElementById('inline-method');
     const parentInput = document.getElementById('inline-parent-id');
@@ -117,16 +118,6 @@ if (!window.creativeRowEditorInitialized) {
             }
             const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
             if (parentTree) refreshRow(parentTree);
-            if (data.parent_suggestions && data.parent_suggestions.length && parentSuggestions) {
-              parentSuggestions.innerHTML = '';
-              data.parent_suggestions.forEach(function(s) {
-                const opt = document.createElement('option');
-                opt.value = s.id;
-                opt.textContent = s.path;
-                parentSuggestions.appendChild(opt);
-              });
-              parentSuggestions.style.display = 'block';
-            }
           } else if (method === 'PATCH') {
             if (tree) refreshRow(tree);
           }
@@ -483,6 +474,29 @@ if (!window.creativeRowEditorInitialized) {
         move(1);
       }
     });
+
+    if (parentSuggestBtn && parentSuggestions) {
+      parentSuggestBtn.addEventListener('click', function() {
+        saveForm().then(function() {
+          const id = form.dataset.creativeId;
+          if (!id) return;
+          window.creativesApi.parentSuggestions(id).then(function(data) {
+            parentSuggestions.innerHTML = '';
+            if (data && data.length) {
+              data.forEach(function(s) {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.textContent = s.path;
+                parentSuggestions.appendChild(opt);
+              });
+              parentSuggestions.style.display = 'block';
+            } else {
+              parentSuggestions.style.display = 'none';
+            }
+          });
+        });
+      });
+    }
 
     if (parentSuggestions) {
       parentSuggestions.addEventListener('change', function() {

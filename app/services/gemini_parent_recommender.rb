@@ -9,6 +9,11 @@ class GeminiParentRecommender
                    .joins(:children)
                    .distinct
                    .select { |c| c.has_permission?(user, :write) }
+    parent = creative.parent
+    if parent&.has_permission?(user, :write)
+      categories << parent
+    end
+    categories = categories.uniq
     paths = {}
     categories.each do |c|
       path = (c.ancestors + [ c ]).map { |node| node.rich_text_description&.to_plain_text }.join(" > ")
