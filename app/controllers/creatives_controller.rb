@@ -120,7 +120,11 @@ class CreativesController < ApplicationController
           @creative.tags.create(label_id: tag_id)
         end
       end
-      render json: { id: @creative.id }
+      suggestions = []
+      if @creative.parent_id.nil?
+        suggestions = GeminiParentRecommender.new.recommend(@creative)
+      end
+      render json: { id: @creative.id, parent_suggestions: suggestions }
     else
       render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity
     end
