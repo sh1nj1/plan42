@@ -71,7 +71,16 @@ class GoogleCalendarService
       @user.calendar_id ||= create_app_calendar
       calendar_id = @user.calendar_id
     end
-    @service.insert_event(calendar_id, event)
+    result = @service.insert_event(calendar_id, event)
+    CalendarEvent.create!(
+      user: @user,
+      google_event_id: result.id,
+      summary: result.summary,
+      start_time: result.start.date_time || Time.zone.parse(result.start.date),
+      end_time: result.end.date_time || Time.zone.parse(result.end.date),
+      html_link: result.html_link
+    )
+    result
   rescue Google::Apis::ClientError => e
     # Surface helpful error info to aid debugging 400 errors
     Rails.logger.error("Google Calendar insert_event 4xx: #{e.class} #{e.status_code} - #{e.message} body=#{e.body}")
