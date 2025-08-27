@@ -16,7 +16,7 @@ class GeminiParentRecommender
     categories = categories.uniq
     paths = {}
     categories.each do |c|
-      path_sequences = c.ancestors.reverse + [c]
+      path_sequences = c.ancestors.reverse + [ c ]
       path = path_sequences.map { |node| node.rich_text_description&.to_plain_text }.join(" > ")
       paths[path_sequences.last.id] = path unless path_sequences.empty?
     end
