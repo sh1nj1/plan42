@@ -24,6 +24,13 @@ class GoogleAuthController < ApplicationController
 
     user.save! if user.new_record? || user.changed?
 
+    # Ensure app calendar exists if the granted scope allows creating an app calendar
+    begin
+      GoogleCalendarService.new(user: user).ensure_app_calendar!
+    rescue => e
+      Rails.logger.error("Post-login calendar setup failed: #{e.message}")
+    end
+
     start_new_session_for(user)
     redirect_to after_authentication_url
   end

@@ -25,3 +25,10 @@ Run `bin/rails credentials:edit` to add them.
 On the sign in or sign up pages click **Sign in with Google**. If an account
 with the returned email does not exist, a new user is created automatically with
 the email and name from Google.
+
+## Scopes
+
+The default scope is `https://www.googleapis.com/auth/userinfo.email`. 
+To request access to Google Calendar,
+* add `https://www.googleapis.com/auth/calendar` (but this needs verification for production).
+* or add `https://www.googleapis.com/auth/calendar.app.created` without verification. (this app will create app calendar)

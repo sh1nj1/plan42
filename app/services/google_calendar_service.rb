@@ -67,8 +67,10 @@ class GoogleCalendarService
 
     event = Google::Apis::CalendarV3::Event.new(**event_args)
 
-    Rails.logger.info("### Creating Google Calendar event: #{event.to_json}")
-
+    if @service.authorization.scope.include?(Google::Apis::CalendarV3::AUTH_CALENDAR_APP_CREATED)
+      @user.calendar_id ||= create_app_calendar
+      calendar_id = @user.calendar_id
+    end
     @service.insert_event(calendar_id, event)
   rescue Google::Apis::ClientError => e
     # Surface helpful error info to aid debugging 400 errors
@@ -86,9 +88,37 @@ class GoogleCalendarService
     Google::Auth::UserRefreshCredentials.new(
       client_id:     Rails.application.credentials.dig(:google, :client_id),
       client_secret: Rails.application.credentials.dig(:google, :client_secret),
-      scope:         [ Google::Apis::CalendarV3::AUTH_CALENDAR ],
+      scope:         [ Google::Apis::CalendarV3::AUTH_CALENDAR_APP_CREATED ],
       refresh_token: @user.google_refresh_token
     ).tap(&:fetch_access_token!)
   end
-end
 
+  def create_app_calendar
+    calendar = @service.insert_calendar(Google::Apis::CalendarV3::Calendar.new(summary: "Collavre"))
+    # save calendar id to user profile
+    @user.update(calendar_id: calendar.id)
+    calendar.id
+  rescue Google::Apis::ClientError => e
+    # Surface helpful error info to aid debugging 400 errors
+    Rails.logger.error("Google Calendar create_calendar 4xx: #{e.class} #{e.status_code} - #{e.message} body=#{e.body}")
+    raise
+  end
+
+  public
+
+  # Ensure user's app calendar exists if the token has calendar.app.created scope.
+  # Returns the calendar_id if created/found, otherwise nil.
+  def ensure_app_calendar!
+    if @service.authorization.scope.include?(Google::Apis::CalendarV3::AUTH_CALENDAR_APP_CREATED)
+      if @user.calendar_id.nil?
+        @user.calendar_id = create_app_calendar
+      else
+        calendar = @service.get_calendar(@user.calendar_id)
+        if calendar.id != @user.calendar_id
+          @user.calendar_id = create_app_calendar
+        end
+      end
+    end
+    @user.calendar_id
+  end
+end
