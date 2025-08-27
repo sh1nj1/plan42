@@ -2,7 +2,7 @@ class CreativesController < ApplicationController
   # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
   # Removed unauthenticated access to index and show actions
   # allow_unauthenticated_access only: %i[ index show ]
-  before_action :set_creative, only: %i[ show edit update destroy request_permission ]
+  before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions ]
 
   def index
     # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
@@ -120,14 +120,15 @@ class CreativesController < ApplicationController
           @creative.tags.create(label_id: tag_id)
         end
       end
-      suggestions = []
-      if @creative.parent_id.nil?
-        suggestions = GeminiParentRecommender.new.recommend(@creative)
-      end
-      render json: { id: @creative.id, parent_suggestions: suggestions }
+      render json: { id: @creative.id }
     else
       render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity
     end
+  end
+
+  def parent_suggestions
+    suggestions = GeminiParentRecommender.new.recommend(@creative)
+    render json: suggestions
   end
 
   def edit

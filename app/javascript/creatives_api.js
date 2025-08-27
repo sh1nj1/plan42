@@ -3,6 +3,9 @@ if (!window.creativesApi) {
     get(id) {
       return fetch(`/creatives/${id}.json`).then(r => r.json());
     },
+    parentSuggestions(id) {
+      return fetch(`/creatives/${id}/parent_suggestions.json`).then(r => r.json());
+    },
     loadChildren(url) {
       return fetch(url).then(r => r.text());
     },
