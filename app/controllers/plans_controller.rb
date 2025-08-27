@@ -10,12 +10,17 @@ class PlansController < ApplicationController
     @plans = Plan.where(owner: Current.user).or(Plan.where(owner: nil))
                  .where("target_date >= ? AND created_at <= ?", start_date, end_date)
                  .order(:created_at)
+      @calendar_events = CalendarEvent.where(user: Current.user)
+                               .where("DATE(start_time) <= ? AND DATE(end_time) >= ?", end_date, start_date)
+                               .order(:start_time)
     respond_to do |format|
       format.html do
-        render html: render_to_string(PlansTimelineComponent.new(plans: @plans), layout: false)
+        render html: render_to_string(PlansTimelineComponent.new(plans: @plans, calendar_events: @calendar_events), layout: false)
       end
       format.json do
-        render json: @plans.map { |p| plan_json(p) }
+        plan_jsons = @plans.map { |p| plan_json(p) }
+          event_jsons = @calendar_events.map { |e| calendar_json(e) }
+          render json: plan_jsons + event_jsons
       end
     end
   end
@@ -74,6 +79,18 @@ class PlansController < ApplicationController
     }
   end
 
+
+  def calendar_json(event)
+    {
+      id: "calendar_event_#{event.id}",
+      name: event.summary.presence || I18n.l(event.start_time.to_date),
+      created_at: event.start_time.to_date,
+      target_date: event.end_time.to_date,
+      progress: 1,
+      path: event.html_link,
+      deletable: false
+    }
+  end
   def plan_creatives_path(plan)
     if params[:id].present?
       creative_path(params[:id], tags: [ plan.id ])
