@@ -28,4 +28,10 @@ module ApplicationHelper
       "<div>(missing svg: #{name})</div>"
     end
   end
+
+  def linkify_urls(text)
+    ERB::Util.html_escape(text.to_s).gsub(%r{https?://[^\s]+}) do |url|
+      link_to(url, url, target: "_blank", rel: "noopener")
+    end.html_safe
+  end
 end
