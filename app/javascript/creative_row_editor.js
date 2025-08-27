@@ -502,7 +502,10 @@ if (!window.creativeRowEditorInitialized) {
       parentSuggestions.addEventListener('change', function() {
         if (!this.value) return;
         parentInput.value = this.value;
-        saveForm().then(function() { window.location.reload(); });
+        const targetId = this.value;
+        saveForm().then(function() {
+          window.location.href = `/creatives/${targetId}`;
+        });
       });
     }
 

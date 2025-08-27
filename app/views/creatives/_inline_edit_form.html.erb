@@ -15,8 +15,6 @@
       <input type="range" id="inline-creative-progress" name="creative[progress]" min="0" max="1" step="0.01">
       <span id="inline-progress-value">0</span>
     </div>
-    <button type="button" id="inline-recommend-parent" class="creative-action-btn" style="margin-top:0.5em;">카테고리 추천</button>
-    <select id="parent-suggestions" size="5" style="display:none;margin-top:0.5em;"></select>
     <div style="margin-top:0.5em;">
       <button type="button" id="inline-move-up" class="creative-action-btn">▲</button>
       <button type="button" id="inline-move-down" class="creative-action-btn">▼</button>
@@ -26,5 +24,7 @@
       <button type="button" id="inline-delete-with-children" class="creative-action-btn danger-link" title="<%= t('creatives.index.delete_with_children') %>" data-confirm="<%= t('creatives.index.are_you_sure_delete_with_children') %>">🗑+</button>
       <button type="button" id="inline-close" class="creative-action-btn">✖</button>
     </div>
+    <button type="button" id="inline-recommend-parent" class="creative-action-btn" style="margin-top:0.5em;">카테고리 추천</button>
+    <select id="parent-suggestions" size="5" style="display:none;margin-top:0.5em;"></select>
   </form>
 </div>
