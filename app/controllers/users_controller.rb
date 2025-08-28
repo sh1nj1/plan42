@@ -100,7 +100,7 @@ class UsersController < ApplicationController
   end
 
   def profile_params
-    params.require(:user).permit(:avatar, :avatar_url, :display_level, :completion_mark, :theme, :name, :notifications_enabled, :calendar_id)
+    params.require(:user).permit(:avatar, :avatar_url, :display_level, :completion_mark, :theme, :name, :notifications_enabled, :calendar_id, :timezone)
   end
 
   def notification_settings_params

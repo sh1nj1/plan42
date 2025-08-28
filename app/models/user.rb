@@ -15,6 +15,7 @@ class User < ApplicationRecord
   attribute :calendar_id, :string
   attribute :name, :string
   attribute :notifications_enabled, :boolean
+  attribute :timezone, :string
 
   attribute :google_uid, :string
   attribute :google_access_token, :string
@@ -28,6 +29,9 @@ class User < ApplicationRecord
   validates :name, presence: true
   validates :display_level, numericality: { only_integer: true, greater_than: 0 }
   validates :theme, inclusion: { in: [ "", "light", "dark" ] }, allow_nil: true
+  validates :timezone,
+            inclusion: { in: ActiveSupport::TimeZone.all.map { |z| z.tzinfo.identifier } },
+            allow_nil: true
 
   generates_token_for :email_verification, expires_in: 1.day do
     email

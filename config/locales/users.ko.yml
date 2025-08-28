@@ -33,6 +33,7 @@ ko:
     theme: "테마"
     calendar_id: "캘린더 ID"
     notifications_enabled: "알림 사용"
+    timezone: "시간대"
     profile_updated: "프로파일이 업데이트되었습니다."
     avatar_updated: "아바타가 변경되었습니다."
     password_updated: "비밀번호가 성공적으로 변경되었습니다."
