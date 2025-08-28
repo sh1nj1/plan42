@@ -1,19 +1,21 @@
 if (!window.creativesDragDropInitialized) {
   window.creativesDragDropInitialized = true;
 
-  console.log('creatives_drag_drop.js loaded');
-
-  const rightZoneRatio = 0.2;
+  const childZoneRatio = 0.3;
+  const coordPrecision = 5;
   const draggableClassName = '.creative-tree';
   // Drag and Drop for Creative Tree
   let draggedCreativeId = null;
   let lastDragOverRow = null;
 
+  function relaxedCoord(value) {
+    return Math.round(value / coordPrecision) * coordPrecision;
+  }
+
   window.handleDragStart = function(event) {
     const row = event.target.closest(draggableClassName);
     draggedCreativeId = row ? row.id : '';
     event.dataTransfer.effectAllowed = 'move';
-    console.log('handleDragStart', draggedCreativeId);
   };
 
   window.handleDragOver = function(event) {
@@ -21,41 +23,37 @@ if (!window.creativesDragDropInitialized) {
     event.dataTransfer.dropEffect = 'move';
     const row = event.target.closest(draggableClassName);
     if (lastDragOverRow && lastDragOverRow !== row) {
-      lastDragOverRow.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-over-child');
-      const childIndicator = lastDragOverRow.querySelector('.child-drop-indicator');
-      if (childIndicator) childIndicator.remove();
+      lastDragOverRow.classList.remove(
+        'drag-over',
+        'drag-over-top',
+        'drag-over-bottom',
+        'drag-over-child',
+        'child-drop-indicator-active'
+      );
     }
     if (row) {
       const rect = row.getBoundingClientRect();
-      const rightZone = rect.left + rect.width * rightZoneRatio;
-      const midpoint = rect.top + rect.height / 2;
-      if (event.clientX > rightZone) {
-        // Child drop indication
-        row.classList.add('drag-over-child');
-        row.classList.remove('drag-over-top', 'drag-over-bottom');
-        if (!row.querySelector('.child-drop-indicator')) {
-          const indicator = document.createElement('span');
-          indicator.className = 'child-drop-indicator';
-          indicator.innerHTML = '↳';
-          indicator.style.marginLeft = '12px';
-          indicator.style.color = '#2196f3';
-          indicator.style.fontSize = '1.3em';
-          row.appendChild(indicator);
-        }
-      } else {
-        // Up/Down drop indication
-        row.classList.remove('drag-over-child');
+      const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
+      const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
+      const y = relaxedCoord(event.clientY);
+      if (y < topZone) {
+        // Insert before target
+        row.classList.add('drag-over-top');
+        row.classList.remove('drag-over-bottom', 'drag-over-child', 'child-drop-indicator-active');
         const childIndicator = row.querySelector('.child-drop-indicator');
         if (childIndicator) childIndicator.remove();
-        if (event.clientY < midpoint) {
-          row.classList.add('drag-over-top');
-          row.classList.remove('drag-over-bottom');
-        } else {
-          row.classList.add('drag-over-bottom');
-          row.classList.remove('drag-over-top');
-        }
+      } else if (y > bottomZone) {
+        // Insert after target
+        row.classList.add('drag-over-bottom');
+        row.classList.remove('drag-over-top', 'drag-over-child', 'child-drop-indicator-active');
+        const childIndicator = row.querySelector('.child-drop-indicator');
+        if (childIndicator) childIndicator.remove();
+      } else {
+          // Child drop indication
+          row.classList.add('drag-over-child', 'child-drop-indicator-active');
+          row.classList.remove('drag-over-top', 'drag-over-bottom');
       }
-      row.classList.add('drag-over');
+        row.classList.add('drag-over');
       lastDragOverRow = row;
     }
   };
@@ -64,22 +62,37 @@ if (!window.creativesDragDropInitialized) {
     event.preventDefault();
     const targetRow = event.target.closest(draggableClassName);
     const targetId = targetRow ? targetRow.id : '';
-    if (targetRow) targetRow.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-over-child');
-    if (lastDragOverRow) lastDragOverRow.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-over-child');
-    const childIndicator = targetRow ? targetRow.querySelector('.child-drop-indicator') : null;
-    if (childIndicator) childIndicator.remove();
+    if (targetRow) {
+      targetRow.classList.remove(
+        'drag-over',
+        'drag-over-top',
+        'drag-over-bottom',
+        'drag-over-child',
+        'child-drop-indicator-active'
+      );
+    }
+    if (lastDragOverRow) {
+      lastDragOverRow.classList.remove(
+        'drag-over',
+        'drag-over-top',
+        'drag-over-bottom',
+        'drag-over-child',
+        'child-drop-indicator-active'
+      );
+    }
     if (draggedCreativeId && targetId && draggedCreativeId !== targetId) {
       const draggedElem = document.getElementById(draggedCreativeId);
       const draggedChildren = document.getElementById(`creative-children-${draggedCreativeId.replace('creative-', '')}`);
       const targetElem = document.getElementById(targetId);
       const rect = targetElem.getBoundingClientRect();
-      const rightZone = rect.left + rect.width * rightZoneRatio;
-      const midpoint = rect.top + rect.height / 2;
+      const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
+      const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
+      const y = relaxedCoord(event.clientY);
       let direction = null;
       // Save original position
       const originalParent = draggedElem.parentNode;
       const originalNextSibling = draggedChildren ? draggedChildren.nextSibling : draggedElem.nextSibling;
-      if (event.clientX > rightZone) {
+      if (y >= topZone && y <= bottomZone) {
         // Append as child
         const targetNum = targetId.replace('creative-', '');
         let childrenContainer = document.getElementById(`creative-children-${targetNum}`);
@@ -92,7 +105,7 @@ if (!window.creativesDragDropInitialized) {
         childrenContainer.appendChild(draggedElem);
         if (draggedChildren) childrenContainer.appendChild(draggedChildren);
         direction = 'child';
-      } else if (event.clientY < midpoint) {
+      } else if (y < topZone) {
         // Insert before target
         targetElem.parentNode.insertBefore(draggedElem, targetElem);
         if (draggedChildren) targetElem.parentNode.insertBefore(draggedChildren, targetElem);
@@ -135,9 +148,13 @@ if (!window.creativesDragDropInitialized) {
   window.handleDragLeave = function(event) {
     const row = event.target.closest(draggableClassName);
     if (row) {
-      row.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-over-child');
-      const childIndicator = row.querySelector('.child-drop-indicator');
-      if (childIndicator) childIndicator.remove();
+      row.classList.remove(
+        'drag-over',
+        'drag-over-top',
+        'drag-over-bottom',
+        'drag-over-child',
+        'child-drop-indicator-active'
+      );
     }
   };
 
