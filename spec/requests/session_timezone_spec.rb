@@ -8,4 +8,11 @@ RSpec.describe 'Session timezone', type: :request do
     expect(response).to redirect_to(root_url)
     expect(user.reload.timezone).to eq('Asia/Tokyo')
   end
+
+  it 'allows clearing timezone from profile' do
+    post session_path, params: { email: user.email, password: 'pw' }
+    patch user_path(user), params: { user: { name: 'User', timezone: '' } }
+    expect(response).to redirect_to(user_url(user))
+    expect(user.reload.timezone).to be_nil
+  end
 end

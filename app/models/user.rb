@@ -23,6 +23,7 @@ class User < ApplicationRecord
   attribute :google_token_expires_at, :datetime
 
   normalizes :email, with: ->(e) { e.strip.downcase }
+  normalizes :timezone, with: ->(z) { z.presence }
 
   validates :email, presence: true, uniqueness: true,
                     format: { with: URI::MailTo::EMAIL_REGEXP }
