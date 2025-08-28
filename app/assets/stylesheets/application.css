@@ -118,6 +118,7 @@ input[type="text"],
 input[type="number"],
 input[type="url"],
 input[type="date"],
+select,
 textarea {
     background: var(--color-bg);
     color: var(--color-btn-text);
@@ -125,6 +126,11 @@ textarea {
     border-radius: 4px;
     border: 1px solid var(--color-border);
     font-size: 16px; /* Prevent iOS zoom on focus */
+}
+
+select option {
+    background: var(--color-bg);
+    color: var(--color-btn-text);
 }
 input[type="email"],
 input[type="password"] {
