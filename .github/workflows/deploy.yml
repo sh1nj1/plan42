@@ -35,4 +35,4 @@ jobs:
           bundler-cache: true
 
       - name: Deploy with Kamal
-        run: SERVER_VRERV1=${{ secrets.SERVER_VRERV1 }} ./bin/kamal deploy
+        run: GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} SERVER_VRERV1=${{ secrets.SERVER_VRERV1 }} ./bin/kamal deploy
