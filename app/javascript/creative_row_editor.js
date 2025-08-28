@@ -477,24 +477,38 @@ if (!window.creativeRowEditorInitialized) {
 
     if (parentSuggestBtn && parentSuggestions) {
       parentSuggestBtn.addEventListener('click', function() {
-        saveForm().then(function() {
-          const id = form.dataset.creativeId;
-          if (!id) return;
-          window.creativesApi.parentSuggestions(id).then(function(data) {
-            parentSuggestions.innerHTML = '';
-            if (data && data.length) {
-              data.forEach(function(s) {
-                const opt = document.createElement('option');
-                opt.value = s.id;
-                opt.textContent = s.path;
-                parentSuggestions.appendChild(opt);
-              });
-              parentSuggestions.style.display = 'block';
-            } else {
+        const originalLabel = parentSuggestBtn.textContent;
+        parentSuggestBtn.disabled = true;
+        parentSuggestBtn.textContent = `${originalLabel}...`;
+        parentSuggestions.innerHTML = '<option>...</option>';
+        parentSuggestions.style.display = 'block';
+
+        saveForm()
+          .then(function() {
+            const id = form.dataset.creativeId;
+            if (!id) {
               parentSuggestions.style.display = 'none';
+              return;
             }
+            return window.creativesApi.parentSuggestions(id).then(function(data) {
+              parentSuggestions.innerHTML = '';
+              if (data && data.length) {
+                data.forEach(function(s) {
+                  const opt = document.createElement('option');
+                  opt.value = s.id;
+                  opt.textContent = s.path;
+                  parentSuggestions.appendChild(opt);
+                });
+                parentSuggestions.style.display = 'block';
+              } else {
+                parentSuggestions.style.display = 'none';
+              }
+            });
+          })
+          .finally(function() {
+            parentSuggestBtn.textContent = originalLabel;
+            parentSuggestBtn.disabled = false;
           });
-        });
       });
     }
 
