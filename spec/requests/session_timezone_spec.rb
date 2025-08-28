@@ -15,4 +15,11 @@ RSpec.describe 'Session timezone', type: :request do
     expect(response).to redirect_to(user_url(user))
     expect(user.reload.timezone).to be_nil
   end
+
+  it 'accepts city names for timezone and stores canonical identifier' do
+    post session_path, params: { email: user.email, password: 'pw' }
+    patch user_path(user), params: { user: { name: 'User', timezone: 'Seoul' } }
+    expect(response).to redirect_to(user_url(user))
+    expect(user.reload.timezone).to eq('Asia/Seoul')
+  end
 end
