@@ -1,0 +1,36 @@
+name: Release Deploy Lock
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.KAMAL_SSH_PRIVATE_KEY }}" > ~/.ssh/id_vrerv1.pem
+          chmod 600 ~/.ssh/id_vrerv1.pem
+
+      - name: Write Rails master.key
+        run: |
+          mkdir -p config
+          echo "${{ secrets.RAILS_MASTER_KEY }}" > config/master.key
+
+      - name: Inject KAMAL_REGISTRY_PASSWORD into .kamal/secrets
+        run: |
+          sed -i.bak "s|KAMAL_REGISTRY_PASSWORD=.*|KAMAL_REGISTRY_PASSWORD=${{ secrets.KAMAL_REGISTRY_PASSWORD }}|" .kamal/secrets
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      - name: Deploy with Kamal
+        run: GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} SERVER_VRERV1=${{ secrets.SERVER_VRERV1 }} ./bin/kamal lock release
