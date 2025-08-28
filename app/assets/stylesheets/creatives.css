@@ -34,6 +34,21 @@
     align-items: center;
 }
 
+.creative-tree {
+    position: relative;
+}
+
+.creative-tree.child-drop-indicator-active::after {
+    content: '↳';
+    position: absolute;
+    top: 50%;
+    margin-left: 12px;
+    color: #2196f3;
+    font-size: 1.3em;
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
 .creative-tree-li {
     display: flex;
     align-items: center;
