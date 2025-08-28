@@ -3,7 +3,7 @@ if (!window.creativesDragDropInitialized) {
 
   console.log('creatives_drag_drop.js loaded');
 
-  const rightZoneRatio = 0.2;
+  const childZoneRatio = 0.3;
   const draggableClassName = '.creative-tree';
   // Drag and Drop for Creative Tree
   let draggedCreativeId = null;
@@ -27,9 +27,21 @@ if (!window.creativesDragDropInitialized) {
     }
     if (row) {
       const rect = row.getBoundingClientRect();
-      const rightZone = rect.left + rect.width * rightZoneRatio;
-      const midpoint = rect.top + rect.height / 2;
-      if (event.clientX > rightZone) {
+      const topZone = rect.top + rect.height * childZoneRatio;
+      const bottomZone = rect.bottom - rect.height * childZoneRatio;
+      if (event.clientY < topZone) {
+        // Insert before target
+        row.classList.add('drag-over-top');
+        row.classList.remove('drag-over-bottom', 'drag-over-child');
+        const childIndicator = row.querySelector('.child-drop-indicator');
+        if (childIndicator) childIndicator.remove();
+      } else if (event.clientY > bottomZone) {
+        // Insert after target
+        row.classList.add('drag-over-bottom');
+        row.classList.remove('drag-over-top', 'drag-over-child');
+        const childIndicator = row.querySelector('.child-drop-indicator');
+        if (childIndicator) childIndicator.remove();
+      } else {
         // Child drop indication
         row.classList.add('drag-over-child');
         row.classList.remove('drag-over-top', 'drag-over-bottom');
@@ -41,18 +53,6 @@ if (!window.creativesDragDropInitialized) {
           indicator.style.color = '#2196f3';
           indicator.style.fontSize = '1.3em';
           row.appendChild(indicator);
-        }
-      } else {
-        // Up/Down drop indication
-        row.classList.remove('drag-over-child');
-        const childIndicator = row.querySelector('.child-drop-indicator');
-        if (childIndicator) childIndicator.remove();
-        if (event.clientY < midpoint) {
-          row.classList.add('drag-over-top');
-          row.classList.remove('drag-over-bottom');
-        } else {
-          row.classList.add('drag-over-bottom');
-          row.classList.remove('drag-over-top');
         }
       }
       row.classList.add('drag-over');
@@ -73,13 +73,13 @@ if (!window.creativesDragDropInitialized) {
       const draggedChildren = document.getElementById(`creative-children-${draggedCreativeId.replace('creative-', '')}`);
       const targetElem = document.getElementById(targetId);
       const rect = targetElem.getBoundingClientRect();
-      const rightZone = rect.left + rect.width * rightZoneRatio;
-      const midpoint = rect.top + rect.height / 2;
+      const topZone = rect.top + rect.height * childZoneRatio;
+      const bottomZone = rect.bottom - rect.height * childZoneRatio;
       let direction = null;
       // Save original position
       const originalParent = draggedElem.parentNode;
       const originalNextSibling = draggedChildren ? draggedChildren.nextSibling : draggedElem.nextSibling;
-      if (event.clientX > rightZone) {
+      if (event.clientY >= topZone && event.clientY <= bottomZone) {
         // Append as child
         const targetNum = targetId.replace('creative-', '');
         let childrenContainer = document.getElementById(`creative-children-${targetNum}`);
@@ -92,7 +92,7 @@ if (!window.creativesDragDropInitialized) {
         childrenContainer.appendChild(draggedElem);
         if (draggedChildren) childrenContainer.appendChild(draggedChildren);
         direction = 'child';
-      } else if (event.clientY < midpoint) {
+      } else if (event.clientY < topZone) {
         // Insert before target
         targetElem.parentNode.insertBefore(draggedElem, targetElem);
         if (draggedChildren) targetElem.parentNode.insertBefore(draggedChildren, targetElem);
