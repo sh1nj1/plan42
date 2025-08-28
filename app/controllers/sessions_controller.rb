@@ -6,9 +6,12 @@ class SessionsController < ApplicationController
   end
 
   def create
-    if user = User.authenticate_by(params.permit(:email, :password))
+    credentials = params.permit(:email, :password)
+    if (user = User.authenticate_by(credentials))
       if user.email_verified?
         start_new_session_for user
+        tz = params[:timezone]
+        user.update(timezone: tz) if tz.present? && user.timezone != tz
         redirect_to after_authentication_url
       else
         redirect_to new_session_path, alert: I18n.t("users.sessions.new.email_not_verified")

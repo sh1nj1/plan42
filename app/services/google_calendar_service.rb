@@ -18,7 +18,7 @@ class GoogleCalendarService
     end_time:,
     summary:,
     description: nil,
-    timezone: "Asia/Seoul",
+    timezone: nil,
     location: nil,
     recurrence: nil,
     attendees: nil,
@@ -26,6 +26,7 @@ class GoogleCalendarService
     all_day: false,
     creative: nil
   )
+    timezone ||= @user.timezone || Time.zone.tzinfo.name
     event_args = { summary: summary, description: description }
 
     if all_day

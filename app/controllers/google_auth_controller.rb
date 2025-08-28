@@ -31,6 +31,9 @@ class GoogleAuthController < ApplicationController
       Rails.logger.error("Post-login calendar setup failed: #{e.message}")
     end
 
+    tz = request.env["omniauth.params"] && request.env["omniauth.params"]["timezone"]
+    user.update(timezone: tz) if tz.present? && user.timezone != tz
+
     start_new_session_for(user)
     redirect_to after_authentication_url
   end

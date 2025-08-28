@@ -4,6 +4,7 @@ class ApplicationController < ActionController::Base
   allow_browser versions: :modern
 
   around_action :switch_locale
+  around_action :set_time_zone
 
   def switch_locale(&action)
     locale = params[:locale] ||
@@ -16,5 +17,11 @@ class ApplicationController < ActionController::Base
 
   def extract_locale_from_accept_language_header
     request.env["HTTP_ACCEPT_LANGUAGE"]&.scan(/^[a-z]{2}/)&.first
+  end
+
+  def set_time_zone(&action)
+    resume_session
+    zone = Current.user&.timezone
+    zone.present? ? Time.use_zone(zone, &action) : action.call
   end
 end

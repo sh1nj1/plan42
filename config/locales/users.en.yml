@@ -33,6 +33,7 @@ en:
     theme: "Theme"
     calendar_id: "Calendar ID"
     notifications_enabled: "Enable notifications"
+    timezone: "Timezone"
     profile_updated: "Profile updated successfully."
     avatar_updated: "Avatar updated successfully."
     password_updated: "Password updated successfully."

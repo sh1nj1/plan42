@@ -47,6 +47,10 @@
     <%= f.check_box :notifications_enabled %>
     <%= f.label :notifications_enabled, t('users.notifications_enabled') %>
   </div>
+  <div>
+    <%= f.label :timezone, t('users.timezone') %>
+    <%= f.select :timezone, ActiveSupport::TimeZone.all.map { |tz| [tz.to_s, tz.tzinfo.name] } %>
+  </div>
   <%= f.submit t('users.update_profile') %>
 <% end %>
 
