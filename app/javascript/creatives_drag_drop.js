@@ -1,19 +1,21 @@
 if (!window.creativesDragDropInitialized) {
   window.creativesDragDropInitialized = true;
 
-  console.log('creatives_drag_drop.js loaded');
-
   const childZoneRatio = 0.3;
+  const coordPrecision = 5;
   const draggableClassName = '.creative-tree';
   // Drag and Drop for Creative Tree
   let draggedCreativeId = null;
   let lastDragOverRow = null;
 
+  function relaxedCoord(value) {
+    return Math.round(value / coordPrecision) * coordPrecision;
+  }
+
   window.handleDragStart = function(event) {
     const row = event.target.closest(draggableClassName);
     draggedCreativeId = row ? row.id : '';
     event.dataTransfer.effectAllowed = 'move';
-    console.log('handleDragStart', draggedCreativeId);
   };
 
   window.handleDragOver = function(event) {
@@ -27,15 +29,16 @@ if (!window.creativesDragDropInitialized) {
     }
     if (row) {
       const rect = row.getBoundingClientRect();
-      const topZone = rect.top + rect.height * childZoneRatio;
-      const bottomZone = rect.bottom - rect.height * childZoneRatio;
-      if (event.clientY < topZone) {
+      const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
+      const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
+      const y = relaxedCoord(event.clientY);
+      if (y < topZone) {
         // Insert before target
         row.classList.add('drag-over-top');
         row.classList.remove('drag-over-bottom', 'drag-over-child');
         const childIndicator = row.querySelector('.child-drop-indicator');
         if (childIndicator) childIndicator.remove();
-      } else if (event.clientY > bottomZone) {
+      } else if (y > bottomZone) {
         // Insert after target
         row.classList.add('drag-over-bottom');
         row.classList.remove('drag-over-top', 'drag-over-child');
@@ -73,13 +76,14 @@ if (!window.creativesDragDropInitialized) {
       const draggedChildren = document.getElementById(`creative-children-${draggedCreativeId.replace('creative-', '')}`);
       const targetElem = document.getElementById(targetId);
       const rect = targetElem.getBoundingClientRect();
-      const topZone = rect.top + rect.height * childZoneRatio;
-      const bottomZone = rect.bottom - rect.height * childZoneRatio;
+      const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
+      const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
+      const y = relaxedCoord(event.clientY);
       let direction = null;
       // Save original position
       const originalParent = draggedElem.parentNode;
       const originalNextSibling = draggedChildren ? draggedChildren.nextSibling : draggedElem.nextSibling;
-      if (event.clientY >= topZone && event.clientY <= bottomZone) {
+      if (y >= topZone && y <= bottomZone) {
         // Append as child
         const targetNum = targetId.replace('creative-', '');
         let childrenContainer = document.getElementById(`creative-children-${targetNum}`);
@@ -92,7 +96,7 @@ if (!window.creativesDragDropInitialized) {
         childrenContainer.appendChild(draggedElem);
         if (draggedChildren) childrenContainer.appendChild(draggedChildren);
         direction = 'child';
-      } else if (event.clientY < topZone) {
+      } else if (y < topZone) {
         // Insert before target
         targetElem.parentNode.insertBefore(draggedElem, targetElem);
         if (draggedChildren) targetElem.parentNode.insertBefore(draggedChildren, targetElem);
