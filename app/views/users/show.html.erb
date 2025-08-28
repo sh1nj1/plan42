@@ -49,7 +49,7 @@
   </div>
   <div>
     <%= f.label :timezone, t('users.timezone') %>
-    <%= f.time_zone_select :timezone %>
+    <%= f.select :timezone, ActiveSupport::TimeZone.all.map { |tz| [tz.to_s, tz.tzinfo.name] } %>
   </div>
   <%= f.submit t('users.update_profile') %>
 <% end %>

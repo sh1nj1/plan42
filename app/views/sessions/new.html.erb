@@ -14,7 +14,7 @@
 <%= link_to t("users.new.sign_up"), new_user_path, class: "sign-up-link" %>
 
 <script>
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('turbo:load', () => {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     document.querySelectorAll('input[name="timezone"]').forEach(el => { el.value = tz; });
   });

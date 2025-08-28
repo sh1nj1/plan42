@@ -22,4 +22,11 @@ RSpec.describe 'Session timezone', type: :request do
     expect(response).to redirect_to(user_url(user))
     expect(user.reload.timezone).to eq('Asia/Seoul')
   end
+
+  it 'preselects saved timezone on profile form' do
+    user.update!(timezone: 'Asia/Seoul')
+    post session_path, params: { email: user.email, password: 'pw' }
+    get user_path(user)
+    expect(response.body).to match(/option selected="selected" value="Asia\/Seoul"/)
+  end
 end
