@@ -87,7 +87,13 @@ if (!window.plansTimelineScriptInitialized) {
         del.addEventListener('click', function(e) {
           e.stopPropagation();
           if (!confirm(container.dataset.deleteConfirm)) return;
-          fetch('/plans/' + plan.id, {
+          var deleteUrl;
+          if (String(plan.id).indexOf('calendar_event_') === 0) {
+            deleteUrl = '/calendar_events/' + String(plan.id).replace('calendar_event_', '');
+          } else {
+            deleteUrl = '/plans/' + plan.id;
+          }
+          fetch(deleteUrl, {
             method: 'DELETE',
             headers: {
               'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,

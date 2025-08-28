@@ -34,7 +34,7 @@ class PlansTimelineComponent < ViewComponent::Base
           target_date: event.end_time.to_date,
           progress: event.creative&.progress || 0,
           path: event.creative ? helpers.creative_path(event.creative) : event.html_link,
-          deletable: false
+          deletable: event.user_id == Current.user&.id
         }
       end
       plan_items + event_items
