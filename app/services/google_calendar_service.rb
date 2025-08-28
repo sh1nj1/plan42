@@ -89,6 +89,17 @@ class GoogleCalendarService
     raise
   end
 
+  # Deletes a Google Calendar event.
+  def delete_event(event_id, calendar_id: "primary")
+    if @service.authorization.scope.include?(Google::Apis::CalendarV3::AUTH_CALENDAR_APP_CREATED)
+      @user.calendar_id ||= create_app_calendar
+      calendar_id = @user.calendar_id
+    end
+    @service.delete_event(calendar_id, event_id)
+  rescue Google::Apis::ClientError => e
+    raise unless e.status_code == 404
+  end
+
   def list_calendars
     @service.list_calendar_lists.items.map { |c| [ c.summary, c.id ] }.to_h
   end
