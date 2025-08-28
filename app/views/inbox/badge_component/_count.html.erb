@@ -1,2 +1,2 @@
 <% display = (count.positive? || show_zero) ? 'inline-block' : 'none' %>
-<span id="<%= badge_id %>" class="badge" style="display:<%= display %>"><%= count if count.positive? || show_zero %></span>
+<span id="<%= badge_id %>" class="badge" style="display:<%= display %>" data-count="<%= count %>"><%= count if count.positive? || show_zero %></span>

@@ -285,3 +285,7 @@
     top: -4px;
     right: -4px;
 }
+
+.comments-btn .badge[data-count="0"] {
+    background: var(--color-complete);
+}
