@@ -106,11 +106,14 @@ class CommentsController < ApplicationController
     return unless content.match?(/\A\/(?:calendar|cal)\b/)
     # Generalize: skip characters until first space; args are whatever follows
     args = content.sub(/\A\S+/, "").strip
+    # Support keyword 'today' (case-insensitive) as the date
+    if args.match?(/\Atoday\b/i)
+      args = args.sub(/\A(today)\b/i, Time.zone.today.to_s)
+    end
     # Support: 'YYYY-MM-DD@HH:MM memo', 'YYYY-MM-DD memo', or '@HH:MM memo' (date defaults to today)
     match = args.match(/\A(?:(\d{4}-\d{2}-\d{2}))?(?:@(\d{2}:\d{2}))?(?:\s+(.*))?\z/)
 
     Rails.logger.debug("### Calendar command: #{match}, #{args}")
-    puts "### Calendar command: #{match}, #{args}"
     return unless match && (match[1].present? || match[2].present?)
 
     date_str = match[1]

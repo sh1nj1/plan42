@@ -37,4 +37,27 @@ RSpec.describe 'Comments calendar command', type: :request do
     created = Comment.last
     expect(created.content).to eq("#{command}\n\nevent created: https://calendar.google.com/event/abc123")
   end
+
+  it 'supports "/calendar today" as an all-day event on today' do
+    command = "/calendar today"
+
+    service = instance_double(GoogleCalendarService)
+    expect(GoogleCalendarService).to receive(:new).with(user: user).and_return(service)
+    expect(service).to receive(:create_event).with(
+      hash_including(
+        all_day: true,
+        start_time: Time.zone.today,
+        end_time: Time.zone.today
+      )
+    ).and_return(OpenStruct.new(html_link: 'https://calendar.google.com/event/today123'))
+
+    expect {
+      post "/creatives/#{creative.id}/comments", params: { comment: { content: command } }
+    }.to change(Comment, :count).by(1)
+
+    expect(response).to have_http_status(:created)
+
+    created = Comment.last
+    expect(created.content).to eq("#{command}\n\nevent created: https://calendar.google.com/event/today123")
+  end
 end
