@@ -6,7 +6,7 @@ class Comment < ApplicationRecord
 
   validates :content, presence: true
 
-  after_create_commit :broadcast_create, :notify_creative_owner, :notify_mentions
+  after_create_commit :broadcast_create, :notify_write_users, :notify_mentions
   after_update_commit :broadcast_update
   after_destroy_commit :broadcast_destroy
 
@@ -50,12 +50,22 @@ class Comment < ApplicationRecord
     broadcast_remove_to([ creative, :comments ])
   end
 
-  def notify_creative_owner
-    return unless creative.user && user && creative.user != user
-    create_inbox_item(
-      creative.user,
-      I18n.t("inbox.comment_added", user: user.display_name, comment: content)
-    )
+  def notify_write_users
+    return unless user
+    base_creative = creative.effective_origin
+    present_ids = CommentPresenceStore.list(base_creative.id)
+    recipients = base_creative.all_shared_users(:write).map(&:user)
+    recipients << base_creative.user
+    recipients.compact!
+    recipients.uniq!
+    recipients.delete(user)
+    recipients.reject! { |u| present_ids.include?(u.id) }
+    recipients.each do |recipient|
+      create_inbox_item(
+        recipient,
+        I18n.t("inbox.comment_added", user: user.display_name, comment: content)
+      )
+    end
   end
 
   def notify_mentions

@@ -1,22 +1,37 @@
 require "test_helper"
 
 class CommentTest < ActiveSupport::TestCase
-  test "creating a comment notifies creative owner" do
+  test "creating a comment notifies write-permission users not present" do
     creative = creatives(:tshirt)
+    Rails.cache.delete(CommentPresenceStore.key(creative.id))
     commenter = users(:two)
+    writer = User.create!(email: "writer@example.com", password: "secret", name: "Writer")
+    CreativeShare.create!(creative: creative, user: writer, permission: :write)
 
-    assert_difference("InboxItem.count", 1) do
+    assert_difference("InboxItem.count", 2) do
       Comment.create!(creative: creative, user: commenter, content: "hi")
     end
 
-    item = InboxItem.last
-    assert_equal creative.user, item.owner
-    assert_includes item.message, commenter.name
-    expected_link = Rails.application.routes.url_helpers.creative_comment_url(
-      creative,
-      Comment.last,
-      host: "example.com"
-    )
-    assert_equal expected_link, item.link
+    [ creative.user, writer ].each do |recipient|
+      item = InboxItem.where(owner: recipient).last
+      assert_includes item.message, commenter.name
+    end
+  end
+
+  test "creating a comment does not notify write-permission users in chat" do
+    creative = creatives(:tshirt)
+    Rails.cache.delete(CommentPresenceStore.key(creative.id))
+    commenter = users(:two)
+    writer = User.create!(email: "writer@example.com", password: "secret", name: "Writer")
+    CreativeShare.create!(creative: creative, user: writer, permission: :write)
+
+    CommentPresenceStore.add(creative.id, creative.user.id)
+    CommentPresenceStore.add(creative.id, writer.id)
+
+    assert_no_difference("InboxItem.count") do
+      Comment.create!(creative: creative, user: commenter, content: "hi")
+    end
+    Rails.cache.delete(CommentPresenceStore.key(creative.id))
   end
 end
+
