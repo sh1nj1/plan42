@@ -286,6 +286,7 @@ button {
     background: var(--color-border);
     border-radius: 4px;
     overflow: hidden;
+    cursor: pointer;
 }
 
 .plan-bar .plan-progress {
