@@ -49,6 +49,21 @@ ActiveRecord::Schema[8.0].define(version: 2025_08_28_060000) do
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
   end
 
+  create_table "calendar_events", force: :cascade do |t|
+    t.integer "user_id", null: false
+    t.string "google_event_id", null: false
+    t.string "summary"
+    t.datetime "start_time", null: false
+    t.datetime "end_time", null: false
+    t.string "html_link"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.integer "creative_id"
+    t.index ["creative_id"], name: "index_calendar_events_on_creative_id"
+    t.index ["google_event_id"], name: "index_calendar_events_on_google_event_id", unique: true
+    t.index ["user_id"], name: "index_calendar_events_on_user_id"
+  end
+
   create_table "comment_read_pointers", force: :cascade do |t|
     t.integer "user_id", null: false
     t.integer "creative_id", null: false
@@ -361,11 +376,14 @@ ActiveRecord::Schema[8.0].define(version: 2025_08_28_060000) do
     t.string "google_access_token"
     t.string "google_refresh_token"
     t.datetime "google_token_expires_at"
+    t.string "timezone"
     t.index ["email"], name: "index_users_on_email", unique: true
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "calendar_events", "creatives"
+  add_foreign_key "calendar_events", "users"
   add_foreign_key "comment_read_pointers", "creatives"
   add_foreign_key "comment_read_pointers", "users"
   add_foreign_key "comments", "creatives"

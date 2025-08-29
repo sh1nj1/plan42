@@ -5,12 +5,14 @@
 #   gem "sqlite3"
 #
 default: &default
-  adapter: sqlite3
+  adapter: <%= ENV.fetch("DB_ADAPTER", "sqlite3") %>
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
   timeout: 5000
+  <% if ENV.fetch("DB_ADAPTER", "sqlite3") == "sqlite3" %>
   variables:
     journal_mode: WAL
     synchronous: normal
+  <% end %>
 
 development:
   <<: *default
