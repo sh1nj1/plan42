@@ -6,7 +6,8 @@ class CreativeShare < ApplicationRecord
     no_access: 0,
     read: 1,
     feedback: 2,
-    write: 3
+    write: 3,
+    admin: 4
   }
 
   validates :creative_id, presence: true

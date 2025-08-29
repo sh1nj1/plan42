@@ -24,4 +24,9 @@ RSpec.describe Creative, type: :model do
     expect(child.has_permission?(shared_user, :read)).to be false
     expect(grandchild.has_permission?(shared_user, :read)).to be false
   end
+
+  it 'treats admin as higher than write' do
+    CreativeShare.create!(creative: root, user: shared_user, permission: :admin)
+    expect(root.has_permission?(shared_user, :write)).to be true
+  end
 end

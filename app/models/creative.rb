@@ -1,4 +1,5 @@
 require "ostruct"
+require "closure_tree"
 class Creative < ApplicationRecord
   include Notifications
 

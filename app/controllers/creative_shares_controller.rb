@@ -1,6 +1,10 @@
 class CreativeSharesController < ApplicationController
   def create
     @creative = Creative.find(params[:creative_id]).effective_origin
+    unless @creative.has_permission?(Current.user, :admin)
+      flash[:alert] = t("creatives.errors.no_permission")
+      redirect_back(fallback_location: creatives_path) and return
+    end
     user = User.find_by(email: params[:user_email])
     unless user
       invitation = Invitation.create!(email: params[:user_email], inviter: Current.user, creative: @creative, permission: params[:permission])
@@ -45,6 +49,10 @@ class CreativeSharesController < ApplicationController
 
   def destroy
     @creative_share = CreativeShare.find(params[:id])
+    unless @creative_share.creative.has_permission?(Current.user, :admin)
+      flash[:alert] = t("creatives.errors.no_permission")
+      redirect_back(fallback_location: creatives_path) and return
+    end
     @creative_share.destroy
     # remove linked creative if it exists
     linked_creative = Creative.find_by(origin_id: @creative_share.creative_id, user_id: @creative_share.user_id)
