@@ -1,15 +1,5 @@
 <h1 class="no-top-margin"><%= t('users.details') %></h1>
 
-<p>
-  <strong><%= t('users.name') %>:</strong>
-  <%= @user.name %>
-</p>
-
-<p>
-  <strong><%= t('users.email') %>:</strong>
-  <%= @user.email %>
-</p>
-
 <div>
   <%= render AvatarComponent.new(user: @user, size: 80, classes: 'avatar') %>
 </div>
@@ -22,6 +12,10 @@
   <div>
     <%= f.label :name, t('users.name') %>
     <%= f.text_field :name, required: true %>
+  </div>
+  <div>
+    <%= f.label :email, t('users.email') %>
+    <%= f.text_field :email, required: true, disabled: true %>
   </div>
   <div>
     <%= f.label :avatar_url, t('users.avatar_url') %>
