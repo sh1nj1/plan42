@@ -84,7 +84,7 @@
         <% end %>
         <% if Current.user %>
           <form id="inbox_button_to">
-            <button id="inbox-menu-btn" class="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user) %></button>
+            <button id="inbox-menu-btn" class="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user, badge_id: 'desktop-inbox-badge') %></button>
           </form>
         <% end %>
         <%= button_to t('app.sign_in'), new_session_path, method: :get unless authenticated? %>
@@ -124,7 +124,7 @@
         <% end %>
         <% if Current.user %>
           <div>
-            <button class="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user) %></button>
+            <button class="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user, badge_id: 'mobile-inbox-badge') %></button>
           </div>
         <% end %>
         <div><%= button_to t('app.sign_in'), new_session_path, method: :get unless authenticated? %></div>
@@ -216,20 +216,23 @@
           if (toggle && localStorage.getItem('inboxShowRead') === '1') {
             toggle.checked = true;
           }
-          var badge = document.getElementById('inbox-badge');
-
           function updateInboxBadge() {
-            if (!badge) return;
+            var badges = ['desktop-inbox-badge', 'mobile-inbox-badge']
+              .map(function(id) { return document.getElementById(id); })
+              .filter(function(el) { return el; });
+            if (badges.length === 0) return;
             fetch('/inbox/count')
               .then(r => r.json())
               .then(data => {
-                if (data.count > 0) {
-                  badge.textContent = data.count;
-                  badge.style.display = 'inline-block';
-                } else {
-                  badge.textContent = '';
-                  badge.style.display = 'none';
-                }
+                badges.forEach(function(badge) {
+                  if (data.count > 0) {
+                    badge.textContent = data.count;
+                    badge.style.display = 'inline-block';
+                  } else {
+                    badge.textContent = '';
+                    badge.style.display = 'none';
+                  }
+                });
               });
           }
 
