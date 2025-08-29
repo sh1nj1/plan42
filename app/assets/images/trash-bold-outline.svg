@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Lid -->
+  <path d="M3 6h18"/>
+  <!-- Handle on the lid -->
+  <path d="M9 6V4.75c0-.97.78-1.75 1.75-1.75h2.5c.97 0 1.75.78 1.75 1.75V6"/>
+  <!-- Can body -->
+  <path d="M6 6l1 13c.1 1.1 1.05 2 2.16 2h5.68c1.11 0 2.06-.9 2.16-2l1-13"/>
+  <!-- Inner lines -->
+  <path d="M10 11v6"/>
+  <path d="M14 11v6"/>
+</svg>
