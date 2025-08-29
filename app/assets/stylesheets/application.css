@@ -378,7 +378,6 @@ button {
     position: relative;
 }
 
-#inbox-badge,
 .badge {
     background: var(--color-badge-bg, red);
     color: var(--color-badge-text, white);

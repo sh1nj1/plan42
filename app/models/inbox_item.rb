@@ -22,13 +22,15 @@ class InboxItem < ApplicationRecord
     # Recompute the new count for this owner:
     new_count = InboxItem.where(owner: owner, state: "new").count
 
-    # Use Turbo::StreamsChannel to broadcast replace to that user’s inbox stream:
-    Turbo::StreamsChannel.broadcast_replace_to(
-      [ "inbox", owner ],
-      target: "inbox-badge",
-      partial: "inbox/badge_component/count",
-      locals: { count: new_count, badge_id: "inbox-badge", show_zero: false }
-    )
+      # Use Turbo::StreamsChannel to broadcast replace to that user’s inbox stream:
+      %w[desktop-inbox-badge mobile-inbox-badge].each do |target_id|
+        Turbo::StreamsChannel.broadcast_replace_to(
+          [ "inbox", owner ],
+          target: target_id,
+          partial: "inbox/badge_component/count",
+          locals: { count: new_count, badge_id: target_id, show_zero: false }
+        )
+      end
   end
 
   def enqueue_push_notification
