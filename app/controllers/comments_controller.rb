@@ -30,7 +30,7 @@ class CommentsController < ApplicationController
       render json: { error: I18n.t("comments.no_permission") }, status: :forbidden and return
     end
     response = handle_comment_commands(@comment)
-    @comment.content = @comment.content + "\n\n" + response if response
+    @comment.content = "#{@comment.content}\n\n#{response}"
     if @comment.save
       render partial: "comments/comment", locals: { comment: @comment }, status: :created
     else
@@ -95,15 +95,22 @@ class CommentsController < ApplicationController
   end
 
   def handle_comment_commands(comment)
+    handle_calendar_command(comment)
+  rescue StandardError => e
+    Rails.logger.error("Calendar command failed: #{e.message}")
+    e.message
+  end
+
+  def handle_calendar_command(comment)
     content = comment.content.to_s.strip
     return unless content.match?(/\A\/(?:calendar|cal)\b/)
-
     # Generalize: skip characters until first space; args are whatever follows
     args = content.sub(/\A\S+/, "").strip
     # Support: 'YYYY-MM-DD@HH:MM memo', 'YYYY-MM-DD memo', or '@HH:MM memo' (date defaults to today)
     match = args.match(/\A(?:(\d{4}-\d{2}-\d{2}))?(?:@(\d{2}:\d{2}))?(?:\s+(.*))?\z/)
 
     Rails.logger.debug("### Calendar command: #{match}, #{args}")
+    puts "### Calendar command: #{match}, #{args}"
     return unless match && (match[1].present? || match[2].present?)
 
     date_str = match[1]
@@ -138,7 +145,5 @@ class CommentsController < ApplicationController
       creative: @creative
     )
     "event created: #{event.html_link}"
-  rescue StandardError => e
-    Rails.logger.error("Calendar command failed: #{e.message}")
   end
 end

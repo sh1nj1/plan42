@@ -79,8 +79,8 @@ class GoogleCalendarService
       creative: creative,
       google_event_id: result.id,
       summary: result.summary,
-      start_time: result.start.date_time || Time.zone.parse(result.start.date),
-      end_time: result.end.date_time || Time.zone.parse(result.end.date),
+      start_time: result.start.date_time || result.start.date,
+      end_time: result.end.date_time || result.end.date,
       html_link: result.html_link
     )
     result
