@@ -28,6 +28,8 @@ en:
     update_profile: "Update Profile"
     index_title: "Users"
     last_login_at: "Last login: %{time}"
+    push_token_present: "Push token present"
+    push_token_absent: "No push token"
     display_level: "Max Display Level"
     completion_mark: "Completion Mark"
     theme: "Theme"

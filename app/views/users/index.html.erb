@@ -16,6 +16,7 @@
       <% if last_login_at %>
         - <%= t('users.last_login_at', time: I18n.l(last_login_at, format: :short)) %>
       <% end %>
+      - <%= user.devices.any? ? t('users.push_token_present') : t('users.push_token_absent') %>
     </li>
   <% end %>
 </ul>
