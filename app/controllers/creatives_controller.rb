@@ -50,6 +50,11 @@ class CreativesController < ApplicationController
         @overall_progress = 0
       end
     end
+
+    respond_to do |format|
+      format.html
+      format.json { render json: creative_tree_json(@creatives || []) }
+    end
   end
 
   def show
@@ -366,17 +371,8 @@ class CreativesController < ApplicationController
 
   def children
     parent = Creative.find(params[:id])
-    @expanded_state_map = CreativeExpandedState
-                              .where(user_id: Current.user.id, creative_id: parent.id)
-                              .first&.expanded_status || {}
     children = parent.children_with_permission(Current.user)
-    level = params[:level].to_i
-    render html: helpers.render_creative_tree(
-      children,
-      level,
-      select_mode: params[:select_mode] == "1",
-      max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL
-    ).html_safe
+    render json: creative_tree_json(children)
   end
 
   def export_markdown
@@ -397,6 +393,19 @@ class CreativesController < ApplicationController
 
     def creative_params
       params.require(:creative).permit(:description, :progress, :parent_id, :sequence)
+    end
+
+    def creative_tree_json(creatives, level = 1, max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL)
+      return [] if level > max_level
+
+      creatives.map do |creative|
+        {
+          id: creative.id,
+          description: creative.effective_description,
+          progress: creative.progress,
+          children: creative_tree_json(creative.children_with_permission(Current.user), level + 1, max_level: max_level)
+        }
+      end
     end
 
     # Recursively destroy all descendants the user can delete

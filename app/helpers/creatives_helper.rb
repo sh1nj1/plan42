@@ -75,7 +75,7 @@ module CreativesHelper
 
   def render_progress_value(value)
     text = number_to_percentage(value * 100, precision: 0)
-    if value == 1 && not Current.user&.completion_mark.nil?
+    if value == 1 && !Current.user&.completion_mark.nil?
       text = Current.user.completion_mark
     end
     content_tag(
@@ -85,102 +85,6 @@ module CreativesHelper
     )
   end
 
-  def render_creative_tree(creatives, level = 1, select_mode: false, max_level: User::DEFAULT_DISPLAY_LEVEL)
-    return "".html_safe if level > max_level
-    safe_join(
-      creatives.map do |creative|
-        # List only commented creatives without children if listing only chats
-        filtered_children = params[:comment] == "true" ? [] : creative.children_with_permission(Current.user)
-        expanded = expanded_from_expanded_state(creative.id, @expanded_state_map)
-        render_next_block = ->(level) {
-          filters = params.to_unsafe_h.except(:id, :controller, :action).present?
-          if filtered_children.any?
-            content_tag(
-              :div,
-              id: "creative-children-#{creative.id}",
-              class: "creative-children",
-              style: "#{filters || expanded ? "" : "display: none;"}",
-              data: {
-                expanded: expanded,
-                loaded: (filters || expanded),
-                load_url: children_creative_path(creative, level: level, select_mode: select_mode ? 1 : 0)
-              }
-            ) do
-              if filters || expanded
-                render_creative_tree(filtered_children, level, select_mode: select_mode, max_level: max_level)
-              else
-                "".html_safe
-              end
-            end
-          else
-            "".html_safe
-          end
-        }
-
-        skip = false
-        if not skip and params[:tags].present?
-          tag_ids = Array(params[:tags]).map(&:to_s)
-          creative_label_ids = creative.tags.pluck(:label_id).map(&:to_s)
-          skip = (creative_label_ids & tag_ids).empty?
-        end
-        if not skip and params[:min_progress].present?
-          min_progress = params[:min_progress].to_f
-          skip = creative.progress < min_progress
-        end
-        if not skip and params[:max_progress].present?
-          max_progress = params[:max_progress].to_f
-          skip = creative.progress > max_progress
-        end
-
-        if skip
-          render_next_block.call level # skip this creative, so decrease level
-        else
-          bullet_starting_level = 3
-          renderer = ->(&block) {
-            toggle_btn = if filtered_children.any?
-              content_tag(:div, toggle_button_symbol(expanded: expanded), class: "before-link creative-toggle-btn creative-action-btn", data: { creative_id: creative.id })
-            else # dummy for space alignment
-              content_tag(:div, "", class: "before-link creative-toggle-btn creative-action-btn", style: "visibility: hidden;", data: { creative_id: creative.id })
-            end
-            if level <= bullet_starting_level
-              heading_tag = (filtered_children.any? or creative.parent.nil?) ? "h#{level}" : "div"
-              content_tag(heading_tag, class: "indent#{level}") do
-                toggle_btn + block.call
-              end
-            else # low level creative render as li
-              margin = level > 0 ? "margin-left: #{(level - bullet_starting_level) * 20}px;" : ""
-              content_tag(:div, class: "creative-tree-li", style: "#{margin}") do
-                bullet = if creative.effective_description.include?("<li>")
-                  "".html_safe
-                else
-                  content_tag(:div, "", class: "creative-tree-bullet")
-                end
-                toggle_btn + bullet + block.call
-              end
-            end
-          }
-          render(CreativeComponent.new(
-            creative: creative,
-            filtered_children: filtered_children,
-            level: level,
-            select_mode: select_mode,
-            expanded: expanded
-          )) do
-            renderer.call do
-              content_tag(:div, class: "creative-content") do
-                link_to(creative.effective_description(params[:tags]&.first), creative, class: "unstyled-link")
-              end
-            end
-          end + render_next_block.call(level + 1)
-        end
-      end
-    )
-  end
-
-  # parent_creative.expandedState[creative.id] 값 사용, parent_creative가 nil이면 controller에서 내려준 expanded_state_map[nil] 사용
-  def expanded_from_expanded_state(creative_id, expanded_state_map)
-    !(expanded_state_map and expanded_state_map[creative_id.to_s] == false)
-  end
 
   # 트리 구조를 마크다운으로 변환하는 헬퍼
   # creatives: 트리 배열, level: 현재 깊이(1부터 시작)
