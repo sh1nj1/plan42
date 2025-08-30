@@ -150,6 +150,13 @@ class Creative < ApplicationRecord
   def create_linked_creative_for_user(user)
     original = effective_origin
     return if original.user_id == user.id
+    ancestor_ids = original.ancestors.pluck(:id)
+    has_ancestor_share = CreativeShare.where(creative_id: ancestor_ids, user_id: user.id)
+                                      .where.not(permission: :no_access)
+                                      .exists?
+    has_owning_ancestors = Creative.where(id: ancestor_ids, user_id: user.id)
+                                        .exists?
+    return if has_ancestor_share or has_owning_ancestors
     Creative.find_or_create_by!(origin_id: original.id, user_id: user.id) do |c|
       c.parent_id = nil
     end
