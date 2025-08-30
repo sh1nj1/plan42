@@ -34,4 +34,3 @@ class CommentTest < ActiveSupport::TestCase
     Rails.cache.delete(CommentPresenceStore.key(creative.id))
   end
 end
-
