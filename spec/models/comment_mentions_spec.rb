@@ -12,6 +12,7 @@ describe Comment, type: :model do
 
     item = InboxItem.find_by(owner: mentioned)
     expect(item).not_to be_nil
-    expect(item.message).to include(commenter.name)
+    expect(item.message_key).to eq('inbox.user_mentioned')
+    expect(item.localized_message).to include(commenter.name)
   end
 end

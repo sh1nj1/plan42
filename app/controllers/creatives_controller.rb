@@ -186,7 +186,8 @@ class CreativesController < ApplicationController
 
     InboxItem.create!(
       owner: creative.user,
-      message: I18n.t("inbox.permission_requested", user: Current.user.display_name, short_title: short_title),
+      message_key: "inbox.permission_requested",
+      message_params: { user: Current.user.display_name, short_title: short_title },
       link: Rails.application.routes.url_helpers.creative_url(
         creative,
         Rails.application.config.action_mailer.default_url_options.merge(share_request: Current.user.email)

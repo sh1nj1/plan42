@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_08_28_060000) do
+ActiveRecord::Schema[8.0].define(version: 2025_08_30_141101) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -162,6 +162,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_08_28_060000) do
     t.string "state", default: "new", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "message_key"
+    t.json "message_params", default: {}, null: false
     t.index ["owner_id"], name: "index_inbox_items_on_owner_id"
     t.index ["state"], name: "index_inbox_items_on_state"
   end
@@ -377,6 +379,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_08_28_060000) do
     t.string "google_refresh_token"
     t.datetime "google_token_expires_at"
     t.string "timezone"
+    t.string "locale"
     t.index ["email"], name: "index_users_on_email", unique: true
   end
 

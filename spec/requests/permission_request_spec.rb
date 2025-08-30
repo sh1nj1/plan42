@@ -17,8 +17,10 @@ RSpec.describe 'Permission request', type: :request do
     expect(response).to have_http_status(:ok)
     item = InboxItem.last
     expect(item.owner).to eq owner
-    expect(item.message).to include('Requester')
-    expect(item.message).to include('Secret Creative Plan'.truncate(10))
+    expect(item.message_key).to eq('inbox.permission_requested')
+    msg = item.localized_message
+    expect(msg).to include('Requester')
+    expect(msg).to include('Secret Creative Plan'.truncate(10))
     expect(item.link).to include("share_request=#{CGI.escape(requester.email)}")
   end
 end

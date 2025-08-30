@@ -7,16 +7,21 @@ class ApplicationController < ActionController::Base
   around_action :set_time_zone
 
   def switch_locale(&action)
-    locale = params[:locale] ||
+    locale = Current.user&.locale ||
+             params[:locale] ||
              extract_locale_from_accept_language_header ||
-             I18n.default_locale
-    I18n.with_locale(locale, &action)
+             "en-US"
+    I18n.with_locale(normalize_locale(locale), &action)
   end
 
   private
 
   def extract_locale_from_accept_language_header
-    request.env["HTTP_ACCEPT_LANGUAGE"]&.scan(/^[a-z]{2}/)&.first
+    request.env["HTTP_ACCEPT_LANGUAGE"]&.split(",")&.first
+  end
+
+  def normalize_locale(locale)
+    locale.to_s.split("-").first
   end
 
   def set_time_zone(&action)

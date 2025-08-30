@@ -1,9 +1,9 @@
 <div class="inbox-item" data-id="<%= item.id %>">
   <div class="message">
     <% if item.link.present? %>
-      <%= link_to item.message, item.link, class: 'item-link unstyled-link' %>
+      <%= link_to item.localized_message, item.link, class: 'item-link unstyled-link' %>
     <% else %>
-      <%= h item.message %>
+      <%= h item.localized_message %>
     <% end %>
   </div>
   <div class="time"><%= time_ago_in_words(item.created_at) %></div>

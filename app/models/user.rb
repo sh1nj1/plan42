@@ -16,6 +16,7 @@ class User < ApplicationRecord
   attribute :name, :string
   attribute :notifications_enabled, :boolean
   attribute :timezone, :string
+  attribute :locale, :string
 
   attribute :google_uid, :string
   attribute :google_access_token, :string

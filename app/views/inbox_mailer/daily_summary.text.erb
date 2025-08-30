@@ -1,7 +1,7 @@
 <%= t('inbox_mailer.daily_summary.greeting') %>
 
 <% @items.each do |item| %>
-* <%= item.message %>
+* <%= item.localized_message %>
   <% if item.link.present? %>
     <%= item.link %>
   <% end %>

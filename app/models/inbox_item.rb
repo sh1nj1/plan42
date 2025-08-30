@@ -6,7 +6,7 @@ class InboxItem < ApplicationRecord
 
   attribute :state, :string, default: "new"
   validates :state, inclusion: { in: %w[new read archived] }
-  validates :message, presence: true
+  validates :message_key, presence: true
 
   scope :new_items, -> { where(state: "new") }
   scope :read_items, -> { where(state: "read") }
@@ -14,6 +14,15 @@ class InboxItem < ApplicationRecord
 
   def read?
     state == "read"
+  end
+
+  def localized_message(locale: I18n.locale)
+    if message_key.present?
+      params = message_params || {}
+      I18n.t(message_key, **params.symbolize_keys, locale: locale)
+    else
+      message
+    end
   end
 
   private
@@ -34,6 +43,7 @@ class InboxItem < ApplicationRecord
   end
 
   def enqueue_push_notification
-    PushNotificationJob.perform_later(owner_id, message: message, link: link)
+    msg = localized_message(locale: owner.locale || "en")
+    PushNotificationJob.perform_later(owner_id, message: msg, link: link)
   end
 end
