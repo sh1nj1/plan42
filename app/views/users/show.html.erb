@@ -43,7 +43,7 @@
   </div>
   <div>
     <%= f.label :locale, t('users.locale') %>
-    <%= f.select :locale, [[t('users.locales.en-US'), 'en-US'], [t('users.locales.ko'), 'ko']] %>
+    <%= f.select :locale, I18n.available_locales.map { |loc| [t("users.locales.#{loc}"), loc] } %>
   </div>
   <div>
     <%= f.label :timezone, t('users.timezone') %>

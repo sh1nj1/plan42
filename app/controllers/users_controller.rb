@@ -111,7 +111,9 @@ class UsersController < ApplicationController
       :calendar_id,
       :timezone,
       :locale
-    )
+    ).tap do |p|
+      p[:locale] = normalize_supported_locale(p[:locale]) if p.key?(:locale)
+    end
   end
 
   def notification_settings_params

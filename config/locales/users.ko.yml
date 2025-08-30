@@ -37,7 +37,7 @@ ko:
     notifications_enabled: "알림 사용"
     locale: "언어"
     locales:
-      en-US: "영어"
+      en: "영어"
       ko: "한국어"
     timezone: "시간대"
     profile_updated: "프로파일이 업데이트되었습니다."
