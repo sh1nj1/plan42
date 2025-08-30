@@ -9,7 +9,7 @@ class InboxSummaryJobTest < ActiveJob::TestCase
 
   test "sends summary email when user has new inbox items" do
     user = users(:one)
-    InboxItem.create!(message: "hi", owner: user)
+    InboxItem.create!(message_key: "inbox.no_messages", message_params: {}, owner: user)
 
     assert_emails 1 do
       InboxSummaryJob.perform_now

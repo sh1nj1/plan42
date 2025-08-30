@@ -12,10 +12,11 @@ class Comment < ApplicationRecord
 
   private
 
-  def create_inbox_item(owner, message)
+  def create_inbox_item(owner, key, params = {})
     InboxItem.create!(
       owner: owner,
-      message: message,
+      message_key: key,
+      message_params: params,
       link: Rails.application.routes.url_helpers.creative_comment_url(
         creative,
         self,
@@ -63,7 +64,8 @@ class Comment < ApplicationRecord
     recipients.each do |recipient|
       create_inbox_item(
         recipient,
-        I18n.t("inbox.comment_added", user: user.display_name, comment: content)
+        "inbox.comment_added",
+        { user: user.display_name, comment: content }
       )
     end
   end
@@ -72,7 +74,8 @@ class Comment < ApplicationRecord
     mentioned_users.each do |mentioned|
       create_inbox_item(
         mentioned,
-        I18n.t("inbox.user_mentioned", user: user.display_name, comment: content)
+        "inbox.user_mentioned",
+        { user: user.display_name, comment: content }
       )
     end
   end

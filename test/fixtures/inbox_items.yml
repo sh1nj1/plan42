@@ -1,9 +1,11 @@
 one_new:
-  message: "Hi"
+  message_key: inbox.no_messages
+  message_params: {}
   owner: one
   state: new
 
 one_read:
-  message: "Old"
+  message_key: inbox.no_messages
+  message_params: {}
   owner: one
   state: read

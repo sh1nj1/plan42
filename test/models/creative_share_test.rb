@@ -14,8 +14,10 @@ class CreativeShareTest < ActiveSupport::TestCase
 
     item = InboxItem.last
     assert_equal recipient, item.owner
-    assert_includes item.message, sharer.name
-    assert_includes item.message, "T-Shirt"
+    assert_equal "inbox.creative_shared", item.message_key
+    msg = item.localized_message
+    assert_includes msg, sharer.name
+    assert_includes msg, "T-Shirt"
     expected_link = Rails.application.routes.url_helpers.creative_url(
       creative,
       host: "example.com"

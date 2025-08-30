@@ -12,6 +12,10 @@ class SessionsController < ApplicationController
         start_new_session_for user
         tz = params[:timezone]
         user.update(timezone: tz) if tz.present? && user.timezone != tz
+        if user.locale.blank?
+          detected = extract_locale_from_accept_language_header || "en-US"
+          user.update(locale: detected)
+        end
         redirect_to after_authentication_url
       else
         redirect_to new_session_path, alert: I18n.t("users.sessions.new.email_not_verified")

@@ -14,7 +14,8 @@ class CommentTest < ActiveSupport::TestCase
 
     [ creative.user, writer ].each do |recipient|
       item = InboxItem.where(owner: recipient).last
-      assert_includes item.message, commenter.name
+      assert_equal "inbox.comment_added", item.message_key
+      assert_includes item.localized_message, commenter.name
     end
   end
 
