@@ -75,7 +75,7 @@ module CreativesHelper
 
   def render_progress_value(value)
     text = number_to_percentage(value * 100, precision: 0)
-    if value == 1 && not Current.user&.completion_mark.nil?
+    if value == 1 && !Current.user&.completion_mark.nil?
       text = Current.user.completion_mark
     end
     content_tag(
