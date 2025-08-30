@@ -11,6 +11,12 @@ class ApplicationController < ActionController::Base
              params[:locale] ||
              extract_locale_from_accept_language_header ||
              "en-US"
+
+    if Current.user && Current.user.locale.blank?
+      detected = extract_locale_from_accept_language_header || "en-US"
+      Current.user.update(locale: detected)
+    end
+
     I18n.with_locale(normalize_locale(locale), &action)
   end
 
