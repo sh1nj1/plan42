@@ -92,7 +92,7 @@
       </div>
 
       <%= render PopupMenuComponent.new(
-            button_content: '...',
+            button_content: safe_join(['...', (render(Inbox::BadgeComponent.new(user: Current.user, badge_id: 'mobile-inbox-badge')) if Current.user)]),
             button_classes: 'mobile-only',
             menu_id: 'mobile-more-menu',
             align: :right
