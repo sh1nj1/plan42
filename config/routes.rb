@@ -45,6 +45,7 @@ Rails.application.routes.draw do
       post :remove_plan
       get :append_as_parent, to: "creatives#append_as_parent", as: :append_as_parent_creative
       get :append_below, to: "creatives#append_below", as: :append_below_creative
+      get :tree
       get :export_markdown
     end
     member do

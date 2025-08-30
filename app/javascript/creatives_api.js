@@ -6,6 +6,10 @@ if (!window.creativesApi) {
     parentSuggestions(id) {
       return fetch(`/creatives/${id}/parent_suggestions.json`).then(r => r.json());
     },
+    tree(parentId) {
+      const param = parentId ? `?id=${parentId}` : '';
+      return fetch(`/creatives/tree.json${param}`).then(r => r.json());
+    },
     loadChildren(url) {
       return fetch(url).then(r => r.text());
     },

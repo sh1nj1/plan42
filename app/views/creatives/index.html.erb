@@ -80,20 +80,23 @@
   </div>
 <% end %>
 
-<div id="creatives">
-  <% if @creatives %>
-    <%= render_creative_tree(@creatives, 1, select_mode: false, max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL) %>
-  <% else %>
-    <% if params[:id] && @creative && !@creative.has_permission?(Current.user, :read) %>
-      <p style="text-align: center;"><%= t('.no_permission') %></p>
-      <div style="text-align: center;">
-        <%= button_to t('.request_permission'), request_permission_creative_path(@creative), method: :post %>
-      </div>
+<div id="creatives" data-parent-id="<%= @parent_creative&.id %>"></div>
+<noscript>
+  <div id="creatives-noscript">
+    <% if @creatives %>
+      <%= render_creative_tree(@creatives, 1, select_mode: false, max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL) %>
     <% else %>
-      <p style="text-align: center;"><%= params[:id] ? t('.no_sub_creatives') : t('.no_creatives') %></p>
+      <% if params[:id] && @creative && !@creative.has_permission?(Current.user, :read) %>
+        <p style="text-align: center;"><%= t('.no_permission') %></p>
+        <div style="text-align: center;">
+          <%= button_to t('.request_permission'), request_permission_creative_path(@creative), method: :post %>
+        </div>
+      <% else %>
+        <p style="text-align: center;"><%= params[:id] ? t('.no_sub_creatives') : t('.no_creatives') %></p>
+      <% end %>
     <% end %>
-  <% end %>
-</div>
+  </div>
+</noscript>
 
 <%= render 'comments/comments_popup' %>
 <%= render 'inline_edit_form' %>
@@ -110,5 +113,6 @@
 <%= javascript_include_tag 'export_to_markdown', defer: true %>
 <%= javascript_include_tag 'mobile_actions', defer: true %>
 <%= javascript_include_tag 'creatives_api', defer: true %>
+<%= javascript_include_tag 'creative_tree_renderer', defer: true %>
 <%= javascript_include_tag 'creative_row_editor', defer: true %>
 <%= javascript_include_tag 'creative_row_swipe', defer: true %>

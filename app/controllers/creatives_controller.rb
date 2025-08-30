@@ -389,6 +389,16 @@ class CreativesController < ApplicationController
     send_data markdown, filename: "creatives.md", type: "text/markdown"
   end
 
+  def tree
+    creatives = if params[:id]
+      parent = Creative.find_by(id: params[:id])
+      parent ? parent.children_with_permission(Current.user) : []
+    else
+      Creative.where(user: Current.user).roots
+    end
+    render json: creatives.map { |c| creative_json(c) }
+  end
+
   private
 
     def set_creative
@@ -397,6 +407,15 @@ class CreativesController < ApplicationController
 
     def creative_params
       params.require(:creative).permit(:description, :progress, :parent_id, :sequence)
+    end
+
+    def creative_json(creative)
+      {
+        id: creative.id,
+        description: creative.effective_description.to_s,
+        progress: creative.progress,
+        children: creative.children_with_permission(Current.user).map { |child| creative_json(child) }
+      }
     end
 
     # Recursively destroy all descendants the user can delete
