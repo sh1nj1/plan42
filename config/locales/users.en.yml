@@ -37,7 +37,7 @@ en:
     notifications_enabled: "Enable notifications"
     locale: "Language"
     locales:
-      en-US: "English"
+      en: "English"
       ko: "Korean"
     timezone: "Timezone"
     profile_updated: "Profile updated successfully."
