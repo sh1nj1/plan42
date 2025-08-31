@@ -1,9 +1,11 @@
 name: Deploy
 
-on:
-  push:
-    branches:
-      - main
+# we change deploy to arm64 and github actions runner not supported native arm64 runners yet so it will take too long time
+# you can use self-hosted runner for arm64 to speed up the deploy process until then prevent this workflow from running
+#on:
+#  push:
+#    branches:
+#      - main
 
 jobs:
   deploy:
