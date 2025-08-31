@@ -60,6 +60,7 @@ class Comment < ApplicationRecord
     recipients.compact!
     recipients.uniq!
     recipients.delete(user)
+    recipients -= mentioned_users.to_a
     recipients.reject! { |u| present_ids.include?(u.id) }
     recipients.each do |recipient|
       create_inbox_item(
