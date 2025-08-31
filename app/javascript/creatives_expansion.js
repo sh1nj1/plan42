@@ -12,8 +12,10 @@ if (!window.creativesExpansionInitialized) {
                     childrenDiv.dataset.loaded = "true";
 
                     addToggleEvent(childrenDiv);
+                    if (window.attachCreativeRowEditorButtons) window.attachCreativeRowEditorButtons();
+                    if (window.attachCommentButtons) window.attachCommentButtons();
                 });
-        }
+            }
         childrenDiv.style.display = "";
         btn.textContent = "▼"
     }
