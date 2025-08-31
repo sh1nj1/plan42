@@ -37,6 +37,13 @@ ssh:
   keys: [ "~/.ssh/id.pem" ] # set ec2 private key
 ```
 
+If you're deploying to an ARM-based instance like a Graviton `t4g.small`, set the builder architecture in `config/deploy.yml`:
+
+```yaml
+builder:
+  arch: arm64
+```
+
 run deploy
 
 ```bash
