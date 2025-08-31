@@ -92,6 +92,8 @@ if (!window.creativesExpansionInitialized) {
                     }
                 });
                 expandBtn.textContent = allExpanded ? expandBtn.dataset.collapseText : expandBtn.dataset.expandText;
+                if (window.attachCreativeRowEditorButtons) window.attachCreativeRowEditorButtons();
+                if (window.attachCommentButtons) window.attachCommentButtons();
             });
         }
     }

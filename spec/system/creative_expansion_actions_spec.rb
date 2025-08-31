@@ -31,4 +31,17 @@ RSpec.describe 'Creative expansion actions', type: :system, js: true do
     find("#creative-#{child.id} [name='show-comments-btn']").click
     expect(page).to have_css('#comments-popup', visible: :visible)
   end
+
+  it 'binds edit and comment buttons after using expand all' do
+    visit creative_path(root_creative)
+    find('#expand-all-btn').click
+    expect(page).to have_css("#creative-#{child.id} .edit-inline-btn")
+
+    find("#creative-#{child.id} .edit-inline-btn").click
+    expect(page).to have_css('#inline-edit-form-element', visible: :visible)
+    find('#inline-close').click
+
+    find("#creative-#{child.id} [name='show-comments-btn']").click
+    expect(page).to have_css('#comments-popup', visible: :visible)
+  end
 end
