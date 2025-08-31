@@ -53,7 +53,7 @@ module CreativesHelper
           "comment.svg",
           class: "comment-icon"
         )
-        badge_id = "comment-badge-#{creative.id}"
+        badge_id = "comment-badge-#{origin.id}"
         stream = turbo_stream_from [ Current.user, origin, :comment_badge ]
         badge = render(
           Inbox::BadgeComponent.new(
