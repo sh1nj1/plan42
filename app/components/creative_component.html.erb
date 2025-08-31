@@ -10,7 +10,7 @@
           </button>
         <% else %> <%#= real (hidden) button for place holder without edit permission to match same width: can change icon or something %>
           <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="<%= creative.id %>" style="visibility: hidden">
-            <%= svg_tag 'edit.svg',class: 'icon-edit' %>
+            <%= svg_tag 'edit-off.svg', class: 'icon-edit' %>
           </button>
         <% end %>
         <div class="creative-divider" style="width: 6px;">
