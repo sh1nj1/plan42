@@ -14,13 +14,12 @@ if (!window.creativesDragDropInitialized) {
 
   window.handleDragStart = function(event) {
     const row = event.target.closest(draggableClassName);
-    draggedCreativeId = row ? row.id : '';
+    if (!row || row.draggable === false) return;
+    draggedCreativeId = row.id;
     event.dataTransfer.effectAllowed = 'move';
   };
 
   window.handleDragOver = function(event) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
     const row = event.target.closest(draggableClassName);
     if (lastDragOverRow && lastDragOverRow !== row) {
       lastDragOverRow.classList.remove(
@@ -31,6 +30,9 @@ if (!window.creativesDragDropInitialized) {
         'child-drop-indicator-active'
       );
     }
+    if (!row || row.draggable === false) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
     if (row) {
       const rect = row.getBoundingClientRect();
       const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
@@ -59,7 +61,6 @@ if (!window.creativesDragDropInitialized) {
   };
 
   window.handleDrop = function(event) {
-    event.preventDefault();
     const targetRow = event.target.closest(draggableClassName);
     const targetId = targetRow ? targetRow.id : '';
     if (targetRow) {
@@ -80,6 +81,12 @@ if (!window.creativesDragDropInitialized) {
         'child-drop-indicator-active'
       );
     }
+    if (!targetRow || targetRow.draggable === false) {
+      draggedCreativeId = null;
+      lastDragOverRow = null;
+      return;
+    }
+    event.preventDefault();
     if (draggedCreativeId && targetId && draggedCreativeId !== targetId) {
       const draggedElem = document.getElementById(draggedCreativeId);
       const draggedChildren = document.getElementById(`creative-children-${draggedCreativeId.replace('creative-', '')}`);
@@ -147,15 +154,14 @@ if (!window.creativesDragDropInitialized) {
 
   window.handleDragLeave = function(event) {
     const row = event.target.closest(draggableClassName);
-    if (row) {
-      row.classList.remove(
-        'drag-over',
-        'drag-over-top',
-        'drag-over-bottom',
-        'drag-over-child',
-        'child-drop-indicator-active'
-      );
-    }
+    if (!row || row.draggable === false) return;
+    row.classList.remove(
+      'drag-over',
+      'drag-over-top',
+      'drag-over-bottom',
+      'drag-over-child',
+      'child-drop-indicator-active'
+    );
   };
 
   function sendNewOrder(draggedId, targetId, direction, onErrorRevert) {

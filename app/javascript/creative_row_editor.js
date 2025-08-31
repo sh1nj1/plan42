@@ -135,6 +135,7 @@ if (!window.creativeRowEditorInitialized) {
       const parentId = parentInput.value;
       const wasNew = !form.dataset.creativeId;
       currentTree = null;
+      tree.draggable = true;
       template.style.display = 'none';
       const p = (pendingSave || saving) ? saveForm() : Promise.resolve();
       p.then(() => {
@@ -170,6 +171,7 @@ if (!window.creativeRowEditorInitialized) {
           }
           currentTree = tree;
           hideRow(tree);
+          tree.draggable = false;
           tree.appendChild(template);
           template.style.display = 'block';
           loadCreative(tree.dataset.id);
