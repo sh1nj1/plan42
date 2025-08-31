@@ -86,7 +86,7 @@
                 ]
               ) %>
         <% end %>
-        <% if Current.user %>
+        <% if authenticated? %>
           <form id="inbox_button_to">
             <button id="inbox-menu-btn" class="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user, badge_id: 'desktop-inbox-badge') %></button>
           </form>
@@ -96,7 +96,7 @@
       </div>
 
       <%= render PopupMenuComponent.new(
-            button_content: safe_join(['...', (render(Inbox::BadgeComponent.new(user: Current.user, badge_id: 'mobile-inbox-badge')) if Current.user)]),
+            button_content: safe_join(['...', (render(Inbox::BadgeComponent.new(user: Current.user, badge_id: 'mobile-inbox-badge')) if authenticated?)]),
             button_classes: 'mobile-only',
             menu_id: 'mobile-more-menu',
             align: :right
@@ -126,7 +126,7 @@
                 ]
               ) %>
         <% end %>
-        <% if Current.user %>
+        <% if authenticated? %>
           <div>
             <button class="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Inbox::BadgeComponent.new(user: Current.user, badge_id: 'mobile-inbox-badge') %></button>
           </div>

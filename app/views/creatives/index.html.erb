@@ -1,5 +1,6 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
+<% if authenticated? %>
 <div class="creative-actions-row">
   <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
   <% if @parent_creative&.parent_id.present? %>
@@ -36,6 +37,7 @@
   <%= render 'mobile_actions_menu' %>
 </div>
 <%= render 'import_upload_zone' %>
+<% end %>
 
 <%#= TODO: remove this later completely recalculate progress you need to remove route, and controller also %>
 <%#= button_to t('.recalculate_progress'), recalculate_progress_creatives_path, method: :post, form: { data: { turbo_confirm: t('.recalculate_all_parent_progress') } } if authenticated? %>
