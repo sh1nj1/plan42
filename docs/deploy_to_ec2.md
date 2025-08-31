@@ -19,6 +19,14 @@ sudo apt install -y docker.io curl git
 sudo usermod -a -G docker ec2-user
 ```
 
+for AWS Linux
+```bash
+sudo yum update -y
+sudo yum install -y docker
+sudo service docker start
+sudo usermod -a -G docker ec2-user
+```
+
 ## Configure config/deploy.yml
 
 configure config/deploy.yml
