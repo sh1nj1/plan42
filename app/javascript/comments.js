@@ -169,13 +169,20 @@ if (!window.commentsInitialized) {
                     window.visualViewport.removeEventListener('resize', adjustForKeyboard);
                 }
             });
-            const buttons = document.getElementsByName('show-comments-btn');
-            buttons.forEach(function(btn) {
-                btn.onclick = function() {
-                    if (popup.style.display === 'block') { closePopup(); return; }
-                    openPopup(btn);
-                };
-            });
+            function attachCommentButtons() {
+                const buttons = document.getElementsByName('show-comments-btn');
+                buttons.forEach(function(btn) {
+                    btn.onclick = function() {
+                        if (popup.style.display === 'block' && popup.dataset.creativeId === btn.dataset.creativeId) {
+                            closePopup();
+                            return;
+                        }
+                        openPopup(btn);
+                    };
+                });
+            }
+            attachCommentButtons();
+            window.attachCommentButtons = attachCommentButtons;
             closeBtn.onclick = closePopup;
             var startY = null;
             popup.addEventListener('touchstart', function(e) {

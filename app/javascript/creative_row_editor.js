@@ -263,7 +263,9 @@ if (!window.creativeRowEditorInitialized) {
           );
         });
       });
+      if (window.attachCommentButtons) window.attachCommentButtons();
     }
+    window.attachCreativeRowEditorButtons = attachButtons;
 
     function loadCreative(id) {
       window.creativesApi.get(id)
