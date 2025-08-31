@@ -19,7 +19,7 @@ class CreativesController < ApplicationController
       @parent_creative = nil
     elsif params[:search].present?
       if params[:id].present?
-        base_creative = Creative.find_by(id: params[:id])
+        base_creative = Creative.find_by(id: params[:id]).effective_origin
         if base_creative
           subtree_ids = base_creative.subtree_ids
           @creatives = Creative
