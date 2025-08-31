@@ -4,8 +4,10 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     return unless params[:creative_id].present? && current_user
 
     @creative_id = Creative.find(params[:creative_id].to_i).effective_origin.id
+    creative = Creative.find(@creative_id)
     stream_from stream_name
     CommentPresenceStore.add(@creative_id, current_user.id)
+    Comment.broadcast_badge(creative, current_user)
     broadcast_presence
   end
 
@@ -16,6 +18,7 @@ class CommentsPresenceChannel < ApplicationCable::Channel
       pointer = CommentReadPointer.find_or_initialize_by(user: current_user, creative: creative)
       pointer.last_read_comment_id = creative.comments.maximum(:id)
       pointer.save!
+      Comment.broadcast_badge(creative, current_user)
       broadcast_presence
     end
   end

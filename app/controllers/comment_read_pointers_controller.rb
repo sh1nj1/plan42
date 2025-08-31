@@ -5,6 +5,7 @@ class CommentReadPointersController < ApplicationController
     pointer = CommentReadPointer.find_or_initialize_by(user: Current.user, creative: creative)
     pointer.last_read_comment_id = last_id
     pointer.save!
+    Comment.broadcast_badge(creative, Current.user)
     render json: { success: true }
   end
 end
