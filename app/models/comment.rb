@@ -6,9 +6,9 @@ class Comment < ApplicationRecord
 
   validates :content, presence: true
 
-  after_create_commit :broadcast_create, :notify_write_users, :notify_mentions
+  after_create_commit :broadcast_create, :notify_write_users, :notify_mentions, :broadcast_badges
   after_update_commit :broadcast_update
-  after_destroy_commit :broadcast_destroy
+  after_destroy_commit :broadcast_destroy, :broadcast_badges
 
   private
 
@@ -51,6 +51,10 @@ class Comment < ApplicationRecord
     broadcast_remove_to([ creative, :comments ])
   end
 
+  def broadcast_badges
+    Comment.broadcast_badges(creative)
+  end
+
   def notify_write_users
     return unless user
     base_creative = creative.effective_origin
@@ -83,5 +87,34 @@ class Comment < ApplicationRecord
 
   def assign_default_user
     self.user ||= Current.user
+  end
+
+  def self.broadcast_badges(creative)
+    origin = creative.effective_origin
+    users = [ origin.user ].compact + origin.all_shared_users(:feedback).map(&:user)
+    users.compact!
+    users.uniq!
+    users.each do |u|
+      broadcast_badge(origin, u)
+    end
+  end
+
+  def self.broadcast_badge(creative, user)
+    origin = creative.effective_origin
+    comments_count = origin.comments.count
+    pointer = CommentReadPointer.find_by(user: user, creative: origin)
+    last_read_id = pointer&.last_read_comment_id
+    unread_count = last_read_id ? origin.comments.where("id > ?", last_read_id).count : comments_count
+    unread_count = 0 if CommentPresenceStore.list(origin.id).include?(user.id)
+    Turbo::StreamsChannel.broadcast_replace_to(
+      [ user, origin, :comment_badge ],
+      target: "comment-badge-#{origin.id}",
+      partial: "inbox/badge_component/count",
+      locals: {
+        count: unread_count,
+        badge_id: "comment-badge-#{origin.id}",
+        show_zero: comments_count.positive?
+      }
+    )
   end
 end
