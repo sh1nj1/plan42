@@ -67,6 +67,13 @@ class CreativesController < ApplicationController
         @overall_progress = 0
       end
     end
+
+    respond_to do |format|
+      format.html
+      format.json do
+        render json: @creatives.map { |c| { id: c.id, description: c.effective_description } }
+      end
+    end
   end
 
   def show
@@ -414,7 +421,7 @@ class CreativesController < ApplicationController
     end
 
     def creative_params
-      params.require(:creative).permit(:description, :progress, :parent_id, :sequence)
+      params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id)
     end
 
     # Recursively destroy all descendants the user can delete

@@ -16,6 +16,7 @@ if (!window.creativeRowEditorInitialized) {
     const addChildBtn = document.getElementById('inline-add-child');
     const deleteBtn = document.getElementById('inline-delete');
     const deleteWithChildrenBtn = document.getElementById('inline-delete-with-children');
+    const linkBtn = document.getElementById('inline-link');
     const closeBtn = document.getElementById('inline-close');
     const parentSuggestions = document.getElementById('parent-suggestions');
     const parentSuggestBtn = document.getElementById('inline-recommend-parent');
@@ -390,6 +391,37 @@ if (!window.creativeRowEditorInitialized) {
       });
     }
 
+    function linkExistingCreative() {
+      if (!currentTree || !form.dataset.creativeId) return;
+      const query = prompt('Search creative');
+      if (!query) return;
+      fetch(`/creatives.json?search=${encodeURIComponent(query)}`)
+        .then(r => r.json())
+        .then(results => {
+          if (!Array.isArray(results) || results.length === 0) {
+            alert('No results');
+            return;
+          }
+          const options = results.map((c, i) => `${i + 1}. ${c.description}`).join('\n');
+          const choice = prompt('Select creative\n' + options);
+          const index = parseInt(choice, 10) - 1;
+          const selected = results[index];
+          if (!selected) return;
+          const fd = new FormData();
+          fd.append('creative[parent_id]', form.dataset.creativeId);
+          fd.append('creative[origin_id]', selected.id);
+          fd.append('authenticity_token', document.querySelector('meta[name="csrf-token"]').content);
+          fetch('/creatives', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json' },
+            body: fd,
+            credentials: 'same-origin'
+          }).then(() => {
+            refreshChildren(currentTree).then(() => refreshRow(currentTree));
+          });
+        });
+    }
+
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
       if (currentTree) hideCurrent(false);
       const newTree = document.createElement('div');
@@ -558,6 +590,10 @@ if (!window.creativeRowEditorInitialized) {
       deleteWithChildrenBtn.addEventListener('click', function() {
         if (confirm(deleteWithChildrenBtn.dataset.confirm)) deleteCurrent(true);
       });
+    }
+
+    if (linkBtn) {
+      linkBtn.addEventListener('click', linkExistingCreative);
     }
 
     attachButtons();
