@@ -12,4 +12,10 @@ class InboxItemTest < ActiveSupport::TestCase
     item.update!(state: "new")
     assert_equal "new", item.state
   end
+
+  test "localized message replaces non-breaking spaces" do
+    I18n.backend.store_translations(:en, inbox: { nbsp_test: "hello&nbsp;world\u00A0!" })
+    item = InboxItem.new(message_key: "inbox.nbsp_test", owner: users(:one), message_params: {})
+    assert_equal "hello world !", item.localized_message(locale: :en)
+  end
 end

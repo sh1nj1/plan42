@@ -17,12 +17,15 @@ class InboxItem < ApplicationRecord
   end
 
   def localized_message(locale: I18n.locale)
-    if message_key.present?
-      params = message_params || {}
-      I18n.t(message_key, **params.symbolize_keys, locale: locale)
-    else
-      message
-    end
+    msg =
+      if message_key.present?
+        params = message_params || {}
+        I18n.t(message_key, **params.symbolize_keys, locale: locale)
+      else
+        message
+      end
+
+    msg&.gsub("&nbsp;", " ")&.gsub("\u00A0", " ")
   end
 
   private
