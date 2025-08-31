@@ -141,6 +141,7 @@ main {
     max-width: var(--max-width);
     margin: 0rem auto;
     padding: 0 1rem;
+    padding-bottom: 4em;
     background: var(--color-section-bg);
 }
 
