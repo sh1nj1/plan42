@@ -140,14 +140,13 @@ input[type="password"] {
 main {
     max-width: var(--max-width);
     margin: 0rem auto;
-    padding: 0 1rem;
-    padding-bottom: 4em;
+    padding: 0 1rem 4rem 1rem;
     background: var(--color-section-bg);
 }
 
 @media (max-width: 768px) {
     main {
-        padding: 0 0.3rem;
+        padding: 0 0.3rem 4rem 0.3rem;
     }
     #search {
         width: 8em;
