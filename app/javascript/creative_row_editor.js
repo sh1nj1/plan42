@@ -395,7 +395,7 @@ if (!window.creativeRowEditorInitialized) {
       if (!currentTree || !form.dataset.creativeId) return;
       const query = prompt('Search creative');
       if (!query) return;
-      fetch(`/creatives.json?search=${encodeURIComponent(query)}`)
+      fetch(`/creatives.json?search=${encodeURIComponent(query)}&simple=true`)
         .then(r => r.json())
         .then(results => {
           if (!Array.isArray(results) || results.length === 0) {

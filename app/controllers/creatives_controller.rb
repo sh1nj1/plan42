@@ -18,7 +18,12 @@ class CreativesController < ApplicationController
       @creatives = @creatives.sort_by { |c| c.comments.maximum(:updated_at) || c.updated_at }.reverse
       @parent_creative = nil
     elsif params[:search].present?
-      if params[:id].present?
+      if params[:simple].present?
+        @creatives = Creative
+                       .joins(:rich_text_description)
+                       .where("action_text_rich_texts.body LIKE :q", q: "%#{params[:search]}%")
+                       .select { |c| c.user == Current.user || c.has_permission?(Current.user, :read) }
+      elsif params[:id].present?
         base_creative = Creative.find_by(id: params[:id]).effective_origin
         if base_creative
           subtree_ids = base_creative.subtree_ids
@@ -71,15 +76,18 @@ class CreativesController < ApplicationController
     respond_to do |format|
       format.html
       format.json do
-        render json: @creatives.map { |c| { id: c.id, description: c.effective_description } }
+        if params[:simple].present?
+          render json: @creatives.map { |c| { id: c.id, description: c.effective_origin.description.to_plain_text } }
+        else
+          render json: @creatives.map { |c| { id: c.id, description: c.effective_description } }
+        end
       end
     end
   end
 
   def show
-    index
     respond_to do |format|
-      format.html { render :index }
+      format.html { redirect_to creatives_path(id: @creative.id) }
       format.json do
         render json: {
           id: @creative.id,
