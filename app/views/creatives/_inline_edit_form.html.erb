@@ -27,6 +27,8 @@
       <button type="button" id="inline-delete-with-children" class="creative-action-btn danger-link" title="<%= t('creatives.index.delete_with_children') %>" data-confirm="<%= t('creatives.index.are_you_sure_delete_with_children') %>">
         ↳<%= svg_tag 'trash-bold-outline.svg',class: 'icon-trash' %>
       </button>
+      <button type="button" id="inline-link" class="creative-action-btn" title="<%= t('creatives.index.link') %>">🔗</button>
+      <button type="button" id="inline-unlink" class="creative-action-btn danger-link" title="<%= t('creatives.index.unlink') %>" data-confirm="<%= t('creatives.index.are_you_sure_unlink') %>" style="display:none;">🔗✖</button>
       <button type="button" id="inline-close" class="creative-action-btn">✖</button>
     </div>
     <button type="button" id="inline-recommend-parent" class="creative-action-btn" style="margin-top:0.5em;">✨<%= t('creatives.index.recommend_parent') %></button>
