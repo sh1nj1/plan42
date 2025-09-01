@@ -92,6 +92,7 @@ class CreativesController < ApplicationController
         render json: {
           id: @creative.id,
           description: @creative.effective_description,
+          origin_id: @creative.origin_id,
           parent_id: @creative.parent_id,
           progress: @creative.progress
         }
