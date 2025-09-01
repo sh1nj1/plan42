@@ -27,7 +27,11 @@ if (!window.creativesExpansionInitialized) {
     function addToggleEvent(div) {
         // Get current creative id from path, e.g. /creatives/10 or /creatives
         let match = window.location.pathname.match(/\/creatives\/(\d+)/);
-        const currentCreativeId = match ? match[1] : null;
+        let currentCreativeId = match ? match[1] : null;
+        if (!currentCreativeId) {
+            const params = new URLSearchParams(window.location.search);
+            currentCreativeId = params.get('id');
+        }
         div.querySelectorAll(".creative-toggle-btn").forEach(function(btn) {
             btn.addEventListener("click", function(e) {
                 const creativeId = btn.dataset.creativeId;
