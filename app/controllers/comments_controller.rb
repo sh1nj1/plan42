@@ -30,8 +30,9 @@ class CommentsController < ApplicationController
       render json: { error: I18n.t("comments.no_permission") }, status: :forbidden and return
     end
     response = handle_comment_commands(@comment)
-    @comment.content = "#{@comment.content}\n\n#{response}"
+    @comment.content = "#{@comment.content}\n\n#{response}" if response.present?
     if @comment.save
+      trigger_gemini_response(@comment) if @comment.content.match?(/\A@gemini\b/i)
       render partial: "comments/comment", locals: { comment: @comment }, status: :created
     else
       render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
@@ -92,6 +93,27 @@ class CommentsController < ApplicationController
 
   def comment_params
     params.require(:comment).permit(:content)
+  end
+
+  def trigger_gemini_response(comment)
+    content = comment.content.sub(/\A@gemini\s*/i, "").strip
+    return if content.blank?
+    messages = []
+    markdown = helpers.render_creative_tree_markdown([ @creative ], 1)
+    messages << { role: "user", parts: [ { text: "Creative:\n#{markdown}" } ] }
+    @creative.comments.order(:created_at).each do |c|
+      role = c.user_id ? "user" : "model"
+      text = c.content.sub(/\A@gemini\s*/i, "")
+      messages << { role: role, parts: [ { text: text } ] }
+    end
+    reply = @creative.comments.create!(content: "", user: nil)
+    Thread.new do
+      accumulator = ""
+      GeminiChatClient.new.chat(messages) do |delta|
+        accumulator += delta
+        reply.update(content: accumulator)
+      end
+    end
   end
 
   def handle_comment_commands(comment)
