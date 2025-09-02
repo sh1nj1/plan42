@@ -3,6 +3,12 @@ if (!window.commentsInitialized) {
 
     document.addEventListener('turbo:load', function() {
         function isMobile() { return window.innerWidth <= 600; }
+        var sizeKey = 'commentsPopupSize';
+        document.querySelectorAll('form[action="/session"]').forEach(function(form) {
+            form.addEventListener('submit', function() {
+                localStorage.removeItem(sizeKey);
+            });
+        });
         var currentBtn = null;
         function updatePosition() {
             if (!currentBtn || isMobile() || popup.dataset.resized === 'true') return;
@@ -28,6 +34,18 @@ if (!window.commentsInitialized) {
             popup.style.left = '';
             popup.style.right = '';
             list.style.height = '';
+            reservedHeight = popup.offsetHeight - list.offsetHeight;
+            var storedSize = localStorage.getItem(sizeKey);
+            if (storedSize) {
+                try {
+                    var sz = JSON.parse(storedSize);
+                    if (sz.width) { popup.style.width = sz.width; }
+                    if (sz.height) {
+                        popup.style.height = sz.height;
+                        list.style.height = (parseInt(sz.height, 10) - reservedHeight) + 'px';
+                    }
+                } catch (e) {}
+            }
             form.style.display = (popup.dataset.canComment === 'true') ? '' : 'none';
             if (isMobile()) {
                 popup.style.display = 'block';
@@ -126,6 +144,12 @@ if (!window.commentsInitialized) {
         }
 
         function stopResize() {
+            if (resizing) {
+                localStorage.setItem(sizeKey, JSON.stringify({
+                    width: popup.style.width,
+                    height: popup.style.height
+                }));
+            }
             resizing = null;
             window.removeEventListener('mousemove', doResize);
             window.removeEventListener('mouseup', stopResize);
