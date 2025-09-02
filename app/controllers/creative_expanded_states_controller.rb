@@ -7,8 +7,8 @@ class CreativeExpandedStatesController < ApplicationController
     record = CreativeExpandedState.find_or_initialize_by(creative_id: creative_id, user_id: Current.user.id)
     state = record.expanded_status || {}
 
-    if expanded == false
-      state[node_id] = false
+    if expanded
+      state[node_id] = true
     else
       state.delete(node_id)
     end
