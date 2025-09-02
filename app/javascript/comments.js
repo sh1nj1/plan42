@@ -434,7 +434,7 @@ if (!window.commentsInitialized) {
                         headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }
                     }).then(function(r) {
                         if (r.ok) {
-                            window.location.reload();
+                            loadInitialComments();
                         }
                     });
                 } else if (e.target.classList.contains('edit-comment-btn')) {
