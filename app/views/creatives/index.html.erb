@@ -1,13 +1,13 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
 <div class="creative-actions-row">
+  <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
   <% if @parent_creative&.parent_id.present? %>
     <%= link_to t('.up'), creative_path(@parent_creative.owning_parent), class: "back-link" %>
   <% elsif @parent_creative.present? %>
     <%= link_to t('.up'), creatives_path, class: "up-link" %>
   <% end %>
-  
-  <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
+
   <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
     <%= render 'share_button' %>
   <% end %>
