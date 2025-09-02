@@ -5,7 +5,27 @@
   /* top: 10em; */
   z-index: 1000;
   width: 350px;
+  min-width: 200px;
+  min-height: 200px;
   transition: all 0.2s;
+}
+
+#comments-popup .resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  top: -5px;
+  z-index: 1001;
+}
+
+#comments-popup .resize-handle-left {
+  left: -5px;
+  cursor: nwse-resize;
+}
+
+#comments-popup .resize-handle-right {
+  right: -5px;
+  cursor: nesw-resize;
 }
 
 #comments-list {
