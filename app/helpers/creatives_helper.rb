@@ -181,7 +181,7 @@ module CreativesHelper
 
   # parent_creative.expandedState[creative.id] 값 사용, parent_creative가 nil이면 controller에서 내려준 expanded_state_map[nil] 사용
   def expanded_from_expanded_state(creative_id, expanded_state_map)
-    !(expanded_state_map and expanded_state_map[creative_id.to_s] == false)
+    !!(expanded_state_map && expanded_state_map[creative_id.to_s])
   end
 
   # 트리 구조를 마크다운으로 변환하는 헬퍼

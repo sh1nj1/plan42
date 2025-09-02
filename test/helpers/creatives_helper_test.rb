@@ -52,4 +52,12 @@ class CreativesHelperTest < ActionView::TestCase
     back = html_links_to_markdown(html)
     assert_equal "Look ![](data:image/png;base64,aGk=)", back
   end
+
+  test "expanded_from_expanded_state defaults to collapsed" do
+    assert_not expanded_from_expanded_state(1, {})
+  end
+
+  test "expanded_from_expanded_state returns true when expanded" do
+    assert expanded_from_expanded_state(1, { "1" => true })
+  end
 end
