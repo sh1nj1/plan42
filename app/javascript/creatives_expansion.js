@@ -95,7 +95,8 @@ if (!window.creativesExpansionInitialized) {
                         expand(childrenDiv, btn);
                     }
                 });
-                expandBtn.textContent = allExpanded ? expandBtn.dataset.collapseText : expandBtn.dataset.expandText;
+                expandBtn.ariaLabel = allExpanded ? expandBtn.dataset.collapseText : expandBtn.dataset.expandText;
+                expandBtn.firstChild.textContent = allExpanded ? "▶" : "▼";
                 if (window.attachCreativeRowEditorButtons) window.attachCreativeRowEditorButtons();
                 if (window.attachCommentButtons) window.attachCommentButtons();
             });
