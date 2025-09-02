@@ -1,7 +1,14 @@
-<%
-  if authenticated? && !params[:id]
-%>
-  <%= button_tag(t('creatives.index.new_creative'), type: 'button', class: 'popup-menu-item new-root-creative-btn') %>
-<%
-  end
-%>
+<% if @parent_creative %>
+  <%= button_tag(
+        t('creatives.index.new_creative'),
+        type: 'button',
+        class: 'popup-menu-item add-creative-btn',
+        data: { parent_id: @parent_creative.id }
+      ) %>
+<% else %>
+  <%= button_tag(
+        t('creatives.index.new_creative'),
+        type: 'button',
+        class: 'popup-menu-item new-root-creative-btn'
+      ) %>
+<% end %>
