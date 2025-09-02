@@ -5,6 +5,9 @@
     <span>· <%= t('datetime.ago', time: time_ago_in_words(comment.created_at)) %></span>
     <% if comment.user == Current.user %>
       <div class="comment-action-container">
+        <button class="convert-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.convert_to_creative') %>">
+          <%= t('comments.convert_button') %>
+        </button>
         <button class="edit-comment-btn" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" title="<%= t('comments.update_comment') %>">
           <%= t('comments.edit_button') %>
         </button>

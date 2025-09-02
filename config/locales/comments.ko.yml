@@ -12,3 +12,5 @@ ko:
     not_owner: "댓글 소유자만 수정할 수 있습니다."
     no_permission: "댓글을 추가할 권한이 없습니다."
     gemini: "Gemini"
+    convert_button: "전환"
+    convert_to_creative: "하위 크리에이티브로 전환"

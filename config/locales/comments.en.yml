@@ -12,3 +12,5 @@ en:
     not_owner: "Only the comment owner can modify this."
     no_permission: "You do not have permission to comment."
     gemini: "Gemini"
+    convert_button: "Convert"
+    convert_to_creative: "Convert to Creative"

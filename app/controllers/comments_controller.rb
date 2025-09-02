@@ -1,6 +1,6 @@
 class CommentsController < ApplicationController
   before_action :set_creative
-  before_action :set_comment, only: [ :destroy, :show, :update ]
+  before_action :set_comment, only: [ :destroy, :show, :update, :convert ]
 
   def index
     per_page = params[:per_page].to_i
@@ -54,6 +54,16 @@ class CommentsController < ApplicationController
   def destroy
     # @comment is set by before_action
     if @comment.user == Current.user
+      @comment.destroy
+      head :no_content
+    else
+      render json: { error: I18n.t("comments.not_owner") }, status: :forbidden
+    end
+  end
+
+  def convert
+    if @comment.user == Current.user
+      @creative.children.create!(description: @comment.content, user: @comment.user)
       @comment.destroy
       head :no_content
     else
