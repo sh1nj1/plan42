@@ -8,7 +8,12 @@
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+    height: 48px;
     align-items: center;
+}
+
+.creative-actions-row button {
+    height: 32px;
 }
 
 .delete-options {

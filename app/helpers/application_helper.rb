@@ -17,10 +17,31 @@ module ApplicationHelper
       # Read the SVG
       svg = File.read(file_path)
 
-      # Add class or other options if passed
-      if options[:class].present?
-        # inject class into the <svg ...> tag
-        svg.sub!("<svg", "<svg class=\"#{options[:class]}\"")
+      # Add/merge class and set width/height if provided in options
+      if options[:class].present? || options[:width].present? || options[:height].present?
+        svg.sub!(/<svg\b([^>]*)>/) do |match|
+          attrs = Regexp.last_match(1)
+
+          [:class, :width, :height].each do |attr|
+            next unless options[attr].present?
+
+            if attr == :class
+              if attrs =~ /\bclass=\"([^\"]*)\"/
+                attrs = attrs.sub(/\bclass=\"([^\"]*)\"/, "class=\"#{$1} #{options[:class]}\"")
+              else
+                attrs = "#{attrs} class=\"#{options[:class]}\""
+              end
+            else
+              if attrs =~ /\b#{attr}=\"[^\"]*\"/
+                attrs = attrs.sub(/\b#{attr}=\"[^\"]*\"/, "#{attr}=\"#{options[attr]}\"")
+              else
+                attrs = "#{attrs} #{attr}=\"#{options[attr]}\""
+              end
+            end
+          end
+
+          "<svg#{attrs}>"
+        end
       end
 
       raw(svg) # mark as HTML safe

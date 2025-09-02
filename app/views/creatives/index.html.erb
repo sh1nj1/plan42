@@ -3,9 +3,13 @@
 <div class="creative-actions-row">
   <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
   <% if @parent_creative&.parent_id.present? %>
-    <%= link_to t('.up'), creative_path(@parent_creative.owning_parent), class: "back-link" %>
+    <%= button_to creative_path(@parent_creative.owning_parent), method: :get, aria: { label: t('.up') } do %>
+      <span aria-hidden="true"><%= svg_tag 'arrow-up.svg', class: 'icon-up', width: 16, height: 16 %></span>
+    <% end %>
   <% elsif @parent_creative.present? %>
-    <%= link_to t('.up'), creatives_path, class: "up-link" %>
+    <%= button_to creatives_path, class: "up-link", method: :get, aria: { label: t('.up') } do %>
+      <span aria-hidden="true"><%= svg_tag 'arrow-up.svg', class: 'icon-up', width: 16, height: 16 %></span>
+    <% end %>
   <% end %>
 
   <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
