@@ -37,12 +37,15 @@ if (!window.creativesExpansionInitialized) {
                 const creativeId = btn.dataset.creativeId;
                 const childrenDiv = document.getElementById(`creative-children-${creativeId}`);
                 if (childrenDiv) {
-                    const isHidden = childrenDiv.style.display === "none";
-                    if (isHidden) {
+                    const wasHidden = childrenDiv.style.display === "none";
+                    if (wasHidden) {
                         expand(childrenDiv, btn);
                     } else {
                         collapse(childrenDiv, btn);
                     }
+                    const expanded = wasHidden;
+                    childrenDiv.dataset.expanded = expanded;
+
                     // Store expansion state in DB, scoped by currentCreativeId and node_id
                     let url = `/creative_expanded_states/toggle`;
                     fetch(url, {
@@ -54,7 +57,7 @@ if (!window.creativesExpansionInitialized) {
                         body: JSON.stringify({
                             creative_id: currentCreativeId,
                             node_id: creativeId,
-                            expanded: isHidden
+                            expanded: expanded
                         })
                     });
                 }
