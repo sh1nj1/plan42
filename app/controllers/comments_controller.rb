@@ -106,12 +106,21 @@ class CommentsController < ApplicationController
       text = c.content.sub(/\A@gemini\s*/i, "")
       messages << { role: role, parts: [ { text: text } ] }
     end
-    reply = @creative.comments.create!(content: "", user: nil)
+    reply = @creative.comments.create!(content: "...", user: comment.user)
+    Rails.logger.debug("### Gemini chat: #{messages}")
     Thread.new do
-      accumulator = ""
-      GeminiChatClient.new.chat(messages) do |delta|
-        accumulator += delta
-        reply.update(content: accumulator)
+      ActiveRecord::Base.connection_pool.with_connection do
+        accumulator = "gemini: "
+        GeminiChatClient.new.chat(messages) do |delta|
+          next if delta.blank?
+          accumulator += delta
+          begin
+            reply.update!(content: accumulator)
+            Rails.logger.debug("### Gemini chat: #{accumulator}")
+          rescue StandardError => e
+            Rails.logger.error("Gemini reply update failed: #{e.class} #{e.message}")
+          end
+        end
       end
     end
   end
