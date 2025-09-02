@@ -119,4 +119,19 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
     expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(2) .creative-row", text: 'Sibling')
     expect(page).not_to have_css("#creative-children-#{child.id} .creative-row", text: 'Sibling', visible: :all)
   end
+
+  it 'shows editor at top and saves as first child when parent context exists' do
+    existing_child = Creative.create!(description: 'Existing', user: user, parent: root_creative)
+
+    visit creative_path(root_creative)
+
+    find('.creative-actions-row .add-creative-btn').click
+    expect(page).to have_css('#creatives > .creative-tree:first-child #inline-creative-description')
+
+    fill_in 'inline-creative-description', with: 'New child'
+    find('#inline-close').click
+
+    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(1) .creative-row", text: 'New child')
+    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(2) .creative-row", text: 'Existing')
+  end
 end

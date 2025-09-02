@@ -200,19 +200,9 @@ if (!window.creativeRowEditorInitialized) {
             beforeId = insertBefore ? insertBefore.dataset.id : '';
           } else {
             parentId = btn.dataset.parentId || '';
-            const parentTree = parentId ? document.getElementById('creative-' + parentId) : null;
-            container = parentId ? document.getElementById('creative-children-' + parentId) : document.getElementById('creatives');
-            if (!container) {
-              container = document.createElement('div');
-              container.className = parentTree ? 'creative-children' : '';
-              if (parentTree) {
-                container.id = 'creative-children-' + parentId;
-                parentTree.appendChild(container);
-              } else {
-                document.getElementById('creatives').appendChild(container);
-              }
-            }
-            insertBefore = container.firstElementChild;
+            const rootContainer = document.getElementById('creatives');
+            container = rootContainer;
+            insertBefore = rootContainer.firstElementChild;
             beforeId = insertBefore ? insertBefore.dataset.id : '';
           }
           startNew(parentId, container, insertBefore, beforeId);
