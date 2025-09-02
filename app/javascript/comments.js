@@ -5,7 +5,7 @@ if (!window.commentsInitialized) {
         function isMobile() { return window.innerWidth <= 600; }
         var currentBtn = null;
         function updatePosition() {
-            if (!currentBtn || isMobile()) return;
+            if (!currentBtn || isMobile() || popup.dataset.resized === 'true') return;
             var rect = currentBtn.getBoundingClientRect();
             var scrollY = window.scrollY || window.pageYOffset;
             var top = rect.bottom + scrollY + 4;
@@ -22,6 +22,12 @@ if (!window.commentsInitialized) {
             currentBtn = btn;
             popup.dataset.creativeId = btn.dataset.creativeId;
             popup.dataset.canComment = btn.dataset.canComment;
+            popup.dataset.resized = 'false';
+            popup.style.width = '';
+            popup.style.height = '';
+            popup.style.left = '';
+            popup.style.right = '';
+            list.style.height = '';
             form.style.display = (popup.dataset.canComment === 'true') ? '' : 'none';
             if (isMobile()) {
                 popup.style.display = 'block';
@@ -56,10 +62,77 @@ if (!window.commentsInitialized) {
         var participants = document.getElementById('comment-participants');
         var submitBtn = form.querySelector('button[type="submit"]');
         var textarea = form.querySelector('textarea');
+        var leftHandle = popup.querySelector('.resize-handle-left');
+        var rightHandle = popup.querySelector('.resize-handle-right');
         var editingId = null;
         var presenceSubscription = null;
         var participantsData = null;
         var currentPresentIds = [];
+
+        var resizing = null;
+        var resizeStartX = 0;
+        var resizeStartY = 0;
+        var startWidth = 0;
+        var startHeight = 0;
+        var startLeft = 0;
+        var startTop = 0;
+        var startBottom = 0;
+        var reservedHeight = 0;
+
+        function startResize(e, dir) {
+            e.preventDefault();
+            var rect = popup.getBoundingClientRect();
+            resizeStartX = e.clientX;
+            resizeStartY = e.clientY;
+            startWidth = rect.width;
+            startHeight = rect.height;
+            startLeft = rect.left + window.scrollX;
+            startTop = rect.top + window.scrollY;
+            startBottom = startTop + startHeight;
+            reservedHeight = popup.offsetHeight - list.offsetHeight;
+            popup.style.left = startLeft + 'px';
+            popup.style.right = '';
+            resizing = dir;
+            popup.dataset.resized = 'true';
+            window.addEventListener('mousemove', doResize);
+            window.addEventListener('mouseup', stopResize);
+        }
+
+        function doResize(e) {
+            if (!resizing) return;
+            var dx = e.clientX - resizeStartX;
+            var dy = e.clientY - resizeStartY;
+            var newWidth = startWidth;
+            var newLeft = startLeft;
+            if (resizing === 'left') {
+                newWidth = Math.max(200, startWidth - dx);
+                newLeft = startLeft + dx;
+                if (newWidth === 200) { newLeft = startLeft + (startWidth - 200); }
+                popup.style.left = newLeft + 'px';
+            } else if (resizing === 'right') {
+                newWidth = Math.max(200, startWidth + dx);
+            }
+            popup.style.width = newWidth + 'px';
+
+            var newTop = startTop + dy;
+            var newHeight = startBottom - newTop;
+            if (newHeight < 200) {
+                newHeight = 200;
+                newTop = startBottom - 200;
+            }
+            popup.style.top = newTop + 'px';
+            popup.style.height = newHeight + 'px';
+            list.style.height = (newHeight - reservedHeight) + 'px';
+        }
+
+        function stopResize() {
+            resizing = null;
+            window.removeEventListener('mousemove', doResize);
+            window.removeEventListener('mouseup', stopResize);
+        }
+
+        if (leftHandle) { leftHandle.addEventListener('mousedown', function(e){ startResize(e, 'left'); }); }
+        if (rightHandle) { rightHandle.addEventListener('mousedown', function(e){ startResize(e, 'right'); }); }
 
         function insertMention(email) {
             var start = textarea.selectionStart;
