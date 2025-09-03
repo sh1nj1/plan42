@@ -61,15 +61,15 @@ class CommentsController < ApplicationController
     end
   end
 
-  def convert
-    if @comment.user == Current.user
-      @creative.children.create!(description: @comment.content, user: @comment.user)
-      @comment.destroy
-      head :no_content
-    else
-      render json: { error: I18n.t("comments.not_owner") }, status: :forbidden
+    def convert
+      if @comment.user == Current.user
+        MarkdownImporter.import(@comment.content, parent: @creative, user: @comment.user, create_root: true)
+        @comment.destroy
+        head :no_content
+      else
+        render json: { error: I18n.t("comments.not_owner") }, status: :forbidden
+      end
     end
-  end
 
   def show
     redirect_to creative_path(@creative, comment_id: @comment.id)
