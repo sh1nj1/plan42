@@ -62,6 +62,7 @@ class GeminiChatClient
     end
   rescue StandardError => e
     Rails.logger.error("Gemini chat error: #{e.message}")
+    yield "Gemini API error: #{e.message}" if block_given?
   end
 
   private
@@ -88,7 +89,9 @@ class GeminiChatClient
 
     # If there's an error message, log it for visibility
     if json["error"].is_a?(Hash) && json["error"]["message"].is_a?(String)
-      Rails.logger.warn("Gemini API error: #{json["error"]["message"]}")
+      message = "Gemini API error: #{json["error"]["message"]}"
+      Rails.logger.warn(message)
+      return message
     end
 
     nil
