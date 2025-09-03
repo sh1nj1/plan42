@@ -186,12 +186,17 @@ module CreativesHelper
 
   # 트리 구조를 마크다운으로 변환하는 헬퍼
   # creatives: 트리 배열, level: 현재 깊이(1부터 시작)
-  def render_creative_tree_markdown(creatives, level = 1)
+  def render_creative_tree_markdown(creatives, level = 1, with_progress = false)
     return "" if creatives.blank?
     md = ""
     creatives.each do |creative|
-      desc = creative.effective_description(nil, false)
-      html = desc.to_s.gsub(/<!--.*?-->/m, "").strip
+      desc = creative.effective_description(nil, false).to_s
+      # Append progress as a percentage if available (progress is 0.0..1.0)
+      if creative.respond_to?(:progress) && !creative.progress.nil?
+        pct = (creative.progress.to_f * 100).round
+        desc = "#{desc} (#{pct}%)"
+      end
+      html = desc.gsub(/<!--.*?-->/m, "").strip
       html = html_links_to_markdown(html)
       if level <= 4
         md += "#{'#' * level} #{ActionView::Base.full_sanitizer.sanitize(html).strip}\n\n"

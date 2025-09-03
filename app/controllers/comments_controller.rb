@@ -99,7 +99,7 @@ class CommentsController < ApplicationController
     content = comment.content.sub(/\A@gemini\s*/i, "").strip
     return if content.blank?
     messages = []
-    markdown = helpers.render_creative_tree_markdown([ @creative ], 1)
+    markdown = helpers.render_creative_tree_markdown([ @creative ], 1, true)
     messages << { role: "user", parts: [ { text: "Creative:\n#{markdown}" } ] }
     @creative.comments.order(:created_at).each do |c|
       role = c.user_id ? "user" : "model"
