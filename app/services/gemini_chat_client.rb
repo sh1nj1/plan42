@@ -10,8 +10,11 @@ class GeminiChatClient
 
   def chat(contents)
     return if @api_key.blank?
-    uri = URI("#{STREAM_URL}?key=#{@api_key}")
-    request = Net::HTTP::Post.new(uri, "Content-Type" => "application/json")
+    uri = URI(STREAM_URL)
+    params = { alt: "sse", key: @api_key }
+    uri.query = [uri.query, URI.encode_www_form(params)].compact.join("&") # preserve any existing query
+
+    req = Net::HTTP::Post.new(uri, "Content-Type" => "application/json")
     system_instruction = {
       parts: [
         {
@@ -25,72 +28,90 @@ class GeminiChatClient
         }
       ]
     }
-    request.body = { contents: contents, systemInstruction: system_instruction }.to_json
-    Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
-      http.request(request) do |response|
-        response.read_body do |chunk|
-          Rails.logger.info("### Gemini chunk: #{chunk}")
+    req.body = { contents: contents, systemInstruction: system_instruction }.to_json
+    Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
+      # inside your Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
+      http.request(req) do |res|
+        unless res.is_a?(Net::HTTPSuccess)
+          # Try to surface server error payload to the room
+          body = +""
+          res.read_body { |c| body << c rescue nil }
+          yield "[ERROR] HTTP #{res.code} #{res.message}#{body.empty? ? '' : " — #{body[0,400]}"}"
+          next
+        end
+
+        # --- Rock-solid SSE parsing (CRLF-safe, partial-safe) ---
+        line_buf    = +""
+        event_lines = []
+
+        # tiny helper to process one complete SSE event
+        process_event = lambda do
+          return if event_lines.empty?
+
+          # Rebuild data payload from one SSE event (can include multiple data: lines)
+          data = event_lines
+                   .select { |l| l.start_with?("data:") }
+                   .map    { |l| l.sub(/\Adata:\s?/, "") }
+                   .join("\n")
+
+          event_lines.clear
+          return if data.empty? || data == "[DONE]"
+
           begin
-            chunk = chunk.to_s.strip
-            next if chunk.blank?
+            obj = JSON.parse(data)
+          rescue JSON::ParserError => e
+            Rails.logger.warn("SSE JSON parse error: #{e.message}")
+            # Yield a short error so chat users can see it (and we keep streaming)
+            yield "[ERROR] Invalid JSON chunk (continuing): #{data[0,200]}"
+            return
+          end
 
-            # Some streaming endpoints prefix lines with "data: "
-            chunk = chunk.sub(/^data:\s*/, "")
+          # If API returns structured error in the stream, surface it
+          if obj.is_a?(Hash) && obj["error"]
+            msg = obj.dig("error", "message") || obj["error"].to_s
+            yield "[ERROR] #{msg}"
+            return
+          end
 
-            json = JSON.parse(chunk)
-
-            # Some transports may wrap multiple payloads in an array per chunk
-            if json.is_a?(Array)
-              json.each do |item|
-                text = extract_text_from(item)
-                yield text if block_given? && text.present?
-              end
-              next
-            end
-
-            text = extract_text_from(json)
-            yield text if block_given? && text.present?
-          rescue JSON::ParserError
-            # Ignore non-JSON keepalive or [DONE] style lines
-            next
-          rescue StandardError => inner_e
-            Rails.logger.warn("Gemini chunk parse error: #{inner_e.class}: #{inner_e.message}")
-            next
+          # Normal token emission
+          parts = obj.dig("candidates", 0, "content", "parts") || []
+          parts.each do |p|
+            t = p["text"]
+            yield t if t && !t.empty?
           end
         end
+
+        begin
+          res.read_body do |chunk|
+            line_buf << chunk
+
+            # Extract COMPLETE lines regardless of \n or \r\n
+            while (newline = line_buf.index(/\r?\n/))
+              # one full line without its newline
+              line = line_buf.slice!(0..newline).sub(/\r?\n\z/, "")
+              Rails.logger.debug { "### SSE line: #{line.inspect}" }
+
+              if line.empty?
+                # Blank line => end of event
+                process_event.call
+              else
+                event_lines << line
+              end
+            end
+          end
+        rescue => e
+          # Network/stream error: show to users
+          yield "[ERROR] Stream error: #{e.class}: #{e.message}"
+        ensure
+          # If stream ended without a trailing blank line, flush the last event
+          process_event.call if event_lines.any?
+        end
       end
+
     end
   rescue StandardError => e
     Rails.logger.error("Gemini chat error: #{e.message}")
+    yield "Gemini error: #{e.message}" if block_given?
   end
 
-  private
-
-  def extract_text_from(json)
-    return nil unless json.is_a?(Hash)
-
-    # Prefer candidates[0].content.parts[0].text
-    candidates = json["candidates"]
-    if candidates.is_a?(Array) && (first = candidates.first).is_a?(Hash)
-      content = first["content"]
-      if content.is_a?(Hash)
-        parts = content["parts"]
-        if parts.is_a?(Array)
-          first_part = parts.first
-          return first_part["text"] if first_part.is_a?(Hash) && first_part["text"].is_a?(String)
-          return first_part if first_part.is_a?(String)
-        end
-      end
-    end
-
-    # Some responses may put text directly in top-level (fallback)
-    return json["text"] if json["text"].is_a?(String)
-
-    # If there's an error message, log it for visibility
-    if json["error"].is_a?(Hash) && json["error"]["message"].is_a?(String)
-      Rails.logger.warn("Gemini API error: #{json["error"]["message"]}")
-    end
-
-    nil
-  end
 end
