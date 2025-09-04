@@ -170,7 +170,8 @@ module CreativesHelper
           )) do
             renderer.call do
               content_tag(:div, class: "creative-content") do
-                link_to(creative.effective_description(params[:tags]&.first), creative, class: "unstyled-link")
+                desc = embed_youtube_iframe(creative.effective_description(params[:tags]&.first))
+                link_to(desc, creative, class: "unstyled-link")
               end
             end
           end + render_next_block.call(level + 1)
