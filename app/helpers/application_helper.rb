@@ -57,12 +57,17 @@ module ApplicationHelper
     end.html_safe
   end
 
-  def render_markdown(text)
-    html = markdown_links_to_html(ERB::Util.html_escape(text.to_s))
-    html.gsub!(%r{(?<!['"])https?://[^\s<]+}) do |url|
-      %(<a href="#{url}" target="_blank" rel="noopener">#{url}</a>)
+  class SafeMarkdownRenderer < Redcarpet::Render::HTML
+    def initialize
+      super(filter_html: true, hard_wrap: true, link_attributes: { target: "_blank", rel: "noopener" })
     end
-    html.gsub!("\n", "<br>")
-    html.html_safe
+  end
+
+  def markdown_renderer
+    @markdown_renderer ||= Redcarpet::Markdown.new(SafeMarkdownRenderer.new, autolink: true)
+  end
+
+  def render_markdown(text)
+    markdown_renderer.render(text.to_s).html_safe
   end
 end

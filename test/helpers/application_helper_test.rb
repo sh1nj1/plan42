@@ -11,7 +11,7 @@ class ApplicationHelperTest < ActionView::TestCase
 
   test "render_markdown converts markdown to HTML" do
     text = "**bold**\nhttp://example.com and [link](http://example.org)"
-    expected = '<strong>bold</strong><br><a href="http://example.com" target="_blank" rel="noopener">http://example.com</a> and <a href="http://example.org">link</a>'
+    expected = "<p><strong>bold</strong><br>\n<a href=\"http://example.com\" target=\"_blank\" rel=\"noopener\">http://example.com</a> and <a href=\"http://example.org\" target=\"_blank\" rel=\"noopener\">link</a></p>\n"
     assert_equal expected, render_markdown(text)
   end
 end
