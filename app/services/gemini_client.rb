@@ -2,7 +2,7 @@ require "net/http"
 require "json"
 
 class GeminiClient
-  GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+  GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
   def initialize(api_key: ENV["GEMINI_API_KEY"])
     @api_key = api_key
