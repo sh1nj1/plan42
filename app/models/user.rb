@@ -53,12 +53,14 @@ class User < ApplicationRecord
   end
 
   def self.anonymous
-    user = find_or_create_by!(email: ANONYMOUS_EMAIL) do |u|
-      u.name = "Anonymous"
-      u.password = SecureRandom.hex(16)
-      u.notifications_enabled = false
+    @@anonymous_user ||= begin
+      user = find_or_create_by!(email: ANONYMOUS_EMAIL) do |u|
+        u.name = "Anonymous"
+        u.password = SecureRandom.hex(16)
+        u.notifications_enabled = false
+      end
+      user.update!(notifications_enabled: false) if user.notifications_enabled
+      user
     end
-    user.update!(notifications_enabled: false) if user.notifications_enabled
-    user
   end
 end
