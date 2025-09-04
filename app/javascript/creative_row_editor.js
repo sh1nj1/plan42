@@ -174,7 +174,12 @@ if (!window.creativeRowEditorInitialized) {
           currentTree = tree;
           hideRow(tree);
           tree.draggable = false;
-          tree.appendChild(template);
+          const children = tree.querySelector('.creative-children');
+          if (children) {
+            tree.insertBefore(template, children);
+          } else {
+            tree.appendChild(template);
+          }
           template.style.display = 'block';
           loadCreative(tree.dataset.id);
         });

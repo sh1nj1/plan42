@@ -39,6 +39,8 @@ RSpec.describe 'Creative expansion actions', type: :system, js: true do
 
     find("#creative-#{child.id} .edit-inline-btn").click
     expect(page).to have_css('#inline-edit-form-element', visible: :visible)
+    prev_id = page.evaluate_script("document.getElementById('creative-children-#{child.id}').previousElementSibling.id")
+    expect(prev_id).to eq('inline-edit-form')
     find('#inline-close').click
 
     find("#creative-#{child.id} [name='show-comments-btn']").click
