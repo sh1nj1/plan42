@@ -424,14 +424,15 @@ if (!window.commentsInitialized) {
                             // TODO: handle error
                         }
                     });
-                } else if (e.target.classList.contains('convert-comment-btn')) {
-                    e.preventDefault();
-                    var btn = e.target;
-                    var commentId = btn.getAttribute('data-comment-id');
-                    var creativeId = popup.dataset.creativeId;
-                    fetch(`/creatives/${creativeId}/comments/${commentId}/convert`, {
-                        method: 'POST',
-                        headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }
+               } else if (e.target.classList.contains('convert-comment-btn')) {
+                   e.preventDefault();
+                    if (!confirm(popup.dataset.convertConfirmText)) return;
+                   var btn = e.target;
+                   var commentId = btn.getAttribute('data-comment-id');
+                   var creativeId = popup.dataset.creativeId;
+                   fetch(`/creatives/${creativeId}/comments/${commentId}/convert`, {
+                       method: 'POST',
+                       headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }
                     }).then(function(r) {
                         if (r.ok) {
                             loadInitialComments();
