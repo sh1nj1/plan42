@@ -80,10 +80,17 @@ if (!window.creativesExpansionInitialized) {
     function setupCreativeToggles() {
         console.log("Setting up creative toggles");
 
+        allExpanded = false;
+
+        var expandBtn = document.getElementById('expand-all-btn');
+        if (expandBtn) {
+            expandBtn.ariaLabel = expandBtn.dataset.expandText;
+            expandBtn.firstChild.textContent = "▼";
+        }
+
         addToggleEvent(document);
 
         // Toggle Expand/Collapse All Creatives
-        var expandBtn = document.getElementById('expand-all-btn');
         if (expandBtn) {
             expandBtn.addEventListener('click', function () {
                 var toggles = document.querySelectorAll('.creative-toggle-btn');

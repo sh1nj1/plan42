@@ -44,6 +44,16 @@ RSpec.describe 'Creative expansion actions', type: :system, js: true do
     find("#creative-#{child.id} [name='show-comments-btn']").click
     expect(page).to have_css('#comments-popup', visible: :visible)
   end
+
+  it 'resets expand all state after navigation' do
+    visit creative_path(root_creative)
+    find('#expand-all-btn').click
+    expect(page).to have_css("#creative-#{child.id}")
+
+    visit root_path
+    visit creative_path(root_creative)
+    expect(page).not_to have_css("#creative-#{child.id}")
+  end
   it 'sends current creative id when toggling expansion' do
     visit creative_path(root_creative)
     find("#creative-#{root_creative.id} .creative-toggle-btn").click
