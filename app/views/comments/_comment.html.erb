@@ -18,6 +18,6 @@
     <% end %>
   </div>
   <div class="comment-content">
-    <%= linkify_urls(comment.content) %>
+    <%= render_markdown(comment.content) %>
   </div>
 </div>

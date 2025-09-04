@@ -1,4 +1,5 @@
 module ApplicationHelper
+  include CreativesHelper
   def user_avatar_url(user, size: 32)
     if user.avatar.attached?
       url_for(user.avatar.variant(resize_to_fill: [ size, size ]))
@@ -22,7 +23,7 @@ module ApplicationHelper
         svg.sub!(/<svg\b([^>]*)>/) do |match|
           attrs = Regexp.last_match(1)
 
-          [:class, :width, :height].each do |attr|
+          [ :class, :width, :height ].each do |attr|
             next unless options[attr].present?
 
             if attr == :class
@@ -54,5 +55,14 @@ module ApplicationHelper
     ERB::Util.html_escape(text.to_s).gsub(%r{https?://[^\s]+}) do |url|
       link_to(url, url, target: "_blank", rel: "noopener")
     end.html_safe
+  end
+
+  def render_markdown(text)
+    html = markdown_links_to_html(ERB::Util.html_escape(text.to_s))
+    html.gsub!(%r{(?<!['"])https?://[^\s<]+}) do |url|
+      %(<a href="#{url}" target="_blank" rel="noopener">#{url}</a>)
+    end
+    html.gsub!("\n", "<br>")
+    html.html_safe
   end
 end
