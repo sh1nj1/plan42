@@ -6,8 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var index = parseInt(container.dataset.initialIndex || '0', 10);
   var rootId = container.dataset.rootId;
   var contentEl = document.getElementById('slide-content');
-  var scrollProxy = document.getElementById('slide-scroll');
-  var scrollProxyInner = document.getElementById('slide-scroll-inner');
+  var swipeArea = document.getElementById('slide-swipe');
   var startX = null;
   var slideSubscription = null;
   var lastScrollLeft = 0;
@@ -21,10 +20,6 @@ document.addEventListener('DOMContentLoaded', function() {
         contentEl.innerHTML = data.description;
         requestAnimationFrame(function() {
           container.scrollLeft = 0;
-          if (scrollProxy) {
-            scrollProxyInner.style.width = contentEl.scrollWidth + 'px';
-            scrollProxy.scrollLeft = 0;
-          }
           lastScrollLeft = 0;
         });
       });
@@ -48,22 +43,24 @@ document.addEventListener('DOMContentLoaded', function() {
     slideSubscription.perform('change', { index: index });
   }
 
-  container.addEventListener('touchstart', function(e) {
-    startX = e.touches[0].clientX;
-  });
+  if (swipeArea) {
+    swipeArea.addEventListener('touchstart', function(e) {
+      startX = e.touches[0].clientX;
+    });
 
-  container.addEventListener('touchend', function(e) {
-    if (startX === null) return;
-    var dx = e.changedTouches[0].clientX - startX;
-    if (Math.abs(dx) > 30) {
-      if (dx < 0) {
-        load(index + 1, true);
-      } else {
-        load(index - 1, true);
+    swipeArea.addEventListener('touchend', function(e) {
+      if (startX === null) return;
+      var dx = e.changedTouches[0].clientX - startX;
+      if (Math.abs(dx) > 30) {
+        if (dx < 0) {
+          load(index + 1, true);
+        } else {
+          load(index - 1, true);
+        }
       }
-    }
-    startX = null;
-  });
+      startX = null;
+    });
+  }
 
   window.addEventListener('keydown', function(e) {
     var key = e.key || e.keyCode;
@@ -76,30 +73,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  if (scrollProxy) {
-    scrollProxy.addEventListener('scroll', function() {
-      container.scrollLeft = scrollProxy.scrollLeft;
-      if (container.scrollWidth <= container.clientWidth) return;
-      var max = container.scrollWidth - container.clientWidth;
-      var left = scrollProxy.scrollLeft;
-      if (left === 0 && lastScrollLeft > 0) {
-        load(index - 1, true);
-      } else if (left >= max && lastScrollLeft < max) {
-        load(index + 1, true);
-      }
-      lastScrollLeft = left;
-    });
-  } else {
-    container.addEventListener('scroll', function() {
-      if (container.scrollWidth <= container.clientWidth) return;
-      var max = container.scrollWidth - container.clientWidth;
-      var left = container.scrollLeft;
-      if (left === 0 && lastScrollLeft > 0) {
-        load(index - 1, true);
-      } else if (left >= max && lastScrollLeft < max) {
-        load(index + 1, true);
-      }
-      lastScrollLeft = left;
-    });
-  }
+  container.addEventListener('scroll', function() {
+    if (container.scrollWidth <= container.clientWidth) return;
+    var max = container.scrollWidth - container.clientWidth;
+    var left = container.scrollLeft;
+    if (left === 0 && lastScrollLeft > 0) {
+      load(index - 1, true);
+    } else if (left >= max && lastScrollLeft < max) {
+      load(index + 1, true);
+    }
+    lastScrollLeft = left;
+  });
 });
