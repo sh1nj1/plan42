@@ -185,35 +185,43 @@ if (!window.creativeRowEditorInitialized) {
         .forEach(function(btn) {
           btn.addEventListener('click', function(e) {
             e.preventDefault();
+            if (template.style.display === 'block') {
+              hideCurrent();
+              return;
+            }
             const tree = btn.closest('.creative-tree');
             let parentId, container, insertBefore, beforeId = '';
-          if (tree) {
-            parentId = tree.dataset.id;
-            container = tree.querySelector('.creative-children');
-            if (!container) {
-              container = document.createElement('div');
-              container.className = 'creative-children';
-              container.id = 'creative-children-' + parentId;
-              tree.appendChild(container);
+            if (tree) {
+              parentId = tree.dataset.id;
+              container = tree.querySelector('.creative-children');
+              if (!container) {
+                container = document.createElement('div');
+                container.className = 'creative-children';
+                container.id = 'creative-children-' + parentId;
+                tree.appendChild(container);
+              }
+              insertBefore = container.firstElementChild;
+              beforeId = insertBefore ? insertBefore.dataset.id : '';
+            } else {
+              parentId = btn.dataset.parentId || '';
+              const rootContainer = document.getElementById('creatives');
+              container = rootContainer;
+              insertBefore = rootContainer.firstElementChild;
+              beforeId = insertBefore ? insertBefore.dataset.id : '';
             }
-            insertBefore = container.firstElementChild;
-            beforeId = insertBefore ? insertBefore.dataset.id : '';
-          } else {
-            parentId = btn.dataset.parentId || '';
-            const rootContainer = document.getElementById('creatives');
-            container = rootContainer;
-            insertBefore = rootContainer.firstElementChild;
-            beforeId = insertBefore ? insertBefore.dataset.id : '';
-          }
-          startNew(parentId, container, insertBefore, beforeId);
+            startNew(parentId, container, insertBefore, beforeId);
+          });
         });
-      });
 
       document.querySelectorAll('.new-root-creative-btn').forEach(function(btn) {
         const container = document.getElementById('creatives');
         if (!container) return;
         btn.addEventListener('click', function(e) {
           e.preventDefault();
+          if (template.style.display === 'block') {
+            hideCurrent();
+            return;
+          }
           const insertBefore = container.firstElementChild;
           const beforeId = insertBefore ? insertBefore.dataset.id : '';
           startNew('', container, insertBefore, beforeId);
