@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var contentEl = document.getElementById('slide-content');
   var startX = null;
   var slideSubscription = null;
+  var lastScrollLeft = 0;
 
   function load(idx, broadcast) {
     if (idx < 0 || idx >= ids.length) return;
@@ -16,6 +17,8 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(function(r) { return r.json(); })
       .then(function(data) {
         contentEl.innerHTML = data.description;
+        container.scrollLeft = 0;
+        lastScrollLeft = 0;
       });
     if (broadcast && slideSubscription) {
       slideSubscription.perform('change', { index: index });
@@ -57,5 +60,17 @@ document.addEventListener('DOMContentLoaded', function() {
   window.addEventListener('keydown', function(e) {
     if (e.key === 'ArrowRight') { load(index + 1, true); }
     if (e.key === 'ArrowLeft') { load(index - 1, true); }
+  });
+
+  container.addEventListener('scroll', function() {
+    if (container.scrollWidth <= container.clientWidth) return;
+    var max = container.scrollWidth - container.clientWidth;
+    var left = container.scrollLeft;
+    if (left === 0 && lastScrollLeft > 0) {
+      load(index - 1, true);
+    } else if (left >= max && lastScrollLeft < max) {
+      load(index + 1, true);
+    }
+    lastScrollLeft = left;
   });
 });
