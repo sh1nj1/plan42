@@ -378,7 +378,12 @@ class CreativesController < ApplicationController
 
     def build_slide_ids(node)
       @slide_ids << node.id
-      node.children.order(:sequence).each { |child| build_slide_ids(child) }
+      children = node.children.order(:sequence)
+      if node.origin_id.present?
+        linked_children = node.linked_children.order(:sequence)
+        children = (children + linked_children).uniq.sort_by(&:sequence)
+      end
+      children.each { |child| build_slide_ids(child) }
     end
 
     # Recursively destroy all descendants the user can delete
