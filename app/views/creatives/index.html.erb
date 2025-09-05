@@ -52,6 +52,9 @@
 </div>
 
 <% if @parent_creative %>
+  <% content_for :head do %>
+    <meta property="og:title" content="<%= @parent_creative.effective_origin.description.to_plain_text %>">
+  <% end %>
   <div class="creative-row" id="creative-markdown-block">
     <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
       <div class="creative-content">
