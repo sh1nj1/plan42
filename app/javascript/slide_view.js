@@ -58,8 +58,14 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   window.addEventListener('keydown', function(e) {
-    if (e.key === 'ArrowRight') { load(index + 1, true); }
-    if (e.key === 'ArrowLeft') { load(index - 1, true); }
+    var key = e.key || e.keyCode;
+    if (key === 'ArrowRight' || key === 39) {
+      e.preventDefault();
+      load(index + 1, true);
+    } else if (key === 'ArrowLeft' || key === 37) {
+      e.preventDefault();
+      load(index - 1, true);
+    }
   });
 
   container.addEventListener('scroll', function() {
