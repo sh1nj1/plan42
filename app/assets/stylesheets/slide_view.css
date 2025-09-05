@@ -7,32 +7,22 @@
   overflow-x: auto;
 }
 
-#slide-scroll {
+#slide-swipe {
   display: none;
 }
 
 @media (max-width: 768px) {
   #slide-view {
-    height: calc(100vh - 20px);
-    overflow-x: hidden;
+    height: 80vh;
   }
 
-  #slide-scroll {
+  #slide-swipe {
     display: block;
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    height: 20px;
-    overflow-x: auto;
+    height: 20vh;
     background: var(--border-color);
-  }
-
-  #slide-scroll::-webkit-scrollbar {
-    height: 6px;
-  }
-
-  #slide-scroll-inner {
-    height: 1px;
   }
 }
