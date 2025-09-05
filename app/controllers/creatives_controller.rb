@@ -2,7 +2,7 @@ class CreativesController < ApplicationController
   # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
   # Removed unauthenticated access to index and show actions
   # allow_unauthenticated_access only: %i[ index show ]
-  before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions ]
+  before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions slide_view ]
 
   def index
     # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
@@ -98,6 +98,12 @@ class CreativesController < ApplicationController
         }
       end
     end
+  end
+
+  def slide_view
+    @slide_ids = []
+    build_slide_ids(@creative)
+    render layout: "slide"
   end
 
   def new
@@ -368,6 +374,11 @@ class CreativesController < ApplicationController
 
     def creative_params
       params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id)
+    end
+
+    def build_slide_ids(node)
+      @slide_ids << node.id
+      node.children.order(:sequence).each { |child| build_slide_ids(child) }
     end
 
     # Recursively destroy all descendants the user can delete

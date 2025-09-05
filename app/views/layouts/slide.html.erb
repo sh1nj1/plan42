@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title><%= t('app.name') %></title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%= stylesheet_link_tag 'slide_view', media: 'all' %>
+    <%= javascript_include_tag 'actioncable', defer: true %>
+    <%= javascript_include_tag 'slide_view', defer: true %>
+  </head>
+  <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>">
+    <%= yield %>
+  </body>
+</html>

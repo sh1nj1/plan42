@@ -16,6 +16,12 @@
     <%= render 'share_button' %>
   <% end %>
 
+  <% if @parent_creative.present? %>
+    <%= link_to slide_view_creative_path(@parent_creative), class: 'slide-view-btn', aria: { label: t('creatives.index.slide_view') } do %>
+      <span aria-hidden="true"><%= svg_tag 'slide.svg', class: 'icon-slide', width: 16, height: 16 %></span>
+    <% end %>
+  <% end %>
+
   <button id="set-plan-btn" class="set-plan-btn" style="display:none;"><%= t('app.set_plan') %></button>
   <input type="checkbox" id="select-all-creatives" style="display:none;vertical-align:middle;" />
   <button id="select-creative-btn" class="select-btn" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>"><%= t('app.select') %></button>

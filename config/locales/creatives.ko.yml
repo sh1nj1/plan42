@@ -19,6 +19,7 @@ ko:
       delete_selection: "선택 항목 삭제"
       are_you_sure_delete_selection: "선택된 크리에이티브를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
       creatives: "크리에이티브 목록"
+      slide_view: "슬라이드 뷰"
       recalculate_progress: "진행률 다시 계산"
       recalculate_all_parent_progress: "모든 상위 진행률을 다시 계산하시겠습니까?"
       no_creatives: "크리에이티브가 없습니다."

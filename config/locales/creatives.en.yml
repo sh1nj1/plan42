@@ -19,6 +19,7 @@ en:
       delete_selection: "Delete selected"
       are_you_sure_delete_selection: "Are you sure you want to delete selected Creatives? This cannot be undone."
       creatives: "Creatives"
+      slide_view: "Slide View"
       recalculate_progress: "Recalculate Progress"
       recalculate_all_parent_progress: "Recalculate all parent progress?"
       no_creatives: "No creatives found."
