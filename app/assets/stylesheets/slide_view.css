@@ -6,3 +6,33 @@
   text-align: center;
   overflow-x: auto;
 }
+
+#slide-scroll {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  #slide-view {
+    height: calc(100vh - 20px);
+    overflow-x: hidden;
+  }
+
+  #slide-scroll {
+    display: block;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 20px;
+    overflow-x: auto;
+    background: var(--border-color);
+  }
+
+  #slide-scroll::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  #slide-scroll-inner {
+    height: 1px;
+  }
+}

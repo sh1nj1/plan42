@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', function() {
   var index = parseInt(container.dataset.initialIndex || '0', 10);
   var rootId = container.dataset.rootId;
   var contentEl = document.getElementById('slide-content');
+  var scrollProxy = document.getElementById('slide-scroll');
+  var scrollProxyInner = document.getElementById('slide-scroll-inner');
   var startX = null;
   var slideSubscription = null;
   var lastScrollLeft = 0;
@@ -17,8 +19,14 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(function(r) { return r.json(); })
       .then(function(data) {
         contentEl.innerHTML = data.description;
-        container.scrollLeft = 0;
-        lastScrollLeft = 0;
+        requestAnimationFrame(function() {
+          container.scrollLeft = 0;
+          if (scrollProxy) {
+            scrollProxyInner.style.width = contentEl.scrollWidth + 'px';
+            scrollProxy.scrollLeft = 0;
+          }
+          lastScrollLeft = 0;
+        });
       });
     if (broadcast && slideSubscription) {
       slideSubscription.perform('change', { index: index });
@@ -68,15 +76,30 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  container.addEventListener('scroll', function() {
-    if (container.scrollWidth <= container.clientWidth) return;
-    var max = container.scrollWidth - container.clientWidth;
-    var left = container.scrollLeft;
-    if (left === 0 && lastScrollLeft > 0) {
-      load(index - 1, true);
-    } else if (left >= max && lastScrollLeft < max) {
-      load(index + 1, true);
-    }
-    lastScrollLeft = left;
-  });
+  if (scrollProxy) {
+    scrollProxy.addEventListener('scroll', function() {
+      container.scrollLeft = scrollProxy.scrollLeft;
+      if (container.scrollWidth <= container.clientWidth) return;
+      var max = container.scrollWidth - container.clientWidth;
+      var left = scrollProxy.scrollLeft;
+      if (left === 0 && lastScrollLeft > 0) {
+        load(index - 1, true);
+      } else if (left >= max && lastScrollLeft < max) {
+        load(index + 1, true);
+      }
+      lastScrollLeft = left;
+    });
+  } else {
+    container.addEventListener('scroll', function() {
+      if (container.scrollWidth <= container.clientWidth) return;
+      var max = container.scrollWidth - container.clientWidth;
+      var left = container.scrollLeft;
+      if (left === 0 && lastScrollLeft > 0) {
+        load(index - 1, true);
+      } else if (left >= max && lastScrollLeft < max) {
+        load(index + 1, true);
+      }
+      lastScrollLeft = left;
+    });
+  }
 });
