@@ -388,7 +388,7 @@ class CreativesController < ApplicationController
       @slide_ids << node.id
       children = node.children.order(:sequence)
       if node.origin_id.present?
-        linked_children = node.linked_children.order(:sequence)
+        linked_children = node.linked_children
         children = (children + linked_children).uniq.sort_by(&:sequence)
       end
       children.each { |child| build_slide_ids(child) }

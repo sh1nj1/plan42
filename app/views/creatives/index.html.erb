@@ -17,8 +17,8 @@
   <% end %>
 
   <% if @parent_creative.present? %>
-    <%= link_to slide_view_creative_path(@parent_creative), class: 'slide-view-btn desktop-only', aria: { label: t('creatives.index.slide_view') } do %>
-      <span aria-hidden="true"><%= svg_tag 'slide.svg', class: 'icon-slide', width: 16, height: 16 %></span>
+    <%= button_to slide_view_creative_path(@parent_creative), method: :get, class: 'slide-view-btn desktop-only', aria: { label: t('creatives.index.slide_view') } do %>
+      <span aria-hidden="true"><%= svg_tag 'slide.svg', class: 'icon-slide', width: 22, height: 20 %></span>
     <% end %>
   <% end %>
 
