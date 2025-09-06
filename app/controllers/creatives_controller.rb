@@ -94,7 +94,8 @@ class CreativesController < ApplicationController
           description: @creative.effective_description,
           origin_id: @creative.origin_id,
           parent_id: @creative.parent_id,
-          progress: @creative.progress
+          progress: @creative.progress,
+          depth: @creative.ancestors.count + 1
         }
       end
     end
