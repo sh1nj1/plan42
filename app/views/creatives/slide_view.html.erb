@@ -1,4 +1,11 @@
+<% depth = @creative.ancestors.count + 1 %>
+<% tag_name = case depth
+             when 1 then 'h1'
+             when 2 then 'h2'
+             when 3 then 'h3'
+             else 'div'
+             end %>
 <div id="slide-view" data-slide-ids="<%= @slide_ids.join(',') %>" data-initial-index="0" data-root-id="<%= @creative.id %>">
-  <div id="slide-content"><%= @creative.effective_description.html_safe %></div>
+  <div id="slide-content"><%= content_tag(tag_name, @creative.effective_description.html_safe) %></div>
 </div>
 <div id="slide-swipe"></div>

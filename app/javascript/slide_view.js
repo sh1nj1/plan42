@@ -17,7 +17,19 @@ document.addEventListener('DOMContentLoaded', function() {
     fetch('/creatives/' + ids[index] + '.json')
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        contentEl.innerHTML = data.description;
+        var depth = data.depth || 1;
+        var tag = 'div';
+        if (depth === 1) {
+          tag = 'h1';
+        } else if (depth === 2) {
+          tag = 'h2';
+        } else if (depth === 3) {
+          tag = 'h3';
+        }
+        contentEl.innerHTML = '';
+        var el = document.createElement(tag);
+        el.innerHTML = data.description;
+        contentEl.appendChild(el);
         requestAnimationFrame(function() {
           container.scrollLeft = 0;
           lastScrollLeft = 0;

@@ -7,6 +7,10 @@
   overflow-x: auto;
 }
 
+#slide-content {
+  padding: 2rem;
+}
+
 #slide-swipe {
   display: none;
 }
