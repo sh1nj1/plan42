@@ -4,8 +4,8 @@ require "cgi"
 class EmailVerificationFlowTest < ActionDispatch::IntegrationTest
   test "verification link verifies user" do
     ActionMailer::Base.deliveries.clear
-    post users_path, params: { user: { email: "verify@example.com", password: "secret", password_confirmation: "secret", name: "Verify" } }
-    user = User.find_by(email: "verify@example.com")
+    post users_path, params: { user: { email: "verify@example1.com", password: "secret", password_confirmation: "secret", name: "Verify" } }
+    user = User.find_by(email: "verify@example1.com")
     assert_not_nil user
     assert_nil user.email_verified_at
 

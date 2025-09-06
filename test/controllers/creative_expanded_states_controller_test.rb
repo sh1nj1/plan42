@@ -4,8 +4,9 @@ require "ostruct"
 class CreativeExpandedStatesControllerTest < ActionDispatch::IntegrationTest
   setup do
     @user = users(:one)
-    @creative = creatives(:one)
-    Current.session = OpenStruct.new(user: @user)
+    @creative = creatives(:tshirt)
+    @user.update!(email_verified_at: Time.current)
+    post session_path, params: { email: @user.email, password: "password" }
   end
 
   test "toggle stores expanded state" do

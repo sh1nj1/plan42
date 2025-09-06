@@ -3,10 +3,10 @@ require "cgi"
 
 class InvitationFlowTest < ActionDispatch::IntegrationTest
   test "invitation link resolves to invitation" do
-    inviter = User.create!(email: "inviter@example.com", password: "secret", name: "Inviter")
+    inviter = User.create!(email: "inviter@example1.com", password: "secret", name: "Inviter")
     creative = Creative.create!(user: inviter, description: "Test creative")
 
-    invitation = Invitation.create!(email: "invitee@example.com",
+    invitation = Invitation.create!(email: "invitee@example1.com",
                                     inviter: inviter,
                                     creative: creative,
                                     permission: :read)
@@ -28,6 +28,6 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
     invitation.reload
     assert_not_nil invitation.clicked_at
     assert_select "input[name=invite_token][value=?]", token
-    assert_select "input[name='user[email]'][readonly][value=?]", "invitee@example.com"
+    assert_select "input[name='user[email]'][readonly][value=?]", "invitee@example1.com"
   end
 end

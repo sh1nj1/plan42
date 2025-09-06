@@ -192,7 +192,7 @@ module CreativesHelper
     creatives.each do |creative|
       desc = creative.effective_description(nil, false).to_s
       # Append progress as a percentage if available (progress is 0.0..1.0)
-      if creative.respond_to?(:progress) && !creative.progress.nil?
+      if with_progress && creative.respond_to?(:progress) && !creative.progress.nil?
         pct = (creative.progress.to_f * 100).round
         desc = "#{desc} (#{pct}%)"
       end
@@ -213,7 +213,7 @@ module CreativesHelper
       end
       # 하위 노드가 있으면 재귀
       if creative.respond_to?(:children) && creative.children.present?
-        md += render_creative_tree_markdown(creative.children, level + 1)
+        md += render_creative_tree_markdown(creative.children, level + 1, with_progress)
       end
       md += "\n" if level <= 4
     end
