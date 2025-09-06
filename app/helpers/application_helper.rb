@@ -61,7 +61,15 @@ module ApplicationHelper
     html = html.to_s
     html.gsub(%r{<a[^>]+href=["']https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([\w-]{11})[^"']*["'][^>]*>.*?</a>}i) do
       video_id = Regexp.last_match(1)
-      %(<iframe width="560" height="315" src="https://www.youtube.com/embed/#{video_id}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>)
+      tag.iframe(
+        "",
+        src: "https://www.youtube.com/embed/#{video_id}",
+        title: "YouTube video player",
+        frameborder: 0,
+        allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
+        allowfullscreen: true,
+        style: "width: 60vw; aspect-ratio: 16 / 9;"
+      )
     end.html_safe
   end
 end
