@@ -89,13 +89,19 @@ class CreativesController < ApplicationController
     respond_to do |format|
       format.html { redirect_to creatives_path(id: @creative.id) }
       format.json do
+        root = params[:root_id] ? Creative.find_by(id: params[:root_id]) : nil
+        depth = if root
+                  (@creative.ancestors.count - root.ancestors.count) + 1
+                else
+                  @creative.ancestors.count + 1
+                end
         render json: {
           id: @creative.id,
           description: @creative.effective_description,
           origin_id: @creative.origin_id,
           parent_id: @creative.parent_id,
           progress: @creative.progress,
-          depth: @creative.ancestors.count + 1
+          depth: depth
         }
       end
     end
@@ -103,6 +109,7 @@ class CreativesController < ApplicationController
 
   def slide_view
     @slide_ids = []
+    @root_depth = @creative.ancestors.count
     build_slide_ids(@creative)
     render layout: "slide"
   end

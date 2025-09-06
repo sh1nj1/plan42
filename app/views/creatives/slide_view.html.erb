@@ -1,4 +1,4 @@
-<% depth = @creative.ancestors.count + 1 %>
+<% depth = (@creative.ancestors.count - @root_depth) + 1 %>
 <% tag_name = case depth
              when 1 then 'h1'
              when 2 then 'h2'
