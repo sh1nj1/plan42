@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', function() {
         contentEl.appendChild(el);
         requestAnimationFrame(function() {
           container.scrollLeft = 0;
+          container.scrollTop = 0;
           lastScrollLeft = 0;
         });
       });

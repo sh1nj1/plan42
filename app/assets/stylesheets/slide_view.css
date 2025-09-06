@@ -1,14 +1,16 @@
 #slide-view {
   height: 100vh;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow-x: auto;
+  overflow: auto;
+  padding: 2rem;
+  box-sizing: border-box;
+}
+
+#slide-content {
+  margin: auto;
   font-size: 150%;
 }
-#slide-content {
-  padding: 2rem;
-}
+
 #slide-content .trix-content {
     line-height: 1.8;
 }
