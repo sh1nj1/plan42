@@ -87,7 +87,9 @@ class CreativesController < ApplicationController
 
   def show
     respond_to do |format|
-      format.html { redirect_to creatives_path(id: @creative.id) }
+      redirect_options = { id: @creative.id }
+      redirect_options[:comment_id] = params[:comment_id] if params[:comment_id].present?
+      format.html { redirect_to creatives_path(redirect_options) }
       format.json do
         root = params[:root_id] ? Creative.find_by(id: params[:root_id]) : nil
         depth = if root

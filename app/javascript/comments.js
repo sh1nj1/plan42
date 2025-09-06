@@ -467,8 +467,13 @@ if (!window.commentsInitialized) {
                 var params = new URLSearchParams(window.location.search);
                 var commentId = params.get('comment_id');
                 var match = window.location.pathname.match(/\/creatives\/(\d+)/);
-                if (commentId && match) {
-                    var creativeId = match[1];
+                var creativeId;
+                if (match) {
+                    creativeId = match[1];
+                } else {
+                    creativeId = params.get('id')
+                }
+                if (commentId && creativeId) {
                     var btn = document.querySelector('[name="show-comments-btn"][data-creative-id="' + creativeId + '"]');
                     if (btn) {
                         openPopup(btn);
