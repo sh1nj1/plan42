@@ -72,7 +72,7 @@ class CommentsController < ApplicationController
     end
 
   def show
-    redirect_to creative_path(@creative, comment_id: @comment.id)
+    redirect_to creatives_path(id: @creative.id, comment_id: @comment.id)
   end
 
   def participants
