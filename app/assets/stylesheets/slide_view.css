@@ -3,12 +3,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  text-align: center;
   overflow-x: auto;
 }
-
 #slide-content {
   padding: 2rem;
+}
+#slide-content .trix-content {
+    line-height: 1.8;
 }
 
 #slide-counter {
@@ -36,6 +37,6 @@
     left: 0;
     right: 0;
     height: 20vh;
-    background: var(--border-color);
+    background: var(--color-border);
   }
 }
