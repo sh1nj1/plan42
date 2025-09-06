@@ -107,8 +107,6 @@ if (!window.creativesExpansionInitialized) {
                 });
                 expandBtn.ariaLabel = allExpanded ? expandBtn.dataset.collapseText : expandBtn.dataset.expandText;
                 expandBtn.firstChild.textContent = allExpanded ? "▶" : "▼";
-                if (window.attachCreativeRowEditorButtons) window.attachCreativeRowEditorButtons();
-                if (window.attachCommentButtons) window.attachCommentButtons();
             });
         }
     }

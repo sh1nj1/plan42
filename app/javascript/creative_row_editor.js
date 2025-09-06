@@ -5,6 +5,8 @@ if (!window.creativeRowEditorInitialized) {
     const template = document.getElementById('inline-edit-form');
     if (!template) return;
 
+    initializeEventListeners();
+
     const form = document.getElementById('inline-edit-form-element');
     const descriptionInput = document.getElementById('inline-creative-description');
     const editor = template.querySelector('trix-editor');
@@ -34,6 +36,101 @@ if (!window.creativeRowEditorInitialized) {
     let saving = false;
     let savePromise = Promise.resolve();
 
+    function initializeEventListeners() {
+      document.body.addEventListener('click', function(e) {
+        // Delegated event for .edit-inline-btn
+        const editBtn = e.target.closest('.edit-inline-btn');
+        if (editBtn) {
+          e.preventDefault();
+          const tree = editBtn.closest('.creative-tree');
+          if (!tree) return;
+
+          if (currentTree === tree) {
+            hideCurrent();
+            return;
+          }
+          if (currentTree) {
+            hideCurrent(false);
+          }
+          currentTree = tree;
+          hideRow(tree);
+          tree.draggable = false;
+          tree.appendChild(template);
+          template.style.display = 'block';
+          loadCreative(tree.dataset.id);
+          return; // Event handled
+        }
+
+        // Delegated event for .add-creative-btn
+        const addBtn = e.target.closest('.add-creative-btn:not(#inline-add):not(#inline-add-child)');
+        if (addBtn) {
+          e.preventDefault();
+          if (template.style.display === 'block') {
+            hideCurrent();
+            return;
+          }
+          const tree = addBtn.closest('.creative-tree');
+          let parentId, container, insertBefore, beforeId = '';
+          if (tree) {
+            parentId = tree.dataset.id;
+            container = tree.querySelector('.creative-children');
+            if (!container) {
+              container = document.createElement('div');
+              container.className = 'creative-children';
+              container.id = 'creative-children-' + parentId;
+              tree.appendChild(container);
+            }
+            insertBefore = container.firstElementChild;
+            beforeId = insertBefore ? insertBefore.dataset.id : '';
+          } else {
+            parentId = addBtn.dataset.parentId || '';
+            const rootContainer = document.getElementById('creatives');
+            container = rootContainer;
+            insertBefore = rootContainer.firstElementChild;
+            beforeId = insertBefore ? insertBefore.dataset.id : '';
+          }
+          startNew(parentId, container, insertBefore, beforeId);
+          return; // Event handled
+        }
+
+        // Delegated event for .new-root-creative-btn
+        const newRootBtn = e.target.closest('.new-root-creative-btn');
+        if (newRootBtn) {
+          e.preventDefault();
+          const container = document.getElementById('creatives');
+          if (!container) return;
+
+          if (template.style.display === 'block') {
+            hideCurrent();
+            return;
+          }
+          const insertBefore = container.firstElementChild;
+          const beforeId = insertBefore ? insertBefore.dataset.id : '';
+          startNew('', container, insertBefore, beforeId);
+          return; // Event handled
+        }
+
+        // Delegated event for .append-parent-btn
+        const appendParentBtn = e.target.closest('.append-parent-btn');
+        if (appendParentBtn) {
+          e.preventDefault();
+          const targetId = appendParentBtn.dataset.childId;
+          const target = document.getElementById('creative-' + targetId);
+          if (!target) return;
+          const container = target.parentNode;
+          startNew(
+            container.id.startsWith('creative-children-') ? container.id.replace('creative-children-', '') : '',
+            container,
+            target,
+            targetId,
+            '',
+            targetId
+          );
+          return; // Event handled
+        }
+      });
+    }
+
     function hideRow(tree) {
       const row = tree.querySelector('.creative-row');
       if (row) row.style.display = 'none';
@@ -62,7 +159,6 @@ if (!window.creativeRowEditorInitialized) {
   </div>
   <div class="creative-row-end"><span class="creative-progress-incomplete">0%</span></div>`;
       tree.insertBefore(row, tree.firstChild);
-      attachButtons();
     }
 
     function refreshRow(tree) {
@@ -88,7 +184,6 @@ if (!window.creativeRowEditorInitialized) {
       return window.creativesApi.loadChildren(url)
         .then(html => {
           container.innerHTML = html;
-          attachButtons();
         });
     }
 
@@ -159,110 +254,8 @@ if (!window.creativeRowEditorInitialized) {
     }
 
     function attachButtons() {
-      document.querySelectorAll('.edit-inline-btn').forEach(function(btn) {
-        const tree = btn.closest('.creative-tree');
-        if (!tree) return;
-        btn.addEventListener('click', function(e) {
-          e.preventDefault();
-          if (currentTree === tree) {
-            hideCurrent();
-            return;
-          }
-          if (currentTree) {
-            hideCurrent(false);
-          }
-          currentTree = tree;
-          hideRow(tree);
-          tree.draggable = false;
-          tree.appendChild(template);
-          template.style.display = 'block';
-          loadCreative(tree.dataset.id);
-        });
-      });
-
-      document
-        .querySelectorAll('.add-creative-btn:not(#inline-add):not(#inline-add-child)')
-        .forEach(function(btn) {
-          btn.addEventListener('click', function(e) {
-            e.preventDefault();
-            if (template.style.display === 'block') {
-              hideCurrent();
-              return;
-            }
-            const tree = btn.closest('.creative-tree');
-            let parentId, container, insertBefore, beforeId = '';
-            if (tree) {
-              parentId = tree.dataset.id;
-              container = tree.querySelector('.creative-children');
-              if (!container) {
-                container = document.createElement('div');
-                container.className = 'creative-children';
-                container.id = 'creative-children-' + parentId;
-                tree.appendChild(container);
-              }
-              insertBefore = container.firstElementChild;
-              beforeId = insertBefore ? insertBefore.dataset.id : '';
-            } else {
-              parentId = btn.dataset.parentId || '';
-              const rootContainer = document.getElementById('creatives');
-              container = rootContainer;
-              insertBefore = rootContainer.firstElementChild;
-              beforeId = insertBefore ? insertBefore.dataset.id : '';
-            }
-            startNew(parentId, container, insertBefore, beforeId);
-          });
-        });
-
-      document.querySelectorAll('.new-root-creative-btn').forEach(function(btn) {
-        const container = document.getElementById('creatives');
-        if (!container) return;
-        btn.addEventListener('click', function(e) {
-          e.preventDefault();
-          if (template.style.display === 'block') {
-            hideCurrent();
-            return;
-          }
-          const insertBefore = container.firstElementChild;
-          const beforeId = insertBefore ? insertBefore.dataset.id : '';
-          startNew('', container, insertBefore, beforeId);
-        });
-      });
-
-      document.querySelectorAll('.append-below-btn').forEach(function(btn) {
-        btn.addEventListener('click', function(e) {
-          e.preventDefault();
-          const targetId = btn.dataset.targetId;
-          const target = document.getElementById('creative-' + targetId);
-          if (!target) return;
-          const container = target.parentNode;
-          const insertBefore = target.nextSibling;
-          startNew(
-            target.parentNode.id.startsWith('creative-children-') ? target.parentNode.id.replace('creative-children-', '') : '',
-            container,
-            insertBefore,
-            '',
-            targetId
-          );
-        });
-      });
-
-      document.querySelectorAll('.append-parent-btn').forEach(function(btn) {
-        btn.addEventListener('click', function(e) {
-          e.preventDefault();
-          const targetId = btn.dataset.childId;
-          const target = document.getElementById('creative-' + targetId);
-          if (!target) return;
-          const container = target.parentNode;
-          startNew(
-            container.id.startsWith('creative-children-') ? container.id.replace('creative-children-', '') : '',
-            container,
-            target,
-            targetId,
-            '',
-            targetId
-          );
-        });
-      });
+      // Most button attachments are now handled by event delegation in initializeEventListeners.
+      // We only need to handle comment buttons here, if that function exists.
       if (window.attachCommentButtons) window.attachCommentButtons();
     }
     window.attachCreativeRowEditorButtons = attachButtons;
@@ -604,7 +597,5 @@ if (!window.creativeRowEditorInitialized) {
         if (confirm(unlinkBtn.dataset.confirm)) deleteCurrent(false);
       });
     }
-
-    attachButtons();
   });
 }
