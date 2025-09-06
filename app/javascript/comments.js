@@ -108,6 +108,10 @@ if (!window.commentsInitialized) {
             });
         }
 
+        document.addEventListener('turbo:after-stream-render', function() {
+            renderMarkdown(document);
+        });
+
         function startResize(e, dir) {
             e.preventDefault();
             var rect = popup.getBoundingClientRect();
