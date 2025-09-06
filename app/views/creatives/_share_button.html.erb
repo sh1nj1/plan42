@@ -54,6 +54,11 @@
             inviteLinkBtn.onclick = function() {
                 const creativeId = inviteLinkBtn.dataset.creativeId;
                 const permission = permissionSelect ? permissionSelect.value : 'read';
+                const permissionLabel = permissionSelect ? permissionSelect.options[permissionSelect.selectedIndex].text : '';
+                if (permission === 'no_access') {
+                    alert('<%= t('creatives.index.invite_link_no_access') %>');
+                    return;
+                }
                 fetch('/invite', {
                     method: 'POST',
                     headers: {
@@ -63,7 +68,8 @@
                     body: JSON.stringify({ creative_id: creativeId, permission: permission })
                 }).then(r => r.json()).then(data => {
                     navigator.clipboard.writeText(data.url).then(function() {
-                        alert('<%= t('creatives.index.invite_link_copied') %>');
+                        const template = '<%= j t('creatives.index.invite_link_copied_permission', permission: '__PERMISSION__') %>';
+                        alert(template.replace('__PERMISSION__', permissionLabel));
                     });
                 });
             };

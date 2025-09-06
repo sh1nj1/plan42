@@ -48,6 +48,8 @@ ko:
       invite: "초대하기"
       invite_link: "초대 링크"
       invite_link_copied: "초대 링크가 복사되었습니다."
+      invite_link_copied_permission: "%{permission} 권한으로 초대 링크가 복사되었습니다."
+      invite_link_no_access: "접근 금지 권한으로는 초대할 수 없습니다."
       plan_tags_applied: "선택한 크리에이티브에 플랜 태그가 적용되었습니다."
       plan_tag_failed: "플랜과 하나 이상의 크리에이티브를 선택하세요."
       plan_tags_removed: "선택한 크리에이티브에서 플랜 태그가 제거되었습니다."
