@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var rootId = container.dataset.rootId;
   var contentEl = document.getElementById('slide-content');
   var swipeArea = document.getElementById('slide-swipe');
+  var counterEl = document.getElementById('slide-counter');
   var startX = null;
   var slideSubscription = null;
   var lastScrollLeft = 0;
@@ -14,6 +15,9 @@ document.addEventListener('DOMContentLoaded', function() {
   function load(idx, broadcast) {
     if (idx < 0 || idx >= ids.length) return;
     index = idx;
+    if (counterEl) {
+      counterEl.textContent = (index + 1) + ' / ' + ids.length;
+    }
     var url = '/creatives/' + ids[index] + '.json';
     if (rootId) {
       url += '?root_id=' + rootId;
@@ -76,6 +80,10 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       startX = null;
     });
+  }
+
+  if (counterEl) {
+    counterEl.textContent = (index + 1) + ' / ' + ids.length;
   }
 
   window.addEventListener('keydown', function(e) {

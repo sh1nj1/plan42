@@ -8,4 +8,5 @@
 <div id="slide-view" data-slide-ids="<%= @slide_ids.join(',') %>" data-initial-index="0" data-root-id="<%= @creative.id %>">
   <div id="slide-content"><%= content_tag(tag_name, @creative.effective_description.html_safe) %></div>
 </div>
+<div id="slide-counter">1 / <%= @slide_ids.length %></div>
 <div id="slide-swipe"></div>
