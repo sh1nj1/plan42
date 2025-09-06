@@ -97,6 +97,19 @@ if (!window.commentsInitialized) {
         var startBottom = 0;
         var reservedHeight = 0;
 
+        function renderMarkdown(container) {
+            if (!window.marked) return;
+            container.querySelectorAll('.comment-content').forEach(function(el) {
+                if (el.dataset.rendered === 'true') return;
+                el.innerHTML = window.marked.parse(el.textContent);
+                el.dataset.rendered = 'true';
+            });
+        }
+
+        document.addEventListener('turbo:after-stream-render', function() {
+            renderMarkdown(document);
+        });
+
         function startResize(e, dir) {
             e.preventDefault();
             var rect = popup.getBoundingClientRect();
@@ -348,6 +361,7 @@ if (!window.commentsInitialized) {
                 list.innerHTML = popup.dataset.loadingText;
                 fetchCommentsPage(1).then(function(html) {
                     list.innerHTML = html;
+                    renderMarkdown(list);
                     updatePosition();
                     if (highlightId) {
                         var el = document.getElementById('comment_' + highlightId);
@@ -372,6 +386,7 @@ if (!window.commentsInitialized) {
                         allLoaded = true;
                     } else {
                         list.insertAdjacentHTML('beforeend', html);
+                        renderMarkdown(list);
                         currentPage += 1;
                         checkAllLoaded(html);
                     }

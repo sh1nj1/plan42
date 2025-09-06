@@ -39,9 +39,10 @@
     <%= javascript_include_tag 'progress_filter_toggle', defer: true %>
     <%= javascript_include_tag 'plans_timeline', defer: true %>
     <%= javascript_include_tag 'actioncable', defer: true %>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
     <%= javascript_importmap_tags %>
   </head>
-  <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>">
+  <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>">
     <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
     <div class="notice"><%= notice %></div>
 

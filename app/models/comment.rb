@@ -44,7 +44,7 @@ class Comment < ApplicationRecord
   end
 
   def broadcast_update
-    broadcast_replace_later_to([ creative, :comments ])
+    broadcast_update_later_to([ creative, :comments ])
   end
 
   def broadcast_destroy
