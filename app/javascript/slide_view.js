@@ -14,7 +14,11 @@ document.addEventListener('DOMContentLoaded', function() {
   function load(idx, broadcast) {
     if (idx < 0 || idx >= ids.length) return;
     index = idx;
-    fetch('/creatives/' + ids[index] + '.json')
+    var url = '/creatives/' + ids[index] + '.json';
+    if (rootId) {
+      url += '?root_id=' + rootId;
+    }
+    fetch(url)
       .then(function(r) { return r.json(); })
       .then(function(data) {
         var depth = data.depth || 1;
