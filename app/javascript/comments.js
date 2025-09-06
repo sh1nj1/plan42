@@ -101,9 +101,7 @@ if (!window.commentsInitialized) {
             if (!window.marked) return;
             container.querySelectorAll('.comment-content').forEach(function(el) {
                 if (el.dataset.rendered === 'true') return;
-                var text = el.textContent;
-                var html = text.includes('\n') ? window.marked.parse(text).trim() : window.marked.parseInline(text).trim();
-                el.innerHTML = html;
+                el.innerHTML = window.marked.parse(el.textContent);
                 el.dataset.rendered = 'true';
             });
         }
