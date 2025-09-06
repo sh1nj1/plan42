@@ -11,6 +11,6 @@
 </div>
 <div id="slide-controls">
   <div id="slide-counter"><%= initial_index + 1 %> / <%= @slide_ids.length %></div>
-  <%= link_to '↗', creative_path(@creative), id: 'slide-goto', aria: { label: t('creatives.slide_view.go_to_creative') } %>
+  <%= link_to '→', creative_path(@creative), id: 'slide-goto', aria: { label: t('creatives.slide_view.go_to_creative') } %>
 </div>
 <div id="slide-swipe"></div>
