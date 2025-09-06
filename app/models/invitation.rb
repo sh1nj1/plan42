@@ -6,7 +6,6 @@ class Invitation < ApplicationRecord
 
   generates_token_for :invite, expires_in: 15.days
 
-  validates :email, presence: true
   validates :expires_at, presence: true
 
   before_validation :set_default_expires_at, on: :create

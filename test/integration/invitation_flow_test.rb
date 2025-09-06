@@ -27,7 +27,31 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
 
     invitation.reload
     assert_not_nil invitation.clicked_at
-    assert_select "input[name=invite_token][value=?]", token
-    assert_select "input[name='user[email]'][readonly][value=?]", "invitee@example1.com"
+    assert_match inviter.display_name, response.body
+    assert_match inviter.email, response.body
+    assert_match creative.description.to_plain_text, response.body
+    assert_select "a[href=?]", new_session_path(invite_token: token),
+                  text: I18n.t("invites.show.login")
+    assert_select "a[href=?]", new_user_path(invite_token: token),
+                  text: I18n.t("invites.show.sign_up")
+  end
+
+  test "existing user accepts invitation by logging in" do
+    inviter = User.create!(email: "inviter@example.com", password: "secret", name: "Inviter")
+    creative = Creative.create!(user: inviter, description: "Test creative")
+    invitee = User.create!(email: "invitee@example.com", password: "secret", name: "Invitee")
+    invitee.update!(email_verified_at: Time.current)
+
+    invitation = Invitation.create!(inviter: inviter, creative: creative, permission: :read)
+    token = invitation.generate_token_for(:invite)
+
+    post session_path, params: { email: invitee.email, password: "secret", invite_token: token }
+    assert_redirected_to root_path
+
+    invitation.reload
+    assert_not_nil invitation.accepted_at
+    share = CreativeShare.find_by(creative: creative, user: invitee)
+    assert share
+    assert_equal "read", share.permission
   end
 end

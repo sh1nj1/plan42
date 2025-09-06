@@ -1,11 +1,18 @@
 class InvitesController < ApplicationController
-  allow_unauthenticated_access
-  before_action :set_invitation
+  allow_unauthenticated_access only: :show
+  before_action :set_invitation, only: :show
+
+  def create
+    creative = Creative.find(params[:creative_id])
+    permission = params[:permission] || :read
+    invitation = Invitation.create!(inviter: Current.user,
+                                    creative: creative,
+                                    permission: permission)
+    render json: { url: invite_url(token: invitation.generate_token_for(:invite)) }
+  end
 
   def show
     @invitation.update(clicked_at: Time.current) unless @invitation.clicked_at
-    @user = User.new(email: @invitation.email)
-    render "users/new"
   end
 
   private

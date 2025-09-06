@@ -19,6 +19,7 @@
         </select>
       </div>
       <button type="submit" class="btn btn-primary" data-share-invite-target="submit" data-share="<%= t('creatives.index.share') %>" data-invite="<%= t('creatives.index.invite') %>"><%= t('creatives.index.share') %></button>
+      <button type="button" id="creative-invite-link" class="btn btn-secondary" data-creative-id="<%= (@parent_creative || @creative).id %>"><%= t('creatives.index.invite_link') %></button>
     </form>
     <% if @shared_list.any? %>
       <div style="margin-top:1em;">
@@ -47,6 +48,32 @@
         const modal = document.getElementById('share-creative-modal');
         const closeBtn = document.getElementById('close-share-modal');
         const emailInput = document.getElementById('share-user-email');
+        const inviteLinkBtn = document.getElementById('creative-invite-link');
+        const permissionSelect = document.getElementById('share-permission');
+        if (inviteLinkBtn) {
+            inviteLinkBtn.onclick = function() {
+                const creativeId = inviteLinkBtn.dataset.creativeId;
+                const permission = permissionSelect ? permissionSelect.value : 'read';
+                const permissionLabel = permissionSelect ? permissionSelect.options[permissionSelect.selectedIndex].text : '';
+                if (permission === 'no_access') {
+                    alert('<%= t('creatives.index.invite_link_no_access') %>');
+                    return;
+                }
+                fetch('/invite', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                    },
+                    body: JSON.stringify({ creative_id: creativeId, permission: permission })
+                }).then(r => r.json()).then(data => {
+                    navigator.clipboard.writeText(data.url).then(function() {
+                        const template = '<%= j t('creatives.index.invite_link_copied_permission', permission: '__PERMISSION__') %>';
+                        alert(template.replace('__PERMISSION__', permissionLabel));
+                    });
+                });
+            };
+        }
         if (shareBtn && modal && closeBtn) {
             shareBtn.onclick = function() {
                 modal.style.display = 'flex';
