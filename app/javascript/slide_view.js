@@ -12,9 +12,22 @@ document.addEventListener('DOMContentLoaded', function() {
   var slideSubscription = null;
   var lastScrollLeft = 0;
 
+  if (index > 0) {
+    load(index, false);
+  } else {
+    updateUrl(index);
+  }
+
+  function updateUrl(idx) {
+    var url = new URL(window.location);
+    url.searchParams.set('slide', idx);
+    history.replaceState(null, '', url);
+  }
+
   function load(idx, broadcast) {
     if (idx < 0 || idx >= ids.length) return;
     index = idx;
+    updateUrl(index);
     if (counterEl) {
       counterEl.textContent = (index + 1) + ' / ' + ids.length;
     }
