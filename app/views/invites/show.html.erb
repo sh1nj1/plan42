@@ -1,0 +1,6 @@
+<p><%= t('invites.show.invited_by', inviter: @invitation.inviter.display_name, email: @invitation.inviter.email, creative: @invitation.creative.description.to_plain_text) %></p>
+<p><%= t('invites.show.prompt') %></p>
+<p>
+  <%= link_to t('invites.show.login'), new_session_path(invite_token: params[:token]) %> |
+  <%= link_to t('invites.show.sign_up'), new_user_path(invite_token: params[:token]) %>
+</p>

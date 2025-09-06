@@ -2,6 +2,11 @@ ko:
   invites:
     invalid: "초대 링크가 잘못되었거나 만료되었습니다."
     invite_sent: "초대 이메일을 보냈습니다."
+    show:
+      invited_by: "%{inviter} (%{email})님이 \"%{creative}\" 크리에이티브에 초대했습니다."
+      prompt: "초대를 수락하려면 로그인하거나 회원 가입을 해주세요."
+      login: "로그인"
+      sign_up: "회원 가입"
   invitation_mailer:
     invite:
       subject: "콜라브에 초대되었습니다"
