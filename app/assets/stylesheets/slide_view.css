@@ -11,6 +11,15 @@
   padding: 2rem;
 }
 
+#slide-counter {
+  position: fixed;
+  bottom: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 10;
+}
+
 #slide-swipe {
   display: none;
 }
