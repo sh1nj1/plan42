@@ -8,6 +8,9 @@
 <% initial_index = params[:slide].to_i.clamp(0, @slide_ids.length - 1) %>
 <div id="slide-view" data-slide-ids="<%= @slide_ids.join(',') %>" data-initial-index="<%= initial_index %>" data-root-id="<%= @creative.id %>">
   <div id="slide-content"><%= content_tag(tag_name, @creative.effective_description.html_safe) %></div>
+</div>
+<div id="slide-controls">
   <div id="slide-counter"><%= initial_index + 1 %> / <%= @slide_ids.length %></div>
+  <%= link_to '↗', creative_path(@creative), id: 'slide-goto', aria: { label: t('creatives.slide_view.go_to_creative') } %>
 </div>
 <div id="slide-swipe"></div>

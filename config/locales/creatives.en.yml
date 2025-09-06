@@ -83,6 +83,8 @@ en:
       notify_me: "Email me when is progressing."
       placeholder_email: "you@example.com"
       submit: "Submit"
+    slide_view:
+      go_to_creative: "Go to Creative"
   creative_mailer:
     in_stock:
       subject: "Good news!"
