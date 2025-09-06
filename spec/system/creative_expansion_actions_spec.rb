@@ -45,6 +45,15 @@ RSpec.describe 'Creative expansion actions', type: :system, js: true do
     expect(page).to have_css('#comments-popup', visible: :visible)
   end
 
+  it 'shows inline editor before children when editing a parent after expand all' do
+    visit creative_path(root_creative)
+    find('#expand-all-btn').click
+    find("#creative-#{root_creative.id} .edit-inline-btn").click
+    expect(page).to have_css('#inline-edit-form-element', visible: :visible)
+    order = page.evaluate_script("Array.from(document.getElementById('creative-#{root_creative.id}').children).map(e => e.id)")
+    expect(order.index('inline-edit-form')).to be < order.index('creative-children-#{root_creative.id}')
+  end
+
   it 'resets expand all state after navigation' do
     visit creative_path(root_creative)
     find('#expand-all-btn').click

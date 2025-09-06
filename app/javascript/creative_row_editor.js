@@ -44,6 +44,15 @@ if (!window.creativeRowEditorInitialized) {
       if (row) row.style.display = '';
     }
 
+    function placeTemplate(tree) {
+      const children = tree.querySelector('.creative-children');
+      if (children) {
+        tree.insertBefore(template, children);
+      } else {
+        tree.appendChild(template);
+      }
+    }
+
     function insertRow(tree, data) {
       if (tree.querySelector('.creative-row')) return;
       const row = document.createElement('div');
@@ -174,7 +183,7 @@ if (!window.creativeRowEditorInitialized) {
           currentTree = tree;
           hideRow(tree);
           tree.draggable = false;
-          tree.appendChild(template);
+          placeTemplate(tree);
           template.style.display = 'block';
           loadCreative(tree.dataset.id);
         });
@@ -315,7 +324,7 @@ if (!window.creativeRowEditorInitialized) {
       const prevParent = parentInput.value;
       currentTree = target;
       hideRow(target);
-      target.appendChild(template);
+      placeTemplate(target);
       template.style.display = 'block';
       beforeNewOrMove(wasNew, prev, prevParent).then(() => {
         loadCreative(target.dataset.id);
@@ -430,7 +439,7 @@ if (!window.creativeRowEditorInitialized) {
       newTree.dataset.parentId = parentId || '';
       if (insertBefore) container.insertBefore(newTree, insertBefore); else container.appendChild(newTree);
       currentTree = newTree;
-      newTree.appendChild(template);
+      placeTemplate(newTree);
       template.style.display = 'block';
       form.action = '/creatives';
       methodInput.value = '';
