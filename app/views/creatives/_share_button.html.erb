@@ -4,7 +4,6 @@
   <div class="popup-box" style="min-width:320px;max-width:90vw;">
     <button id="close-share-modal" class="popup-close-btn">&times;</button>
     <h2><%= t('creatives.index.share_creative') %></h2>
-    <button type="button" id="creative-invite-link" class="btn btn-secondary" data-creative-id="<%= (@parent_creative || @creative).id %>"><%= t('creatives.index.invite_link') %></button>
     <form id="share-creative-form" action="<%= creative_creative_shares_path(@parent_creative || @creative) %>" method="post" data-controller="share-invite">
       <%= csrf_meta_tags %>
       <div style="margin-bottom:1em;">
@@ -20,6 +19,7 @@
         </select>
       </div>
       <button type="submit" class="btn btn-primary" data-share-invite-target="submit" data-share="<%= t('creatives.index.share') %>" data-invite="<%= t('creatives.index.invite') %>"><%= t('creatives.index.share') %></button>
+      <button type="button" id="creative-invite-link" class="btn btn-secondary" data-creative-id="<%= (@parent_creative || @creative).id %>"><%= t('creatives.index.invite_link') %></button>
     </form>
     <% if @shared_list.any? %>
       <div style="margin-top:1em;">

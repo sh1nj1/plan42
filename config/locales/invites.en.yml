@@ -3,6 +3,7 @@ en:
     invalid: "Invitation link is invalid or has expired."
     invite_sent: "Invitation email sent."
     show:
+      title: "Invitation"
       invited_by: "%{inviter} (%{email}) invited you to the \"%{creative}\" creative."
       prompt: "To accept the invitation, please log in or sign up."
       login: "Log in"
