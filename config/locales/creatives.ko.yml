@@ -83,6 +83,8 @@ ko:
       notify_me: "진행 상황을 이메일로 알려주세요."
       placeholder_email: "you@example.com"
       submit: "제출"
+    slide_view:
+      go_to_creative: "현재 크리에이티브로 이동"
   creative_mailer:
     in_stock:
       subject: "좋은 소식!"

@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var contentEl = document.getElementById('slide-content');
   var swipeArea = document.getElementById('slide-swipe');
   var counterEl = document.getElementById('slide-counter');
+  var linkEl = document.getElementById('slide-goto');
   var startX = null;
   var slideSubscription = null;
   var lastScrollLeft = 0;
@@ -30,6 +31,9 @@ document.addEventListener('DOMContentLoaded', function() {
     updateUrl(index);
     if (counterEl) {
       counterEl.textContent = (index + 1) + ' / ' + ids.length;
+    }
+    if (linkEl) {
+      linkEl.href = '/creatives/' + ids[index];
     }
     var url = '/creatives/' + ids[index] + '.json';
     if (rootId) {
@@ -98,6 +102,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
   if (counterEl) {
     counterEl.textContent = (index + 1) + ' / ' + ids.length;
+  }
+  if (linkEl) {
+    linkEl.href = '/creatives/' + ids[index];
   }
 
   window.addEventListener('keydown', function(e) {
