@@ -4,6 +4,7 @@
   align-items: center;
   justify-content: center;
   overflow-x: auto;
+  font-size: 150%;
 }
 #slide-content {
   padding: 2rem;
