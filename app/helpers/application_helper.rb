@@ -22,7 +22,7 @@ module ApplicationHelper
         svg.sub!(/<svg\b([^>]*)>/) do |match|
           attrs = Regexp.last_match(1)
 
-          [:class, :width, :height].each do |attr|
+          [ :class, :width, :height ].each do |attr|
             next unless options[attr].present?
 
             if attr == :class
@@ -53,6 +53,23 @@ module ApplicationHelper
   def linkify_urls(text)
     ERB::Util.html_escape(text.to_s).gsub(%r{https?://[^\s]+}) do |url|
       link_to(url, url, target: "_blank", rel: "noopener")
+    end.html_safe
+  end
+
+  def embed_youtube_iframe(html)
+    return html if html.blank?
+    html = html.to_s
+    html.gsub(%r{<a[^>]+href=["']https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([\w-]{11})[^"']*["'][^>]*>.*?</a>}i) do
+      video_id = Regexp.last_match(1)
+      tag.iframe(
+        "",
+        src: "https://www.youtube.com/embed/#{video_id}",
+        title: "YouTube video player",
+        frameborder: 0,
+        allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
+        allowfullscreen: true,
+        style: "width: 60vw; aspect-ratio: 16 / 9;"
+      )
     end.html_safe
   end
 end
