@@ -485,6 +485,11 @@ if (!window.creativeRowEditorInitialized) {
         hideCurrent();
         return;
       }
+      if (e.key === 'Enter' && e.altKey) {
+        e.preventDefault();
+        addChild();
+        return;
+      }
       if (e.key === 'Enter' && e.shiftKey) {
         e.preventDefault();
         addNew();
