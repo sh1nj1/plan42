@@ -41,12 +41,6 @@ module CreativesHelper
       comment_part = if creative.has_permission?(Current.user, :feedback)
         origin = creative.effective_origin
         comments_count = origin.comments.size
-        pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
-        last_read_id = pointer&.last_read_comment_id
-        unread_count = last_read_id ? origin.comments.where("id > ?", last_read_id).count : comments_count
-        if CommentPresenceStore.list(origin.id).include?(Current.user.id)
-          unread_count = 0
-        end
         classes = [ "comments-btn", "creative-action-btn" ]
         classes << "no-comments" if comments_count.zero?
         comment_icon = svg_tag(
@@ -55,13 +49,15 @@ module CreativesHelper
         )
         badge_id = "comment-badge-#{origin.id}"
         stream = turbo_stream_from [ Current.user, origin, :comment_badge ]
-        badge = render(
-          Inbox::BadgeComponent.new(
-            count: unread_count,
-            badge_id: badge_id,
-            show_zero: comments_count.positive?
+        badge = turbo_frame_tag(badge_id, src: comment_badge_creative_path(origin)) do
+          render(
+            Inbox::BadgeComponent.new(
+              count: 0,
+              badge_id: badge_id,
+              show_zero: comments_count.positive?
+            )
           )
-        )
+        end
         stream + button_tag(
           comment_icon + badge,
           name: "show-comments-btn",

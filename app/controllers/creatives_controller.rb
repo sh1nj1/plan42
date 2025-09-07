@@ -94,9 +94,9 @@ class CreativesController < ApplicationController
         root = params[:root_id] ? Creative.find_by(id: params[:root_id]) : nil
         depth = if root
                   (@creative.ancestors.count - root.ancestors.count) + 1
-                else
+        else
                   @creative.ancestors.count + 1
-                end
+        end
         render json: {
           id: @creative.id,
           description: @creative.effective_description,
@@ -349,6 +349,22 @@ class CreativesController < ApplicationController
       flash[:alert] = t("creatives.index.plan_tag_remove_failed", default: "Please select a plan and at least one creative.")
     end
     redirect_back fallback_location: creatives_path(select_mode: 1)
+  end
+
+  def comment_badge
+    creative = Creative.find(params[:id]).effective_origin
+    return head :forbidden unless creative.has_permission?(Current.user, :feedback)
+    comments_count = creative.comments.count
+    pointer = CommentReadPointer.find_by(user: Current.user, creative: creative)
+    last_read_id = pointer&.last_read_comment_id
+    unread_count = last_read_id ? creative.comments.where("id > ?", last_read_id).count : comments_count
+    unread_count = 0 if CommentPresenceStore.list(creative.id).include?(Current.user.id)
+    render partial: "inbox/badge_component/count",
+           locals: {
+             count: unread_count,
+             badge_id: "comment-badge-#{creative.id}",
+             show_zero: comments_count.positive?
+           }
   end
 
   def children

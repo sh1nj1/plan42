@@ -52,6 +52,7 @@ Rails.application.routes.draw do
     end
     member do
       get :children
+      get :comment_badge
       post :share, to: "creatives#share", as: :share_creative
       post :request_permission, to: "creatives#request_permission"
       get :parent_suggestions
