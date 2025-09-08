@@ -40,8 +40,8 @@ class UsersController < ApplicationController
 
   def search
     term = params[:q].to_s.strip.downcase
-    users = User.where("email LIKE ?", "#{term}%").limit(5)
-    render json: users.map { |u| { email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
+    users = User.where("LOWER(email) LIKE :term OR LOWER(name) LIKE :term", term: "#{term}%").limit(5)
+    render json: users.map { |u| { id: u.id, name: u.display_name, email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
   end
 
   # List all users

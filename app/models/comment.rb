@@ -33,10 +33,22 @@ class Comment < ApplicationRecord
            .uniq
   end
 
+  def mentioned_names
+    return [] unless content
+    content.scan(/@"([^\"]+)"/)
+           .flatten
+           .map(&:downcase)
+           .uniq
+  end
+
   def mentioned_users
-    return [] unless user
+    return User.none unless user
     emails = mentioned_emails - [ user.email.downcase ]
-    User.where(email: emails)
+    names = mentioned_names - [ user.name.downcase ]
+    scope = User.none
+    scope = scope.or(User.where(email: emails)) if emails.any?
+    scope = scope.or(User.where("LOWER(name) IN (?)", names)) if names.any?
+    scope
   end
 
   def broadcast_create
