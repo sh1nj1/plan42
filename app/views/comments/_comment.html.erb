@@ -15,5 +15,5 @@
       </button>
     </div>
   </div>
-  <div class="comment-content"><%= comment.content %></div>
+  <div class="comment-content"><%= markdown_links_to_html(comment.content).html_safe %></div>
 </div>

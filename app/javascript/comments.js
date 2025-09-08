@@ -171,19 +171,19 @@ if (!window.commentsInitialized) {
         if (leftHandle) { leftHandle.addEventListener('mousedown', function(e){ startResize(e, 'left'); }); }
         if (rightHandle) { rightHandle.addEventListener('mousedown', function(e){ startResize(e, 'right'); }); }
 
-        function insertMention(email) {
+        function insertMention(user) {
             var start = textarea.selectionStart;
             var end = textarea.selectionEnd;
-            var mentionText = `@${email} `;
-            
+            var mentionText = `[@${user.name}](/users/${user.id}) `;
+
             if (start !== end) {
-                // 선택영역이 있는 경우: 선택영역을 '@' + email로 바꿈
+                // 선택영역이 있는 경우: 선택영역을 링크로 바꿈
                 var before = textarea.value.slice(0, start);
                 var after = textarea.value.slice(end);
                 textarea.value = before + mentionText + after;
                 textarea.setSelectionRange(start + mentionText.length, start + mentionText.length);
             } else {
-                // 선택영역이 없는 경우: '@' + email을 현재 커서에 삽입
+                // 선택영역이 없는 경우: 링크를 현재 커서에 삽입
                 var before = textarea.value.slice(0, start);
                 var after = textarea.value.slice(start);
                 textarea.value = before + mentionText + after;
@@ -215,6 +215,8 @@ if (!window.commentsInitialized) {
                 img.style.borderRadius = '50%';
                 img.style.verticalAlign = 'middle';
                 if (u.email) { img.dataset.email = u.email; }
+                img.dataset.userId = u.id;
+                img.dataset.userName = u.name;
                 wrapper.appendChild(img);
 
                 if (u.default_avatar) {
@@ -316,8 +318,8 @@ if (!window.commentsInitialized) {
 
             participants.addEventListener('click', function(e) {
                 var avatar = e.target.closest('.comment-presence-avatar');
-                if (avatar && avatar.dataset.email) {
-                    insertMention(avatar.dataset.email);
+                if (avatar && avatar.dataset.userId && avatar.dataset.userName) {
+                    insertMention({ id: avatar.dataset.userId, name: avatar.dataset.userName });
                     textarea.focus();
                 }
             });

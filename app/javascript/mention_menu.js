@@ -20,9 +20,9 @@ if (!window.mentionMenuInitialized) {
       menu.style.display = 'none';
     }
 
-    function insert(email) {
+    function insert(user) {
       var pos = textarea.selectionStart;
-      var before = textarea.value.slice(0, pos).replace(/@[^@\s]*$/, `@${email} `);
+      var before = textarea.value.slice(0, pos).replace(/@[^@\s]*$/, `[@${user.name}](/users/${user.id}) `);
       textarea.value = before + textarea.value.slice(pos);
     }
 
@@ -31,9 +31,9 @@ if (!window.mentionMenuInitialized) {
       users.forEach(function (u) {
         var li = document.createElement('li');
         li.className = 'mention-item';
-        li.innerHTML = '<img src="' + u.avatar_url + '" width="20" height="20" class="avatar" /> ' + u.email;
+        li.innerHTML = '<img src="' + u.avatar_url + '" width="20" height="20" class="avatar" /> ' + u.name;
         li.addEventListener('click', function () {
-          insert(u.email);
+          insert(u);
           hide();
           textarea.focus();
         });
@@ -50,7 +50,7 @@ if (!window.mentionMenuInitialized) {
     textarea.addEventListener('input', function () {
       var pos = textarea.selectionStart;
       var before = textarea.value.slice(0, pos);
-      var m = before.match(/@([\w.\-+@]*)$/);
+      var m = before.match(/@([^\s@]*)$/);
       if (m) {
         var q = m[1];
         if (q.length === 0) { hide(); return; }
