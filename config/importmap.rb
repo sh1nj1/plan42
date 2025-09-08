@@ -12,3 +12,4 @@ pin "firebase/app", to: "https://www.gstatic.com/firebasejs/10.11.1/firebase-app
 pin "firebase/messaging", to: "https://www.gstatic.com/firebasejs/10.11.1/firebase-messaging.js"
 pin "dark_mode_toggle", to: "dark_mode_toggle.js"
 pin "trix_color_picker", to: "trix_color_picker.js"
+pin "creative_row_component", to: "creative_row_component.js"

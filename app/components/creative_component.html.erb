@@ -1,23 +1,23 @@
 <%= content_tag :div, class: 'creative-tree', data: { id: creative.id, parent_id: creative.parent_id }, **drag_attrs do %>
-  <div class="creative-row">
-    <div class="creative-row-start">
-      <div class="creative-row-actions">
-        <%= check_box_tag('selected_creative_ids[]', creative.id, false, class: 'select-creative-checkbox', style: select_mode ? '' : 'display: none') %>
+  <creative-row>
+    <div slot="actions">
+      <%= check_box_tag('selected_creative_ids[]', creative.id, false, class: 'select-creative-checkbox', style: select_mode ? '' : 'display: none') %>
 
-        <% if creative.has_permission?(Current.user, :write) %>
-          <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="<%= creative.id %>">
-            <%= svg_tag 'edit.svg',class: 'icon-edit' %>
-          </button>
-        <% else %> <%#= real (hidden) button for place holder without edit permission to match same width: can change icon or something %>
-          <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="<%= creative.id %>" style="visibility: hidden">
-            <%= svg_tag 'edit-off.svg', class: 'icon-edit' %>
-          </button>
-        <% end %>
-        <div class="creative-divider" style="width: 6px;">
-        </div>
+      <% if creative.has_permission?(Current.user, :write) %>
+        <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="<%= creative.id %>">
+          <%= svg_tag 'edit.svg',class: 'icon-edit' %>
+        </button>
+      <% else %> <%#= real (hidden) button for place holder without edit permission to match same width: can change icon or something %>
+        <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="<%= creative.id %>" style="visibility: hidden">
+          <%= svg_tag 'edit-off.svg', class: 'icon-edit' %>
+        </button>
+      <% end %>
+      <div class="creative-divider" style="width: 6px;">
       </div>
+    </div>
+    <div slot="content">
       <%= content %>
     </div>
-    <%= helpers.render_creative_progress(creative, select_mode: select_mode) %>
-  </div>
+    <%= helpers.render_creative_progress(creative, select_mode: select_mode, slot: 'end') %>
+  </creative-row>
 <% end %>

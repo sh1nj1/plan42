@@ -29,7 +29,7 @@ module CreativesHelper
     end
   end
 
-  def render_creative_progress(creative, select_mode: false)
+  def render_creative_progress(creative, select_mode: false, slot: nil)
     progress_value = if params[:tags].present?
       tag_ids = Array(params[:tags]).map(&:to_s)
       creative.progress_for_tags(tag_ids) || 0
@@ -37,7 +37,7 @@ module CreativesHelper
       creative.progress
     end
 
-    content_tag(:div, class: "creative-row-end") do
+    content_tag(:div, class: "creative-row-end", slot: slot) do
       comment_part = if creative.has_permission?(Current.user, :feedback)
         origin = creative.effective_origin
         comments_count = origin.comments.size
