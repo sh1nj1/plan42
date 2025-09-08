@@ -174,16 +174,16 @@ if (!window.commentsInitialized) {
         function insertMention(user) {
             var start = textarea.selectionStart;
             var end = textarea.selectionEnd;
-            var mentionText = `[@${user.name}](/users/${user.id}) `;
+            var mentionText = '@"' + user.name + '" ';
 
             if (start !== end) {
-                // 선택영역이 있는 경우: 선택영역을 링크로 바꿈
+                // 선택영역이 있는 경우: 선택영역을 멘션으로 바꿈
                 var before = textarea.value.slice(0, start);
                 var after = textarea.value.slice(end);
                 textarea.value = before + mentionText + after;
                 textarea.setSelectionRange(start + mentionText.length, start + mentionText.length);
             } else {
-                // 선택영역이 없는 경우: 링크를 현재 커서에 삽입
+                // 선택영역이 없는 경우: 멘션을 현재 커서에 삽입
                 var before = textarea.value.slice(0, start);
                 var after = textarea.value.slice(start);
                 textarea.value = before + mentionText + after;

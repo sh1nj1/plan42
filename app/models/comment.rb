@@ -33,21 +33,21 @@ class Comment < ApplicationRecord
            .uniq
   end
 
-  def mentioned_user_ids
+  def mentioned_names
     return [] unless content
-    content.scan(/\[@[^\]]+\]\(\/users\/(\d+)\)/)
+    content.scan(/@"([^\"]+)"/)
            .flatten
-           .map(&:to_i)
+           .map(&:downcase)
            .uniq
   end
 
   def mentioned_users
     return User.none unless user
-    ids = mentioned_user_ids - [ user.id ]
     emails = mentioned_emails - [ user.email.downcase ]
+    names = mentioned_names - [ user.name.downcase ]
     scope = User.none
-    scope = scope.or(User.where(id: ids)) if ids.any?
     scope = scope.or(User.where(email: emails)) if emails.any?
+    scope = scope.or(User.where("LOWER(name) IN (?)", names)) if names.any?
     scope
   end
 
