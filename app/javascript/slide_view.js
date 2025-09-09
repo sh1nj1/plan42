@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var swipeArea = document.getElementById('slide-swipe');
   var counterEl = document.getElementById('slide-counter');
   var linkEl = document.getElementById('slide-goto');
+  var captionEl = document.getElementById('slide-caption');
   var startX = null;
   var slideSubscription = null;
   var lastScrollLeft = 0;
@@ -55,6 +56,9 @@ document.addEventListener('DOMContentLoaded', function() {
         var el = document.createElement(tag);
         el.innerHTML = data.description;
         contentEl.appendChild(el);
+        if (captionEl) {
+          captionEl.textContent = data.prompt || '';
+        }
         requestAnimationFrame(function() {
           container.scrollLeft = 0;
           container.scrollTop = 0;

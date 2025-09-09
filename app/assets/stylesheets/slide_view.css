@@ -38,18 +38,32 @@
   display: none;
 }
 
+#slide-caption {
+  display: none;
+}
+
 @media (max-width: 768px) {
   #slide-view {
     height: 80vh;
   }
 
   #slide-swipe {
-    display: block;
+    display: flex;
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
     height: 20vh;
     background: var(--color-border);
+    align-items: center;
+    justify-content: center;
+  }
+
+  #slide-caption {
+    display: block;
+    pointer-events: none;
+    padding: 0.5rem;
+    text-align: center;
+    white-space: pre-wrap;
   }
 }
