@@ -26,6 +26,7 @@ if (!window.commentsInitialized) {
         }
         function openPopup(btn) {
             currentBtn = btn;
+            resetForm();
             popup.dataset.creativeId = btn.dataset.creativeId;
             popup.dataset.canComment = btn.dataset.canComment;
             popup.dataset.resized = 'false';
@@ -68,6 +69,7 @@ if (!window.commentsInitialized) {
             if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
             clearTimeout(typingTimeout);
             typingTimeout = null;
+            resetForm();
             if (isMobile()) {
                 popup.classList.remove('open');
                 setTimeout(function() { popup.style.display = 'none'; }, 300);
@@ -85,6 +87,7 @@ if (!window.commentsInitialized) {
         var participants = document.getElementById('comment-participants');
         var typingIndicator = document.getElementById('typing-indicator');
         var submitBtn = form.querySelector('button[type="submit"]');
+        var defaultSubmitBtnHTML = submitBtn.innerHTML;
         var textarea = form.querySelector('textarea');
         var leftHandle = popup.querySelector('.resize-handle-left');
         var rightHandle = popup.querySelector('.resize-handle-right');
@@ -477,6 +480,7 @@ if (!window.commentsInitialized) {
             function resetForm() {
                 form.reset();
                 editingId = null;
+                submitBtn.innerHTML = defaultSubmitBtnHTML;
             }
 
             form.onsubmit = function(e) {
