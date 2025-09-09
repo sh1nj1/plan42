@@ -55,6 +55,12 @@
   float: right;
 }
 
+#new-comment-form #cancel-edit-btn {
+  margin-top: 0.5em;
+  float: right;
+  margin-right: 0.5em;
+}
+
 .comment-item {
     border-top: 1px solid var(--color-border);
     padding: 0.5em 0 1.5em 0;
