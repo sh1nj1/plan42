@@ -117,6 +117,16 @@ class Creative < ApplicationRecord
     end
   end
 
+  def prompt_for(user)
+    comments
+      .where(private: true, user: user)
+      .where("content LIKE ?", "> %")
+      .order(created_at: :desc)
+      .first
+      &.content
+      &.sub(/\A>\s*/i, "")
+  end
+
   def progress_for_tags(tag_ids, user = Current.user)
     return progress if tag_ids.blank?
 
