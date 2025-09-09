@@ -242,8 +242,41 @@ if (!window.commentsInitialized) {
 
         function renderTypingIndicator() {
             if (!typingIndicator) return;
-            var names = Object.values(typingUsers);
-            typingIndicator.textContent = names.length > 0 ? names.join(', ') + ' ...' : '';
+            typingIndicator.innerHTML = '';
+            var ids = Object.keys(typingUsers);
+            if (ids.length === 0) {
+                typingIndicator.style.display = 'none';
+                return;
+            }
+            typingIndicator.style.display = 'flex';
+            if (participantsData) {
+                ids.forEach(function(id) {
+                    var user = participantsData.find(function(u) { return u.id === parseInt(id, 10); });
+                    if (!user) return;
+                    var wrapper = document.createElement('span');
+                    wrapper.className = 'avatar-wrapper';
+                    var img = document.createElement('img');
+                    img.src = user.avatar_url;
+                    img.alt = '';
+                    img.width = 20;
+                    img.height = 20;
+                    img.className = 'avatar comment-presence-avatar';
+                    img.style.borderRadius = '50%';
+                    wrapper.appendChild(img);
+                    if (user.default_avatar) {
+                        var span = document.createElement('span');
+                        span.className = 'avatar-initial';
+                        span.textContent = user.initial;
+                        span.style.fontSize = Math.round(20 / 2) + 'px';
+                        wrapper.appendChild(span);
+                    }
+                    typingIndicator.appendChild(wrapper);
+                });
+            }
+            var names = ids.map(function(id) { return typingUsers[id]; });
+            var text = document.createElement('span');
+            text.textContent = names.join(', ') + ' ...';
+            typingIndicator.appendChild(text);
         }
 
         function loadParticipants() {
@@ -253,6 +286,7 @@ if (!window.commentsInitialized) {
                 .then(function(data) {
                     participantsData = data;
                     renderParticipants(currentPresentIds);
+                    renderTypingIndicator();
                 });
         }
 

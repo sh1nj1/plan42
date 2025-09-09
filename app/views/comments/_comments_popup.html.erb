@@ -9,10 +9,10 @@
   <button id="close-comments-btn" class="popup-close-btn">&times;</button>
   <h3 style="margin-top:0;"><%= t('comments.comments') %></h3>
   <div id="comment-participants"></div>
-  <div id="typing-indicator"></div>
   <%= render UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <br/>
   <div id="comments-list"><%= t('app.loading') %></div>
+  <div id="typing-indicator"></div>
   <form id="new-comment-form" style="display:none;">
     <textarea name="comment[content]" rows="2" required></textarea>
     <button class="creative-action-btn" type="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
