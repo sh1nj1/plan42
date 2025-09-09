@@ -90,6 +90,7 @@ if (!window.commentsInitialized) {
         var defaultSubmitBtnHTML = submitBtn.innerHTML;
         var textarea = form.querySelector('textarea');
         var privateCheckbox = form.querySelector('#comment-private');
+        var cancelBtn = form.querySelector('#cancel-edit-btn');
         var leftHandle = popup.querySelector('.resize-handle-left');
         var rightHandle = popup.querySelector('.resize-handle-right');
         var editingId = null;
@@ -107,6 +108,12 @@ if (!window.commentsInitialized) {
                 }
                 clearTimeout(typingTimeout);
                 typingTimeout = null;
+            });
+        }
+
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', function() {
+                resetForm();
             });
         }
 
@@ -508,6 +515,7 @@ if (!window.commentsInitialized) {
                 form.reset();
                 editingId = null;
                 submitBtn.innerHTML = defaultSubmitBtnHTML;
+                if (cancelBtn) { cancelBtn.style.display = 'none'; }
             }
 
             form.onsubmit = function(e) {
@@ -572,6 +580,11 @@ if (!window.commentsInitialized) {
                     editingId = btn.getAttribute('data-comment-id');
                     textarea.value = btn.getAttribute('data-comment-content');
                     submitBtn.textContent = popup.dataset.updateCommentText;
+                    if (privateCheckbox) {
+                        privateCheckbox.checked = btn.getAttribute('data-comment-private') === 'true';
+                        privateCheckbox.dispatchEvent(new Event('change'));
+                    }
+                    if (cancelBtn) { cancelBtn.style.display = ''; }
                     textarea.focus();
                 }
             });
