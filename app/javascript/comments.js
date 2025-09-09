@@ -121,6 +121,8 @@ if (!window.commentsInitialized) {
                     }
                 } else if (privateCheckbox) {
                     privateCheckbox.disabled = false;
+                    privateCheckbox.checked = false;
+                    privateCheckbox.dispatchEvent(new Event('change'));
                 }
                 renderTypingIndicator();
             });
