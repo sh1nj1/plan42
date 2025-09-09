@@ -58,11 +58,16 @@ if (!window.commentsInitialized) {
             }
             participantsData = null;
             currentPresentIds = [];
+            typingUsers = {};
+            renderTypingIndicator();
             loadParticipants();
             subscribePresence();
             loadInitialComments();
         }
         function closePopup() {
+            if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
+            clearTimeout(typingTimeout);
+            typingTimeout = null;
             if (isMobile()) {
                 popup.classList.remove('open');
                 setTimeout(function() { popup.style.display = 'none'; }, 300);
@@ -78,6 +83,7 @@ if (!window.commentsInitialized) {
         var list = document.getElementById('comments-list');
         var form = document.getElementById('new-comment-form');
         var participants = document.getElementById('comment-participants');
+        var typingIndicator = document.getElementById('typing-indicator');
         var submitBtn = form.querySelector('button[type="submit"]');
         var textarea = form.querySelector('textarea');
         var leftHandle = popup.querySelector('.resize-handle-left');
@@ -86,6 +92,9 @@ if (!window.commentsInitialized) {
         var presenceSubscription = null;
         var participantsData = null;
         var currentPresentIds = [];
+        var typingUsers = {};
+        var typingTimers = {};
+        var typingTimeout = null;
 
         var resizing = null;
         var resizeStartX = 0;
@@ -231,6 +240,12 @@ if (!window.commentsInitialized) {
             });
         }
 
+        function renderTypingIndicator() {
+            if (!typingIndicator) return;
+            var names = Object.values(typingUsers);
+            typingIndicator.textContent = names.length > 0 ? names.join(', ') + ' ...' : '';
+        }
+
         function loadParticipants() {
             if (!popup.dataset.creativeId) return;
             fetch(`/creatives/${popup.dataset.creativeId}/comments/participants`)
@@ -251,6 +266,23 @@ if (!window.commentsInitialized) {
                         currentPresentIds = data.ids.map(function(id) { return parseInt(id, 10); });
                         renderParticipants(currentPresentIds);
                     }
+                    if (data.typing) {
+                        var id = data.typing.id;
+                        typingUsers[id] = data.typing.name;
+                        renderTypingIndicator();
+                        clearTimeout(typingTimers[id]);
+                        typingTimers[id] = setTimeout(function() {
+                            delete typingUsers[id];
+                            renderTypingIndicator();
+                            delete typingTimers[id];
+                        }, 3000);
+                    }
+                    if (data.stop_typing) {
+                        var id2 = data.stop_typing.id;
+                        delete typingUsers[id2];
+                        if (typingTimers[id2]) { clearTimeout(typingTimers[id2]); delete typingTimers[id2]; }
+                        renderTypingIndicator();
+                    }
                 } }
             );
         }
@@ -269,6 +301,14 @@ if (!window.commentsInitialized) {
                 }
                 popup.style.bottom = inset + 'px';
             }
+            textarea.addEventListener('input', function() {
+                if (!presenceSubscription) return;
+                presenceSubscription.perform('typing');
+                clearTimeout(typingTimeout);
+                typingTimeout = setTimeout(function() {
+                    if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
+                }, 3000);
+            });
             textarea.addEventListener('focus', function() {
                 adjustForKeyboard();
                 if (window.visualViewport) {
@@ -276,6 +316,9 @@ if (!window.commentsInitialized) {
                 }
             });
             textarea.addEventListener('blur', function() {
+                if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
+                clearTimeout(typingTimeout);
+                typingTimeout = null;
                 popup.style.bottom = '';
                 if (window.visualViewport) {
                     window.visualViewport.removeEventListener('resize', adjustForKeyboard);
@@ -404,6 +447,9 @@ if (!window.commentsInitialized) {
 
             form.onsubmit = function(e) {
                 e.preventDefault();
+                if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
+                clearTimeout(typingTimeout);
+                typingTimeout = null;
                 var formData = new FormData(form);
                 var url = `/creatives/${popup.dataset.creativeId}/comments`;
                 var method = 'POST';

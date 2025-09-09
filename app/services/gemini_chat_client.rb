@@ -12,7 +12,7 @@ class GeminiChatClient
     return if @api_key.blank?
     uri = URI(STREAM_URL)
     params = { alt: "sse", key: @api_key }
-    uri.query = [uri.query, URI.encode_www_form(params)].compact.join("&") # preserve any existing query
+    uri.query = [ uri.query, URI.encode_www_form(params) ].compact.join("&") # preserve any existing query
 
     req = Net::HTTP::Post.new(uri, "Content-Type" => "application/json")
     system_instruction = {
@@ -36,7 +36,7 @@ class GeminiChatClient
           # Try to surface server error payload to the room
           body = +""
           res.read_body { |c| body << c rescue nil }
-          yield "[ERROR] HTTP #{res.code} #{res.message}#{body.empty? ? '' : " — #{body[0,400]}"}"
+          yield "[ERROR] HTTP #{res.code} #{res.message}#{body.empty? ? '' : " — #{body[0, 400]}"}"
           next
         end
 
@@ -62,7 +62,7 @@ class GeminiChatClient
           rescue JSON::ParserError => e
             Rails.logger.warn("SSE JSON parse error: #{e.message}")
             # Yield a short error so chat users can see it (and we keep streaming)
-            yield "[ERROR] Invalid JSON chunk (continuing): #{data[0,200]}"
+            yield "[ERROR] Invalid JSON chunk (continuing): #{data[0, 200]}"
             return
           end
 
@@ -107,11 +107,9 @@ class GeminiChatClient
           process_event.call if event_lines.any?
         end
       end
-
     end
   rescue StandardError => e
     Rails.logger.error("Gemini chat error: #{e.message}")
     yield "Gemini error: #{e.message}" if block_given?
   end
-
 end

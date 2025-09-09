@@ -94,9 +94,9 @@ class CreativesController < ApplicationController
         root = params[:root_id] ? Creative.find_by(id: params[:root_id]) : nil
         depth = if root
                   (@creative.ancestors.count - root.ancestors.count) + 1
-                else
+        else
                   @creative.ancestors.count + 1
-                end
+        end
         render json: {
           id: @creative.id,
           description: @creative.effective_description,

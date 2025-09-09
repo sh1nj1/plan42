@@ -125,6 +125,12 @@
   margin-bottom: 0.3em;
 }
 
+#typing-indicator {
+  font-style: italic;
+  margin-bottom: 0.3em;
+  min-height: 1em;
+}
+
 .comment-presence-avatar {
   margin-right: 0.2em;
 }
