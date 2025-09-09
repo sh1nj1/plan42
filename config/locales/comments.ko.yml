@@ -16,3 +16,5 @@ ko:
     convert_to_creative: "하위 크리에이티브로 전환"
     convert_confirm: "현재 크리에이티브 하위에 해당 댓글의 내용이 추가됩니다. 진행하시겠습니까?"
     private: "비밀"
+    prompt: "프롬프트"
+    prompt_notice: "이 메시지는 모바일 화면의 슬라이드 뷰에서 자막으로 표시됩니다."
