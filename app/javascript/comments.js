@@ -346,6 +346,16 @@ if (!window.commentsInitialized) {
                     if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
                 }, 3000);
             });
+            textarea.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && e.shiftKey) {
+                    e.preventDefault();
+                    if (form.requestSubmit) {
+                        form.requestSubmit(submitBtn);
+                    } else {
+                        submitBtn.click();
+                    }
+                }
+            });
             textarea.addEventListener('focus', function() {
                 adjustForKeyboard();
                 if (window.visualViewport) {
