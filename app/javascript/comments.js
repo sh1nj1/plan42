@@ -183,7 +183,7 @@ if (!window.commentsInitialized) {
         function insertMention(user) {
             var start = textarea.selectionStart;
             var end = textarea.selectionEnd;
-            var mentionText = '@"' + user.name + '" ';
+            var mentionText = '@' + user.name + ': ';
 
             if (start !== end) {
                 // 선택영역이 있는 경우: 선택영역을 멘션으로 바꿈
