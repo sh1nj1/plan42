@@ -245,10 +245,10 @@ if (!window.commentsInitialized) {
             typingIndicator.innerHTML = '';
             var ids = Object.keys(typingUsers);
             if (ids.length === 0) {
-                typingIndicator.style.display = 'none';
+                typingIndicator.style.visibility = 'hidden';
                 return;
             }
-            typingIndicator.style.display = 'flex';
+            typingIndicator.style.visibility = 'visible';
             if (participantsData) {
                 ids.forEach(function(id) {
                     var user = participantsData.find(function(u) { return u.id === parseInt(id, 10); });
