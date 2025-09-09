@@ -66,7 +66,7 @@ if (!window.commentsInitialized) {
             loadInitialComments();
         }
         function closePopup() {
-            if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
+            if (presenceSubscription && (!privateCheckbox || !privateCheckbox.checked)) { presenceSubscription.perform('stopped_typing'); }
             clearTimeout(typingTimeout);
             typingTimeout = null;
             resetForm();
@@ -89,6 +89,7 @@ if (!window.commentsInitialized) {
         var submitBtn = form.querySelector('button[type="submit"]');
         var defaultSubmitBtnHTML = submitBtn.innerHTML;
         var textarea = form.querySelector('textarea');
+        var privateCheckbox = form.querySelector('#comment-private');
         var leftHandle = popup.querySelector('.resize-handle-left');
         var rightHandle = popup.querySelector('.resize-handle-right');
         var editingId = null;
@@ -98,6 +99,16 @@ if (!window.commentsInitialized) {
         var typingUsers = {};
         var typingTimers = {};
         var typingTimeout = null;
+
+        if (privateCheckbox) {
+            privateCheckbox.addEventListener('change', function() {
+                if (presenceSubscription && privateCheckbox.checked) {
+                    presenceSubscription.perform('stopped_typing');
+                }
+                clearTimeout(typingTimeout);
+                typingTimeout = null;
+            });
+        }
 
         var resizing = null;
         var resizeStartX = 0;
@@ -340,6 +351,12 @@ if (!window.commentsInitialized) {
             }
             textarea.addEventListener('input', function() {
                 if (!presenceSubscription) return;
+                if (privateCheckbox && privateCheckbox.checked) {
+                    presenceSubscription.perform('stopped_typing');
+                    clearTimeout(typingTimeout);
+                    typingTimeout = null;
+                    return;
+                }
                 presenceSubscription.perform('typing');
                 clearTimeout(typingTimeout);
                 typingTimeout = setTimeout(function() {
@@ -353,7 +370,7 @@ if (!window.commentsInitialized) {
                 }
             });
             textarea.addEventListener('blur', function() {
-                if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
+                if (presenceSubscription && (!privateCheckbox || !privateCheckbox.checked)) { presenceSubscription.perform('stopped_typing'); }
                 clearTimeout(typingTimeout);
                 typingTimeout = null;
                 popup.style.bottom = '';
@@ -485,7 +502,7 @@ if (!window.commentsInitialized) {
 
             form.onsubmit = function(e) {
                 e.preventDefault();
-                if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
+                if (presenceSubscription && (!privateCheckbox || !privateCheckbox.checked)) { presenceSubscription.perform('stopped_typing'); }
                 clearTimeout(typingTimeout);
                 typingTimeout = null;
                 var formData = new FormData(form);

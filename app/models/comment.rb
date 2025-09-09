@@ -52,14 +52,17 @@ class Comment < ApplicationRecord
   end
 
   def broadcast_create
+    return if private?
     broadcast_append_later_to([ creative, :comments ], target: "comments_list")
   end
 
   def broadcast_update
+    return if private?
     broadcast_update_later_to([ creative, :comments ])
   end
 
   def broadcast_destroy
+    return if private?
     broadcast_remove_to([ creative, :comments ])
   end
 
@@ -68,7 +71,7 @@ class Comment < ApplicationRecord
   end
 
   def notify_write_users
-    return unless user
+    return if private? || !user
     base_creative = creative.effective_origin
     present_ids = CommentPresenceStore.list(base_creative.id)
     recipients = base_creative.all_shared_users(:write).map(&:user)
@@ -88,6 +91,7 @@ class Comment < ApplicationRecord
   end
 
   def notify_mentions
+    return if private?
     mentioned_users.each do |mentioned|
       create_inbox_item(
         mentioned,
@@ -113,10 +117,12 @@ class Comment < ApplicationRecord
 
   def self.broadcast_badge(creative, user)
     origin = creative.effective_origin
-    comments_count = origin.comments.count
+    visible_comments = origin.comments.where("comments.private = ? OR comments.user_id = ?", false, user.id)
+    comments_count = visible_comments.count
     pointer = CommentReadPointer.find_by(user: user, creative: origin)
     last_read_id = pointer&.last_read_comment_id
-    unread_count = last_read_id ? origin.comments.where("id > ?", last_read_id).count : comments_count
+    unread_scope = last_read_id ? visible_comments.where("comments.id > ?", last_read_id) : visible_comments
+    unread_count = unread_scope.count
     unread_count = 0 if CommentPresenceStore.list(origin.id).include?(user.id)
     Turbo::StreamsChannel.broadcast_replace_to(
       [ user, origin, :comment_badge ],

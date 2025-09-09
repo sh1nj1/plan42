@@ -15,3 +15,4 @@ ko:
     convert_button: "전환"
     convert_to_creative: "하위 크리에이티브로 전환"
     convert_confirm: "현재 크리에이티브 하위에 해당 댓글의 내용이 추가됩니다. 진행하시겠습니까?"
+    private: "비밀"

@@ -43,7 +43,7 @@ module CreativesHelper
         comments_count = origin.comments.size
         pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
         last_read_id = pointer&.last_read_comment_id
-        unread_count = last_read_id ? origin.comments.where("id > ?", last_read_id).count : comments_count
+        unread_count = last_read_id ? origin.comments.where("id > ? and private = ?", last_read_id, false).count : comments_count
         if CommentPresenceStore.list(origin.id).include?(Current.user.id)
           unread_count = 0
         end

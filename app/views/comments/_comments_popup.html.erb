@@ -15,6 +15,7 @@
   <div id="typing-indicator"></div>
   <form id="new-comment-form" style="display:none;">
     <textarea name="comment[content]" rows="2" required></textarea>
+    <label><input type="checkbox" id="comment-private" name="comment[private]" /> <%= t('comments.private') %></label>
     <button class="creative-action-btn" type="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
   </form>
 </div>

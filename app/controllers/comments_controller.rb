@@ -8,11 +8,13 @@ class CommentsController < ApplicationController
     page = params[:page].to_i
     page = 1 if page <= 0
 
-    scope = @creative.comments.order(created_at: :desc)
+    scope = @creative.comments.where("comments.private = ? OR comments.user_id = ?", false, Current.user.id)
+                              .order(created_at: :desc)
     @comments = scope.offset((page - 1) * per_page).limit(per_page).to_a
     pointer = CommentReadPointer.find_by(user: Current.user, creative: @creative)
     last_read_comment_id = pointer&.last_read_comment_id
-    if last_read_comment_id && last_read_comment_id == @creative.comments.maximum(:id)
+    max_id = scope.maximum(:id)
+    if last_read_comment_id && last_read_comment_id == max_id
       last_read_comment_id = nil
     end
 
@@ -98,11 +100,13 @@ class CommentsController < ApplicationController
   end
 
   def set_comment
-    @comment = @creative.comments.find(params[:id])
+    @comment = @creative.comments
+                           .where("comments.private = ? OR comments.user_id = ?", false, Current.user.id)
+                           .find(params[:id])
   end
 
   def comment_params
-    params.require(:comment).permit(:content)
+    params.require(:comment).permit(:content, :private)
   end
 
   def trigger_gemini_response(comment)
@@ -111,7 +115,8 @@ class CommentsController < ApplicationController
     messages = []
     markdown = helpers.render_creative_tree_markdown([ @creative ], 1, true)
     messages << { role: "user", parts: [ { text: "Creative:\n#{markdown}" } ] }
-    @creative.comments.order(:created_at).each do |c|
+    @creative.comments.where("comments.private = ? OR comments.user_id = ?", false, comment.user_id)
+             .order(:created_at).each do |c|
       role = c.user_id ? "user" : "model"
       text = c.content.sub(/\A@gemini\s*/i, "")
       messages << { role: role, parts: [ { text: text } ] }

@@ -3,6 +3,9 @@
     <%= render AvatarComponent.new(user: comment.user, size: 20, classes: 'avatar comment-avatar') %>
     <strong><%= comment.user&.display_name || t('comments.gemini') %></strong>
     <span>· <%= t('datetime.ago', time: time_ago_in_words(comment.created_at)) %></span>
+    <% if comment.private? %>
+      <span class="private-label">[<%= t('comments.private') %>]</span>
+    <% end %>
     <div class="comment-action-container" data-comment-target="actions" style="display: none;">
       <button class="convert-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.convert_to_creative') %>">
         <%= t('comments.convert_button') %>
