@@ -35,7 +35,7 @@ class Comment < ApplicationRecord
 
   def mentioned_names
     return [] unless content
-    content.scan(/@"([^\"]+)"/)
+    content.scan(/@([^:]+):/)
            .flatten
            .map(&:downcase)
            .uniq

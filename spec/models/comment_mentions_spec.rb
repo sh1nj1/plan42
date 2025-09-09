@@ -8,7 +8,7 @@ describe Comment, type: :model do
     mentioned = User.create!(email: 'mentioned@example.com', password: 'pw', name: 'Mentioned')
     creative = Creative.create!(user: owner, description: 'root')
 
-    Comment.create!(creative: creative, user: commenter, content: "hi @\"#{mentioned.name}\"")
+    Comment.create!(creative: creative, user: commenter, content: "hi @#{mentioned.name}:")
 
     items = InboxItem.where(owner: mentioned)
     expect(items.count).to eq(1)
@@ -21,7 +21,7 @@ describe Comment, type: :model do
     commenter = User.create!(email: 'commenter@example.com', password: 'pw', name: 'Commenter')
     creative = Creative.create!(user: owner, description: 'root')
 
-    Comment.create!(creative: creative, user: commenter, content: "hi @\"#{owner.name}\"")
+    Comment.create!(creative: creative, user: commenter, content: "hi @#{owner.name}:")
 
     items = InboxItem.where(owner: owner)
     expect(items.count).to eq(1)
