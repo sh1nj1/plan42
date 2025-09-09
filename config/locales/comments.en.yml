@@ -16,3 +16,4 @@ en:
     convert_to_creative: "Convert to Creative"
     convert_confirm: "This will add the comment content as a child creative of the current creative. Continue?"
     private: "Private"
+    private_prompt: "This message will only be visible to you."

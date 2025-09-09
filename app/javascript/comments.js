@@ -87,6 +87,7 @@ if (!window.commentsInitialized) {
         var submitBtn = form.querySelector('button[type="submit"]');
         var textarea = form.querySelector('textarea');
         var privateCheckbox = form.querySelector('#comment-private');
+        var privatePrompt = document.getElementById('private-comment-prompt');
         var leftHandle = popup.querySelector('.resize-handle-left');
         var rightHandle = popup.querySelector('.resize-handle-right');
         var editingId = null;
@@ -97,6 +98,15 @@ if (!window.commentsInitialized) {
         var typingTimers = {};
         var typingTimeout = null;
 
+        function updatePrivatePrompt() {
+            if (!privatePrompt) return;
+            if (isMobile() && privateCheckbox && privateCheckbox.checked) {
+                privatePrompt.style.display = 'block';
+            } else {
+                privatePrompt.style.display = 'none';
+            }
+        }
+
         if (privateCheckbox) {
             privateCheckbox.addEventListener('change', function() {
                 if (presenceSubscription && privateCheckbox.checked) {
@@ -104,8 +114,12 @@ if (!window.commentsInitialized) {
                 }
                 clearTimeout(typingTimeout);
                 typingTimeout = null;
+                updatePrivatePrompt();
             });
         }
+
+        updatePrivatePrompt();
+        window.addEventListener('resize', updatePrivatePrompt);
 
         var resizing = null;
         var resizeStartX = 0;
@@ -494,6 +508,7 @@ if (!window.commentsInitialized) {
             function resetForm() {
                 form.reset();
                 editingId = null;
+                updatePrivatePrompt();
             }
 
             form.onsubmit = function(e) {
