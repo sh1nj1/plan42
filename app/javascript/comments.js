@@ -58,11 +58,16 @@ if (!window.commentsInitialized) {
             }
             participantsData = null;
             currentPresentIds = [];
+            typingUsers = {};
+            renderTypingIndicator();
             loadParticipants();
             subscribePresence();
             loadInitialComments();
         }
         function closePopup() {
+            if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
+            clearTimeout(typingTimeout);
+            typingTimeout = null;
             if (isMobile()) {
                 popup.classList.remove('open');
                 setTimeout(function() { popup.style.display = 'none'; }, 300);
@@ -78,6 +83,7 @@ if (!window.commentsInitialized) {
         var list = document.getElementById('comments-list');
         var form = document.getElementById('new-comment-form');
         var participants = document.getElementById('comment-participants');
+        var typingIndicator = document.getElementById('typing-indicator');
         var submitBtn = form.querySelector('button[type="submit"]');
         var textarea = form.querySelector('textarea');
         var leftHandle = popup.querySelector('.resize-handle-left');
@@ -86,6 +92,9 @@ if (!window.commentsInitialized) {
         var presenceSubscription = null;
         var participantsData = null;
         var currentPresentIds = [];
+        var typingUsers = {};
+        var typingTimers = {};
+        var typingTimeout = null;
 
         var resizing = null;
         var resizeStartX = 0;
@@ -231,6 +240,45 @@ if (!window.commentsInitialized) {
             });
         }
 
+        function renderTypingIndicator() {
+            if (!typingIndicator) return;
+            typingIndicator.innerHTML = '';
+            var ids = Object.keys(typingUsers);
+            if (ids.length === 0) {
+                typingIndicator.style.display = 'none';
+                return;
+            }
+            typingIndicator.style.display = 'flex';
+            if (participantsData) {
+                ids.forEach(function(id) {
+                    var user = participantsData.find(function(u) { return u.id === parseInt(id, 10); });
+                    if (!user) return;
+                    var wrapper = document.createElement('span');
+                    wrapper.className = 'avatar-wrapper';
+                    var img = document.createElement('img');
+                    img.src = user.avatar_url;
+                    img.alt = '';
+                    img.width = 20;
+                    img.height = 20;
+                    img.className = 'avatar comment-presence-avatar';
+                    img.style.borderRadius = '50%';
+                    wrapper.appendChild(img);
+                    if (user.default_avatar) {
+                        var span = document.createElement('span');
+                        span.className = 'avatar-initial';
+                        span.textContent = user.initial;
+                        span.style.fontSize = Math.round(20 / 2) + 'px';
+                        wrapper.appendChild(span);
+                    }
+                    typingIndicator.appendChild(wrapper);
+                });
+            }
+            var names = ids.map(function(id) { return typingUsers[id]; });
+            var text = document.createElement('span');
+            text.textContent = names.join(', ') + ' ...';
+            typingIndicator.appendChild(text);
+        }
+
         function loadParticipants() {
             if (!popup.dataset.creativeId) return;
             fetch(`/creatives/${popup.dataset.creativeId}/comments/participants`)
@@ -238,6 +286,7 @@ if (!window.commentsInitialized) {
                 .then(function(data) {
                     participantsData = data;
                     renderParticipants(currentPresentIds);
+                    renderTypingIndicator();
                 });
         }
 
@@ -250,6 +299,23 @@ if (!window.commentsInitialized) {
                     if (data.ids) {
                         currentPresentIds = data.ids.map(function(id) { return parseInt(id, 10); });
                         renderParticipants(currentPresentIds);
+                    }
+                    if (data.typing) {
+                        var id = data.typing.id;
+                        typingUsers[id] = data.typing.name;
+                        renderTypingIndicator();
+                        clearTimeout(typingTimers[id]);
+                        typingTimers[id] = setTimeout(function() {
+                            delete typingUsers[id];
+                            renderTypingIndicator();
+                            delete typingTimers[id];
+                        }, 3000);
+                    }
+                    if (data.stop_typing) {
+                        var id2 = data.stop_typing.id;
+                        delete typingUsers[id2];
+                        if (typingTimers[id2]) { clearTimeout(typingTimers[id2]); delete typingTimers[id2]; }
+                        renderTypingIndicator();
                     }
                 } }
             );
@@ -269,6 +335,14 @@ if (!window.commentsInitialized) {
                 }
                 popup.style.bottom = inset + 'px';
             }
+            textarea.addEventListener('input', function() {
+                if (!presenceSubscription) return;
+                presenceSubscription.perform('typing');
+                clearTimeout(typingTimeout);
+                typingTimeout = setTimeout(function() {
+                    if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
+                }, 3000);
+            });
             textarea.addEventListener('focus', function() {
                 adjustForKeyboard();
                 if (window.visualViewport) {
@@ -276,6 +350,9 @@ if (!window.commentsInitialized) {
                 }
             });
             textarea.addEventListener('blur', function() {
+                if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
+                clearTimeout(typingTimeout);
+                typingTimeout = null;
                 popup.style.bottom = '';
                 if (window.visualViewport) {
                     window.visualViewport.removeEventListener('resize', adjustForKeyboard);
@@ -404,6 +481,9 @@ if (!window.commentsInitialized) {
 
             form.onsubmit = function(e) {
                 e.preventDefault();
+                if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
+                clearTimeout(typingTimeout);
+                typingTimeout = null;
                 var formData = new FormData(form);
                 var url = `/creatives/${popup.dataset.creativeId}/comments`;
                 var method = 'POST';

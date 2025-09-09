@@ -23,6 +23,21 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     end
   end
 
+  def typing
+    return unless @creative_id && current_user
+
+    ActionCable.server.broadcast(
+      stream_name,
+      { typing: { id: current_user.id, name: current_user.display_name } }
+    )
+  end
+
+  def stopped_typing
+    return unless @creative_id && current_user
+
+    ActionCable.server.broadcast(stream_name, { stop_typing: { id: current_user.id } })
+  end
+
   private
 
   def stream_name
