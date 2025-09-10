@@ -166,6 +166,7 @@
       </div>
     </div>
 
+    <% unless Rails.env.test? %>
     <div id="notification-permission-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
       <div class="popup-box" style="max-width:400px;">
         <p><%= t('notifications.permission_prompt') %></p>
@@ -175,6 +176,7 @@
         </div>
       </div>
     </div>
+<% end %>
 
     <script>
       if (!window.isPlansMenuInitialized) {
