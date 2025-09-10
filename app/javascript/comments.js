@@ -30,6 +30,7 @@ if (!window.commentsInitialized) {
             popup.dataset.creativeId = btn.dataset.creativeId;
             popup.dataset.canComment = btn.dataset.canComment;
             popup.dataset.resized = 'false';
+            document.getElementById('comments-popup-title').textContent = btn.dataset.creativeSnippet;
             popup.style.width = '';
             popup.style.height = '';
             popup.style.left = '';

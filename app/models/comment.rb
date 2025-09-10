@@ -12,7 +12,7 @@ class Comment < ApplicationRecord
 
   # public for db migration
   def creative_snippet
-    creative.effective_origin.description.to_plain_text.truncate(24, omission: "...")
+    creative.creative_snippet
   end
 
   private

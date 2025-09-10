@@ -95,6 +95,10 @@ class Creative < ApplicationRecord
     end
   end
 
+  def creative_snippet
+    effective_origin.description.to_plain_text.truncate(24, omission: "...")
+  end
+
   def progress
     effective_attribute(:progress)
   end

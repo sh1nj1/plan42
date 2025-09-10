@@ -65,7 +65,7 @@ module CreativesHelper
         stream + button_tag(
           comment_icon + badge,
           name: "show-comments-btn",
-          data: { creative_id: creative.id, can_comment: true },
+          data: { creative_id: creative.id, can_comment: true, creative_snippet: creative.creative_snippet },
           class: classes.join(" ")
         )
       else

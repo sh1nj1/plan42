@@ -7,7 +7,7 @@
   <div class="resize-handle resize-handle-left"></div>
   <div class="resize-handle resize-handle-right"></div>
   <button id="close-comments-btn" class="popup-close-btn">&times;</button>
-  <h3 style="margin-top:0;"><%= t('comments.comments') %></h3>
+  <h3 id="comments-popup-title" style="margin-top:0;"><%= t('comments.comments') %></h3>
   <div id="comment-participants"></div>
   <%= render UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <br/>
