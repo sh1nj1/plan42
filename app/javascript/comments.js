@@ -21,7 +21,7 @@ if (!window.commentsInitialized) {
                 top = Math.max(scrollY + 4, viewportBottom - popup.offsetHeight - 4);
             }
             popup.style.top = top + 'px';
-            popup.style.right = (window.innerWidth - rect.right) + 'px';
+            popup.style.right = (window.innerWidth - rect.right + 24) + 'px';
             popup.style.left = '';
         }
         function openPopup(btn) {
