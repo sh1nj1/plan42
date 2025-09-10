@@ -62,9 +62,9 @@ en:
     delete: "Delete"
     show_read: "Show read"
     no_messages: "No messages"
-    comment_added: "%{user} added \"%{comment}\"."
+    comment_added: "%{user} added \"%{comment}\" to \"%{creative}\"."
     creative_shared: "%{user} shared \"%{short_title}\"."
-    user_mentioned: "%{user} mentioned you: \"%{comment}\""
+    user_mentioned: "%{user} mentioned you in \"%{creative}\": \"%{comment}\""
     permission_requested: "%{user} requested access to \"%{short_title}\"."
 
   inbox_mailer:
