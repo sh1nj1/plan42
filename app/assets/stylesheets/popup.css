@@ -35,6 +35,17 @@
   margin-right: 0.4em;
 }
 
+#link-creative-results li {
+  cursor: pointer;
+  padding: 0.25em 0.5em;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+#link-creative-results li:hover {
+  border-color: var(--color-border);
+}
+
 .popup-close-btn {
   position: absolute;
   top: 0.5em;

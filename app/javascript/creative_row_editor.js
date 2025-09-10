@@ -419,7 +419,6 @@ if (!window.creativeRowEditorInitialized) {
               const li = document.createElement('li');
               li.textContent = c.description;
               li.dataset.id = c.id;
-              li.style.cursor = 'pointer';
               linkResults.appendChild(li);
             });
           }
