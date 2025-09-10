@@ -15,8 +15,6 @@
       </div>
     <% end %>
 
-    <%= render "inventory", creative: @creative %>
-
     <div class="creative-actions-row">
       <% if authenticated? %>
         <%= link_to t('creatives.index.new_sub_creative'), @creative&.id ? new_creative_path(parent_id: @creative.id, tags: params[:tags]) : new_creative_path(tags: params[:tags]) %>
