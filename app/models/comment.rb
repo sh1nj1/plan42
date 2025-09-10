@@ -10,6 +10,11 @@ class Comment < ApplicationRecord
   after_update_commit :broadcast_update
   after_destroy_commit :broadcast_destroy, :broadcast_badges
 
+  # public for db migration
+  def creative_snippet
+    creative.effective_origin.description.to_plain_text.truncate(24, omission: "...")
+  end
+
   private
 
   def create_inbox_item(owner, key, params = {})
@@ -103,10 +108,6 @@ class Comment < ApplicationRecord
 
   def assign_default_user
     self.user ||= Current.user
-  end
-
-  def creative_snippet
-    creative.effective_origin.description.to_plain_text.truncate(24, omission: "...")
   end
 
   def self.broadcast_badges(creative)
