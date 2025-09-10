@@ -5,7 +5,7 @@ RSpec.describe Creative, type: :model do
   let(:creative) { Creative.create!(user: user, description: 'Slide') }
 
   it 'returns prompt without prefix' do
-    creative.comments.create!(user: user, content: 'prompt: Hello world', private: true)
+    creative.comments.create!(user: user, content: '> Hello world', private: true)
     expect(creative.prompt_for(user)).to eq('Hello world')
   end
 

@@ -10,7 +10,7 @@ RSpec.describe 'Creative prompt in JSON', type: :request do
   end
 
   it 'includes prompt field' do
-    creative.comments.create!(user: user, content: 'prompt: Hello presenter', private: true)
+    creative.comments.create!(user: user, content: '> Hello presenter', private: true)
     get "/creatives/#{creative.id}.json"
     expect(response).to have_http_status(:success)
     data = JSON.parse(response.body)
