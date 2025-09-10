@@ -96,7 +96,7 @@ if (!window.plansTimelineScriptInitialized) {
           fetch(deleteUrl, {
             method: 'DELETE',
             headers: {
-              'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+              'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content,
               Accept: 'application/json'
             }
           }).then(function(r) {
@@ -250,7 +250,7 @@ if (!window.plansTimelineScriptInitialized) {
         fetch(planForm.action, {
           method: 'POST',
           headers: {
-            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content,
             Accept: 'application/json'
           },
           body: fd

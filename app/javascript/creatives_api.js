@@ -14,7 +14,7 @@ if (!window.creativesApi) {
         method: method,
         headers: {
           'Accept': 'application/json',
-          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content
         },
         body: new FormData(form),
         credentials: 'same-origin'
@@ -23,7 +23,7 @@ if (!window.creativesApi) {
     destroy(id, withChildren) {
       return fetch(`/creatives/${id}${withChildren ? '?delete_with_children=true' : ''}`, {
         method: 'DELETE',
-        headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
+        headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content },
         credentials: 'same-origin'
       });
     }

@@ -74,7 +74,7 @@ if (!window.creativesImportInitialized) {
             fetch('/creatives/import_markdown', {
                 method: 'POST',
                 headers: {
-                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content
                 },
                 body: formData
             })

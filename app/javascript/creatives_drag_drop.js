@@ -169,7 +169,7 @@ if (!window.creativesDragDropInitialized) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content
       },
       body: JSON.stringify({ dragged_id: draggedId, target_id: targetId, direction: direction })
     })
