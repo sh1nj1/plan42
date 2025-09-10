@@ -1,4 +1,4 @@
-class BackfillCreativeInCommentInboxItems < ActiveRecord::Migration[7.0]
+class BackfillCreativeInCommentInboxItems < ActiveRecord::Migration[8.0]
   disable_ddl_transaction!
 
   def up
@@ -10,10 +10,13 @@ class BackfillCreativeInCommentInboxItems < ActiveRecord::Migration[7.0]
       next unless comment_id
 
       comment = Comment.find_by(id: comment_id)
-      next unless comment
+      if comment.blank? || comment.creative.blank?
+        params["creative"] = ""
+      else
+        snippet = comment.creative_snippet
+        params["creative"] = snippet
+      end
 
-      snippet = comment.creative.effective_origin.description.to_plain_text.truncate(24, omission: "")
-      params["creative"] = snippet
       item.update_columns(message_params: params)
     end
   end

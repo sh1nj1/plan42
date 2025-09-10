@@ -106,7 +106,7 @@ class Comment < ApplicationRecord
   end
 
   def creative_snippet
-    creative.effective_origin.description.to_plain_text.truncate(24, omission: "")
+    creative.effective_origin.description.to_plain_text.truncate(24, omission: "...")
   end
 
   def self.broadcast_badges(creative)
