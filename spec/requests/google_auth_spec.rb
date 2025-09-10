@@ -17,6 +17,11 @@ RSpec.describe 'Google authentication', type: :request do
           email: 'user@example.com',
           name: 'Test User',
           image: image_url
+        ),
+        credentials: OmniAuth::AuthHash.new(
+          token: 'test_token',
+          refresh_token: 'test_refresh_token',
+          expires_at: Time.now.to_i + 3600
         )
       )
 
