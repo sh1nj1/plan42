@@ -23,6 +23,10 @@ if (!window.creativeRowEditorInitialized) {
     const closeBtn = document.getElementById('inline-close');
     const parentSuggestions = document.getElementById('parent-suggestions');
     const parentSuggestBtn = document.getElementById('inline-recommend-parent');
+    const linkModal = document.getElementById('link-creative-modal');
+    const linkSearchInput = document.getElementById('link-creative-search');
+    const linkResults = document.getElementById('link-creative-results');
+    const linkCloseBtn = document.getElementById('close-link-creative-modal');
 
     const methodInput = document.getElementById('inline-method');
     const parentInput = document.getElementById('inline-parent-id');
@@ -386,34 +390,58 @@ if (!window.creativeRowEditorInitialized) {
     }
 
     function linkExistingCreative() {
-      if (!currentTree || !form.dataset.creativeId) return;
-      const query = prompt('Search creative');
-      if (!query) return;
+      if (!currentTree || !form.dataset.creativeId || !linkModal || !linkSearchInput || !linkResults) return;
+      linkModal.style.display = 'flex';
+      document.body.classList.add('no-scroll');
+      linkSearchInput.value = '';
+      linkResults.innerHTML = '';
+      linkSearchInput.focus();
+    }
+
+    function closeLinkModal() {
+      if (!linkModal) return;
+      linkModal.style.display = 'none';
+      document.body.classList.remove('no-scroll');
+    }
+
+    function searchLinkCreatives() {
+      const query = linkSearchInput.value.trim();
+      if (!query) {
+        linkResults.innerHTML = '';
+        return;
+      }
       fetch(`/creatives.json?search=${encodeURIComponent(query)}&simple=true`)
         .then(r => r.json())
         .then(results => {
-          if (!Array.isArray(results) || results.length === 0) {
-            alert('No results');
-            return;
+          linkResults.innerHTML = '';
+          if (Array.isArray(results)) {
+            results.forEach(function(c) {
+              const li = document.createElement('li');
+              li.textContent = c.description;
+              li.dataset.id = c.id;
+              li.style.cursor = 'pointer';
+              linkResults.appendChild(li);
+            });
           }
-          const options = results.map((c, i) => `${i + 1}. ${c.description}`).join('\n');
-          const choice = prompt('Select creative\n' + options);
-          const index = parseInt(choice, 10) - 1;
-          const selected = results[index];
-          if (!selected) return;
-          const fd = new FormData();
-          fd.append('creative[parent_id]', form.dataset.creativeId);
-          fd.append('creative[origin_id]', selected.id);
-          fd.append('authenticity_token', document.querySelector('meta[name="csrf-token"]').content);
-          fetch('/creatives', {
-            method: 'POST',
-            headers: { 'Accept': 'application/json' },
-            body: fd,
-            credentials: 'same-origin'
-          }).then(() => {
-            refreshChildren(currentTree).then(() => refreshRow(currentTree));
-          });
         });
+    }
+
+    function handleLinkResultClick(e) {
+      const li = e.target.closest('li');
+      if (!li) return;
+      const fd = new FormData();
+      fd.append('creative[parent_id]', form.dataset.creativeId);
+      fd.append('creative[origin_id]', li.dataset.id);
+      fd.append('authenticity_token', document.querySelector('meta[name="csrf-token"]').content);
+      fetch('/creatives', {
+        method: 'POST',
+        headers: { 'Accept': 'application/json' },
+        body: fd,
+        credentials: 'same-origin'
+      }).then(() => {
+        closeLinkModal();
+        refreshChildren(currentTree).then(() => refreshRow(currentTree));
+      });
     }
 
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
@@ -587,20 +615,35 @@ if (!window.creativeRowEditorInitialized) {
       });
     }
 
-    if (deleteWithChildrenBtn) {
-      deleteWithChildrenBtn.addEventListener('click', function() {
-        if (confirm(deleteWithChildrenBtn.dataset.confirm)) deleteCurrent(true);
-      });
-    }
+      if (deleteWithChildrenBtn) {
+        deleteWithChildrenBtn.addEventListener('click', function() {
+          if (confirm(deleteWithChildrenBtn.dataset.confirm)) deleteCurrent(true);
+        });
+      }
 
-    if (linkBtn) {
-      linkBtn.addEventListener('click', linkExistingCreative);
-    }
+      if (linkBtn) {
+        linkBtn.addEventListener('click', linkExistingCreative);
+      }
 
-    if (unlinkBtn) {
-      unlinkBtn.addEventListener('click', function() {
-        if (confirm(unlinkBtn.dataset.confirm)) deleteCurrent(false);
-      });
-    }
-  });
-}
+      if (linkSearchInput) {
+        linkSearchInput.addEventListener('input', searchLinkCreatives);
+      }
+
+      if (linkResults) {
+        linkResults.addEventListener('click', handleLinkResultClick);
+      }
+
+      if (linkCloseBtn && linkModal) {
+        linkCloseBtn.addEventListener('click', closeLinkModal);
+        linkModal.addEventListener('click', function(e) {
+          if (e.target === linkModal) closeLinkModal();
+        });
+      }
+
+      if (unlinkBtn) {
+        unlinkBtn.addEventListener('click', function() {
+          if (confirm(unlinkBtn.dataset.confirm)) deleteCurrent(false);
+        });
+      }
+    });
+  }
