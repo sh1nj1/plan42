@@ -1,5 +1,5 @@
 // creatives_import.js
-// Handles the import button, slide, drag & drop, and AJAX upload for markdown files
+// Handles the import button, slide, drag & drop, and AJAX upload for markdown and PPT files
 if (!window.creativesImportInitialized) {
     window.creativesImportInitialized = true;
     document.addEventListener('turbo:load', function () {
@@ -58,7 +58,10 @@ if (!window.creativesImportInitialized) {
         });
 
         function handleFile(file) {
-            if (!file.name.endsWith('.md')) {
+            const lower = file.name.toLowerCase();
+            const isMarkdown = lower.endsWith('.md');
+            const isPpt = lower.endsWith('.ppt') || lower.endsWith('.pptx');
+            if (!isMarkdown && !isPpt) {
                 alert(onlyMarkdownText);
                 return;
             }

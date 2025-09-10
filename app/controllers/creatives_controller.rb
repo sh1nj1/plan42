@@ -297,13 +297,23 @@ class CreativesController < ApplicationController
     unless authenticated?
       render json: { error: "Unauthorized" }, status: :unauthorized and return
     end
-    if params[:markdown].blank? || !params[:markdown].content_type.in?(%w[text/markdown text/x-markdown application/octet-stream])
+    if params[:markdown].blank?
       render json: { error: "Invalid file type" }, status: :unprocessable_entity and return
     end
     parent = params[:parent_id].present? ? Creative.find_by(id: params[:parent_id]) : nil
     file = params[:markdown]
-    content = file.read.force_encoding("UTF-8")
-    created = MarkdownImporter.import(content, parent: parent, user: Current.user, create_root: true)
+    created =
+      case file.content_type
+      when "text/markdown", "text/x-markdown", "application/octet-stream"
+        content = file.read.force_encoding("UTF-8")
+        MarkdownImporter.import(content, parent: parent, user: Current.user, create_root: true)
+      when "application/vnd.ms-powerpoint",
+           "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        PptImporter.import(file.tempfile, parent: parent, user: Current.user,
+                           create_root: true, filename: file.original_filename)
+      else
+        render json: { error: "Invalid file type" }, status: :unprocessable_entity and return
+      end
     if created.any?
       render json: { success: true, created: created.map(&:id) }
     else
