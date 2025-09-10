@@ -35,6 +35,28 @@
   margin-right: 0.4em;
 }
 
+#link-creative-modal .popup-box {
+  width: 90vw;
+  max-width: 90vw;
+  min-width: 320px;
+}
+
+#link-creative-results li {
+  cursor: pointer;
+  padding: 0.25em 0.5em;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+#link-creative-results li:hover {
+  background-color: var(--color-border);
+}
+
+#link-creative-results li:focus {
+  background-color: var(--color-border);
+  outline: none;
+}
+
 .popup-close-btn {
   position: absolute;
   top: 0.5em;
