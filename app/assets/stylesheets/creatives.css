@@ -291,11 +291,13 @@
 
 .creative-row:hover .comments-btn.no-comments {
     visibility: visible;
+    opacity: 1.0;
 }
 
 @media (max-width: 768px) {
     .comments-btn.no-comments {
         visibility: visible;
+        opacity: 0.2;
     }
 }
 
