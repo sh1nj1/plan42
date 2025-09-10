@@ -35,6 +35,12 @@
   margin-right: 0.4em;
 }
 
+#link-creative-modal .popup-box {
+  width: 90vw;
+  max-width: 90vw;
+  min-width: 320px;
+}
+
 #link-creative-results li {
   cursor: pointer;
   padding: 0.25em 0.5em;
