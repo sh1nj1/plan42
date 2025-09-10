@@ -44,6 +44,7 @@ ko:
       permission_write: "쓰기"
       permission_feedback: "피드백"
       permission_no_access: "접근 금지"
+      permission_admin: "관리자"
       share: "공유하기"
       invite: "초대하기"
       invite_link: "초대 링크"
