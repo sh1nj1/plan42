@@ -44,6 +44,7 @@ en:
       permission_write: "Write"
       permission_feedback: "Feedback"
       permission_no_access: "No access"
+      permission_admin: "Admin"
       share: "Share"
       invite: "Invite"
       invite_link: "Invite Link"

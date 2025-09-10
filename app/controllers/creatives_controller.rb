@@ -212,7 +212,7 @@ class CreativesController < ApplicationController
 
   def destroy
     parent = @creative.parent
-    unless @creative.has_permission?(Current.user, :write)
+    unless @creative.has_permission?(Current.user, :admin)
       redirect_to @creative, alert: t("creatives.errors.no_permission") and return
     end
     if params[:delete_with_children]
@@ -399,7 +399,7 @@ class CreativesController < ApplicationController
 
     # Recursively destroy all descendants the user can delete
     def destroy_descendants_recursively(creative, user)
-      deletable_children = creative.children_with_permission(user, :write)
+      deletable_children = creative.children_with_permission(user, :admin)
       deletable_children.each do |child|
         destroy_descendants_recursively(child, user)
         CreativeShare.where(creative: child).destroy_all
