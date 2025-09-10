@@ -419,15 +419,15 @@ if (!window.creativeRowEditorInitialized) {
               const li = document.createElement('li');
               li.textContent = c.description;
               li.dataset.id = c.id;
+              li.tabIndex = 0;
+              li.setAttribute('role', 'button');
               linkResults.appendChild(li);
             });
           }
         });
     }
 
-    function handleLinkResultClick(e) {
-      const li = e.target.closest('li');
-      if (!li) return;
+    function linkCreativeFromLi(li) {
       const fd = new FormData();
       fd.append('creative[parent_id]', form.dataset.creativeId);
       fd.append('creative[origin_id]', li.dataset.id);
@@ -441,6 +441,20 @@ if (!window.creativeRowEditorInitialized) {
         closeLinkModal();
         refreshChildren(currentTree).then(() => refreshRow(currentTree));
       });
+    }
+
+    function handleLinkResultClick(e) {
+      const li = e.target.closest('li');
+      if (!li) return;
+      linkCreativeFromLi(li);
+    }
+
+    function handleLinkResultKeydown(e) {
+      if (e.key !== 'Enter') return;
+      const li = e.target.closest('li');
+      if (!li) return;
+      e.preventDefault();
+      linkCreativeFromLi(li);
     }
 
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
@@ -630,6 +644,7 @@ if (!window.creativeRowEditorInitialized) {
 
       if (linkResults) {
         linkResults.addEventListener('click', handleLinkResultClick);
+        linkResults.addEventListener('keydown', handleLinkResultKeydown);
       }
 
       if (linkCloseBtn && linkModal) {

@@ -49,7 +49,12 @@
 }
 
 #link-creative-results li:hover {
-  border-color: var(--color-border);
+  background-color: var(--color-border);
+}
+
+#link-creative-results li:focus {
+  background-color: var(--color-border);
+  outline: none;
 }
 
 .popup-close-btn {
