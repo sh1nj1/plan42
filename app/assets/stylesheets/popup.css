@@ -37,7 +37,7 @@
 
 #link-creative-modal .popup-box {
   width: 90vw;
-  max-width: 90vw;
+  max-width: calc(var(--max-width) - 120px);
   min-width: 320px;
 }
 
