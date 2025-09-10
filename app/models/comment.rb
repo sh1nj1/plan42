@@ -85,7 +85,7 @@ class Comment < ApplicationRecord
       create_inbox_item(
         recipient,
         "inbox.comment_added",
-        { user: user.display_name, comment: content }
+        { user: user.display_name, comment: content, creative: creative_snippet }
       )
     end
   end
@@ -96,13 +96,17 @@ class Comment < ApplicationRecord
       create_inbox_item(
         mentioned,
         "inbox.user_mentioned",
-        { user: user.display_name, comment: content }
+        { user: user.display_name, comment: content, creative: creative_snippet }
       )
     end
   end
 
   def assign_default_user
     self.user ||= Current.user
+  end
+
+  def creative_snippet
+    creative.effective_origin.description.to_plain_text.truncate(24, omission: "")
   end
 
   def self.broadcast_badges(creative)
