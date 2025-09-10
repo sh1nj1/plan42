@@ -104,7 +104,8 @@ class CreativesController < ApplicationController
           parent_id: @creative.parent_id,
           progress: @creative.progress,
           depth: depth,
-          prompt: @creative.prompt_for(Current.user)
+          prompt: @creative.prompt_for(Current.user),
+          prompt_comment_id: @creative.prompt_comment_for(Current.user)&.id
         }
       end
     end

@@ -35,7 +35,11 @@ class CommentsController < ApplicationController
     @comment.content = "#{@comment.content}\n\n#{response}" if response.present?
     if @comment.save
       trigger_gemini_response(@comment) if @comment.content.match?(/\A@gemini\b/i)
-      render partial: "comments/comment", locals: { comment: @comment }, status: :created
+      if request.format.json?
+        render json: { id: @comment.id, content: @comment.content }, status: :created
+      else
+        render partial: "comments/comment", locals: { comment: @comment }, status: :created
+      end
     else
       render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
     end
@@ -44,7 +48,11 @@ class CommentsController < ApplicationController
   def update
     if @comment.user == Current.user
       if @comment.update(comment_params)
-        render partial: "comments/comment", locals: { comment: @comment }
+        if request.format.json?
+          render json: { id: @comment.id, content: @comment.content }
+        else
+          render partial: "comments/comment", locals: { comment: @comment }
+        end
       else
         render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
       end

@@ -122,12 +122,16 @@ class Creative < ApplicationRecord
     end
   end
 
-  def prompt_for(user)
+  def prompt_comment_for(user)
     comments
       .where(private: true, user: user)
       .where("content LIKE ?", "> %")
       .order(created_at: :desc)
       .first
+  end
+
+  def prompt_for(user)
+    prompt_comment_for(user)
       &.content
       &.sub(/\A>\s*/i, "")
   end

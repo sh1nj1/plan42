@@ -10,6 +10,13 @@ document.addEventListener('DOMContentLoaded', function() {
   var counterEl = document.getElementById('slide-counter');
   var linkEl = document.getElementById('slide-goto');
   var captionEl = document.getElementById('slide-caption');
+  var captionPopup = document.getElementById('caption-popup');
+  var captionDisplay = document.getElementById('caption-display');
+  var captionInput = document.getElementById('caption-input');
+  var closeCaptionBtn = document.getElementById('close-caption-btn');
+  var captionCommentId = container.dataset.initialPromptId ? parseInt(container.dataset.initialPromptId, 10) : null;
+  var csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+  var editingCaption = false;
   var startX = null;
   var slideSubscription = null;
   var lastScrollLeft = 0;
@@ -59,6 +66,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (captionEl) {
           captionEl.textContent = data.prompt || '';
         }
+        if (captionDisplay) {
+          captionDisplay.textContent = data.prompt || '';
+        }
+        captionCommentId = data.prompt_comment_id || null;
+        exitCaptionEdit();
         requestAnimationFrame(function() {
           container.scrollLeft = 0;
           container.scrollTop = 0;
@@ -119,6 +131,12 @@ document.addEventListener('DOMContentLoaded', function() {
     } else if (key === 'ArrowLeft' || key === 37) {
       e.preventDefault();
       load(index - 1, true);
+    } else if (key === 's' || key === 83) {
+      e.preventDefault();
+      toggleCaptionPopup();
+    } else if (key === 'e' || key === 69) {
+      e.preventDefault();
+      openCaptionEditor();
     }
   });
 
@@ -133,4 +151,88 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     lastScrollLeft = left;
   });
+
+  function toggleCaptionPopup() {
+    if (!captionPopup) return;
+    if (captionPopup.style.display === 'block') {
+      captionPopup.style.display = 'none';
+      exitCaptionEdit();
+    } else {
+      if (captionDisplay) {
+        captionDisplay.textContent = captionEl ? captionEl.textContent : '';
+      }
+      captionPopup.style.display = 'block';
+    }
+  }
+
+  function openCaptionEditor() {
+    if (!captionPopup) return;
+    if (captionPopup.style.display !== 'block') {
+      toggleCaptionPopup();
+    }
+    if (!captionInput || !captionDisplay) return;
+    captionInput.value = captionEl ? captionEl.textContent : '';
+    captionInput.style.display = 'block';
+    captionDisplay.style.display = 'none';
+    captionInput.focus();
+    editingCaption = true;
+  }
+
+  function exitCaptionEdit() {
+    if (!captionInput || !captionDisplay) return;
+    captionInput.style.display = 'none';
+    captionDisplay.style.display = 'block';
+    editingCaption = false;
+  }
+
+  function saveCaption() {
+    if (!captionInput) return;
+    var text = captionInput.value.trim();
+    var body = JSON.stringify({ comment: { content: '> ' + text, private: true } });
+    var url;
+    var method;
+    if (captionCommentId) {
+      url = '/creatives/' + ids[index] + '/comments/' + captionCommentId;
+      method = 'PUT';
+    } else {
+      url = '/creatives/' + ids[index] + '/comments';
+      method = 'POST';
+    }
+    fetch(url, {
+      method: method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-Token': csrfToken
+      },
+      body: body
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        captionCommentId = data.id;
+        if (captionEl) {
+          captionEl.textContent = text;
+        }
+        if (captionDisplay) {
+          captionDisplay.textContent = text;
+        }
+        exitCaptionEdit();
+        captionPopup.style.display = 'none';
+      });
+  }
+
+  if (captionInput) {
+    captionInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveCaption();
+      }
+    });
+  }
+
+  if (closeCaptionBtn) {
+    closeCaptionBtn.addEventListener('click', function() {
+      toggleCaptionPopup();
+    });
+  }
 });

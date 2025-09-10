@@ -9,6 +9,11 @@ RSpec.describe Creative, type: :model do
     expect(creative.prompt_for(user)).to eq('Hello world')
   end
 
+  it 'returns comment for prompt_comment_for' do
+    comment = creative.comments.create!(user: user, content: '> Hi', private: true)
+    expect(creative.prompt_comment_for(user)).to eq(comment)
+  end
+
   it 'returns nil when no prompt' do
     expect(creative.prompt_for(user)).to be_nil
   end
