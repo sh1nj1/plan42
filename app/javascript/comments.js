@@ -528,8 +528,9 @@ if (!window.commentsInitialized) {
                 if (cancelBtn) { cancelBtn.style.display = 'none'; }
             }
 
-            form.onsubmit = function(e) {
+            const send = function(e) {
                 e.preventDefault();
+                if (!textarea.value) return;
                 if (presenceSubscription && (!privateCheckbox || !privateCheckbox.checked)) { presenceSubscription.perform('stopped_typing'); }
                 clearTimeout(typingTimeout);
                 typingTimeout = null;
@@ -551,7 +552,20 @@ if (!window.commentsInitialized) {
                         loadInitialComments(editingId);
                     })
                     .catch(e => { alert(e.message); });
-            };
+            }
+
+            submitBtn.addEventListener('click', send);
+            // iOS에서 키보드 열림 중 click 유실 대비
+            submitBtn.addEventListener('pointerup', (e)=>{ if (e.pointerType !== 'mouse') send(e); });
+            submitBtn.addEventListener('touchend', (e)=>{ e.preventDefault(); send(e); }, {passive:false});
+
+            if (isMobile()) { // mobile 에선 쉽프트 엔터킬로 보내는 건 무의미
+                // 키보드의 엔터(‘보내기’ 표시)로도 보낼 수 있게
+                textarea.addEventListener('keydown', (e)=>{
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(e); }
+                });
+            }
+            form.onsubmit = send;
             // 이벤트 위임 방식으로 삭제 버튼 처리
             list.addEventListener('click', function(e) {
                 if (e.target.classList.contains('delete-comment-btn')) {

@@ -14,7 +14,7 @@
   <div id="comments-list"><%= t('app.loading') %></div>
   <div id="typing-indicator"></div>
   <form id="new-comment-form" style="display:none;">
-    <textarea name="comment[content]" rows="2" required></textarea>
+    <textarea name="comment[content]" rows="2" required enterkeyhint="send"></textarea>
     <label><input type="checkbox" id="comment-private" name="comment[private]" /> <%= t('comments.private') %></label>
     <button class="creative-action-btn" type="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
     <button class="creative-action-btn" id="cancel-edit-btn" type="button" style="display:none;"><%= t('app.cancel') %></button>
