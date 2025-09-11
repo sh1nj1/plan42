@@ -100,6 +100,7 @@ if (!window.commentsInitialized) {
         var typingUsers = {};
         var typingTimers = {};
         var typingTimeout = null;
+        var hasPresenceConnected = false;
 
         if (privateCheckbox) {
             privateCheckbox.addEventListener('change', function() {
@@ -314,14 +315,22 @@ if (!window.commentsInitialized) {
         function subscribePresence() {
             if (!popup.dataset.creativeId) return;
             if (presenceSubscription) { presenceSubscription.unsubscribe(); }
+            hasPresenceConnected = false;
             presenceSubscription = ActionCable.createConsumer().subscriptions.create(
                 { channel: 'CommentsPresenceChannel', creative_id: popup.dataset.creativeId },
-                { received: function(data) {
-                    if (data.ids) {
-                        currentPresentIds = data.ids.map(function(id) { return parseInt(id, 10); });
-                        renderParticipants(currentPresentIds);
-                    }
-                    if (data.typing) {
+                {
+                    connected: function() {
+                        if (hasPresenceConnected) {
+                            loadInitialComments();
+                        }
+                        hasPresenceConnected = true;
+                    },
+                    received: function(data) {
+                        if (data.ids) {
+                            currentPresentIds = data.ids.map(function(id) { return parseInt(id, 10); });
+                            renderParticipants(currentPresentIds);
+                        }
+                        if (data.typing) {
                         var id = data.typing.id;
                         typingUsers[id] = data.typing.name;
                         renderTypingIndicator();
@@ -609,6 +618,24 @@ if (!window.commentsInitialized) {
             }
 
             openFromUrl();
+
+            window.addEventListener('online', function() {
+                if (popup.style.display === 'block') {
+                    loadInitialComments();
+                }
+            });
+
+            window.addEventListener('focus', function() {
+                if (popup.style.display === 'block') {
+                    loadInitialComments();
+                }
+            });
+
+            document.addEventListener('visibilitychange', function() {
+                if (!document.hidden && popup.style.display === 'block') {
+                    loadInitialComments();
+                }
+            });
         }
     });
 }
