@@ -528,9 +528,11 @@ if (!window.commentsInitialized) {
                 if (cancelBtn) { cancelBtn.style.display = 'none'; }
             }
 
+            let sending = false;
             const send = function(e) {
                 e.preventDefault();
-                if (!textarea.value) return;
+                if (sending || !textarea.value) return;
+                sending = true;
                 if (presenceSubscription && (!privateCheckbox || !privateCheckbox.checked)) { presenceSubscription.perform('stopped_typing'); }
                 clearTimeout(typingTimeout);
                 typingTimeout = null;
@@ -551,7 +553,8 @@ if (!window.commentsInitialized) {
                         resetForm();
                         loadInitialComments(editingId);
                     })
-                    .catch(e => { alert(e.message); });
+                    .catch(e => { alert(e.message); })
+                    .finally(() => { sending = false; });
             }
 
             submitBtn.addEventListener('click', send);
