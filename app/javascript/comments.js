@@ -87,7 +87,7 @@ if (!window.commentsInitialized) {
         var form = document.getElementById('new-comment-form');
         var participants = document.getElementById('comment-participants');
         var typingIndicator = document.getElementById('typing-indicator');
-        var submitBtn = form.querySelector('button[type="submit"]');
+        var submitBtn = form.querySelector('#submit-comment-btn');
         var defaultSubmitBtnHTML = submitBtn.innerHTML;
         var textarea = form.querySelector('textarea');
         var privateCheckbox = form.querySelector('#comment-private');
@@ -102,6 +102,15 @@ if (!window.commentsInitialized) {
         var typingTimers = {};
         var typingTimeout = null;
         var hasPresenceConnected = false;
+
+        submitBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (form.requestSubmit) {
+                form.requestSubmit();
+            } else {
+                form.dispatchEvent(new Event('submit', { cancelable: true }));
+            }
+        });
 
         if (privateCheckbox) {
             privateCheckbox.addEventListener('change', function() {
@@ -383,11 +392,7 @@ if (!window.commentsInitialized) {
             textarea.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter' && e.shiftKey) {
                     e.preventDefault();
-                    if (form.requestSubmit) {
-                        form.requestSubmit(submitBtn);
-                    } else {
-                        submitBtn.click();
-                    }
+                    submitBtn.click();
                 }
             });
             textarea.addEventListener('focus', function() {
