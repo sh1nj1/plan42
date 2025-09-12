@@ -551,12 +551,13 @@ if (!window.commentsInitialized) {
                             var existing = document.getElementById(`comment_${wasEditing}`);
                             if (existing) {
                                 existing.outerHTML = html;
+                                renderMarkdown(list);
                             }
                         } else {
-                            list.insertAdjacentHTML('beforeend', html);
+                            // The new comment will be appended via Turbo Stream broadcast.
+                            // Scroll to the bottom to keep the view anchored.
                             list.scrollTop = list.scrollHeight;
                         }
-                        renderMarkdown(list);
                         markCommentsRead();
                     })
                     .catch(e => { alert(e.message); })
