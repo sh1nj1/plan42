@@ -1,5 +1,4 @@
 module SystemHelpers
-
   PASSWORD = 'P4ssW0rd!'
 
   def sign_in(user)
