@@ -381,13 +381,8 @@ if (!window.commentsInitialized) {
                 }, 3000);
             });
             textarea.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && e.shiftKey) {
-                    e.preventDefault();
-                    if (form.requestSubmit) {
-                        form.requestSubmit(submitBtn);
-                    } else {
-                        submitBtn.click();
-                    }
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    send(e);
                 }
             });
             textarea.addEventListener('focus', function() {
@@ -562,12 +557,6 @@ if (!window.commentsInitialized) {
             submitBtn.addEventListener('pointerup', (e)=>{ if (e.pointerType !== 'mouse') send(e); });
             submitBtn.addEventListener('touchend', (e)=>{ e.preventDefault(); send(e); }, {passive:false});
 
-            if (isMobile()) { // mobile 에선 쉽프트 엔터킬로 보내는 건 무의미
-                // 키보드의 엔터(‘보내기’ 표시)로도 보낼 수 있게
-                textarea.addEventListener('keydown', (e)=>{
-                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(e); }
-                });
-            }
             form.onsubmit = send;
             // 이벤트 위임 방식으로 삭제 버튼 처리
             list.addEventListener('click', function(e) {

@@ -16,7 +16,6 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
   end
 
   it 'shows saved row when starting another addition' do
-
     find("#creative-#{root_creative.id}").hover
     find("#creative-#{root_creative.id} .edit-inline-btn").click
     find('#inline-add-child').click
@@ -44,7 +43,6 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
   end
 
   it 'supports keyboard shortcuts for add and close' do
-
     find("#creative-#{root_creative.id}").hover
     find("#creative-#{root_creative.id} .edit-inline-btn").click
     find('trix-editor').send_keys([ :alt, :enter ])
