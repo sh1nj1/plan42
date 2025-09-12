@@ -17,6 +17,8 @@ if (!window.creativesDragDropInitialized) {
     if (!row || row.draggable === false) return;
     draggedCreativeId = row.id;
     event.dataTransfer.effectAllowed = 'move';
+    // allow cross-window dragging by explicitly setting the dragged id
+    event.dataTransfer.setData('text/plain', row.id);
   };
 
   window.handleDragOver = function(event) {
@@ -87,66 +89,78 @@ if (!window.creativesDragDropInitialized) {
       return;
     }
     event.preventDefault();
-    if (draggedCreativeId && targetId && draggedCreativeId !== targetId) {
-      const draggedElem = document.getElementById(draggedCreativeId);
-      const draggedChildren = document.getElementById(`creative-children-${draggedCreativeId.replace('creative-', '')}`);
+    const transferredId = event.dataTransfer.getData('text/plain');
+    const draggedId = transferredId || draggedCreativeId;
+    if (draggedId && targetId && draggedId !== targetId) {
       const targetElem = document.getElementById(targetId);
       const rect = targetElem.getBoundingClientRect();
       const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
       const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
       const y = relaxedCoord(event.clientY);
       let direction = null;
-      // Save original position
-      const originalParent = draggedElem.parentNode;
-      const originalNextSibling = draggedChildren ? draggedChildren.nextSibling : draggedElem.nextSibling;
       if (y >= topZone && y <= bottomZone) {
-        // Append as child
-        const targetNum = targetId.replace('creative-', '');
-        let childrenContainer = document.getElementById(`creative-children-${targetNum}`);
-        if (!childrenContainer) {
-          childrenContainer = document.createElement('div');
-          childrenContainer.className = 'creative-children';
-          childrenContainer.id = `creative-children-${targetNum}`;
-          targetElem.parentNode.insertBefore(childrenContainer, targetElem.nextSibling);
-        }
-        childrenContainer.appendChild(draggedElem);
-        if (draggedChildren) childrenContainer.appendChild(draggedChildren);
         direction = 'child';
       } else if (y < topZone) {
-        // Insert before target
-        targetElem.parentNode.insertBefore(draggedElem, targetElem);
-        if (draggedChildren) targetElem.parentNode.insertBefore(draggedChildren, targetElem);
         direction = 'up';
       } else {
-        // Insert after target
-        if (targetElem.nextSibling) {
-          targetElem.parentNode.insertBefore(draggedElem, targetElem.nextSibling);
-        } else {
-          targetElem.parentNode.appendChild(draggedElem);
-        }
-        if (draggedChildren) {
-          if (draggedElem.nextSibling) {
-            draggedElem.parentNode.insertBefore(draggedChildren, draggedElem.nextSibling);
-          } else {
-            draggedElem.parentNode.appendChild(draggedChildren);
-          }
-        }
         direction = 'down';
       }
-      sendNewOrder(
-        draggedCreativeId.replace('creative-', ''),
-        targetId.replace('creative-', ''),
-        direction,
-        function revert() {
-          if (originalNextSibling) {
-            originalParent.insertBefore(draggedElem, originalNextSibling);
-            if (draggedChildren) originalParent.insertBefore(draggedChildren, originalNextSibling);
+      const draggedElem = document.getElementById(draggedId);
+      const draggedChildren = draggedElem ? document.getElementById(`creative-children-${draggedId.replace('creative-', '')}`) : null;
+      if (draggedElem) {
+        // Save original position for potential revert
+        const originalParent = draggedElem.parentNode;
+        const originalNextSibling = draggedChildren ? draggedChildren.nextSibling : draggedElem.nextSibling;
+        if (direction === 'child') {
+          const targetNum = targetId.replace('creative-', '');
+          let childrenContainer = document.getElementById(`creative-children-${targetNum}`);
+          if (!childrenContainer) {
+            childrenContainer = document.createElement('div');
+            childrenContainer.className = 'creative-children';
+            childrenContainer.id = `creative-children-${targetNum}`;
+            targetElem.parentNode.insertBefore(childrenContainer, targetElem.nextSibling);
+          }
+          childrenContainer.appendChild(draggedElem);
+          if (draggedChildren) childrenContainer.appendChild(draggedChildren);
+        } else if (direction === 'up') {
+          targetElem.parentNode.insertBefore(draggedElem, targetElem);
+          if (draggedChildren) targetElem.parentNode.insertBefore(draggedChildren, targetElem);
+        } else {
+          if (targetElem.nextSibling) {
+            targetElem.parentNode.insertBefore(draggedElem, targetElem.nextSibling);
           } else {
-            originalParent.appendChild(draggedElem);
-            if (draggedChildren) originalParent.appendChild(draggedChildren);
+            targetElem.parentNode.appendChild(draggedElem);
+          }
+          if (draggedChildren) {
+            if (draggedElem.nextSibling) {
+              draggedElem.parentNode.insertBefore(draggedChildren, draggedElem.nextSibling);
+            } else {
+              draggedElem.parentNode.appendChild(draggedChildren);
+            }
           }
         }
-      );
+        sendNewOrder(
+          draggedId.replace('creative-', ''),
+          targetId.replace('creative-', ''),
+          direction,
+          function revert() {
+            if (originalNextSibling) {
+              originalParent.insertBefore(draggedElem, originalNextSibling);
+              if (draggedChildren) originalParent.insertBefore(draggedChildren, originalNextSibling);
+            } else {
+              originalParent.appendChild(draggedElem);
+              if (draggedChildren) originalParent.appendChild(draggedChildren);
+            }
+          }
+        );
+      } else {
+        // dragged element is from another window – just send to server and reload
+        sendNewOrder(
+          draggedId.replace('creative-', ''),
+          targetId.replace('creative-', ''),
+          direction
+        ).then(() => window.location.reload());
+      }
     }
     draggedCreativeId = null;
     lastDragOverRow = null;
@@ -165,7 +179,7 @@ if (!window.creativesDragDropInitialized) {
   };
 
   function sendNewOrder(draggedId, targetId, direction, onErrorRevert) {
-    fetch('/creatives/reorder', {
+    return fetch('/creatives/reorder', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -178,10 +192,12 @@ if (!window.creativesDragDropInitialized) {
         console.error('Failed to update order');
         if (onErrorRevert) onErrorRevert();
       }
+      return response;
     })
     .catch((error) => {
       console.error('Failed to update order', error);
       if (onErrorRevert) onErrorRevert();
+      throw error;
     });
   }
 }
