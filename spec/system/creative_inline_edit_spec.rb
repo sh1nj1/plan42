@@ -15,6 +15,22 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
     visit creatives_path
   end
 
+  it 'allows editing page title and shows actions' do
+    visit creative_path(root_creative)
+
+    find("#creative-#{root_creative.id}").hover
+    expect(page).to have_css("#creative-#{root_creative.id} .edit-inline-btn")
+    expect(page).to have_css("#creative-#{root_creative.id} .comments-btn")
+    expect(page).to have_css("#creative-#{root_creative.id} .creative-progress-incomplete", text: '0%')
+
+    find("#creative-#{root_creative.id} .edit-inline-btn").click
+    find('trix-editor[input="inline-creative-description"]').click.set('Updated Title')
+    find('#inline-close').click
+    wait_for_ajax
+
+    expect(page).to have_css("#creative-#{root_creative.id} .creative-content", text: 'Updated Title')
+  end
+
   it 'shows saved row when starting another addition' do
     find("#creative-#{root_creative.id}").hover
     find("#creative-#{root_creative.id} .edit-inline-btn").click

@@ -245,6 +245,11 @@
     font-size: 1.3em;
 }
 
+.creative-row-start h1.page-title {
+    margin-left: 0;
+    font-size: 1.4em;
+}
+
 .creative-row-start h2 {
     font-size: 1.2em;
 }

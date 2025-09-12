@@ -63,18 +63,13 @@
   <% content_for :head do %>
     <meta property="og:title" content="<%= @parent_creative.effective_origin.description.to_plain_text %>">
   <% end %>
-  <div class="creative-row" id="creative-markdown-block">
+  <%= render CreativeComponent.new(creative: @parent_creative, filtered_children: [], level: 1, select_mode: false, expanded: true) do %>
     <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
       <div class="creative-content">
         <%= @parent_creative.effective_description %>
       </div>
     </h1>
-    <div>
-      <h1 style="display: flex; align-items: center; gap: 1em;">
-        <%= render_creative_progress(@parent_creative) %>
-      </h1>
-    </div>
-  </div>
+  <% end %>
 <% else %>
   <div class="creative-row" id="creative-markdown-block">
     <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
