@@ -545,8 +545,19 @@ if (!window.commentsInitialized) {
                 })
                     .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.errors.join(', ')); }))
                     .then(html => {
+                        const wasEditing = editingId;
                         resetForm();
-                        loadInitialComments(editingId);
+                        if (wasEditing) {
+                            var existing = document.getElementById(`comment_${wasEditing}`);
+                            if (existing) {
+                                existing.outerHTML = html;
+                            }
+                        } else {
+                            list.insertAdjacentHTML('beforeend', html);
+                            list.scrollTop = list.scrollHeight;
+                        }
+                        renderMarkdown(list);
+                        markCommentsRead();
                     })
                     .catch(e => { alert(e.message); })
                     .finally(() => { sending = false; });
