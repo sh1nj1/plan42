@@ -103,22 +103,6 @@ if (!window.commentsInitialized) {
         var typingTimeout = null;
         var hasPresenceConnected = false;
 
-        if (privateCheckbox) {
-            privateCheckbox.addEventListener('change', function() {
-                if (presenceSubscription && privateCheckbox.checked) {
-                    presenceSubscription.perform('stopped_typing');
-                }
-                clearTimeout(typingTimeout);
-                typingTimeout = null;
-            });
-        }
-
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', function() {
-                resetForm();
-            });
-        }
-
         var resizing = null;
         var resizeStartX = 0;
         var resizeStartY = 0;
@@ -366,40 +350,101 @@ if (!window.commentsInitialized) {
                 }
                 popup.style.bottom = inset + 'px';
             }
-            textarea.addEventListener('input', function() {
-                if (!presenceSubscription) return;
-                if (privateCheckbox && privateCheckbox.checked) {
-                    presenceSubscription.perform('stopped_typing');
+            if (!form.dataset.initialized) {
+                if (privateCheckbox) {
+                    privateCheckbox.addEventListener('change', function() {
+                        if (presenceSubscription && privateCheckbox.checked) {
+                            presenceSubscription.perform('stopped_typing');
+                        }
+                        clearTimeout(typingTimeout);
+                        typingTimeout = null;
+                    });
+                }
+                if (cancelBtn) {
+                    cancelBtn.addEventListener('click', function() {
+                        resetForm();
+                    });
+                }
+                let sending = false;
+                const send = function(e) {
+                    e.preventDefault();
+                    if (sending || !textarea.value) return;
+                    sending = true;
+                    if (presenceSubscription && (!privateCheckbox || !privateCheckbox.checked)) { presenceSubscription.perform('stopped_typing'); }
                     clearTimeout(typingTimeout);
                     typingTimeout = null;
-                    return;
-                }
-                presenceSubscription.perform('typing');
-                clearTimeout(typingTimeout);
-                typingTimeout = setTimeout(function() {
-                    if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
-                }, 3000);
-            });
-            textarea.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    send(e);
-                }
-            });
-            textarea.addEventListener('focus', function() {
-                adjustForKeyboard();
-                if (window.visualViewport) {
-                    window.visualViewport.addEventListener('resize', adjustForKeyboard);
-                }
-            });
-            textarea.addEventListener('blur', function() {
-                if (presenceSubscription && (!privateCheckbox || !privateCheckbox.checked)) { presenceSubscription.perform('stopped_typing'); }
-                clearTimeout(typingTimeout);
-                typingTimeout = null;
-                popup.style.bottom = '';
-                if (window.visualViewport) {
-                    window.visualViewport.removeEventListener('resize', adjustForKeyboard);
-                }
-            });
+                    var formData = new FormData(form);
+                    var url = `/creatives/${popup.dataset.creativeId}/comments`;
+                    var method = 'POST';
+                    if (editingId) {
+                        url += `/${editingId}`;
+                        method = 'PATCH';
+                    }
+                    fetch(url, {
+                        method: method,
+                        headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
+                        body: formData
+                    })
+                        .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.errors.join(', ')); }))
+                        .then(html => {
+                            const wasEditing = editingId;
+                            resetForm();
+                            if (wasEditing) {
+                                var existing = document.getElementById(`comment_${wasEditing}`);
+                                if (existing) {
+                                    existing.outerHTML = html;
+                                }
+                            } else {
+                                list.insertAdjacentHTML('beforeend', html);
+                                list.scrollTop = list.scrollHeight;
+                            }
+                            renderMarkdown(list);
+                            markCommentsRead();
+                        })
+                        .catch(e => { alert(e.message); })
+                        .finally(() => { sending = false; });
+                };
+                textarea.addEventListener('input', function() {
+                    if (!presenceSubscription) return;
+                    if (privateCheckbox && privateCheckbox.checked) {
+                        presenceSubscription.perform('stopped_typing');
+                        clearTimeout(typingTimeout);
+                        typingTimeout = null;
+                        return;
+                    }
+                    presenceSubscription.perform('typing');
+                    clearTimeout(typingTimeout);
+                    typingTimeout = setTimeout(function() {
+                        if (presenceSubscription) { presenceSubscription.perform('stopped_typing'); }
+                    }, 3000);
+                });
+                textarea.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        send(e);
+                    }
+                });
+                textarea.addEventListener('focus', function() {
+                    adjustForKeyboard();
+                    if (window.visualViewport) {
+                        window.visualViewport.addEventListener('resize', adjustForKeyboard);
+                    }
+                });
+                textarea.addEventListener('blur', function() {
+                    if (presenceSubscription && (!privateCheckbox || !privateCheckbox.checked)) { presenceSubscription.perform('stopped_typing'); }
+                    clearTimeout(typingTimeout);
+                    typingTimeout = null;
+                    popup.style.bottom = '';
+                    if (window.visualViewport) {
+                        window.visualViewport.removeEventListener('resize', adjustForKeyboard);
+                    }
+                });
+                submitBtn.addEventListener('click', send);
+                // iOS에서 키보드 열림 중 click 유실 대비
+                submitBtn.addEventListener('pointerup', (e)=>{ if (e.pointerType !== 'mouse') send(e); });
+                submitBtn.addEventListener('touchend', (e)=>{ e.preventDefault(); send(e); }, {passive:false});
+                form.onsubmit = send;
+                form.dataset.initialized = 'true';
+            }
             function attachCommentButtons() {
                 const buttons = document.getElementsByName('show-comments-btn');
                 buttons.forEach(function(btn) {
@@ -435,21 +480,27 @@ if (!window.commentsInitialized) {
                 startY = null;
             });
 
-            participants.addEventListener('click', function(e) {
-                var avatar = e.target.closest('.comment-presence-avatar');
-                if (avatar && avatar.dataset.userId && avatar.dataset.userName) {
-                    insertMention({ id: avatar.dataset.userId, name: avatar.dataset.userName });
-                    textarea.focus();
-                }
-            });
+            if (!participants.dataset.clickInitialized) {
+                participants.addEventListener('click', function(e) {
+                    var avatar = e.target.closest('.comment-presence-avatar');
+                    if (avatar && avatar.dataset.userId && avatar.dataset.userName) {
+                        insertMention({ id: avatar.dataset.userId, name: avatar.dataset.userName });
+                        textarea.focus();
+                    }
+                });
+                participants.dataset.clickInitialized = 'true';
+            }
 
-            list.addEventListener('scroll', function() {
-                const pos = list.scrollHeight - list.clientHeight + list.scrollTop;
-                if (pos < 50) {
-                    loadMoreComments();
-                }
-                console.log("scrollTop:", list.scrollTop, "scrollHeight:", list.scrollHeight, "clientHeight:", list.clientHeight, "pos:", pos);
-            });
+            if (!list.dataset.scrollInitialized) {
+                list.addEventListener('scroll', function() {
+                    const pos = list.scrollHeight - list.clientHeight + list.scrollTop;
+                    if (pos < 50) {
+                        loadMoreComments();
+                    }
+                    console.log("scrollTop:", list.scrollTop, "scrollHeight:", list.scrollHeight, "clientHeight:", list.clientHeight, "pos:", pos);
+                });
+                list.dataset.scrollInitialized = 'true';
+            }
             var currentPage = 1;
             var loadingMore = false;
             var allLoaded = false;
@@ -523,98 +574,55 @@ if (!window.commentsInitialized) {
                 if (cancelBtn) { cancelBtn.style.display = 'none'; }
             }
 
-            let sending = false;
-            const send = function(e) {
-                e.preventDefault();
-                if (sending || !textarea.value) return;
-                sending = true;
-                if (presenceSubscription && (!privateCheckbox || !privateCheckbox.checked)) { presenceSubscription.perform('stopped_typing'); }
-                clearTimeout(typingTimeout);
-                typingTimeout = null;
-                var formData = new FormData(form);
-                var url = `/creatives/${popup.dataset.creativeId}/comments`;
-                var method = 'POST';
-                if (editingId) {
-                    url += `/${editingId}`;
-                    method = 'PATCH';
-                }
-                fetch(url, {
-                    method: method,
-                    headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
-                    body: formData
-                })
-                    .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.errors.join(', ')); }))
-                    .then(html => {
-                        const wasEditing = editingId;
-                        resetForm();
-                        if (wasEditing) {
-                            var existing = document.getElementById(`comment_${wasEditing}`);
-                            if (existing) {
-                                existing.outerHTML = html;
-                            }
-                        } else {
-                            list.insertAdjacentHTML('beforeend', html);
-                            list.scrollTop = list.scrollHeight;
-                        }
-                        renderMarkdown(list);
-                        markCommentsRead();
-                    })
-                    .catch(e => { alert(e.message); })
-                    .finally(() => { sending = false; });
-            }
-
-            submitBtn.addEventListener('click', send);
-            // iOS에서 키보드 열림 중 click 유실 대비
-            submitBtn.addEventListener('pointerup', (e)=>{ if (e.pointerType !== 'mouse') send(e); });
-            submitBtn.addEventListener('touchend', (e)=>{ e.preventDefault(); send(e); }, {passive:false});
-
-            form.onsubmit = send;
             // 이벤트 위임 방식으로 삭제 버튼 처리
-            list.addEventListener('click', function(e) {
-                if (e.target.classList.contains('delete-comment-btn')) {
-                    e.preventDefault();
-                    if (!confirm(popup.dataset.deleteConfirmText)) return;
-                    var btn = e.target;
-                    var commentId = btn.getAttribute('data-comment-id');
-                    var creativeId = popup.dataset.creativeId;
-                    fetch(`/creatives/${creativeId}/comments/${commentId}`, {
-                        method: 'DELETE',
-                        headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }
-                    }).then(function(r) {
-                        if (r.ok) {
-                            loadInitialComments();
-                        } else {
-                            // TODO: handle error
+            if (!list.dataset.clickInitialized) {
+                list.addEventListener('click', function(e) {
+                    if (e.target.classList.contains('delete-comment-btn')) {
+                        e.preventDefault();
+                        if (!confirm(popup.dataset.deleteConfirmText)) return;
+                        var btn = e.target;
+                        var commentId = btn.getAttribute('data-comment-id');
+                        var creativeId = popup.dataset.creativeId;
+                        fetch(`/creatives/${creativeId}/comments/${commentId}`, {
+                            method: 'DELETE',
+                            headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }
+                        }).then(function(r) {
+                            if (r.ok) {
+                                loadInitialComments();
+                            } else {
+                                // TODO: handle error
+                            }
+                        });
+                   } else if (e.target.classList.contains('convert-comment-btn')) {
+                       e.preventDefault();
+                        if (!confirm(popup.dataset.convertConfirmText)) return;
+                       var btn = e.target;
+                       var commentId = btn.getAttribute('data-comment-id');
+                       var creativeId = popup.dataset.creativeId;
+                       fetch(`/creatives/${creativeId}/comments/${commentId}/convert`, {
+                           method: 'POST',
+                           headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }
+                        }).then(function(r) {
+                            if (r.ok) {
+                                loadInitialComments();
+                            }
+                        });
+                    } else if (e.target.classList.contains('edit-comment-btn')) {
+                        e.preventDefault();
+                        var btn = e.target;
+                        editingId = btn.getAttribute('data-comment-id');
+                        textarea.value = btn.getAttribute('data-comment-content');
+                        submitBtn.textContent = popup.dataset.updateCommentText;
+                        if (privateCheckbox) {
+                            privateCheckbox.checked = btn.getAttribute('data-comment-private') === 'true';
+                            privateCheckbox.dispatchEvent(new Event('change'));
                         }
-                    });
-               } else if (e.target.classList.contains('convert-comment-btn')) {
-                   e.preventDefault();
-                    if (!confirm(popup.dataset.convertConfirmText)) return;
-                   var btn = e.target;
-                   var commentId = btn.getAttribute('data-comment-id');
-                   var creativeId = popup.dataset.creativeId;
-                   fetch(`/creatives/${creativeId}/comments/${commentId}/convert`, {
-                       method: 'POST',
-                       headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }
-                    }).then(function(r) {
-                        if (r.ok) {
-                            loadInitialComments();
-                        }
-                    });
-                } else if (e.target.classList.contains('edit-comment-btn')) {
-                    e.preventDefault();
-                    var btn = e.target;
-                    editingId = btn.getAttribute('data-comment-id');
-                    textarea.value = btn.getAttribute('data-comment-content');
-                    submitBtn.textContent = popup.dataset.updateCommentText;
-                    if (privateCheckbox) {
-                        privateCheckbox.checked = btn.getAttribute('data-comment-private') === 'true';
-                        privateCheckbox.dispatchEvent(new Event('change'));
+                        if (cancelBtn) { cancelBtn.style.display = ''; }
+                        textarea.focus();
                     }
-                    if (cancelBtn) { cancelBtn.style.display = ''; }
-                    textarea.focus();
-                }
-            });
+                });
+                list.dataset.clickInitialized = 'true';
+            }
 
             function openFromUrl() {
                 var params = new URLSearchParams(window.location.search);
