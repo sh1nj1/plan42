@@ -548,16 +548,19 @@ if (!window.commentsInitialized) {
                         const wasEditing = editingId;
                         resetForm();
                         if (wasEditing) {
+                            // UI automatically updated by turbo stream
                             var existing = document.getElementById(`comment_${wasEditing}`);
                             if (existing) {
-                                existing.outerHTML = html;
+                                markCommentsRead();
                             }
                         } else {
-                            list.insertAdjacentHTML('beforeend', html);
-                            list.scrollTop = list.scrollHeight;
+                            setTimeout(function() {
+                                if (document.getElementById('no-comments')) {
+                                    document.getElementById('no-comments').style.display = 'none';
+                                }
+                                list.scrollTop = list.scrollHeight;
+                            }, 100)
                         }
-                        renderMarkdown(list);
-                        markCommentsRead();
                     })
                     .catch(e => { alert(e.message); })
                     .finally(() => { sending = false; });

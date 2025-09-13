@@ -5,6 +5,6 @@
       <%= render partial: 'comments/comment', locals: { comment: comment, last_read_comment_id: last_read_comment_id } %>
     <% end %>
   <% else %>
-    <div><%= t('comments.no_comments') %></div>
+    <div id="no-comments"><%= t('comments.no_comments') %></div>
   <% end %>
 </div>
