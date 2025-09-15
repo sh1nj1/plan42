@@ -23,13 +23,19 @@ store % rails -v
 Rails 8.0.2
 ```
 
+## JavaScript bundling
+
+This project uses `jsbundling-rails`, so Node.js and npm packages must be installed when building for production. Ensure `npm ci`
+runs before `rails assets:precompile`. The provided Dockerfile and Render build script handle this automatically.
+
 ## Deploy to AWS EC2
 
 - [Deploy to AWS EC2](docs/deploy_to_ec2.md)
 
 ## Deploying to Render
 
-This application is configured for deployment on Render. To deploy:
+This application is configured for deployment on Render. The `bin/render-build.sh` script installs npm packages with `npm ci`
+before precompiling assets. To deploy:
 
 1. [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/sh1nj1/ror_getting_started)
 2. You'll need to set the following environment variables in Render:
