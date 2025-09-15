@@ -1,4 +1,9 @@
-// Import and register all your controllers from the importmap via controllers/**/*_controller
-import { application } from "controllers/application"
-import { eagerLoadControllersFrom } from "@hotwired/stimulus-loading"
-eagerLoadControllersFrom("controllers", application)
+import { application } from "./application"
+
+import CommentController from "./comment_controller"
+import HelloController from "./hello_controller"
+import ShareInviteController from "./share_invite_controller"
+
+application.register("comment", CommentController)
+application.register("hello", HelloController)
+application.register("share-invite", ShareInviteController)

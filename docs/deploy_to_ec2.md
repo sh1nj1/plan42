@@ -1,5 +1,11 @@
 # Deploy to AWS EC2
 
+## JavaScript build prerequisites
+
+This application uses `jsbundling-rails`. The provided Dockerfile installs Node.js and runs `npm ci` before `rails assets:precompile`
+so JavaScript assets are bundled during `bin/kamal deploy`. Ensure any custom build steps also install Node and run `npm ci` before
+precompiling assets.
+
 ## Create docker hub repository
 
 - create account
