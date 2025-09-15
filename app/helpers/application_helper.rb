@@ -68,7 +68,7 @@ module ApplicationHelper
         frameborder: 0,
         allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
         allowfullscreen: true,
-        style: "width: 60vw; aspect-ratio: 16 / 9;"
+        style: "width: min(60vw, calc(var(--max-width) - 60px)); aspect-ratio: 16 / 9;"
       )
     end.html_safe
   end
