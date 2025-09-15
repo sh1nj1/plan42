@@ -6,7 +6,7 @@
 
 <ul>
   <% @users.each do |user| %>
-    <% last_login_at = user.sessions.max_by(&:created_at)&.created_at %>
+    <% last_login_at = user.sessions.max_by(&:updated_at)&.updated_at %>
     <li>
       <%= render AvatarComponent.new(
             user: user,
