@@ -82,9 +82,12 @@ if (!window.commentsInitialized) {
             unsubscribePresence();
         }
         var popup = document.getElementById('comments-popup');
-        var closeBtn = document.getElementById('close-comments-btn');
         var list = document.getElementById('comments-list');
         var form = document.getElementById('new-comment-form');
+
+        if (!popup || !list || !form) { return; }
+
+        var closeBtn = document.getElementById('close-comments-btn');
         var participants = document.getElementById('comment-participants');
         var typingIndicator = document.getElementById('typing-indicator');
         var submitBtn = form.querySelector('button[type="submit"]');
