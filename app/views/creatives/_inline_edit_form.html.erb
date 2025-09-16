@@ -7,8 +7,11 @@
     <input type="hidden" id="inline-before-id" name="before_id" />
     <input type="hidden" id="inline-after-id" name="after_id" />
     <input type="hidden" id="inline-child-id" name="child_id" />
+    <%#= trix-toolbar can be inserted by trix but not added so that added manually %>
+    <trix-toolbar id="trix-toolbar"></trix-toolbar>
     <trix-editor input="inline-creative-description"
                  class="trix-content"
+                 toolbar="trix-toolbar"
                  style="background-color: var(--color-bg);"
                  data-direct-upload-url="<%= rails_direct_uploads_url %>"
                  data-blob-url-template="<%= rails_service_blob_url(':signed_id', ':filename') %>"></trix-editor>
