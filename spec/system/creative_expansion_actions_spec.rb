@@ -32,6 +32,21 @@ RSpec.describe 'Creative expansion actions', type: :system, js: true do
     expect(page).to have_css('#comments-popup', visible: :visible)
   end
 
+  it 'shows the trix toolbar when editing inline' do
+    find("#creative-#{root_creative.id}").hover
+    find("#creative-#{root_creative.id} .creative-toggle-btn").click
+
+    find("#creative-#{child.id}").hover
+    find("#creative-#{child.id} .edit-inline-btn").click
+
+    expect(page).to have_css('#inline-edit-form-element trix-toolbar', visible: :visible)
+    within '#inline-edit-form-element trix-toolbar' do
+      expect(page).to have_css('button', minimum: 3)
+    end
+
+    find('#inline-close').click
+  end
+
   it 'binds edit and comment buttons after using expand all' do
     find('#expand-all-btn').click
     find("#creative-#{child.id}").hover
