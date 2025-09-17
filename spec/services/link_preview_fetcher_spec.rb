@@ -1,6 +1,7 @@
 require "rails_helper"
 require "open-uri"
 require "stringio"
+require "uri"
 
 RSpec.describe LinkPreviewFetcher do
   let(:logger) { instance_double(Logger, warn: nil, info: nil) }
@@ -20,9 +21,11 @@ RSpec.describe LinkPreviewFetcher do
   end
 
   def build_io(body, content_type: "text/html")
+    base_uri = URI.parse(url)
+
     StringIO.new(body).tap do |io|
       io.define_singleton_method(:content_type) { content_type }
-      io.define_singleton_method(:base_uri) { URI(url) }
+      io.define_singleton_method(:base_uri) { base_uri }
     end
   end
 
