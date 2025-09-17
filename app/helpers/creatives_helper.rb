@@ -137,47 +137,46 @@ module CreativesHelper
         if skip
           render_next_block.call level # skip this creative, so decrease level
         else
-          bullet_starting_level = 3
-          renderer = ->(&block) {
-            toggle_btn = if filtered_children.any?
-              content_tag(:div, toggle_button_symbol(expanded: expanded), class: "before-link creative-toggle-btn creative-action-btn", data: { creative_id: creative.id })
-            else # dummy for space alignment
-              content_tag(:div, "", class: "before-link creative-toggle-btn creative-action-btn", style: "visibility: hidden;", data: { creative_id: creative.id })
-            end
-            if level <= bullet_starting_level
-              heading_tag = (filtered_children.any? or creative.parent.nil?) ? "h#{level}" : "div"
-              content_tag(heading_tag, class: "indent#{level}") do
-                toggle_btn + block.call
-              end
-            else # low level creative render as li
-              margin = level > 0 ? "margin-left: #{(level - bullet_starting_level) * 20}px;" : ""
-              content_tag(:div, class: "creative-tree-li", style: "#{margin}") do
-                bullet = if creative.effective_description.include?("<li>")
-                  "".html_safe
-                else
-                  content_tag(:div, "", class: "creative-tree-bullet")
-                end
-                toggle_btn + bullet + block.call
-              end
-            end
-          }
-          render(CreativeComponent.new(
+          description_html = embed_youtube_iframe(creative.effective_description(params[:tags]&.first))
+
+          progress_html = render_creative_progress(creative, select_mode: select_mode)
+
+          creative_tree_row_element(
             creative: creative,
-            filtered_children: filtered_children,
-            level: level,
             select_mode: select_mode,
+            description_html: description_html,
+            progress_html: progress_html,
+            level: level,
+            has_children: filtered_children.any?,
             expanded: expanded
-          )) do
-            renderer.call do
-              content_tag(:div, class: "creative-content") do
-                desc = embed_youtube_iframe(creative.effective_description(params[:tags]&.first))
-                link_to(desc, creative, class: "unstyled-link")
-              end
-            end
-          end + render_next_block.call(level + 1)
+          ) + render_next_block.call(level + 1)
         end
       end
     )
+  end
+
+  def creative_tree_row_element(creative:, select_mode:, description_html:, progress_html:, level:, has_children:, expanded:)
+    templates = [
+      content_tag(:template, data: { part: "description" }) { description_html },
+      content_tag(:template, data: { part: "progress" }) { progress_html },
+      content_tag(:template, data: { part: "edit-icon" }) { svg_tag("edit.svg", class: "icon-edit") },
+      content_tag(:template, data: { part: "edit-off-icon" }) { svg_tag("edit-off.svg", class: "icon-edit") }
+    ]
+
+    attrs = {
+      "creative-id": creative.id,
+      "dom-id": "creative-#{creative.id}",
+      "parent-id": creative.parent_id,
+      "select-mode": (select_mode ? "" : nil),
+      "can-write": (creative.has_permission?(Current.user, :write) ? "" : nil),
+      "level": level,
+      "has-children": (has_children ? "" : nil),
+      "expanded": (expanded ? "" : nil),
+      "is-root": (creative.parent.nil? ? "" : nil),
+      "link-url": creative_path(creative)
+    }
+
+    content_tag("creative-tree-row", safe_join(templates), attrs)
   end
 
   # parent_creative.expandedState[creative.id] 값 사용, parent_creative가 nil이면 controller에서 내려준 expanded_state_map[nil] 사용

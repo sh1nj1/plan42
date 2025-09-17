@@ -403,20 +403,21 @@ if (!window.commentsInitialized) {
                     window.visualViewport.removeEventListener('resize', adjustForKeyboard);
                 }
             });
-            function attachCommentButtons() {
-                const buttons = document.getElementsByName('show-comments-btn');
-                buttons.forEach(function(btn) {
-                    btn.onclick = function() {
-                        if (popup.style.display === 'block' && popup.dataset.creativeId === btn.dataset.creativeId) {
-                            closePopup();
-                            return;
-                        }
-                        openPopup(btn);
-                    };
-                });
+            if (window.handleCreativeCommentsClick) {
+                document.removeEventListener('creative-comments-click', window.handleCreativeCommentsClick);
             }
-            attachCommentButtons();
-            window.attachCommentButtons = attachCommentButtons;
+            function onCreativeCommentsClick(e) {
+                const btn = e.detail?.button;
+                if (!btn) return;
+                if (popup.style.display === 'block' && popup.dataset.creativeId === btn.dataset.creativeId) {
+                    closePopup();
+                    return;
+                }
+                openPopup(btn);
+            }
+            window.handleCreativeCommentsClick = onCreativeCommentsClick;
+            document.addEventListener('creative-comments-click', onCreativeCommentsClick);
+            window.attachCommentButtons = function() {};
             closeBtn.onclick = closePopup;
             var startY = null;
             popup.addEventListener('touchstart', function(e) {
