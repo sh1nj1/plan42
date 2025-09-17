@@ -20,8 +20,8 @@ RSpec.describe LinkPreviewFetcher do
     HTML
   end
 
-  def build_io(body, content_type: "text/html")
-    base_uri = URI.parse(url)
+  def build_io(body, content_type: "text/html", base_url: url)
+    base_uri = URI.parse(base_url)
 
     StringIO.new(body).tap do |io|
       io.define_singleton_method(:content_type) { content_type }
@@ -29,11 +29,19 @@ RSpec.describe LinkPreviewFetcher do
     end
   end
 
+  def stub_resolved_addresses(fetcher, mapping)
+    allow(fetcher).to receive(:resolve_addresses) do |host|
+      mapping.fetch(host, [])
+    end
+  end
+
   it "extracts metadata from the HTML head" do
     io = build_io(html)
-    expect(URI).to receive(:open).with(url, hash_including("User-Agent" => described_class::USER_AGENT)).and_yield(io)
+    expect(URI).to receive(:open).with(url, hash_including("User-Agent" => described_class::USER_AGENT, redirect: false)).and_yield(io)
 
-    metadata = described_class.new(url, io_opener: URI, logger: logger).fetch
+    fetcher = described_class.new(url, io_opener: URI, logger: logger)
+    stub_resolved_addresses(fetcher, URI.parse(url).hostname => [ "93.184.216.34" ])
+    metadata = fetcher.fetch
 
     expect(metadata[:title]).to eq("Example Title")
     expect(metadata[:description]).to eq("An example description.")
@@ -45,7 +53,9 @@ RSpec.describe LinkPreviewFetcher do
     io = build_io("<html><head><title>Fallback Title</title></head><body></body></html>")
     expect(URI).to receive(:open).and_yield(io)
 
-    metadata = described_class.new(url, io_opener: URI, logger: logger).fetch
+    fetcher = described_class.new(url, io_opener: URI, logger: logger)
+    stub_resolved_addresses(fetcher, URI.parse(url).hostname => [ "93.184.216.34" ])
+    metadata = fetcher.fetch
 
     expect(metadata[:title]).to eq("Fallback Title")
   end
@@ -54,7 +64,9 @@ RSpec.describe LinkPreviewFetcher do
     io = build_io("binary data", content_type: "image/png")
     expect(URI).to receive(:open).and_yield(io)
 
-    metadata = described_class.new(url, io_opener: URI, logger: logger).fetch
+    fetcher = described_class.new(url, io_opener: URI, logger: logger)
+    stub_resolved_addresses(fetcher, URI.parse(url).hostname => [ "93.184.216.34" ])
+    metadata = fetcher.fetch
 
     expect(metadata).to eq({})
   end
@@ -62,7 +74,71 @@ RSpec.describe LinkPreviewFetcher do
   it "handles network errors gracefully" do
     expect(URI).to receive(:open).and_raise(OpenURI::HTTPError.new("500", nil))
 
-    metadata = described_class.new(url, io_opener: URI, logger: logger).fetch
+    fetcher = described_class.new(url, io_opener: URI, logger: logger)
+    stub_resolved_addresses(fetcher, URI.parse(url).hostname => [ "93.184.216.34" ])
+    metadata = fetcher.fetch
+
+    expect(metadata).to eq({})
+  end
+
+  it "returns an empty hash when the host resolves to a private address" do
+    fetcher = described_class.new(url, io_opener: URI, logger: logger)
+    stub_resolved_addresses(fetcher, URI.parse(url).hostname => [ "10.0.0.5" ])
+
+    expect(URI).not_to receive(:open)
+
+    metadata = fetcher.fetch
+
+    expect(metadata).to eq({})
+  end
+
+  it "returns an empty hash for loopback IP URLs" do
+    local_url = "http://127.0.0.1/secret"
+    fetcher = described_class.new(local_url, io_opener: URI, logger: logger)
+    stub_resolved_addresses(fetcher, URI.parse(local_url).hostname => [ "127.0.0.1" ])
+
+    expect(URI).not_to receive(:open)
+
+    metadata = fetcher.fetch
+
+    expect(metadata).to eq({})
+  end
+
+  it "follows redirects when the destination is allowed" do
+    redirect_uri = URI.parse("https://www.example.com/article")
+    io = build_io(html, base_url: redirect_uri.to_s)
+    opener = double("io_opener")
+    redirect_error = OpenURI::HTTPRedirect.new("301", StringIO.new, redirect_uri)
+
+    expect(opener).to receive(:open).with(url, hash_including(redirect: false)).ordered.and_raise(redirect_error)
+    expect(opener).to receive(:open).with(redirect_uri.to_s, hash_including(redirect: false)).ordered.and_yield(io)
+
+    fetcher = described_class.new(url, io_opener: opener, logger: logger)
+    stub_resolved_addresses(fetcher, {
+      URI.parse(url).hostname => [ "93.184.216.34" ],
+      redirect_uri.hostname => [ "93.184.216.35" ]
+    })
+
+    metadata = fetcher.fetch
+
+    expect(metadata[:title]).to eq("Example Title")
+    expect(metadata[:image_url]).to eq("https://www.example.com/image.png")
+  end
+
+  it "stops following redirects that resolve to private addresses" do
+    redirect_uri = URI.parse("https://internal.example/resource")
+    opener = double("io_opener")
+    redirect_error = OpenURI::HTTPRedirect.new("301", StringIO.new, redirect_uri)
+
+    expect(opener).to receive(:open).with(url, hash_including(redirect: false)).and_raise(redirect_error)
+
+    fetcher = described_class.new(url, io_opener: opener, logger: logger)
+    stub_resolved_addresses(fetcher, {
+      URI.parse(url).hostname => [ "93.184.216.34" ],
+      redirect_uri.hostname => [ "10.0.0.8" ]
+    })
+
+    metadata = fetcher.fetch
 
     expect(metadata).to eq({})
   end
