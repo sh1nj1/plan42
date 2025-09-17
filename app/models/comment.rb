@@ -3,6 +3,7 @@ class Comment < ApplicationRecord
   belongs_to :user, optional: true
 
   before_validation :assign_default_user, on: :create
+  before_save :apply_link_previews, if: :should_apply_link_previews?
 
   validates :content, presence: true
 
@@ -108,6 +109,16 @@ class Comment < ApplicationRecord
 
   def assign_default_user
     self.user ||= Current.user
+  end
+
+  def should_apply_link_previews?
+    will_save_change_to_content? && content.present?
+  end
+
+  def apply_link_previews
+    self.content = CommentLinkFormatter.new(content).format
+  rescue StandardError => e
+    Rails.logger.warn("Comment link preview formatting failed: #{e.class} #{e.message}")
   end
 
   def self.broadcast_badges(creative)
