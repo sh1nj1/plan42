@@ -55,4 +55,7 @@ Rails.application.configure do
   # set logger for test
   # config.logger = ActiveSupport::TaggedLogging.new(Logger.new(STDOUT))
   # config.logger.level = Logger::DEBUG
+
+  # Override Sessions#create rate limit for tests (Option B)
+  config.x.sessions_create_rate_limit = { to: 1000, within: 1.second }
 end

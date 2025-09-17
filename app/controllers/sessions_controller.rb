@@ -1,6 +1,12 @@
 class SessionsController < ApplicationController
   allow_unauthenticated_access only: %i[ new create ]
-  rate_limit to: 10, within: 3.minutes, only: :create, with: -> { redirect_to new_session_url, alert: I18n.t("users.sessions.new.try_again_later") }
+
+  # Read rate limiting from environment-driven configuration
+  limit_cfg = Rails.configuration.x.sessions_create_rate_limit || {}
+  rate_limit to: (limit_cfg[:to] || 10),
+             within: (limit_cfg[:within] || 3.minutes),
+             only: :create,
+             with: -> { redirect_to new_session_url, alert: I18n.t("users.sessions.new.try_again_later") }
 
   def new
   end
