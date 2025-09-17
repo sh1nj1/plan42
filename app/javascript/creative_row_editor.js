@@ -40,7 +40,32 @@ if (!window.creativeRowEditorInitialized) {
     let saving = false;
     let savePromise = Promise.resolve();
 
+    function handleEditButtonClick(tree) {
+      if (!tree) return;
+
+      if (currentTree === tree) {
+        hideCurrent();
+        return;
+      }
+      if (currentTree) {
+        hideCurrent(false);
+      }
+      currentTree = tree;
+      hideRow(tree);
+      tree.draggable = false;
+      tree.appendChild(template);
+      template.style.display = 'block';
+      loadCreative(tree.dataset.id);
+    }
+
     function initializeEventListeners() {
+      document.addEventListener('creative-edit-click', function(e) {
+        const tree = e.detail?.treeElement || e.detail?.button?.closest('.creative-tree');
+        if (!tree) return;
+        e.preventDefault();
+        handleEditButtonClick(tree);
+      });
+
       document.body.addEventListener('click', function(e) {
         // Delegated event for .edit-inline-btn
         const editBtn = e.target.closest('.edit-inline-btn');
@@ -48,20 +73,7 @@ if (!window.creativeRowEditorInitialized) {
           e.preventDefault();
           const tree = editBtn.closest('.creative-tree');
           if (!tree) return;
-
-          if (currentTree === tree) {
-            hideCurrent();
-            return;
-          }
-          if (currentTree) {
-            hideCurrent(false);
-          }
-          currentTree = tree;
-          hideRow(tree);
-          tree.draggable = false;
-          tree.appendChild(template);
-          template.style.display = 'block';
-          loadCreative(tree.dataset.id);
+          handleEditButtonClick(tree);
           return; // Event handled
         }
 

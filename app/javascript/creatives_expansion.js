@@ -2,116 +2,175 @@ if (!window.creativesExpansionInitialized) {
     window.creativesExpansionInitialized = true;
 
     let allExpanded = false;
+    let currentCreativeId = null;
 
-    function expand(childrenDiv, btn) {
-        if (childrenDiv.dataset.loaded !== "true") {
-            fetch(childrenDiv.dataset.loadUrl)
-                .then(r => r.text())
-                .then(html => {
-                    childrenDiv.innerHTML = html;
-                    childrenDiv.dataset.loaded = "true";
-
-                    addToggleEvent(childrenDiv);
-                    if (window.attachCreativeRowEditorButtons) window.attachCreativeRowEditorButtons();
-                    if (window.attachCommentButtons) window.attachCommentButtons();
-                });
-            }
-        childrenDiv.style.display = "";
-        btn.textContent = "▼"
-    }
-    function collapse(childrenDiv, btn) {
-        childrenDiv.style.display = "none";
-        btn.textContent = "▶";
-    }
-
-    function addToggleEvent(div) {
-        // Get current creative id from path, e.g. /creatives/10 or /creatives
+    function computeCurrentCreativeId() {
         let match = window.location.pathname.match(/\/creatives\/(\d+)/);
-        let currentCreativeId = match ? match[1] : null;
-        if (!currentCreativeId) {
+        let id = match ? match[1] : null;
+        if (!id) {
             const params = new URLSearchParams(window.location.search);
-            currentCreativeId = params.get('id');
+            id = params.get('id');
         }
-        div.querySelectorAll(".creative-toggle-btn").forEach(function(btn) {
-            btn.addEventListener("click", function(e) {
-                const creativeId = btn.dataset.creativeId;
-                const childrenDiv = document.getElementById(`creative-children-${creativeId}`);
-                if (childrenDiv) {
-                    const wasHidden = childrenDiv.style.display === "none";
-                    if (wasHidden) {
-                        expand(childrenDiv, btn);
-                    } else {
-                        collapse(childrenDiv, btn);
-                    }
-                    const expanded = wasHidden;
-                    childrenDiv.dataset.expanded = expanded;
+        return id;
+    }
 
-                    // Store expansion state in DB, scoped by currentCreativeId and node_id
-                    let url = `/creative_expanded_states/toggle`;
-                    fetch(url, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content
-                        },
-                        body: JSON.stringify({
-                            creative_id: currentCreativeId,
-                            node_id: creativeId,
-                            expanded: expanded
-                        })
-                    });
-                }
+    function saveExpansionState(creativeId, expanded) {
+        if (!creativeId) return;
+        if (!currentCreativeId) currentCreativeId = computeCurrentCreativeId();
+        if (!currentCreativeId) return;
+
+        fetch('/creative_expanded_states/toggle', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content
+            },
+            body: JSON.stringify({
+                creative_id: currentCreativeId,
+                node_id: creativeId,
+                expanded: expanded
+            })
+        });
+    }
+
+    function toggleButtonFor(row) {
+        return row.querySelector('.creative-toggle-btn');
+    }
+
+    function childrenContainerFor(row) {
+        const creativeId = row.creativeId || row.getAttribute('creative-id');
+        if (!creativeId) return null;
+        return document.getElementById(`creative-children-${creativeId}`);
+    }
+
+    function setRowHasChildren(row, childrenDiv) {
+        const has = !!(childrenDiv && childrenDiv.querySelector('creative-tree-row'));
+        row.hasChildren = has;
+        const update = row.updateComplete instanceof Promise ? row.updateComplete : Promise.resolve();
+        return update.then(() => has);
+    }
+
+    function ensureLoaded(row, childrenDiv) {
+        if (!childrenDiv) {
+            return setRowHasChildren(row, null);
+        }
+        if (childrenDiv.dataset.loaded === 'true') {
+            return setRowHasChildren(row, childrenDiv);
+        }
+
+        const url = childrenDiv.dataset.loadUrl;
+        if (!url) {
+            return setRowHasChildren(row, childrenDiv);
+        }
+
+        return fetch(url)
+            .then(r => r.text())
+            .then(html => {
+                childrenDiv.innerHTML = html;
+                childrenDiv.dataset.loaded = 'true';
+                initializeRows(childrenDiv);
+                if (window.attachCreativeRowEditorButtons) window.attachCreativeRowEditorButtons();
+                if (window.attachCommentButtons) window.attachCommentButtons();
+                return setRowHasChildren(row, childrenDiv);
             });
+    }
 
-            // On load, restore state
-            const creativeId = btn.dataset.creativeId;
-            const childrenDiv = document.getElementById(`creative-children-${creativeId}`);
-            if (childrenDiv) {
-                if (allExpanded || childrenDiv.dataset.expanded === "true") {
-                    expand(childrenDiv, btn);
-                } else {
-                    collapse(childrenDiv, btn);
-                }
+    function expandRow(row, { persist = true } = {}) {
+        const creativeId = row.creativeId || row.getAttribute('creative-id');
+        const childrenDiv = childrenContainerFor(row);
+        ensureLoaded(row, childrenDiv).then(hasChildren => {
+            if (!hasChildren || !childrenDiv) {
+                collapseRow(row, { persist: false });
+                return;
+            }
+            childrenDiv.style.display = '';
+            childrenDiv.dataset.expanded = 'true';
+            const toggleBtn = toggleButtonFor(row);
+            if (toggleBtn) toggleBtn.textContent = row.hasChildren ? '▼' : '';
+            row.expanded = true;
+            if (persist) saveExpansionState(creativeId, true);
+        });
+    }
+
+    function collapseRow(row, { persist = true } = {}) {
+        const creativeId = row.creativeId || row.getAttribute('creative-id');
+        const childrenDiv = childrenContainerFor(row);
+        if (childrenDiv) {
+            childrenDiv.style.display = 'none';
+            childrenDiv.dataset.expanded = 'false';
+        }
+        const toggleBtn = toggleButtonFor(row);
+        if (toggleBtn) toggleBtn.textContent = row.hasChildren ? '▶' : '';
+        row.expanded = false;
+        if (persist) saveExpansionState(creativeId, false);
+    }
+
+    function toggleRow(row) {
+        if (row.expanded) {
+            collapseRow(row);
+        } else {
+            expandRow(row);
+        }
+    }
+
+    function initializeRows(container) {
+        container.querySelectorAll('creative-tree-row').forEach(row => {
+            syncInitialState(row);
+        });
+    }
+
+    function syncInitialState(row) {
+        const childrenDiv = childrenContainerFor(row);
+        const shouldExpand = allExpanded || row.expanded || (childrenDiv && childrenDiv.dataset.expanded === 'true');
+        ensureLoaded(row, childrenDiv).then(hasChildren => {
+            if (!hasChildren) {
+                collapseRow(row, { persist: false });
+                return;
+            }
+            if (shouldExpand) {
+                expandRow(row, { persist: false });
+            } else {
+                collapseRow(row, { persist: false });
             }
         });
     }
 
-    // Toggle children visibility on ▶/▼ button click
-    function setupCreativeToggles() {
-        console.log("Setting up creative toggles");
+    document.addEventListener('creative-toggle-click', function(event) {
+        const row = event.detail?.component;
+        if (!row) return;
+        toggleRow(row);
+    });
 
+    function setupCreativeToggles() {
+        currentCreativeId = computeCurrentCreativeId();
         allExpanded = false;
 
-        var expandBtn = document.getElementById('expand-all-btn');
+        const expandBtn = document.getElementById('expand-all-btn');
         if (expandBtn) {
             expandBtn.ariaLabel = expandBtn.dataset.expandText;
-            expandBtn.firstChild.textContent = "▼";
+            if (expandBtn.firstChild) expandBtn.firstChild.textContent = '▼';
         }
 
-        addToggleEvent(document);
+        initializeRows(document);
 
-        // Toggle Expand/Collapse All Creatives
         if (expandBtn) {
             expandBtn.addEventListener('click', function () {
-                var toggles = document.querySelectorAll('.creative-toggle-btn');
+                const rows = document.querySelectorAll('creative-tree-row');
                 allExpanded = !allExpanded;
-                toggles.forEach(function(btn) {
-                    const creativeId = btn.dataset.creativeId;
-                    const childrenDiv = document.getElementById(`creative-children-${creativeId}`);
-
-                    if (childrenDiv && !allExpanded) {
-                        collapse(childrenDiv, btn);
-                    } else if (childrenDiv) {
-                        expand(childrenDiv, btn);
+                rows.forEach(row => {
+                    if (allExpanded) {
+                        expandRow(row, { persist: false });
+                    } else {
+                        collapseRow(row, { persist: false });
                     }
                 });
                 expandBtn.ariaLabel = allExpanded ? expandBtn.dataset.collapseText : expandBtn.dataset.expandText;
-                expandBtn.firstChild.textContent = allExpanded ? "▶" : "▼";
+                if (expandBtn.firstChild) {
+                    expandBtn.firstChild.textContent = allExpanded ? '▶' : '▼';
+                }
             });
         }
     }
 
-    // XXX: do not initialize Toggles it only do once when page loads or changes, so only use turbo:load
-    // document.addEventListener("DOMContentLoaded", setupCreativeToggles);
-    document.addEventListener("turbo:load", setupCreativeToggles);
+    document.addEventListener('turbo:load', setupCreativeToggles);
 }
