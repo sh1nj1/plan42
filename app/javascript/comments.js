@@ -549,6 +549,7 @@ if (!window.commentsInitialized) {
                     .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.errors.join(', ')); }))
                     .then(html => {
                         const wasEditing = editingId;
+                        const isPrivate = privateCheckbox && privateCheckbox.checked;
                         resetForm();
                         if (wasEditing) {
                             // UI automatically updated by turbo stream
@@ -560,6 +561,10 @@ if (!window.commentsInitialized) {
                             setTimeout(function() {
                                 if (document.getElementById('no-comments')) {
                                     document.getElementById('no-comments').style.display = 'none';
+                                }
+                                if (isPrivate) {
+                                    const l = document.getElementById('comments_list')
+                                    l.insertAdjacentHTML('beforeend', html)
                                 }
                                 list.scrollTop = list.scrollHeight;
                             }, 100)
