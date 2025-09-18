@@ -80,13 +80,15 @@ if (!window.creativesExpansionInitialized) {
         const childrenDiv = childrenContainerFor(row);
         ensureLoaded(row, childrenDiv).then(hasChildren => {
             if (!hasChildren || !childrenDiv) {
-                collapseRow(row, { persist: false });
+                if (childrenDiv) {
+                    childrenDiv.style.display = 'none';
+                    childrenDiv.dataset.expanded = 'false';
+                }
+                row.expanded = false;
                 return;
             }
             childrenDiv.style.display = '';
             childrenDiv.dataset.expanded = 'true';
-            const toggleBtn = toggleButtonFor(row);
-            if (toggleBtn) toggleBtn.textContent = row.hasChildren ? '▼' : '';
             row.expanded = true;
             if (persist) saveExpansionState(creativeId, true);
         });
@@ -99,8 +101,6 @@ if (!window.creativesExpansionInitialized) {
             childrenDiv.style.display = 'none';
             childrenDiv.dataset.expanded = 'false';
         }
-        const toggleBtn = toggleButtonFor(row);
-        if (toggleBtn) toggleBtn.textContent = row.hasChildren ? '▶' : '';
         row.expanded = false;
         if (persist) saveExpansionState(creativeId, false);
     }
