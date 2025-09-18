@@ -59,12 +59,15 @@ if (!window.creativeRowEditorInitialized) {
     }
 
     function initializeEventListeners() {
-      document.addEventListener('creative-edit-click', function(e) {
-        const tree = e.detail?.treeElement || e.detail?.button?.closest('.creative-tree');
-        if (!tree) return;
-        e.preventDefault();
-        handleEditButtonClick(tree);
-      });
+      if (!window._creativeEditClickHandler) {
+        window._creativeEditClickHandler = function(e) {
+          const tree = e.detail?.treeElement || e.detail?.button?.closest('.creative-tree');
+          if (!tree) return;
+          e.preventDefault();
+          handleEditButtonClick(tree);
+        };
+        document.addEventListener('creative-edit-click', window._creativeEditClickHandler);
+      }
 
       document.body.addEventListener('click', function(e) {
         // Delegated event for .edit-inline-btn
