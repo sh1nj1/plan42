@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe 'Creative inline editing', type: :system, js: true do
-  let!(:user) { User.create!(email: 'user@example.com', password: SystemHelpers::PASSWORD, name: 'User', email_verified_at: Time.current) }
+  let!(:user) { User.create!(email: 'user@example.com', password: SystemHelpers::PASSWORD, name: 'User', email_verified_at: Time.current, notifications_enabled: false) }
   let!(:root_creative) { Creative.create!(description: 'Root', user: user) }
 
   def resize_window_to_pc
@@ -23,21 +23,19 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
 
     find('trix-editor[input="inline-creative-description"]').click.set('First child')
     find('#inline-add').click
-    wait_for_ajax
 
     expect(page).to have_css("#creative-children-#{root_creative.id} .creative-row", text: 'First child', count: 1)
     find('trix-editor[input="inline-creative-description"]').click.set('Second child')
     find('#inline-close').click
-    wait_for_ajax
 
     find("#creative-#{root_creative.id}").hover
     find("#creative-#{root_creative.id} .creative-toggle-btn").click
 
-    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree", count: 2)
-    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(1) .creative-row", text: 'First child')
-    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(2) .creative-row", text: 'Second child')
+    expect(page).to have_css("#creative-children-#{root_creative.id} > creative-tree-row > .creative-tree", count: 2)
+    expect(page).to have_css("#creative-children-#{root_creative.id} > creative-tree-row:nth-of-type(1) > .creative-tree .creative-row", text: 'First child')
+    expect(page).to have_css("#creative-children-#{root_creative.id} > creative-tree-row:nth-of-type(2) > .creative-tree .creative-row", text: 'Second child')
 
-    new_creative_id = find("#creative-children-#{root_creative.id} > .creative-tree:nth-child(1)")['data-id']
+    new_creative_id = find("#creative-children-#{root_creative.id} > creative-tree-row:nth-of-type(1) > .creative-tree")['data-id']
     new_creative = Creative.find(new_creative_id)
     expect(new_creative.description.body.to_plain_text).to eq('First child')
   end
@@ -56,9 +54,9 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
     find("#creative-#{root_creative.id}").hover
     find("#creative-#{root_creative.id} .creative-toggle-btn").click
 
-    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree", count: 2)
-    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(1) .creative-row", text: 'First child')
-    expect(page).to have_css("#creative-children-#{root_creative.id} > .creative-tree:nth-child(2) .creative-row", text: 'Second child')
+    expect(page).to have_css("#creative-children-#{root_creative.id} > creative-tree-row > .creative-tree", count: 2)
+    expect(page).to have_css("#creative-children-#{root_creative.id} > creative-tree-row:nth-of-type(1) .creative-row", text: 'First child')
+    expect(page).to have_css("#creative-children-#{root_creative.id} > creative-tree-row:nth-of-type(2) .creative-row", text: 'Second child')
   end
 
   # TODO: fix this tests by fixing editor
@@ -107,12 +105,11 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
     find('#inline-add').click
     find('trix-editor[input="inline-creative-description"]').click.set('D')
     find('#inline-close').click
-    wait_for_ajax
 
-    expect(page).to have_css("#creatives > .creative-tree:nth-child(1) .creative-row", text: child_a.description.to_plain_text)
-    expect(page).to have_css("#creatives > .creative-tree:nth-child(2) .creative-row", text: child_b.description.to_plain_text)
-    expect(page).to have_css("#creatives > .creative-tree:nth-child(3) .creative-row", text: 'C')
-    expect(page).to have_css("#creatives > .creative-tree:nth-child(4) .creative-row", text: 'D')
+    expect(page).to have_css("#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: child_a.description.to_plain_text)
+    expect(page).to have_css("#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: child_b.description.to_plain_text)
+    expect(page).to have_css("#creatives > creative-tree-row:nth-of-type(3) .creative-row", text: 'C')
+    expect(page).to have_css("#creatives > creative-tree-row:nth-of-type(4) .creative-row", text: 'D')
   end
   it 'adds as sibling when current node is collapsed' do
     child = Creative.create!(description: 'Child', user: user, parent: root_creative)
@@ -125,10 +122,9 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
     find('#inline-add').click
     find('trix-editor[input="inline-creative-description"]').click.set('Sibling')
     find('#inline-close').click
-    wait_for_ajax
 
-    expect(page).to have_css("#creatives > .creative-tree:nth-child(1) .creative-row", text: 'Child')
-    expect(page).to have_css("#creatives > .creative-tree:nth-child(3) .creative-row", text: 'Sibling')
+    expect(page).to have_css("#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: 'Child')
+    expect(page).to have_css("#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: 'Sibling')
   end
 
   it 'shows editor at top and saves as first child when parent context exists' do
@@ -139,9 +135,8 @@ RSpec.describe 'Creative inline editing', type: :system, js: true do
     find('.creative-actions-row .add-creative-btn').click
     find('trix-editor[input="inline-creative-description"]').click.set('New child')
     find('#inline-close').click
-    wait_for_ajax
 
-    expect(page).to have_css("#creatives > .creative-tree:nth-child(1) .creative-row", text: 'New child')
-    expect(page).to have_css("#creatives > .creative-tree:nth-child(2) .creative-row", text: existing_child.description.to_plain_text)
+    expect(page).to have_css("#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: 'New child')
+    expect(page).to have_css("#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: existing_child.description.to_plain_text)
   end
 end

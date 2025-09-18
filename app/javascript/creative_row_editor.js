@@ -100,13 +100,13 @@ if (!window.creativeRowEditorInitialized) {
               tree.appendChild(container);
             }
             insertBefore = container.firstElementChild;
-            beforeId = insertBefore ? insertBefore.dataset.id : '';
+            beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
           } else {
             parentId = addBtn.dataset.parentId || '';
             const rootContainer = document.getElementById('creatives');
             container = rootContainer;
             insertBefore = rootContainer.firstElementChild;
-            beforeId = insertBefore ? insertBefore.dataset.id : '';
+            beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
           }
           startNew(parentId, container, insertBefore, beforeId);
           return; // Event handled
@@ -124,7 +124,7 @@ if (!window.creativeRowEditorInitialized) {
             return;
           }
           const insertBefore = container.firstElementChild;
-          const beforeId = insertBefore ? insertBefore.dataset.id : '';
+          const beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
           startNew('', container, insertBefore, beforeId);
           return; // Event handled
         }
@@ -158,6 +158,27 @@ if (!window.creativeRowEditorInitialized) {
     function showRow(tree) {
       const row = tree.querySelector('.creative-row');
       if (row) row.style.display = '';
+    }
+
+    function creativeTreeElement(node) {
+      if (!node) return null;
+      if (node.classList && node.classList.contains('creative-tree')) return node;
+      if (node.querySelector) {
+        const inner = node.querySelector('.creative-tree');
+        if (inner) return inner;
+      }
+      return null;
+    }
+
+    function creativeIdFrom(node) {
+      const treeEl = creativeTreeElement(node);
+      if (treeEl && treeEl.dataset) {
+        return treeEl.dataset.id || '';
+      }
+      if (node?.getAttribute) {
+        return node.getAttribute('creative-id') || node.getAttribute('data-id') || '';
+      }
+      return '';
     }
 
     function insertRow(tree, data) {
@@ -376,7 +397,7 @@ if (!window.creativeRowEditorInitialized) {
           prev.appendChild(container);
         }
         const insertBefore = container.firstElementChild;
-        const beforeId = insertBefore ? insertBefore.dataset.id : '';
+        const beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
         startNew(parentId, container, insertBefore, beforeId);
       });
     }

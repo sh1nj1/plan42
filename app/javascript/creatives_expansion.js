@@ -16,8 +16,9 @@ if (!window.creativesExpansionInitialized) {
 
     function saveExpansionState(creativeId, expanded) {
         if (!creativeId) return;
-        if (!currentCreativeId) currentCreativeId = computeCurrentCreativeId();
-        if (!currentCreativeId) return;
+        if (currentCreativeId === null) currentCreativeId = computeCurrentCreativeId();
+
+        const contextId = currentCreativeId ?? null;
 
         fetch('/creative_expanded_states/toggle', {
             method: 'POST',
@@ -26,7 +27,7 @@ if (!window.creativesExpansionInitialized) {
                 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content
             },
             body: JSON.stringify({
-                creative_id: currentCreativeId,
+                creative_id: contextId,
                 node_id: creativeId,
                 expanded: expanded
             })

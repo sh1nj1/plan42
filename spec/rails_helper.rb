@@ -52,7 +52,7 @@ RSpec.configure do |config|
   end
 
   config.before(:each, type: :system, js: true) do
-    driven_by :selenium, using: :chrome
+    driven_by :selenium, using: :chrome # headless_chrome fails, so use chrome
   end
 
   # If you're not using ActiveRecord, or you'd prefer not to run each of your
