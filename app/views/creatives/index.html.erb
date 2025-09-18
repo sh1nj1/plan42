@@ -63,37 +63,35 @@
   <% content_for :head do %>
     <meta property="og:title" content="<%= @parent_creative.effective_origin.description.to_plain_text %>">
   <% end %>
-  <div class="creative-row" id="creative-markdown-block">
-    <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
-      <div class="creative-content">
-        <%= @parent_creative.effective_description %>
-      </div>
-    </h1>
-    <div>
-      <h1 style="display: flex; align-items: center; gap: 1em;">
-        <%= render_creative_progress(@parent_creative) %>
-      </h1>
-    </div>
-  </div>
+  <%= content_tag(
+        "creative-tree-row",
+        content_tag(:template, data: { part: "description" }) { @parent_creative.effective_description } +
+        content_tag(:template, data: { part: "progress" }) { render_creative_progress(@parent_creative) },
+        "dom-id": "creative-markdown-block",
+        "creative-id": @parent_creative.id,
+        "parent-id": @parent_creative.parent_id,
+        "is-title": ""
+      ) %>
 <% else %>
-  <div class="creative-row" id="creative-markdown-block">
-    <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
-      <span>
-        <% if params[:tags].present? %>
-          <%= render_tags(params[:tags]&.map { |tag_id| Label.find(tag_id) }, 'unstyled-link') %>
-        <% else %>
-          <%= t('.creatives') %>
-        <% end %>
-      </span>
-    </h1>
-    <div>
-      <h1 style="display: flex; align-items: center; gap: 1em;">
-        <% unless @overall_progress.nil? %>
-          <%= render_progress_value(@overall_progress) %>
-        <% end %>
-      </h1>
-    </div>
-  </div>
+  <%= content_tag(
+        "creative-tree-row",
+        content_tag(:template, data: { part: "description" }) do
+          if params[:tags].present?
+            render_tags(params[:tags]&.map { |tag_id| Label.find(tag_id) }, "unstyled-link")
+          else
+            t('.creatives')
+          end
+        end +
+        content_tag(:template, data: { part: "progress" }) do
+          if @overall_progress.nil?
+            "".html_safe
+          else
+            render_progress_value(@overall_progress)
+          end
+        end,
+        "dom-id": "creative-markdown-block",
+        "is-title": ""
+      ) %>
 <% end %>
 
 <div id="creatives">
@@ -115,4 +113,3 @@
 <%= render 'inline_edit_form' %>
 
 <%= render 'set_plan_modal' %>
-
