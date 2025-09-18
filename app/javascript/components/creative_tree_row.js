@@ -18,7 +18,8 @@ class CreativeTreeRow extends LitElement {
     descriptionHtml: { state: true },
     progressHtml: { state: true },
     editIconHtml: { state: true },
-    editOffIconHtml: { state: true }
+    editOffIconHtml: { state: true },
+    isTitle: { type: Boolean, attribute: "is-title", reflect: true }
   };
 
   constructor() {
@@ -37,6 +38,7 @@ class CreativeTreeRow extends LitElement {
     this.progressHtml = "";
     this.editIconHtml = "";
     this.editOffIconHtml = "";
+    this.isTitle = false;
     this._templatesExtracted = false;
 
     this._toggleBtn = null;
@@ -103,6 +105,10 @@ class CreativeTreeRow extends LitElement {
   }
 
   render() {
+    if (this.isTitle) {
+      return this._renderTitle();
+    }
+
     const dragEnabled = !this.selectMode;
     const draggableAttr = dragEnabled ? "true" : nothing;
     const dragStartAttr = dragEnabled ? "handleDragStart(event)" : nothing;
@@ -131,6 +137,30 @@ class CreativeTreeRow extends LitElement {
             ${this._renderContent()}
           </div>
           ${unsafeHTML(this.progressHtml || "")}
+        </div>
+      </div>
+    `;
+  }
+
+  _renderTitle() {
+    return html`
+      <div
+        class="creative-tree creative-tree-title"
+        id=${this.domId ?? nothing}
+        data-id=${this.creativeId ?? nothing}
+        data-parent-id=${this.parentId ?? nothing}
+      >
+        <div class="creative-row">
+          <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
+            <div class="creative-content">
+              ${unsafeHTML(this.descriptionHtml || "")}
+            </div>
+          </h1>
+          <div>
+            <h1 style="display:flex;align-items:center;gap:1em;">
+              ${unsafeHTML(this.progressHtml || "")}
+            </h1>
+          </div>
         </div>
       </div>
     `;
