@@ -65,10 +65,7 @@ class PushNotificationJob < ApplicationJob
     return false unless status_code == 404
 
     payload = parse_error_body(error.body)
-    return true if contains_unregistered_detail?(payload)
-    return true if payload&.dig("error", "status") == "NOT_FOUND"
-
-    error.message.to_s.match?(/not found/i)
+    contains_unregistered_detail?(payload)
   end
 
   def parse_error_body(body)
