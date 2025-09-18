@@ -66,27 +66,64 @@ class CreativeTreeRow extends LitElement {
   _extractTemplates() {
     if (this._templatesExtracted) return;
     const templates = this.querySelectorAll("template[data-part]");
-    templates.forEach((template) => {
-      const part = template.dataset.part;
-      const markup = template.innerHTML;
-      switch (part) {
-        case "description":
-          this.descriptionHtml = markup;
-          break;
-        case "progress":
-          this.progressHtml = markup;
-          break;
-        case "edit-icon":
-          this.editIconHtml = markup;
-          break;
-        case "edit-off-icon":
-          this.editOffIconHtml = markup;
-          break;
-        default:
-          break;
+    const existingTree = this.querySelector(":scope > .creative-tree");
+    const ensureCached = (key, value) => {
+      if (value === undefined || value === null) return;
+      this.dataset[key] = value;
+      this[`${key}`] = value;
+    };
+
+    if (templates.length === 0) {
+      // The element might have been restored from a Turbo snapshot where we no longer
+      // have template nodes, so fall back to any cached markup stored in data attributes.
+      const cachedDescription = this.dataset.descriptionHtml;
+      const cachedProgress = this.dataset.progressHtml;
+      const cachedEditIcon = this.dataset.editIconHtml;
+      const cachedEditOffIcon = this.dataset.editOffIconHtml;
+
+      if (cachedDescription !== undefined) this.descriptionHtml = cachedDescription;
+      if (cachedProgress !== undefined) this.progressHtml = cachedProgress;
+      if (cachedEditIcon !== undefined) this.editIconHtml = cachedEditIcon;
+      if (cachedEditOffIcon !== undefined) this.editOffIconHtml = cachedEditOffIcon;
+
+      // If we lack cached markup (older snapshots), attempt to extract from the existing DOM.
+      if (!cachedDescription && existingTree) {
+        const content = existingTree.querySelector(".creative-content");
+        ensureCached("descriptionHtml", content ? content.innerHTML : "");
       }
-      template.remove();
-    });
+      if (!cachedProgress && existingTree) {
+        const progressNode = existingTree.querySelector(".creative-row > :last-child");
+        ensureCached("progressHtml", progressNode ? progressNode.innerHTML : "");
+      }
+    } else {
+      templates.forEach((template) => {
+        const part = template.dataset.part;
+        const markup = template.innerHTML;
+        switch (part) {
+          case "description":
+            this.descriptionHtml = markup;
+            this.dataset.descriptionHtml = markup;
+            break;
+          case "progress":
+            this.progressHtml = markup;
+            this.dataset.progressHtml = markup;
+            break;
+          case "edit-icon":
+            this.editIconHtml = markup;
+            this.dataset.editIconHtml = markup;
+            break;
+          case "edit-off-icon":
+            this.editOffIconHtml = markup;
+            this.dataset.editOffIconHtml = markup;
+            break;
+          default:
+            break;
+        }
+        template.remove();
+      });
+    }
+
+    if (existingTree) existingTree.remove();
     this._templatesExtracted = true;
   }
 
