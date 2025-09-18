@@ -67,31 +67,27 @@ class CreativeTreeRow extends LitElement {
     if (this._templatesExtracted) return;
     const templates = this.querySelectorAll("template[data-part]");
     const existingTree = this.querySelector(":scope > .creative-tree");
+    const hasCached = (key) => Object.prototype.hasOwnProperty.call(this.dataset, key);
     const ensureCached = (key, value) => {
       if (value === undefined || value === null) return;
       this.dataset[key] = value;
-      this[`${key}`] = value;
+      this[key] = value;
     };
 
     if (templates.length === 0) {
       // The element might have been restored from a Turbo snapshot where we no longer
       // have template nodes, so fall back to any cached markup stored in data attributes.
-      const cachedDescription = this.dataset.descriptionHtml;
-      const cachedProgress = this.dataset.progressHtml;
-      const cachedEditIcon = this.dataset.editIconHtml;
-      const cachedEditOffIcon = this.dataset.editOffIconHtml;
-
-      if (cachedDescription !== undefined) this.descriptionHtml = cachedDescription;
-      if (cachedProgress !== undefined) this.progressHtml = cachedProgress;
-      if (cachedEditIcon !== undefined) this.editIconHtml = cachedEditIcon;
-      if (cachedEditOffIcon !== undefined) this.editOffIconHtml = cachedEditOffIcon;
+      if (hasCached("descriptionHtml")) this.descriptionHtml = this.dataset.descriptionHtml;
+      if (hasCached("progressHtml")) this.progressHtml = this.dataset.progressHtml;
+      if (hasCached("editIconHtml")) this.editIconHtml = this.dataset.editIconHtml;
+      if (hasCached("editOffIconHtml")) this.editOffIconHtml = this.dataset.editOffIconHtml;
 
       // If we lack cached markup (older snapshots), attempt to extract from the existing DOM.
-      if (!cachedDescription && existingTree) {
+      if (!hasCached("descriptionHtml") && existingTree) {
         const content = existingTree.querySelector(".creative-content");
         ensureCached("descriptionHtml", content ? content.innerHTML : "");
       }
-      if (!cachedProgress && existingTree) {
+      if (!hasCached("progressHtml") && existingTree) {
         const progressNode = existingTree.querySelector(".creative-row > :last-child");
         ensureCached("progressHtml", progressNode ? progressNode.innerHTML : "");
       }
