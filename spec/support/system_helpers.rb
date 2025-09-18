@@ -6,6 +6,6 @@ module SystemHelpers
     fill_in placeholder: I18n.t('users.new.enter_your_email'), with: user.email
     fill_in placeholder: I18n.t('users.new.enter_your_password'), with: PASSWORD
     find('#sign-in-submit').click
-    wait_for_path(root_path)
+    expect(page).to have_current_path(root_path, ignore_query: true)
   end
 end
