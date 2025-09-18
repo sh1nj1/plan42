@@ -43,24 +43,21 @@ if (!window.creativesExpansionInitialized) {
         return document.getElementById(`creative-children-${creativeId}`);
     }
 
-    function setRowHasChildren(row, childrenDiv) {
-        const has = !!(childrenDiv && childrenDiv.querySelector('creative-tree-row'));
-        row.hasChildren = has;
-        const update = row.updateComplete instanceof Promise ? row.updateComplete : Promise.resolve();
-        return update.then(() => has);
-    }
-
     function ensureLoaded(row, childrenDiv) {
         if (!childrenDiv) {
-            return setRowHasChildren(row, null);
+            row.hasChildren = false;
+            return Promise.resolve(false);
         }
         if (childrenDiv.dataset.loaded === 'true') {
-            return setRowHasChildren(row, childrenDiv);
+            const has = !!childrenDiv.querySelector('creative-tree-row');
+            row.hasChildren = has;
+            return Promise.resolve(has);
         }
 
         const url = childrenDiv.dataset.loadUrl;
         if (!url) {
-            return setRowHasChildren(row, childrenDiv);
+            row.hasChildren = false;
+            return Promise.resolve(false);
         }
 
         return fetch(url)
@@ -71,7 +68,9 @@ if (!window.creativesExpansionInitialized) {
                 initializeRows(childrenDiv);
                 if (window.attachCreativeRowEditorButtons) window.attachCreativeRowEditorButtons();
                 if (window.attachCommentButtons) window.attachCommentButtons();
-                return setRowHasChildren(row, childrenDiv);
+                const has = !!childrenDiv.querySelector('creative-tree-row');
+                row.hasChildren = has;
+                return has;
             });
     }
 
@@ -80,11 +79,7 @@ if (!window.creativesExpansionInitialized) {
         const childrenDiv = childrenContainerFor(row);
         ensureLoaded(row, childrenDiv).then(hasChildren => {
             if (!hasChildren || !childrenDiv) {
-                if (childrenDiv) {
-                    childrenDiv.style.display = 'none';
-                    childrenDiv.dataset.expanded = 'false';
-                }
-                row.expanded = false;
+                collapseRow(row, { persist: false });
                 return;
             }
             childrenDiv.style.display = '';
@@ -122,17 +117,11 @@ if (!window.creativesExpansionInitialized) {
     function syncInitialState(row) {
         const childrenDiv = childrenContainerFor(row);
         const shouldExpand = allExpanded || row.expanded || (childrenDiv && childrenDiv.dataset.expanded === 'true');
-        ensureLoaded(row, childrenDiv).then(hasChildren => {
-            if (!hasChildren) {
-                collapseRow(row, { persist: false });
-                return;
-            }
-            if (shouldExpand) {
-                expandRow(row, { persist: false });
-            } else {
-                collapseRow(row, { persist: false });
-            }
-        });
+        if (shouldExpand && row.hasChildren) {
+            expandRow(row, { persist: false });
+        } else {
+            collapseRow(row, { persist: false });
+        }
     }
 
     document.addEventListener('creative-toggle-click', function(event) {
