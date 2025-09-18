@@ -233,6 +233,11 @@ class CreativeTreeRow extends LitElement {
   }
 
   _handleToggleClick(event) {
+    if (!this.hasChildren) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     this.dispatchEvent(new CustomEvent("creative-toggle-click", {
