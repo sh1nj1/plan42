@@ -44,8 +44,44 @@ class PushNotificationJob < ApplicationJob
     Rails.logger.info("Sending push to token: #{token} with message: #{message} and link: #{link}")
 
     request = Google::Apis::FcmV1::SendMessageRequest.new(message: msg)
-    response = service.send_message("projects/#{project_id}", request)
-    Rails.logger.info("✅ Push sent successfully: #{token} #{response.inspect}")
-    response
+
+    begin
+      response = service.send_message("projects/#{project_id}", request)
+      Rails.logger.info("✅ Push sent successfully: #{token} #{response.inspect}")
+      response
+    rescue Google::Apis::ClientError => e
+      if invalid_registration_token?(e)
+        Rails.logger.warn("⚠️ Removing invalid FCM token: #{token} (#{e.message})")
+        Device.where(fcm_token: token).delete_all
+        nil
+      else
+        raise
+      end
+    end
+  end
+
+  def invalid_registration_token?(error)
+    status_code = error.respond_to?(:status_code) ? error.status_code : nil
+    return false unless status_code == 404
+
+    payload = parse_error_body(error.body)
+    return true if contains_unregistered_detail?(payload)
+    return true if payload&.dig("error", "status") == "NOT_FOUND"
+
+    error.message.to_s.match?(/not found/i)
+  end
+
+  def parse_error_body(body)
+    JSON.parse(body) if body.present?
+  rescue JSON::ParserError
+    nil
+  end
+
+  def contains_unregistered_detail?(body)
+    details = body&.dig("error", "details")
+    Array(details).any? do |detail|
+      detail["@type"] == "type.googleapis.com/google.firebase.fcm.v1.FcmError" &&
+        detail["errorCode"] == "UNREGISTERED"
+    end
   end
 end
