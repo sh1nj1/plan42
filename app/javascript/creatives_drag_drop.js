@@ -4,164 +4,400 @@ if (!window.creativesDragDropInitialized) {
   const childZoneRatio = 0.3;
   const coordPrecision = 5;
   const draggableClassName = '.creative-tree';
-  // Drag and Drop for Creative Tree
-  let draggedCreativeId = null;
+
+  let draggedState = null;
   let lastDragOverRow = null;
 
   function relaxedCoord(value) {
     return Math.round(value / coordPrecision) * coordPrecision;
   }
 
-  window.handleDragStart = function(event) {
-    const row = event.target.closest(draggableClassName);
-    if (!row || row.draggable === false) return;
-    draggedCreativeId = row.id;
-    event.dataTransfer.effectAllowed = 'move';
-  };
-
-  window.handleDragOver = function(event) {
-    const row = event.target.closest(draggableClassName);
-    if (lastDragOverRow && lastDragOverRow !== row) {
-      lastDragOverRow.classList.remove(
-        'drag-over',
-        'drag-over-top',
-        'drag-over-bottom',
-        'drag-over-child',
-        'child-drop-indicator-active'
-      );
-    }
-    if (!row || row.draggable === false) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    if (row) {
-      const rect = row.getBoundingClientRect();
-      const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
-      const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
-      const y = relaxedCoord(event.clientY);
-      if (y < topZone) {
-        // Insert before target
-        row.classList.add('drag-over-top');
-        row.classList.remove('drag-over-bottom', 'drag-over-child', 'child-drop-indicator-active');
-        const childIndicator = row.querySelector('.child-drop-indicator');
-        if (childIndicator) childIndicator.remove();
-      } else if (y > bottomZone) {
-        // Insert after target
-        row.classList.add('drag-over-bottom');
-        row.classList.remove('drag-over-top', 'drag-over-child', 'child-drop-indicator-active');
-        const childIndicator = row.querySelector('.child-drop-indicator');
-        if (childIndicator) childIndicator.remove();
-      } else {
-          // Child drop indication
-          row.classList.add('drag-over-child', 'child-drop-indicator-active');
-          row.classList.remove('drag-over-top', 'drag-over-bottom');
-      }
-        row.classList.add('drag-over');
-      lastDragOverRow = row;
-    }
-  };
-
-  window.handleDrop = function(event) {
-    const targetRow = event.target.closest(draggableClassName);
-    const targetId = targetRow ? targetRow.id : '';
-    if (targetRow) {
-      targetRow.classList.remove(
-        'drag-over',
-        'drag-over-top',
-        'drag-over-bottom',
-        'drag-over-child',
-        'child-drop-indicator-active'
-      );
-    }
-    if (lastDragOverRow) {
-      lastDragOverRow.classList.remove(
-        'drag-over',
-        'drag-over-top',
-        'drag-over-bottom',
-        'drag-over-child',
-        'child-drop-indicator-active'
-      );
-    }
-    if (!targetRow || targetRow.draggable === false) {
-      draggedCreativeId = null;
-      lastDragOverRow = null;
-      return;
-    }
-    event.preventDefault();
-    if (draggedCreativeId && targetId && draggedCreativeId !== targetId) {
-      const draggedElem = document.getElementById(draggedCreativeId);
-      const draggedChildren = document.getElementById(`creative-children-${draggedCreativeId.replace('creative-', '')}`);
-      const targetElem = document.getElementById(targetId);
-      const rect = targetElem.getBoundingClientRect();
-      const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
-      const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
-      const y = relaxedCoord(event.clientY);
-      let direction = null;
-      // Save original position
-      const originalParent = draggedElem.parentNode;
-      const originalNextSibling = draggedChildren ? draggedChildren.nextSibling : draggedElem.nextSibling;
-      if (y >= topZone && y <= bottomZone) {
-        // Append as child
-        const targetNum = targetId.replace('creative-', '');
-        let childrenContainer = document.getElementById(`creative-children-${targetNum}`);
-        if (!childrenContainer) {
-          childrenContainer = document.createElement('div');
-          childrenContainer.className = 'creative-children';
-          childrenContainer.id = `creative-children-${targetNum}`;
-          targetElem.parentNode.insertBefore(childrenContainer, targetElem.nextSibling);
-        }
-        childrenContainer.appendChild(draggedElem);
-        if (draggedChildren) childrenContainer.appendChild(draggedChildren);
-        direction = 'child';
-      } else if (y < topZone) {
-        // Insert before target
-        targetElem.parentNode.insertBefore(draggedElem, targetElem);
-        if (draggedChildren) targetElem.parentNode.insertBefore(draggedChildren, targetElem);
-        direction = 'up';
-      } else {
-        // Insert after target
-        if (targetElem.nextSibling) {
-          targetElem.parentNode.insertBefore(draggedElem, targetElem.nextSibling);
-        } else {
-          targetElem.parentNode.appendChild(draggedElem);
-        }
-        if (draggedChildren) {
-          if (draggedElem.nextSibling) {
-            draggedElem.parentNode.insertBefore(draggedChildren, draggedElem.nextSibling);
-          } else {
-            draggedElem.parentNode.appendChild(draggedChildren);
-          }
-        }
-        direction = 'down';
-      }
-      sendNewOrder(
-        draggedCreativeId.replace('creative-', ''),
-        targetId.replace('creative-', ''),
-        direction,
-        function revert() {
-          if (originalNextSibling) {
-            originalParent.insertBefore(draggedElem, originalNextSibling);
-            if (draggedChildren) originalParent.insertBefore(draggedChildren, originalNextSibling);
-          } else {
-            originalParent.appendChild(draggedElem);
-            if (draggedChildren) originalParent.appendChild(draggedChildren);
-          }
-        }
-      );
-    }
-    draggedCreativeId = null;
-    lastDragOverRow = null;
-  };
-
-  window.handleDragLeave = function(event) {
-    const row = event.target.closest(draggableClassName);
-    if (!row || row.draggable === false) return;
-    row.classList.remove(
+  function clearDragHighlight(tree) {
+    if (!tree) return;
+    tree.classList.remove(
       'drag-over',
       'drag-over-top',
       'drag-over-bottom',
       'drag-over-child',
       'child-drop-indicator-active'
     );
+  }
+
+  function asTreeRow(node) {
+    return node ? node.closest('creative-tree-row') : null;
+  }
+
+  function getChildrenContainer(row) {
+    if (!row) return null;
+    const creativeId = row.getAttribute('creative-id');
+    if (!creativeId) return null;
+    return document.getElementById(`creative-children-${creativeId}`);
+  }
+
+  function ensureChildrenContainer(row) {
+    if (!row) return null;
+    const creativeId = row.getAttribute('creative-id');
+    if (!creativeId) return null;
+    let container = document.getElementById(`creative-children-${creativeId}`);
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'creative-children';
+      container.id = `creative-children-${creativeId}`;
+      container.dataset.loaded = 'true';
+      container.dataset.expanded = 'true';
+      container.style.display = '';
+      row.parentNode?.insertBefore(container, row.nextSibling);
+    }
+    return container;
+  }
+
+  function getNodeAfterBlock(row) {
+    if (!row) return null;
+    const children = getChildrenContainer(row);
+    let node = children ? children.nextSibling : row.nextSibling;
+    while (node && node.nodeType === Node.TEXT_NODE) {
+      node = node.nextSibling;
+    }
+    return node;
+  }
+
+  function moveBlockBefore(draggedRow, draggedChildren, referenceRow) {
+    const parent = referenceRow.parentNode;
+    parent.insertBefore(draggedRow, referenceRow);
+    if (draggedChildren) parent.insertBefore(draggedChildren, referenceRow);
+  }
+
+  function moveBlockAfter(draggedRow, draggedChildren, referenceRow) {
+    const parent = referenceRow.parentNode;
+    const afterNode = getNodeAfterBlock(referenceRow);
+    parent.insertBefore(draggedRow, afterNode);
+    if (draggedChildren) parent.insertBefore(draggedChildren, afterNode);
+  }
+
+  function appendBlockToContainer(draggedRow, draggedChildren, container) {
+    container.appendChild(draggedRow);
+    if (draggedChildren) container.appendChild(draggedChildren);
+  }
+
+  function isDescendantRow(parentRow, candidateRow) {
+    const container = getChildrenContainer(parentRow);
+    if (!container) return false;
+    return container.contains(candidateRow);
+  }
+
+  function updateRowLevel(row, delta) {
+    const current = Number(row.getAttribute('level') || row.level || 1);
+    const next = Math.max(1, current + delta);
+    if (row.level !== next) row.level = next;
+    row.setAttribute('level', next);
+    const tree = row.querySelector('.creative-tree');
+    if (tree) tree.dataset.level = String(next);
+    row.requestUpdate?.();
+  }
+
+  function applyLevelDelta(row, delta) {
+    if (!row || delta === 0) return;
+    updateRowLevel(row, delta);
+    const childrenContainer = getChildrenContainer(row);
+    if (!childrenContainer) return;
+    const childRows = childrenContainer.querySelectorAll(':scope > creative-tree-row');
+    childRows.forEach((childRow) => applyLevelDelta(childRow, delta));
+  }
+
+  function setRowParent(row, parentId) {
+    if (!row) return;
+    if (parentId) {
+      if (row.parentId !== parentId) row.parentId = parentId;
+      row.setAttribute('parent-id', parentId);
+    } else {
+      row.parentId = null;
+      row.removeAttribute('parent-id');
+    }
+    const tree = row.querySelector('.creative-tree');
+    if (tree) {
+      if (parentId) {
+        tree.dataset.parentId = parentId;
+      } else {
+        delete tree.dataset.parentId;
+      }
+    }
+    row.requestUpdate?.();
+  }
+
+  function setRowRootState(row, isRoot) {
+    if (!row) return;
+    if (isRoot) {
+      row.isRoot = true;
+      row.setAttribute('is-root', '');
+    } else {
+      row.isRoot = false;
+      row.removeAttribute('is-root');
+    }
+    row.requestUpdate?.();
+  }
+
+  function setHasChildren(row, hasChildren) {
+    if (!row) return;
+    if (hasChildren) {
+      row.hasChildren = true;
+      row.setAttribute('has-children', '');
+    } else {
+      row.hasChildren = false;
+      row.removeAttribute('has-children');
+    }
+    row.requestUpdate?.();
+  }
+
+  function setExpanded(row, expanded, container) {
+    if (!row) return;
+    if (expanded) {
+      row.expanded = true;
+      row.setAttribute('expanded', '');
+      if (container) {
+        container.style.display = '';
+        container.dataset.expanded = 'true';
+        if (!container.dataset.loaded) container.dataset.loaded = 'true';
+      }
+    } else {
+      row.expanded = false;
+      row.removeAttribute('expanded');
+      if (container) {
+        container.style.display = 'none';
+        container.dataset.expanded = 'false';
+      }
+    }
+    row.requestUpdate?.();
+  }
+
+  function syncParentHasChildren(parentId) {
+    if (!parentId) return;
+    const parentRow = document.querySelector(`creative-tree-row[creative-id="${parentId}"]`);
+    if (!parentRow) return;
+    const container = getChildrenContainer(parentRow);
+    const hasChildren = !!(container && container.querySelector('creative-tree-row'));
+    setHasChildren(parentRow, hasChildren);
+    if (!hasChildren) {
+      setExpanded(parentRow, false, container);
+    }
+  }
+
+  function createMoveContext({ draggedRow, draggedChildren, targetRow, targetContainerBefore }) {
+    return {
+      draggedRow,
+      draggedChildren,
+      originalParentContainer: draggedRow.parentNode,
+      originalNextSibling: draggedChildren ? draggedChildren.nextSibling : draggedRow.nextSibling,
+      originalParentId: draggedState.parentId,
+      originalLevel: draggedState.level,
+      originalIsRoot: draggedState.isRoot,
+      targetRow,
+      targetContainerBefore,
+      targetHadContainer: !!targetContainerBefore,
+      targetPreviousExpanded: targetRow ? targetRow.hasAttribute('expanded') : false,
+      targetPreviousHasChildren: targetRow ? targetRow.hasAttribute('has-children') : false
+    };
+  }
+
+  function revertMove(context, attemptedParentId) {
+    const {
+      draggedRow,
+      draggedChildren,
+      originalParentContainer,
+      originalNextSibling,
+      originalParentId,
+      originalLevel,
+      originalIsRoot,
+      targetRow,
+      targetHadContainer,
+      targetPreviousExpanded,
+      targetPreviousHasChildren,
+      targetContainerCreated
+    } = context;
+
+    if (originalNextSibling) {
+      originalParentContainer.insertBefore(draggedRow, originalNextSibling);
+      if (draggedChildren) originalParentContainer.insertBefore(draggedChildren, originalNextSibling);
+    } else {
+      originalParentContainer.appendChild(draggedRow);
+      if (draggedChildren) originalParentContainer.appendChild(draggedChildren);
+    }
+
+    const currentLevel = Number(draggedRow.getAttribute('level') || draggedRow.level || 1);
+    const delta = originalLevel - currentLevel;
+    if (delta !== 0) applyLevelDelta(draggedRow, delta);
+
+    setRowParent(draggedRow, originalParentId);
+    setRowRootState(draggedRow, originalIsRoot);
+
+    if (targetRow) {
+      if (targetContainerCreated) {
+        const container = getChildrenContainer(targetRow);
+        if (container) container.remove();
+      }
+      setHasChildren(targetRow, targetPreviousHasChildren);
+      const targetContainer = getChildrenContainer(targetRow);
+      setExpanded(targetRow, targetPreviousExpanded, targetContainer);
+    }
+
+    syncParentHasChildren(originalParentId);
+    syncParentHasChildren(attemptedParentId);
+  }
+
+  function resetDragState() {
+    draggedState = null;
+    lastDragOverRow = null;
+  }
+
+  window.handleDragStart = function(event) {
+    const tree = event.target.closest(draggableClassName);
+    if (!tree || tree.draggable === false) return;
+    const row = asTreeRow(tree);
+    if (!row) return;
+    const creativeId = row.getAttribute('creative-id');
+    draggedState = {
+      tree,
+      row,
+      treeId: tree.id,
+      creativeId,
+      parentId: row.getAttribute('parent-id') || null,
+      level: Number(row.getAttribute('level') || row.level || 1),
+      isRoot: row.hasAttribute('is-root')
+    };
+    event.dataTransfer.effectAllowed = 'move';
+  };
+
+  window.handleDragOver = function(event) {
+    const tree = event.target.closest(draggableClassName);
+    if (lastDragOverRow && lastDragOverRow !== tree) {
+      clearDragHighlight(lastDragOverRow);
+    }
+    if (!tree || tree.draggable === false) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+
+    const rect = tree.getBoundingClientRect();
+    const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
+    const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
+    const y = relaxedCoord(event.clientY);
+
+    if (y < topZone) {
+      tree.classList.add('drag-over', 'drag-over-top');
+      tree.classList.remove('drag-over-bottom', 'drag-over-child', 'child-drop-indicator-active');
+    } else if (y > bottomZone) {
+      tree.classList.add('drag-over', 'drag-over-bottom');
+      tree.classList.remove('drag-over-top', 'drag-over-child', 'child-drop-indicator-active');
+    } else {
+      tree.classList.add('drag-over', 'drag-over-child', 'child-drop-indicator-active');
+      tree.classList.remove('drag-over-top', 'drag-over-bottom');
+    }
+
+    lastDragOverRow = tree;
+  };
+
+  window.handleDrop = function(event) {
+    const targetTree = event.target.closest(draggableClassName);
+    const targetId = targetTree ? targetTree.id : '';
+    clearDragHighlight(targetTree);
+    clearDragHighlight(lastDragOverRow);
+
+    if (!targetTree || targetTree.draggable === false || !draggedState) {
+      resetDragState();
+      return;
+    }
+
+    event.preventDefault();
+
+    if (!targetId || draggedState.treeId === targetId) {
+      resetDragState();
+      return;
+    }
+
+    const targetRow = asTreeRow(targetTree);
+    const draggedRow = draggedState.row;
+    const draggedTree = draggedState.tree;
+    if (!targetRow || !draggedRow || !draggedTree) {
+      resetDragState();
+      return;
+    }
+
+    if (isDescendantRow(draggedRow, targetRow)) {
+      resetDragState();
+      return;
+    }
+
+    const rect = targetTree.getBoundingClientRect();
+    const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
+    const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
+    const y = relaxedCoord(event.clientY);
+
+    let direction;
+    if (y >= topZone && y <= bottomZone) {
+      direction = 'child';
+    } else if (y < topZone) {
+      direction = 'up';
+    } else {
+      direction = 'down';
+    }
+
+    const draggedChildren = getChildrenContainer(draggedRow);
+    const preExistingTargetContainer = direction === 'child' ? getChildrenContainer(targetRow) : null;
+    const moveContext = createMoveContext({
+      draggedRow,
+      draggedChildren,
+      targetRow,
+      targetContainerBefore: preExistingTargetContainer
+    });
+
+    const targetLevel = Number(targetRow.getAttribute('level') || targetRow.level || 1);
+    let newParentId;
+    let newLevel;
+    let targetContainer = preExistingTargetContainer;
+
+    if (direction === 'child') {
+      targetContainer = targetContainer || ensureChildrenContainer(targetRow);
+      moveContext.targetContainerCreated = !moveContext.targetHadContainer && !!targetContainer;
+      newParentId = targetRow.getAttribute('creative-id');
+      newLevel = targetLevel + 1;
+      appendBlockToContainer(draggedRow, draggedChildren, targetContainer);
+      setHasChildren(targetRow, true);
+      setExpanded(targetRow, true, targetContainer);
+    } else if (direction === 'up') {
+      newParentId = targetRow.getAttribute('parent-id') || null;
+      newLevel = targetLevel;
+      moveBlockBefore(draggedRow, draggedChildren, targetRow);
+    } else {
+      newParentId = targetRow.getAttribute('parent-id') || null;
+      newLevel = targetLevel;
+      moveBlockAfter(draggedRow, draggedChildren, targetRow);
+    }
+
+    const levelDelta = newLevel - draggedState.level;
+    if (levelDelta !== 0) applyLevelDelta(draggedRow, levelDelta);
+
+    setRowParent(draggedRow, newParentId);
+    setRowRootState(draggedRow, !newParentId);
+
+    syncParentHasChildren(draggedState.parentId);
+    syncParentHasChildren(newParentId);
+
+    const draggedNumericId = draggedState.creativeId;
+
+    sendNewOrder(
+      draggedNumericId,
+      targetId.replace('creative-', ''),
+      direction,
+      function revert() {
+        revertMove(moveContext, newParentId);
+      }
+    );
+
+    resetDragState();
+  };
+
+  window.handleDragLeave = function(event) {
+    const tree = event.target.closest(draggableClassName);
+    if (!tree || tree.draggable === false) return;
+    clearDragHighlight(tree);
   };
 
   function sendNewOrder(draggedId, targetId, direction, onErrorRevert) {
