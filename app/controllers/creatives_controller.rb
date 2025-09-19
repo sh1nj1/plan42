@@ -304,8 +304,7 @@ class CreativesController < ApplicationController
 
     new_creative = Creative.new(
       origin_id: origin.id,
-      parent: new_parent,
-      user: Current.user
+      parent: new_parent
     )
 
     Creative.transaction do
