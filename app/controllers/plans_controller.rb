@@ -10,10 +10,14 @@ class PlansController < ApplicationController
     @plans = Plan.where(owner: Current.user).or(Plan.where(owner: nil))
                  .where("target_date >= ? AND created_at <= ?", start_date, end_date)
                  .order(:created_at)
-      @calendar_events = CalendarEvent.where(user: Current.user)
-                               .includes(:creative)
-                               .where("DATE(start_time) <= ? AND DATE(end_time) >= ?", end_date, start_date)
-                               .order(:start_time)
+    calendar_scope = CalendarEvent.includes(:creative)
+                                  .where("DATE(start_time) <= ? AND DATE(end_time) >= ?", end_date, start_date)
+                                  .order(:start_time)
+    events_in_scope = calendar_scope.to_a
+    own_events = events_in_scope.select { |event| event.user_id == Current.user.id }
+    shared_events = events_in_scope.reject { |event| event.user_id == Current.user.id }
+                                   .select { |event| event.creative&.has_permission?(Current.user, :write) }
+    @calendar_events = (own_events + shared_events).uniq.sort_by(&:start_time)
     respond_to do |format|
       format.html do
         render html: render_to_string(PlansTimelineComponent.new(plans: @plans, calendar_events: @calendar_events), layout: false)

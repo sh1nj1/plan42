@@ -1,4 +1,6 @@
 require "ostruct"
+require "set"
+require "closure_tree"
 class Creative < ApplicationRecord
   include Notifications
 
@@ -8,6 +10,33 @@ class Creative < ApplicationRecord
   has_many :comment_read_pointers, dependent: :delete_all
 
   has_closure_tree order: :sequence, name_column: :description
+
+  def self.ids_with_permission(user, required_permission = :read)
+    return [] unless user
+
+    permission_value = CreativeShare.permissions.fetch(required_permission.to_s)
+
+    owned_ids = where(user: user, origin_id: nil).pluck(:id)
+
+    shared_creative_ids = CreativeShare.where(user: user)
+                                       .where("permission >= ?", permission_value)
+                                       .pluck(:creative_id)
+
+    permitted_ids = Set.new(owned_ids)
+    return permitted_ids.to_a if shared_creative_ids.empty?
+
+    queue = shared_creative_ids.uniq
+    permitted_ids.merge(queue)
+
+    until queue.empty?
+      children = Creative.where(parent_id: queue).pluck(:id)
+      new_children = children.reject { |child_id| permitted_ids.include?(child_id) }
+      permitted_ids.merge(new_children)
+      queue = new_children
+    end
+
+    permitted_ids.to_a
+  end
 
   # belongs_to :parent, class_name: "Creative", optional: true
   # has_many :children, -> { order(:sequence) }, class_name: "Creative", foreign_key: :parent_id, dependent: :destroy
@@ -221,11 +250,17 @@ class Creative < ApplicationRecord
     return true if self.user_id == user&.id
     # self 및 ancestors 모두 검사
     cache = Current.respond_to?(:creative_share_cache) ? Current.creative_share_cache : nil
-    ([ self ] + ancestors).each do |node|
+    node = self
+    while node
       share = cache ? cache[node.id] : CreativeShare.find_by(user: user, creative: node)
-      next unless share
-      # return false if share.permission == :no_access.to_s
-      return CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
+      if share
+        return false if share.permission.to_s == "no_access"
+
+        if CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
+          return true
+        end
+      end
+      node = node.parent
     end
     false
   end
