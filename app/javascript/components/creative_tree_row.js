@@ -184,11 +184,17 @@ class CreativeTreeRow extends LitElement {
         data-parent-id=${this.parentId ?? nothing}
       >
         <div class="creative-row">
-          <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
-            <div class="creative-content">
-              ${unsafeHTML(this.descriptionHtml || "")}
-            </div>
-          </h1>
+          <div class="creative-row-start">
+            <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
+              <div class="creative-row-actions">
+                ${this._renderCheckbox()}
+                ${this._renderActionButton()}
+              </div>
+              <div class="creative-content">
+                ${unsafeHTML(this.descriptionHtml || "")}
+              </div>
+            </h1>
+          </div>
           <div>
             <h1 style="display:flex;align-items:center;gap:1em;">
               ${unsafeHTML(this.progressHtml || "")}
