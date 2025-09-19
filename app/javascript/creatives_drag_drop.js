@@ -8,6 +8,12 @@ if (!window.creativesDragDropInitialized) {
   let draggedState = null;
   let lastDragOverRow = null;
 
+  const crossWindowDragStorageKey = 'creatives.dragState';
+  const crossWindowDropStorageKey = 'creatives.dropBroadcast';
+  const crossWindowPayloadTTL = 30000;
+  const crossWindowWindowId = ensureCrossWindowWindowId();
+  let pendingCrossWindowReload = false;
+
   function relaxedCoord(value) {
     return Math.round(value / coordPrecision) * coordPrecision;
   }
@@ -35,6 +41,168 @@ if (!window.creativesDragDropInitialized) {
   function hideLinkHover() {
     linkHoverIndicator.style.display = 'none';
   }
+
+  function isDocumentVisible() {
+    if (typeof document.visibilityState === 'string') {
+      return document.visibilityState === 'visible';
+    }
+    if (typeof document.hidden === 'boolean') {
+      return !document.hidden;
+    }
+    return true;
+  }
+
+  function ensureCrossWindowWindowId() {
+    if (window.creativesCrossWindowId) return window.creativesCrossWindowId;
+    let identifier;
+    try {
+      identifier = sessionStorage.getItem('creatives.windowId');
+      if (!identifier) {
+        identifier = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        sessionStorage.setItem('creatives.windowId', identifier);
+      }
+    } catch (error) {
+      identifier = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+    window.creativesCrossWindowId = identifier;
+    return identifier;
+  }
+
+  function createSharedDragPayload(state) {
+    if (!state || !state.creativeId) return null;
+    return {
+      creativeId: state.creativeId,
+      parentId: state.parentId || null,
+      level: state.level || 1,
+      isRoot: !!state.isRoot,
+      treeId: state.treeId || null,
+      timestamp: Date.now(),
+      sourceWindowId: crossWindowWindowId
+    };
+  }
+
+  function persistCrossWindowDragPayload(payload) {
+    try {
+      localStorage.setItem(crossWindowDragStorageKey, payload);
+    } catch (error) {
+      console.warn('Failed to persist drag payload for cross-window drop', error);
+    }
+  }
+
+  function clearPersistedDragState() {
+    try {
+      localStorage.removeItem(crossWindowDragStorageKey);
+    } catch (error) {
+      // ignore storage failures
+    }
+  }
+
+  function readDragPayloadFromStorage() {
+    try {
+      const stored = localStorage.getItem(crossWindowDragStorageKey);
+      if (!stored) return null;
+      const payload = JSON.parse(stored);
+      if (payload.timestamp && Date.now() - payload.timestamp > crossWindowPayloadTTL) {
+        localStorage.removeItem(crossWindowDragStorageKey);
+        return null;
+      }
+      return payload;
+    } catch (error) {
+      console.warn('Failed to read drag payload from storage', error);
+      return null;
+    }
+  }
+
+  function readDragPayloadFromEvent(event) {
+    const transfer = event && event.dataTransfer;
+    if (!transfer) return null;
+    try {
+      const json = transfer.getData('application/json');
+      if (json) {
+        const payload = JSON.parse(json);
+        if (payload.creativeId) return payload;
+      }
+    } catch (error) {
+      // ignore parse errors
+    }
+
+    try {
+      const text = transfer.getData('text/plain');
+      if (text && text.startsWith('creative:')) {
+        const creativeId = text.replace('creative:', '').trim();
+        if (creativeId) {
+          return {
+            creativeId,
+            timestamp: Date.now()
+          };
+        }
+      }
+    } catch (error) {
+      // ignore
+    }
+
+    return null;
+  }
+
+  function getExternalDragPayload(event) {
+    const fromEvent = readDragPayloadFromEvent(event);
+    if (fromEvent && fromEvent.creativeId) return fromEvent;
+    return readDragPayloadFromStorage();
+  }
+
+  function broadcastCrossWindowUpdate(action) {
+    try {
+      const payload = JSON.stringify({
+        action,
+        timestamp: Date.now(),
+        sourceWindowId: crossWindowWindowId
+      });
+      localStorage.setItem(crossWindowDropStorageKey, payload);
+    } catch (error) {
+      console.warn('Failed to broadcast cross-window update', error);
+    }
+  }
+
+  function performReload() {
+    if (window.Turbo && typeof window.Turbo.visit === 'function') {
+      window.Turbo.visit(window.location.href, { action: 'replace' });
+    } else {
+      window.location.reload();
+    }
+  }
+
+  function scheduleCrossWindowReload() {
+    if (isDocumentVisible()) {
+      pendingCrossWindowReload = false;
+      performReload();
+    } else {
+      pendingCrossWindowReload = true;
+    }
+  }
+
+  window.addEventListener('focus', () => {
+    if (!pendingCrossWindowReload) return;
+    pendingCrossWindowReload = false;
+    performReload();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (!pendingCrossWindowReload || !isDocumentVisible()) return;
+    pendingCrossWindowReload = false;
+    performReload();
+  });
+
+  window.addEventListener('storage', (event) => {
+    if (event.key !== crossWindowDropStorageKey || !event.newValue) return;
+    try {
+      const payload = JSON.parse(event.newValue);
+      if (!payload || payload.sourceWindowId === crossWindowWindowId) return;
+      if (payload.timestamp && Date.now() - payload.timestamp > crossWindowPayloadTTL) return;
+      scheduleCrossWindowReload();
+    } catch (error) {
+      console.warn('Failed to handle cross-window update payload', error);
+    }
+  });
 
   function clearDragHighlight(tree) {
     if (!tree) return;
@@ -268,9 +436,13 @@ if (!window.creativesDragDropInitialized) {
   }
 
   function resetDragState() {
+    if (lastDragOverRow) {
+      clearDragHighlight(lastDragOverRow);
+    }
     draggedState = null;
     lastDragOverRow = null;
     hideLinkHover();
+    clearPersistedDragState();
   }
 
   window.handleDragStart = function(event) {
@@ -288,6 +460,23 @@ if (!window.creativesDragDropInitialized) {
       level: Number(row.getAttribute('level') || row.level || 1),
       isRoot: row.hasAttribute('is-root')
     };
+    const sharedPayload = createSharedDragPayload(draggedState);
+    if (sharedPayload) {
+      const payloadJson = JSON.stringify(sharedPayload);
+      try {
+        event.dataTransfer.setData('application/json', payloadJson);
+      } catch (error) {
+        // ignore data transfer failures
+      }
+      try {
+        event.dataTransfer.setData('text/plain', `creative:${sharedPayload.creativeId}`);
+      } catch (error) {
+        // ignore data transfer failures
+      }
+      persistCrossWindowDragPayload(payloadJson);
+    } else {
+      clearPersistedDragState();
+    }
     event.dataTransfer.effectAllowed = 'move';
   };
 
@@ -331,7 +520,7 @@ if (!window.creativesDragDropInitialized) {
     clearDragHighlight(targetTree);
     clearDragHighlight(lastDragOverRow);
 
-    if (!targetTree || targetTree.draggable === false || !draggedState) {
+    if (!targetTree || targetTree.draggable === false) {
       resetDragState();
       hideLinkHover();
       return;
@@ -339,16 +528,30 @@ if (!window.creativesDragDropInitialized) {
 
     event.preventDefault();
 
+    const targetRow = asTreeRow(targetTree);
+    if (!targetRow) {
+      resetDragState();
+      hideLinkHover();
+      return;
+    }
+
+    if (draggedState) {
+      handleLocalDrop(event, targetTree, targetRow, targetId);
+    } else {
+      handleCrossWindowDrop(event, targetTree, targetRow, targetId);
+    }
+  };
+
+  function handleLocalDrop(event, targetTree, targetRow, targetId) {
     if (!targetId || draggedState.treeId === targetId) {
       resetDragState();
       hideLinkHover();
       return;
     }
 
-    const targetRow = asTreeRow(targetTree);
     const draggedRow = draggedState.row;
     const draggedTree = draggedState.tree;
-    if (!targetRow || !draggedRow || !draggedTree) {
+    if (!draggedRow || !draggedTree) {
       resetDragState();
       hideLinkHover();
       return;
@@ -360,19 +563,7 @@ if (!window.creativesDragDropInitialized) {
       return;
     }
 
-    const rect = targetTree.getBoundingClientRect();
-    const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
-    const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
-    const y = relaxedCoord(event.clientY);
-
-    let direction;
-    if (y >= topZone && y <= bottomZone) {
-      direction = 'child';
-    } else if (y < topZone) {
-      direction = 'up';
-    } else {
-      direction = 'down';
-    }
+    const direction = determineDropDirection(event, targetTree);
 
     if (event.shiftKey) {
       const stateSnapshot = draggedState;
@@ -445,7 +636,83 @@ if (!window.creativesDragDropInitialized) {
     );
 
     resetDragState();
-  };
+  }
+
+  function handleCrossWindowDrop(event, targetTree, targetRow, targetId) {
+    const sharedState = getExternalDragPayload(event);
+    const targetNumericId = targetId ? targetId.replace('creative-', '') : '';
+
+    if (!sharedState || !sharedState.creativeId || !targetNumericId) {
+      resetDragState();
+      hideLinkHover();
+      return;
+    }
+
+    if (sharedState.treeId && sharedState.treeId === targetId) {
+      resetDragState();
+      hideLinkHover();
+      return;
+    }
+
+    if (String(sharedState.creativeId) === targetNumericId) {
+      resetDragState();
+      hideLinkHover();
+      return;
+    }
+
+    const draggedRowLocal = document.querySelector(
+      `creative-tree-row[creative-id="${sharedState.creativeId}"]`
+    );
+    if (draggedRowLocal && isDescendantRow(draggedRowLocal, targetRow)) {
+      resetDragState();
+      hideLinkHover();
+      return;
+    }
+
+    const direction = determineDropDirection(event, targetTree);
+    const draggedNumericId = sharedState.creativeId;
+
+    if (event.shiftKey) {
+      sendLinkedCreative(draggedNumericId, targetNumericId, direction)
+        .then(() => {
+          finalizeCrossWindowDrop('link');
+        })
+        .catch((error) => {
+          console.error('Failed to create linked creative', error);
+          resetDragState();
+        });
+      return;
+    }
+
+    sendNewOrder(draggedNumericId, targetNumericId, direction, null).then((response) => {
+      if (response && response.ok) {
+        finalizeCrossWindowDrop('reorder');
+      } else {
+        resetDragState();
+      }
+    });
+  }
+
+  function determineDropDirection(event, targetTree) {
+    const rect = targetTree.getBoundingClientRect();
+    const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
+    const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
+    const y = relaxedCoord(event.clientY);
+
+    if (y >= topZone && y <= bottomZone) {
+      return 'child';
+    }
+    if (y < topZone) {
+      return 'up';
+    }
+    return 'down';
+  }
+
+  function finalizeCrossWindowDrop(action) {
+    resetDragState();
+    broadcastCrossWindowUpdate(action);
+    scheduleCrossWindowReload();
+  }
 
   window.handleDragLeave = function(event) {
     const tree = event.target.closest(draggableClassName);
@@ -455,7 +722,7 @@ if (!window.creativesDragDropInitialized) {
   };
 
   function sendNewOrder(draggedId, targetId, direction, onErrorRevert) {
-    fetch('/creatives/reorder', {
+    return fetch('/creatives/reorder', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -467,11 +734,14 @@ if (!window.creativesDragDropInitialized) {
       if (!response.ok) {
         console.error('Failed to update order');
         if (onErrorRevert) onErrorRevert();
+        return null;
       }
+      return response;
     })
     .catch((error) => {
       console.error('Failed to update order', error);
       if (onErrorRevert) onErrorRevert();
+      return null;
     });
   }
 
@@ -490,5 +760,7 @@ if (!window.creativesDragDropInitialized) {
       });
   }
 
-  document.addEventListener('dragend', hideLinkHover);
+  document.addEventListener('dragend', () => {
+    resetDragState();
+  });
 }
