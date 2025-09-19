@@ -53,6 +53,22 @@
     pointer-events: none;
 }
 
+
+.creative-link-drop-indicator {
+    position: fixed;
+    display: none;
+    pointer-events: none;
+    background: rgba(33, 150, 243, 0.9);
+    color: #fff;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    transform: translate(-50%, -170%);
+    z-index: 9999;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
 .creative-tree-li {
     display: flex;
     align-items: center;

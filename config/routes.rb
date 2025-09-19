@@ -43,6 +43,7 @@ Rails.application.routes.draw do
     collection do
       post :recalculate_progress
       post :reorder
+      post :link_drop
       post :import_markdown
       post :set_plan
       post :remove_plan

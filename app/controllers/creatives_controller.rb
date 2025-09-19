@@ -293,6 +293,64 @@ class CreativesController < ApplicationController
     head :ok
   end
 
+  def link_drop
+    dragged = Creative.find_by(id: params[:dragged_id])
+    target = Creative.find_by(id: params[:target_id])
+    direction = params[:direction]
+    return head :unprocessable_entity unless dragged && target && %w[up down child].include?(direction)
+
+    origin = dragged.effective_origin
+    new_parent = direction == "child" ? target : target.parent
+
+    new_creative = Creative.new(
+      origin_id: origin.id,
+      parent: new_parent,
+      user: Current.user
+    )
+
+    Creative.transaction do
+      new_creative.save!
+
+      siblings = if new_parent
+        new_parent.children.order(:sequence).to_a
+      else
+        Creative.roots.order(:sequence).to_a
+      end
+
+      siblings.delete(new_creative)
+
+      if direction == "child"
+        siblings << new_creative
+      else
+        target_index = siblings.index(target) || 0
+        insert_index = direction == "up" ? target_index : target_index + 1
+        insert_index = [ [ insert_index, 0 ].max, siblings.size ].min
+        siblings.insert(insert_index, new_creative)
+      end
+
+      siblings.each_with_index do |creative, idx|
+        creative.update_column(:sequence, idx)
+      end
+    end
+
+    level = new_creative.ancestors.count + 1
+    html = helpers.render_creative_tree(
+      [ new_creative ],
+      level,
+      select_mode: false,
+      max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL
+    ).to_s
+
+    render json: {
+      html: html,
+      creative_id: new_creative.id,
+      parent_id: new_parent&.id,
+      direction: direction
+    }
+  rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotSaved
+    head :unprocessable_entity
+  end
+
   def import_markdown
     unless authenticated?
       render json: { error: "Unauthorized" }, status: :unauthorized and return
