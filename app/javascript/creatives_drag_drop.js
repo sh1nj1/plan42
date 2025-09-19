@@ -12,6 +12,30 @@ if (!window.creativesDragDropInitialized) {
     return Math.round(value / coordPrecision) * coordPrecision;
   }
 
+  const linkHoverIndicator = document.createElement('div');
+  linkHoverIndicator.className = 'creative-link-drop-indicator';
+  linkHoverIndicator.textContent = '-->';
+
+  function appendLinkHoverIndicator() {
+    (document.body || document.documentElement).appendChild(linkHoverIndicator);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', appendLinkHoverIndicator, { once: true });
+  } else {
+    appendLinkHoverIndicator();
+  }
+
+  function showLinkHover(x, y) {
+    linkHoverIndicator.style.display = 'block';
+    linkHoverIndicator.style.left = `${x}px`;
+    linkHoverIndicator.style.top = `${y}px`;
+  }
+
+  function hideLinkHover() {
+    linkHoverIndicator.style.display = 'none';
+  }
+
   function clearDragHighlight(tree) {
     if (!tree) return;
     tree.classList.remove(
@@ -246,6 +270,7 @@ if (!window.creativesDragDropInitialized) {
   function resetDragState() {
     draggedState = null;
     lastDragOverRow = null;
+    hideLinkHover();
   }
 
   window.handleDragStart = function(event) {
@@ -291,6 +316,12 @@ if (!window.creativesDragDropInitialized) {
       tree.classList.remove('drag-over-top', 'drag-over-bottom');
     }
 
+    if (event.shiftKey) {
+      showLinkHover(event.clientX, event.clientY);
+    } else {
+      hideLinkHover();
+    }
+
     lastDragOverRow = tree;
   };
 
@@ -302,6 +333,7 @@ if (!window.creativesDragDropInitialized) {
 
     if (!targetTree || targetTree.draggable === false || !draggedState) {
       resetDragState();
+      hideLinkHover();
       return;
     }
 
@@ -309,6 +341,7 @@ if (!window.creativesDragDropInitialized) {
 
     if (!targetId || draggedState.treeId === targetId) {
       resetDragState();
+      hideLinkHover();
       return;
     }
 
@@ -317,11 +350,13 @@ if (!window.creativesDragDropInitialized) {
     const draggedTree = draggedState.tree;
     if (!targetRow || !draggedRow || !draggedTree) {
       resetDragState();
+      hideLinkHover();
       return;
     }
 
     if (isDescendantRow(draggedRow, targetRow)) {
       resetDragState();
+      hideLinkHover();
       return;
     }
 
@@ -337,6 +372,24 @@ if (!window.creativesDragDropInitialized) {
       direction = 'up';
     } else {
       direction = 'down';
+    }
+
+    if (event.shiftKey) {
+      const stateSnapshot = draggedState;
+      resetDragState();
+      if (!stateSnapshot) return;
+
+      const draggedId = stateSnapshot.creativeId;
+      const targetNumericId = targetId.replace('creative-', '');
+
+      sendLinkedCreative(draggedId, targetNumericId, direction)
+        .then(() => window.location.reload())
+        .catch((error) => {
+          console.error('Failed to create linked creative', error);
+        });
+
+      hideLinkHover();
+      return;
     }
 
     const draggedChildren = getChildrenContainer(draggedRow);
@@ -398,6 +451,7 @@ if (!window.creativesDragDropInitialized) {
     const tree = event.target.closest(draggableClassName);
     if (!tree || tree.draggable === false) return;
     clearDragHighlight(tree);
+    hideLinkHover();
   };
 
   function sendNewOrder(draggedId, targetId, direction, onErrorRevert) {
@@ -420,4 +474,21 @@ if (!window.creativesDragDropInitialized) {
       if (onErrorRevert) onErrorRevert();
     });
   }
+
+  function sendLinkedCreative(draggedId, targetId, direction) {
+    return fetch('/creatives/link_drop', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content
+      },
+      body: JSON.stringify({ dragged_id: draggedId, target_id: targetId, direction: direction })
+    })
+      .then(response => {
+        if (!response.ok) throw new Error('Failed to create linked creative');
+        return response.json();
+      });
+  }
+
+  document.addEventListener('dragend', hideLinkHover);
 }

@@ -1,2 +1,6 @@
 
-<%= render 'inbox/badge_component/count', count: count, badge_id: badge_id, show_zero: show_zero %>
+<%= render partial: 'inbox/badge_component/count', formats: :html, locals: {
+  count: count,
+  badge_id: badge_id,
+  show_zero: show_zero
+} %>
