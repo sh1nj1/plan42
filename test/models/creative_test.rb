@@ -87,24 +87,4 @@ class CreativeTest < ActiveSupport::TestCase
 
     Current.reset
   end
-
-  test "ids_with_permission skips descendants blocked by no access share" do
-    Current.reset
-
-    owner = users(:one)
-    recipient = users(:two)
-
-    parent = Creative.create!(user: owner, description: "Parent")
-    child = Creative.create!(user: owner, parent: parent, description: "Child")
-
-    CreativeShare.create!(creative: parent, user: recipient, permission: :write)
-    CreativeShare.create!(creative: child, user: recipient, permission: :no_access)
-
-    ids = Creative.ids_with_permission(recipient, :write)
-
-    assert_includes ids, parent.id
-    refute_includes ids, child.id
-
-    Current.reset
-  end
 end

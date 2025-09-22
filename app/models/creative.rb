@@ -11,33 +11,6 @@ class Creative < ApplicationRecord
 
   has_closure_tree order: :sequence, name_column: :description
 
-  def self.ids_with_permission(user, required_permission = :read)
-    return [] unless user
-
-    permission_value = CreativeShare.permissions.fetch(required_permission.to_s)
-
-    owned_ids = where(user: user, origin_id: nil).pluck(:id)
-
-    shared_creative_ids = CreativeShare.where(user: user)
-                                       .where("permission >= ?", permission_value)
-                                       .pluck(:creative_id)
-
-    permitted_ids = Set.new(owned_ids)
-    return permitted_ids.to_a if shared_creative_ids.empty?
-
-    queue = shared_creative_ids.uniq
-    permitted_ids.merge(queue)
-
-    until queue.empty?
-      children = Creative.where(parent_id: queue).pluck(:id)
-      new_children = children.reject { |child_id| permitted_ids.include?(child_id) }
-      permitted_ids.merge(new_children)
-      queue = new_children
-    end
-
-    permitted_ids.to_a
-  end
-
   # belongs_to :parent, class_name: "Creative", optional: true
   # has_many :children, -> { order(:sequence) }, class_name: "Creative", foreign_key: :parent_id, dependent: :destroy
 
