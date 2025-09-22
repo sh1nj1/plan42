@@ -1,4 +1,3 @@
-require "ostruct"
 
 class CreativesController < ApplicationController
   # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
@@ -337,41 +336,12 @@ class CreativesController < ApplicationController
 
     level = new_creative.ancestors.count + 1
     render_user = Current.user || new_parent&.user || origin.user
-    html = if Current.respond_to?(:set)
-             session_context = Current.session || OpenStruct.new(user: render_user)
-             Current.set(session: session_context) do
-               helpers.render_creative_tree(
-                 [ new_creative ],
-                 level,
-                 select_mode: false,
-                 max_level: render_user&.display_level || User::DEFAULT_DISPLAY_LEVEL
-               ).to_s
-             end
-    else
-             original_session = Current.respond_to?(:session) ? Current.session : nil
-             original_user = Current.respond_to?(:user) ? Current.user : nil
-
-             if Current.respond_to?(:session=)
-               Current.session = original_session || OpenStruct.new(user: render_user)
-             elsif Current.respond_to?(:user=)
-               Current.user = render_user
-             end
-
-             begin
-               helpers.render_creative_tree(
-                 [ new_creative ],
-                 level,
-                 select_mode: false,
-                 max_level: render_user&.display_level || User::DEFAULT_DISPLAY_LEVEL
-               ).to_s
-             ensure
-               if Current.respond_to?(:session=)
-                 Current.session = original_session
-               elsif Current.respond_to?(:user=)
-                 Current.user = original_user
-               end
-             end
-    end
+    html = helpers.render_creative_tree(
+      [ new_creative ],
+      level,
+      select_mode: false,
+      max_level: render_user&.display_level || User::DEFAULT_DISPLAY_LEVEL
+    ).to_s
 
     render json: {
       html: html,
