@@ -16,3 +16,6 @@ en:
     convert_to_creative: "Convert to Creative"
     convert_confirm: "This will add the comment content as a child creative of the current creative. Continue?"
     private: "Private"
+    convert_system_message: "System: Comment was converted to the [%{title}](%{url}) creative."
+    convert_system_message_default_title: "Untitled"
+    system_user: "System"

@@ -63,15 +63,31 @@ class CommentsController < ApplicationController
     end
   end
 
-    def convert
-      if @comment.user == Current.user
-        MarkdownImporter.import(@comment.content, parent: @creative, user: @comment.user, create_root: true)
-        @comment.destroy
-        head :no_content
-      else
-        render json: { error: I18n.t("comments.not_owner") }, status: :forbidden
+  def convert
+    if @comment.user == Current.user
+      created_creatives = MarkdownImporter.import(
+        @comment.content,
+        parent: @creative,
+        user: @comment.user,
+        create_root: true
+      )
+
+      primary_creative = created_creatives.first
+      system_message = build_convert_system_message(primary_creative) if primary_creative
+
+      @comment.destroy
+
+      if system_message.present?
+        Current.set(session: nil) do
+          @creative.comments.create!(content: system_message, user: nil)
+        end
       end
+
+      head :no_content
+    else
+      render json: { error: I18n.t("comments.not_owner") }, status: :forbidden
     end
+  end
 
   def show
     redirect_to creative_path(@creative, comment_id: @comment.id)
@@ -107,6 +123,13 @@ class CommentsController < ApplicationController
 
   def comment_params
     params.require(:comment).permit(:content, :private)
+  end
+
+  def build_convert_system_message(creative)
+    title = creative.description&.to_plain_text.to_s.strip
+    title = I18n.t("comments.convert_system_message_default_title") if title.blank?
+    url = creative_path(creative)
+    I18n.t("comments.convert_system_message", title: title, url: url)
   end
 
   def trigger_gemini_response(comment)
