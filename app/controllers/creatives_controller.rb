@@ -1,4 +1,3 @@
-
 class CreativesController < ApplicationController
   # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
   # Removed unauthenticated access to index and show actions
@@ -306,7 +305,7 @@ class CreativesController < ApplicationController
     new_creative = Creative.new(
       origin_id: origin.id,
       parent: new_parent,
-      user: new_parent&.user || Current.user
+      user: new_parent.user || Current.user
     )
 
     Creative.transaction do
@@ -335,12 +334,11 @@ class CreativesController < ApplicationController
     end
 
     level = new_creative.ancestors.count + 1
-    render_user = Current.user || new_parent&.user || origin.user
     html = helpers.render_creative_tree(
       [ new_creative ],
       level,
       select_mode: false,
-      max_level: render_user&.display_level || User::DEFAULT_DISPLAY_LEVEL
+      max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL
     ).to_s
 
     render json: {
