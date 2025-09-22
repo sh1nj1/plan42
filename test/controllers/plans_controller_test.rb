@@ -44,6 +44,24 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes json_ids, "calendar_event_#{event.id}"
   end
 
+  test "does not show events from child creative if user has no access" do
+    # User has write access to parent
+    CreativeShare.create!(creative: @creative, user: @collaborator, permission: :write)
+
+    # But has no_access to the child
+    child_creative = Creative.create!(parent: @creative, description: "Child creative")
+    CreativeShare.create!(creative: child_creative, user: @collaborator, permission: :no_access)
+
+    # Event is in the inaccessible child
+    event = create_event(user: @owner, creative: child_creative, google_event_id: "inaccessible-child-event")
+
+    login_as(@collaborator)
+    get plans_url(format: :json)
+
+    assert_response :success
+    assert_not_includes json_ids, "calendar_event_#{event.id}", "Event from no_access child should not be visible"
+  end
+
   private
 
   def login_as(user)
