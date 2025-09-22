@@ -1,4 +1,6 @@
 require "ostruct"
+require "set"
+require "closure_tree"
 class Creative < ApplicationRecord
   include Notifications
 
@@ -221,11 +223,17 @@ class Creative < ApplicationRecord
     return true if self.user_id == user&.id
     # self 및 ancestors 모두 검사
     cache = Current.respond_to?(:creative_share_cache) ? Current.creative_share_cache : nil
-    ([ self ] + ancestors).each do |node|
+    node = self
+    while node
       share = cache ? cache[node.id] : CreativeShare.find_by(user: user, creative: node)
-      next unless share
-      # return false if share.permission == :no_access.to_s
-      return CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
+      if share
+        return false if share.permission.to_s == "no_access"
+
+        if CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
+          return true
+        end
+      end
+      node = node.parent
     end
     false
   end
