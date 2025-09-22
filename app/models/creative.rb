@@ -1,4 +1,7 @@
 require "ostruct"
+require "set"
+require "closure_tree"
+
 class Creative < ApplicationRecord
   include Notifications
 
@@ -33,6 +36,94 @@ class Creative < ApplicationRecord
     Creative.roots.find_each do |root|
       root.recalculate_subtree_progress!
     end
+  end
+
+  def self.ids_with_permission(user, required_permission = :read)
+    return [] unless user
+
+    share_cache =
+      if Current.respond_to?(:creative_share_cache) && Current.creative_share_cache
+        Current.creative_share_cache
+      else
+        CreativeShare.where(user: user)
+      end
+
+    share_cache = share_cache.to_a.index_by(&:creative_id) unless share_cache.is_a?(Hash)
+    share_cache ||= {}
+
+    threshold = CreativeShare.permissions.fetch(required_permission.to_s)
+
+    stack = []
+    visited = Set.new
+    accessible_ids = []
+
+    share_cache.each_value do |share|
+      permission_value = CreativeShare.permissions[share.permission]
+      next if permission_value < threshold
+
+      stack << share.creative_id
+    end
+
+    Creative.where(user_id: user.id).pluck(:id).each do |creative_id|
+      stack << creative_id
+    end
+
+    previous_cache = nil
+    if Current.respond_to?(:creative_share_cache)
+      previous_cache = Current.creative_share_cache
+      Current.creative_share_cache = share_cache
+    end
+
+    begin
+      while stack.any?
+        batch_ids = Array(stack.pop(100))
+        batch_ids.uniq!
+        batch_ids.reject! { |id| visited.include?(id) }
+        next if batch_ids.empty?
+
+        nodes = Creative.where(id: batch_ids)
+        found_ids = nodes.map(&:id)
+        (batch_ids - found_ids).each { |missing_id| visited.add(missing_id) }
+
+        accessible_parent_ids = []
+
+        nodes.each do |node|
+          next if visited.include?(node.id)
+
+          visited.add(node.id)
+          next unless node.has_permission?(user, required_permission)
+
+          accessible_ids << node.id
+          accessible_parent_ids << node.id
+        end
+
+        next if accessible_parent_ids.empty?
+
+        children = Creative.where(parent_id: accessible_parent_ids).pluck(:parent_id, :id, :user_id)
+        children.each do |_parent_id, child_id, child_user_id|
+          next if visited.include?(child_id)
+
+          if child_user_id == user.id
+            stack << child_id
+            next
+          end
+
+          child_share = share_cache[child_id]
+          if child_share
+            permission_value = CreativeShare.permissions[child_share.permission]
+            next if permission_value < threshold
+          end
+
+          stack << child_id
+        end
+      end
+    ensure
+      if Current.respond_to?(:creative_share_cache)
+        Current.creative_share_cache = previous_cache
+      end
+    end
+
+    accessible_ids
   end
 
   def recalculate_subtree_progress!
