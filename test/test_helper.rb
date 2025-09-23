@@ -14,3 +14,20 @@ module ActiveSupport
     # Add more helper methods to be used by all tests here...
   end
 end
+
+module IntegrationAuthHelper
+  def sign_in_as(user, password: "pw", follow_redirect: false)
+    user.update!(email_verified_at: Time.current) unless user.email_verified?
+    post session_path, params: { email: user.email, password: password }
+    assert_response :redirect
+    follow_redirect! if follow_redirect && response.redirect?
+  end
+
+  def sign_out
+    delete session_path
+  end
+end
+
+class ActionDispatch::IntegrationTest
+  include IntegrationAuthHelper
+end
