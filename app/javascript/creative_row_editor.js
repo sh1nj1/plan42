@@ -81,6 +81,7 @@ if (!window.creativeRowEditorInitialized) {
 
     function readRowLevel(row) {
       if (!row) return null;
+      if (row.isTitle) return 0;
       if (row.getAttribute) {
         const levelAttr = row.getAttribute('level');
         if (levelAttr) {
@@ -100,26 +101,25 @@ if (!window.creativeRowEditorInitialized) {
         const parsed = Number(tree.dataset.level);
         if (!Number.isNaN(parsed)) return parsed;
       }
-      return null;
+      return 1;
     }
 
     function computeNewRowLevel(parentId, referenceNode, afterId) {
       if (parentId) {
         const parentRow = document.querySelector(`creative-tree-row[creative-id="${parentId}"]`);
         if (parentRow) {
-          const parentLevel = readRowLevel(parentRow) || 1;
-          return parentLevel + 1;
+          return readRowLevel(parentRow) + 1;
         }
         const parentTree = document.getElementById(`creative-${parentId}`);
         if (parentTree?.dataset?.level) {
           const parsed = Number(parentTree.dataset.level);
           if (!Number.isNaN(parsed)) return parsed + 1;
         }
+        console.log('use default level 2')
         return 2;
       }
       const normalized = normalizeRowNode(referenceNode) || (afterId ? treeRowElement(document.getElementById(`creative-${afterId}`)) : null);
-      const level = readRowLevel(normalized);
-      return level || 1;
+      return readRowLevel(normalized);
     }
 
     function removeTreeElement(tree) {
