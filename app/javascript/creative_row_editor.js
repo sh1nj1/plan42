@@ -35,10 +35,102 @@ if (!window.creativeRowEditorInitialized) {
     const childInput = document.getElementById('inline-child-id');
 
     let currentTree = null;
+    let currentRowElement = null;
     let saveTimer = null;
     let pendingSave = false;
     let saving = false;
     let savePromise = Promise.resolve();
+
+    function treeRowElement(node) {
+      return node && node.closest ? node.closest('creative-tree-row') : null;
+    }
+
+    function treeContainerElement(tree) {
+      if (!tree) return null;
+      const row = treeRowElement(tree);
+      if (row && row.parentNode) return row.parentNode;
+      return tree.parentNode;
+    }
+
+    function nodeAfterTreeBlock(tree) {
+      if (!tree) return null;
+      const row = treeRowElement(tree);
+      if (!row) return tree.nextSibling;
+      let node = row.nextSibling;
+      while (node && node.nodeType === Node.TEXT_NODE) node = node.nextSibling;
+      const treeId = tree.dataset?.id;
+      if (treeId) {
+        const childrenContainer = document.getElementById(`creative-children-${treeId}`);
+        if (childrenContainer && childrenContainer.parentNode === row.parentNode && node === childrenContainer) {
+          node = childrenContainer.nextSibling;
+          while (node && node.nodeType === Node.TEXT_NODE) node = node.nextSibling;
+        }
+      }
+      return node;
+    }
+
+    function normalizeRowNode(node) {
+      if (!node) return null;
+      if (node.matches && node.matches('creative-tree-row')) return node;
+      if (node.classList && node.classList.contains('creative-tree')) {
+        const row = treeRowElement(node);
+        return row || node;
+      }
+      return node;
+    }
+
+    function readRowLevel(row) {
+      if (!row) return null;
+      if (row.isTitle) return 0;
+      if (row.getAttribute) {
+        const levelAttr = row.getAttribute('level');
+        if (levelAttr) {
+          const parsed = Number(levelAttr);
+          if (!Number.isNaN(parsed)) return parsed;
+        }
+      }
+      if (typeof row.level === 'number') {
+        return row.level;
+      }
+      if (row.level) {
+        const parsed = Number(row.level);
+        if (!Number.isNaN(parsed)) return parsed;
+      }
+      const tree = row.querySelector ? row.querySelector('.creative-tree') : null;
+      if (tree && tree.dataset?.level) {
+        const parsed = Number(tree.dataset.level);
+        if (!Number.isNaN(parsed)) return parsed;
+      }
+      return 1;
+    }
+
+    function computeNewRowLevel(parentId, referenceNode, afterId) {
+      if (parentId) {
+        const parentRow = document.querySelector(`creative-tree-row[creative-id="${parentId}"]`);
+        if (parentRow) {
+          return readRowLevel(parentRow) + 1;
+        }
+        const parentTree = document.getElementById(`creative-${parentId}`);
+        if (parentTree?.dataset?.level) {
+          const parsed = Number(parentTree.dataset.level);
+          if (!Number.isNaN(parsed)) return parsed + 1;
+        }
+        console.log('use default level 2')
+        return 2;
+      }
+      const normalized = normalizeRowNode(referenceNode) || (afterId ? treeRowElement(document.getElementById(`creative-${afterId}`)) : null);
+      return readRowLevel(normalized);
+    }
+
+    function removeTreeElement(tree) {
+      if (!tree) return;
+      const row = treeRowElement(tree);
+      if (row) {
+        row.remove();
+      } else if (tree.remove) {
+        tree.remove();
+      }
+    }
 
     function handleEditButtonClick(tree) {
       if (!tree) return;
@@ -51,6 +143,7 @@ if (!window.creativeRowEditorInitialized) {
         hideCurrent(false);
       }
       currentTree = tree;
+      currentRowElement = treeRowElement(tree);
       hideRow(tree);
       tree.draggable = false;
       tree.appendChild(template);
@@ -251,6 +344,30 @@ if (!window.creativeRowEditorInitialized) {
               tree.id = `creative-${data.id}`;
               tree.dataset.id = data.id;
               tree.dataset.parentId = parentId || '';
+              const rowEl = treeRowElement(tree) || currentRowElement;
+              if (rowEl) {
+                rowEl.setAttribute('creative-id', data.id);
+                rowEl.creativeId = data.id;
+                const levelValue = tree.dataset.level;
+                if (levelValue) {
+                  rowEl.setAttribute('level', levelValue);
+                  rowEl.level = Number(levelValue);
+                }
+                if (parentId) {
+                  rowEl.setAttribute('parent-id', parentId);
+                  rowEl.parentId = parentId;
+                  rowEl.removeAttribute('is-root');
+                  rowEl.isRoot = false;
+                } else {
+                  rowEl.removeAttribute('parent-id');
+                  rowEl.parentId = null;
+                  rowEl.setAttribute('is-root', '');
+                  rowEl.isRoot = true;
+                }
+                rowEl.canWrite = true;
+                rowEl.setAttribute('can-write', '');
+                rowEl.requestUpdate?.();
+              }
               insertRow(tree, data);
             }
             const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
@@ -272,12 +389,13 @@ if (!window.creativeRowEditorInitialized) {
       const parentId = parentInput.value;
       const wasNew = !form.dataset.creativeId;
       currentTree = null;
+      currentRowElement = null;
       tree.draggable = true;
       template.style.display = 'none';
       const p = (pendingSave || saving) ? saveForm() : Promise.resolve();
       p.then(() => {
         if (wasNew && !form.dataset.creativeId) {
-          tree.remove();
+          removeTreeElement(tree);
         } else if (!tree.querySelector('.creative-row')) {
           const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
           if (parentTree) {
@@ -328,7 +446,7 @@ if (!window.creativeRowEditorInitialized) {
         const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
         return p.then(() => {
             if (wasNew && !form.dataset.creativeId) {
-                prev.remove();
+                removeTreeElement(prev);
             } else {
                 showRow(prev);
                 refreshRow(prev);
@@ -347,6 +465,7 @@ if (!window.creativeRowEditorInitialized) {
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
       currentTree = target;
+      currentRowElement = treeRowElement(target);
       hideRow(target);
       target.appendChild(template);
       template.style.display = 'block';
@@ -370,13 +489,13 @@ if (!window.creativeRowEditorInitialized) {
         if (firstChild && !isCollapsed) {
           parentId = prevCreativeId;
           container = childContainer;
-          insertBefore = firstChild;
-          beforeId = firstChild.dataset.id;
+          insertBefore = normalizeRowNode(firstChild);
+          beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
         } else {
           parentId = prev.dataset.parentId;
-          container = prev.parentNode;
+          container = treeContainerElement(prev);
           afterId = prev.dataset.id;
-          insertBefore = prev.nextSibling;
+          insertBefore = nodeAfterTreeBlock(prev);
         }
         startNew(parentId, container, insertBefore, beforeId, afterId);
       });
@@ -421,7 +540,7 @@ if (!window.creativeRowEditorInitialized) {
           document.getElementById("creative-children-" + id)?.remove();
         }
         move(1);
-        tree.remove();
+        removeTreeElement(tree);
       });
     }
 
@@ -495,31 +614,100 @@ if (!window.creativeRowEditorInitialized) {
 
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
       if (currentTree) hideCurrent(false);
-      const newTree = document.createElement('div');
-      newTree.className = 'creative-tree';
-      newTree.dataset.parentId = parentId || '';
-      if (insertBefore) container.insertBefore(newTree, insertBefore); else container.appendChild(newTree);
-      currentTree = newTree;
-      newTree.appendChild(template);
-      template.style.display = 'block';
-      form.action = '/creatives';
-      methodInput.value = '';
-      form.dataset.creativeId = '';
-      parentInput.value = parentId || '';
-      beforeInput.value = beforeId || '';
-      afterInput.value = afterId || '';
-      if (childInput) childInput.value = childId || '';
-      descriptionInput.value = '';
-      editor.editor.loadHTML('');
-      progressInput.value = 0;
-      progressValue.textContent = 0;
-      if (linkBtn) linkBtn.style.display = '';
-      if (unlinkBtn) unlinkBtn.style.display = 'none';
-      pendingSave = false;
-      editor.focus();
-      if (parentSuggestions) {
-        parentSuggestions.style.display = 'none';
-        parentSuggestions.innerHTML = '';
+
+      let targetContainer = container || document.getElementById('creatives');
+      if (targetContainer && targetContainer.matches && targetContainer.matches('creative-tree-row')) {
+        targetContainer = targetContainer.parentNode;
+      } else if (targetContainer && targetContainer.classList && targetContainer.classList.contains('creative-tree')) {
+        const resolved = treeContainerElement(targetContainer);
+        if (resolved) targetContainer = resolved;
+      }
+
+      let referenceNode = insertBefore;
+      if (referenceNode && referenceNode.classList && referenceNode.classList.contains('creative-tree')) {
+        const normalized = normalizeRowNode(referenceNode);
+        if (normalized) referenceNode = normalized;
+      }
+
+      const level = computeNewRowLevel(parentId, referenceNode, afterId);
+
+      const rowComponent = document.createElement('creative-tree-row');
+      rowComponent.level = level;
+      rowComponent.setAttribute('level', level);
+      const iconSource = document.querySelector('creative-tree-row[data-edit-icon-html]');
+      if (iconSource) {
+        if (iconSource.dataset.editIconHtml) rowComponent.dataset.editIconHtml = iconSource.dataset.editIconHtml;
+        if (iconSource.dataset.editOffIconHtml) rowComponent.dataset.editOffIconHtml = iconSource.dataset.editOffIconHtml;
+      }
+      if (parentId) {
+        rowComponent.parentId = parentId;
+        rowComponent.setAttribute('parent-id', parentId);
+        rowComponent.removeAttribute('is-root');
+        rowComponent.isRoot = false;
+      } else {
+        rowComponent.parentId = null;
+        rowComponent.setAttribute('is-root', '');
+        rowComponent.isRoot = true;
+      }
+      rowComponent.canWrite = true;
+      rowComponent.setAttribute('can-write', '');
+      rowComponent.hasChildren = false;
+      rowComponent.removeAttribute('has-children');
+      rowComponent.expanded = true;
+      rowComponent.setAttribute('expanded', '');
+      rowComponent.dataset.descriptionHtml = '';
+      rowComponent.dataset.progressHtml = '';
+
+      if (referenceNode) {
+        targetContainer.insertBefore(rowComponent, referenceNode);
+      } else {
+        targetContainer.appendChild(rowComponent);
+      }
+
+      const finalizeSetup = () => {
+        const newTree = rowComponent.querySelector('.creative-tree');
+        if (!newTree || currentTree === newTree) return;
+        newTree.dataset.parentId = parentId || '';
+        newTree.dataset.level = String(level);
+        newTree.draggable = false;
+        hideRow(newTree);
+        if (parentId) {
+          const parentRow = document.querySelector(`creative-tree-row[creative-id="${parentId}"]`);
+          if (parentRow) {
+            parentRow.setAttribute('has-children', '');
+            parentRow.hasChildren = true;
+            parentRow.requestUpdate?.();
+          }
+        }
+        currentTree = newTree;
+        currentRowElement = rowComponent;
+        newTree.appendChild(template);
+        template.style.display = 'block';
+        form.action = '/creatives';
+        methodInput.value = '';
+        form.dataset.creativeId = '';
+        parentInput.value = parentId || '';
+        beforeInput.value = beforeId || '';
+        afterInput.value = afterId || '';
+        if (childInput) childInput.value = childId || '';
+        descriptionInput.value = '';
+        editor.editor.loadHTML('');
+        progressInput.value = 0;
+        progressValue.textContent = 0;
+        if (linkBtn) linkBtn.style.display = '';
+        if (unlinkBtn) unlinkBtn.style.display = 'none';
+        pendingSave = false;
+        editor.focus();
+        if (parentSuggestions) {
+          parentSuggestions.style.display = 'none';
+          parentSuggestions.innerHTML = '';
+        }
+      };
+
+      if (rowComponent.updateComplete) {
+        rowComponent.updateComplete.then(finalizeSetup);
+      } else {
+        requestAnimationFrame(finalizeSetup);
       }
     }
 
