@@ -1,5 +1,5 @@
-import { initializeApp } from "firebase/app"
-import { getMessaging, isSupported, getToken } from "firebase/messaging"
+import {initializeApp} from "firebase/app"
+import {getMessaging, getToken, isSupported} from "firebase/messaging"
 
 function registerDevice(token) {
   fetch('/devices', {
@@ -46,7 +46,12 @@ function initMessaging(registration) {
   getToken(messaging, { vapidKey: config.vapidKey, serviceWorkerRegistration: registration })
     .then((currentToken) => {
       if (currentToken) {
-        registerDevice(currentToken)
+          if (localStorage.getItem('fcm_token') === currentToken) {
+              // ok
+          } else {
+              registerDevice(currentToken)
+              localStorage.setItem('fcm_token', currentToken)
+          }
       }
     })
     .catch((err) => console.error('Failed to get FCM token', err))
@@ -90,7 +95,7 @@ function showPermissionPrompt(registration) {
 }
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
+  window.addEventListener('turbo:load', () => {
     navigator.serviceWorker
       .register('/service-worker.js', { updateViaCache: 'none'})
       .then((registration) => {
@@ -107,9 +112,10 @@ if ('serviceWorker' in navigator) {
 
         if (pref === 'true') {
           if (Notification.permission === 'granted') {
-            console.log('Notifications granted')
-            updatePreference(true)
             initMessaging(registration)
+          } else if (Notification.permission === 'denied') {
+            // we need to ask user for reset permission if they want to enable notification
+            console.warn("Notification permission is denied but user turned on notification in settings")
           } else if (Notification.permission === 'default') {
             showPermissionPrompt(registration)
           }
