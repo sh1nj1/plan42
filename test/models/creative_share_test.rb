@@ -26,4 +26,24 @@ class CreativeShareTest < ActiveSupport::TestCase
 
     Current.reset
   end
+
+  test "descendant no_access share removes read permission" do
+    owner = User.create!(email: "share-owner@example.com", password: "secret", name: "Owner")
+    shared_user = User.create!(email: "share-shared@example.com", password: "secret", name: "Shared")
+    Current.session = Struct.new(:user).new(owner)
+
+    root = Creative.create!(user: owner, description: "Root")
+    child = Creative.create!(user: owner, parent: root, description: "Child")
+    grandchild = Creative.create!(user: owner, parent: child, description: "Grandchild")
+
+    CreativeShare.create!(creative: root, user: shared_user, permission: :read)
+    assert child.has_permission?(shared_user, :read)
+
+    CreativeShare.create!(creative: child, user: shared_user, permission: :no_access)
+
+    refute child.has_permission?(shared_user, :read)
+    refute grandchild.has_permission?(shared_user, :read)
+  ensure
+    Current.reset
+  end
 end
