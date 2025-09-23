@@ -5,5 +5,5 @@ class Device < ApplicationRecord
 
   validates :client_id, presence: true, uniqueness: true
   validates :device_type, presence: true
-  validates :fcm_token, presence: true
+  validates :fcm_token, presence: true, uniqueness: true
 end

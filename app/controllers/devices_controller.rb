@@ -1,7 +1,10 @@
 class DevicesController < ApplicationController
   def create
-    device = Current.user.devices.find_or_initialize_by(client_id: device_params[:client_id])
+    device = Device.find_by(fcm_token: device_params[:fcm_token]) ||
+             Current.user.devices.find_or_initialize_by(client_id: device_params[:client_id])
+
     device.assign_attributes(device_params)
+    device.user = Current.user
     device.save!
     head :no_content
   end

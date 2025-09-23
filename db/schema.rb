@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_11_084338) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_23_002959) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -139,7 +139,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_11_084338) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["client_id"], name: "index_devices_on_client_id", unique: true
-    t.index ["fcm_token"], name: "index_devices_on_fcm_token"
+    t.index ["fcm_token"], name: "index_devices_on_fcm_token", unique: true
     t.index ["user_id"], name: "index_devices_on_user_id"
   end
 
