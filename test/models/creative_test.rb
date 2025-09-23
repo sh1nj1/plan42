@@ -87,4 +87,61 @@ class CreativeTest < ActiveSupport::TestCase
 
     Current.reset
   end
+
+  test "updates ancestors when reparenting" do
+    user = User.create!(email: "ancestor@example.com", password: "secret", name: "Ancestor")
+    Current.session = Struct.new(:user).new(user)
+
+    root = Creative.create!(user: user, description: "Root")
+    child = Creative.create!(user: user, parent: root, description: "Child")
+    new_parent = Creative.create!(user: user, parent: root, description: "New Parent")
+
+    child.update!(parent: new_parent)
+
+    assert_equal [ root.id ], new_parent.ancestor_ids
+    assert_equal [ new_parent.id, root.id ], child.ancestor_ids
+  ensure
+    Current.reset
+  end
+
+  test "prompt_for returns prompt without prefix" do
+    user = User.create!(email: "prompt@example.com", password: "secret", name: "Prompt")
+    creative = Creative.create!(user: user, description: "Slide")
+
+    creative.comments.create!(user: user, content: "> Hello world", private: true)
+
+    assert_equal "Hello world", creative.prompt_for(user)
+  end
+
+  test "prompt_for returns nil when no prompt" do
+    user = User.create!(email: "prompt-empty@example.com", password: "secret", name: "Prompt Empty")
+    creative = Creative.create!(user: user, description: "Slide")
+
+    assert_nil creative.prompt_for(user)
+  end
+
+  test "assigns parent user when parent present" do
+    owner = User.create!(email: "creative-owner@example.com", password: "secret", name: "Owner")
+    Current.session = Struct.new(:user).new(owner)
+    parent = Creative.create!(user: owner, description: "Parent")
+    other = User.create!(email: "creative-other@example.com", password: "secret", name: "Other")
+    Current.session = Struct.new(:user).new(other)
+
+    child = Creative.create!(parent: parent, description: "Child")
+
+    assert_equal parent.user, child.user
+  ensure
+    Current.reset
+  end
+
+  test "assigns Current user when parent missing" do
+    current_user = User.create!(email: "creative-current@example.com", password: "secret", name: "Current")
+    Current.session = Struct.new(:user).new(current_user)
+
+    creative = Creative.create!(description: "Root")
+
+    assert_equal current_user, creative.user
+  ensure
+    Current.reset
+  end
 end

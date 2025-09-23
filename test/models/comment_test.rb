@@ -35,4 +35,59 @@ class CommentTest < ActiveSupport::TestCase
     end
     Rails.cache.delete(CommentPresenceStore.key(creative.id))
   end
+
+  test "formats content before saving" do
+    user = User.create!(email: "formatter@example.com", password: "secret", name: "Formatter")
+    creative = Creative.create!(user: user, description: "Root")
+
+    formatter = Minitest::Mock.new
+    formatter.expect(:format, "formatted content")
+
+    CommentLinkFormatter.stub(:new, formatter) do
+      comment = Comment.create!(creative: creative, user: user, content: "https://example.com")
+      assert_equal "formatted content", comment.content
+    end
+
+    formatter.verify
+  end
+
+  test "creates a single inbox item for mentioned users" do
+    owner = User.create!(email: "mentions-owner@example.com", password: "secret", name: "Owner")
+    commenter = User.create!(email: "mentions-commenter@example.com", password: "secret", name: "Commenter")
+    mentioned = User.create!(email: "mentions-mentioned@example.com", password: "secret", name: "Mentioned")
+    creative = Creative.create!(user: owner, description: "Root")
+
+    assert_difference("InboxItem.where(owner: mentioned).count", 1) do
+      Comment.create!(creative: creative, user: commenter, content: "hi @#{mentioned.name}:")
+    end
+
+    item = InboxItem.where(owner: mentioned).last
+    assert_equal "inbox.user_mentioned", item.message_key
+    assert_includes item.localized_message, commenter.name
+  end
+
+  test "does not create duplicate mentions for existing recipient" do
+    owner = User.create!(email: "mentions-owner-dup@example.com", password: "secret", name: "OwnerDup")
+    commenter = User.create!(email: "mentions-commenter-dup@example.com", password: "secret", name: "CommenterDup")
+    creative = Creative.create!(user: owner, description: "Root")
+
+    assert_difference("InboxItem.where(owner: owner).count", 1) do
+      Comment.create!(creative: creative, user: commenter, content: "hi @#{owner.name}:")
+    end
+
+    items = InboxItem.where(owner: owner)
+    assert_equal "inbox.user_mentioned", items.last.message_key
+  end
+
+  test "defaults user to Current.user when user missing" do
+    owner = User.create!(email: "comment-owner@example.com", password: "secret", name: "Owner")
+    current_user = User.create!(email: "comment-current@example.com", password: "secret", name: "Current")
+    Current.session = Struct.new(:user).new(current_user)
+    creative = Creative.create!(user: owner, description: "Root")
+
+    comment = Comment.create!(creative: creative, content: "hello")
+    assert_equal current_user, comment.user
+  ensure
+    Current.reset
+  end
 end
