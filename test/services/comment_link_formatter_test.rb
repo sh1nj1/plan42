@@ -43,7 +43,7 @@ class CommentLinkFormatterTest < ActiveSupport::TestCase
       raise StandardError, "boom"
     end
     logger = Minitest::Mock.new
-    logger.expect(:warn, nil, [String])
+    logger.expect(:warn, nil, [ String ])
 
     formatter = CommentLinkFormatter.new("https://example.com", metadata_fetcher: fetcher, logger: logger)
 

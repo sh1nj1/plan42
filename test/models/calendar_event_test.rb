@@ -11,7 +11,7 @@ class CalendarEventTest < ActiveSupport::TestCase
     )
 
     service = Minitest::Mock.new
-    service.expect(:delete_event, true, ["abc123"])
+    service.expect(:delete_event, true, [ "abc123" ])
 
     GoogleCalendarService.stub(:new, service) do
       event.destroy
