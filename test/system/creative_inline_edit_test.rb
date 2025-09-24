@@ -16,48 +16,74 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     visit creatives_path
   end
 
+  def open_inline_editor(creative)
+    find("#creative-#{creative.id}").hover
+    find("#creative-#{creative.id} .edit-inline-btn", wait: 5).click
+    assert_selector "#inline-edit-form-element", wait: 5
+  end
+
+  def inline_editor_field
+    find('trix-editor[input="inline-creative-description"]', wait: 5)
+  end
+
+  def fill_inline_editor(text)
+    inline_editor_field.click.set(text)
+  end
+
+  def add_inline_child(text)
+    fill_inline_editor(text)
+    find("#inline-add", wait: 5).click
+  end
+
+  def close_inline_editor
+    find("#inline-close", wait: 5).click
+    assert_no_selector "#inline-edit-form-element", wait: 5
+  end
+
+  def expand_creative(creative)
+    find("#creative-#{creative.id}").hover
+    find("#creative-#{creative.id} .creative-toggle-btn", wait: 5).click
+  end
+
   test "shows saved row when starting another addition" do
-    find("#creative-#{@root_creative.id}").hover
-    find("#creative-#{@root_creative.id} .edit-inline-btn").click
-    find("#inline-add-child").click
+    open_inline_editor(@root_creative)
+    find("#inline-add-child", wait: 5).click
 
-    refute_selector "#creative-children-#{@root_creative.id} .creative-row"
+    assert_no_selector "#creative-children-#{@root_creative.id} .creative-row", wait: 1
 
-    find('trix-editor[input="inline-creative-description"]').click.set("First child")
-    find("#inline-add").click
+    add_inline_child("First child")
 
-    assert_selector "#creative-children-#{@root_creative.id} .creative-row", text: "First child", count: 1
+    assert_selector "#creative-children-#{@root_creative.id} .creative-row", text: "First child", count: 1, wait: 5
 
-    find('trix-editor[input="inline-creative-description"]').click.set("Second child")
-    find("#inline-close").click
+    fill_inline_editor("Second child")
+    close_inline_editor
 
-    find("#creative-#{@root_creative.id}").hover
-    find("#creative-#{@root_creative.id} .creative-toggle-btn").click
-
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row", count: 2
+    expand_creative(@root_creative)
+    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row", count: 2, wait: 5
     assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(1) > .creative-tree .creative-row", text: "First child"
     assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(2) > .creative-tree .creative-row", text: "Second child"
 
-    new_creative_id = find("#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(1) > .creative-tree")["data-id"]
-    new_creative = Creative.find(new_creative_id)
-    assert_equal "First child", new_creative.description.body.to_plain_text
+    first_row = find(
+      "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(1) > .creative-tree",
+      wait: 5
+    )
+    first_id = first_row["data-id"]
+    assert_equal "First child", Creative.find(first_id).description.body.to_plain_text
   end
 
   test "supports keyboard shortcuts for add and close" do
-    find("#creative-#{@root_creative.id}").hover
-    find("#creative-#{@root_creative.id} .edit-inline-btn").click
-    find("trix-editor").send_keys([ :alt, :enter ])
+    open_inline_editor(@root_creative)
+    inline_editor_field.send_keys([ :alt, :enter ])
 
-    find('trix-editor[input="inline-creative-description"]').click.set("First child")
-    find("trix-editor").send_keys([ :shift, :enter ])
+    fill_inline_editor("First child")
+    inline_editor_field.send_keys([ :shift, :enter ])
 
-    find('trix-editor[input="inline-creative-description"]').click.set("Second child")
-    find("trix-editor").send_keys(:escape)
+    fill_inline_editor("Second child")
+    inline_editor_field.send_keys(:escape)
 
-    find("#creative-#{@root_creative.id}").hover
-    find("#creative-#{@root_creative.id} .creative-toggle-btn").click
+    expand_creative(@root_creative)
 
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row", count: 2
+    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row", count: 2, wait: 5
     assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(1) .creative-row", text: "First child"
     assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(2) .creative-row", text: "Second child"
   end
@@ -68,15 +94,14 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     visit creative_path(@root_creative)
 
-    find("#creative-#{child_b.id}").hover
-    find("#creative-#{child_b.id} .edit-inline-btn").click
-    find("#inline-add").click
-    find('trix-editor[input="inline-creative-description"]').click.set("C")
-    find("#inline-add").click
-    find('trix-editor[input="inline-creative-description"]').click.set("D")
-    find("#inline-close").click
+    open_inline_editor(child_b)
+    find("#inline-add", wait: 5).click
+    fill_inline_editor("C")
+    find("#inline-add", wait: 5).click
+    fill_inline_editor("D")
+    close_inline_editor
 
-    assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: child_a.description.to_plain_text
+    assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: child_a.description.to_plain_text, wait: 5
     assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: child_b.description.to_plain_text
     assert_selector "#creatives > creative-tree-row:nth-of-type(3) .creative-row", text: "C"
     assert_selector "#creatives > creative-tree-row:nth-of-type(4) .creative-row", text: "D"
@@ -88,13 +113,12 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     visit creative_path(@root_creative)
 
-    find("#creative-#{child.id}").hover
-    find("#creative-#{child.id} .edit-inline-btn").click
-    find("#inline-add").click
-    find('trix-editor[input="inline-creative-description"]').click.set("Sibling")
-    find("#inline-close").click
+    open_inline_editor(child)
+    find("#inline-add", wait: 5).click
+    fill_inline_editor("Sibling")
+    close_inline_editor
 
-    assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: "Child"
+    assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: "Child", wait: 5
     assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: "Sibling"
   end
 
@@ -104,10 +128,10 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     visit creative_path(@root_creative)
 
     find(".creative-actions-row .add-creative-btn").click
-    find('trix-editor[input="inline-creative-description"]').click.set("New child")
-    find("#inline-close").click
+    fill_inline_editor("New child")
+    close_inline_editor
 
-    assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: "New child"
+    assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: "New child", wait: 5
     assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: existing_child.description.to_plain_text
   end
 end

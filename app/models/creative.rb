@@ -1,5 +1,4 @@
 require "ostruct"
-require "set"
 require "closure_tree"
 class Creative < ApplicationRecord
   include Notifications
@@ -32,24 +31,15 @@ class Creative < ApplicationRecord
   after_destroy :update_parent_progress
 
   def self.recalculate_all_progress!
-    Creative.roots.find_each do |root|
-      root.recalculate_subtree_progress!
-    end
+    Creatives::ProgressService.recalculate_all!
   end
 
   def recalculate_subtree_progress!
-    if origin_id.nil?
-      children.each(&:recalculate_subtree_progress!)
-      if children.any?
-        update(progress: children.average(:progress) || 0)
-      end
-    else
-      origin.recalculate_subtree_progress!
-    end
+    progress_service.recalculate_subtree!
   end
 
   def has_permission?(user, required_permission = :read)
-    origin_id.nil? ? has_permission_impl(user, required_permission) : origin.has_permission?(user, required_permission)
+    Creatives::PermissionChecker.new(self, user).allowed?(required_permission)
   end
 
   # Returns only children for which the user has at least the given permission (default: :read)
@@ -135,38 +125,13 @@ class Creative < ApplicationRecord
   end
 
   def progress_for_tags(tag_ids, user = Current.user)
-    return progress if tag_ids.blank?
-
-    tag_ids = Array(tag_ids).map(&:to_s)
-    visible_children = children_with_permission(user)
-    child_values = visible_children.map do |child|
-      child.progress_for_tags(tag_ids, user)
-    end.compact
-
-    if child_values.any?
-      child_values.sum.to_f / child_values.size
-    else
-      own_label_ids = tags.pluck(:label_id).map(&:to_s)
-      if (own_label_ids & tag_ids).any?
-        visible_children.any? ? 1.0 : progress
-      else
-        nil
-      end
-    end
+    progress_service.progress_for_tags(tag_ids, user)
   end
 
   # Calculate progress for the subtree ignoring permission checks.
   # `tagged_ids` should be a Set of creative IDs that are tagged with the plan.
   def progress_for_plan(tagged_ids)
-    child_values = children.map { |child| child.progress_for_plan(tagged_ids) }.compact
-
-    if child_values.any?
-      child_values.sum.to_f / child_values.size
-    elsif tagged_ids.include?(id)
-      children.any? ? 1.0 : progress
-    else
-      nil
-    end
+    progress_service.progress_for_plan(tagged_ids)
   end
 
   # 공유 대상 사용자를 위해 Linked Creative를 생성합니다.
@@ -187,12 +152,7 @@ class Creative < ApplicationRecord
   end
 
   def update_parent_progress
-    # 참조 하는 모든 Linked Creative 도 업데이트
-    linked_creatives.update_all(progress: self[:progress])
-    return unless parent
-    parent.reload
-    new_progress = parent.children.any? ? parent.children.map(&:progress).sum.to_f / parent.children.size : 0
-    parent.update(progress: new_progress)
+    progress_service.update_parent_progress!
   end
 
   def all_shared_users(required_permission = :no_access)
@@ -219,22 +179,7 @@ class Creative < ApplicationRecord
     end
   end
 
-  def has_permission_impl(user, required_permission = :read)
-    return true if self.user_id == user&.id
-    # self 및 ancestors 모두 검사
-    cache = Current.respond_to?(:creative_share_cache) ? Current.creative_share_cache : nil
-    node = self
-    while node
-      share = cache ? cache[node.id] : CreativeShare.find_by(user: user, creative: node)
-      if share
-        return false if share.permission.to_s == "no_access"
-
-        if CreativeShare.permissions[share.permission] >= CreativeShare.permissions[required_permission.to_s]
-          return true
-        end
-      end
-      node = node.parent
-    end
-    false
+  def progress_service
+    @progress_service ||= Creatives::ProgressService.new(self)
   end
 end
