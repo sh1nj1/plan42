@@ -71,7 +71,7 @@ if (!window.creativesImportInitialized) {
             const parentId = importArea.dataset.parentCreativeId;
             if (parentId) formData.append('parent_id', parentId);
 
-            fetch('/creatives/import_markdown', {
+            fetch('/creative_imports', {
                 method: 'POST',
                 headers: {
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content

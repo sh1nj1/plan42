@@ -53,7 +53,7 @@ if (!window.isSetPlanModalInitialized) {
                     alert(selectPlanText);
                     return;
                 }
-                // Submit via POST to /creatives/remove_plan
+                // Submit via DELETE to creative_plan_path
                 var f = document.createElement('form');
                 f.method = 'POST';
                 f.action = removeBtn.dataset.removePath;
@@ -66,6 +66,11 @@ if (!window.isSetPlanModalInitialized) {
                     csrfInput.value = csrf.content;
                     f.appendChild(csrfInput);
                 }
+                var methodField = document.createElement('input');
+                methodField.type = 'hidden';
+                methodField.name = '_method';
+                methodField.value = 'delete';
+                f.appendChild(methodField);
                 var idsField = document.createElement('input');
                 idsField.type = 'hidden';
                 idsField.name = 'creative_ids';
