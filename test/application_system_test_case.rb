@@ -19,10 +19,15 @@ Capybara.register_driver :custom_headless_chrome do |app|
   Capybara::Selenium::Driver.new(app, browser: :chrome, options: options)
 end
 
+DRIVER_ENV_KEY = "SYSTEM_TEST_DRIVER".freeze
+
 class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   include SystemHelpers
 
-  # for local development test with chrome
-  # driven_by :selenium, using: :chrome, screen_size: [ 1920, 1080 ]
-  driven_by :custom_headless_chrome
+  driver_name = ENV.fetch(DRIVER_ENV_KEY, "custom_headless_chrome")
+  if driver_name == "chrome"
+    driven_by :selenium, using: :chrome, screen_size: [ 1920, 1080 ]
+  else
+    driven_by driver_name.to_sym
+  end
 end
