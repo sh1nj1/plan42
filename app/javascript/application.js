@@ -7,8 +7,8 @@ import "./register_service_worker"
 import "./trix_color_picker"
 
 // Creative page modules
-import "./creatives_api"
-import "./creatives_drag_drop"
+import "./creatives/drag_drop"
+import "./api/creatives.api"
 import "./creatives_expansion"
 import "./creatives_import"
 import "./creative_row_editor"
