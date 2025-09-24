@@ -34,5 +34,4 @@ class DragDropSystemTest < ApplicationSystemTestCase
     order = @root.reload.children.order(:sequence).map { |c| c.description.to_plain_text }
     assert_equal [ "Task B", "Task A" ], order
   end
-
 end
