@@ -1,6 +1,7 @@
 require "test_helper"
 require_relative "support/system_helpers"
 require "tmpdir"
+require "fileutils"
 
 Capybara.register_driver :custom_headless_chrome do |app|
   options = Selenium::WebDriver::Chrome::Options.new
@@ -9,7 +10,11 @@ Capybara.register_driver :custom_headless_chrome do |app|
   options.add_argument "--no-sandbox"
   options.add_argument "--disable-dev-shm-usage"
   options.add_argument "--window-size=1920,1080"
-  options.add_argument "--user-data-dir=#{Dir.mktmpdir("chrome-profile-#{Process.pid}-")}"
+  user_data_dir = Dir.mktmpdir("chrome-profile-#{Process.pid}-")
+  options.add_argument "--user-data-dir=#{user_data_dir}"
+  at_exit do
+    FileUtils.remove_entry(user_data_dir) if File.exist?(user_data_dir)
+  end
 
   Capybara::Selenium::Driver.new(app, browser: :chrome, options: options)
 end

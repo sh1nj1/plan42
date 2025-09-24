@@ -44,9 +44,6 @@ Rails.application.routes.draw do
       post :recalculate_progress
       post :reorder
       post :link_drop
-      post :import_markdown
-      post :set_plan
-      post :remove_plan
       get :append_as_parent, to: "creatives#append_as_parent", as: :append_as_parent_creative
       get :append_below, to: "creatives#append_below", as: :append_below_creative
       get :export_markdown
@@ -59,6 +56,9 @@ Rails.application.routes.draw do
       get :slide_view
     end
   end
+
+  resources :creative_imports, only: [ :create ]
+  resource :creative_plan, only: [ :create, :destroy ], controller: "creative_plans"
 
   resources :plans, only: [ :create, :destroy, :index ]
 
