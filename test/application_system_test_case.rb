@@ -1,5 +1,7 @@
 require "test_helper"
 require_relative "support/system_helpers"
+require_relative "support/html5_dnd_helpers"
+require_relative "support/system_drag_helper"
 require "tmpdir"
 require "fileutils"
 
@@ -23,6 +25,8 @@ DRIVER_ENV_KEY = "SYSTEM_TEST_DRIVER".freeze
 
 class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   include SystemHelpers
+  include SystemDragHelper
+  include Html5DndHelpers
 
   driver_name = ENV.fetch(DRIVER_ENV_KEY, "custom_headless_chrome")
   if driver_name == "chrome"
