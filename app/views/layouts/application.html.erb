@@ -156,7 +156,7 @@
         <button id="close-inbox" type="button">&times;</button>
         <label><input type="checkbox" id="toggle-inbox-read"> <%= t('inbox.show_read') %></label>
       </div>
-      <div id="inbox-list" data-loading-text="<%= t('app.loading') %>"></div>
+      <div id="inbox-list" data-loading-text="<%= t('app.loading') %>" data-empty-text="<%= t('inbox.no_messages') %>"></div>
     </div>
 
     <div id="creative-guide-popover" style="display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%); background:white; border:1px solid var(--color-border); box-shadow:0 2px 8px rgba(0,0,0,0.12); padding:1.2em; max-width:400px; z-index:1000; border-radius:8px;">
@@ -242,13 +242,69 @@
               });
           }
 
+          var inboxNextPage = null;
+          var inboxIsLoading = false;
+
+          function fetchInboxPage(page, append) {
+            if (!list) return Promise.resolve();
+            inboxIsLoading = true;
+            var params = new URLSearchParams();
+            params.set('page', page);
+            if (toggle && toggle.checked) {
+              params.set('show', 'all');
+            }
+            return fetch('/inbox?' + params.toString(), { headers: { 'Accept': 'application/json' } })
+              .then(function(r) { return r.json(); })
+              .then(function(data) {
+                var container = list.querySelector('#inbox-items');
+                if (!container) {
+                  container = document.createElement('div');
+                  container.id = 'inbox-items';
+                  list.innerHTML = '';
+                  list.appendChild(container);
+                } else if (!append) {
+                  container.innerHTML = '';
+                }
+
+                if (data.empty && !append) {
+                  container.innerHTML = '';
+                  var emptyDiv = document.createElement('div');
+                  emptyDiv.className = 'inbox-empty';
+                  emptyDiv.textContent = list ? (list.dataset.emptyText || '') : '';
+                  container.appendChild(emptyDiv);
+                } else if (data.items_html) {
+                  if (!append) {
+                    container.innerHTML = data.items_html;
+                  } else {
+                    container.insertAdjacentHTML('beforeend', data.items_html);
+                  }
+                }
+
+                inboxNextPage = data.next_page;
+                container.dataset.nextPage = data.next_page || '';
+                attachActions();
+                updateInboxBadge();
+              })
+              .finally(function() {
+                inboxIsLoading = false;
+              });
+          }
+
           function loadInbox() {
-            if (!list) return;
-            list.innerHTML = list.dataset.loadingText;
-            var showRead = toggle && toggle.checked;
-            fetch('/inbox' + (showRead ? '?show=all' : ''))
-              .then(r => r.text())
-              .then(html => { list.innerHTML = html; attachActions(); updateInboxBadge(); });
+            if (!list) return Promise.resolve();
+            inboxNextPage = null;
+            inboxIsLoading = false;
+            list.textContent = list.dataset.loadingText || '';
+            return fetchInboxPage(1, false);
+          }
+
+          function maybeLoadMore() {
+            if (!panel) return;
+            if (inboxIsLoading) return;
+            if (!inboxNextPage) return;
+            if (panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 50) {
+              fetchInboxPage(inboxNextPage, true);
+            }
           }
 
           function attachActions() {
@@ -332,6 +388,7 @@
               }
               startX = null;
             });
+            panel.addEventListener('scroll', maybeLoadMore);
           }
 
           btns.forEach(function(btn) {

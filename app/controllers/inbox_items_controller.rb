@@ -1,11 +1,34 @@
 class InboxItemsController < ApplicationController
   before_action :set_inbox_item, only: [ :update, :destroy ]
 
+  PER_PAGE = 20
+
   def index
     scope = InboxItem.where(owner: Current.user).order(created_at: :desc)
     scope = scope.new_items unless params[:show] == "all"
-    @inbox_items = scope
-    render partial: "inbox_items/list", locals: { items: @inbox_items }
+
+    per_page = params[:per_page].presence&.to_i || PER_PAGE
+    per_page = PER_PAGE if per_page <= 0 || per_page > 100
+    page = params[:page].presence&.to_i || 1
+    page = 1 if page < 1
+    offset = (page - 1) * per_page
+
+    items = scope.offset(offset).limit(per_page + 1).to_a
+    @inbox_items = items.first(per_page)
+    @next_page = items.length > per_page ? page + 1 : nil
+
+    respond_to do |format|
+      format.html do
+        render partial: "inbox_items/list", locals: { items: @inbox_items, next_page: @next_page }
+      end
+      format.json do
+        render json: {
+          items_html: render_to_string(partial: "inbox_items/items", formats: [ :html ], locals: { items: @inbox_items }),
+          next_page: @next_page,
+          empty: @inbox_items.empty?
+        }
+      end
+    end
   end
 
   def count

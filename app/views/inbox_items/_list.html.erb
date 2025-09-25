@@ -1,9 +1,7 @@
-<div id="inbox-items">
+<div id="inbox-items" data-next-page="<%= next_page || '' %>">
   <% if items.any? %>
-    <% items.each do |item| %>
-      <%= render partial: 'inbox_items/item', locals: { item: item } %>
-    <% end %>
+    <%= render partial: 'inbox_items/items', locals: { items: items } %>
   <% else %>
-    <div><%= t('inbox.no_messages') %></div>
+    <div class="inbox-empty"><%= t('inbox.no_messages') %></div>
   <% end %>
 </div>
