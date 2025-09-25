@@ -17,10 +17,12 @@ Rails.application.routes.draw do
 
   root "creatives#index"
 
-  resources :users, only: [ :new, :create, :index, :show, :update ] do
+  resources :users, only: [ :new, :create, :index, :show, :update, :destroy ] do
     member do
       get :edit_password
       patch :update_password
+      patch :grant_system_admin
+      patch :revoke_system_admin
     end
     collection do
       get :exists

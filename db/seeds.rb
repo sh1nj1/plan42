@@ -9,7 +9,8 @@ unless User.exists?(email: default_email)
   User.create!(
     email: default_email,
     password: ENV.fetch('DEFAULT_USER_PASSWORD', 'password123'),
-    password_confirmation: ENV.fetch('DEFAULT_USER_PASSWORD', 'password123')
+    password_confirmation: ENV.fetch('DEFAULT_USER_PASSWORD', 'password123'),
+    system_admin: true
   )
   puts "Created default user with email: #{default_email}"
 end

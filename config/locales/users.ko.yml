@@ -26,6 +26,11 @@ ko:
     avatar: "아바타"
     avatar_url: "아바타 URL"
     update_profile: "프로파일 업데이트"
+    delete: "삭제"
+    make_system_admin: "시스템 관리자 지정"
+    make_normal_user: "일반 사용자로 변경"
+    confirm_grant_system_admin: "이 사용자에게 시스템 관리자 권한을 부여할까요?"
+    confirm_destroy: "사용자의 모든 정보를 삭제하시겠습니까?"
     index_title: "사용자 목록"
     push_token_present: "푸시 토큰 있음"
     push_token_absent: "푸시 토큰 없음"
@@ -52,6 +57,15 @@ ko:
     send_password_reset_instructions: "비밀번호 재설정 이메일 보내기"
     email_verified: "이메일 인증이 완료되었습니다."
     verification_invalid: "인증 링크가 유효하지 않거나 만료되었습니다."
+    admin_required: "시스템 관리자만 접근할 수 있습니다."
+    system_admin:
+      granted: "시스템 관리자 권한이 부여되었습니다."
+      revoked: "시스템 관리자 권한이 해제되었습니다."
+      failed: "사용자의 시스템 관리자 상태를 변경하지 못했습니다."
+    destroy:
+      success: "사용자와 모든 관련 데이터가 삭제되었습니다."
+      failure: "사용자를 삭제하지 못했습니다."
+      cannot_delete_self: "자신의 계정은 삭제할 수 없습니다."
     table:
       avatar: "아바타"
       name: "이름"
@@ -63,6 +77,9 @@ ko:
       notifications_enabled: "사용"
       notifications_disabled: "사용 안 함"
       notifications_unset: "설정되지 않음"
+      actions: "작업"
+      current_user: "현재 사용자"
+      system_admin: "시스템 관리자"
   user_mailer:
     email_verification:
       subject: "이메일 인증"

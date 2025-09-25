@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_23_002959) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_24_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -379,7 +379,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_23_002959) do
     t.datetime "google_token_expires_at"
     t.string "timezone"
     t.string "locale"
+    t.boolean "system_admin", default: false, null: false
     t.index ["email"], name: "index_users_on_email", unique: true
+    t.index ["system_admin"], name: "index_users_on_system_admin"
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"

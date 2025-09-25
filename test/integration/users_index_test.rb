@@ -2,7 +2,7 @@ require "test_helper"
 
 class UsersIndexTest < ActionDispatch::IntegrationTest
   setup do
-    @viewer = User.create!(email: "viewer@example.com", password: "pw", name: "Viewer")
+    @viewer = User.create!(email: "viewer@example.com", password: "pw", name: "Viewer", system_admin: true)
     sign_in_as(@viewer)
   end
 

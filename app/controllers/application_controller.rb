@@ -38,4 +38,10 @@ class ApplicationController < ActionController::Base
     zone = Current.user&.timezone
     zone.present? ? Time.use_zone(zone, &action) : action.call
   end
+
+  def require_system_admin!
+    return if Current.user&.system_admin?
+
+    redirect_to root_path, alert: t("users.admin_required")
+  end
 end

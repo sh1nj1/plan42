@@ -26,6 +26,11 @@ en:
     avatar: "Avatar"
     avatar_url: "Avatar URL"
     update_profile: "Update Profile"
+    delete: "Delete"
+    make_system_admin: "Make system admin"
+    make_normal_user: "Make normal user"
+    confirm_grant_system_admin: "Grant system admin access to this user?"
+    confirm_destroy: "Are you sure you want to delete all of this user's data?"
     index_title: "Users"
     push_token_present: "Push token present"
     push_token_absent: "No push token"
@@ -52,6 +57,15 @@ en:
     send_password_reset_instructions: "Email reset instructions"
     email_verified: "Email verified successfully."
     verification_invalid: "Verification link is invalid or has expired."
+    admin_required: "You must be a system administrator to access that page."
+    system_admin:
+      granted: "System admin access granted."
+      revoked: "System admin access removed."
+      failed: "Could not update the user's system admin status."
+    destroy:
+      success: "The user and all associated data have been deleted."
+      failure: "Could not delete the user."
+      cannot_delete_self: "You cannot delete your own account."
     table:
       avatar: "Avatar"
       name: "Name"
@@ -63,6 +77,9 @@ en:
       notifications_enabled: "Enabled"
       notifications_disabled: "Disabled"
       notifications_unset: "Not configured"
+      actions: "Actions"
+      current_user: "This is you"
+      system_admin: "System admin"
   user_mailer:
     email_verification:
       subject: "Verify your email"
