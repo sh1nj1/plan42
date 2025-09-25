@@ -1,3 +1,6 @@
 en:
+  time:
+    formats:
+      chat_timestamp: "%Y-%m-%d %H:%M:%S"
   datetime:
-    ago: "%{time} age"
+    ago: "%{time} ago"
