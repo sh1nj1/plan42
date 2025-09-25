@@ -28,6 +28,7 @@ ko:
     update_profile: "프로파일 업데이트"
     delete: "삭제"
     make_system_admin: "시스템 관리자 지정"
+    make_normal_user: "일반 사용자로 변경"
     confirm_grant_system_admin: "이 사용자에게 시스템 관리자 권한을 부여할까요?"
     confirm_destroy: "사용자의 모든 정보를 삭제하시겠습니까?"
     index_title: "사용자 목록"
@@ -59,6 +60,7 @@ ko:
     admin_required: "시스템 관리자만 접근할 수 있습니다."
     system_admin:
       granted: "시스템 관리자 권한이 부여되었습니다."
+      revoked: "시스템 관리자 권한이 해제되었습니다."
       failed: "사용자의 시스템 관리자 상태를 변경하지 못했습니다."
     destroy:
       success: "사용자와 모든 관련 데이터가 삭제되었습니다."

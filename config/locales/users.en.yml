@@ -28,6 +28,7 @@ en:
     update_profile: "Update Profile"
     delete: "Delete"
     make_system_admin: "Make system admin"
+    make_normal_user: "Make normal user"
     confirm_grant_system_admin: "Grant system admin access to this user?"
     confirm_destroy: "Are you sure you want to delete all of this user's data?"
     index_title: "Users"
@@ -59,6 +60,7 @@ en:
     admin_required: "You must be a system administrator to access that page."
     system_admin:
       granted: "System admin access granted."
+      revoked: "System admin access removed."
       failed: "Could not update the user's system admin status."
     destroy:
       success: "The user and all associated data have been deleted."

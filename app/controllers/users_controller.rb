@@ -1,6 +1,6 @@
 class UsersController < ApplicationController
   allow_unauthenticated_access only: [ :new, :create, :exists ]
-  before_action :require_system_admin!, only: [ :index, :destroy, :grant_system_admin ]
+  before_action :require_system_admin!, only: [ :index, :destroy, :grant_system_admin, :revoke_system_admin ]
 
   def new
     @user = User.new
@@ -75,6 +75,16 @@ class UsersController < ApplicationController
 
     if @user.update(system_admin: true)
       redirect_to users_path, notice: t("users.system_admin.granted")
+    else
+      redirect_to users_path, alert: t("users.system_admin.failed")
+    end
+  end
+
+  def revoke_system_admin
+    @user = User.find(params[:id])
+
+    if @user.update(system_admin: false)
+      redirect_to users_path, notice: t("users.system_admin.revoked")
     else
       redirect_to users_path, alert: t("users.system_admin.failed")
     end

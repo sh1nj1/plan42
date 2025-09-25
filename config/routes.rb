@@ -22,6 +22,7 @@ Rails.application.routes.draw do
       get :edit_password
       patch :update_password
       patch :grant_system_admin
+      patch :revoke_system_admin
     end
     collection do
       get :exists

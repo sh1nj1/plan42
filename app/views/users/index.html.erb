@@ -49,7 +49,9 @@
         <td>
           <% if user != Current.user %>
             <% if user.system_admin? %>
-              <span class="text-muted"><%= t('users.table.system_admin') %></span>
+              <%= button_to t('users.make_normal_user'),
+                            revoke_system_admin_user_path(user),
+                            method: :patch %>
             <% else %>
               <%= button_to t('users.make_system_admin'),
                             grant_system_admin_user_path(user),
