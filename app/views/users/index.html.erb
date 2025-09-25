@@ -4,19 +4,48 @@
 
 <h1 class="no-top-margin"><%= t('users.index_title') %></h1>
 
-<ul>
-  <% @users.each do |user| %>
-    <% last_login_at = user.sessions.max_by(&:updated_at)&.updated_at %>
-    <li>
-      <%= render AvatarComponent.new(
-            user: user,
-            size: 20,
-            classes: "avatar comment-presence-avatar#{' inactive' if user.sessions.empty?}" ) %>
-      <%= user.display_name %> (<%= user.email %>)
-      <% if last_login_at %>
-        - <%= t('users.last_login_at', time: I18n.l(last_login_at, format: :short)) %>
-      <% end %>
-      - <%= user.devices.any? ? t('users.push_token_present') : t('users.push_token_absent') %>
-    </li>
-  <% end %>
-</ul>
+<table>
+  <thead>
+    <tr>
+      <th><%= t('users.table.avatar') %></th>
+      <th><%= t('users.table.name') %></th>
+      <th><%= t('users.table.email') %></th>
+      <th><%= t('users.table.last_login_at') %></th>
+      <th><%= t('users.table.push_token') %></th>
+      <th><%= t('users.table.notifications') %></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @users.each do |user| %>
+      <% last_login_at = user.sessions.max_by(&:updated_at)&.updated_at %>
+      <tr>
+        <td>
+          <%= render AvatarComponent.new(
+                user: user,
+                size: 20,
+                classes: "avatar comment-presence-avatar#{' inactive' if user.sessions.empty?}" ) %>
+        </td>
+        <td><%= user.display_name %></td>
+        <td><%= user.email %></td>
+        <td>
+          <% if last_login_at %>
+            <%= I18n.l(last_login_at, format: :short) %>
+          <% else %>
+            <%= t('users.table.last_login_unknown') %>
+          <% end %>
+        </td>
+        <td><%= user.devices.any? ? t('users.push_token_present') : t('users.push_token_absent') %></td>
+        <td>
+          <% case user.notifications_enabled %>
+          <% when true %>
+            <%= t('users.table.notifications_enabled') %>
+          <% when false %>
+            <%= t('users.table.notifications_disabled') %>
+          <% else %>
+            <%= t('users.table.notifications_unset') %>
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
