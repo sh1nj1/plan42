@@ -106,6 +106,42 @@ if (!window.commentsInitialized) {
         var typingTimeout = null;
         var hasPresenceConnected = false;
 
+        var computedStyle = window.getComputedStyle ? window.getComputedStyle(list) : null;
+        var isColumnReverse = computedStyle && computedStyle.flexDirection === 'column-reverse';
+        var stickToBottom = true;
+
+        function scrollToBottom() {
+            if (isColumnReverse) {
+                list.scrollTop = 0;
+            } else {
+                list.scrollTop = list.scrollHeight;
+            }
+            stickToBottom = true;
+        }
+
+        function isNearBottom() {
+            if (isColumnReverse) {
+                return list.scrollTop <= 50;
+            }
+            return (list.scrollHeight - list.clientHeight - list.scrollTop) <= 50;
+        }
+
+        function updateStickiness() {
+            stickToBottom = isNearBottom();
+        }
+
+        if (window.MutationObserver) {
+            var listObserver = new MutationObserver(function(mutations) {
+                var hasAddedNodes = mutations.some(function(mutation) {
+                    return mutation.addedNodes && mutation.addedNodes.length > 0;
+                });
+                if (hasAddedNodes && stickToBottom) {
+                    requestAnimationFrame(scrollToBottom);
+                }
+            });
+            listObserver.observe(list, { childList: true });
+        }
+
         if (privateCheckbox) {
             privateCheckbox.addEventListener('change', function() {
                 if (presenceSubscription && privateCheckbox.checked) {
@@ -448,11 +484,11 @@ if (!window.commentsInitialized) {
             });
 
             list.addEventListener('scroll', function() {
+                updateStickiness();
                 const pos = list.scrollHeight - list.clientHeight + list.scrollTop;
                 if (pos < 50) {
                     loadMoreComments();
                 }
-                console.log("scrollTop:", list.scrollTop, "scrollHeight:", list.scrollHeight, "clientHeight:", list.clientHeight, "pos:", pos);
             });
             var currentPage = 1;
             var loadingMore = false;
@@ -488,6 +524,14 @@ if (!window.commentsInitialized) {
                     list.innerHTML = html;
                     renderMarkdown(list);
                     updatePosition();
+                    if (!highlightId) {
+                        requestAnimationFrame(function() {
+                            scrollToBottom();
+                            updateStickiness();
+                        });
+                    } else {
+                        updateStickiness();
+                    }
                     if (highlightId) {
                         var el = document.getElementById('comment_' + highlightId);
                         if (el) {
@@ -564,10 +608,13 @@ if (!window.commentsInitialized) {
                                     document.getElementById('no-comments').style.display = 'none';
                                 }
                                 if (isPrivate) {
-                                    const l = document.getElementById('comments_list')
-                                    l.insertAdjacentHTML('beforeend', html)
+                                    const l = document.getElementById('comments_list');
+                                    l.insertAdjacentHTML('beforeend', html);
                                 }
-                                list.scrollTop = list.scrollHeight;
+                                requestAnimationFrame(function() {
+                                    scrollToBottom();
+                                    updateStickiness();
+                                });
                             }, 100)
                         }
                     })
