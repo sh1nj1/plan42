@@ -23,6 +23,28 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, @regular_user.email
   end
 
+  test "non admin cannot grant system admin" do
+    sign_in_as(@regular_user, password: "password")
+
+    patch grant_system_admin_user_path(@regular_user)
+
+    assert_redirected_to root_path
+    assert_not @regular_user.reload.system_admin?
+  end
+
+  test "system admin can grant system admin" do
+    sign_in_as(@admin, password: "password")
+
+    refute @regular_user.system_admin?
+
+    patch grant_system_admin_user_path(@regular_user)
+
+    assert_redirected_to users_path
+    follow_redirect!
+    assert_equal I18n.t("users.system_admin.granted"), flash[:notice]
+    assert @regular_user.reload.system_admin?
+  end
+
   test "system admin cannot delete themselves" do
     sign_in_as(@admin, password: "password")
 

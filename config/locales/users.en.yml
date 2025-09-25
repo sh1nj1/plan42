@@ -27,6 +27,8 @@ en:
     avatar_url: "Avatar URL"
     update_profile: "Update Profile"
     delete: "Delete"
+    make_system_admin: "Make system admin"
+    confirm_grant_system_admin: "Grant system admin access to this user?"
     confirm_destroy: "Are you sure you want to delete all of this user's data?"
     index_title: "Users"
     push_token_present: "Push token present"
@@ -55,6 +57,9 @@ en:
     email_verified: "Email verified successfully."
     verification_invalid: "Verification link is invalid or has expired."
     admin_required: "You must be a system administrator to access that page."
+    system_admin:
+      granted: "System admin access granted."
+      failed: "Could not update the user's system admin status."
     destroy:
       success: "The user and all associated data have been deleted."
       failure: "Could not delete the user."
@@ -72,6 +77,7 @@ en:
       notifications_unset: "Not configured"
       actions: "Actions"
       current_user: "This is you"
+      system_admin: "System admin"
   user_mailer:
     email_verification:
       subject: "Verify your email"

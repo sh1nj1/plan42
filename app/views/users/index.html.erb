@@ -48,6 +48,14 @@
         </td>
         <td>
           <% if user != Current.user %>
+            <% if user.system_admin? %>
+              <span class="text-muted"><%= t('users.table.system_admin') %></span>
+            <% else %>
+              <%= button_to t('users.make_system_admin'),
+                            grant_system_admin_user_path(user),
+                            method: :patch,
+                            form: { data: { turbo_confirm: t('users.confirm_grant_system_admin') } } %>
+            <% end %>
             <%= button_to t('users.delete'),
                           user_path(user),
                           method: :delete,

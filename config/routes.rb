@@ -21,6 +21,7 @@ Rails.application.routes.draw do
     member do
       get :edit_password
       patch :update_password
+      patch :grant_system_admin
     end
     collection do
       get :exists
