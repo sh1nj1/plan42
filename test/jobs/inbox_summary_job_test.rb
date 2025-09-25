@@ -17,6 +17,16 @@ class InboxSummaryJobTest < ActiveJob::TestCase
     assert Email.order(:created_at).last.body.present?, "email body should be saved"
   end
 
+  test "does not send email when user has notifications disabled" do
+    user = users(:one)
+    user.update!(notifications_enabled: false)
+    InboxItem.create!(message_key: "inbox.no_messages", message_params: {}, owner: user)
+
+    assert_emails 0 do
+      InboxSummaryJob.perform_now
+    end
+  end
+
   test "does not send email when user has no new items" do
     assert_emails 0 do
       InboxSummaryJob.perform_now
