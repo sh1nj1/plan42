@@ -121,7 +121,7 @@ if (!window.commentsInitialized) {
 
         function isNearBottom() {
             if (isColumnReverse) {
-                return list.scrollTop <= 50;
+                return Math.abs(list.scrollTop) <= 50;
             }
             return (list.scrollHeight - list.clientHeight - list.scrollTop) <= 50;
         }
