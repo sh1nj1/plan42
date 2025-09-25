@@ -14,6 +14,7 @@ class User < ApplicationRecord
   has_many :emails, dependent: :destroy
   has_many :inbox_items, foreign_key: :owner_id, dependent: :destroy, inverse_of: :owner
   has_many :invitations, foreign_key: :inviter_id, dependent: :destroy, inverse_of: :inviter
+  has_one :github_account, dependent: :destroy
 
   has_one_attached :avatar
 

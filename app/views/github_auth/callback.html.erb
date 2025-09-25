@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Github 연결</title>
+  </head>
+  <body>
+    <script>
+      try {
+        if (window.opener) {
+          window.opener.postMessage({ type: 'githubConnected' }, window.location.origin);
+        }
+      } catch (e) {
+        console.error('Failed to notify opener', e);
+      }
+      window.close();
+    </script>
+  </body>
+</html>

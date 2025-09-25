@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_24_000000) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_25_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -152,6 +152,33 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_24_000000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["user_id"], name: "index_emails_on_user_id"
+  end
+
+  create_table "github_accounts", force: :cascade do |t|
+    t.integer "user_id", null: false
+    t.string "github_uid", null: false
+    t.string "login", null: false
+    t.string "name"
+    t.string "avatar_url"
+    t.string "token", null: false
+    t.datetime "token_expires_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["github_uid"], name: "index_github_accounts_on_github_uid", unique: true
+    t.index ["user_id"], name: "index_github_accounts_on_user_id", unique: true
+  end
+
+  create_table "github_repository_links", force: :cascade do |t|
+    t.integer "creative_id", null: false
+    t.integer "github_account_id", null: false
+    t.bigint "repository_id"
+    t.string "repository_full_name", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["creative_id", "repository_full_name"], name: "index_github_links_on_creative_and_repo", unique: true
+    t.index ["creative_id"], name: "index_github_repository_links_on_creative_id"
+    t.index ["github_account_id"], name: "index_github_repository_links_on_github_account_id"
+    t.index ["repository_full_name"], name: "index_github_repository_links_on_repository_full_name"
   end
 
   create_table "inbox_items", force: :cascade do |t|
@@ -401,6 +428,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_24_000000) do
   add_foreign_key "creatives", "users"
   add_foreign_key "devices", "users"
   add_foreign_key "emails", "users"
+  add_foreign_key "github_accounts", "users"
+  add_foreign_key "github_repository_links", "creatives"
+  add_foreign_key "github_repository_links", "github_accounts"
   add_foreign_key "inbox_items", "users", column: "owner_id"
   add_foreign_key "invitations", "creatives"
   add_foreign_key "invitations", "users", column: "inviter_id"
