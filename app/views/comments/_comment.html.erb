@@ -10,8 +10,16 @@
          else
            t('comments.gemini')
          end %>
+    <% timestamp = comment.created_at.in_time_zone %>
     <strong><%= display_name %></strong>
-    <span>· <%= t('datetime.ago', time: time_ago_in_words(comment.created_at)) %></span>
+    <span>
+      · <%= content_tag(
+        :time,
+        t('datetime.ago', time: time_ago_in_words(timestamp)),
+        title: l(timestamp, format: :chat_timestamp),
+        datetime: timestamp.iso8601
+      ) %>
+    </span>
     <% if comment.private? %>
       <span class="private-label">[<%= t('comments.private') %>]</span>
     <% end %>
