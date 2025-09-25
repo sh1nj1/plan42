@@ -27,9 +27,18 @@ ko:
     avatar_url: "아바타 URL"
     update_profile: "프로파일 업데이트"
     index_title: "사용자 목록"
+    table_headers:
+      user: "사용자"
+      last_login: "마지막 로그인"
+      push_token: "푸시 토큰"
+      notifications: "알림 설정"
     last_login_at: "마지막 로그인: %{time}"
     push_token_present: "푸시 토큰 있음"
     push_token_absent: "푸시 토큰 없음"
+    never_logged_in: "로그인 기록 없음"
+    notifications_status:
+      enabled: "사용"
+      disabled: "미사용"
     display_level: "최대 표시 레벨"
     completion_mark: "완료 표시 문자"
     theme: "테마"

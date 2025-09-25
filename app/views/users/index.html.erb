@@ -4,19 +4,46 @@
 
 <h1 class="no-top-margin"><%= t('users.index_title') %></h1>
 
-<ul>
-  <% @users.each do |user| %>
-    <% last_login_at = user.sessions.max_by(&:updated_at)&.updated_at %>
-    <li>
-      <%= render AvatarComponent.new(
-            user: user,
-            size: 20,
-            classes: "avatar comment-presence-avatar#{' inactive' if user.sessions.empty?}" ) %>
-      <%= user.display_name %> (<%= user.email %>)
-      <% if last_login_at %>
-        - <%= t('users.last_login_at', time: I18n.l(last_login_at, format: :short)) %>
-      <% end %>
-      - <%= user.devices.any? ? t('users.push_token_present') : t('users.push_token_absent') %>
-    </li>
-  <% end %>
-</ul>
+<table class="users-table">
+  <thead>
+    <tr>
+      <th><%= t('users.table_headers.user') %></th>
+      <th><%= t('users.table_headers.last_login') %></th>
+      <th><%= t('users.table_headers.push_token') %></th>
+      <th><%= t('users.table_headers.notifications') %></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @users.each do |user| %>
+      <% last_login_at = user.sessions.max_by(&:updated_at)&.updated_at %>
+      <% notifications_enabled = ActiveModel::Type::Boolean.new.cast(user.notifications_enabled) %>
+      <tr>
+        <td>
+          <div class="users-table__user">
+            <%= render AvatarComponent.new(
+                  user: user,
+                  size: 32,
+                  classes: "avatar comment-presence-avatar#{' inactive' if user.sessions.empty?}" ) %>
+            <div class="users-table__identity">
+              <div class="users-table__name"><%= user.display_name %></div>
+              <div class="users-table__email"><%= user.email %></div>
+            </div>
+          </div>
+        </td>
+        <td>
+          <% if last_login_at %>
+            <%= I18n.l(last_login_at, format: :short) %>
+          <% else %>
+            <%= t('users.never_logged_in') %>
+          <% end %>
+        </td>
+        <td>
+          <%= user.devices.any? ? t('users.push_token_present') : t('users.push_token_absent') %>
+        </td>
+        <td>
+          <%= notifications_enabled ? t('users.notifications_status.enabled') : t('users.notifications_status.disabled') %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

@@ -442,3 +442,48 @@ input[type="password"] {
     width: 100%;
     max-width: 320px;
 }
+
+/* Users index table */
+.users-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1.5rem;
+}
+
+.users-table th,
+.users-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    text-align: left;
+    vertical-align: middle;
+}
+
+.users-table thead th {
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-muted);
+}
+
+.users-table__user {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.users-table__identity {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.users-table__name {
+    font-weight: 600;
+}
+
+.users-table__email {
+    font-size: 0.875rem;
+    color: var(--color-muted);
+    word-break: break-all;
+}

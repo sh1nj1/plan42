@@ -27,9 +27,18 @@ en:
     avatar_url: "Avatar URL"
     update_profile: "Update Profile"
     index_title: "Users"
+    table_headers:
+      user: "User"
+      last_login: "Last login"
+      push_token: "Push token"
+      notifications: "Notifications"
     last_login_at: "Last login: %{time}"
     push_token_present: "Push token present"
     push_token_absent: "No push token"
+    never_logged_in: "Never signed in"
+    notifications_status:
+      enabled: "Enabled"
+      disabled: "Disabled"
     display_level: "Max Display Level"
     completion_mark: "Completion Mark"
     theme: "Theme"
