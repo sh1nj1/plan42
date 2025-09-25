@@ -27,7 +27,6 @@ en:
     avatar_url: "Avatar URL"
     update_profile: "Update Profile"
     index_title: "Users"
-    last_login_at: "Last login: %{time}"
     push_token_present: "Push token present"
     push_token_absent: "No push token"
     display_level: "Max Display Level"
@@ -53,6 +52,17 @@ en:
     send_password_reset_instructions: "Email reset instructions"
     email_verified: "Email verified successfully."
     verification_invalid: "Verification link is invalid or has expired."
+    table:
+      avatar: "Avatar"
+      name: "Name"
+      email: "Email"
+      last_login_at: "Last login"
+      last_login_unknown: "Never"
+      push_token: "Push token"
+      notifications: "Notifications"
+      notifications_enabled: "Enabled"
+      notifications_disabled: "Disabled"
+      notifications_unset: "Not configured"
   user_mailer:
     email_verification:
       subject: "Verify your email"

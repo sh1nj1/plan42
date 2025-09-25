@@ -27,7 +27,6 @@ ko:
     avatar_url: "아바타 URL"
     update_profile: "프로파일 업데이트"
     index_title: "사용자 목록"
-    last_login_at: "마지막 로그인: %{time}"
     push_token_present: "푸시 토큰 있음"
     push_token_absent: "푸시 토큰 없음"
     display_level: "최대 표시 레벨"
@@ -53,6 +52,17 @@ ko:
     send_password_reset_instructions: "비밀번호 재설정 이메일 보내기"
     email_verified: "이메일 인증이 완료되었습니다."
     verification_invalid: "인증 링크가 유효하지 않거나 만료되었습니다."
+    table:
+      avatar: "아바타"
+      name: "이름"
+      email: "이메일"
+      last_login_at: "마지막 로그인"
+      last_login_unknown: "로그인 기록 없음"
+      push_token: "푸시 토큰"
+      notifications: "알림 설정"
+      notifications_enabled: "사용"
+      notifications_disabled: "사용 안 함"
+      notifications_unset: "설정되지 않음"
   user_mailer:
     email_verification:
       subject: "이메일 인증"
