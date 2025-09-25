@@ -8,10 +8,12 @@ module Github
     end
 
     def call
-      return unless HANDLED_ACTIONS.include?(payload["action"])
+      action = payload["action"]
+      return unless HANDLED_ACTIONS.include?(action)
 
       pr = payload["pull_request"]
       return unless pr
+      return if pr["merged"]
 
       repo_full_name = payload.dig("repository", "full_name")
       return unless repo_full_name

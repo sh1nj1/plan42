@@ -113,3 +113,24 @@ changes, and resend recent deliveries from the GitHub UI for quick testing.
 
 Once everything is configured, each pull request event triggers Gemini analysis
 and posts a summary as a comment on the linked creative.
+
+## 4. Manually trigger the webhook for local testing
+
+You can simulate a GitHub delivery against your local server without waiting
+for GitHub to send a real event. The helper script below generates a
+fully-signed `curl` command using the webhook secret stored in your
+credentials/environment.
+
+```bash
+script/github_webhook_curl --repo owner/repo "PR title" "PR description"
+```
+
+* `--repo` can be omitted if you have already linked a repository — the script
+  picks the first `GithubRepositoryLink` it finds.
+* Use `--number` to set the pull request number shown in the payload and
+  `--action` to test other supported webhook actions (defaults to `opened`).
+* Override the default URL (`http://localhost:3000/github/webhook`) with
+  `--url` when tunnelling through a service like ngrok.
+
+The script prints the command to run along with a valid `X-Hub-Signature-256`
+header so the `Github::WebhooksController` accepts the request.
