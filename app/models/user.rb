@@ -3,9 +3,17 @@ class User < ApplicationRecord
 
   has_secure_password
   has_many :sessions, dependent: :destroy
-  has_many :creatives
-  has_many :labels, foreign_key: :owner_id
+  has_many :calendar_events, dependent: :destroy
+  has_many :creatives, dependent: :destroy
+  has_many :labels, foreign_key: :owner_id, dependent: :destroy
   has_many :devices, dependent: :destroy
+  has_many :comment_read_pointers, dependent: :destroy
+  has_many :creative_expanded_states, dependent: :destroy
+  has_many :creative_shares, dependent: :destroy
+  has_many :comments, dependent: :destroy
+  has_many :emails, dependent: :destroy
+  has_many :inbox_items, foreign_key: :owner_id, dependent: :destroy, inverse_of: :owner
+  has_many :invitations, foreign_key: :inviter_id, dependent: :destroy, inverse_of: :inviter
 
   has_one_attached :avatar
 
@@ -17,6 +25,7 @@ class User < ApplicationRecord
   attribute :notifications_enabled, :boolean
   attribute :timezone, :string
   attribute :locale, :string
+  attribute :system_admin, :boolean, default: false
 
   attribute :google_uid, :string
   attribute :google_access_token, :string

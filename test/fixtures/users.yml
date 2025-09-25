@@ -4,8 +4,10 @@ one:
   email: one@example1.com
   password_digest: <%= password_digest %>
   name: One
+  system_admin: true
 
 two:
   email: two@example1.com
   password_digest: <%= password_digest %>
   name: Two
+  system_admin: false

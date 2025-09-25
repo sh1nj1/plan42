@@ -13,6 +13,7 @@
       <th><%= t('users.table.last_login_at') %></th>
       <th><%= t('users.table.push_token') %></th>
       <th><%= t('users.table.notifications') %></th>
+      <th><%= t('users.table.actions') %></th>
     </tr>
   </thead>
   <tbody>
@@ -43,6 +44,16 @@
             <%= t('users.table.notifications_disabled') %>
           <% else %>
             <%= t('users.table.notifications_unset') %>
+          <% end %>
+        </td>
+        <td>
+          <% if user != Current.user %>
+            <%= button_to t('users.delete'),
+                          user_path(user),
+                          method: :delete,
+                          form: { data: { turbo_confirm: t('users.confirm_destroy') } } %>
+          <% else %>
+            <span class="text-muted"><%= t('users.table.current_user') %></span>
           <% end %>
         </td>
       </tr>

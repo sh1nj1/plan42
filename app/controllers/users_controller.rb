@@ -1,5 +1,6 @@
 class UsersController < ApplicationController
   allow_unauthenticated_access only: [ :new, :create, :exists ]
+  before_action :require_system_admin!, only: [ :index, :destroy ]
 
   def new
     @user = User.new
@@ -52,6 +53,21 @@ class UsersController < ApplicationController
   # Show a single user
   def show
     @user = User.find(params[:id])
+  end
+
+  def destroy
+    @user = User.find(params[:id])
+
+    if @user == Current.user
+      redirect_to users_path, alert: t("users.destroy.cannot_delete_self")
+      return
+    end
+
+    if @user.destroy
+      redirect_to users_path, notice: t("users.destroy.success")
+    else
+      redirect_to users_path, alert: t("users.destroy.failure")
+    end
   end
 
   def update
