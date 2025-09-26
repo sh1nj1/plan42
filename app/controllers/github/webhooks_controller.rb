@@ -1,7 +1,11 @@
 module Github
   class WebhooksController < ActionController::API
     def create
-      event = request.headers["X-GitHub-Event"]
+      event = github_event_header
+      if event.blank?
+        Rails.logger.warn("GitHub event header missing; rejecting request")
+        return head :bad_request
+      end
       raw_body = request.raw_post.presence || request.body.read
       payload = parse_payload(raw_body)
       return head :unauthorized unless valid_signature?(raw_body, payload)
@@ -93,6 +97,11 @@ module Github
       end
 
       raw_body.present? ? JSON.parse(raw_body) : nil
+    end
+
+    def github_event_header
+      request.headers["X-GitHub-Event"].presence ||
+        request.get_header("HTTP_X_GITHUB_EVENT").presence
     end
   end
 end
