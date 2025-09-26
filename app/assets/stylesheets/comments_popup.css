@@ -84,11 +84,33 @@
 }
 
 .delete-comment-btn,
-.edit-comment-btn {
+.edit-comment-btn,
+.copy-comment-link-btn {
     border: none;
     background: none;
     font-weight: bold;
     cursor: pointer;
+}
+
+.comment-copy-notice {
+    position: absolute;
+    right: 0.2em;
+    bottom: 2.4em;
+    background: var(--color-section-bg);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 0.2em 0.6em;
+    font-size: 0.75em;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+}
+
+.comment-copy-notice.visible {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 .send-icon {

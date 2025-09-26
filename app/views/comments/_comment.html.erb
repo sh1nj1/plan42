@@ -30,6 +30,9 @@
       <button class="edit-comment-btn" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('comments.update_comment') %>">
         <%= t('comments.edit_button') %>
       </button>
+      <button class="copy-comment-link-btn" data-comment-id="<%= comment.id %>" data-comment-url="<%= creative_comment_url(comment.creative, comment) %>" title="<%= t('comments.copy_link_button') %>">
+        <%= t('comments.copy_link_button') %>
+      </button>
       <button class="delete-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.delete') %>">
         <%= t('comments.delete_button') %>
       </button>
