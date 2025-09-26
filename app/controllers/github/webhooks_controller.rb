@@ -75,8 +75,24 @@ module Github
     end
 
     def parse_payload(raw_body)
-      request.request_parameters.presence ||
-        (raw_body.present? ? JSON.parse(raw_body) : nil)
+      params = request.request_parameters
+      parsed_params =
+        case params
+        when ActionController::Parameters
+          params.to_unsafe_h
+        else
+          params
+        end
+
+      if parsed_params.present?
+        wrapper_payload = parsed_params.with_indifferent_access[:payload]
+        return wrapper_payload if wrapper_payload.is_a?(Hash)
+        return JSON.parse(wrapper_payload) if wrapper_payload.is_a?(String)
+
+        return parsed_params
+      end
+
+      raw_body.present? ? JSON.parse(raw_body) : nil
     end
   end
 end

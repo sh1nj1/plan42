@@ -1,4 +1,5 @@
 require "test_helper"
+require "uri"
 
 class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
   setup do
@@ -57,5 +58,27 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
          }
 
     assert_response :unauthorized
+  end
+
+  test "accepts webhook when payload is form encoded" do
+    payload_json = @payload.to_json
+    form_body = URI.encode_www_form(payload: payload_json)
+    signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, form_body)}"
+    processor = Minitest::Mock.new
+    processor.expect(:call, true)
+
+    Github::PullRequestProcessor.stub :new, ->(*) { processor } do
+      post github_webhook_path,
+           params: { payload: payload_json },
+           headers: {
+             "CONTENT_TYPE" => "application/x-www-form-urlencoded",
+             "HTTP_X_GITHUB_EVENT" => "pull_request",
+             "HTTP_X_HUB_SIGNATURE_256" => signature
+           }
+
+      assert_response :success
+    end
+
+    processor.verify
   end
 end
