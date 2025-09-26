@@ -17,13 +17,17 @@ if (!window.githubIntegrationInitialized) {
     const repoList = document.getElementById('github-repository-list');
     const summaryList = document.getElementById('github-selected-repos');
     const summaryEmpty = document.getElementById('github-summary-empty');
+    const summaryInstructions = document.getElementById('github-webhook-instructions');
     const errorEl = document.getElementById('github-wizard-error');
+    const webhookUrlLabel = modal.dataset.webhookUrlLabel || 'Webhook URL';
+    const webhookSecretLabel = modal.dataset.webhookSecretLabel || 'Webhook secret';
 
     let creativeId = null;
     let currentStep = 'connect';
     let organizations = [];
     let selectedOrg = null;
     let selectedRepos = new Set();
+    let webhookDetails = {};
 
     function csrfToken() {
       return document.querySelector('meta[name="csrf-token"]')?.content;
@@ -34,9 +38,11 @@ if (!window.githubIntegrationInitialized) {
       organizations = [];
       selectedOrg = null;
       selectedRepos = new Set();
+      webhookDetails = {};
       statusEl.textContent = '';
       errorEl.style.display = 'none';
       errorEl.textContent = '';
+      if (summaryInstructions) summaryInstructions.style.display = 'none';
       updateStep();
     }
 
@@ -109,6 +115,7 @@ if (!window.githubIntegrationInitialized) {
           statusEl.textContent = data.account && data.account.login ?
             `${data.account.login} 님의 Github 계정과 연동됩니다.` : '';
           selectedRepos = new Set(data.selected_repositories || []);
+          webhookDetails = data.webhooks || {};
           currentStep = 'organization';
           updateStep();
           loadOrganizations();
@@ -222,14 +229,56 @@ if (!window.githubIntegrationInitialized) {
       const repos = Array.from(selectedRepos);
       if (!repos.length) {
         summaryEmpty.style.display = 'block';
+        if (summaryInstructions) summaryInstructions.style.display = 'none';
         return;
       }
       summaryEmpty.style.display = 'none';
+      if (summaryInstructions) summaryInstructions.style.display = 'block';
       repos.forEach(function (fullName) {
         const li = document.createElement('li');
-        li.textContent = fullName;
+        const title = document.createElement('strong');
+        title.textContent = fullName;
+        li.appendChild(title);
+
+        const details = webhookDetails[fullName] || {};
+        const urlValue = details.url;
+        const secretValue = details.secret;
+
+        if (urlValue || secretValue) {
+          const detailsContainer = document.createElement('div');
+          detailsContainer.className = 'github-webhook-details';
+          detailsContainer.style.marginTop = '0.3em';
+
+          if (urlValue) {
+            detailsContainer.appendChild(createWebhookDetail(webhookUrlLabel, urlValue));
+          }
+
+          if (secretValue) {
+            detailsContainer.appendChild(createWebhookDetail(webhookSecretLabel, secretValue));
+          }
+
+          li.appendChild(detailsContainer);
+        }
+
         summaryList.appendChild(li);
       });
+    }
+
+    function createWebhookDetail(label, value) {
+      const row = document.createElement('div');
+      row.className = 'github-webhook-detail-row';
+
+      const labelEl = document.createElement('span');
+      labelEl.textContent = `${label}: `;
+      labelEl.style.fontWeight = '600';
+
+      const codeEl = document.createElement('code');
+      codeEl.textContent = value;
+
+      row.appendChild(labelEl);
+      row.appendChild(codeEl);
+
+      return row;
     }
 
     function saveSelection() {
@@ -249,8 +298,10 @@ if (!window.githubIntegrationInitialized) {
             showError(result.body.error || '연동 저장 중 오류가 발생했습니다.');
             return;
           }
+          selectedRepos = new Set(result.body.selected_repositories || []);
+          webhookDetails = result.body.webhooks || {};
+          updateSummary();
           alert(modal.dataset.successMessage);
-          closeModal();
         })
         .catch(function () {
           showError('연동 정보를 저장하지 못했습니다.');

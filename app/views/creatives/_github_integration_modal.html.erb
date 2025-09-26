@@ -2,6 +2,8 @@
      data-success-message="<%= t('creatives.index.github_integration_saved', default: 'Github 연동이 저장되었습니다.') %>"
      data-login-required="<%= t('creatives.index.github_integration_login_required', default: 'Github 계정 연동이 필요합니다.') %>"
      data-no-creative="<%= t('creatives.index.github_integration_missing_creative', default: '연동할 Creative가 선택되지 않았습니다.') %>"
+     data-webhook-url-label="<%= t('creatives.index.github_integration_webhook_url_label', default: 'Webhook URL') %>"
+     data-webhook-secret-label="<%= t('creatives.index.github_integration_webhook_secret_label', default: 'Webhook 비밀값') %>"
      style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
   <div class="popup-box" style="min-width:360px;max-width:90vw;">
     <button type="button" id="close-github-modal" class="popup-close-btn">&times;</button>
@@ -30,6 +32,7 @@
 
     <div class="github-wizard-step" id="github-step-summary" style="display:none;">
       <p><%= t('creatives.index.github_integration_summary', default: '다음 Repository가 현재 Creative와 연동됩니다:') %></p>
+      <p id="github-webhook-instructions" style="display:none;color:#555;margin-bottom:0.5em;"><%= t('creatives.index.github_integration_webhook_instructions', default: '각 Repository에 아래의 Webhook 정보를 설정하세요.') %></p>
       <ul id="github-selected-repos" style="padding-left:1.2em;"></ul>
       <p id="github-summary-empty" style="display:none;color:#777;"><%= t('creatives.index.github_integration_summary_empty', default: '선택된 Repository가 없습니다.') %></p>
     </div>

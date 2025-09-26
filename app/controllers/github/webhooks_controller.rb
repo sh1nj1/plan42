@@ -3,10 +3,9 @@ module Github
     def create
       event = request.headers["X-GitHub-Event"]
       raw_body = request.raw_post.presence || request.body.read
-      return head :unauthorized unless valid_signature?(raw_body)
-
-      payload = request.request_parameters.presence
-      payload ||= raw_body.present? ? JSON.parse(raw_body) : {}
+      payload = parse_payload(raw_body)
+      return head :unauthorized unless valid_signature?(raw_body, payload)
+      payload = payload.presence || {}
 
       case event
       when "pull_request"
@@ -22,8 +21,8 @@ module Github
 
     private
 
-    def valid_signature?(raw_body)
-      secret = webhook_secret
+    def valid_signature?(raw_body, payload)
+      secret = webhook_secret(payload)
       signature_header = request.headers["X-Hub-Signature-256"] || request.headers["X-Hub-Signature"]
 
       if secret.blank?
@@ -48,8 +47,29 @@ module Github
       ActiveSupport::SecurityUtils.secure_compare(expected_signature, signature_header)
     end
 
-    def webhook_secret
+    def webhook_secret(payload)
+      repository_secret(payload) || fallback_webhook_secret
+    end
+
+    def repository_secret(payload)
+      return if payload.blank?
+
+      repo = payload["repository"] || payload[:repository]
+      return if repo.blank?
+
+      full_name = repo["full_name"] || repo[:full_name]
+      return if full_name.blank?
+
+      GithubRepositoryLink.find_by(repository_full_name: full_name)&.webhook_secret
+    end
+
+    def fallback_webhook_secret
       Rails.application.credentials.dig(:github, :webhook_secret) || ENV["GITHUB_WEBHOOK_SECRET"]
+    end
+
+    def parse_payload(raw_body)
+      request.request_parameters.presence ||
+        (raw_body.present? ? JSON.parse(raw_body) : nil)
     end
   end
 end
