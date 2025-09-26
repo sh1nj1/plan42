@@ -32,19 +32,22 @@ module Github
 
       return false if signature_header.blank?
 
-      algorithm =
-        if signature_header.start_with?("sha256=")
-          "sha256"
-        elsif signature_header.start_with?("sha1=")
-          "sha1"
-        end
+      algorithm, provided_digest = signature_header.to_s.split("=", 2)
+      algorithm = algorithm.to_s.downcase
+      provided_digest = provided_digest.to_s.strip.downcase
 
-      return false if algorithm.blank?
+      return false if provided_digest.blank?
 
-      digest = OpenSSL::HMAC.hexdigest(algorithm.upcase, secret, raw_body)
-      expected_signature = "#{algorithm}=#{digest}"
+      return false unless %w[sha256 sha1].include?(algorithm)
 
-      ActiveSupport::SecurityUtils.secure_compare(expected_signature, signature_header)
+      expected_digest =
+        OpenSSL::HMAC.hexdigest(OpenSSL::Digest.new(algorithm), secret, raw_body)
+
+      return false if expected_digest.bytesize != provided_digest.bytesize
+
+      ActiveSupport::SecurityUtils.secure_compare(expected_digest, provided_digest)
+    rescue ArgumentError
+      false
     end
 
     def webhook_secret(payload)
