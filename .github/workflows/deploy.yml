@@ -37,4 +37,4 @@ jobs:
           bundler-cache: true
 
       - name: Deploy with Kamal
-        run: GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} SERVER_VRERV1=${{ secrets.SERVER_VRERV1 }} ./bin/kamal deploy
+        run: GITHUB_CLIENT_ID=${{ secrets.GITHUB_CLIENT_ID }} GITHUB_CLIENT_SECRET=${{ secrets.GITHUB_CLIENT_SECRET }} GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} SERVER_VRERV1=${{ secrets.SERVER_VRERV1 }} ./bin/kamal deploy
