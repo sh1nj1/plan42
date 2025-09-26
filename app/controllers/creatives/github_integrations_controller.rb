@@ -50,6 +50,12 @@ module Creatives
         links = linked_repository_links(account).to_a
       end
 
+      Github::WebhookProvisioner.ensure_for_links(
+        account: account,
+        links: links,
+        webhook_url: github_webhook_url
+      ) if links.present?
+
       render json: {
         success: true,
         selected_repositories: links.map(&:repository_full_name),

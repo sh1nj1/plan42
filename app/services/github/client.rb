@@ -59,6 +59,46 @@ module Github
       nil
     end
 
+    def repository_hooks(repo_full_name)
+      client.hooks(repo_full_name)
+    rescue Octokit::Error => e
+      Rails.logger.warn("GitHub hooks fetch failed for #{repo_full_name}: #{e.message}")
+      []
+    end
+
+    def create_repository_webhook(repo_full_name, url:, secret:, events:, content_type: "json")
+      client.create_hook(
+        repo_full_name,
+        "web",
+        {
+          url: url,
+          content_type: content_type,
+          secret: secret
+        },
+        {
+          events: events,
+          active: true
+        }
+      )
+    end
+
+    def update_repository_webhook(repo_full_name, hook_id, url:, secret:, events:, content_type: "json")
+      client.edit_hook(
+        repo_full_name,
+        hook_id,
+        "web",
+        {
+          url: url,
+          content_type: content_type,
+          secret: secret
+        },
+        {
+          events: events,
+          active: true
+        }
+      )
+    end
+
     private
 
     attr_reader :client
