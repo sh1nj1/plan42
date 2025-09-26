@@ -1,6 +1,7 @@
 Rails.application.routes.draw do
   resource :session
-  match "/auth/:provider/callback", to: "google_auth#callback", via: [ :get, :post ]
+  match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
+  match "/auth/github/callback", to: "github_auth#callback", via: [ :get, :post ]
   resources :passwords, param: :token
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 
@@ -32,6 +33,7 @@ Rails.application.routes.draw do
   end
 
   resources :creatives do
+    resource :github_integration, only: [ :show, :update ], module: :creatives
     resources :subscribers, only: [ :create ]
     resources :creative_shares, only: [ :create, :destroy ]
       resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
@@ -77,6 +79,14 @@ Rails.application.routes.draw do
   resource :unsubscribe, only: [ :show ]
   resource :invite, only: [ :show, :create ]
   resource :verify, controller: "email_verifications", only: [ :show ]
+
+  namespace :github do
+    resource :account, only: [ :show ] do
+      get :organizations
+      get :repositories
+    end
+    post :webhook, to: "webhooks#create"
+  end
 
   post "/creative_expanded_states/toggle", to: "creative_expanded_states#toggle"
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"

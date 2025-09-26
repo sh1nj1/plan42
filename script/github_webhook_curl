@@ -1,0 +1,111 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "optparse"
+require "json"
+require "openssl"
+require "shellwords"
+
+require_relative "../config/environment"
+
+options = {
+  repo: nil,
+  number: 1,
+  action: "opened",
+  url: "http://localhost:3000/github/webhook",
+  html_url: nil
+}
+
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: script/github_webhook_curl [options] \"PR Title\" \"PR Description\""
+
+  opts.on("--repo=FULL_NAME", "Repository full name (owner/name). Defaults to the first linked repository.") do |value|
+    options[:repo] = value
+  end
+
+  opts.on("--number=N", Integer, "Pull request number used in the payload (default: 1).") do |value|
+    options[:number] = value
+  end
+
+  opts.on("--action=ACTION", "GitHub pull_request action (default: opened).") do |value|
+    options[:action] = value
+  end
+
+  opts.on("--url=URL", "Webhook URL (default: http://localhost:3000/github/webhook).") do |value|
+    options[:url] = value
+  end
+
+  opts.on("--html-url=URL", "Optional html_url for the pull request. Defaults to https://github.com/<repo>/pull/<number>.") do |value|
+    options[:html_url] = value
+  end
+
+  opts.on("-h", "--help", "Show this help message.") do
+    puts opts
+    exit
+  end
+end
+
+parser.parse!
+
+title = ARGV.shift
+body = ARGV.shift
+
+if title.nil?
+  warn "error: pull request title is required"
+  warn parser
+  exit 1
+end
+
+body ||= ""
+
+repo_full_name = options[:repo]
+repo_full_name ||= GithubRepositoryLink.first&.repository_full_name
+
+if repo_full_name.blank?
+  warn "error: unable to determine repository full name. Pass --repo or link a repository first."
+  exit 1
+end
+
+webhook_secret = Rails.application.credentials.dig(:github, :webhook_secret) || ENV["GITHUB_WEBHOOK_SECRET"]
+
+if webhook_secret.blank?
+  warn "error: configure GITHUB_WEBHOOK_SECRET or github.webhook_secret in credentials"
+  exit 1
+end
+
+pr_number = options[:number]
+html_url = options[:html_url] || "https://github.com/#{repo_full_name}/pull/#{pr_number}"
+
+event_payload = {
+  "action" => options[:action],
+  "pull_request" => {
+    "number" => pr_number,
+    "title" => title,
+    "body" => body,
+    "html_url" => html_url
+  },
+  "repository" => {
+    "full_name" => repo_full_name
+  }
+}
+
+payload_json = JSON.generate(event_payload)
+
+digest = OpenSSL::HMAC.hexdigest("SHA256", webhook_secret, payload_json)
+signature = "sha256=#{digest}"
+
+url_argument = Shellwords.escape(options[:url])
+data_argument = Shellwords.escape(payload_json)
+
+puts "# Run this command to post the simulated webhook payload:\n"
+puts <<~COMMAND
+  curl -X POST #{url_argument} \\
+    -H 'Content-Type: application/json' \\
+    -H 'X-GitHub-Event: pull_request' \\
+    -H 'X-Hub-Signature-256: #{signature}' \\
+    --data #{data_argument}
+COMMAND
+
+puts "\n# Action: #{options[:action]}"
+puts "# Repository: #{repo_full_name}"
+puts "# Pull request ##{pr_number}: #{title}"
