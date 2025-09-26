@@ -81,4 +81,18 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
 
     processor.verify
   end
+
+  test "rejects webhook when event header missing" do
+    body = @payload.to_json
+    signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
+
+    post github_webhook_path,
+         params: body,
+         headers: {
+           "CONTENT_TYPE" => "application/json",
+           "HTTP_X_HUB_SIGNATURE_256" => signature
+         }
+
+    assert_response :bad_request
+  end
 end
