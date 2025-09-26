@@ -12,6 +12,9 @@ if (!window.commentsInitialized) {
             });
         });
         var currentBtn = null;
+        let resetForm;
+        let loadInitialComments;
+        let markCommentsRead;
         function updatePosition() {
             if (!currentBtn || isMobile() || popup.dataset.resized === 'true') return;
             var rect = currentBtn.getBoundingClientRect();
@@ -522,7 +525,7 @@ if (!window.commentsInitialized) {
                     .then(r => r.text());
             }
 
-            function markCommentsRead() {
+            markCommentsRead = function markCommentsRead() {
                 fetch('/comment_read_pointers/update', {
                     method: 'POST',
                     headers: {
@@ -531,7 +534,7 @@ if (!window.commentsInitialized) {
                     },
                     body: JSON.stringify({ creative_id: popup.dataset.creativeId })
                 });
-            }
+            };
 
             function checkAllLoaded(html) {
                 if ((html.match(/class="comment-item /g) || []).length < 10) {
@@ -539,7 +542,7 @@ if (!window.commentsInitialized) {
                 }
             }
 
-            function loadInitialComments(highlightId) {
+            loadInitialComments = function loadInitialComments(highlightId) {
                 currentPage = 1;
                 allLoaded = false;
                 list.innerHTML = popup.dataset.loadingText;
@@ -567,7 +570,7 @@ if (!window.commentsInitialized) {
                     checkAllLoaded(html);
                     markCommentsRead();
                 });
-            }
+            };
 
             function loadMoreComments() {
                 if (loadingMore || allLoaded) return;
@@ -587,12 +590,12 @@ if (!window.commentsInitialized) {
                 });
             }
 
-            function resetForm() {
+            resetForm = function resetForm() {
                 form.reset();
                 editingId = null;
                 submitBtn.innerHTML = defaultSubmitBtnHTML;
                 if (cancelBtn) { cancelBtn.style.display = 'none'; }
-            }
+            };
 
             let sending = false;
             const send = function(e) {
