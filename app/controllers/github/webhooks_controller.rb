@@ -3,7 +3,7 @@ module Github
     def create
       event = request.headers["X-GitHub-Event"]
       raw_body = request.raw_post.presence || request.body.read
-      payload = parse_payload(raw_body)
+      payload = parse_payload(raw_body)["payload"]
       return head :unauthorized unless valid_signature?(raw_body, payload)
       payload = payload.presence || {}
 
