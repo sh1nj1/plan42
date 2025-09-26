@@ -33,6 +33,32 @@ module Github
       nil
     end
 
+    def pull_request_commit_messages(repo_full_name, number)
+      client
+        .pull_request_commits(repo_full_name, number)
+        .map { |commit| commit.commit&.message }
+        .compact
+    rescue Octokit::Error => e
+      Rails.logger.warn("GitHub PR commits fetch failed: #{e.message}")
+      []
+    end
+
+    def pull_request_diff(repo_full_name, number)
+      files = client.pull_request_files(repo_full_name, number)
+      formatted = files.filter_map do |file|
+        next unless file.patch.present?
+
+        <<~DIFF.strip
+          diff --git a/#{file.filename} b/#{file.filename}
+          #{file.patch}
+        DIFF
+      end
+      formatted.join("\n\n").presence
+    rescue Octokit::Error => e
+      Rails.logger.warn("GitHub PR files fetch failed: #{e.message}")
+      nil
+    end
+
     private
 
     attr_reader :client
