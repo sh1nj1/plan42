@@ -1,3 +1,5 @@
+import { copyTextToClipboard } from './utils/clipboard';
+
 if (!window.commentsInitialized) {
     window.commentsInitialized = true;
 
@@ -10,6 +12,9 @@ if (!window.commentsInitialized) {
             });
         });
         var currentBtn = null;
+        let resetForm;
+        let loadInitialComments;
+        let markCommentsRead;
         function updatePosition() {
             if (!currentBtn || isMobile() || popup.dataset.resized === 'true') return;
             var rect = currentBtn.getBoundingClientRect();
@@ -86,6 +91,27 @@ if (!window.commentsInitialized) {
         var form = document.getElementById('new-comment-form');
 
         if (!popup || !list || !form) { return; }
+
+        function showCopyFeedback(commentElement, message) {
+            if (!commentElement || !message) return;
+            var existing = commentElement.querySelector('.comment-copy-notice');
+            if (existing) {
+                existing.remove();
+            }
+            var notice = document.createElement('div');
+            notice.className = 'comment-copy-notice';
+            notice.textContent = message;
+            commentElement.appendChild(notice);
+            requestAnimationFrame(function() {
+                notice.classList.add('visible');
+            });
+            setTimeout(function() {
+                notice.classList.remove('visible');
+            }, 2000);
+            setTimeout(function() {
+                notice.remove();
+            }, 2400);
+        }
 
         var closeBtn = document.getElementById('close-comments-btn');
         var participants = document.getElementById('comment-participants');
@@ -499,7 +525,7 @@ if (!window.commentsInitialized) {
                     .then(r => r.text());
             }
 
-            function markCommentsRead() {
+            markCommentsRead = function markCommentsRead() {
                 fetch('/comment_read_pointers/update', {
                     method: 'POST',
                     headers: {
@@ -508,7 +534,7 @@ if (!window.commentsInitialized) {
                     },
                     body: JSON.stringify({ creative_id: popup.dataset.creativeId })
                 });
-            }
+            };
 
             function checkAllLoaded(html) {
                 if ((html.match(/class="comment-item /g) || []).length < 10) {
@@ -516,7 +542,7 @@ if (!window.commentsInitialized) {
                 }
             }
 
-            function loadInitialComments(highlightId) {
+            loadInitialComments = function loadInitialComments(highlightId) {
                 currentPage = 1;
                 allLoaded = false;
                 list.innerHTML = popup.dataset.loadingText;
@@ -544,7 +570,7 @@ if (!window.commentsInitialized) {
                     checkAllLoaded(html);
                     markCommentsRead();
                 });
-            }
+            };
 
             function loadMoreComments() {
                 if (loadingMore || allLoaded) return;
@@ -564,12 +590,12 @@ if (!window.commentsInitialized) {
                 });
             }
 
-            function resetForm() {
+            resetForm = function resetForm() {
                 form.reset();
                 editingId = null;
                 submitBtn.innerHTML = defaultSubmitBtnHTML;
                 if (cancelBtn) { cancelBtn.style.display = 'none'; }
-            }
+            };
 
             let sending = false;
             const send = function(e) {
@@ -630,10 +656,36 @@ if (!window.commentsInitialized) {
             form.onsubmit = send;
             // 이벤트 위임 방식으로 삭제 버튼 처리
             list.addEventListener('click', function(e) {
-                if (e.target.classList.contains('delete-comment-btn')) {
+                var target = e.target instanceof Element ? e.target : e.target.parentElement;
+                if (!target) return;
+
+                var copyBtn = target.closest('.copy-comment-link-btn');
+                if (copyBtn) {
+                    e.preventDefault();
+                    var url = copyBtn.getAttribute('data-comment-url');
+                    var commentId = copyBtn.getAttribute('data-comment-id');
+                    if (!url && commentId && popup.dataset.creativeId) {
+                        var baseUrl = new URL(window.location.origin + '/creatives/' + popup.dataset.creativeId);
+                        baseUrl.searchParams.set('comment_id', commentId);
+                        baseUrl.hash = 'comment_' + commentId;
+                        url = baseUrl.toString();
+                    }
+                    if (!url) { return; }
+                    var commentElement = copyBtn.closest('.comment-item');
+                    copyTextToClipboard(url)
+                        .then(function() {
+                            showCopyFeedback(commentElement, popup.dataset.copyLinkSuccessText);
+                        })
+                        .catch(function() {
+                            showCopyFeedback(commentElement, popup.dataset.copyLinkErrorText);
+                        });
+                    return;
+                }
+
+                if (target.classList.contains('delete-comment-btn')) {
                     e.preventDefault();
                     if (!confirm(popup.dataset.deleteConfirmText)) return;
-                    var btn = e.target;
+                    var btn = target;
                     var commentId = btn.getAttribute('data-comment-id');
                     var creativeId = popup.dataset.creativeId;
                     fetch(`/creatives/${creativeId}/comments/${commentId}`, {
@@ -646,10 +698,10 @@ if (!window.commentsInitialized) {
                             // TODO: handle error
                         }
                     });
-               } else if (e.target.classList.contains('convert-comment-btn')) {
+               } else if (target.classList.contains('convert-comment-btn')) {
                    e.preventDefault();
                     if (!confirm(popup.dataset.convertConfirmText)) return;
-                   var btn = e.target;
+                   var btn = target;
                    var commentId = btn.getAttribute('data-comment-id');
                    var creativeId = popup.dataset.creativeId;
                    fetch(`/creatives/${creativeId}/comments/${commentId}/convert`, {
@@ -660,9 +712,9 @@ if (!window.commentsInitialized) {
                             loadInitialComments();
                         }
                     });
-                } else if (e.target.classList.contains('edit-comment-btn')) {
+                } else if (target.classList.contains('edit-comment-btn')) {
                     e.preventDefault();
-                    var btn = e.target;
+                    var btn = target;
                     editingId = btn.getAttribute('data-comment-id');
                     textarea.value = btn.getAttribute('data-comment-content');
                     submitBtn.textContent = popup.dataset.updateCommentText;

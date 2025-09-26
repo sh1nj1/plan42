@@ -23,14 +23,17 @@
     <% if comment.private? %>
       <span class="private-label">[<%= t('comments.private') %>]</span>
     <% end %>
-    <div class="comment-action-container" data-comment-target="actions" style="display: none;">
-      <button class="convert-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.convert_to_creative') %>">
+    <div class="comment-action-container">
+      <button class="convert-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('comments.convert_to_creative') %>">
         <%= t('comments.convert_button') %>
       </button>
-      <button class="edit-comment-btn" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('comments.update_comment') %>">
+      <button class="edit-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('comments.update_comment') %>">
         <%= t('comments.edit_button') %>
       </button>
-      <button class="delete-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.delete') %>">
+      <button class="copy-comment-link-btn" data-comment-id="<%= comment.id %>" data-comment-url="<%= creative_comment_url(comment.creative, comment) %>" title="<%= t('comments.copy_link_button') %>">
+        <%= t('comments.copy_link_button') %>
+      </button>
+      <button class="delete-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('comments.delete') %>">
         <%= t('comments.delete_button') %>
       </button>
     </div>
