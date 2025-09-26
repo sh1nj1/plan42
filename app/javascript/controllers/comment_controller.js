@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = [ "actions" ]
+  static targets = [ "ownerButton" ]
 
   connect() {
     // Render Markdown
@@ -21,7 +21,9 @@ export default class extends Controller {
     const commentAuthorId = this.element.dataset.userId;
 
     if (currentUserId && commentAuthorId && currentUserId === commentAuthorId) {
-      this.actionsTarget.style.display = 'inline-flex'; // Use inline-flex for better alignment
+      this.ownerButtonTargets.forEach((button) => {
+        button.classList.remove('comment-owner-only')
+      })
     }
   }
 }

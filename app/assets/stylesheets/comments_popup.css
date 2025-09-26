@@ -92,6 +92,10 @@
     cursor: pointer;
 }
 
+.comment-owner-only {
+    display: none;
+}
+
 .comment-copy-notice {
     position: absolute;
     right: 0.2em;
