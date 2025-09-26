@@ -58,16 +58,15 @@ module Github
     def repository_secret(payload)
       return if payload.blank?
 
-      Rails.logger.info("GitHub webhook payload: #{payload}")
       repo = payload["repository"] || payload[:repository]
       if repo.blank?
-        Rails.logger.warn("GitHub webhook repository missing; rejecting request")
+        Rails.logger.warn("GitHub webhook repository missing; rejecting request. payload=#{payload}")
         return
       end
 
       full_name = repo["full_name"] || repo[:full_name]
       if full_name.blank?
-        Rails.logger.warn("GitHub webhook repository full name missing; rejecting request")
+        Rails.logger.warn("GitHub webhook repository full name missing; rejecting request. payload=#{payload}")
         return
       end
 
