@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_25_000000) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_27_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -175,6 +175,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_25_000000) do
     t.string "repository_full_name", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "webhook_secret", null: false
     t.index ["creative_id", "repository_full_name"], name: "index_github_links_on_creative_and_repo", unique: true
     t.index ["creative_id"], name: "index_github_repository_links_on_creative_id"
     t.index ["github_account_id"], name: "index_github_repository_links_on_github_account_id"
