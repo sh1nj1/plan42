@@ -70,10 +70,19 @@
                     },
                     body: JSON.stringify({ creative_id: creativeId, permission: permission })
                 }).then(r => r.json()).then(data => {
-                    navigator.clipboard.writeText(data.url).then(function() {
-                        const template = '<%= j t('creatives.index.invite_link_copied_permission', permission: '__PERMISSION__') %>';
-                        alert(template.replace('__PERMISSION__', permissionLabel));
-                    });
+                    const plan42Copy = window.Plan42 && window.Plan42.copyTextToClipboard;
+                    let copyPromise = null;
+                    if (plan42Copy) {
+                        copyPromise = plan42Copy(data.url);
+                    } else if (navigator.clipboard && navigator.clipboard.writeText) {
+                        copyPromise = navigator.clipboard.writeText(data.url);
+                    }
+                    if (copyPromise) {
+                        copyPromise.then(function() {
+                            const template = '<%= j t('creatives.index.invite_link_copied_permission', permission: '__PERMISSION__') %>';
+                            alert(template.replace('__PERMISSION__', permissionLabel));
+                        });
+                    }
                 });
             };
         }
