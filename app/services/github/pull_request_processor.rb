@@ -37,7 +37,19 @@ module Github
       paths = Creatives::PathExporter.new(creative).paths
       return if paths.blank?
 
-      analyzer = Github::PullRequestAnalyzer.new(payload: payload, creative: creative, paths: paths)
+      repo_full_name = payload.dig("repository", "full_name")
+      pr = payload["pull_request"]
+      client = Github::Client.new(link.github_account)
+      commit_messages = client.pull_request_commit_messages(repo_full_name, pr["number"])
+      diff = client.pull_request_diff(repo_full_name, pr["number"])
+
+      analyzer = Github::PullRequestAnalyzer.new(
+        payload: payload,
+        creative: creative,
+        paths: paths,
+        commit_messages: commit_messages,
+        diff: diff
+      )
       result = analyzer.call
       return unless result
 

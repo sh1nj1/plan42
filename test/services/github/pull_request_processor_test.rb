@@ -28,12 +28,23 @@ module Github
 
       fake_analyzer = Minitest::Mock.new
       fake_analyzer.expect(:call, result)
+      fake_client = Minitest::Mock.new
+      fake_client.expect(:pull_request_commit_messages, [ "Initial commit" ], [ "org/repo", 12 ])
+      fake_client.expect(:pull_request_diff, "diff --git a/file.rb b/file.rb\n+change", [ "org/repo", 12 ])
 
-      Github::PullRequestAnalyzer.stub(:new, ->(*) { fake_analyzer }) do
-        Github::PullRequestProcessor.new(payload: payload).call
+      analyzer_args = nil
+
+      Github::Client.stub(:new, ->(_) { fake_client }) do
+        Github::PullRequestAnalyzer.stub(:new, ->(**kwargs) { analyzer_args = kwargs; fake_analyzer }) do
+          Github::PullRequestProcessor.new(payload: payload).call
+        end
       end
 
       fake_analyzer.verify
+      fake_client.verify
+
+      assert_equal [ "Initial commit" ], analyzer_args[:commit_messages]
+      assert_equal "diff --git a/file.rb b/file.rb\n+change", analyzer_args[:diff]
 
       comment = creative.comments.last
       assert comment.present?

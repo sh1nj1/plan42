@@ -4,10 +4,14 @@ module Github
   class PullRequestAnalyzer
     Result = Struct.new(:completed, :additional, :raw_response, keyword_init: true)
 
-    def initialize(payload:, creative:, paths:, client: GeminiChatClient.new, logger: Rails.logger)
+    DIFF_MAX_LENGTH = 10_000
+
+    def initialize(payload:, creative:, paths:, commit_messages: [], diff: nil, client: GeminiChatClient.new, logger: Rails.logger)
       @payload = payload
       @creative = creative
       @paths = paths
+      @commit_messages = Array(commit_messages)
+      @diff = diff
       @client = client
       @logger = logger
     end
@@ -29,7 +33,7 @@ module Github
 
     private
 
-    attr_reader :payload, :creative, :paths, :client, :logger
+    attr_reader :payload, :creative, :paths, :commit_messages, :diff, :client, :logger
 
     def collect_response
       messages = build_messages
@@ -47,12 +51,20 @@ module Github
       pr = payload["pull_request"]
       tree_lines = paths.map { |path| "- #{path}" }.join("\n")
       pr_body = pr["body"].to_s
+      commit_lines = formatted_commit_messages
+      diff_text = formatted_diff
 
       prompt = <<~PROMPT
         You are reviewing a GitHub pull request and mapping it to Creative tasks.
         Pull request title: #{pr["title"]}
         Pull request body:
         #{pr_body}
+
+        Pull request commit messages:
+        #{commit_lines}
+
+        Pull request diff:
+        #{diff_text}
 
         Creative task paths (each line is a single task path from root to leaf):
         #{tree_lines}
@@ -80,6 +92,26 @@ module Github
       return text unless start_index && end_index && end_index >= start_index
 
       text[start_index..end_index]
+    end
+
+    def formatted_commit_messages
+      return "No commit messages available." if commit_messages.blank?
+
+      commit_messages.map.with_index(1) do |message, index|
+        "#{index}. #{message.to_s.strip}"
+      end.join("\n")
+    end
+
+    def formatted_diff
+      return "(No diff available)" if diff.blank?
+
+      diff_text = diff.to_s.strip
+      return "(No diff available)" if diff_text.empty?
+
+      return diff_text if diff_text.length <= DIFF_MAX_LENGTH
+
+      truncated = diff_text.slice(0, DIFF_MAX_LENGTH)
+      "#{truncated}\n...\n[Diff truncated to #{DIFF_MAX_LENGTH} characters]"
     end
   end
 end
