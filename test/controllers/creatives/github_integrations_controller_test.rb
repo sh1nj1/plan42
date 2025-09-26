@@ -40,8 +40,12 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
       repositories: [ "sample-user/example", "sample-user/another" ]
     }
 
+    provisioner_args = nil
+
     assert_difference("GithubRepositoryLink.count", 1) do
-      patch creative_github_integration_path(@creative), params: payload, as: :json
+      Github::WebhookProvisioner.stub(:ensure_for_links, ->(**kwargs) { provisioner_args = kwargs }) do
+        patch creative_github_integration_path(@creative), params: payload, as: :json
+      end
     end
 
     assert_response :success
@@ -58,5 +62,11 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
 
     link = GithubRepositoryLink.find_by!(repository_full_name: "sample-user/another")
     assert_equal new_details["secret"], link.webhook_secret
+
+    assert provisioner_args.present?, "Expected webhook provisioner to be invoked"
+    assert_equal @github_account, provisioner_args[:account]
+    assert_equal github_webhook_url, provisioner_args[:webhook_url]
+    returned_links = provisioner_args[:links]
+    assert_equal payload[:repositories].sort, returned_links.map(&:repository_full_name).sort
   end
 end

@@ -16,7 +16,7 @@ Rails.application.config.middleware.use OmniAuth::Builder do
     provider :github,
              github_client_id,
              github_client_secret,
-             scope: "repo read:org",
+             scope: "repo read:org admin:repo_hook",
              allow_signup: false
   end
 end

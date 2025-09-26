@@ -30,7 +30,9 @@ production host and a second for local testing.
    - Or set the environment variables `GITHUB_CLIENT_ID` and
      `GITHUB_CLIENT_SECRET` in your hosting platform.
 6. Restart the app. OmniAuth only registers the GitHub strategy when both values
-   are present.
+   are present. The OAuth flow requests the `repo`, `read:org`, and
+   `admin:repo_hook` scopes so Plan42 can read repository metadata and manage
+   webhooks on your behalf.
 
 ### Localhost (`localhost:3000`)
 1. Create another OAuth app with **Authorization callback URL**
@@ -49,22 +51,23 @@ production host and a second for local testing.
 > `github.client_id` and `github.client_secret` keys instead of exporting
 > environment variables.
 
-## 2. Configure the GitHub webhook
+## 2. Webhook automation and manual fallback
 
 The webhook notifies Plan42 when pull requests change so Gemini can analyse the
-creative paths linked to the repository.
+creative paths linked to the repository. When you link a repository in the
+integration modal, Plan42 now calls the GitHub API to create (or update) a
+webhook pointing at `/github/webhook` with a repository-specific secret. No
+additional setup is required in the GitHub UI during normal operation.
 
-### Choose where to add the webhook
-* **Single repository:** `Repository` → `Settings` → `Webhooks` → `Add webhook`.
-* **Organization wide:** `Organization` → `Settings` → `Webhooks` → `Add webhook`.
+If automation fails or you need to recreate the hook manually, use the
+configuration below as a reference.
 
-### Required settings
+### Required settings for manual setup
 1. **Payload URL:**
    * Production: `https://YOUR_PRODUCTION_HOST/github/webhook`
    * Local testing (via tunnel): e.g. `https://<random>.ngrok.app/github/webhook`
 2. **Content type:** `application/json`.
-3. **Secret:** Generate a long random string. Store the same value for the app
-   so incoming requests can be verified (see next section).
+3. **Secret:** Use the per-repository secret shown in the integration modal.
 4. **Events:** Select **Let me select individual events** and check **Pull
    requests**. All other events can remain unchecked.
 5. Save the webhook and click **Recent Deliveries** to confirm GitHub receives a

@@ -59,7 +59,7 @@ en:
       github_integration_choose_org: "Select the organization that owns the repositories."
       github_integration_choose_repo: "Select repositories to link. You can choose multiple."
       github_integration_summary: "The following repositories will be linked to this Creative:"
-      github_integration_webhook_instructions: "Configure the webhook for each repository using the details below."
+      github_integration_webhook_instructions: "Webhooks are created automatically. Use the details below if you ever need to configure them manually."
       github_integration_webhook_url_label: "Webhook URL"
       github_integration_webhook_secret_label: "Webhook secret"
       github_integration_summary_empty: "No repositories selected."
