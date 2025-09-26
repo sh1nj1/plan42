@@ -24,6 +24,7 @@ en:
       recalculate_all_parent_progress: "Recalculate all parent progress?"
       no_creatives: "No creatives found."
       no_sub_creatives: "No sub-creatives found."
+      no_search_results: "No creatives match your search."
       recommend_parent: "Recommend Category"
       import_uploading: "Uploading..."
       import_success: "Import successful! Reloading..."

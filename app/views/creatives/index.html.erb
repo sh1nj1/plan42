@@ -107,10 +107,12 @@
 <% end %>
 
 <div id="creatives">
-  <% if @creatives %>
+  <% if @creatives.present? %>
     <%= render_creative_tree(@creatives, 1, select_mode: false, max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL) %>
   <% else %>
-    <% if params[:id] && @creative && !@creative.has_permission?(Current.user, :read) %>
+    <% if params[:search].present? %>
+      <p style="text-align: center;"><%= t('.no_search_results') %></p>
+    <% elsif params[:id] && @creative && !@creative.has_permission?(Current.user, :read) %>
       <p style="text-align: center;"><%= t('.no_permission') %></p>
       <div style="text-align: center;">
         <%= button_to t('.request_permission'), request_permission_creative_path(@creative), method: :post %>
