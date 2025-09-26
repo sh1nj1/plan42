@@ -24,6 +24,7 @@ ko:
       recalculate_all_parent_progress: "모든 상위 진행률을 다시 계산하시겠습니까?"
       no_creatives: "크리에이티브가 없습니다."
       no_sub_creatives: "하위 크리에이티브가 없습니다."
+      no_search_results: "검색 결과가 없습니다."
       recommend_parent: "카테고리 추천"
       import_uploading: "업로드 중..."
       import_success: "가져오기 성공! 새로고침 중..."
