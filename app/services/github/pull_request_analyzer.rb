@@ -70,7 +70,7 @@ module Github
         Pull request diff:
         #{diff_text}
 
-        Creative task paths (each line is a single task path from root to leaf). Each node is shown as "[ID] Title":
+        Creative task paths (each line is a single task path from root to leaf). Each node is shown as "[ID] Title (progress XX%)" when progress is known:
         #{tree_lines}
 
         #{language_instructions}
@@ -78,6 +78,8 @@ module Github
         Return a JSON object with two keys:
         - "completed": array of objects representing tasks finished by this PR. Each object must include "creative_id" (from the IDs above). Optionally include "progress" (0.0 to 1.0), "note", or "path" for context.
         - "additional": array of objects for follow-up work. Each object must include "parent_id" (from the IDs above) and "description" (the new creative text). Optionally include "progress" (0.0 to 1.0), "note", or "path".
+
+        Do not add tasks to "completed" if they already show 100% progress in the tree above unless this PR clearly made new changes that justify marking them complete.
 
         Use only IDs present in the tree. Respond with valid JSON only.
       PROMPT
