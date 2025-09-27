@@ -75,6 +75,12 @@
     margin-top:0.2em;
 }
 
+.comment-status-label {
+    margin-left: 0.4em;
+    font-size: 0.85em;
+    color: var(--color-muted);
+}
+
 .comment-action-container {
     position: absolute;
     bottom: 0.2em;

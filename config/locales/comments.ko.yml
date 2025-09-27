@@ -33,6 +33,7 @@ ko:
     approve_invalid_creative: "댓글 작업이 잘못된 크리에이티브를 대상으로 하고 있습니다."
     approve_invalid_progress: "댓글 작업 진행률은 숫자여야 합니다."
     approve_invalid_description: "댓글 작업 설명은 텍스트여야 합니다."
+    approved_label: "승인됨"
     private: "비밀"
     convert_system_message: "System: 메세지가 [%{title}](%{url}) 크리에이티브로 변환되었습니다"
     convert_system_message_default_title: "제목 없음"
