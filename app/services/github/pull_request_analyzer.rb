@@ -58,34 +58,18 @@ module Github
       pr_body = pr["body"].to_s
       commit_lines = formatted_commit_messages
       diff_text = formatted_diff
-
       language_instructions = preferred_language_instructions
 
-      prompt = <<~PROMPT
-        You are reviewing a GitHub pull request and mapping it to Creative tasks.
-        Pull request title: #{pr["title"]}
-        Pull request body:
-        #{pr_body}
-
-        Pull request commit messages:
-        #{commit_lines}
-
-        Pull request diff:
-        #{diff_text}
-
-        Creative task paths (each line is a single task path from root to leaf). Each node is shown as "[ID] Title (progress XX%)" when progress is known. Leaf creatives are marked with [LEAF] and non-leaf creatives with [BRANCH]:
-        #{tree_lines}
-
-        #{language_instructions}
-
-        Return a JSON object with two keys:
-        - "completed": array of objects representing tasks finished by this PR. Each object must include "creative_id" (from the IDs above). Use only creatives marked [LEAF] in the list above. Optionally include "progress" (0.0 to 1.0), "note", or "path" for context.
-        - "additional": array of objects for new creatives that are not already represented in the tree above. Each object must include "parent_id" (from the IDs above) and "description" (the new creative text). Do not use this list for follow-up tasks on existing creatives—only describe brand new creatives. Optionally include "progress" (0.0 to 1.0), "note", or "path".
-
-        Do not add tasks to "completed" if they already show 100% progress in the tree above unless this PR clearly made new changes that justify marking them complete.
-
-        Use only IDs present in the tree. Respond with valid JSON only.
-      PROMPT
+      prompt_template = creative.github_gemini_prompt_template
+      prompt = render_prompt_template(
+        prompt_template,
+        pr_title: pr["title"].to_s,
+        pr_body: pr_body,
+        commit_messages: commit_lines,
+        diff: diff_text,
+        creative_tree: tree_lines,
+        language_instructions: language_instructions
+      )
 
       [ { role: "user", parts: [ { text: prompt } ] } ]
     end
@@ -171,6 +155,14 @@ module Github
       end
 
       { code: locale, label: label }
+    end
+
+    def render_prompt_template(template, variables)
+      template.to_s.gsub(/\#\{([^}]+)\}/) do
+        key = Regexp.last_match(1).strip.to_sym
+        value = variables.fetch(key, "")
+        value.to_s
+      end
     end
 
     def sanitize_completed(items)

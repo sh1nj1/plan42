@@ -37,6 +37,20 @@
       <p id="github-summary-empty" style="display:none;color:#777;"><%= t('creatives.index.github_integration_summary_empty', default: '선택된 Repository가 없습니다.') %></p>
     </div>
 
+    <div class="github-wizard-step" id="github-step-prompt" style="display:none;">
+      <p><%= t('creatives.index.github_integration_prompt_title', default: 'Gemini 분석 프롬프트를 검토하고 필요하다면 수정하세요.') %></p>
+      <textarea id="github-gemini-prompt" style="width:100%;min-height:220px;padding:0.75em;border:1px solid #ccc;border-radius:4px;font-family:monospace;font-size:0.95em;"></textarea>
+      <p style="margin-top:0.75em;color:#555;font-size:0.9em;">
+        <%= t('creatives.index.github_integration_prompt_help', default: '필요한 정보를 런타임에 삽입하기 위해 아래 자리표시자를 사용할 수 있습니다:') %>
+        <code>#{pr_title}</code>,
+        <code>#{pr_body}</code>,
+        <code>#{commit_messages}</code>,
+        <code>#{diff}</code>,
+        <code>#{creative_tree}</code>,
+        <code>#{language_instructions}</code>
+      </p>
+    </div>
+
     <div id="github-wizard-error" style="display:none;margin:0.5em 0;color:#c0392b;font-weight:bold;"></div>
 
     <div class="github-wizard-footer" style="display:flex;justify-content:space-between;gap:0.5em;margin-top:1.5em;">
