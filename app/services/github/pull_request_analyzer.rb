@@ -56,6 +56,8 @@ module Github
       commit_lines = formatted_commit_messages
       diff_text = formatted_diff
 
+      language_instructions = preferred_language_instructions
+
       prompt = <<~PROMPT
         You are reviewing a GitHub pull request and mapping it to Creative tasks.
         Pull request title: #{pr["title"]}
@@ -70,6 +72,8 @@ module Github
 
         Creative task paths (each line is a single task path from root to leaf). Each node is shown as "[ID] Title":
         #{tree_lines}
+
+        #{language_instructions}
 
         Return a JSON object with two keys:
         - "completed": array of objects representing tasks finished by this PR. Each object must include "creative_id" (from the IDs above). Optionally include "progress" (0.0 to 1.0), "note", or "path" for context.
@@ -119,6 +123,25 @@ module Github
 
       truncated = diff_text.slice(0, DIFF_MAX_LENGTH)
       "#{truncated}\n...\n[Diff truncated to #{DIFF_MAX_LENGTH} characters]"
+    end
+
+    def preferred_language_instructions
+      language = preferred_response_language
+      "Preferred response language: #{language[:label]} (#{language[:code]}). Write all natural-language output, including new creative descriptions, in #{language[:label]}."
+    end
+
+    def preferred_response_language
+      locale = creative.user&.locale.presence
+      locale ||= I18n.default_locale.to_s if defined?(I18n)
+      locale ||= "en"
+
+      label = if defined?(I18n)
+                I18n.t("users.locales.#{locale}", default: locale)
+      else
+                locale
+      end
+
+      { code: locale, label: label }
     end
 
     def sanitize_completed(items)
