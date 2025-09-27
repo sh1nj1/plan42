@@ -1,4 +1,5 @@
 require "test_helper"
+require "json"
 
 module Github
   class PullRequestProcessorTest < ActiveSupport::TestCase
@@ -21,10 +22,20 @@ module Github
         "repository" => { "full_name" => "org/repo" }
       }
 
+      completed_task = Github::PullRequestAnalyzer::CompletedTask.new(
+        creative_id: creative.children.first.id,
+        progress: 1.0,
+        path: "Root > Child"
+      )
+      suggestion = Github::PullRequestAnalyzer::SuggestedTask.new(
+        parent_id: creative.id,
+        description: "Follow up",
+        progress: nil
+      )
       result = Github::PullRequestAnalyzer::Result.new(
-        completed: [ "Root > Child" ],
-        additional: [ "Root > Child > Follow up" ],
-        raw_response: '{"completed":["Root > Child"],"additional":["Root > Child > Follow up"]}'
+        completed: [ completed_task ],
+        additional: [ suggestion ],
+        raw_response: "{\"completed\":[{\"creative_id\":#{completed_task.creative_id}}],\"additional\":[{\"parent_id\":#{suggestion.parent_id},\"description\":\"Follow up\"}]}"
       )
 
       fake_analyzer = Minitest::Mock.new
@@ -46,13 +57,25 @@ module Github
 
       assert_equal [ "Initial commit" ], analyzer_args[:commit_messages]
       assert_equal "diff --git a/file.rb b/file.rb\n+change", analyzer_args[:diff]
+      assert_equal Creatives::PathExporter.new(creative).paths_with_ids, analyzer_args[:paths]
 
       comment = creative.comments.last
       assert comment.present?
       assert_includes comment.content, "#12"
-      assert_includes comment.content, "Root > Child"
-      assert_includes comment.content, "Root > Child > Follow up"
+      assert_includes comment.content, "[#{completed_task.creative_id}]"
+      assert_includes comment.content, "Follow up"
       assert_includes comment.content, "Gemini 응답"
+      assert comment.action.present?
+      assert_equal account.user, comment.approver
+
+      action_payload = JSON.parse(comment.action)
+      assert_equal 2, action_payload["actions"].size
+      update_action = action_payload["actions"].first
+      create_action = action_payload["actions"].last
+      assert_equal "update_creative", update_action["action"]
+      assert_equal completed_task.creative_id, update_action["creative_id"]
+      assert_equal "create_creative", create_action["action"]
+      assert_equal suggestion.parent_id, create_action["parent_id"]
     end
 
     test "ignores unmerged pull requests" do

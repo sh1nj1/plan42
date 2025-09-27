@@ -82,15 +82,15 @@ module Comments
 
       def evaluate(code)
         payload = parse_payload(code)
-        action = payload["action"] || payload["type"]
-        raise InvalidActionError, I18n.t("comments.approve_missing_action") if action.blank?
 
-        handler = SUPPORTED_ACTIONS[action]
-        unless handler
-          raise InvalidActionError, I18n.t("comments.approve_unsupported_action", action: action)
+        actions = Array(payload["actions"])
+        if actions.present?
+          actions.each do |action_payload|
+            process_action(action_payload)
+          end
+        else
+          process_action(payload)
         end
-
-        send(handler, payload)
       end
 
       private
@@ -123,9 +123,10 @@ module Comments
 
       def create_creative(payload)
         attributes = extract_attributes(payload)
+        parent = parent_creative_for(payload)
 
-        new_creative = comment.creative.children.build
-        new_creative.user = comment.creative.user || comment.user || Current.user
+        new_creative = parent.children.build
+        new_creative.user = parent.user || comment.user || Current.user
         assign_creative_attributes(new_creative, attributes)
         new_creative.save!
       rescue ActiveRecord::RecordInvalid => e
@@ -140,6 +141,22 @@ module Comments
         creative.save!
       rescue ActiveRecord::RecordInvalid => e
         raise InvalidActionError, e.record.errors.full_messages.to_sentence
+      end
+
+      def process_action(payload)
+        unless payload.is_a?(Hash)
+          raise InvalidActionError, I18n.t("comments.approve_invalid_format")
+        end
+
+        action = payload["action"] || payload["type"]
+        raise InvalidActionError, I18n.t("comments.approve_missing_action") if action.blank?
+
+        handler = SUPPORTED_ACTIONS[action]
+        unless handler
+          raise InvalidActionError, I18n.t("comments.approve_unsupported_action", action: action)
+        end
+
+        send(handler, payload)
       end
 
       def extract_attributes(payload)
@@ -185,12 +202,40 @@ module Comments
         creative_id = payload["creative_id"]
         return comment.creative if creative_id.blank?
 
-        creative = Creative.find_by(id: creative_id)
-        unless creative && creative.id == comment.creative.id
+        creative = find_creative_in_comment_tree(creative_id)
+        unless creative
           raise InvalidActionError, I18n.t("comments.approve_invalid_creative")
         end
 
         creative
+      end
+
+      def parent_creative_for(payload)
+        parent_id = payload["parent_id"]
+        return comment.creative if parent_id.blank?
+
+        creative = find_creative_in_comment_tree(parent_id)
+        unless creative
+          raise InvalidActionError, I18n.t("comments.approve_invalid_creative")
+        end
+
+        creative
+      end
+
+      def find_creative_in_comment_tree(creative_id)
+        id = creative_id.to_i
+        return if id <= 0
+
+        creative = Creative.find_by(id: id)&.effective_origin
+        return unless creative
+
+        return creative if allowed_creative_ids.include?(creative.id)
+
+        nil
+      end
+
+      def allowed_creative_ids
+        @allowed_creative_ids ||= comment.creative.effective_origin.self_and_descendants.pluck(:id)
       end
     end
   end
