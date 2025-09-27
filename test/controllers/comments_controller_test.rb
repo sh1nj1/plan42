@@ -126,6 +126,23 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_not_nil comment.reload.action_executed_at
   end
 
+  test "approver sees private comments in index" do
+    other_user = users(:two)
+    other_user.update!(email_verified_at: Time.current)
+
+    comment = @creative.comments.create!(
+      content: "Private for approver",
+      user: other_user,
+      private: true,
+      approver: @user
+    )
+
+    get creative_comments_path(@creative), params: { page: 1, per_page: 10 }
+
+    assert_response :success
+    assert_includes @response.body, comment.content
+  end
+
   test "commenters cannot set approval attributes when creating" do
     assert_difference("Comment.count", 1) do
       post creative_comments_path(@creative), params: {

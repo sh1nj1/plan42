@@ -8,7 +8,12 @@ class CommentsController < ApplicationController
     page = params[:page].to_i
     page = 1 if page <= 0
 
-    scope = @creative.comments.where("comments.private = ? OR comments.user_id = ?", false, Current.user.id)
+    scope = @creative.comments.where(
+      "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
+      false,
+      Current.user.id,
+      Current.user.id
+    )
                               .order(created_at: :desc)
     @comments = scope.offset((page - 1) * per_page).limit(per_page).to_a
     pointer = CommentReadPointer.find_by(user: Current.user, creative: @creative)
