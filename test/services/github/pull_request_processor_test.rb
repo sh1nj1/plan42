@@ -32,10 +32,12 @@ module Github
         description: "Follow up",
         progress: nil
       )
+      prompt_text = "PR prompt contents"
       result = Github::PullRequestAnalyzer::Result.new(
         completed: [ completed_task ],
         additional: [ suggestion ],
-        raw_response: "{\"completed\":[{\"creative_id\":#{completed_task.creative_id}}],\"additional\":[{\"parent_id\":#{suggestion.parent_id},\"description\":\"Follow up\"}]}"
+        raw_response: "{\"completed\":[{\"creative_id\":#{completed_task.creative_id}}],\"additional\":[{\"parent_id\":#{suggestion.parent_id},\"description\":\"Follow up\"}]}",
+        prompt: prompt_text
       )
 
       fake_analyzer = Minitest::Mock.new
@@ -67,6 +69,8 @@ module Github
       assert_includes comment.content, "#12"
       assert_includes comment.content, "[#{completed_task.creative_id}]"
       assert_includes comment.content, "Follow up"
+      assert_includes comment.content, "Gemini 전송 메시지"
+      assert_includes comment.content, prompt_text
       assert_includes comment.content, "Gemini 응답"
       assert comment.action.present?
       assert_equal account.user, comment.approver
