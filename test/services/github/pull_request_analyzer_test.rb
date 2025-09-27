@@ -48,5 +48,32 @@ module Github
       assert_includes prompt, "No commit messages available."
       assert_includes prompt, "(No diff available)"
     end
+
+    test "appends default instructions after custom prompt" do
+      creative = creatives(:tshirt)
+      creative.update!(github_gemini_prompt: "Custom prompt instructions")
+
+      payload = {
+        "pull_request" => {
+          "title" => "Improve feature",
+          "body" => "Adds improvements"
+        }
+      }
+
+      analyzer = Github::PullRequestAnalyzer.new(
+        payload: payload,
+        creative: creative,
+        paths: [ "Root > Child" ],
+        commit_messages: [],
+        diff: nil
+      )
+
+      messages = analyzer.send(:build_messages)
+      prompt = messages.dig(0, :parts, 0, :text)
+
+      assert_includes prompt, "Custom prompt instructions"
+      assert_match(/Custom prompt instructions.*You are reviewing a GitHub pull request/m, prompt)
+      assert_includes prompt, Github::PullRequestAnalyzer::DEFAULT_PROMPT_INSTRUCTIONS.strip
+    end
   end
 end

@@ -63,8 +63,12 @@ module Github
       commit_lines = formatted_commit_messages
       diff_text = formatted_diff
 
-      instructions = creative.github_gemini_prompt.to_s.strip
-      instructions = DEFAULT_PROMPT_INSTRUCTIONS if instructions.blank?
+      custom_instructions = creative.github_gemini_prompt.to_s.strip
+      instructions = if custom_instructions.present?
+        "#{custom_instructions}\n\n#{DEFAULT_PROMPT_INSTRUCTIONS}"
+      else
+        DEFAULT_PROMPT_INSTRUCTIONS
+      end
 
       prompt = <<~PROMPT
         #{instructions}
