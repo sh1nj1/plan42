@@ -137,9 +137,9 @@ module Github
 
       label = if defined?(I18n)
                 I18n.t("users.locales.#{locale}", default: locale)
-              else
+      else
                 locale
-              end
+      end
 
       { code: locale, label: label }
     end
