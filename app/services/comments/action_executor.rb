@@ -221,10 +221,13 @@ module Comments
         id = creative_id.to_i
         return if id <= 0
 
-        creative = Creative.find_by(id: id)&.effective_origin
+        creative = Creative.find_by(id: id)
         return unless creative
 
         return creative if allowed_creative_ids.include?(creative.id)
+
+        origin = creative.effective_origin
+        return origin if origin && allowed_creative_ids.include?(origin.id)
 
         nil
       end

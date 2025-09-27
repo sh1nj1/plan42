@@ -1,6 +1,6 @@
 module Creatives
   class PathExporter
-    Entry = Struct.new(:creative_id, :path, :path_with_ids, keyword_init: true)
+    Entry = Struct.new(:creative_id, :path, :path_with_ids, :full_path_with_ids, keyword_init: true)
 
     def initialize(creative)
       @creative = creative.effective_origin
@@ -20,6 +20,14 @@ module Creatives
 
     def path_with_ids_for(id)
       entry_map[id.to_i]&.path_with_ids
+    end
+
+    def full_paths_with_ids
+      entries.map(&:full_path_with_ids)
+    end
+
+    def full_path_with_ids_for(id)
+      entry_map[id.to_i]&.full_path_with_ids
     end
 
     private
@@ -45,7 +53,8 @@ module Creatives
       results << Entry.new(
         creative_id: node.id,
         path: current_path,
-        path_with_ids: current_path_with_ids
+        path_with_ids: label_with_id,
+        full_path_with_ids: current_path_with_ids
       )
 
       node.children.order(:sequence).each do |child|
