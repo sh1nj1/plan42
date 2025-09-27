@@ -1,6 +1,6 @@
 class CommentsController < ApplicationController
   before_action :set_creative
-  before_action :set_comment, only: [ :destroy, :show, :update, :convert ]
+  before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve ]
 
   def index
     per_page = params[:per_page].to_i
@@ -8,7 +8,12 @@ class CommentsController < ApplicationController
     page = params[:page].to_i
     page = 1 if page <= 0
 
-    scope = @creative.comments.where("comments.private = ? OR comments.user_id = ?", false, Current.user.id)
+    scope = @creative.comments.where(
+      "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
+      false,
+      Current.user.id,
+      Current.user.id
+    )
                               .order(created_at: :desc)
     @comments = scope.offset((page - 1) * per_page).limit(per_page).to_a
     pointer = CommentReadPointer.find_by(user: Current.user, creative: @creative)
@@ -91,6 +96,20 @@ class CommentsController < ApplicationController
     end
   end
 
+  def approve
+    unless @comment.approver == Current.user
+      render json: { error: I18n.t("comments.approve_not_allowed") }, status: :forbidden and return
+    end
+
+    begin
+      Comments::ActionExecutor.new(comment: @comment, executor: Current.user).call
+      @comment.reload
+      render partial: "comments/comment", locals: { comment: @comment }
+    rescue Comments::ActionExecutor::ExecutionError => e
+      render json: { error: e.message }, status: :unprocessable_entity
+    end
+  end
+
   def show
     redirect_to creative_path(@creative, comment_id: @comment.id)
   end
@@ -119,7 +138,12 @@ class CommentsController < ApplicationController
 
   def set_comment
     @comment = @creative.comments
-                           .where("comments.private = ? OR comments.user_id = ?", false, Current.user.id)
+                           .where(
+                             "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
+                             false,
+                             Current.user.id,
+                             Current.user.id
+                           )
                            .find(params[:id])
   end
 
