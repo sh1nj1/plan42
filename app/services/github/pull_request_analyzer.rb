@@ -51,10 +51,10 @@ module Github
 
     def build_messages
       pr = payload["pull_request"]
-      tree_lines = paths.map do |entry|
-        status = entry[:leaf] ? "[LEAF]" : "[BRANCH]"
-        "- #{entry[:path]} #{status}"
-      end.join("\n")
+      tree_lines = paths
+        .select { |entry| entry[:leaf] }
+        .map { |entry| "- #{entry[:path]} [LEAF]" }
+        .join("\n")
       pr_body = pr["body"].to_s
       commit_lines = formatted_commit_messages
       diff_text = formatted_diff
