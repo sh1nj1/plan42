@@ -187,6 +187,9 @@ if (!window.githubIntegrationInitialized) {
     function loadRepositories() {
       if (!selectedOrg) return;
       clearError();
+      if (repoList) {
+        repoList.textContent = '...';
+      }
       const params = new URLSearchParams({ organization: selectedOrg });
       if (creativeId) params.append('creative_id', creativeId);
       fetch(`/github/account/repositories?${params.toString()}`, { headers: { Accept: 'application/json' } })
@@ -195,6 +198,7 @@ if (!window.githubIntegrationInitialized) {
           renderRepositories(data.repositories || []);
         })
         .catch(function () {
+          if (repoList) repoList.textContent = '';
           showError('Repository 목록을 불러오지 못했습니다.');
         });
     }
