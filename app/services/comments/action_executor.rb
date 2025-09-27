@@ -85,8 +85,10 @@ module Comments
 
         actions = Array(payload["actions"])
         if actions.present?
-          actions.each do |action_payload|
-            process_action(action_payload)
+          Comment.transaction do
+            actions.each do |action_payload|
+              process_action(action_payload)
+            end
           end
         else
           process_action(payload)

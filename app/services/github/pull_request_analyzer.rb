@@ -201,7 +201,7 @@ module Github
       float_value = Float(value) rescue nil
       return default unless float_value
 
-      [[float_value, 0.0].max, 1.0].min
+      [ [ float_value, 0.0 ].max, 1.0 ].min
     end
 
     def string_presence(value)
