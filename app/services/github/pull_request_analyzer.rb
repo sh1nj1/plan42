@@ -2,7 +2,7 @@ require "json"
 
 module Github
   class PullRequestAnalyzer
-    Result = Struct.new(:completed, :additional, :raw_response, keyword_init: true)
+    Result = Struct.new(:completed, :additional, :raw_response, :prompt, keyword_init: true)
     CompletedTask = Struct.new(:creative_id, :progress, :note, :path, keyword_init: true)
     SuggestedTask = Struct.new(:parent_id, :description, :progress, :note, :path, keyword_init: true)
 
@@ -16,6 +16,7 @@ module Github
       @diff = diff
       @client = client
       @logger = logger
+      @prompt_text = nil
     end
 
     def call
@@ -26,7 +27,8 @@ module Github
       Result.new(
         completed: parsed[:completed],
         additional: parsed[:additional],
-        raw_response: response_text
+        raw_response: response_text,
+        prompt: prompt_text
       )
     rescue StandardError => e
       logger.error("Gemini analysis failed: #{e.class} #{e.message}")
@@ -35,7 +37,7 @@ module Github
 
     private
 
-    attr_reader :payload, :creative, :paths, :commit_messages, :diff, :client, :logger
+    attr_reader :payload, :creative, :paths, :commit_messages, :diff, :client, :logger, :prompt_text
 
     def collect_response
       messages = build_messages
@@ -71,6 +73,7 @@ module Github
         language_instructions: language_instructions
       )
 
+      @prompt_text = prompt
       [ { role: "user", parts: [ { text: prompt } ] } ]
     end
 
