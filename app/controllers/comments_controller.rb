@@ -138,7 +138,7 @@ class CommentsController < ApplicationController
   end
 
   def comment_params
-    params.require(:comment).permit(:content, :private, :action, :approver_id)
+    params.require(:comment).permit(:content, :private)
   end
 
   def build_convert_system_message(creative)

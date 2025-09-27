@@ -58,4 +58,38 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
       assert_response :forbidden
     end
   end
+
+  test "commenters cannot set approval attributes when creating" do
+    assert_difference("Comment.count", 1) do
+      post creative_comments_path(@creative), params: {
+        comment: {
+          content: "Needs approval",
+          private: false,
+          action: "User.count",
+          approver_id: @user.id
+        }
+      }
+    end
+
+    comment = @creative.comments.order(:id).last
+    assert_nil comment.action
+    assert_nil comment.approver_id
+  end
+
+  test "commenters cannot set approval attributes when updating" do
+    comment = @creative.comments.create!(content: "Needs approval", user: @user)
+
+    patch creative_comment_path(@creative, comment), params: {
+      comment: {
+        content: "Updated",
+        action: "User.count",
+        approver_id: @user.id
+      }
+    }
+
+    comment.reload
+    assert_equal "Updated", comment.content
+    assert_nil comment.action
+    assert_nil comment.approver_id
+  end
 end
