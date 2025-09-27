@@ -4,6 +4,7 @@ require "json"
 class Comments::ActionExecutorTest < ActiveSupport::TestCase
   setup do
     @user = users(:one)
+    @approver = users(:two)
     @creative = creatives(:tshirt)
   end
 
@@ -93,7 +94,7 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
         },
         {
           "action" => "create_creative",
-          "parent_id" => child.id,
+          "parent_id" => @creative.id,
           "attributes" => { "description" => "Follow up" }
         }
       ]
@@ -103,16 +104,16 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
       content: "Needs approval",
       user: @user,
       action: JSON.generate(action_payload),
-      approver: @user
+      approver: @approver
     )
 
-    Comments::ActionExecutor.new(comment: comment, executor: @user).call
+    Comments::ActionExecutor.new(comment: comment, executor: @approver).call
 
     child.reload
     assert_in_delta 1.0, child.progress
-    new_child = child.children.order(:created_at).last
+    new_child = @creative.children.order(:created_at).last
     assert_equal "Follow up", new_child.description.to_plain_text.strip
-    assert_equal child, new_child.parent
+    assert_equal @creative, new_child.parent
   end
 
   test "rolls back all actions when one fails" do
@@ -137,10 +138,10 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
       content: "Needs approval",
       user: @user,
       action: JSON.generate(action_payload),
-      approver: @user
+      approver: @approver
     )
 
-    executor = Comments::ActionExecutor.new(comment: comment, executor: @user)
+    executor = Comments::ActionExecutor.new(comment: comment, executor: @approver)
 
     error = assert_raises(Comments::ActionExecutor::ExecutionError) do
       executor.call
