@@ -138,6 +138,41 @@ class Github::WebhookProvisionerTest < ActiveSupport::TestCase
     assert_equal "existing-secret", link.reload.webhook_secret
   end
 
+  test "recreates missing webhook with primary link secret" do
+    existing_creative = Creative.create!(
+      description: "Existing creative",
+      progress: 0.0,
+      user: @user
+    )
+
+    existing_link = GithubRepositoryLink.create!(
+      creative: existing_creative,
+      github_account: @account,
+      repository_full_name: "example/repo"
+    )
+    existing_link.update!(webhook_secret: "existing-secret")
+
+    link = GithubRepositoryLink.create!(
+      creative: @creative,
+      github_account: @account,
+      repository_full_name: "example/repo"
+    )
+    link.update!(webhook_secret: "new-secret")
+
+    webhook_url = "https://example.com/github/webhook"
+    client = FakeGithubClient.new(hooks: [])
+
+    provisioner = Github::WebhookProvisioner.new(account: @account, webhook_url: webhook_url, client: client)
+    provisioner.ensure_for_links([ link ])
+
+    assert_equal [ "example/repo" ], client.hooks_called_with
+    assert_equal 1, client.create_calls.size
+    repo, options = client.create_calls.first
+    assert_equal "example/repo", repo
+    assert_equal "existing-secret", options[:secret]
+    assert_equal "existing-secret", link.reload.webhook_secret
+  end
+
   test "ignores errors raised by github client" do
     link = GithubRepositoryLink.create!(
       creative: @creative,
