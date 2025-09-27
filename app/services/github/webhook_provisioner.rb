@@ -24,18 +24,24 @@ module Github
 
     def ensure_webhook(link)
       repository_full_name = link.repository_full_name
+      primary_link = primary_link_for(repository_full_name)
       hook = find_existing_hook(repository_full_name)
 
       if hook
-        primary_link = primary_link_for(repository_full_name)
-
         if primary_link && primary_link != link
           align_link_secret(link, primary_link.webhook_secret)
         else
           update_webhook(repository_full_name, hook.id, link.webhook_secret)
         end
       else
-        create_webhook(repository_full_name, link.webhook_secret)
+        secret = link.webhook_secret
+
+        if primary_link && primary_link != link
+          secret = primary_link.webhook_secret
+          align_link_secret(link, secret)
+        end
+
+        create_webhook(repository_full_name, secret)
       end
     rescue Octokit::Error => e
       Rails.logger.warn(
