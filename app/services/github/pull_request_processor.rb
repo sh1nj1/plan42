@@ -1,6 +1,6 @@
 module Github
   class PullRequestProcessor
-    HANDLED_ACTIONS = %w[opened reopened synchronize ready_for_review].freeze
+    HANDLED_ACTIONS = %w[closed].freeze
 
     def initialize(payload:, logger: Rails.logger)
       @payload = payload
@@ -13,7 +13,7 @@ module Github
 
       pr = payload["pull_request"]
       return unless pr
-      return if pr["merged"]
+      return unless pr["merged"]
 
       repo_full_name = payload.dig("repository", "full_name")
       return unless repo_full_name
