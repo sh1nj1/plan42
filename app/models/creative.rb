@@ -115,6 +115,10 @@ class Creative < ApplicationRecord
     end
   end
 
+  def github_gemini_prompt
+    effective_attribute(:github_gemini_prompt)
+  end
+
   def prompt_for(user)
     comments
       .where(private: true, user: user)

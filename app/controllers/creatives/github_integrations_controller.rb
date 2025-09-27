@@ -15,7 +15,8 @@ module Creatives
           avatar_url: account.avatar_url
         },
         selected_repositories: links.map(&:repository_full_name),
-        webhooks: serialize_webhooks(links)
+        webhooks: serialize_webhooks(links),
+        prompt: current_prompt
       }
     end
 
@@ -34,6 +35,8 @@ module Creatives
       repositories = Array(params[:repositories]).map(&:to_s).uniq
 
       links = nil
+      prompt_param = params.key?(:prompt) ? params[:prompt].to_s : nil
+      base_creative = @creative.effective_origin
 
       GithubRepositoryLink.transaction do
         linked_repository_links(account)
@@ -48,6 +51,10 @@ module Creatives
         end
 
         links = linked_repository_links(account).to_a
+
+        if params.key?(:prompt)
+          base_creative.update!(github_gemini_prompt: prompt_param.presence)
+        end
       end
 
       Github::WebhookProvisioner.ensure_for_links(
@@ -56,10 +63,14 @@ module Creatives
         webhook_url: github_webhook_url
       ) if links.present?
 
+      prompt_response = prompt_param.presence || base_creative.github_gemini_prompt.presence ||
+        Github::PullRequestAnalyzer::DEFAULT_PROMPT_INSTRUCTIONS
+
       render json: {
         success: true,
         selected_repositories: links.map(&:repository_full_name),
-        webhooks: serialize_webhooks(links)
+        webhooks: serialize_webhooks(links),
+        prompt: prompt_response
       }
     rescue ActiveRecord::RecordInvalid => e
       render json: { error: e.message }, status: :unprocessable_entity
@@ -93,6 +104,11 @@ module Creatives
           secret: link.webhook_secret
         }
       end
+    end
+
+    def current_prompt
+      base = @creative.effective_origin
+      base.github_gemini_prompt.presence || Github::PullRequestAnalyzer::DEFAULT_PROMPT_INSTRUCTIONS
     end
   end
 end

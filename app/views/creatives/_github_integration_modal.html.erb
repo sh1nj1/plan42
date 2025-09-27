@@ -4,6 +4,7 @@
      data-no-creative="<%= t('creatives.index.github_integration_missing_creative', default: '연동할 Creative가 선택되지 않았습니다.') %>"
      data-webhook-url-label="<%= t('creatives.index.github_integration_webhook_url_label', default: 'Webhook URL') %>"
      data-webhook-secret-label="<%= t('creatives.index.github_integration_webhook_secret_label', default: 'Webhook 비밀값') %>"
+     data-default-prompt="<%= j(Github::PullRequestAnalyzer::DEFAULT_PROMPT_INSTRUCTIONS) %>"
      style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
   <div class="popup-box" style="min-width:360px;max-width:90vw;">
     <button type="button" id="close-github-modal" class="popup-close-btn">&times;</button>
@@ -35,6 +36,17 @@
       <p id="github-webhook-instructions" style="display:none;color:#555;margin-bottom:0.5em;"><%= t('creatives.index.github_integration_webhook_instructions', default: '각 Repository에 아래의 Webhook 정보를 설정하세요.') %></p>
       <ul id="github-selected-repos" style="padding-left:1.2em;"></ul>
       <p id="github-summary-empty" style="display:none;color:#777;"><%= t('creatives.index.github_integration_summary_empty', default: '선택된 Repository가 없습니다.') %></p>
+    </div>
+
+    <div class="github-wizard-step" id="github-step-prompt" style="display:none;">
+      <p><%= t('creatives.index.github_integration_prompt_description', default: 'PR 분석에 사용할 Gemini 프롬프트를 확인하고 필요한 경우 수정하세요.') %></p>
+      <label for="github-gemini-prompt" style="display:block;font-weight:600;margin-bottom:0.4em;">
+        <%= t('creatives.index.github_integration_prompt_label', default: 'Gemini 프롬프트') %>
+      </label>
+      <textarea id="github-gemini-prompt" rows="8" style="width:100%;padding:0.6em;border:1px solid #ccc;border-radius:4px;font-family:inherit;font-size:0.95em;resize:vertical;"></textarea>
+      <p style="color:#777;font-size:0.85em;margin-top:0.5em;">
+        <%= t('creatives.index.github_integration_prompt_hint', default: 'Creative와 Pull Request 정보는 자동으로 이어서 포함됩니다.') %>
+      </p>
     </div>
 
     <div id="github-wizard-error" style="display:none;margin:0.5em 0;color:#c0392b;font-weight:bold;"></div>

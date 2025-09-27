@@ -17,6 +17,7 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
       repository_full_name: "sample-user/example",
       webhook_secret: "existing-secret"
     )
+    @creative.update!(github_gemini_prompt: "Custom prompt instructions")
     sign_in_as(@user, password: "password")
   end
 
@@ -27,6 +28,7 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     body = JSON.parse(response.body)
 
     assert body["connected"], "Expected response to indicate connected account"
+    assert_equal "Custom prompt instructions", body["prompt"]
     details = body.fetch("webhooks")
     assert details.key?("sample-user/example"), "Expected webhook details for repository"
 
@@ -37,7 +39,8 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
 
   test "update stores webhook secrets for selected repositories" do
     payload = {
-      repositories: [ "sample-user/example", "sample-user/another" ]
+      repositories: [ "sample-user/example", "sample-user/another" ],
+      prompt: "New prompt instructions"
     }
 
     provisioner_args = nil
@@ -52,6 +55,7 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     body = JSON.parse(response.body)
 
     assert_equal payload[:repositories].sort, body["selected_repositories"].sort
+    assert_equal payload[:prompt], body["prompt"]
 
     details = body.fetch("webhooks")
     assert_equal "existing-secret", details["sample-user/example"]["secret"]
@@ -68,5 +72,7 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     assert_equal github_webhook_url, provisioner_args[:webhook_url]
     returned_links = provisioner_args[:links]
     assert_equal payload[:repositories].sort, returned_links.map(&:repository_full_name).sort
+
+    assert_equal "New prompt instructions", @creative.reload.github_gemini_prompt
   end
 end

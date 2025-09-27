@@ -6,6 +6,15 @@ module Github
 
     DIFF_MAX_LENGTH = 10_000
 
+    DEFAULT_PROMPT_INSTRUCTIONS = <<~PROMPT.freeze
+      You are reviewing a GitHub pull request and mapping it to Creative tasks.
+      Use the pull request details, commit messages, and diff to decide which Creative tasks were completed or should be created next.
+      Return a JSON object with two keys:
+      - "completed": array of task paths from the provided list that this PR completes.
+      - "additional": array of task paths (existing or new suggestions) that should be tackled next.
+      Respond with valid JSON only.
+    PROMPT
+
     def initialize(payload:, creative:, paths:, commit_messages: [], diff: nil, client: GeminiChatClient.new, logger: Rails.logger)
       @payload = payload
       @creative = creative
@@ -54,8 +63,12 @@ module Github
       commit_lines = formatted_commit_messages
       diff_text = formatted_diff
 
+      instructions = creative.github_gemini_prompt.to_s.strip
+      instructions = DEFAULT_PROMPT_INSTRUCTIONS if instructions.blank?
+
       prompt = <<~PROMPT
-        You are reviewing a GitHub pull request and mapping it to Creative tasks.
+        #{instructions}
+
         Pull request title: #{pr["title"]}
         Pull request body:
         #{pr_body}
@@ -68,11 +81,6 @@ module Github
 
         Creative task paths (each line is a single task path from root to leaf):
         #{tree_lines}
-
-        Return a JSON object with two keys:
-        - "completed": array of task paths from the provided list that this PR completes.
-        - "additional": array of task paths (existing or new suggestions) that should be tackled next.
-        Respond with valid JSON only.
       PROMPT
 
       [ { role: "user", parts: [ { text: prompt } ] } ]
