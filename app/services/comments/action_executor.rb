@@ -10,13 +10,14 @@ module Comments
     end
 
     def call
-      mark_execution_started!
-      execute_action!
+      comment.with_lock do
+        prepare_for_execution!
+
+        execute_within_transaction!
+      end
     rescue ExecutionError
-      reset_execution_marker!
       raise
     rescue StandardError, ScriptError => e
-      reset_execution_marker!
       Rails.logger.error("Comment action execution failed: #{e.class} #{e.message}")
       raise ExecutionError, I18n.t("comments.approve_execution_failed", message: e.message)
     end
@@ -25,37 +26,29 @@ module Comments
 
     attr_reader :comment, :executor
 
-    def mark_execution_started!
-      comment.with_lock do
-        comment.reload
-        raise ExecutionError, I18n.t("comments.approve_missing_action") if comment.action.blank?
-        raise ExecutionError, I18n.t("comments.approve_missing_approver") if comment.approver_id.blank?
-        unless comment.approver == executor
-          raise ExecutionError, I18n.t("comments.approve_not_allowed")
-        end
-        if comment.action_executed_at.present?
-          raise ExecutionError, I18n.t("comments.approve_already_executed")
-        end
-
-        comment.action_executed_at = Time.current
-        comment.action_executed_by = executor
-        comment.save!
-        @execution_marked = true
+    def prepare_for_execution!
+      comment.reload
+      raise ExecutionError, I18n.t("comments.approve_missing_action") if comment.action.blank?
+      raise ExecutionError, I18n.t("comments.approve_missing_approver") if comment.approver_id.blank?
+      unless comment.approver == executor
+        raise ExecutionError, I18n.t("comments.approve_not_allowed")
+      end
+      if comment.action_executed_at.present?
+        raise ExecutionError, I18n.t("comments.approve_already_executed")
       end
     end
 
-    def reset_execution_marker!
-      return unless execution_marked?
-
-      comment.with_lock do
-        comment.update!(action_executed_at: nil, action_executed_by: nil)
+    def execute_within_transaction!
+      ApplicationRecord.transaction do
+        execute_action!
+        mark_execution_completed!
       end
-    ensure
-      @execution_marked = false
     end
 
-    def execution_marked?
-      @execution_marked
+    def mark_execution_completed!
+      comment.action_executed_at = Time.current
+      comment.action_executed_by = executor
+      comment.save!
     end
 
     def execute_action!
