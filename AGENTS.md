@@ -6,6 +6,7 @@ use ruby version from ~/.ruby-version
 - run `./bin/rubocop -a` every time you push code for a PR to confirm code style and no offenses.
 - run `rails test`
 - run `rails test:system`
+- add original user's requirements to the PR description as `Original User's Requirements` section.
 
 ## AI Development Guidelines
 - Document any AI-specific configuration or workflows in `CLAUDE.md` so other agents can collaborate easily.
