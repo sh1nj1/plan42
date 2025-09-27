@@ -55,7 +55,7 @@ module Creatives
       assert_includes(
         paths_with_leaf,
         {
-          path: "[#{root.id}] Root (progress 25%) > [#{child.id}] Child (progress 100%) > [#{grandchild.id}] Grandchild",
+          path: "[#{root.id}] Root (progress 25%) > [#{child.id}] Child (progress 100%) > [#{grandchild.id}] Grandchild (progress 0%)",
           leaf: true
         }
       )
