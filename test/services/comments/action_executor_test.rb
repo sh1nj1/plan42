@@ -20,7 +20,7 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
       approver: @user
     )
 
-    Comments::ActionExecutor.new(comment: comment).call
+    Comments::ActionExecutor.new(comment: comment, executor: @user).call
 
     comment.reload
     assert_equal action_payload, JSON.parse(comment.action)
@@ -43,7 +43,7 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
       approver: @user
     )
 
-    executor = Comments::ActionExecutor.new(comment: comment)
+    executor = Comments::ActionExecutor.new(comment: comment, executor: @user)
 
     error = assert_raises(Comments::ActionExecutor::ExecutionError) do
       executor.call
@@ -72,12 +72,37 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
     )
 
     assert_difference -> { @creative.reload.children.count }, 1 do
-      Comments::ActionExecutor.new(comment: comment).call
+      Comments::ActionExecutor.new(comment: comment, executor: @user).call
     end
 
     child = @creative.reload.children.order(:created_at).last
     assert_equal "New idea", child.description.to_plain_text.strip
     assert_in_delta 0.25, child.progress
     assert_equal @creative.user, child.user
+  end
+
+  test "raises when executor no longer matches approver" do
+    approver = users(:two)
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate("action" => "update_creative", "attributes" => { "progress" => 0.5 }),
+      approver: @user
+    )
+
+    stale_comment = Comment.find(comment.id)
+    comment.update!(approver: approver)
+
+    executor = Comments::ActionExecutor.new(comment: stale_comment, executor: @user)
+
+    error = assert_raises(Comments::ActionExecutor::ExecutionError) do
+      executor.call
+    end
+
+    assert_equal I18n.t("comments.approve_not_allowed"), error.message
+    comment.reload
+    assert_nil comment.action_executed_at
+    assert_nil comment.action_executed_by
   end
 end

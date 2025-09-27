@@ -4,8 +4,9 @@ module Comments
   class ActionExecutor
     class ExecutionError < StandardError; end
 
-    def initialize(comment:)
+    def initialize(comment:, executor:)
       @comment = comment
+      @executor = executor
     end
 
     def call
@@ -22,19 +23,22 @@ module Comments
 
     private
 
-    attr_reader :comment
+    attr_reader :comment, :executor
 
     def mark_execution_started!
       comment.with_lock do
         comment.reload
         raise ExecutionError, I18n.t("comments.approve_missing_action") if comment.action.blank?
         raise ExecutionError, I18n.t("comments.approve_missing_approver") if comment.approver_id.blank?
+        unless comment.approver == executor
+          raise ExecutionError, I18n.t("comments.approve_not_allowed")
+        end
         if comment.action_executed_at.present?
           raise ExecutionError, I18n.t("comments.approve_already_executed")
         end
 
         comment.action_executed_at = Time.current
-        comment.action_executed_by = comment.approver
+        comment.action_executed_by = executor
         comment.save!
         @execution_marked = true
       end

@@ -97,7 +97,7 @@ class CommentsController < ApplicationController
     end
 
     begin
-      Comments::ActionExecutor.new(comment: @comment).call
+      Comments::ActionExecutor.new(comment: @comment, executor: Current.user).call
       @comment.reload
       render partial: "comments/comment", locals: { comment: @comment }
     rescue Comments::ActionExecutor::ExecutionError => e
