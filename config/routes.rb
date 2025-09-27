@@ -39,6 +39,7 @@ Rails.application.routes.draw do
       resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
         member do
           post :convert
+          post :approve
         end
         collection do
           get :participants

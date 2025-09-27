@@ -27,6 +27,11 @@
       <button class="convert-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('comments.convert_to_creative') %>">
         <%= t('comments.convert_button') %>
       </button>
+      <% if comment.action.present? && comment.approver == Current.user %>
+        <button class="approve-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.approve_button') %>">
+          <%= t('comments.approve_button') %>
+        </button>
+      <% end %>
       <button class="edit-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('comments.update_comment') %>">
         <%= t('comments.edit_button') %>
       </button>

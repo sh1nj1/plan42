@@ -31,4 +31,31 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     )
     assert_equal expected_message, system_comment.content
   end
+
+  test "approver can execute comment action" do
+    comment = @creative.comments.create!(
+      content: "Run action",
+      user: @user,
+      action: "creative.update!(progress: 0.9)",
+      approver: @user
+    )
+
+    post approve_creative_comment_path(@creative, comment)
+
+    assert_response :success
+    comment.reload
+    assert_nil comment.action
+    assert_nil comment.approver_id
+    assert_in_delta 0.9, comment.creative.reload.progress
+  end
+
+  test "non approver cannot execute comment action" do
+    approver = users(:two)
+    comment = @creative.comments.create!(content: "Needs approval", user: @user, action: "User.count", approver: approver)
+
+    assert_no_changes -> { comment.reload.action } do
+      post approve_creative_comment_path(@creative, comment)
+      assert_response :forbidden
+    end
+  end
 end

@@ -712,6 +712,41 @@ if (!window.commentsInitialized) {
                             loadInitialComments();
                         }
                     });
+                } else if (target.classList.contains('approve-comment-btn')) {
+                    e.preventDefault();
+                    var btn = target;
+                    if (btn.disabled) return;
+                    btn.disabled = true;
+                    var commentId = btn.getAttribute('data-comment-id');
+                    var creativeId = popup.dataset.creativeId;
+                    fetch(`/creatives/${creativeId}/comments/${commentId}/approve`, {
+                        method: 'POST',
+                        headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }
+                    }).then(function(r) {
+                        if (r.ok) {
+                            return r.text();
+                        }
+                        return r.json().then(function(j) {
+                            throw new Error(j && j.error ? j.error : popup.dataset.approveErrorText);
+                        }).catch(function(err) {
+                            throw err instanceof Error ? err : new Error(popup.dataset.approveErrorText);
+                        });
+                    }).then(function(html) {
+                        if (!html) { btn.disabled = false; return; }
+                        var existing = document.getElementById(`comment_${commentId}`);
+                        if (existing) {
+                            existing.outerHTML = html;
+                            var updated = document.getElementById(`comment_${commentId}`);
+                            if (updated && popup.dataset.approveSuccessText) {
+                                showCopyFeedback(updated, popup.dataset.approveSuccessText);
+                            }
+                        } else {
+                            btn.disabled = false;
+                        }
+                    }).catch(function(e) {
+                        btn.disabled = false;
+                        alert(e && e.message ? e.message : popup.dataset.approveErrorText);
+                    });
                 } else if (target.classList.contains('edit-comment-btn')) {
                     e.preventDefault();
                     var btn = target;

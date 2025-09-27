@@ -1,6 +1,6 @@
 class CommentsController < ApplicationController
   before_action :set_creative
-  before_action :set_comment, only: [ :destroy, :show, :update, :convert ]
+  before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve ]
 
   def index
     per_page = params[:per_page].to_i
@@ -91,6 +91,20 @@ class CommentsController < ApplicationController
     end
   end
 
+  def approve
+    unless @comment.approver == Current.user
+      render json: { error: I18n.t("comments.approve_not_allowed") }, status: :forbidden and return
+    end
+
+    begin
+      Comments::ActionExecutor.new(comment: @comment).call
+      @comment.reload
+      render partial: "comments/comment", locals: { comment: @comment }
+    rescue Comments::ActionExecutor::ExecutionError => e
+      render json: { error: e.message }, status: :unprocessable_entity
+    end
+  end
+
   def show
     redirect_to creative_path(@creative, comment_id: @comment.id)
   end
@@ -124,7 +138,7 @@ class CommentsController < ApplicationController
   end
 
   def comment_params
-    params.require(:comment).permit(:content, :private)
+    params.require(:comment).permit(:content, :private, :action, :approver_id)
   end
 
   def build_convert_system_message(creative)

@@ -1,6 +1,7 @@
 class Comment < ApplicationRecord
   belongs_to :creative
   belongs_to :user, optional: true
+  belongs_to :approver, class_name: "User", optional: true
 
   before_validation :assign_default_user, on: :create
   before_save :apply_link_previews, if: :should_apply_link_previews?

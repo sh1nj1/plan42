@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_27_000000) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_28_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -82,8 +82,11 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_27_000000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.boolean "private", default: false, null: false
+    t.text "action"
+    t.integer "approver_id"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
+    t.index ["approver_id"], name: "index_comments_on_approver_id"
   end
 
   create_table "creative_expanded_states", force: :cascade do |t|
@@ -420,6 +423,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_27_000000) do
   add_foreign_key "comment_read_pointers", "users"
   add_foreign_key "comments", "creatives"
   add_foreign_key "comments", "users"
+  add_foreign_key "comments", "users", column: "approver_id"
   add_foreign_key "creative_expanded_states", "creatives"
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
