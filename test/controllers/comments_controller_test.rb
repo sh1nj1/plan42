@@ -44,9 +44,29 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     comment.reload
-    assert_nil comment.action
-    assert_nil comment.approver_id
+    assert_equal "creative.update!(progress: 0.9)", comment.action
+    assert_equal @user, comment.approver
+    assert_not_nil comment.action_executed_at
+    assert_equal @user, comment.action_executed_by
     assert_in_delta 0.9, comment.creative.reload.progress
+  end
+
+  test "cannot execute comment action more than once" do
+    comment = @creative.comments.create!(
+      content: "Run action",
+      user: @user,
+      action: "creative.update!(progress: 0.9)",
+      approver: @user
+    )
+
+    post approve_creative_comment_path(@creative, comment)
+    assert_response :success
+
+    post approve_creative_comment_path(@creative, comment)
+
+    assert_response :unprocessable_entity
+    response_body = JSON.parse(@response.body)
+    assert_equal I18n.t("comments.approve_already_executed"), response_body["error"]
   end
 
   test "non approver cannot execute comment action" do
