@@ -1,4 +1,5 @@
 require "test_helper"
+require "json"
 
 class CommentsControllerTest < ActionDispatch::IntegrationTest
   setup do
@@ -33,10 +34,15 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "approver can execute comment action" do
+    action_payload = {
+      "action" => "update_creative",
+      "attributes" => { "progress" => 0.9 }
+    }
+
     comment = @creative.comments.create!(
       content: "Run action",
       user: @user,
-      action: "creative.update!(progress: 0.9)",
+      action: JSON.generate(action_payload),
       approver: @user
     )
 
@@ -44,7 +50,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     comment.reload
-    assert_equal "creative.update!(progress: 0.9)", comment.action
+    assert_equal action_payload, JSON.parse(comment.action)
     assert_equal @user, comment.approver
     assert_not_nil comment.action_executed_at
     assert_equal @user, comment.action_executed_by
@@ -52,10 +58,15 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "cannot execute comment action more than once" do
+    action_payload = {
+      "action" => "update_creative",
+      "attributes" => { "progress" => 0.9 }
+    }
+
     comment = @creative.comments.create!(
       content: "Run action",
       user: @user,
-      action: "creative.update!(progress: 0.9)",
+      action: JSON.generate(action_payload),
       approver: @user
     )
 
@@ -71,7 +82,17 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
   test "non approver cannot execute comment action" do
     approver = users(:two)
-    comment = @creative.comments.create!(content: "Needs approval", user: @user, action: "User.count", approver: approver)
+    action_payload = {
+      "action" => "update_creative",
+      "attributes" => { "progress" => 0.9 }
+    }
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate(action_payload),
+      approver: approver
+    )
 
     assert_no_changes -> { comment.reload.action } do
       post approve_creative_comment_path(@creative, comment)

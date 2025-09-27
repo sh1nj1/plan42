@@ -1,3 +1,5 @@
+require "json"
+
 module Comments
   class ActionExecutor
     class ExecutionError < StandardError; end
@@ -61,6 +63,13 @@ module Comments
     class ExecutionContext
       class InvalidActionError < StandardError; end
 
+      SUPPORTED_ACTIONS = {
+        "create_creative" => :create_creative,
+        "update_creative" => :update_creative
+      }.freeze
+
+      CREATIVE_ATTRIBUTES = %w[description progress].freeze
+
       def initialize(comment)
         @comment = comment
       end
@@ -68,32 +77,116 @@ module Comments
       attr_reader :comment
 
       def evaluate(code)
+        payload = parse_payload(code)
+        action = payload["action"] || payload["type"]
+        raise InvalidActionError, I18n.t("comments.approve_missing_action") if action.blank?
+
+        handler = SUPPORTED_ACTIONS[action]
+        unless handler
+          raise InvalidActionError, I18n.t("comments.approve_unsupported_action", action: action)
+        end
+
+        send(handler, payload)
+      end
+
+      private
+
+      def parse_payload(code)
         raise InvalidActionError, I18n.t("comments.approve_missing_action") if code.blank?
 
-        instance_eval(code, __FILE__, __LINE__)
+        payload = JSON.parse(code)
+        unless payload.is_a?(Hash)
+          raise InvalidActionError, I18n.t("comments.approve_invalid_format")
+        end
+
+        deep_stringify_keys(payload)
+      rescue JSON::ParserError
+        raise InvalidActionError, I18n.t("comments.approve_invalid_format")
       end
 
-      def creative
-        comment.creative
+      def deep_stringify_keys(value)
+        case value
+        when Hash
+          value.each_with_object({}) do |(key, inner_value), acc|
+            acc[key.to_s] = deep_stringify_keys(inner_value)
+          end
+        when Array
+          value.map { |item| deep_stringify_keys(item) }
+        else
+          value
+        end
       end
 
-      def author
-        comment.user
+      def create_creative(payload)
+        attributes = extract_attributes(payload)
+
+        new_creative = comment.creative.children.build
+        new_creative.user = comment.creative.user || comment.user || Current.user
+        assign_creative_attributes(new_creative, attributes)
+        new_creative.save!
+      rescue ActiveRecord::RecordInvalid => e
+        raise InvalidActionError, e.record.errors.full_messages.to_sentence
       end
 
-      alias_method :user, :author
+      def update_creative(payload)
+        creative = find_target_creative(payload)
+        attributes = extract_attributes(payload)
 
-      def approver
-        comment.approver
+        assign_creative_attributes(creative, attributes)
+        creative.save!
+      rescue ActiveRecord::RecordInvalid => e
+        raise InvalidActionError, e.record.errors.full_messages.to_sentence
       end
 
-      def context
-        {
-          comment_id: comment.id,
-          creative_id: comment.creative_id,
-          author_id: comment.user_id,
-          approver_id: comment.approver_id
-        }
+      def extract_attributes(payload)
+        attributes = payload["attributes"]
+        unless attributes.is_a?(Hash)
+          raise InvalidActionError, I18n.t("comments.approve_invalid_attributes")
+        end
+
+        sanitized = attributes.slice(*CREATIVE_ATTRIBUTES)
+        if sanitized.empty?
+          raise InvalidActionError, I18n.t("comments.approve_no_attributes")
+        end
+
+        deep_stringify_keys(validate_attribute_types(sanitized))
+      end
+
+      def validate_attribute_types(attributes)
+        attributes.each do |key, value|
+          case key.to_s
+          when "description"
+            unless value.is_a?(String)
+              raise InvalidActionError, I18n.t("comments.approve_invalid_description")
+            end
+          when "progress"
+            unless value.is_a?(Numeric)
+              raise InvalidActionError, I18n.t("comments.approve_invalid_progress")
+            end
+          end
+        end
+
+        attributes
+      end
+
+      def assign_creative_attributes(record, attributes)
+        assignable = attributes.except("description")
+        record.assign_attributes(assignable)
+        if attributes.key?("description")
+          record.description = attributes["description"]
+        end
+      end
+
+      def find_target_creative(payload)
+        creative_id = payload["creative_id"]
+        return comment.creative if creative_id.blank?
+
+        creative = Creative.find_by(id: creative_id)
+        unless creative && creative.id == comment.creative.id
+          raise InvalidActionError, I18n.t("comments.approve_invalid_creative")
+        end
+
+        creative
       end
     end
   end
