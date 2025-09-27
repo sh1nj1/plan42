@@ -51,7 +51,8 @@ module Github
         creative: creative,
         paths: tree_entries,
         commit_messages: commit_messages,
-        diff: diff
+        diff: diff,
+        user: link.github_account.user
       )
       result = analyzer.call
       return unless result

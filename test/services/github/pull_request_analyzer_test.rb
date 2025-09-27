@@ -96,6 +96,33 @@ module Github
       assert_includes prompt, "Lang: Preferred response language:"
     end
 
+    test "prefers analyzer user locale when present" do
+      payload = {
+        "pull_request" => {
+          "title" => "Improve feature",
+          "body" => "Adds improvements"
+        }
+      }
+
+      user = users(:one)
+      user.update!(locale: "ko-KR")
+
+      analyzer = Github::PullRequestAnalyzer.new(
+        payload: payload,
+        creative: creatives(:tshirt),
+        paths: [ { path: "[1] Root > [2] Child", leaf: true } ],
+        commit_messages: [ "Refactor module" ],
+        diff: "diff --git a/file.rb b/file.rb\\n+change",
+        user: user
+      )
+
+      messages = analyzer.send(:build_messages)
+      prompt = messages.dig(0, :parts, 0, :text)
+
+      assert_includes prompt, "Preferred response language: 한국어 (ko)."
+      assert_includes prompt, "in 한국어."
+    end
+
     test "parses structured response into tasks" do
       payload = { "pull_request" => { "title" => "Feature" } }
       creative = creatives(:tshirt)

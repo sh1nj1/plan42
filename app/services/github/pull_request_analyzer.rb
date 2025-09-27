@@ -8,7 +8,7 @@ module Github
 
     DIFF_MAX_LENGTH = 10_000
 
-    def initialize(payload:, creative:, paths:, commit_messages: [], diff: nil, client: GeminiChatClient.new, logger: Rails.logger)
+    def initialize(payload:, creative:, paths:, commit_messages: [], diff: nil, client: GeminiChatClient.new, logger: Rails.logger, user: nil)
       @payload = payload
       @creative = creative
       @paths = normalize_paths(paths)
@@ -17,6 +17,7 @@ module Github
       @client = client
       @logger = logger
       @prompt_text = nil
+      @user = user
     end
 
     def call
@@ -37,7 +38,7 @@ module Github
 
     private
 
-    attr_reader :payload, :creative, :paths, :commit_messages, :diff, :client, :logger, :prompt_text
+    attr_reader :payload, :creative, :paths, :commit_messages, :diff, :client, :logger, :prompt_text, :user
 
     def collect_response
       messages = build_messages
@@ -147,17 +148,35 @@ module Github
     end
 
     def preferred_response_language
-      locale = creative.user&.locale.presence
-      locale ||= I18n.default_locale.to_s if defined?(I18n)
-      locale ||= "en"
+      locale = normalized_locale(user&.locale)
+      locale ||= normalized_locale(creative.user&.locale)
+      locale ||= default_locale
 
       label = if defined?(I18n)
-                I18n.t("users.locales.#{locale}", default: locale)
+                I18n.t("users.locales.#{locale}", default: locale, locale: locale)
       else
                 locale
       end
 
       { code: locale, label: label }
+    end
+
+    def default_locale
+      if defined?(I18n)
+        I18n.default_locale.to_s
+      else
+        "en"
+      end
+    end
+
+    def normalized_locale(locale)
+      return if locale.blank?
+
+      value = locale.to_s.split("-").first
+      return value unless defined?(I18n)
+
+      available = I18n.available_locales.map(&:to_s)
+      available.include?(value) ? value : nil
     end
 
     def render_prompt_template(template, variables)
