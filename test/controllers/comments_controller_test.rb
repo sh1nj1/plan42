@@ -49,6 +49,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     post approve_creative_comment_path(@creative, comment)
 
     assert_response :success
+    assert_includes @response.body, I18n.t("comments.approved_label")
     comment.reload
     assert_equal action_payload, JSON.parse(comment.action)
     assert_equal @user, comment.approver

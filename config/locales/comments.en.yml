@@ -33,6 +33,7 @@ en:
     approve_invalid_creative: "Comment action targets an invalid creative."
     approve_invalid_progress: "Comment action progress must be a number."
     approve_invalid_description: "Comment action description must be text."
+    approved_label: "Approved"
     private: "Private"
     convert_system_message: "System: Comment was converted to the [%{title}](%{url}) creative."
     convert_system_message_default_title: "Untitled"
