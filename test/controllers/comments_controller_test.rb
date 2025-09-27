@@ -100,6 +100,32 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "approver can execute private comment action" do
+    approver = users(:two)
+    approver.update!(email_verified_at: Time.current)
+
+    action_payload = {
+      "action" => "update_creative",
+      "attributes" => { "progress" => 0.9 }
+    }
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      private: true,
+      action: JSON.generate(action_payload),
+      approver: approver
+    )
+
+    delete session_path
+    post session_path, params: { email: approver.email, password: "password" }
+
+    post approve_creative_comment_path(@creative, comment)
+
+    assert_response :success
+    assert_not_nil comment.reload.action_executed_at
+  end
+
   test "commenters cannot set approval attributes when creating" do
     assert_difference("Comment.count", 1) do
       post creative_comments_path(@creative), params: {

@@ -133,7 +133,12 @@ class CommentsController < ApplicationController
 
   def set_comment
     @comment = @creative.comments
-                           .where("comments.private = ? OR comments.user_id = ?", false, Current.user.id)
+                           .where(
+                             "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
+                             false,
+                             Current.user.id,
+                             Current.user.id
+                           )
                            .find(params[:id])
   end
 
