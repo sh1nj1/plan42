@@ -98,6 +98,46 @@ class Github::WebhookProvisionerTest < ActiveSupport::TestCase
     assert_equal "json", options[:content_type]
   end
 
+  test "aligns webhook secret with existing link when hook already configured" do
+    existing_creative = Creative.create!(
+      description: "Existing creative",
+      progress: 0.0,
+      user: @user
+    )
+
+    existing_link = GithubRepositoryLink.create!(
+      creative: existing_creative,
+      github_account: @account,
+      repository_full_name: "example/repo"
+    )
+    existing_link.update!(webhook_secret: "existing-secret")
+
+    link = GithubRepositoryLink.create!(
+      creative: @creative,
+      github_account: @account,
+      repository_full_name: "example/repo"
+    )
+    link.update!(webhook_secret: "new-secret")
+
+    webhook_url = "https://example.com/github/webhook"
+    hook = OpenStruct.new(
+      id: 123,
+      config: { "url" => webhook_url },
+      events: [ "pull_request" ],
+      active: true
+    )
+
+    client = FakeGithubClient.new(hooks: [ hook ])
+
+    provisioner = Github::WebhookProvisioner.new(account: @account, webhook_url: webhook_url, client: client)
+    provisioner.ensure_for_links([ link ])
+
+    assert_equal [ "example/repo" ], client.hooks_called_with
+    assert_equal [], client.create_calls
+    assert_equal [], client.update_calls
+    assert_equal "existing-secret", link.reload.webhook_secret
+  end
+
   test "ignores errors raised by github client" do
     link = GithubRepositoryLink.create!(
       creative: @creative,
