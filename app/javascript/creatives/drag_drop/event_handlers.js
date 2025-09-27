@@ -30,8 +30,60 @@ import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 const childZoneRatio = 0.3;
 const coordPrecision = 5;
 
+const TRANSFER_MIME_TYPE = 'application/x-plan42-creative';
+
 function relaxedCoord(value) {
   return Math.round(value / coordPrecision) * coordPrecision;
+}
+
+function serializeDragState(state) {
+  try {
+    return JSON.stringify({
+      creativeId: state.creativeId,
+      treeId: state.treeId,
+      parentId: state.parentId,
+      level: state.level,
+      isRoot: state.isRoot,
+    });
+  } catch (error) {
+    console.error('Failed to serialize drag state', error);
+    return null;
+  }
+}
+
+function parseDragState(data) {
+  if (!data) return null;
+
+  try {
+    const parsed = JSON.parse(data);
+    if (parsed && parsed.creativeId && parsed.treeId) {
+      return parsed;
+    }
+  } catch (error) {
+    console.error('Failed to parse drag data', error);
+  }
+
+  return null;
+}
+
+function getDraggedContext(event) {
+  const existing = getDraggedState();
+  if (existing) {
+    return { draggedState: existing, isExternal: false };
+  }
+
+  const transfer = event.dataTransfer;
+  if (!transfer) return { draggedState: null, isExternal: false };
+
+  const rawData =
+    transfer.getData(TRANSFER_MIME_TYPE) || transfer.getData('text/plain');
+  const parsed = parseDragState(rawData);
+
+  if (!parsed) {
+    return { draggedState: null, isExternal: false };
+  }
+
+  return { draggedState: parsed, isExternal: true };
 }
 
 function handleDragStart(event) {
@@ -50,6 +102,12 @@ function handleDragStart(event) {
     isRoot: row.hasAttribute('is-root'),
   });
   event.dataTransfer.effectAllowed = 'move';
+
+  const serialized = serializeDragState(getDraggedState());
+  if (serialized) {
+    event.dataTransfer.setData(TRANSFER_MIME_TYPE, serialized);
+    event.dataTransfer.setData('text/plain', serialized);
+  }
 }
 
 function handleDragOver(event) {
@@ -98,7 +156,7 @@ function handleDrop(event) {
   clearDragHighlight(targetTree);
   clearDragHighlight(getLastDragOverRow());
 
-  const draggedState = getDraggedState();
+  const { draggedState, isExternal } = getDraggedContext(event);
 
   if (!targetTree || targetTree.draggable === false || !draggedState) {
     resetDrag();
@@ -113,14 +171,14 @@ function handleDrop(event) {
   }
 
   const targetRow = asTreeRow(targetTree);
-  const draggedRow = draggedState.row;
-  const draggedTree = draggedState.tree;
-  if (!targetRow || !draggedRow || !draggedTree) {
+  const draggedRow = isExternal ? null : draggedState.row;
+  const draggedTree = isExternal ? null : draggedState.tree;
+  if (!targetRow || (!isExternal && (!draggedRow || !draggedTree))) {
     resetDrag();
     return;
   }
 
-  if (isDescendantRow(draggedRow, targetRow)) {
+  if (!isExternal && isDescendantRow(draggedRow, targetRow)) {
     resetDrag();
     return;
   }
@@ -152,18 +210,32 @@ function handleDrop(event) {
     return;
   }
 
-  const draggedChildren = getChildrenContainer(draggedRow);
-  const moveContext = createMoveContext(draggedState, targetRow, draggedChildren);
+  let moveContext = null;
+  let newParentId = null;
+  let draggedChildren = null;
 
-  const { newParentId } = applyMove({
-    direction,
-    targetRow,
-    draggedState,
-    draggedChildren,
-    moveContext,
-  });
+  if (!isExternal) {
+    draggedChildren = getChildrenContainer(draggedRow);
+    moveContext = createMoveContext(draggedState, targetRow, draggedChildren);
+
+    ({ newParentId } = applyMove({
+      direction,
+      targetRow,
+      draggedState,
+      draggedChildren,
+      moveContext,
+    }));
+  }
 
   const draggedNumericId = draggedState.creativeId;
+
+  resetDrag();
+
+  const finalizeDrop = () => {
+    if (isExternal) {
+      window.location.reload();
+    }
+  };
 
   sendNewOrder({
     draggedId: draggedNumericId,
@@ -172,15 +244,18 @@ function handleDrop(event) {
   })
     .then((response) => {
       if (!response.ok) {
-        revertMove(moveContext, newParentId);
+        if (!isExternal) {
+          revertMove(moveContext, newParentId);
+        }
       }
     })
     .catch((error) => {
       console.error('Failed to update order', error);
-      revertMove(moveContext, newParentId);
-    });
-
-  resetDrag();
+      if (!isExternal) {
+        revertMove(moveContext, newParentId);
+      }
+    })
+    .finally(finalizeDrop);
 }
 
 function handleDragLeave(event) {
