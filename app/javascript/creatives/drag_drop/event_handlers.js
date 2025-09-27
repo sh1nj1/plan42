@@ -266,7 +266,7 @@ function handleDragLeave(event) {
 }
 
 function handleDragEnd() {
-  hideLinkHover();
+  resetDrag();
 }
 
 export function registerGlobalHandlers() {
