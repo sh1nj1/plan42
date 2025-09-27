@@ -37,7 +37,7 @@ module Github
     def process_link(link)
       creative = link.creative.effective_origin
       path_exporter = Creatives::PathExporter.new(creative)
-      paths = path_exporter.paths_with_ids
+      paths = path_exporter.full_paths_with_ids_and_progress
       return if paths.blank?
 
       repo_full_name = payload.dig("repository", "full_name")

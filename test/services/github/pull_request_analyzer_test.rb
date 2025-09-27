@@ -24,7 +24,8 @@ module Github
       assert_includes prompt, "1. Refactor module"
       assert_includes prompt, "2. Add tests"
       assert_includes prompt, "diff --git a/file.rb b/file.rb"
-      assert_includes prompt, "Each node is shown as \"[ID] Title\""
+      assert_includes prompt, "Each node is shown as \"[ID] Title (progress XX%)\" when progress is known"
+      assert_includes prompt, "Do not add tasks to \"completed\" if they already show 100% progress"
       assert_includes prompt, '"creative_id"'
       assert_includes prompt, '"parent_id"'
     end
