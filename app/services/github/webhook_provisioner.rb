@@ -14,7 +14,7 @@ module Github
 
     def ensure_for_links(links)
       links.each do |link|
-        ensure_webhook(link.repository_full_name, link.webhook_secret)
+        ensure_webhook(link)
       end
     end
 
@@ -22,13 +22,20 @@ module Github
 
     attr_reader :client, :webhook_url
 
-    def ensure_webhook(repository_full_name, secret)
+    def ensure_webhook(link)
+      repository_full_name = link.repository_full_name
       hook = find_existing_hook(repository_full_name)
 
       if hook
-        update_webhook(repository_full_name, hook.id, secret)
+        primary_link = primary_link_for(repository_full_name)
+
+        if primary_link && primary_link != link
+          align_link_secret(link, primary_link.webhook_secret)
+        else
+          update_webhook(repository_full_name, hook.id, link.webhook_secret)
+        end
       else
-        create_webhook(repository_full_name, secret)
+        create_webhook(repository_full_name, link.webhook_secret)
       end
     rescue Octokit::Error => e
       Rails.logger.warn(
@@ -62,6 +69,19 @@ module Github
         events: EVENTS,
         content_type: CONTENT_TYPE
       )
+    end
+
+    def primary_link_for(repository_full_name)
+      GithubRepositoryLink
+        .where(repository_full_name: repository_full_name)
+        .order(:id)
+        .first
+    end
+
+    def align_link_secret(link, secret)
+      return if secret.blank? || link.webhook_secret == secret
+
+      link.update!(webhook_secret: secret)
     end
 
     def normalize_config(config)
