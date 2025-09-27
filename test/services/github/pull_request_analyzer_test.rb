@@ -13,7 +13,7 @@ module Github
       analyzer = Github::PullRequestAnalyzer.new(
         payload: payload,
         creative: creatives(:tshirt),
-        paths: [ "[1] Root > [2] Child" ],
+        paths: [ { path: "[1] Root > [2] Child", leaf: true } ],
         commit_messages: [ "Refactor module", "Add tests" ],
         diff: "diff --git a/file.rb b/file.rb\n+change"
       )
@@ -25,9 +25,15 @@ module Github
       assert_includes prompt, "2. Add tests"
       assert_includes prompt, "diff --git a/file.rb b/file.rb"
       assert_includes prompt, "Each node is shown as \"[ID] Title (progress XX%)\" when progress is known"
+      assert_includes prompt, "Leaf creatives are marked with [LEAF]"
+      assert_includes prompt, "[1] Root > [2] Child"
+      assert_includes prompt, "[LEAF]"
       assert_includes prompt, "Do not add tasks to \"completed\" if they already show 100% progress"
       assert_includes prompt, '"creative_id"'
       assert_includes prompt, '"parent_id"'
+      assert_includes prompt, "Use only creatives marked [LEAF]"
+      assert_includes prompt, "new creatives that are not already represented"
+      assert_includes prompt, "Do not use this list for follow-up tasks"
     end
 
     test "handles missing commit messages and diff" do
@@ -41,7 +47,7 @@ module Github
       analyzer = Github::PullRequestAnalyzer.new(
         payload: payload,
         creative: creatives(:tshirt),
-        paths: [ "[1] Root > [2] Child" ],
+        paths: [ { path: "[1] Root > [2] Child", leaf: false } ],
         commit_messages: [],
         diff: nil
       )
@@ -59,7 +65,7 @@ module Github
       analyzer = Github::PullRequestAnalyzer.new(
         payload: payload,
         creative: creative,
-        paths: [ "[#{creative.id}] Root" ]
+        paths: [ { path: "[#{creative.id}] Root", leaf: true } ]
       )
 
       response = '{"completed":[{"creative_id":123,"progress":0.75,"note":"partial","path":"Root > Child"}],"additional":[{"parent_id":123,"description":"Add docs","progress":0.1}]}'

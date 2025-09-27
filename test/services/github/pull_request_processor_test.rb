@@ -57,7 +57,10 @@ module Github
 
       assert_equal [ "Initial commit" ], analyzer_args[:commit_messages]
       assert_equal "diff --git a/file.rb b/file.rb\n+change", analyzer_args[:diff]
-      assert_equal Creatives::PathExporter.new(creative).full_paths_with_ids_and_progress, analyzer_args[:paths]
+      assert_equal(
+        Creatives::PathExporter.new(creative).full_paths_with_ids_and_progress_with_leaf,
+        analyzer_args[:paths]
+      )
 
       comment = creative.comments.last
       assert comment.present?
