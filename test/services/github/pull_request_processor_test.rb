@@ -10,12 +10,13 @@ module Github
       GithubRepositoryLink.create!(creative: creative, github_account: account, repository_full_name: "org/repo")
 
       payload = {
-        "action" => "opened",
+        "action" => "closed",
         "pull_request" => {
           "title" => "Add feature",
           "number" => 12,
           "html_url" => "https://github.com/org/repo/pull/12",
-          "body" => "Implements feature"
+          "body" => "Implements feature",
+          "merged" => true
         },
         "repository" => { "full_name" => "org/repo" }
       }
@@ -54,7 +55,7 @@ module Github
       assert_includes comment.content, "Gemini 응답"
     end
 
-    test "ignores merged pull requests" do
+    test "ignores unmerged pull requests" do
       user = users(:one)
       creative = Creative.create!(user: user, description: "Root")
       account = GithubAccount.create!(user: user, github_uid: "1", login: "tester", token: "token")
@@ -67,7 +68,7 @@ module Github
           "number" => 13,
           "html_url" => "https://github.com/org/repo/pull/13",
           "body" => "Implements feature",
-          "merged" => true
+          "merged" => false
         },
         "repository" => { "full_name" => "org/repo" }
       }
