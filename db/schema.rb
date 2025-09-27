@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_28_010000) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -130,6 +130,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_010000) do
     t.integer "sequence", default: 0, null: false
     t.integer "user_id", null: false
     t.integer "origin_id"
+    t.text "github_gemini_prompt"
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"

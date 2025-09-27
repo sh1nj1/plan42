@@ -59,6 +59,43 @@ module Github
       assert_includes prompt, "(No diff available)"
     end
 
+    test "uses creative github gemini prompt template with placeholders" do
+      creative = creatives(:tshirt)
+      creative.update!(github_gemini_prompt: <<~PROMPT)
+        Title: \#{pr_title}
+        Body: \#{pr_body}
+        Commits: \#{commit_messages}
+        Diff: \#{diff}
+        Tree: \#{creative_tree}
+        Lang: \#{language_instructions}
+      PROMPT
+
+      payload = {
+        "pull_request" => {
+          "title" => "Improve feature",
+          "body" => "Adds improvements"
+        }
+      }
+
+      analyzer = Github::PullRequestAnalyzer.new(
+        payload: payload,
+        creative: creative,
+        paths: [ { path: "[1] Root > [2] Child", leaf: true } ],
+        commit_messages: [ "Refactor module" ],
+        diff: "diff --git a/file.rb b/file.rb\n+change"
+      )
+
+      messages = analyzer.send(:build_messages)
+      prompt = messages.dig(0, :parts, 0, :text)
+
+      assert_includes prompt, "Title: Improve feature"
+      assert_includes prompt, "Body: Adds improvements"
+      assert_includes prompt, "Commits: 1. Refactor module"
+      assert_includes prompt, "Diff: diff --git a/file.rb b/file.rb"
+      assert_includes prompt, "Tree: - [1] Root > [2] Child [LEAF]"
+      assert_includes prompt, "Lang: Preferred response language:"
+    end
+
     test "parses structured response into tasks" do
       payload = { "pull_request" => { "title" => "Feature" } }
       creative = creatives(:tshirt)

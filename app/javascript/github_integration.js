@@ -18,6 +18,7 @@ if (!window.githubIntegrationInitialized) {
     const summaryList = document.getElementById('github-selected-repos');
     const summaryEmpty = document.getElementById('github-summary-empty');
     const summaryInstructions = document.getElementById('github-webhook-instructions');
+    const promptInput = document.getElementById('github-gemini-prompt');
     const errorEl = document.getElementById('github-wizard-error');
     const webhookUrlLabel = modal.dataset.webhookUrlLabel || 'Webhook URL';
     const webhookSecretLabel = modal.dataset.webhookSecretLabel || 'Webhook secret';
@@ -28,6 +29,7 @@ if (!window.githubIntegrationInitialized) {
     let selectedOrg = null;
     let selectedRepos = new Set();
     let webhookDetails = {};
+    let geminiPrompt = '';
 
     function csrfToken() {
       return document.querySelector('meta[name="csrf-token"]')?.content;
@@ -39,19 +41,21 @@ if (!window.githubIntegrationInitialized) {
       selectedOrg = null;
       selectedRepos = new Set();
       webhookDetails = {};
+      geminiPrompt = '';
       statusEl.textContent = '';
       errorEl.style.display = 'none';
       errorEl.textContent = '';
       if (summaryInstructions) summaryInstructions.style.display = 'none';
+      if (promptInput) promptInput.value = '';
       updateStep();
     }
 
     function updateStep() {
-      ['github-step-connect', 'github-step-organization', 'github-step-repositories', 'github-step-summary']
-        .forEach(function (id) {
-          const el = document.getElementById(id);
+      ['connect', 'organization', 'repositories', 'summary', 'prompt']
+        .forEach(function (step) {
+          const el = document.getElementById(`github-step-${step}`);
           if (!el) return;
-          el.style.display = (id === `github-step-${currentStep}`) ? 'block' : 'none';
+          el.style.display = (step === currentStep) ? 'block' : 'none';
         });
 
       if (currentStep === 'connect') {
@@ -70,9 +74,15 @@ if (!window.githubIntegrationInitialized) {
         finishBtn.style.display = 'none';
       } else if (currentStep === 'summary') {
         prevBtn.style.display = 'block';
+        nextBtn.style.display = 'block';
+        nextBtn.disabled = false;
+        finishBtn.style.display = 'none';
+        updateSummary();
+      } else if (currentStep === 'prompt') {
+        prevBtn.style.display = 'block';
         nextBtn.style.display = 'none';
         finishBtn.style.display = 'block';
-        updateSummary();
+        if (promptInput) promptInput.focus();
       }
     }
 
@@ -116,6 +126,8 @@ if (!window.githubIntegrationInitialized) {
             `${data.account.login} 님의 Github 계정과 연동됩니다.` : '';
           selectedRepos = new Set(data.selected_repositories || []);
           webhookDetails = data.webhooks || {};
+          geminiPrompt = data.github_gemini_prompt || '';
+          if (promptInput) promptInput.value = geminiPrompt;
           currentStep = 'organization';
           updateStep();
           loadOrganizations();
@@ -284,6 +296,7 @@ if (!window.githubIntegrationInitialized) {
     function saveSelection() {
       clearError();
       const payload = { repositories: Array.from(selectedRepos) };
+      if (promptInput) payload.github_gemini_prompt = promptInput.value;
       fetch(`/creatives/${creativeId}/github_integration`, {
         method: 'PATCH',
         headers: {
@@ -300,6 +313,8 @@ if (!window.githubIntegrationInitialized) {
           }
           selectedRepos = new Set(result.body.selected_repositories || []);
           webhookDetails = result.body.webhooks || {};
+          geminiPrompt = result.body.github_gemini_prompt || '';
+          if (promptInput) promptInput.value = geminiPrompt;
           updateSummary();
           alert(modal.dataset.successMessage);
         })
@@ -332,6 +347,8 @@ if (!window.githubIntegrationInitialized) {
         currentStep = 'organization';
       } else if (currentStep === 'summary') {
         currentStep = 'repositories';
+      } else if (currentStep === 'prompt') {
+        currentStep = 'summary';
       }
       updateStep();
       if (currentStep === 'organization' && organizations.length === 0) loadOrganizations();
@@ -347,6 +364,10 @@ if (!window.githubIntegrationInitialized) {
       } else if (currentStep === 'repositories') {
         currentStep = 'summary';
         updateStep();
+      } else if (currentStep === 'summary') {
+        currentStep = 'prompt';
+        updateStep();
+        if (promptInput) promptInput.focus();
       }
     });
 

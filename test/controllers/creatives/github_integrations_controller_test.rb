@@ -17,6 +17,7 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
       repository_full_name: "sample-user/example",
       webhook_secret: "existing-secret"
     )
+    @creative.update!(github_gemini_prompt: 'Custom prompt: #{pr_title}')
     sign_in_as(@user, password: "password")
   end
 
@@ -33,11 +34,13 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     repo_details = details["sample-user/example"]
     assert_equal "existing-secret", repo_details["secret"]
     assert repo_details["url"].end_with?("/github/webhook")
+    assert_equal 'Custom prompt: #{pr_title}', body["github_gemini_prompt"]
   end
 
   test "update stores webhook secrets for selected repositories" do
     payload = {
-      repositories: [ "sample-user/example", "sample-user/another" ]
+      repositories: [ "sample-user/example", "sample-user/another" ],
+      github_gemini_prompt: 'Updated prompt: #{pr_title} #{diff}'
     }
 
     provisioner_args = nil
@@ -68,5 +71,8 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     assert_equal github_webhook_url, provisioner_args[:webhook_url]
     returned_links = provisioner_args[:links]
     assert_equal payload[:repositories].sort, returned_links.map(&:repository_full_name).sort
+
+    assert_equal 'Updated prompt: #{pr_title} #{diff}', body["github_gemini_prompt"]
+    assert_equal 'Updated prompt: #{pr_title} #{diff}', @creative.reload.github_gemini_prompt
   end
 end
