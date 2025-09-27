@@ -12,6 +12,10 @@ module ActiveSupport
     fixtures :all
 
     # Add more helper methods to be used by all tests here...
+    setup do
+      # Rebuild the closure tree for Creatives fixture
+      Creative.rebuild! if defined?(Creative)
+    end
   end
 end
 

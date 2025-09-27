@@ -4,6 +4,7 @@ require "json"
 class Comments::ActionExecutorTest < ActiveSupport::TestCase
   setup do
     @user = users(:one)
+    @approver = users(:two)
     @creative = creatives(:tshirt)
   end
 
@@ -79,6 +80,101 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
     assert_equal "New idea", child.description.to_plain_text.strip
     assert_in_delta 0.25, child.progress
     assert_equal @creative.user, child.user
+  end
+
+  test "supports multiple actions within a single payload" do
+    child = Creative.create!(user: @user, parent: @creative, description: "Child", progress: 0.2)
+
+    action_payload = {
+      "actions" => [
+        {
+          "action" => "update_creative",
+          "creative_id" => child.id,
+          "attributes" => { "progress" => 1.0 }
+        },
+        {
+          "action" => "create_creative",
+          "parent_id" => @creative.id,
+          "attributes" => { "description" => "Follow up" }
+        }
+      ]
+    }
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate(action_payload),
+      approver: @approver
+    )
+
+    Comments::ActionExecutor.new(comment: comment, executor: @approver).call
+
+    child.reload
+    assert_in_delta 1.0, child.progress
+    new_child = @creative.children.order(:created_at).last
+    assert_equal "Follow up", new_child.description.to_plain_text.strip
+    assert_equal @creative, new_child.parent
+  end
+
+  test "rolls back all actions when one fails" do
+    child = Creative.create!(user: @user, parent: @creative, description: "Child", progress: 0.2)
+
+    action_payload = {
+      "actions" => [
+        {
+          "action" => "update_creative",
+          "creative_id" => child.id,
+          "attributes" => { "progress" => 0.9 }
+        },
+        {
+          "action" => "update_creative",
+          "creative_id" => child.id,
+          "attributes" => { "progress" => 2.0 }
+        }
+      ]
+    }
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate(action_payload),
+      approver: @approver
+    )
+
+    executor = Comments::ActionExecutor.new(comment: comment, executor: @approver)
+
+    error = assert_raises(Comments::ActionExecutor::ExecutionError) do
+      executor.call
+    end
+    assert_match "less than or equal to 1.0", error.message
+
+    child.reload
+    assert_in_delta 0.2, child.progress
+  end
+
+  test "raises when action targets creative outside the comment tree" do
+    external = Creative.create!(user: @user, description: "External")
+
+    action_payload = {
+      "action" => "update_creative",
+      "creative_id" => external.id,
+      "attributes" => { "progress" => 0.5 }
+    }
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate(action_payload),
+      approver: @user
+    )
+
+    executor = Comments::ActionExecutor.new(comment: comment, executor: @user)
+
+    error = assert_raises(Comments::ActionExecutor::ExecutionError) do
+      executor.call
+    end
+
+    assert_equal I18n.t("comments.approve_invalid_creative"), error.message
   end
 
   test "raises when executor no longer matches approver" do
