@@ -8,6 +8,7 @@ module Creatives
       :path_with_ids_and_progress,
       :full_path_with_ids,
       :full_path_with_ids_and_progress,
+      :leaf,
       keyword_init: true
     )
 
@@ -55,6 +56,15 @@ module Creatives
       entry_map[id.to_i]&.full_path_with_ids_and_progress
     end
 
+    def full_paths_with_ids_and_progress_with_leaf
+      entries.map do |entry|
+        {
+          path: entry.full_path_with_ids_and_progress,
+          leaf: entry.leaf
+        }
+      end
+    end
+
     private
 
     def entries
@@ -77,6 +87,8 @@ module Creatives
       current_path_with_ids = (ancestors_with_ids + [ label_with_id ]).join(" > ")
       current_path_with_ids_and_progress = (ancestors_with_ids_and_progress + [ label_with_progress ]).join(" > ")
 
+      children = node.children.order(:sequence).to_a
+
       results << Entry.new(
         creative_id: node.id,
         progress: node.progress,
@@ -84,10 +96,11 @@ module Creatives
         path_with_ids: label_with_id,
         path_with_ids_and_progress: label_with_progress,
         full_path_with_ids: current_path_with_ids,
-        full_path_with_ids_and_progress: current_path_with_ids_and_progress
+        full_path_with_ids_and_progress: current_path_with_ids_and_progress,
+        leaf: children.empty?
       )
 
-      node.children.order(:sequence).each do |child|
+      children.each do |child|
         traverse(
           child,
           ancestors + [ label ],

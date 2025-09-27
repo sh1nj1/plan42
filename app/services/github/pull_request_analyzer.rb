@@ -11,7 +11,7 @@ module Github
     def initialize(payload:, creative:, paths:, commit_messages: [], diff: nil, client: GeminiChatClient.new, logger: Rails.logger)
       @payload = payload
       @creative = creative
-      @paths = paths
+      @paths = normalize_paths(paths)
       @commit_messages = Array(commit_messages)
       @diff = diff
       @client = client
@@ -51,7 +51,10 @@ module Github
 
     def build_messages
       pr = payload["pull_request"]
-      tree_lines = paths.map { |path| "- #{path}" }.join("\n")
+      tree_lines = paths.map do |entry|
+        status = entry[:leaf] ? "[LEAF]" : "[BRANCH]"
+        "- #{entry[:path]} #{status}"
+      end.join("\n")
       pr_body = pr["body"].to_s
       commit_lines = formatted_commit_messages
       diff_text = formatted_diff
@@ -70,14 +73,14 @@ module Github
         Pull request diff:
         #{diff_text}
 
-        Creative task paths (each line is a single task path from root to leaf). Each node is shown as "[ID] Title (progress XX%)" when progress is known:
+        Creative task paths (each line is a single task path from root to leaf). Each node is shown as "[ID] Title (progress XX%)" when progress is known. Leaf creatives are marked with [LEAF] and non-leaf creatives with [BRANCH]:
         #{tree_lines}
 
         #{language_instructions}
 
         Return a JSON object with two keys:
-        - "completed": array of objects representing tasks finished by this PR. Each object must include "creative_id" (from the IDs above). Optionally include "progress" (0.0 to 1.0), "note", or "path" for context.
-        - "additional": array of objects for follow-up work. Each object must include "parent_id" (from the IDs above) and "description" (the new creative text). Optionally include "progress" (0.0 to 1.0), "note", or "path".
+        - "completed": array of objects representing tasks finished by this PR. Each object must include "creative_id" (from the IDs above). Use only creatives marked [LEAF] in the list above. Optionally include "progress" (0.0 to 1.0), "note", or "path" for context.
+        - "additional": array of objects for new creatives that are not already represented in the tree above. Each object must include "parent_id" (from the IDs above) and "description" (the new creative text). Do not use this list for follow-up tasks on existing creatives—only describe brand new creatives. Optionally include "progress" (0.0 to 1.0), "note", or "path".
 
         Do not add tasks to "completed" if they already show 100% progress in the tree above unless this PR clearly made new changes that justify marking them complete.
 
@@ -85,6 +88,30 @@ module Github
       PROMPT
 
       [ { role: "user", parts: [ { text: prompt } ] } ]
+    end
+
+    def normalize_paths(paths)
+      Array(paths).map do |entry|
+        case entry
+        when Hash
+          path_value = entry[:path]
+          path_value = entry["path"] if path_value.nil?
+
+          leaf_value =
+            if entry.key?(:leaf)
+              entry[:leaf]
+            elsif entry.key?("leaf")
+              entry["leaf"]
+            end
+
+          {
+            path: path_value.to_s,
+            leaf: !!leaf_value
+          }
+        else
+          { path: entry.to_s, leaf: false }
+        end
+      end
     end
 
     def parse_response(text)

@@ -6,7 +6,7 @@ module Creatives
       user = users(:one)
       root = Creative.create!(user: user, description: "Root")
       child = Creative.create!(user: user, parent: root, description: "Child")
-      Creative.create!(user: user, parent: child, description: "Grandchild")
+      grandchild = Creative.create!(user: user, parent: child, description: "Grandchild")
       Creative.create!(user: user, parent: root, description: "Second")
 
       root.update_column(:progress, 0.25)
@@ -38,6 +38,26 @@ module Creatives
       assert_includes(
         full_paths_with_ids_and_progress,
         "[#{root.id}] Root (progress 25%) > [#{child.id}] Child (progress 100%)"
+      )
+
+      paths_with_leaf = exporter.full_paths_with_ids_and_progress_with_leaf
+      assert_includes(
+        paths_with_leaf,
+        { path: "[#{root.id}] Root (progress 25%)", leaf: false }
+      )
+      assert_includes(
+        paths_with_leaf,
+        {
+          path: "[#{root.id}] Root (progress 25%) > [#{child.id}] Child (progress 100%)",
+          leaf: false
+        }
+      )
+      assert_includes(
+        paths_with_leaf,
+        {
+          path: "[#{root.id}] Root (progress 25%) > [#{child.id}] Child (progress 100%) > [#{grandchild.id}] Grandchild",
+          leaf: true
+        }
       )
 
       assert_equal "Root > Child", exporter.path_for(child.id)
