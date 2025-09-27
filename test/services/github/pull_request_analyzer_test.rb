@@ -92,7 +92,7 @@ module Github
       assert_includes prompt, "Body: Adds improvements"
       assert_includes prompt, "Commits: 1. Refactor module"
       assert_includes prompt, "Diff: diff --git a/file.rb b/file.rb"
-      assert_includes prompt, "Tree: [1] Root > [2] Child"
+      assert_includes prompt, "Tree: - [1] Root > [2] Child [LEAF]"
       assert_includes prompt, "Lang: Preferred response language:"
     end
 
