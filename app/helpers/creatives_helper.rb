@@ -71,52 +71,20 @@ module CreativesHelper
       else
         "".html_safe
       end
-      render_progress_value(
-        progress_value,
-        link_url: creative_path(creative),
-        aria_label: t("creatives.progress_link.aria_label", default: "Open creative"),
-        tooltip: t("creatives.progress_link.tooltip", default: "Open creative")
-      ) + comment_part + "<br />".html_safe + (creative.tags ? render_creative_tags(creative) : "".html_safe)
+      render_progress_value(progress_value) + comment_part + "<br />".html_safe + (creative.tags ? render_creative_tags(creative) : "".html_safe)
     end
   end
 
-  def render_progress_value(value, link_url: nil, aria_label: nil, tooltip: nil)
+  def render_progress_value(value)
     text = number_to_percentage(value * 100, precision: 0)
     if value == 1 && !Current.user&.completion_mark.nil?
       text = Current.user.completion_mark
     end
-
-    progress_classes = [
-      "creative-progress-value",
-      "creative-progress-#{value == 1 ? 'complete' : 'incomplete'}"
-    ]
-
-    progress_classes << "creative-progress-value--linked" if link_url.present?
-
-    label = content_tag(:span, text, class: "creative-progress-label")
-
-    return content_tag(:span, label, class: progress_classes.join(" ")) unless link_url.present?
-
-    aria_label ||= I18n.t("creatives.progress_link.aria_label", default: "Open creative")
-    tooltip ||= I18n.t("creatives.progress_link.tooltip", default: "Open creative")
-
-    arrow = content_tag(
+    content_tag(
       :span,
-      svg_tag("arrow-right.svg", class: "creative-progress-link-icon", width: 16, height: 16),
-      class: "creative-progress-link-pill",
-      aria: { hidden: true }
+      text,
+      class: "creative-progress-#{value == 1 ? 'complete' : 'incomplete'}"
     )
-
-    link = content_tag(
-      :a,
-      arrow,
-      href: link_url,
-      class: "creative-progress-link",
-      aria: { label: aria_label },
-      title: tooltip
-    )
-
-    content_tag(:span, safe_join([label, link]), class: progress_classes.join(" "))
   end
 
   def render_creative_tree(creatives, level = 1, select_mode: false, max_level: User::DEFAULT_DISPLAY_LEVEL)
