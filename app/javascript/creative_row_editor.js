@@ -274,11 +274,49 @@ if (!window.creativeRowEditorInitialized) {
       return '';
     }
 
+    function escapeAttribute(value) {
+      if (value === undefined || value === null) return '';
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function progressLinkLabelFor(tree) {
+      const rowElement = treeRowElement(tree);
+      if (rowElement) {
+        if (rowElement.progressLinkLabel) return rowElement.progressLinkLabel;
+        if (rowElement.getAttribute) {
+          const attr = rowElement.getAttribute('progress-link-label');
+          if (attr) return attr;
+        }
+        if (rowElement.dataset?.progressLinkLabel) return rowElement.dataset.progressLinkLabel;
+      }
+      if (tree?.dataset?.progressLinkLabel) return tree.dataset.progressLinkLabel;
+      const templateRow = document.querySelector('creative-tree-row[progress-link-label]');
+      if (templateRow) {
+        return templateRow.progressLinkLabel
+          || templateRow.getAttribute?.('progress-link-label')
+          || templateRow.dataset?.progressLinkLabel
+          || 'Open creative';
+      }
+      return 'Open creative';
+    }
+
     function insertRow(tree, data) {
       if (tree.querySelector('.creative-row')) return;
       const row = document.createElement('div');
       row.className = 'creative-row';
       row.style.display = 'none';
+      const rowElement = treeRowElement(tree);
+      const linkUrl = `/creatives/${data.id}`;
+      const ariaLabel = escapeAttribute(progressLinkLabelFor(tree));
+      if (rowElement) {
+        rowElement.linkUrl = linkUrl;
+        rowElement.setAttribute('link-url', linkUrl);
+      }
       // TODO: remove DRY, use template or copy existing dom
       row.innerHTML = `
   <div class="creative-row-start">
@@ -288,9 +326,18 @@ if (!window.creativeRowEditorInitialized) {
       </button>
       <div class="creative-divider" style="width: 6px;"></div>
     </div>
-    <a class="unstyled-link" href="/creatives/${data.id}">${data.description || ''}</a>
+    <a class="unstyled-link" href="${linkUrl}">${data.description || ''}</a>
   </div>
-  <div class="creative-row-end"><span class="creative-progress-incomplete">0%</span></div>`;
+  <div class="creative-row-end">
+    <span class="creative-progress-float-wrapper">
+      <div class="creative-progress-container">
+        <span class="creative-progress-label"><span class="creative-progress-incomplete">0%</span></span>
+      </div>
+      <a class="creative-progress-float-link" href="${linkUrl}" aria-label="${ariaLabel}">
+        <span class="creative-progress-float-icon" aria-hidden="true">→</span>
+      </a>
+    </span>
+  </div>`;
       tree.insertBefore(row, tree.firstChild);
     }
 
@@ -298,13 +345,32 @@ if (!window.creativeRowEditorInitialized) {
       const id = tree.dataset.id;
       window.creativesApi.get(id)
         .then(data => {
-          const link = tree.querySelector('a.unstyled-link');
-          if (link) link.innerHTML = data.description || '';
-          const span = tree.querySelector('.creative-row-end span');
-          if (span) {
-            span.textContent = `${Math.round((data.progress || 0) * 100)}%`;
-            span.className = data.progress == 1 ?
-              'creative-progress-complete' : 'creative-progress-incomplete';
+          const linkUrl = `/creatives/${id}`;
+          const descriptionLink = tree.querySelector('.creative-row-start a.unstyled-link');
+          if (descriptionLink) {
+            descriptionLink.innerHTML = data.description || '';
+            descriptionLink.setAttribute('href', linkUrl);
+          }
+
+          const progressPercent = Math.round((data.progress || 0) * 100);
+          const progressClass = data.progress == 1 ?
+            'creative-progress-complete' : 'creative-progress-incomplete';
+          const label = tree.querySelector('.creative-progress-label');
+          if (label) {
+            label.innerHTML = `<span class="${progressClass}">${progressPercent}%</span>`;
+          } else {
+            const span = tree.querySelector('.creative-row-end span');
+            if (span) {
+              span.textContent = `${progressPercent}%`;
+              span.className = progressClass;
+            }
+          }
+
+          const progressLink = tree.querySelector('.creative-progress-float-link');
+          if (progressLink) {
+            progressLink.setAttribute('href', linkUrl);
+            const ariaLabel = progressLinkLabelFor(tree);
+            if (ariaLabel) progressLink.setAttribute('aria-label', ariaLabel);
           }
         });
     }
