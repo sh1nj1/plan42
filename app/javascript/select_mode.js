@@ -34,10 +34,16 @@ if (!window.isSelectModeInitialized) {
             row.addEventListener('mousedown', function(e) {
                 if (!selectModeActive) return;
                 if (e.target.closest('.select-creative-checkbox')) return;
-                dragging = true;
+                const tree = row.closest('.creative-tree');
+                const isDraggable = tree && tree.getAttribute('draggable') !== 'false';
+                const alreadySelected = row.classList.contains('selected');
+                const shouldToggle = !isDraggable || !alreadySelected || e.altKey || e.shiftKey;
+                dragging = shouldToggle;
                 dragMode = e.altKey ? 'remove' : (e.shiftKey ? 'add' : 'toggle');
-                applySelection(row);
-                e.preventDefault();
+                if (shouldToggle) {
+                    applySelection(row);
+                    e.preventDefault();
+                }
             });
             row.addEventListener('mouseenter', function() {
                 if (dragging && selectModeActive) {

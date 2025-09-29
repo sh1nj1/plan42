@@ -149,7 +149,7 @@ class CreativeTreeRow extends LitElement {
       return this._renderTitle();
     }
 
-    const dragEnabled = !this.selectMode;
+    const dragEnabled = !this.selectMode || this.canWrite;
     const draggableAttr = dragEnabled ? "true" : nothing;
     const dragStartAttr = dragEnabled ? "handleDragStart(event)" : nothing;
     const dragOverAttr = dragEnabled ? "handleDragOver(event)" : nothing;
