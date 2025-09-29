@@ -68,16 +68,28 @@ function parseDragState(data) {
 
 function getDraggedContext(event) {
   const existing = getDraggedState();
+  const transfer = event.dataTransfer;
+  const transferTypes = transfer?.types
+    ? new Set(Array.from(transfer.types))
+    : new Set();
+  const hasTrustedPayload = transferTypes.has(TRANSFER_MIME_TYPE);
+
+  const rawData = hasTrustedPayload
+    ? transfer.getData(TRANSFER_MIME_TYPE) || transfer.getData('text/plain')
+    : null;
+  const parsed = parseDragState(rawData);
+
   if (existing) {
+    if (parsed && parsed.creativeId === existing.creativeId && parsed.treeId === existing.treeId) {
+      return { draggedState: existing, isExternal: false };
+    }
+
+    if (parsed) {
+      return { draggedState: parsed, isExternal: true };
+    }
+
     return { draggedState: existing, isExternal: false };
   }
-
-  const transfer = event.dataTransfer;
-  if (!transfer) return { draggedState: null, isExternal: false };
-
-  const rawData =
-    transfer.getData(TRANSFER_MIME_TYPE) || transfer.getData('text/plain');
-  const parsed = parseDragState(rawData);
 
   if (!parsed) {
     return { draggedState: null, isExternal: false };
