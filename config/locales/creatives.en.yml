@@ -36,6 +36,7 @@ en:
       import_markdown: "Import Markdown/PPT"
       request_permission: "Request Access"
       no_permission: "You do not have permission to view this Creative."
+      view_origin: "Open origin creative"
       share_creative: "Share Creative"
       shared_with: "Shared With"
       unknown_user: "Unknown user"

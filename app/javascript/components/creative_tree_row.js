@@ -19,6 +19,7 @@ class CreativeTreeRow extends LitElement {
     progressHtml: { state: true },
     editIconHtml: { state: true },
     editOffIconHtml: { state: true },
+    originLinkHtml: { state: true },
     isTitle: { type: Boolean, attribute: "is-title", reflect: true }
   };
 
@@ -38,6 +39,7 @@ class CreativeTreeRow extends LitElement {
     this.progressHtml = "";
     this.editIconHtml = "";
     this.editOffIconHtml = "";
+    this.originLinkHtml = "";
     this.isTitle = false;
     this._templatesExtracted = false;
 
@@ -81,6 +83,7 @@ class CreativeTreeRow extends LitElement {
       if (hasCached("progressHtml")) this.progressHtml = this.dataset.progressHtml;
       if (hasCached("editIconHtml")) this.editIconHtml = this.dataset.editIconHtml;
       if (hasCached("editOffIconHtml")) this.editOffIconHtml = this.dataset.editOffIconHtml;
+      if (hasCached("originLinkHtml")) this.originLinkHtml = this.dataset.originLinkHtml;
 
       // If we lack cached markup (older snapshots), attempt to extract from the existing DOM.
       if (!hasCached("descriptionHtml") && existingTree) {
@@ -111,6 +114,10 @@ class CreativeTreeRow extends LitElement {
           case "edit-off-icon":
             this.editOffIconHtml = markup;
             this.dataset.editOffIconHtml = markup;
+            break;
+          case "origin-link":
+            this.originLinkHtml = markup;
+            this.dataset.originLinkHtml = markup;
             break;
           default:
             break;
@@ -188,6 +195,7 @@ class CreativeTreeRow extends LitElement {
             <div class="creative-content">
               ${unsafeHTML(this.descriptionHtml || "")}
             </div>
+            ${this.originLinkHtml ? unsafeHTML(this.originLinkHtml) : nothing}
           </h1>
           <div>
             <h1 style="display:flex;align-items:center;gap:1em;">
