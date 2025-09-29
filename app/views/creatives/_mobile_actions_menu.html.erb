@@ -9,7 +9,7 @@
       <button type="button" class="popup-menu-item" data-click-target="github-integration-btn"><%= t('creatives.index.integrations', default: '연동') %> - Github</button>
     <% end %>
     <% if @parent_creative.present? %>
-      <%= link_to t('creatives.index.slide_view'), slide_view_creative_path(@parent_creative), class: 'popup-menu-item' %>
+      <%= button_to t('creatives.index.slide_view'), slide_view_creative_path(@parent_creative), method: :get, class: 'popup-menu-item' %>
     <% end %>
     <button type="button" class="popup-menu-item" data-click-target="import-markdown-btn"><%= t('creatives.index.import_markdown') %></button>
     <button type="button" class="popup-menu-item" data-click-target="export-markdown-btn"><%= t('creatives.index.export_markdown') %></button>
