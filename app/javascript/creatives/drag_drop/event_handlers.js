@@ -32,6 +32,8 @@ const coordPrecision = 5;
 
 const TRANSFER_MIME_TYPE = 'application/x-plan42-creative';
 const DRAG_TOKEN_STORAGE_KEY = 'plan42.dragToken';
+const INVALID_DROP_MESSAGE =
+  'We could not verify that drop. Please refresh the page and try again.';
 
 let cachedDragToken;
 
@@ -148,28 +150,36 @@ function getDraggedContext(event) {
 
   const rawData = hasTrustedPayload ? transfer.getData(TRANSFER_MIME_TYPE) : null;
   const parsed = parseDragState(rawData);
+  const wasRejectedPayload = hasTrustedPayload && !parsed;
 
   if (existing) {
     if (parsed && parsed.creativeId === existing.creativeId && parsed.treeId === existing.treeId) {
-      return { draggedState: existing, isExternal: false };
+      return { draggedState: existing, isExternal: false, wasRejectedPayload };
     }
 
     if (parsed) {
-      return { draggedState: parsed, isExternal: true };
+      return { draggedState: parsed, isExternal: true, wasRejectedPayload };
     }
 
     if (hasTrustedPayload) {
-      return { draggedState: null, isExternal: false };
+      return { draggedState: null, isExternal: false, wasRejectedPayload };
     }
 
-    return { draggedState: existing, isExternal: false };
+    return { draggedState: existing, isExternal: false, wasRejectedPayload };
   }
 
   if (!parsed) {
-    return { draggedState: null, isExternal: false };
+    return { draggedState: null, isExternal: false, wasRejectedPayload };
   }
 
-  return { draggedState: parsed, isExternal: true };
+  return { draggedState: parsed, isExternal: true, wasRejectedPayload };
+}
+
+function notifyInvalidDrop() {
+  console.error('Rejected invalid creative drop payload');
+  if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+    window.alert(INVALID_DROP_MESSAGE);
+  }
 }
 
 function handleDragStart(event) {
@@ -243,9 +253,17 @@ function handleDrop(event) {
   clearDragHighlight(targetTree);
   clearDragHighlight(getLastDragOverRow());
 
-  const { draggedState, isExternal } = getDraggedContext(event);
+  const { draggedState, isExternal, wasRejectedPayload } = getDraggedContext(event);
 
-  if (!targetTree || targetTree.draggable === false || !draggedState) {
+  if (!targetTree || targetTree.draggable === false) {
+    resetDrag();
+    return;
+  }
+
+  if (!draggedState) {
+    if (wasRejectedPayload) {
+      notifyInvalidDrop();
+    }
     resetDrag();
     return;
   }
