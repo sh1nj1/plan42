@@ -36,7 +36,7 @@ class Creative < ApplicationRecord
   has_many :comments, dependent: :destroy
   has_many :comment_read_pointers, dependent: :delete_all
 
-  has_closure_tree order: :sequence, name_column: :description
+  acts_as_tree order: :sequence, name_column: :description
 
   # belongs_to :parent, class_name: "Creative", optional: true
   # has_many :children, -> { order(:sequence) }, class_name: "Creative", foreign_key: :parent_id, dependent: :destroy
@@ -58,6 +58,8 @@ class Creative < ApplicationRecord
 
   after_save :update_parent_progress
   after_destroy :update_parent_progress
+  after_commit :broadcast_livestore_upsert, on: %i[create update]
+  after_commit :broadcast_livestore_destroy, on: :destroy
 
   def self.recalculate_all_progress!
     Creatives::ProgressService.recalculate_all!
@@ -202,6 +204,33 @@ class Creative < ApplicationRecord
   end
 
   private
+
+  def broadcast_livestore_upsert
+    broadcast_livestore_event(:refresh)
+  end
+
+  def broadcast_livestore_destroy
+    broadcast_livestore_event(:destroy)
+  end
+
+  def broadcast_livestore_event(event)
+    return unless Rails.application.config.x.livestore.enabled
+    base = effective_origin
+    payload = {
+      event: event.to_s,
+      id: base.id,
+      initiator_id: Current.user&.id
+    }
+    recipients_for_livestore(base).each do |recipient|
+      CreativeUpdatesChannel.broadcast_to(recipient, payload)
+    end
+  end
+
+  def recipients_for_livestore(base)
+    recipients = [ base.user ]
+    recipients += base.all_shared_users(:read).filter_map(&:user)
+    recipients.compact.uniq
+  end
 
   def assign_default_user
     return if user.present?

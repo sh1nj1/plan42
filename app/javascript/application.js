@@ -9,6 +9,7 @@ import "./trix_color_picker"
 // Creative page modules
 import "./creatives/drag_drop"
 import "./api/creatives.api"
+import "./creative_updates_stream"
 import "./creatives_expansion"
 import "./creatives_import"
 import "./creative_row_editor"

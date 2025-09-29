@@ -1,6 +1,11 @@
+import livestoreClient from './livestore.client';
+
 const creativesApi = {
   get(id) {
-    return fetch(`/creatives/${id}.json`).then((r) => r.json());
+    return livestoreClient.getCreative(id).then((data) => {
+      if (data) return data;
+      return fetch(`/creatives/${id}.json`).then((r) => r.json());
+    });
   },
 
   parentSuggestions(id) {
@@ -12,26 +17,11 @@ const creativesApi = {
   },
 
   save(action, method, form) {
-    return fetch(action, {
-      method,
-      headers: {
-        Accept: 'application/json',
-        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content,
-      },
-      body: new FormData(form),
-      credentials: 'same-origin',
-    });
+    return livestoreClient.saveForm(action, method, form);
   },
 
   destroy(id, withChildren) {
-    const query = withChildren ? '?delete_with_children=true' : '';
-    return fetch(`/creatives/${id}${query}`, {
-      method: 'DELETE',
-      headers: {
-        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content,
-      },
-      credentials: 'same-origin',
-    });
+    return livestoreClient.destroyCreative(id, withChildren);
   },
 };
 

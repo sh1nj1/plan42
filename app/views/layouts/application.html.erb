@@ -8,6 +8,9 @@
     <meta name="app-version" content="<%= Rails.application.config.app_version %>">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
+    <% if Rails.application.config.x.livestore.enabled %>
+      <meta name="livestore-base-url" content="<%= Rails.application.config.x.livestore.base_url %>">
+    <% end %>
     <% if Current.user %>
       <meta name="notifications-enabled" content="<%= Current.user.notifications_enabled %>">
     <% end %>

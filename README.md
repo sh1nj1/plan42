@@ -14,6 +14,15 @@ Your creativeness is coming!
 * `bin/rails db:prepare` - Run database migrations (default to use sqlite3)
 * `bin/rails server` - Start the Rails server. When `SOLID_QUEUE_IN_PUMA` is set, the background job processor and scheduler run alongside the server. The `bin/dev` script sets this variable automatically in development.
 
+## LiveStore integration
+
+Creatives are cached locally via [livestore.dev](https://livestore.dev) before being synchronized with the Rails backend.
+
+Configure the integration with the following environment variables (defaults shown in parentheses):
+
+* `LIVESTORE_BASE_URL` (`https://livestore.dev/api`) – LiveStore endpoint that mirrors creative CRUD operations.
+* `LIVESTORE_ENABLED` (`true`) – Toggle LiveStore support. Set to `false` to fall back to server-only requests.
+
 ### Runtime version info:
 
 ```bash
