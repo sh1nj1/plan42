@@ -36,6 +36,7 @@ const DROP_SIGNAL_STORAGE_KEY = 'plan42.dragDropSignal';
 const WINDOW_ID_SESSION_KEY = 'plan42.dragWindowId';
 const INVALID_DROP_MESSAGE =
   'We could not verify that drop. Please refresh the page and try again.';
+const DROP_COMPLETED_EVENT = 'plan42:creative-drop-complete';
 
 let cachedDragToken;
 let cachedWindowId;
@@ -226,6 +227,20 @@ function emitDropSignal({ creativeId, treeId, sourceWindowId }) {
   }
 }
 
+function dispatchDropCompletion(detail) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.dispatchEvent(
+      new CustomEvent(DROP_COMPLETED_EVENT, {
+        detail,
+      })
+    );
+  } catch (error) {
+    console.error('Failed to dispatch creative drop completion event', error);
+  }
+}
+
 function removeDroppedCreative({ creativeId, treeId }) {
   if (typeof document === 'undefined') return;
 
@@ -270,10 +285,29 @@ function handleStorageChange(event) {
     return;
   }
 
-  const { creativeId, treeId } = payload;
+  const { creativeId } = payload;
   if (!creativeId) return;
 
-  removeDroppedCreative({ creativeId, treeId });
+  dispatchDropCompletion({
+    ...payload,
+    context: 'source',
+  });
+}
+
+function handleDropCompletionEvent(event) {
+  if (!event || !event.detail) return;
+
+  const { creativeId, treeId = null, sourceWindowId = null, context } = event.detail;
+  if (!creativeId || !context) return;
+
+  const windowId = readWindowId();
+  if (!windowId || sourceWindowId !== windowId) {
+    return;
+  }
+
+  if (context === 'source') {
+    removeDroppedCreative({ creativeId, treeId });
+  }
 }
 
 function getDraggedContext(event) {
@@ -500,6 +534,7 @@ function handleDrop(event) {
 
       if (dropSignalDetails.sourceWindowId) {
         emitDropSignal(dropSignalDetails);
+        dispatchDropCompletion({ ...dropSignalDetails, context: 'target' });
       }
     })
     .catch((error) => {
@@ -532,6 +567,7 @@ export function registerGlobalHandlers() {
 
   document.addEventListener('dragend', handleDragEnd);
   window.addEventListener('storage', handleStorageChange);
+  window.addEventListener(DROP_COMPLETED_EVENT, handleDropCompletionEvent);
 }
 
 export function hasActiveDrag() {
