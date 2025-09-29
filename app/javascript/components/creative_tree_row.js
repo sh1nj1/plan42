@@ -63,6 +63,7 @@ class CreativeTreeRow extends LitElement {
 
   updated() {
     this._attachHandlers();
+    this._ensureProgressLinkOverlay();
   }
 
   _extractTemplates() {
@@ -128,6 +129,53 @@ class CreativeTreeRow extends LitElement {
 
     if (existingTree) existingTree.remove();
     this._templatesExtracted = true;
+  }
+
+  _ensureProgressLinkOverlay() {
+    if (!this.linkUrl) return;
+
+    const progressContainer = this.querySelector(".creative-row-end");
+    if (!progressContainer) return;
+
+    const progressValue = progressContainer.querySelector(
+      ".creative-progress-complete, .creative-progress-incomplete"
+    );
+    if (!progressValue) return;
+
+    progressValue.classList.add("creative-progress-value");
+
+    let progressLink = progressValue.querySelector(".creative-progress-link");
+    if (!progressLink) {
+      progressLink = document.createElement("a");
+      progressLink.className = "creative-progress-link";
+      progressLink.setAttribute("aria-label", this._progressLinkAriaLabel());
+      progressLink.setAttribute("title", this._progressLinkTooltip());
+      progressValue.appendChild(progressLink);
+
+      const svgNS = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(svgNS, "svg");
+      svg.setAttribute("class", "creative-progress-link-icon");
+      svg.setAttribute("viewBox", "0 0 16 16");
+      svg.setAttribute("aria-hidden", "true");
+      const path = document.createElementNS(svgNS, "path");
+      path.setAttribute("fill", "currentColor");
+      path.setAttribute(
+        "d",
+        "M5.22 3.97a.75.75 0 0 1 1.06 0L10.53 8l-4.25 4.03a.75.75 0 1 1-1.04-1.08L8.44 8 5.22 5.03a.75.75 0 0 1 0-1.06z"
+      );
+      svg.appendChild(path);
+      progressLink.appendChild(svg);
+    }
+
+    progressLink.href = this.linkUrl;
+  }
+
+  _progressLinkAriaLabel() {
+    return this.getAttribute("link-aria-label") || "Open creative";
+  }
+
+  _progressLinkTooltip() {
+    return this.getAttribute("link-tooltip") || "Open creative";
   }
 
   _attachHandlers() {
