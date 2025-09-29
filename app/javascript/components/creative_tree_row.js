@@ -63,7 +63,6 @@ class CreativeTreeRow extends LitElement {
 
   updated() {
     this._attachHandlers();
-    this._ensureProgressLinkOverlay();
   }
 
   _extractTemplates() {
@@ -131,16 +130,21 @@ class CreativeTreeRow extends LitElement {
     this._templatesExtracted = true;
   }
 
-  _ensureProgressLinkOverlay() {
-    if (!this.linkUrl) return;
+  _renderProgress() {
+    if (!this.progressHtml) return nothing;
 
-    const progressContainer = this.querySelector(".creative-row-end");
-    if (!progressContainer) return;
+    return unsafeHTML(this.linkUrl ? this._progressHtmlWithOverlay() : this.progressHtml);
+  }
 
-    const progressValue = progressContainer.querySelector(
+  _progressHtmlWithOverlay() {
+    const template = document.createElement("template");
+    template.innerHTML = this.progressHtml;
+
+    const progressValue = template.content.querySelector(
       ".creative-progress-complete, .creative-progress-incomplete"
     );
-    if (!progressValue) return;
+
+    if (!progressValue) return this.progressHtml;
 
     progressValue.classList.add("creative-progress-value");
 
@@ -148,26 +152,23 @@ class CreativeTreeRow extends LitElement {
     if (!progressLink) {
       progressLink = document.createElement("a");
       progressLink.className = "creative-progress-link";
-      progressLink.setAttribute("aria-label", this._progressLinkAriaLabel());
-      progressLink.setAttribute("title", this._progressLinkTooltip());
       progressValue.appendChild(progressLink);
-
-      const svgNS = "http://www.w3.org/2000/svg";
-      const svg = document.createElementNS(svgNS, "svg");
-      svg.setAttribute("class", "creative-progress-link-icon");
-      svg.setAttribute("viewBox", "0 0 16 16");
-      svg.setAttribute("aria-hidden", "true");
-      const path = document.createElementNS(svgNS, "path");
-      path.setAttribute("fill", "currentColor");
-      path.setAttribute(
-        "d",
-        "M5.22 3.97a.75.75 0 0 1 1.06 0L10.53 8l-4.25 4.03a.75.75 0 1 1-1.04-1.08L8.44 8 5.22 5.03a.75.75 0 0 1 0-1.06z"
-      );
-      svg.appendChild(path);
-      progressLink.appendChild(svg);
     }
 
-    progressLink.href = this.linkUrl;
+    progressLink.setAttribute("href", this.linkUrl);
+    progressLink.setAttribute("aria-label", this._progressLinkAriaLabel());
+    progressLink.setAttribute("title", this._progressLinkTooltip());
+    progressLink.innerHTML = CreativeTreeRow._progressLinkIconSvg;
+
+    return template.innerHTML;
+  }
+
+  static get _progressLinkIconSvg() {
+    return (
+      '<svg class="creative-progress-link-icon" viewBox="0 0 16 16" aria-hidden="true">' +
+      '<path fill="currentColor" d="M5.22 3.97a.75.75 0 0 1 1.06 0L10.53 8l-4.25 4.03a.75.75 0 1 1-1.04-1.08L8.44 8 5.22 5.03a.75.75 0 0 1 0-1.06z"></path>' +
+      "</svg>"
+    );
   }
 
   _progressLinkAriaLabel() {
@@ -224,7 +225,7 @@ class CreativeTreeRow extends LitElement {
             </div>
             ${this._renderContent()}
           </div>
-          ${unsafeHTML(this.progressHtml || "")}
+          ${this._renderProgress()}
         </div>
       </div>
     `;
@@ -247,7 +248,7 @@ class CreativeTreeRow extends LitElement {
           </h1>
           <div>
             <h1 style="display:flex;align-items:center;gap:1em;">
-              ${unsafeHTML(this.progressHtml || "")}
+              ${this._renderProgress()}
             </h1>
           </div>
         </div>
