@@ -31,12 +31,77 @@ const childZoneRatio = 0.3;
 const coordPrecision = 5;
 
 const TRANSFER_MIME_TYPE = 'application/x-plan42-creative';
+const DRAG_TOKEN_STORAGE_KEY = 'plan42.dragToken';
+
+let cachedDragToken;
+
+function generateDragToken() {
+  if (typeof window === 'undefined') return null;
+
+  const fallback = () =>
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+  try {
+    const { crypto } = window;
+    if (crypto && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch (error) {
+    console.error('Failed to access crypto API for drag token generation', error);
+  }
+
+  return fallback();
+}
+
+function readStoredDragToken() {
+  if (cachedDragToken) return cachedDragToken;
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const storage = window.localStorage;
+    if (!storage) return null;
+
+    const storedToken = storage.getItem(DRAG_TOKEN_STORAGE_KEY);
+    if (storedToken) {
+      cachedDragToken = storedToken;
+    }
+
+    return cachedDragToken || null;
+  } catch (error) {
+    console.error('Failed to read drag session token from storage', error);
+    return null;
+  }
+}
+
+function ensureDragSessionToken() {
+  if (typeof window === 'undefined') return null;
+
+  const existing = readStoredDragToken();
+  if (existing) return existing;
+
+  try {
+    const storage = window.localStorage;
+    if (!storage) return null;
+
+    const freshToken = generateDragToken();
+    if (!freshToken) return null;
+
+    storage.setItem(DRAG_TOKEN_STORAGE_KEY, freshToken);
+    cachedDragToken = freshToken;
+    return freshToken;
+  } catch (error) {
+    console.error('Failed to persist drag session token', error);
+    return null;
+  }
+}
 
 function relaxedCoord(value) {
   return Math.round(value / coordPrecision) * coordPrecision;
 }
 
-function serializeDragState(state) {
+function serializeDragState(state, sessionToken) {
+  if (!sessionToken) return null;
+
   try {
     return JSON.stringify({
       creativeId: state.creativeId,
@@ -44,6 +109,7 @@ function serializeDragState(state) {
       parentId: state.parentId,
       level: state.level,
       isRoot: state.isRoot,
+      token: sessionToken,
     });
   } catch (error) {
     console.error('Failed to serialize drag state', error);
@@ -57,7 +123,13 @@ function parseDragState(data) {
   try {
     const parsed = JSON.parse(data);
     if (parsed && parsed.creativeId && parsed.treeId) {
-      return parsed;
+      const expectedToken = readStoredDragToken();
+      if (!expectedToken || parsed.token !== expectedToken) {
+        return null;
+      }
+
+      const { creativeId, treeId, parentId = null, level, isRoot } = parsed;
+      return { creativeId, treeId, parentId, level, isRoot };
     }
   } catch (error) {
     console.error('Failed to parse drag data', error);
@@ -74,9 +146,7 @@ function getDraggedContext(event) {
     : new Set();
   const hasTrustedPayload = transferTypes.has(TRANSFER_MIME_TYPE);
 
-  const rawData = hasTrustedPayload
-    ? transfer.getData(TRANSFER_MIME_TYPE) || transfer.getData('text/plain')
-    : null;
+  const rawData = hasTrustedPayload ? transfer.getData(TRANSFER_MIME_TYPE) : null;
   const parsed = parseDragState(rawData);
 
   if (existing) {
@@ -86,6 +156,10 @@ function getDraggedContext(event) {
 
     if (parsed) {
       return { draggedState: parsed, isExternal: true };
+    }
+
+    if (hasTrustedPayload) {
+      return { draggedState: null, isExternal: false };
     }
 
     return { draggedState: existing, isExternal: false };
@@ -115,7 +189,8 @@ function handleDragStart(event) {
   });
   event.dataTransfer.effectAllowed = 'move';
 
-  const serialized = serializeDragState(getDraggedState());
+  const sessionToken = ensureDragSessionToken();
+  const serialized = serializeDragState(getDraggedState(), sessionToken);
   if (serialized) {
     event.dataTransfer.setData(TRANSFER_MIME_TYPE, serialized);
     event.dataTransfer.setData('text/plain', serialized);
