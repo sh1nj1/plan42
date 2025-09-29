@@ -74,6 +74,54 @@ function generateDragToken() {
   return generateRandomIdentifier('drag token generation');
 }
 
+function collectSelectedCreativeIds(activeCreativeId) {
+  if (typeof document === 'undefined') {
+    return activeCreativeId ? [String(activeCreativeId)] : [];
+  }
+
+  const seen = new Set();
+  const ids = [];
+
+  const selectedCheckboxes = document.querySelectorAll('.select-creative-checkbox:checked');
+  selectedCheckboxes.forEach((checkbox) => {
+    const value = checkbox?.value;
+    if (!value) return;
+    const str = String(value);
+    if (seen.has(str)) return;
+    seen.add(str);
+    ids.push(str);
+  });
+
+  if (activeCreativeId) {
+    const str = String(activeCreativeId);
+    if (!seen.has(str)) {
+      ids.push(str);
+    }
+  }
+
+  return ids;
+}
+
+function resolveDraggedIds(state) {
+  if (!state) return [];
+
+  const list = Array.isArray(state.selectedCreativeIds)
+    ? state.selectedCreativeIds
+    : [];
+  const seen = new Set();
+  const result = [];
+
+  [...list, state.creativeId].forEach((id) => {
+    if (!id && id !== 0) return;
+    const str = String(id);
+    if (seen.has(str)) return;
+    seen.add(str);
+    result.push(str);
+  });
+
+  return result;
+}
+
 function readStoredDragToken() {
   if (cachedDragToken) return cachedDragToken;
   if (typeof window === 'undefined') return null;
@@ -213,6 +261,9 @@ function serializeDragState(state, sessionToken) {
       isRoot: state.isRoot,
       token: sessionToken,
       sourceWindowId: state.sourceWindowId,
+      selectedCreativeIds: Array.isArray(state.selectedCreativeIds)
+        ? state.selectedCreativeIds
+        : [],
     });
   } catch (error) {
     console.error('Failed to serialize drag state', error);
@@ -238,8 +289,20 @@ function parseDragState(data) {
         level,
         isRoot,
         sourceWindowId = null,
+        selectedCreativeIds = [],
       } = parsed;
-      return { creativeId, treeId, parentId, level, isRoot, sourceWindowId };
+      const normalizedSelected = Array.isArray(selectedCreativeIds)
+        ? selectedCreativeIds.map((id) => String(id)).filter((value, index, array) => array.indexOf(value) === index)
+        : [];
+      return {
+        creativeId,
+        treeId,
+        parentId,
+        level,
+        isRoot,
+        sourceWindowId,
+        selectedCreativeIds: normalizedSelected,
+      };
     }
   } catch (error) {
     console.error('Failed to parse drag data', error);
@@ -449,6 +512,7 @@ function handleDragStart(event) {
   if (!row) return;
   const windowId = ensureWindowId();
   const creativeId = row.getAttribute('creative-id');
+  const selectedCreativeIds = collectSelectedCreativeIds(creativeId);
   setDraggedState({
     tree,
     row,
@@ -458,6 +522,7 @@ function handleDragStart(event) {
     level: Number(row.getAttribute('level') || row.level || 1),
     isRoot: row.hasAttribute('is-root'),
     sourceWindowId: windowId,
+    selectedCreativeIds,
   });
   event.dataTransfer.effectAllowed = 'move';
 
@@ -547,9 +612,42 @@ function handleDrop(event) {
     return;
   }
 
+  const baseDraggedState = resolvedDraggedState || draggedState;
+  const draggedIds = resolveDraggedIds(baseDraggedState);
+  const isMultiDrag = draggedIds.length > 1;
+
   if (draggedRow && isDescendantRow(draggedRow, targetRow)) {
     resetDrag();
     return;
+  }
+
+  if (isMultiDrag) {
+    const targetCreativeId = targetRow.getAttribute('creative-id');
+    if (draggedIds.includes(String(targetCreativeId))) {
+      resetDrag();
+      return;
+    }
+
+    if (typeof document !== 'undefined') {
+      const selectedRows = draggedIds
+        .map((id) => {
+          if (draggedRow && String(resolvedDraggedState?.creativeId) === String(id)) {
+            return draggedRow;
+          }
+          const treeElement = document.getElementById(`creative-${id}`);
+          return treeElement ? asTreeRow(treeElement) : null;
+        })
+        .filter(Boolean);
+
+      const targetWithinSelection = selectedRows.some(
+        (rowEl) => rowEl === targetRow || isDescendantRow(rowEl, targetRow)
+      );
+
+      if (targetWithinSelection) {
+        resetDrag();
+        return;
+      }
+    }
   }
 
   const rect = targetTree.getBoundingClientRect();
@@ -567,6 +665,11 @@ function handleDrop(event) {
   }
 
   if (event.shiftKey) {
+    if (isMultiDrag) {
+      resetDrag();
+      console.warn('Linking multiple creatives at once is not supported.');
+      return;
+    }
     const snapshot = { ...draggedState };
     resetDrag();
     sendLinkedCreative({
@@ -583,7 +686,7 @@ function handleDrop(event) {
   let newParentId = null;
   let draggedChildren = null;
 
-  if (draggedRow) {
+  if (draggedRow && !isMultiDrag) {
     draggedChildren = getChildrenContainer(draggedRow);
     moveContext = createMoveContext(
       resolvedDraggedState,
@@ -601,13 +704,15 @@ function handleDrop(event) {
   }
 
   const draggedNumericId = draggedState.creativeId;
-  const dropSignalDetails = {
-    creativeId: draggedNumericId,
-    treeId: draggedState.treeId,
-    sourceWindowId: draggedState.sourceWindowId,
-    targetTreeId: targetId,
-    direction,
-  };
+  const dropSignalDetails = isMultiDrag
+    ? null
+    : {
+        creativeId: draggedNumericId,
+        treeId: draggedState.treeId,
+        sourceWindowId: draggedState.sourceWindowId,
+        targetTreeId: targetId,
+        direction,
+      };
 
   resetDrag();
 
@@ -619,11 +724,18 @@ function handleDrop(event) {
     }
   };
 
-  sendNewOrder({
-    draggedId: draggedNumericId,
+  const reorderPayload = {
     targetId: targetId.replace('creative-', ''),
     direction,
-  })
+  };
+
+  if (isMultiDrag) {
+    reorderPayload.draggedIds = draggedIds;
+  } else {
+    reorderPayload.draggedId = draggedNumericId;
+  }
+
+  sendNewOrder(reorderPayload)
     .then((response) => {
       if (!response.ok) {
         if (moveContext) {
@@ -632,7 +744,12 @@ function handleDrop(event) {
         return;
       }
 
-      if (dropSignalDetails.sourceWindowId) {
+      if (isMultiDrag) {
+        window.location.reload();
+        return;
+      }
+
+      if (dropSignalDetails?.sourceWindowId) {
         emitDropSignal(dropSignalDetails);
         dispatchDropCompletion({ ...dropSignalDetails, context: 'target' });
       }

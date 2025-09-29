@@ -191,11 +191,23 @@ class CreativesController < ApplicationController
   end
 
   def reorder
-    reorderer.reorder(
-      dragged_id: params[:dragged_id],
-      target_id: params[:target_id],
-      direction: params[:direction]
-    )
+    dragged_ids = Array(params[:dragged_ids]).map(&:presence).compact
+    target_id = params[:target_id]
+    direction = params[:direction]
+
+    if dragged_ids.any?
+      reorderer.reorder_multiple(
+        dragged_ids: dragged_ids,
+        target_id: target_id,
+        direction: direction
+      )
+    else
+      reorderer.reorder(
+        dragged_id: params[:dragged_id],
+        target_id: target_id,
+        direction: direction
+      )
+    end
     head :ok
   rescue Creatives::Reorderer::Error
     head :unprocessable_entity

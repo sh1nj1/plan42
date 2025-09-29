@@ -22,6 +22,38 @@ module Creatives
       true
     end
 
+    def reorder_multiple(dragged_ids:, target_id:, direction:)
+      ids = Array(dragged_ids).map(&:presence).compact
+      validate_direction!(direction)
+      raise Error, "Invalid creatives" if ids.empty?
+
+      target = Creative.find_by(id: target_id)
+      raise Error, "Invalid creatives" unless target
+
+      dragged_lookup = Creative.where(id: ids).index_by { |creative| creative.id.to_s }
+      ordered_dragged = ids.map { |id| dragged_lookup[id.to_s] }.compact
+      raise Error, "Invalid creatives" unless ordered_dragged.size == ids.size
+
+      if ordered_dragged.any? { |creative| creative.id == target.id }
+        raise Error, "Invalid creatives"
+      end
+
+      target_ancestor_ids = target.ancestors.pluck(:id)
+      if ordered_dragged.any? { |creative| target_ancestor_ids.include?(creative.id) }
+        raise Error, "Invalid creatives"
+      end
+
+      if direction == "child"
+        reorder_multiple_as_child(ordered_dragged, target)
+      else
+        reorder_multiple_as_sibling(ordered_dragged, target, direction)
+      end
+
+      true
+    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotSaved => e
+      raise Error, e.message
+    end
+
     def link_drop(dragged_id:, target_id:, direction:)
       dragged, target = fetch_creatives(dragged_id, target_id)
       validate_direction!(direction)
@@ -89,6 +121,45 @@ module Creatives
       new_index = direction == "up" ? target_index : target_index.to_i + 1
       siblings.insert(new_index, dragged)
       resequence!(siblings)
+    end
+
+    def reorder_multiple_as_child(dragged_creatives, target)
+      Creative.transaction do
+        siblings = target.children.order(:sequence).to_a
+        dragged_creatives.each do |dragged|
+          siblings.delete(dragged)
+        end
+
+        dragged_creatives.each do |dragged|
+          dragged.update!(parent: target)
+        end
+
+        siblings.concat(dragged_creatives)
+        resequence!(siblings)
+      end
+    end
+
+    def reorder_multiple_as_sibling(dragged_creatives, target, direction)
+      Creative.transaction do
+        parent = target.parent
+        siblings = sibling_scope(parent)
+        dragged_creatives.each do |dragged|
+          siblings.delete(dragged)
+        end
+
+        dragged_creatives.each do |dragged|
+          dragged.update!(parent: parent)
+        end
+
+        target_index = siblings.index(target)
+        raise Error, "Invalid creatives" if target_index.nil?
+
+        insert_index = direction == "up" ? target_index : target_index + 1
+        insert_index = [ [ insert_index, 0 ].max, siblings.size ].min
+
+        siblings.insert(insert_index, *dragged_creatives)
+        resequence!(siblings)
+      end
     end
 
     def sibling_scope(parent)

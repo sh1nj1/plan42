@@ -2,14 +2,21 @@ function csrfToken() {
   return document.querySelector('meta[name="csrf-token"]')?.content;
 }
 
-export function sendNewOrder({ draggedId, targetId, direction }) {
+export function sendNewOrder({ draggedId, draggedIds, targetId, direction }) {
+  const payload = { target_id: targetId, direction };
+  if (Array.isArray(draggedIds) && draggedIds.length > 0) {
+    payload.dragged_ids = draggedIds;
+  } else {
+    payload.dragged_id = draggedId;
+  }
+
   return fetch('/creatives/reorder', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-CSRF-Token': csrfToken(),
     },
-    body: JSON.stringify({ dragged_id: draggedId, target_id: targetId, direction }),
+    body: JSON.stringify(payload),
   });
 }
 
