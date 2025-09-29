@@ -32,16 +32,19 @@ const coordPrecision = 5;
 
 const TRANSFER_MIME_TYPE = 'application/x-plan42-creative';
 const DRAG_TOKEN_STORAGE_KEY = 'plan42.dragToken';
+const DROP_SIGNAL_STORAGE_KEY = 'plan42.dragDropSignal';
+const WINDOW_ID_SESSION_KEY = 'plan42.dragWindowId';
 const INVALID_DROP_MESSAGE =
   'We could not verify that drop. Please refresh the page and try again.';
 
 let cachedDragToken;
+let cachedWindowId;
 
-function generateDragToken() {
-  if (typeof window === 'undefined') return null;
-
+function generateRandomIdentifier(context) {
   const fallback = () =>
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+  if (typeof window === 'undefined') return fallback();
 
   try {
     const { crypto } = window;
@@ -49,10 +52,20 @@ function generateDragToken() {
       return crypto.randomUUID();
     }
   } catch (error) {
-    console.error('Failed to access crypto API for drag token generation', error);
+    if (context) {
+      console.error(`Failed to access crypto API for ${context}`, error);
+    } else {
+      console.error('Failed to access crypto API for identifier generation', error);
+    }
   }
 
   return fallback();
+}
+
+function generateDragToken() {
+  if (typeof window === 'undefined') return null;
+
+  return generateRandomIdentifier('drag token generation');
 }
 
 function readStoredDragToken() {
@@ -97,6 +110,46 @@ function ensureDragSessionToken() {
   }
 }
 
+function readWindowId() {
+  if (cachedWindowId) return cachedWindowId;
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const storage = window.sessionStorage;
+    if (!storage) return null;
+
+    const stored = storage.getItem(WINDOW_ID_SESSION_KEY);
+    if (stored) {
+      cachedWindowId = stored;
+    }
+    return cachedWindowId || null;
+  } catch (error) {
+    console.error('Failed to read drag window id from session storage', error);
+    return cachedWindowId || null;
+  }
+}
+
+function ensureWindowId() {
+  if (typeof window === 'undefined') return null;
+
+  const existing = readWindowId();
+  if (existing) return existing;
+
+  const freshId = generateRandomIdentifier('drag window id generation');
+  if (!freshId) return null;
+
+  try {
+    const storage = window.sessionStorage;
+    storage?.setItem(WINDOW_ID_SESSION_KEY, freshId);
+    cachedWindowId = freshId;
+    return freshId;
+  } catch (error) {
+    console.error('Failed to persist drag window id', error);
+    cachedWindowId = freshId;
+    return freshId;
+  }
+}
+
 function relaxedCoord(value) {
   return Math.round(value / coordPrecision) * coordPrecision;
 }
@@ -112,6 +165,7 @@ function serializeDragState(state, sessionToken) {
       level: state.level,
       isRoot: state.isRoot,
       token: sessionToken,
+      sourceWindowId: state.sourceWindowId,
     });
   } catch (error) {
     console.error('Failed to serialize drag state', error);
@@ -130,14 +184,96 @@ function parseDragState(data) {
         return null;
       }
 
-      const { creativeId, treeId, parentId = null, level, isRoot } = parsed;
-      return { creativeId, treeId, parentId, level, isRoot };
+      const {
+        creativeId,
+        treeId,
+        parentId = null,
+        level,
+        isRoot,
+        sourceWindowId = null,
+      } = parsed;
+      return { creativeId, treeId, parentId, level, isRoot, sourceWindowId };
     }
   } catch (error) {
     console.error('Failed to parse drag data', error);
   }
 
   return null;
+}
+
+function emitDropSignal({ creativeId, treeId, sourceWindowId }) {
+  if (typeof window === 'undefined') return;
+
+  const sessionToken = readStoredDragToken();
+  if (!sessionToken) return;
+
+  try {
+    const storage = window.localStorage;
+    if (!storage) return;
+
+    const payload = JSON.stringify({
+      creativeId,
+      treeId,
+      sourceWindowId,
+      sessionToken,
+      nonce: generateRandomIdentifier('drag drop signal'),
+    });
+
+    storage.setItem(DROP_SIGNAL_STORAGE_KEY, payload);
+    storage.removeItem(DROP_SIGNAL_STORAGE_KEY);
+  } catch (error) {
+    console.error('Failed to broadcast drop completion signal', error);
+  }
+}
+
+function removeDroppedCreative({ creativeId, treeId }) {
+  if (typeof document === 'undefined') return;
+
+  const tree = treeId ? document.getElementById(treeId) : null;
+  const row = tree ? asTreeRow(tree) : null;
+  const fallbackRow = document.querySelector(
+    `creative-tree-row[creative-id="${creativeId}"]`
+  );
+  const targetRow = row || fallbackRow;
+  if (!targetRow) return;
+
+  const parentId = targetRow.getAttribute('parent-id') || null;
+  const childrenContainer = getChildrenContainer(targetRow);
+  if (childrenContainer) {
+    childrenContainer.remove();
+  }
+  targetRow.remove();
+
+  syncParentHasChildren(parentId);
+}
+
+function handleStorageChange(event) {
+  if (!event || event.key !== DROP_SIGNAL_STORAGE_KEY || !event.newValue) {
+    return;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(event.newValue);
+  } catch (error) {
+    console.error('Failed to parse drop completion payload', error);
+    return;
+  }
+
+  const expectedToken = readStoredDragToken();
+  if (!expectedToken || payload.sessionToken !== expectedToken) {
+    return;
+  }
+
+  const windowId = readWindowId();
+  if (!windowId || payload.sourceWindowId !== windowId) {
+    return;
+  }
+
+  const { creativeId, treeId } = payload;
+  if (!creativeId) return;
+
+  removeDroppedCreative({ creativeId, treeId });
 }
 
 function getDraggedContext(event) {
@@ -187,6 +323,7 @@ function handleDragStart(event) {
   if (!tree || tree.draggable === false) return;
   const row = asTreeRow(tree);
   if (!row) return;
+  const windowId = ensureWindowId();
   const creativeId = row.getAttribute('creative-id');
   setDraggedState({
     tree,
@@ -196,6 +333,7 @@ function handleDragStart(event) {
     parentId: row.getAttribute('parent-id') || null,
     level: Number(row.getAttribute('level') || row.level || 1),
     isRoot: row.hasAttribute('is-root'),
+    sourceWindowId: windowId,
   });
   event.dataTransfer.effectAllowed = 'move';
 
@@ -333,6 +471,11 @@ function handleDrop(event) {
   }
 
   const draggedNumericId = draggedState.creativeId;
+  const dropSignalDetails = {
+    creativeId: draggedNumericId,
+    treeId: draggedState.treeId,
+    sourceWindowId: draggedState.sourceWindowId,
+  };
 
   resetDrag();
 
@@ -352,6 +495,11 @@ function handleDrop(event) {
         if (!isExternal) {
           revertMove(moveContext, newParentId);
         }
+        return;
+      }
+
+      if (dropSignalDetails.sourceWindowId) {
+        emitDropSignal(dropSignalDetails);
       }
     })
     .catch((error) => {
@@ -383,6 +531,7 @@ export function registerGlobalHandlers() {
   window.handleDragLeave = handleDragLeave;
 
   document.addEventListener('dragend', handleDragEnd);
+  window.addEventListener('storage', handleStorageChange);
 }
 
 export function hasActiveDrag() {
