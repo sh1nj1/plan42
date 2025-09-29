@@ -267,6 +267,7 @@
     text-decoration: none;
     opacity: 0;
     transition: opacity 0.2s ease;
+    background-color: var(--color-bg);
 }
 
 .creative-progress-link-icon {
