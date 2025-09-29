@@ -257,6 +257,25 @@
     font-size: 1.4em;
 }
 
+.creative-origin-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: 999px;
+    transition: background-color 0.2s ease;
+}
+
+.creative-origin-link:hover,
+.creative-origin-link:focus {
+    background-color: var(--color-border);
+}
+
+.creative-origin-link-icon {
+    width: 16px;
+    height: 16px;
+}
+
 .creative-row-start h1 {
     font-size: 1.3em;
 }

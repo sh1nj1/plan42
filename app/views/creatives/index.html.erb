@@ -76,10 +76,23 @@
   <% content_for :head do %>
     <meta property="og:title" content="<%= @parent_creative.effective_origin.description.to_plain_text %>">
   <% end %>
+  <% title_templates = [
+        content_tag(:template, data: { part: "description" }) { @parent_creative.effective_description },
+        content_tag(:template, data: { part: "progress" }) { render_creative_progress(@parent_creative) }
+      ] %>
+  <% if @parent_creative.origin_id.present? %>
+    <% title_templates << content_tag(:template, data: { part: "origin-link" }) do %>
+      <%= link_to creative_path(@parent_creative.origin),
+                  class: "creative-origin-link creative-action-btn unstyled-link",
+                  title: t("creatives.index.view_origin"),
+                  aria: { label: t("creatives.index.view_origin") } do %>
+        <%= svg_tag "arrow-right.svg", class: "creative-origin-link-icon", width: 16, height: 16 %>
+      <% end %>
+    <% end %>
+  <% end %>
   <%= content_tag(
         "creative-tree-row",
-        content_tag(:template, data: { part: "description" }) { @parent_creative.effective_description } +
-        content_tag(:template, data: { part: "progress" }) { render_creative_progress(@parent_creative) },
+        safe_join(title_templates),
         "dom-id": "creative-markdown-block",
         "creative-id": @parent_creative.id,
         "parent-id": @parent_creative.parent_id,
