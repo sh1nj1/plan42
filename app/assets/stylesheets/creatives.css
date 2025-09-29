@@ -252,6 +252,59 @@
     margin-left: 10px;
 }
 
+.creative-progress-container {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 8px;
+}
+
+.creative-progress-link {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+    padding: 4px 32px 4px 12px;
+    border-radius: 999px;
+    color: inherit;
+    text-decoration: none;
+    transition: background-color 0.2s ease;
+}
+
+.creative-progress-link:hover,
+.creative-progress-link:focus-visible,
+.creative-row:hover .creative-progress-link {
+    background-color: var(--color-border);
+}
+
+.creative-progress-label {
+    display: inline-flex;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+}
+
+.creative-progress-arrow {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%) scale(0.9);
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+}
+
+.creative-row:hover .creative-progress-arrow,
+.creative-progress-link:focus-visible .creative-progress-arrow {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+}
+
+.creative-progress-arrow-icon {
+    width: 16px;
+    height: 16px;
+    display: block;
+}
+
 .page-title {
     margin-left: 1.5em;
     font-size: 1.4em;

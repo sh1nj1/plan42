@@ -38,6 +38,18 @@ module CreativesHelper
     end
 
     content_tag(:div, class: "creative-row-end") do
+      progress_link = link_to(creative_path(creative), class: "creative-progress-link") do
+        content_tag(:span, render_progress_value(progress_value), class: "creative-progress-label") +
+          content_tag(
+            :span,
+            svg_tag("arrow-right.svg", class: "creative-progress-arrow-icon"),
+            class: "creative-progress-arrow",
+            aria: { hidden: true }
+          )
+      end
+
+      progress_section = content_tag(:div, progress_link, class: "creative-progress-container")
+
       comment_part = if creative.has_permission?(Current.user, :feedback)
         origin = creative.effective_origin
         comments_count = origin.comments.size
@@ -71,7 +83,10 @@ module CreativesHelper
       else
         "".html_safe
       end
-      render_progress_value(progress_value) + comment_part + "<br />".html_safe + (creative.tags ? render_creative_tags(creative) : "".html_safe)
+      progress_section +
+        comment_part +
+        "<br />".html_safe +
+        (creative.tags ? render_creative_tags(creative) : "".html_safe)
     end
   end
 
