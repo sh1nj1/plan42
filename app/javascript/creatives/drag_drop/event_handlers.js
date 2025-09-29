@@ -665,20 +665,32 @@ function handleDrop(event) {
   }
 
   if (event.shiftKey) {
-    if (isMultiDrag) {
-      resetDrag();
-      console.warn('Linking multiple creatives at once is not supported.');
-      return;
-    }
     const snapshot = { ...draggedState };
     resetDrag();
-    sendLinkedCreative({
-      draggedId: snapshot.creativeId,
-      targetId: targetId.replace('creative-', ''),
-      direction,
-    })
-      .then(() => window.location.reload())
-      .catch((error) => console.error('Failed to create linked creative', error));
+    
+    if (isMultiDrag) {
+      // Handle multiple linked creatives
+      const promises = draggedIds.map(draggedId => 
+        sendLinkedCreative({
+          draggedId,
+          targetId: targetId.replace('creative-', ''),
+          direction,
+        })
+      );
+      
+      Promise.all(promises)
+        .then(() => window.location.reload())
+        .catch((error) => console.error('Failed to create linked creatives', error));
+    } else {
+      // Handle single linked creative
+      sendLinkedCreative({
+        draggedId: snapshot.creativeId,
+        targetId: targetId.replace('creative-', ''),
+        direction,
+      })
+        .then(() => window.location.reload())
+        .catch((error) => console.error('Failed to create linked creative', error));
+    }
     return;
   }
 
