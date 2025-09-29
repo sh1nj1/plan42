@@ -31,33 +31,6 @@ const childZoneRatio = 0.3;
 const coordPrecision = 5;
 
 const TRANSFER_MIME_TYPE = 'application/x-plan42-creative';
-const DROP_EVENT_NAME = 'plan42:creative-drop';
-const DROP_MESSAGE_TYPE = 'creative-drop-complete';
-const DROP_CHANNEL_NAME = 'plan42:creative-drop';
-
-let dropChannel = null;
-let dropHandlersInitialized = false;
-
-function getWindowIdentifier() {
-  if (typeof window === 'undefined') return 'plan42-ssr';
-
-  const storageKey = 'plan42:drag-drop-window-id';
-
-  try {
-    const existing = window.sessionStorage?.getItem(storageKey);
-    if (existing) return existing;
-
-    const generated =
-      (window.crypto?.randomUUID && window.crypto.randomUUID()) ||
-      `win-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    window.sessionStorage?.setItem(storageKey, generated);
-    return generated;
-  } catch (error) {
-    return `win-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }
-}
-
-const windowIdentifier = getWindowIdentifier();
 
 function relaxedCoord(value) {
   return Math.round(value / coordPrecision) * coordPrecision;
@@ -91,95 +64,6 @@ function parseDragState(data) {
   }
 
   return null;
-}
-
-function ensureDropChannel() {
-  if (dropHandlersInitialized || typeof window === 'undefined') return;
-
-  dropHandlersInitialized = true;
-
-  if (window.BroadcastChannel) {
-    try {
-      dropChannel = new BroadcastChannel(DROP_CHANNEL_NAME);
-      dropChannel.addEventListener('message', (event) => {
-        if (!event) return;
-        handleDropSignal(event.data);
-      });
-    } catch (error) {
-      console.error('Failed to create drag drop channel', error);
-    }
-  }
-
-  window.addEventListener(DROP_EVENT_NAME, (event) => {
-    handleDropSignal(event?.detail);
-  });
-}
-
-function broadcastDropSignal(detail) {
-  if (!detail) return;
-
-  const payload = {
-    ...detail,
-    type: DROP_MESSAGE_TYPE,
-    sourceWindowId: windowIdentifier,
-  };
-
-  window.dispatchEvent(new CustomEvent(DROP_EVENT_NAME, { detail: payload }));
-  if (dropChannel) {
-    try {
-      dropChannel.postMessage(payload);
-    } catch (error) {
-      console.error('Failed to broadcast drop signal', error);
-    }
-  }
-}
-
-function handleDropSignal(data) {
-  if (!data || data.type !== DROP_MESSAGE_TYPE) return;
-  if (data.sourceWindowId === windowIdentifier) return;
-
-  applyRemoteDrop(data);
-}
-
-function applyRemoteDrop(payload) {
-  const { creativeId, targetId, direction, draggedState } = payload;
-  if (!creativeId || !targetId || !direction || !draggedState) return;
-
-  const draggedRow = document.querySelector(
-    `creative-tree-row[creative-id="${creativeId}"]`
-  );
-  if (!draggedRow) return;
-
-  const targetTree = document.getElementById(targetId);
-  if (!targetTree) return;
-
-  const targetRow = asTreeRow(targetTree);
-  if (!targetRow) return;
-
-  const sanitizedState = {
-    row: draggedRow,
-    tree: document.getElementById(draggedState.treeId) || null,
-    treeId: draggedState.treeId,
-    creativeId: draggedState.creativeId,
-    parentId: draggedState.parentId,
-    level:
-      Number(draggedState.level) ||
-      Number(draggedRow.getAttribute('level') || draggedRow.level || 1),
-    isRoot: !!draggedState.isRoot,
-  };
-
-  const draggedChildren = getChildrenContainer(draggedRow);
-  const moveContext = createMoveContext(sanitizedState, targetRow, draggedChildren);
-
-  applyMove({
-    direction,
-    targetRow,
-    draggedState: sanitizedState,
-    draggedChildren,
-    moveContext,
-  });
-
-  resetDrag();
 }
 
 function getDraggedContext(event) {
@@ -330,19 +214,6 @@ function handleDrop(event) {
   let newParentId = null;
   let draggedChildren = null;
 
-  const dropSignalDetail = {
-    creativeId: draggedState.creativeId,
-    targetId,
-    direction,
-    draggedState: {
-      creativeId: draggedState.creativeId,
-      treeId: draggedState.treeId,
-      parentId: draggedState.parentId,
-      level: draggedState.level,
-      isRoot: draggedState.isRoot,
-    },
-  };
-
   if (!isExternal) {
     draggedChildren = getChildrenContainer(draggedRow);
     moveContext = createMoveContext(draggedState, targetRow, draggedChildren);
@@ -360,16 +231,6 @@ function handleDrop(event) {
 
   resetDrag();
 
-  if (newParentId === null) {
-    if (direction === 'child') {
-      newParentId = targetRow.getAttribute('creative-id');
-    } else {
-      newParentId = targetRow.getAttribute('parent-id') || null;
-    }
-  }
-
-  dropSignalDetail.newParentId = newParentId;
-
   const finalizeDrop = () => {
     if (isExternal) {
       window.location.reload();
@@ -386,8 +247,6 @@ function handleDrop(event) {
         if (!isExternal) {
           revertMove(moveContext, newParentId);
         }
-      } else {
-        broadcastDropSignal(dropSignalDetail);
       }
     })
     .catch((error) => {
@@ -412,8 +271,6 @@ function handleDragEnd() {
 
 export function registerGlobalHandlers() {
   initIndicator();
-
-  ensureDropChannel();
 
   window.handleDragStart = handleDragStart;
   window.handleDragOver = handleDragOver;
