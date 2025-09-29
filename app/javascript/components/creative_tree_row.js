@@ -190,9 +190,9 @@ class CreativeTreeRow extends LitElement {
         data-id=${this.creativeId ?? nothing}
         data-parent-id=${this.parentId ?? nothing}
       >
-        <div class="creative-row">
+        <div class="creative-row" style="background-color: transparent;">
           <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
-            <div class="creative-content">
+            <div class="creative-title-content">
               ${unsafeHTML(this.descriptionHtml || "")}
             </div>
             ${this.originLinkHtml ? unsafeHTML(this.originLinkHtml) : nothing}

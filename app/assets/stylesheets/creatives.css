@@ -74,11 +74,19 @@
     align-items: center;
 }
 .creative-content {
+    min-width: min(50vw, var(--max-width) / 2);
     max-width: calc(min(100vw, var(--max-width)) - 160px);
+}
+.creative-row:hover .creative-content {
+    text-decoration: underline;
+    text-decoration-color: var(--color-link);
+    text-decoration-thickness: 4px;
+    cursor: pointer;
 }
 
 @media (max-width: 768px) {
     .creative-content {
+        min-width: min(50vw, var(--max-width) / 2);
         max-width: calc(min(100vw, var(--max-width)) - 110px);
     }
 }
