@@ -76,9 +76,14 @@
   <% content_for :head do %>
     <meta property="og:title" content="<%= @parent_creative.effective_origin.description.to_plain_text %>">
   <% end %>
-  <% title_templates = [
+  <% progress_parts = creative_progress_parts(@parent_creative)
+     title_templates = [
         content_tag(:template, data: { part: "description" }) { @parent_creative.effective_description },
-        content_tag(:template, data: { part: "progress" }) { render_creative_progress(@parent_creative) }
+        content_tag(:template, data: { part: "progress-display" }) { progress_parts.display },
+        content_tag(:template, data: { part: "progress-meta" }) { progress_parts.meta },
+        content_tag(:template, data: { part: "progress-arrow" }) do
+          content_tag(:span, svg_tag("arrow-right.svg", class: "creative-progress-arrow-icon"), class: "creative-progress-float-icon", aria: { hidden: true })
+        end
       ] %>
   <% if @parent_creative.origin_id.present? %>
     <% title_templates << content_tag(:template, data: { part: "origin-link" }) do %>
@@ -96,7 +101,8 @@
         "dom-id": "creative-markdown-block",
         "creative-id": @parent_creative.id,
         "parent-id": @parent_creative.parent_id,
-        "is-title": ""
+        "is-title": "",
+        "progress-link-label": t('creatives.index.open_creative', default: 'Open creative')
       ) %>
 <% else %>
   <%= content_tag(
@@ -108,15 +114,22 @@
             t('.creatives')
           end
         end +
-        content_tag(:template, data: { part: "progress" }) do
+        content_tag(:template, data: { part: "progress-display" }) do
           if @overall_progress.nil?
             "".html_safe
           else
-            render_progress_value(@overall_progress)
+            content_tag(:div, class: "creative-progress-container") do
+              content_tag(:span, render_progress_value(@overall_progress), class: "creative-progress-label")
+            end
           end
+        end +
+        content_tag(:template, data: { part: "progress-meta" }) { "".html_safe } +
+        content_tag(:template, data: { part: "progress-arrow" }) do
+          content_tag(:span, svg_tag("arrow-right.svg", class: "creative-progress-arrow-icon"), class: "creative-progress-float-icon", aria: { hidden: true })
         end,
         "dom-id": "creative-markdown-block",
-        "is-title": ""
+        "is-title": "",
+        "progress-link-label": t('creatives.index.open_creative', default: 'Open creative')
       ) %>
 <% end %>
 

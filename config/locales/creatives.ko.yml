@@ -37,6 +37,7 @@ ko:
       request_permission: "권한 요청"
       no_permission: "이 크리에이티브를 볼 권한이 없습니다."
       view_origin: "원본 크리에이티브로 이동"
+      open_creative: "크리에이티브로 이동"
       share_creative: "크리에이티브 공유"
       shared_with: "공유 대상"
       unknown_user: "알 수 없는 사용자"

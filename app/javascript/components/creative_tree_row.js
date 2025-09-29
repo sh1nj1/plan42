@@ -16,11 +16,14 @@ class CreativeTreeRow extends LitElement {
     isRoot: { type: Boolean, attribute: "is-root" },
     linkUrl: { attribute: "link-url" },
     descriptionHtml: { state: true },
-    progressHtml: { state: true },
+    progressDisplayHtml: { state: true },
+    progressMetaHtml: { state: true },
+    progressArrowHtml: { state: true },
     editIconHtml: { state: true },
     editOffIconHtml: { state: true },
     originLinkHtml: { state: true },
-    isTitle: { type: Boolean, attribute: "is-title", reflect: true }
+    isTitle: { type: Boolean, attribute: "is-title", reflect: true },
+    progressLinkLabel: { attribute: "progress-link-label" }
   };
 
   constructor() {
@@ -36,11 +39,14 @@ class CreativeTreeRow extends LitElement {
     this.isRoot = false;
     this.linkUrl = "#";
     this.descriptionHtml = "";
-    this.progressHtml = "";
+    this.progressDisplayHtml = "";
+    this.progressMetaHtml = "";
+    this.progressArrowHtml = "";
     this.editIconHtml = "";
     this.editOffIconHtml = "";
     this.originLinkHtml = "";
     this.isTitle = false;
+    this.progressLinkLabel = "";
     this._templatesExtracted = false;
 
     this._toggleBtn = null;
@@ -80,7 +86,9 @@ class CreativeTreeRow extends LitElement {
       // The element might have been restored from a Turbo snapshot where we no longer
       // have template nodes, so fall back to any cached markup stored in data attributes.
       if (hasCached("descriptionHtml")) this.descriptionHtml = this.dataset.descriptionHtml;
-      if (hasCached("progressHtml")) this.progressHtml = this.dataset.progressHtml;
+      if (hasCached("progressDisplayHtml")) this.progressDisplayHtml = this.dataset.progressDisplayHtml;
+      if (hasCached("progressMetaHtml")) this.progressMetaHtml = this.dataset.progressMetaHtml;
+      if (hasCached("progressArrowHtml")) this.progressArrowHtml = this.dataset.progressArrowHtml;
       if (hasCached("editIconHtml")) this.editIconHtml = this.dataset.editIconHtml;
       if (hasCached("editOffIconHtml")) this.editOffIconHtml = this.dataset.editOffIconHtml;
       if (hasCached("originLinkHtml")) this.originLinkHtml = this.dataset.originLinkHtml;
@@ -90,9 +98,22 @@ class CreativeTreeRow extends LitElement {
         const content = existingTree.querySelector(".creative-content");
         ensureCached("descriptionHtml", content ? content.innerHTML : "");
       }
-      if (!hasCached("progressHtml") && existingTree) {
-        const progressNode = existingTree.querySelector(".creative-row > :last-child");
-        ensureCached("progressHtml", progressNode ? progressNode.innerHTML : "");
+      if (existingTree) {
+        const rowEnd = existingTree.querySelector(".creative-row-end");
+        if (!hasCached("progressDisplayHtml") && rowEnd) {
+          const displayNode = rowEnd.querySelector(".creative-progress-container");
+          ensureCached("progressDisplayHtml", displayNode ? displayNode.outerHTML : "");
+        }
+        if (!hasCached("progressArrowHtml") && rowEnd) {
+          const arrowNode = rowEnd.querySelector(".creative-progress-float-icon");
+          ensureCached("progressArrowHtml", arrowNode ? arrowNode.outerHTML : "");
+        }
+        if (!hasCached("progressMetaHtml") && rowEnd) {
+          const temp = rowEnd.cloneNode(true);
+          const wrapperClone = temp.querySelector(".creative-progress-float-wrapper");
+          if (wrapperClone) wrapperClone.remove();
+          ensureCached("progressMetaHtml", temp.innerHTML);
+        }
       }
     } else {
       templates.forEach((template) => {
@@ -103,9 +124,13 @@ class CreativeTreeRow extends LitElement {
             this.descriptionHtml = markup;
             this.dataset.descriptionHtml = markup;
             break;
-          case "progress":
-            this.progressHtml = markup;
-            this.dataset.progressHtml = markup;
+          case "progress-display":
+            this.progressDisplayHtml = markup;
+            this.dataset.progressDisplayHtml = markup;
+            break;
+          case "progress-meta":
+            this.progressMetaHtml = markup;
+            this.dataset.progressMetaHtml = markup;
             break;
           case "edit-icon":
             this.editIconHtml = markup;
@@ -118,6 +143,10 @@ class CreativeTreeRow extends LitElement {
           case "origin-link":
             this.originLinkHtml = markup;
             this.dataset.originLinkHtml = markup;
+            break;
+          case "progress-arrow":
+            this.progressArrowHtml = markup;
+            this.dataset.progressArrowHtml = markup;
             break;
           default:
             break;
@@ -176,7 +205,7 @@ class CreativeTreeRow extends LitElement {
             </div>
             ${this._renderContent()}
           </div>
-          ${unsafeHTML(this.progressHtml || "")}
+          ${this._renderProgressArea()}
         </div>
       </div>
     `;
@@ -197,10 +226,8 @@ class CreativeTreeRow extends LitElement {
             </div>
             ${this.originLinkHtml ? unsafeHTML(this.originLinkHtml) : nothing}
           </h1>
-          <div>
-            <h1 style="display:flex;align-items:center;gap:1em;">
-              ${unsafeHTML(this.progressHtml || "")}
-            </h1>
+          <div class="creative-title-progress">
+            ${this._renderProgressArea()}
           </div>
         </div>
       </div>
@@ -280,6 +307,49 @@ class CreativeTreeRow extends LitElement {
       <div class="creative-tree-li" style=${margin}>
         ${toggle}${bullet}${content}
       </div>
+    `;
+  }
+
+  _renderProgressArea() {
+    const displayHtml = this.progressDisplayHtml || "";
+    const metaHtml = this.progressMetaHtml || "";
+    const hasDisplay = displayHtml.trim().length > 0;
+    const hasMeta = metaHtml.trim().length > 0;
+
+    if (!hasDisplay && !hasMeta) {
+      return nothing;
+    }
+
+    return html`
+      <div class="creative-row-end">
+        ${hasDisplay
+          ? html`
+              <span class="creative-progress-float-wrapper">
+                ${unsafeHTML(displayHtml)}
+                ${this._renderProgressLink()}
+              </span>
+            `
+          : nothing}
+        ${hasMeta ? unsafeHTML(metaHtml) : nothing}
+      </div>
+    `;
+  }
+
+  _renderProgressLink() {
+    if (!this.linkUrl || this.linkUrl === "#") {
+      return nothing;
+    }
+
+    const arrowHtml = (this.progressArrowHtml || "").trim();
+    const ariaLabel = this.progressLinkLabel || "Open creative";
+    const arrowContent = arrowHtml.length > 0
+      ? unsafeHTML(arrowHtml)
+      : html`<span class="creative-progress-float-icon" aria-hidden="true">→</span>`;
+
+    return html`
+      <a class="creative-progress-float-link" href=${this.linkUrl} aria-label=${ariaLabel}>
+        ${arrowContent}
+      </a>
     `;
   }
 

@@ -656,7 +656,9 @@ if (!window.creativeRowEditorInitialized) {
       rowComponent.expanded = true;
       rowComponent.setAttribute('expanded', '');
       rowComponent.dataset.descriptionHtml = '';
-      rowComponent.dataset.progressHtml = '';
+      rowComponent.dataset.progressDisplayHtml = '';
+      rowComponent.dataset.progressMetaHtml = '';
+      rowComponent.dataset.progressArrowHtml = '';
 
       if (referenceNode) {
         targetContainer.insertBefore(rowComponent, referenceNode);

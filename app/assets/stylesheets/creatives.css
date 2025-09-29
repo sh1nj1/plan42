@@ -255,25 +255,10 @@
 .creative-progress-container {
     display: inline-flex;
     align-items: center;
-    margin-right: 8px;
-}
-
-.creative-progress-link {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
     gap: 0.25em;
     padding: 4px 32px 4px 12px;
     border-radius: 999px;
-    color: inherit;
-    text-decoration: none;
     transition: background-color 0.2s ease;
-}
-
-.creative-progress-link:hover,
-.creative-progress-link:focus-visible,
-.creative-row:hover .creative-progress-link {
-    background-color: var(--color-border);
 }
 
 .creative-progress-label {
@@ -283,20 +268,47 @@
     z-index: 1;
 }
 
-.creative-progress-arrow {
-    position: absolute;
-    top: 50%;
-    right: 12px;
-    transform: translateY(-50%) scale(0.9);
-    opacity: 0;
-    transition: opacity 0.2s ease, transform 0.2s ease;
-    pointer-events: none;
+.creative-progress-float-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    margin-right: 8px;
 }
 
-.creative-row:hover .creative-progress-arrow,
-.creative-progress-link:focus-visible .creative-progress-arrow {
+.creative-progress-float-wrapper:hover .creative-progress-container,
+.creative-progress-float-wrapper:focus-within .creative-progress-container {
+    background-color: var(--color-border);
+}
+
+.creative-progress-float-link {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 8px;
+    border-radius: 999px;
+    color: inherit;
+    text-decoration: none;
+}
+
+.creative-progress-float-link:focus-visible {
+    outline: 2px solid var(--color-accent, #4c9aff);
+    outline-offset: 2px;
+}
+
+.creative-progress-float-icon {
+    display: inline-flex;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-4px) scale(0.9);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.creative-progress-float-wrapper:hover .creative-progress-float-icon,
+.creative-progress-float-link:focus-visible .creative-progress-float-icon {
     opacity: 1;
-    transform: translateY(-50%) scale(1);
+    transform: translateX(0) scale(1);
 }
 
 .creative-progress-arrow-icon {
@@ -327,6 +339,16 @@
 .creative-origin-link-icon {
     width: 16px;
     height: 16px;
+}
+
+.creative-title-progress {
+    display: flex;
+    align-items: center;
+}
+
+.creative-title-progress .creative-row-end {
+    display: flex;
+    align-items: center;
 }
 
 .creative-row-start h1 {

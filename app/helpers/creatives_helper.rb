@@ -29,7 +29,9 @@ module CreativesHelper
     end
   end
 
-  def render_creative_progress(creative, select_mode: false)
+  CreativeProgressParts = Struct.new(:display, :meta, keyword_init: true)
+
+  def creative_progress_parts(creative, select_mode: false)
     progress_value = if params[:tags].present?
       tag_ids = Array(params[:tags]).map(&:to_s)
       creative.progress_for_tags(tag_ids) || 0
@@ -37,57 +39,56 @@ module CreativesHelper
       creative.progress
     end
 
-    content_tag(:div, class: "creative-row-end") do
-      progress_link = link_to(creative_path(creative), class: "creative-progress-link") do
-        content_tag(:span, render_progress_value(progress_value), class: "creative-progress-label") +
-          content_tag(
-            :span,
-            svg_tag("arrow-right.svg", class: "creative-progress-arrow-icon"),
-            class: "creative-progress-arrow",
-            aria: { hidden: true }
-          )
-      end
-
-      progress_section = content_tag(:div, progress_link, class: "creative-progress-container")
-
-      comment_part = if creative.has_permission?(Current.user, :feedback)
-        origin = creative.effective_origin
-        comments_count = origin.comments.size
-        pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
-        last_read_id = pointer&.last_read_comment_id
-        unread_count = last_read_id ? origin.comments.where("id > ? and private = ?", last_read_id, false).count : comments_count
-        if CommentPresenceStore.list(origin.id).include?(Current.user.id)
-          unread_count = 0
-        end
-        classes = [ "comments-btn", "creative-action-btn" ]
-        classes << "no-comments" if comments_count.zero?
-        comment_icon = svg_tag(
-          "comment.svg",
-          class: "comment-icon"
-        )
-        badge_id = "comment-badge-#{origin.id}"
-        stream = turbo_stream_from [ Current.user, origin, :comment_badge ]
-        badge = render(
-          Inbox::BadgeComponent.new(
-            count: unread_count,
-            badge_id: badge_id,
-            show_zero: comments_count.positive?
-          )
-        )
-        stream + button_tag(
-          comment_icon + badge,
-          name: "show-comments-btn",
-          data: { creative_id: creative.id, can_comment: true, creative_snippet: creative.creative_snippet },
-          class: classes.join(" ")
-        )
-      else
-        "".html_safe
-      end
-      progress_section +
-        comment_part +
-        "<br />".html_safe +
-        (creative.tags ? render_creative_tags(creative) : "".html_safe)
+    display = content_tag(:div, class: "creative-progress-container") do
+      content_tag(:span, render_progress_value(progress_value), class: "creative-progress-label")
     end
+
+    comment_part = if creative.has_permission?(Current.user, :feedback)
+      origin = creative.effective_origin
+      comments_count = origin.comments.size
+      pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
+      last_read_id = pointer&.last_read_comment_id
+      unread_count = last_read_id ? origin.comments.where("id > ? and private = ?", last_read_id, false).count : comments_count
+      if CommentPresenceStore.list(origin.id).include?(Current.user.id)
+        unread_count = 0
+      end
+      classes = [ "comments-btn", "creative-action-btn" ]
+      classes << "no-comments" if comments_count.zero?
+      comment_icon = svg_tag(
+        "comment.svg",
+        class: "comment-icon"
+      )
+      badge_id = "comment-badge-#{origin.id}"
+      stream = turbo_stream_from [ Current.user, origin, :comment_badge ]
+      badge = render(
+        Inbox::BadgeComponent.new(
+          count: unread_count,
+          badge_id: badge_id,
+          show_zero: comments_count.positive?
+        )
+      )
+      stream + button_tag(
+        comment_icon + badge,
+        name: "show-comments-btn",
+        data: { creative_id: creative.id, can_comment: true, creative_snippet: creative.creative_snippet },
+        class: classes.join(" ")
+      )
+    else
+      "".html_safe
+    end
+
+    meta = safe_join([
+      comment_part,
+      tag.br,
+      (creative.tags ? render_creative_tags(creative) : "".html_safe)
+    ])
+
+    CreativeProgressParts.new(display: display, meta: meta)
+  end
+
+  def render_creative_progress(creative, select_mode: false)
+    parts = creative_progress_parts(creative, select_mode: select_mode)
+    safe_join([ parts.display, parts.meta ])
   end
 
   def render_progress_value(value)
@@ -154,13 +155,14 @@ module CreativesHelper
         else
           description_html = embed_youtube_iframe(creative.effective_description(params[:tags]&.first))
 
-          progress_html = render_creative_progress(creative, select_mode: select_mode)
+          progress_parts = creative_progress_parts(creative, select_mode: select_mode)
 
           creative_tree_row_element(
             creative: creative,
             select_mode: select_mode,
             description_html: description_html,
-            progress_html: progress_html,
+            progress_display_html: progress_parts.display,
+            progress_meta_html: progress_parts.meta,
             level: level,
             has_children: filtered_children.any?,
             expanded: expanded
@@ -170,12 +172,16 @@ module CreativesHelper
     )
   end
 
-  def creative_tree_row_element(creative:, select_mode:, description_html:, progress_html:, level:, has_children:, expanded:)
+  def creative_tree_row_element(creative:, select_mode:, description_html:, progress_display_html:, progress_meta_html:, level:, has_children:, expanded:)
     templates = [
       content_tag(:template, data: { part: "description" }) { description_html },
-      content_tag(:template, data: { part: "progress" }) { progress_html },
+      content_tag(:template, data: { part: "progress-display" }) { progress_display_html },
+      content_tag(:template, data: { part: "progress-meta" }) { progress_meta_html },
       content_tag(:template, data: { part: "edit-icon" }) { svg_tag("edit.svg", class: "icon-edit") },
-      content_tag(:template, data: { part: "edit-off-icon" }) { svg_tag("edit-off.svg", class: "icon-edit") }
+      content_tag(:template, data: { part: "edit-off-icon" }) { svg_tag("edit-off.svg", class: "icon-edit") },
+      content_tag(:template, data: { part: "progress-arrow" }) do
+        content_tag(:span, svg_tag("arrow-right.svg", class: "creative-progress-arrow-icon"), class: "creative-progress-float-icon", aria: { hidden: true })
+      end
     ]
 
     attrs = {
@@ -188,7 +194,8 @@ module CreativesHelper
       "has-children": (has_children ? "" : nil),
       "expanded": (expanded ? "" : nil),
       "is-root": (creative.parent.nil? ? "" : nil),
-      "link-url": creative_path(creative)
+      "link-url": creative_path(creative),
+      "progress-link-label": t("creatives.index.open_creative", default: "Open creative")
     }
 
     content_tag("creative-tree-row", safe_join(templates), attrs)
