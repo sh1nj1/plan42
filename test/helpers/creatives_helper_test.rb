@@ -29,6 +29,18 @@ class CreativesHelperTest < ActionView::TestCase
     assert_equal "This is **bold** text", back
   end
 
+  test "bold markdown spanning lines converts to html" do
+    md = "This is **bold\ntext** example"
+    html = markdown_links_to_html(md)
+    assert_equal "This is <strong>bold\ntext</strong> example", html
+  end
+
+  test "html bold with attributes converts to markdown" do
+    input = '<strong class="highlight">bold</strong> text'
+    expected = "**bold** text"
+    assert_equal expected, html_links_to_markdown(input)
+  end
+
   test "escaped characters round trip" do
     md = "A \\*star\\* \\-dash\\- \\#hash\\# \\~tilde\\~ \\+plus\\+ example"
     html = markdown_links_to_html(md)
@@ -150,5 +162,32 @@ class CreativesHelperTest < ActionView::TestCase
 
   test "expanded_from_expanded_state returns true when expanded" do
     assert expanded_from_expanded_state(1, { "1" => true })
+  end
+
+  test "markdown importer preserves bold formatting" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent")
+    markdown = <<~MD
+      ## **Bold Heading**
+      Regular **bold** text
+    MD
+
+    created = []
+
+    begin
+      created = MarkdownImporter.import(markdown, parent: parent, user: user)
+
+      heading = parent.children.detect { |child| child.description.body.to_html.include?("Bold Heading") }
+      paragraph = parent.descendants.detect { |desc| desc.description.body.to_html.include?("Regular") }
+
+      assert_not_nil heading, "Expected heading creative to be created"
+      assert_includes heading.description.body.to_html, "<strong>Bold Heading</strong>"
+
+      assert_not_nil paragraph, "Expected paragraph creative to be created"
+      assert_includes paragraph.description.body.to_html, "<strong>bold</strong>"
+    ensure
+      created.each(&:destroy)
+      parent.destroy
+    end
   end
 end

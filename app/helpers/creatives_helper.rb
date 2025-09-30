@@ -258,7 +258,7 @@ module CreativesHelper
     html.gsub!(/(?<!\\)\[([^\]]+)\]\(([^)]+)\)/) do
       "<a href=\"#{$2}\">#{$1}</a>"
     end
-    html.gsub!(/(?<!\\)(\*\*|__)(.+?)\1/) do
+    html.gsub!(/(?<!\\)(\*\*|__)(.+?)\1/m) do
       "<strong>#{$2}</strong>"
     end
     html.gsub!(/\\([\\*_\[\]()!#~+\-])/, '\\1')
@@ -306,7 +306,7 @@ module CreativesHelper
       placeholders[token] = "[#{inner}](#{$1})"
       token
     end
-    markdown.gsub!(/<(strong|b)>(.*?)<\/\1>/m) do
+    markdown.gsub!(/<(strong|b)(?:\s+[^>]*)?>(.*?)<\/\1>/im) do
       token = "__BOLD#{index}__"; index += 1
       placeholders[token] = "**#{$2.strip}**"
       token
