@@ -25,6 +25,7 @@ if (!window.githubIntegrationInitialized) {
     const existingContainer = document.getElementById('github-existing-connections');
     const existingList = document.getElementById('github-existing-repo-list');
     const deleteBtn = document.getElementById('github-delete-btn');
+    const connectMessage = document.getElementById('github-connect-message');
     const existingMessage = modal.dataset.existingMessage || '이미 연동된 Repository가 있습니다.';
     const deleteConfirm = modal.dataset.deleteConfirm || 'Github 연동을 삭제하시겠습니까?';
     const deleteSuccess = modal.dataset.deleteSuccess || 'Github 연동이 삭제되었습니다.';
@@ -64,6 +65,9 @@ if (!window.githubIntegrationInitialized) {
       }
       if (deleteBtn) {
         deleteBtn.style.display = 'none';
+      }
+      if (connectMessage) {
+        connectMessage.style.display = '';
       }
       if (loginBtn) {
         loginBtn.style.display = 'inline-block';
@@ -146,6 +150,7 @@ if (!window.githubIntegrationInitialized) {
             statusEl.textContent = modal.dataset.loginRequired;
             hasExistingIntegration = false;
             renderExistingConnections([]);
+            if (connectMessage) connectMessage.style.display = '';
             if (loginBtn) loginBtn.style.display = 'inline-block';
             currentStep = 'connect';
             updateStep();
@@ -161,11 +166,13 @@ if (!window.githubIntegrationInitialized) {
 
           if (hasExistingIntegration) {
             statusEl.textContent = existingMessage;
+            if (connectMessage) connectMessage.style.display = 'none';
             currentStep = 'connect';
             updateStep();
           } else {
             statusEl.textContent = data.account && data.account.login ?
               `${data.account.login} 님의 Github 계정과 연동됩니다.` : '';
+            if (connectMessage) connectMessage.style.display = 'none';
             selectedOrg = null;
             organizations = [];
             currentStep = 'organization';
