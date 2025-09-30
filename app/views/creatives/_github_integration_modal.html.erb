@@ -25,7 +25,7 @@
       </button>
       <div id="github-existing-connections" style="display:none;margin-top:1.25em;">
         <p style="margin-bottom:0.5em;"><%= t('creatives.index.github_integration_existing_intro', default: '이미 연동된 Repository 목록입니다:') %></p>
-        <ul id="github-existing-repo-list" style="padding-left:1.2em;margin-bottom:0.75em;color:#333;"></ul>
+        <ul id="github-existing-repo-list" style="padding-left:1.2em;margin-bottom:0.75em;color:var(--color-text);"></ul>
         <button type="button" id="github-delete-btn" class="btn btn-danger" style="display:none;">
           <%= t('creatives.index.github_integration_delete_button', default: '연동 삭제') %>
         </button>
@@ -45,7 +45,7 @@
     <div class="github-wizard-step" id="github-step-summary" style="display:none;">
       <p class="github-modal-subtext"><%= t('creatives.index.github_integration_summary', default: 'The following repositories will be linked to this Creative:') %></p>
       <p id="github-webhook-instructions" class="github-modal-subtext" style="display:none;margin-bottom:0.5em;"><%= t('creatives.index.github_integration_webhook_instructions', default: 'Configure each repository with the webhook details below.') %></p>
-      <ul id="github-selected-repos" style="padding-left:1.2em;"></ul>
+      <ul id="github-selected-repos" style="padding-left:1.2em;color:var(--color-text);"></ul>
       <p id="github-summary-empty" class="github-modal-empty" style="display:none;"><%= t('creatives.index.github_integration_summary_empty', default: 'No repositories selected.') %></p>
     </div>
 
