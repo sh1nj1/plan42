@@ -2,6 +2,7 @@ module Creatives
   class GithubIntegrationsController < ApplicationController
     before_action :set_creative
     before_action :ensure_read_permission
+    before_action :ensure_admin_permission, only: [ :show, :update ]
 
     def show
       account = Current.user.github_account
@@ -21,11 +22,6 @@ module Creatives
     end
 
     def update
-      unless @creative.has_permission?(Current.user, :write)
-        render json: { error: "forbidden" }, status: :forbidden
-        return
-      end
-
       account = Current.user.github_account
       unless account
         render json: { error: "not_connected" }, status: :unprocessable_entity
@@ -81,6 +77,12 @@ module Creatives
 
     def ensure_read_permission
       return if @creative.has_permission?(Current.user, :read)
+
+      render json: { error: "forbidden" }, status: :forbidden
+    end
+
+    def ensure_admin_permission
+      return if @creative.has_permission?(Current.user, :admin)
 
       render json: { error: "forbidden" }, status: :forbidden
     end

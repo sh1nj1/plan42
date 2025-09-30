@@ -75,4 +75,19 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     assert_equal 'Updated prompt: #{pr_title} #{diff}', body["github_gemini_prompt"]
     assert_equal 'Updated prompt: #{pr_title} #{diff}', @creative.reload.github_gemini_prompt
   end
+
+  test "non admin users cannot manage github integration" do
+    other_user = users(:two)
+    CreativeShare.create!(creative: @creative, user: other_user, permission: :write)
+
+    sign_out
+    sign_in_as(other_user, password: "password")
+
+    get creative_github_integration_path(@creative), as: :json
+    assert_response :forbidden
+
+    payload = { repositories: [ "sample-user/example" ] }
+    patch creative_github_integration_path(@creative), params: payload, as: :json
+    assert_response :forbidden
+  end
 end
