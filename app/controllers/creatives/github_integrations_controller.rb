@@ -95,7 +95,7 @@ module Creatives
         end
 
         GithubRepositoryLink.transaction do
-          removed_repositories = [link.repository_full_name]
+          removed_repositories = [ link.repository_full_name ]
           link.destroy!
         end
       else
