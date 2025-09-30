@@ -52,21 +52,23 @@ class CreativeShare < ApplicationRecord
 
     # Clear cache for all combinations
     combinations_to_clear.each do |creative_id_val, user_id_val|
-      # Clear for the creative itself
-      permission_levels.each do |level|
-        Rails.cache.delete("creative_permission:#{creative_id_val}:#{user_id_val}:#{level}")
-      end
-
-      # Clear for all descendants of this creative
+      # Clear for the creative itself (use effective_origin.id for cache key)
       begin
         creative_record = Creative.find(creative_id_val)
-        creative_record.self_and_descendants.pluck(:id).each do |descendant_id|
+        origin_id = creative_record.effective_origin.id
+        permission_levels.each do |level|
+          Rails.cache.delete("creative_permission:#{origin_id}:#{user_id_val}:#{level}")
+        end
+
+        # Clear for all descendants of this creative (use their effective_origin.id too)
+        creative_record.self_and_descendants.each do |descendant|
+          descendant_origin_id = descendant.effective_origin.id
           permission_levels.each do |level|
-            Rails.cache.delete("creative_permission:#{descendant_id}:#{user_id_val}:#{level}")
+            Rails.cache.delete("creative_permission:#{descendant_origin_id}:#{user_id_val}:#{level}")
           end
         end
       rescue ActiveRecord::RecordNotFound
-        # Creative might have been deleted, skip descendant clearing
+        # Creative might have been deleted, skip clearing
       end
     end
   end
