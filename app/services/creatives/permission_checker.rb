@@ -4,25 +4,24 @@ module Creatives
       @creative = creative
       @user = user
       @cache = Current.respond_to?(:creative_share_cache) ? Current.creative_share_cache : nil
-      @permission_cache = Current.respond_to?(:creative_permission_cache) ? Current.creative_permission_cache : nil
     end
 
     def allowed?(required_permission = :read)
       base = creative.origin_id.nil? ? creative : creative.origin
 
-      # Check permission cache first
-      if @permission_cache && @user
-        cache_key = "#{base.id}_#{@user.id}_#{required_permission}"
-        cached_result = @permission_cache[cache_key]
+      # Check application-wide permission cache first
+      if @user
+        cache_key = "creative_permission:#{base.id}:#{@user.id}:#{required_permission}"
+        cached_result = Rails.cache.read(cache_key)
         return cached_result unless cached_result.nil?
       end
 
       result = allowed_on_tree?(base, required_permission)
 
-      # Store result in cache
-      if @permission_cache && @user
-        cache_key = "#{base.id}_#{@user.id}_#{required_permission}"
-        @permission_cache[cache_key] = result
+      # Store result in application-wide cache
+      if @user
+        cache_key = "creative_permission:#{base.id}:#{@user.id}:#{required_permission}"
+        Rails.cache.write(cache_key, result, expires_in: 1.hour)
       end
 
       result
@@ -30,7 +29,7 @@ module Creatives
 
     private
 
-    attr_reader :creative, :user, :cache, :permission_cache
+    attr_reader :creative, :user, :cache
 
     def allowed_on_tree?(node, required_permission)
       return true if node.user_id == user&.id
