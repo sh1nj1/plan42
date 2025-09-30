@@ -28,7 +28,20 @@ class CreativeShare < ApplicationRecord
   private
 
   def clear_permission_cache
-    Current.clear_permission_cache!
+    return unless user_id && creative_id
+
+    # Invalidate cache keys for this creative and user (all permission levels)
+    permission_levels = [ :read, :feedback, :write, :admin ]
+    permission_levels.each do |level|
+      Rails.cache.delete("creative_permission:#{creative_id}:#{user_id}:#{level}")
+    end
+
+    # Invalidate cache keys for all descendants of this creative and user
+    creative.self_and_descendants.pluck(:id).each do |descendant_id|
+      permission_levels.each do |level|
+        Rails.cache.delete("creative_permission:#{descendant_id}:#{user_id}:#{level}")
+      end
+    end
   end
 
   def notify_recipient
