@@ -25,9 +25,23 @@ export PERMISSION_CACHE_EXPIRES_IN="3.days"
 # Set cache to expire in 12 hours
 export PERMISSION_CACHE_EXPIRES_IN="12.hours" 
 
+# Set cache to expire in 30 minutes
+export PERMISSION_CACHE_EXPIRES_IN="30.minutes"
+
 # Set cache to expire in 1 hour (3600 seconds)
 export PERMISSION_CACHE_EXPIRES_IN="3600"
 ```
+
+### Security
+
+The configuration parser uses **safe duration parsing** that prevents code injection attacks. The following input formats are supported:
+
+- `\d+.days?` - Example: "7.days" or "7.day"
+- `\d+.hours?` - Example: "12.hours" or "12.hour"  
+- `\d+.minutes?` - Example: "30.minutes" or "30.minute"
+- `\d+` - Raw seconds as integer
+
+Any invalid or potentially malicious input will safely default to 7 days and log a warning. The parser **never uses eval()** or executes arbitrary code from environment variables.
 
 ## How It Works
 
