@@ -115,10 +115,6 @@ class CommentsController < ApplicationController
       render json: { error: I18n.t("comments.approve_not_allowed") }, status: :forbidden and return
     end
 
-    if @comment.action_executed_at.present?
-      render json: { error: I18n.t("comments.approve_already_executed") }, status: :unprocessable_entity and return
-    end
-
     action_payload = params.dig(:comment, :action)
     if action_payload.blank?
       render json: { error: I18n.t("comments.approve_missing_action") }, status: :unprocessable_entity and return
@@ -128,7 +124,22 @@ class CommentsController < ApplicationController
     parsed_payload = validator.validate!(action_payload)
     normalized_action = JSON.pretty_generate(parsed_payload)
 
-    if @comment.update(action: normalized_action)
+    executed_error = false
+    update_success = false
+
+    @comment.with_lock do
+      @comment.reload
+
+      if @comment.action_executed_at.present?
+        executed_error = true
+      else
+        update_success = @comment.update(action: normalized_action)
+      end
+    end
+
+    if executed_error
+      render json: { error: I18n.t("comments.approve_already_executed") }, status: :unprocessable_entity
+    elsif update_success
       render partial: "comments/comment", locals: { comment: @comment }
     else
       error_message = @comment.errors.full_messages.to_sentence.presence || I18n.t("comments.action_update_error")
