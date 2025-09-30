@@ -191,7 +191,7 @@ module CreativesHelper
     return "" if creatives.blank?
     md = ""
     creatives.each do |creative|
-      desc = creative.effective_description(nil, false).to_s
+      desc = creative.effective_description(nil, false).to_html
       # Append progress as a percentage if available (progress is 0.0..1.0)
       if with_progress && creative.respond_to?(:progress) && !creative.progress.nil?
         pct = (creative.progress.to_f * 100).round
@@ -201,7 +201,16 @@ module CreativesHelper
       markdown_content = html_links_to_markdown(raw_html)
       cleaned_markdown = markdown_content.strip
       rendered_table_block = false
-      if level <= 4 && markdown_table_block?(cleaned_markdown)
+
+      # Extract table content from within divs if present
+      table_match = cleaned_markdown.match(/^<div[^>]*>\s*<div[^>]*>\s*(\|.*?\|(?:\n\|.*?\|)*)\s*<\/div>\s*<\/div>$/m)
+      if level <= 4 && table_match
+        table_content = table_match[1].strip
+        if markdown_table_block?(table_content)
+          md += "#{table_content}\n\n"
+          rendered_table_block = true
+        end
+      elsif level <= 4 && markdown_table_block?(cleaned_markdown)
         md += "#{cleaned_markdown}\n\n"
         rendered_table_block = true
       elsif level <= 4

@@ -103,7 +103,7 @@ class CreativesHelperTest < ActionView::TestCase
     expected = <<~MD.strip
       | Expression | Description |
       | --- | --- |
-      | A \| B | Either A or B |
+      | A \\| B | Either A or B |
     MD
     assert_equal expected, html_links_to_markdown(html.strip)
   end
@@ -132,7 +132,7 @@ class CreativesHelperTest < ActionView::TestCase
     HTML
     creative = Creative.create!(user: user, description: description)
 
-    markdown = render_creative_tree_markdown([creative])
+    markdown = render_creative_tree_markdown([ creative ])
 
     expected = <<~MD
       | Name | Count |
