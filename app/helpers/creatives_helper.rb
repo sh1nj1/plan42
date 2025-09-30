@@ -1,5 +1,6 @@
 require "base64"
 require "securerandom"
+require "nokogiri"
 
 module CreativesHelper
   # Shared toggle button symbol helper
@@ -257,6 +258,11 @@ module CreativesHelper
     markdown = text.dup
     placeholders = {}
     index = 0
+    markdown.gsub!(%r{<table\b[^>]*>.*?</table>}im) do |match|
+      token = "__TABLE#{index}__"; index += 1
+      placeholders[token] = html_table_to_markdown(match)
+      token
+    end
     markdown.gsub!(%r{<action-text-attachment ([^>]+)>(?:</action-text-attachment>)?}) do |match|
       attrs = Hash[$1.scan(/(\S+?)="([^"]*)"/)]
       sgid = attrs["sgid"]
@@ -309,5 +315,72 @@ module CreativesHelper
     else
       "<img src=\"#{data_url}\" alt=\"#{alt}\" />"
     end
+  end
+
+  def html_table_to_markdown(table_html)
+    fragment = Nokogiri::HTML::DocumentFragment.parse(table_html)
+    table = fragment.at_css("table")
+    return "" unless table
+
+    header_row = table.at_css("thead tr") || table.css("tr").first
+    return "" unless header_row
+
+    header_cells = header_row.css("th,td")
+    headers = header_cells.map { |cell| html_links_to_markdown(cell.inner_html).strip }
+
+    alignments = header_cells.map { |cell| alignment_from_html_cell(cell) }
+
+    body_rows = table.css("tbody tr")
+    if body_rows.empty?
+      all_rows = table.css("tr")
+      body_rows = all_rows.drop(1)
+    end
+
+    body_lines = body_rows.map do |row|
+      cells = row.css("th,td").map { |cell| html_links_to_markdown(cell.inner_html).strip }
+      normalized = normalize_row_cells(cells, headers.length)
+      "| #{normalized.join(' | ')} |"
+    end
+
+    alignment_cells = normalize_row_cells(alignments, headers.length).map { |align| alignment_to_markdown(align) }
+    header_line = "| #{headers.map(&:strip).join(' | ')} |"
+    alignment_line = "| #{alignment_cells.join(' | ')} |"
+
+    ([header_line, alignment_line] + body_lines).join("\n")
+  end
+
+  def alignment_from_html_cell(cell)
+    style = cell["style"].to_s
+    align = cell["align"].to_s
+    case
+    when style =~ /text-align\s*:\s*center/i || align =~ /center/i
+      :center
+    when style =~ /text-align\s*:\s*right/i || align =~ /right/i
+      :right
+    when style =~ /text-align\s*:\s*left/i || align =~ /left/i
+      :left
+    else
+      nil
+    end
+  end
+
+  def alignment_to_markdown(alignment)
+    case alignment
+    when :center
+      ":---:"
+    when :right
+      "---:"
+    when :left
+      ":---"
+    else
+      "---"
+    end
+  end
+
+  def normalize_row_cells(cells, expected_length)
+    values = cells.dup
+    values = values.first(expected_length)
+    values.fill("", values.length...expected_length)
+    values
   end
 end

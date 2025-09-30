@@ -53,6 +53,36 @@ class CreativesHelperTest < ActionView::TestCase
     assert_equal "Look ![](data:image/png;base64,aGk=)", back
   end
 
+  test "html table converts to markdown" do
+    html = <<~HTML
+      <table>
+        <thead>
+          <tr>
+            <th style="text-align: left;">Name</th>
+            <th style="text-align: center;">Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Alice</td>
+            <td>3</td>
+          </tr>
+          <tr>
+            <td>Bob</td>
+            <td>5</td>
+          </tr>
+        </tbody>
+      </table>
+    HTML
+    expected = <<~MD.strip
+      | Name | Count |
+      | :--- | :---: |
+      | Alice | 3 |
+      | Bob | 5 |
+    MD
+    assert_equal expected, html_links_to_markdown(html.strip)
+  end
+
   test "expanded_from_expanded_state defaults to collapsed" do
     assert_not expanded_from_expanded_state(1, {})
   end
