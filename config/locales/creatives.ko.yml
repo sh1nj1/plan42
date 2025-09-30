@@ -67,6 +67,7 @@ ko:
       github_integration_saved: "Github 연동이 저장되었습니다."
       github_integration_login_required: "Github 계정으로 로그인하여 연동을 시작하세요."
       github_integration_existing_message: "이미 아래 Repository와 연동 중입니다."
+      github_integration_delete_select_warning: "삭제할 Repository를 선택하세요."
       github_integration_missing_creative: "연동할 Creative가 선택되지 않았습니다."
       plan_tags_applied: "선택한 크리에이티브에 플랜 태그가 적용되었습니다."
       plan_tag_failed: "플랜과 하나 이상의 크리에이티브를 선택하세요."

@@ -81,13 +81,26 @@ module Creatives
         return
       end
 
+      repositories = Array(params[:repositories]).filter_map { |value| value.to_s.presence }
       repository = params[:repository].presence || params[:repository_full_name].presence
 
       scope = linked_repository_links(account)
 
       removed_repositories = []
 
-      if repository
+      if repositories.present?
+        links_to_remove = scope.where(repository_full_name: repositories).to_a
+        missing_repositories = repositories - links_to_remove.map(&:repository_full_name)
+        if missing_repositories.present?
+          render json: { error: "not_found" }, status: :not_found
+          return
+        end
+
+        GithubRepositoryLink.transaction do
+          removed_repositories = links_to_remove.map(&:repository_full_name)
+          links_to_remove.each(&:destroy!)
+        end
+      elsif repository
         link = scope.find_by(repository_full_name: repository)
         unless link
           render json: { error: "not_found" }, status: :not_found
