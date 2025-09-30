@@ -12,12 +12,13 @@
     <% end %>
   <% end %>
 
+  <% current_creative = @parent_creative || @creative %>
+  <% can_manage_integrations = current_creative&.has_permission?(Current.user, :admin) %>
   <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
     <%= render 'share_button' %>
   <% end %>
 
-  <% current_creative = @parent_creative || @creative %>
-  <% if current_creative&.has_permission?(Current.user, :write) %>
+  <% if can_manage_integrations %>
     <%= render PopupMenuComponent.new(
           button_content: t('creatives.index.integrations', default: '연동'),
           menu_id: 'creative-integrations-menu',
@@ -45,10 +46,12 @@
     <span aria-hidden="true"><%= svg_tag 'edit.svg', class: 'icon-edit', width: 16, height: 16 %></span></button>
   <button id="import-markdown-btn" class="import-btn desktop-only"><%= t('.import_markdown') %></button>
   <button id="export-markdown-btn" class="export-btn desktop-only" data-parent-creative-id="<%= @parent_creative&.id %>" data-error="<%= t('creatives.index.export_failed') %>"><%= t('.export_markdown') %></button>
-  <%= render 'mobile_actions_menu' %>
+  <%= render 'mobile_actions_menu', current_creative: current_creative, can_manage_integrations: can_manage_integrations %>
 </div>
 <%= render 'import_upload_zone' %>
-<button id="github-integration-btn" data-creative-id="<%= current_creative&.id %>" style="display:none;"></button>
+<% if can_manage_integrations %>
+  <button id="github-integration-btn" data-creative-id="<%= current_creative&.id %>" style="display:none;"></button>
+<% end %>
 
 <%#= TODO: remove this later completely recalculate progress you need to remove route, and controller also %>
 <%#= button_to t('.recalculate_progress'), recalculate_progress_creatives_path, method: :post, form: { data: { turbo_confirm: t('.recalculate_all_parent_progress') } } if authenticated? %>
@@ -141,4 +144,6 @@
 <%= render 'inline_edit_form' %>
 
 <%= render 'set_plan_modal' %>
-<%= render 'github_integration_modal', creative: current_creative %>
+<% if can_manage_integrations %>
+  <%= render 'github_integration_modal', creative: current_creative %>
+<% end %>
