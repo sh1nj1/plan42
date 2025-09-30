@@ -44,6 +44,7 @@ Rails.application.routes.draw do
         end
         collection do
           get :participants
+          post :move
         end
       end
     collection do

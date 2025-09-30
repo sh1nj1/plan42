@@ -1,4 +1,10 @@
 <div class="comment-item <%= 'last-read' if defined?(last_read_comment_id) && last_read_comment_id && comment.id == last_read_comment_id %>" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>">
+  <div class="comment-select">
+    <input type="checkbox"
+           class="comment-select-checkbox"
+           value="<%= comment.id %>"
+           aria-label="<%= t('comments.select_label') %>" />
+  </div>
   <div>
     <%= render AvatarComponent.new(user: comment.user, size: 20, classes: 'avatar comment-avatar') %>
     <% system_prefix = "#{t('comments.system_user')}:" %>

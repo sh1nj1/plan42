@@ -178,6 +178,40 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_nil comment.approver_id
   end
 
+  test "user can move comments to another creative" do
+    target = creatives(:childless_creative)
+    comment = @creative.comments.create!(content: "Move me", user: @user)
+
+    assert_changes -> { comment.reload.creative }, from: @creative, to: target.effective_origin do
+      post move_creative_comments_path(@creative), params: {
+        comment_ids: [ comment.id ],
+        target_creative_id: target.id
+      }, as: :json
+      assert_response :success
+    end
+
+    response_body = JSON.parse(@response.body)
+    assert_equal true, response_body["success"]
+  end
+
+  test "cannot move comments without permission on target" do
+    other_user = users(:two)
+    other_user.update!(email_verified_at: Time.current)
+    target = Creative.create!(user: other_user, description: "Restricted", progress: 0.0)
+    comment = @creative.comments.create!(content: "Move me", user: @user)
+
+    assert_no_changes -> { comment.reload.creative } do
+      post move_creative_comments_path(@creative), params: {
+        comment_ids: [ comment.id ],
+        target_creative_id: target.id
+      }, as: :json
+      assert_response :forbidden
+    end
+
+    response_body = JSON.parse(@response.body)
+    assert_equal I18n.t("comments.move_not_allowed"), response_body["error"]
+  end
+
   test "approver can update comment action" do
     action_payload = {
       "action" => "update_creative",

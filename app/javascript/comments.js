@@ -32,6 +32,7 @@ if (!window.commentsInitialized) {
         function openPopup(btn) {
             currentBtn = btn;
             resetForm();
+            clearSelection();
             popup.dataset.creativeId = btn.dataset.creativeId;
             popup.dataset.canComment = btn.dataset.canComment;
             popup.dataset.resized = 'false';
@@ -76,6 +77,7 @@ if (!window.commentsInitialized) {
             clearTimeout(typingTimeout);
             typingTimeout = null;
             resetForm();
+            clearSelection();
             if (isMobile()) {
                 popup.classList.remove('open');
                 setTimeout(function() { popup.style.display = 'none'; }, 300);
@@ -89,6 +91,12 @@ if (!window.commentsInitialized) {
         var popup = document.getElementById('comments-popup');
         var list = document.getElementById('comments-list');
         var form = document.getElementById('new-comment-form');
+        var moveBtn = document.getElementById('move-comments-btn');
+        var linkModal = document.getElementById('link-creative-modal');
+        var linkSearchInput = document.getElementById('link-creative-search');
+        var linkResults = document.getElementById('link-creative-results');
+        const selectedCommentIds = new Set();
+        let movingComments = false;
 
         if (!popup || !list || !form) { return; }
 
@@ -111,6 +119,107 @@ if (!window.commentsInitialized) {
             setTimeout(function() {
                 notice.remove();
             }, 2400);
+        }
+
+        function updateMoveButtonState() {
+            if (!moveBtn) return;
+            moveBtn.disabled = movingComments || selectedCommentIds.size === 0;
+        }
+
+        function handleSelectionChange(checkbox) {
+            if (!checkbox) return;
+            const commentId = checkbox.value;
+            const item = checkbox.closest('.comment-item');
+            if (checkbox.checked) {
+                selectedCommentIds.add(commentId);
+                if (item) item.classList.add('selected-for-move');
+            } else {
+                selectedCommentIds.delete(commentId);
+                if (item) item.classList.remove('selected-for-move');
+            }
+            updateMoveButtonState();
+        }
+
+        function clearSelection() {
+            selectedCommentIds.clear();
+            list.querySelectorAll('.comment-select-checkbox').forEach(function(cb) {
+                cb.checked = false;
+                const item = cb.closest('.comment-item');
+                if (item) item.classList.remove('selected-for-move');
+            });
+            updateMoveButtonState();
+        }
+
+        function moveSelectedComments(targetCreativeId) {
+            if (!targetCreativeId || selectedCommentIds.size === 0) return;
+            const commentIds = Array.from(selectedCommentIds);
+            const csrfToken = document.querySelector('meta[name=csrf-token]');
+            const errorText = popup.dataset.moveErrorText || 'Failed to move comments.';
+            movingComments = true;
+            updateMoveButtonState();
+            fetch(`/creatives/${popup.dataset.creativeId}/comments/move`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-Token': csrfToken ? csrfToken.content : '',
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    comment_ids: commentIds,
+                    target_creative_id: targetCreativeId
+                })
+            }).then(function(r) {
+                if (!r.ok) {
+                    return r.json().catch(function() { return {}; }).then(function(data) {
+                        throw new Error(data && data.error ? data.error : errorText);
+                    });
+                }
+                return r.json().catch(function() { return {}; });
+            }).then(function() {
+                loadInitialComments();
+                clearSelection();
+            }).catch(function(err) {
+                alert(err && err.message ? err.message : errorText);
+            }).finally(function() {
+                movingComments = false;
+                updateMoveButtonState();
+            });
+        }
+
+        function openMoveModal() {
+            if (!linkModal || !linkSearchInput || !linkResults) {
+                alert(popup.dataset.moveErrorText);
+                return;
+            }
+
+            const cleanup = function() {
+                linkModal.removeEventListener('link-creative-modal:select', handleSelect);
+                linkModal.removeEventListener('link-creative-modal:closed', handleClosed);
+            };
+
+            const handleSelect = function(event) {
+                cleanup();
+                const detail = event && event.detail ? event.detail : {};
+                if (detail && detail.id) {
+                    moveSelectedComments(detail.id);
+                }
+            };
+
+            const handleClosed = function() {
+                cleanup();
+                updateMoveButtonState();
+            };
+
+            linkModal.addEventListener('link-creative-modal:select', handleSelect);
+            linkModal.addEventListener('link-creative-modal:closed', handleClosed);
+            linkModal.dataset.context = 'comment-move';
+            linkSearchInput.value = '';
+            linkResults.innerHTML = '';
+            linkModal.style.display = 'flex';
+            document.body.classList.add('no-scroll');
+            requestAnimationFrame(function() {
+                linkSearchInput.focus();
+            });
         }
 
         function getActionContainer(element) {
@@ -651,9 +760,11 @@ if (!window.commentsInitialized) {
             loadInitialComments = function loadInitialComments(highlightId) {
                 currentPage = 1;
                 allLoaded = false;
+                clearSelection();
                 list.innerHTML = popup.dataset.loadingText;
                 fetchCommentsPage(1).then(function(html) {
                     list.innerHTML = html;
+                    clearSelection();
                     clearManualTypingMessage();
                     clearSearchFilter();
                     renderMarkdown(list);
@@ -706,6 +817,21 @@ if (!window.commentsInitialized) {
                 clearManualTypingMessage();
                 clearSearchFilter();
             };
+
+            if (moveBtn) {
+                moveBtn.addEventListener('click', function() {
+                    if (movingComments) return;
+                    if (selectedCommentIds.size === 0) {
+                        if (popup.dataset.moveNoSelectionText) {
+                            alert(popup.dataset.moveNoSelectionText);
+                        }
+                        return;
+                    }
+                    openMoveModal();
+                });
+            }
+
+            updateMoveButtonState();
 
             let sending = false;
             const send = function(e) {
@@ -767,9 +893,19 @@ if (!window.commentsInitialized) {
 
             form.onsubmit = send;
             // 이벤트 위임 방식으로 삭제 버튼 처리
+            list.addEventListener('change', function(e) {
+                var checkbox = e.target instanceof Element ? e.target.closest('.comment-select-checkbox') : null;
+                if (!checkbox) return;
+                handleSelectionChange(checkbox);
+            });
+
             list.addEventListener('click', function(e) {
                 var target = e.target instanceof Element ? e.target : e.target.parentElement;
                 if (!target) return;
+
+                if (target.closest('.comment-select-checkbox')) {
+                    return;
+                }
 
                 var copyBtn = target.closest('.copy-comment-link-btn');
                 if (copyBtn) {
@@ -819,6 +955,8 @@ if (!window.commentsInitialized) {
                         headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content }
                     }).then(function(r) {
                         if (r.ok) {
+                            selectedCommentIds.delete(commentId);
+                            updateMoveButtonState();
                             loadInitialComments();
                         } else {
                             // TODO: handle error
