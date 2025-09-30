@@ -81,7 +81,7 @@ class NotionService
   end
 
   def create_creative_page(creative, notion_link, parent_page_id)
-    title = creative.content.presence || "Untitled Creative"
+    title = creative.description.to_plain_text.strip.presence || "Untitled Creative"
     blocks = NotionCreativeExporter.new(creative).export_blocks
 
     # If no parent specified, search for a suitable workspace page
@@ -104,7 +104,7 @@ class NotionService
   end
 
   def update_creative_page(creative, notion_link)
-    title = creative.content.presence || "Untitled Creative"
+    title = creative.description.to_plain_text.strip.presence || "Untitled Creative"
     blocks = NotionCreativeExporter.new(creative).export_blocks
 
     properties = {
