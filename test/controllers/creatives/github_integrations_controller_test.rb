@@ -112,4 +112,28 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     assert_equal github_webhook_url, removal_args[:webhook_url]
     assert_equal [ "sample-user/example" ], removal_args[:repositories]
   end
+
+  test "destroy removes single repository when repository param provided" do
+    GithubRepositoryLink.create!(
+      creative: @creative,
+      github_account: @github_account,
+      repository_full_name: "sample-user/another",
+      webhook_secret: "another-secret"
+    )
+
+    assert_difference("GithubRepositoryLink.count", -1) do
+      delete creative_github_integration_path(@creative),
+             params: { repository: "sample-user/example" },
+             as: :json
+    end
+
+    assert_response :success
+    body = JSON.parse(response.body)
+
+    assert_equal [ "sample-user/another" ], body["selected_repositories"], "Expected remaining repository to be returned"
+    assert body["webhooks"].key?("sample-user/another"), "Expected webhook info for remaining repo"
+    assert_not body["webhooks"].key?("sample-user/example"), "Expected deleted repo to be absent"
+    remaining = @creative.github_repository_links.where(github_account: @github_account).pluck(:repository_full_name)
+    assert_equal [ "sample-user/another" ], remaining
+  end
 end

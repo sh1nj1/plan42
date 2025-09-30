@@ -81,26 +81,32 @@ module Creatives
         return
       end
 
-      removed_links = GithubRepositoryLink.transaction do
-        links = linked_repository_links(account).to_a
-        linked_repository_links(account).destroy_all
-        links
+      repository = params[:repository].presence || params[:repository_full_name].presence
+
+      scope = linked_repository_links(account)
+
+      if repository
+        link = scope.find_by(repository_full_name: repository)
+        unless link
+          render json: { error: "not_found" }, status: :not_found
+          return
+        end
+
+        GithubRepositoryLink.transaction do
+          link.destroy!
+        end
+      else
+        GithubRepositoryLink.transaction do
+          scope.destroy_all
+        end
       end
 
-      removed_repositories = removed_links.map(&:repository_full_name)
-
-      if removed_repositories.present?
-        Github::WebhookProvisioner.remove_for_repositories(
-          account: account,
-          repositories: removed_repositories,
-          webhook_url: github_webhook_url
-        )
-      end
+      links = linked_repository_links(account)
 
       render json: {
         success: true,
-        selected_repositories: [],
-        webhooks: {},
+        selected_repositories: links.pluck(:repository_full_name),
+        webhooks: serialize_webhooks(links),
         github_gemini_prompt: @creative.github_gemini_prompt_template
       }
     end

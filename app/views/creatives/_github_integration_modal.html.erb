@@ -8,6 +8,7 @@
      data-delete-confirm="<%= t('creatives.index.github_integration_delete_confirm', default: 'Do you want to remove the Github integration?') %>"
      data-delete-success="<%= t('creatives.index.github_integration_delete_success', default: 'Github integration removed successfully.') %>"
      data-delete-error="<%= t('creatives.index.github_integration_delete_error', default: 'Failed to remove the Github integration.') %>"
+     data-delete-button-label="<%= t('creatives.index.github_integration_delete_button', default: 'Remove integration') %>"
      style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
   <div class="popup-box" style="min-width:360px;max-width:90vw;">
     <button type="button" id="close-github-modal" class="popup-close-btn">&times;</button>
@@ -22,11 +23,9 @@
       <button type="button" id="github-login-btn" class="btn btn-primary" data-window-width="620" data-window-height="720">
         <%= t('creatives.index.github_login_button', default: 'Sign in with Github') %>
       </button>
-      <div id="github-existing-connections" class="github-existing-connections" style="display:none;">
-        <ul id="github-existing-repo-list" class="github-modal-list"></ul>
-        <button type="button" id="github-delete-btn" class="btn btn-danger" style="display:none;">
-          <%= t('creatives.index.github_integration_delete_button', default: 'Remove integration') %>
-        </button>
+      <div id="github-existing-connections" style="display:none;margin-top:1.25em;">
+        <p style="margin-bottom:0.5em;"><%= t('creatives.index.github_integration_existing_intro', default: '이미 연동된 Repository 목록입니다:') %></p>
+        <ul id="github-existing-repo-list" style="padding-left:1.2em;margin-bottom:0.75em;color:#333;"></ul>
       </div>
     </div>
 
