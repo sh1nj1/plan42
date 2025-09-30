@@ -63,7 +63,7 @@ class NotionClient
       
       Rails.logger.info("NotionClient: Testing with single test block first")
       begin
-        test_response = post("blocks/#{format_id(page_id)}/children", { children: test_block })
+        test_response = patch("blocks/#{format_id(page_id)}/children", { children: test_block })
         Rails.logger.info("NotionClient: Test block append successful")
         
         # If test works, proceed with real blocks
@@ -127,10 +127,10 @@ class NotionClient
       Rails.logger.info("NotionClient: Appending #{blocks.length} blocks in batches")
       blocks.each_slice(100).with_index do |block_batch, index|
         Rails.logger.info("NotionClient: Appending batch #{index + 1} with #{block_batch.length} blocks")
-        post("blocks/#{format_id(page_id)}/children", { children: block_batch })
+        patch("blocks/#{format_id(page_id)}/children", { children: block_batch })
       end
     else
-      post("blocks/#{format_id(page_id)}/children", { children: blocks })
+      patch("blocks/#{format_id(page_id)}/children", { children: blocks })
     end
   end
 
