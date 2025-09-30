@@ -1,0 +1,90 @@
+<div id="notion-integration-modal"
+     data-success-message="<%= t('creatives.index.notion_integration_saved', default: 'Notion integration saved successfully.') %>"
+     data-login-required="<%= t('creatives.index.notion_integration_login_required', default: 'Sign in with your Notion account to start the integration.') %>"
+     data-no-creative="<%= t('creatives.index.notion_integration_missing_creative', default: 'No Creative selected for integration.') %>"
+     data-existing-message="<%= t('creatives.index.notion_integration_existing_message', default: 'You\'re already connected to Notion pages below.') %>"
+     data-delete-confirm="<%= t('creatives.index.notion_integration_delete_confirm', default: 'Do you want to remove the Notion integration?') %>"
+     data-delete-success="<%= t('creatives.index.notion_integration_delete_success', default: 'Notion integration removed successfully.') %>"
+     data-delete-error="<%= t('creatives.index.notion_integration_delete_error', default: 'Failed to remove the Notion integration.') %>"
+     data-delete-button-label="<%= t('creatives.index.notion_integration_delete_button', default: 'Remove integration') %>"
+     data-export-success="<%= t('creatives.index.notion_export_success', default: 'Creative exported to Notion successfully.') %>"
+     data-sync-success="<%= t('creatives.index.notion_sync_success', default: 'Creative synced to Notion successfully.') %>"
+     style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
+  <div class="popup-box" style="min-width:360px;max-width:90vw;">
+    <button type="button" id="close-notion-modal" class="popup-close-btn">&times;</button>
+    <h2><%= t('creatives.index.notion_integration_title', default: 'Configure Notion integration') %></h2>
+    <p id="notion-integration-status" class="notion-modal-status"></p>
+
+    <div class="notion-wizard-step" id="notion-step-connect">
+      <p id="notion-connect-message" class="notion-modal-subtext"><%= t('creatives.index.notion_integration_connect', default: 'Sign in with your Notion account to start exporting.') %></p>
+      <form id="notion-login-form" action="/auth/notion" method="post" target="notion-auth-window" style="display:none;">
+        <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+      </form>
+      <button type="button" id="notion-login-btn" class="btn btn-primary" data-window-width="620" data-window-height="720">
+        <%= t('creatives.index.notion_login_button', default: 'Sign in with Notion') %>
+      </button>
+      <div id="notion-existing-connections" style="display:none;margin-top:1.25em;">
+        <p style="margin-bottom:0.5em;"><%= t('creatives.index.notion_integration_existing_intro', default: 'Linked Notion pages:') %></p>
+        <ul id="notion-existing-page-list" style="padding-left:1.2em;margin-bottom:0.75em;color:var(--color-text);"></ul>
+        <div style="display:flex;gap:0.5em;">
+          <button type="button" id="notion-sync-btn" class="btn btn-secondary" style="display:none;">
+            <%= t('creatives.index.notion_sync_button', default: 'Sync to Notion') %>
+          </button>
+          <button type="button" id="notion-delete-btn" class="btn btn-danger" style="display:none;">
+            <%= t('creatives.index.notion_integration_delete_button', default: 'Remove link') %>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="notion-wizard-step" id="notion-step-workspace" style="display:none;">
+      <p class="notion-modal-subtext"><%= t('creatives.index.notion_integration_workspace', default: 'Your Notion workspace is connected. Choose how to export your creative.') %></p>
+      <div id="notion-workspace-info" style="margin-bottom:1em;padding:1em;background:var(--color-bg-alt);border-radius:4px;">
+        <strong id="notion-workspace-name"></strong>
+      </div>
+      <div style="margin-bottom:1em;">
+        <label style="display:block;margin-bottom:0.5em;">
+          <%= t('creatives.index.notion_export_option', default: 'Export option:') %>
+        </label>
+        <div style="display:flex;flex-direction:column;gap:0.5em;">
+          <label style="display:flex;align-items:center;gap:0.5em;">
+            <input type="radio" name="notion-export-type" value="new-page" checked>
+            <%= t('creatives.index.notion_export_new_page', default: 'Create new page') %>
+          </label>
+          <label style="display:flex;align-items:center;gap:0.5em;">
+            <input type="radio" name="notion-export-type" value="select-parent">
+            <%= t('creatives.index.notion_export_under_page', default: 'Create as subpage under existing page') %>
+          </label>
+        </div>
+      </div>
+      <div id="notion-parent-page-section" style="display:none;margin-bottom:1em;">
+        <label for="notion-parent-page-select" style="display:block;margin-bottom:0.5em;">
+          <%= t('creatives.index.notion_parent_page', default: 'Parent page:') %>
+        </label>
+        <select id="notion-parent-page-select" style="width:100%;padding:0.5em;border:1px solid var(--color-border);border-radius:4px;">
+          <option value=""><%= t('creatives.index.notion_loading', default: 'Loading pages...') %></option>
+        </select>
+      </div>
+    </div>
+
+    <div class="notion-wizard-step" id="notion-step-summary" style="display:none;">
+      <p class="notion-modal-subtext"><%= t('creatives.index.notion_integration_summary', default: 'Ready to export your creative to Notion:') %></p>
+      <div id="notion-export-summary" style="margin:1em 0;padding:1em;background:var(--color-bg-alt);border-radius:4px;">
+        <div><strong><%= t('creatives.index.notion_creative_title', default: 'Creative:') %></strong> <span id="notion-creative-title"></span></div>
+        <div><strong><%= t('creatives.index.notion_workspace', default: 'Workspace:') %></strong> <span id="notion-workspace-summary"></span></div>
+        <div><strong><%= t('creatives.index.notion_export_as', default: 'Export as:') %></strong> <span id="notion-export-type-summary"></span></div>
+        <div id="notion-parent-summary" style="display:none;"><strong><%= t('creatives.index.notion_parent_page', default: 'Parent page:') %></strong> <span id="notion-parent-page-summary"></span></div>
+      </div>
+    </div>
+
+    <div id="notion-wizard-error" style="display:none;margin:0.5em 0;color:#c0392b;font-weight:bold;"></div>
+
+    <div class="notion-wizard-footer" style="display:flex;justify-content:space-between;gap:0.5em;margin-top:1.5em;">
+      <button type="button" id="notion-prev-btn" class="btn btn-secondary" style="display:none;"><%= t('app.previous', default: 'Previous') %></button>
+      <div style="margin-left:auto;display:flex;gap:0.5em;">
+        <button type="button" id="notion-next-btn" class="btn btn-primary" style="display:none;"><%= t('app.next', default: 'Next') %></button>
+        <button type="button" id="notion-export-btn" class="btn btn-primary" style="display:none;"><%= t('creatives.index.notion_export_button', default: 'Export to Notion') %></button>
+      </div>
+    </div>
+  </div>
+</div>

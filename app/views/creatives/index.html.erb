@@ -26,6 +26,7 @@
           button_classes: 'desktop-only'
         ) do %>
       <button type="button" class="popup-menu-item" data-click-target="github-integration-btn">Github</button>
+       <button type="button" class="popup-menu-item" data-click-target="notion-integration-btn">Notion</button>
     <% end %>
   <% end %>
 
@@ -51,6 +52,7 @@
 <%= render 'import_upload_zone' %>
 <% if can_manage_integrations %>
   <button id="github-integration-btn" data-creative-id="<%= current_creative&.id %>" style="display:none;"></button>
+  <button id="notion-integration-btn" data-creative-id="<%= current_creative&.id %>" style="display:none;"></button>
 <% end %>
 
 <%#= TODO: remove this later completely recalculate progress you need to remove route, and controller also %>
@@ -146,4 +148,5 @@
 <%= render 'set_plan_modal' %>
 <% if can_manage_integrations %>
   <%= render 'github_integration_modal', creative: current_creative %>
+  <%= render 'notion_integration_modal', creative: current_creative %>
 <% end %>

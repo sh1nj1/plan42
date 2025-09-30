@@ -1,0 +1,134 @@
+module Creatives
+  class NotionIntegrationsController < ApplicationController
+    before_action :set_creative
+    before_action :ensure_read_permission
+    before_action :ensure_admin_permission, only: [ :show, :update ]
+
+    def show
+      account = Current.user.notion_account
+      links = linked_page_links(account)
+
+      render json: {
+        connected: account.present?,
+        account: account && {
+          workspace_name: account.workspace_name,
+          workspace_id: account.workspace_id,
+          bot_id: account.bot_id
+        },
+        linked_pages: links.map do |link|
+          {
+            page_id: link.page_id,
+            page_title: link.page_title,
+            page_url: link.page_url,
+            last_synced_at: link.last_synced_at
+          }
+        end
+      }
+    end
+
+    def update
+      account = Current.user.notion_account
+      unless account
+        render json: { error: "not_connected" }, status: :unprocessable_entity
+        return
+      end
+
+      integration_attributes = integration_params
+      action = integration_attributes[:action]
+      parent_page_id = integration_attributes[:parent_page_id]
+
+      begin
+        case action
+        when "export"
+          # Export creative to Notion
+          NotionExportJob.perform_later(@creative, account, parent_page_id)
+          render json: { success: true, message: "Export started" }
+        when "sync"
+          # Sync existing page
+          link = linked_page_links(account).first
+          if link
+            NotionSyncJob.perform_later(@creative, account, link.page_id)
+            render json: { success: true, message: "Sync started" }
+          else
+            render json: { error: "no_linked_page" }, status: :unprocessable_entity
+          end
+        else
+          render json: { error: "invalid_action" }, status: :unprocessable_entity
+        end
+      rescue StandardError => e
+        Rails.logger.error("Notion integration error: #{e.message}")
+        render json: { error: "operation_failed", message: e.message }, status: :internal_server_error
+      end
+    end
+
+    def destroy
+      unless @creative.has_permission?(Current.user, :write)
+        render json: { error: "forbidden" }, status: :forbidden
+        return
+      end
+
+      account = Current.user.notion_account
+      unless account
+        render json: { error: "not_connected" }, status: :unprocessable_entity
+        return
+      end
+
+      page_id = params[:page_id]
+
+      if page_id
+        # Remove specific page link
+        link = linked_page_links(account).find_by(page_id: page_id)
+        unless link
+          render json: { error: "not_found" }, status: :not_found
+          return
+        end
+
+        link.destroy!
+      else
+        # Remove all page links for this creative
+        linked_page_links(account).destroy_all
+      end
+
+      links = linked_page_links(account)
+      render json: {
+        success: true,
+        linked_pages: links.map do |link|
+          {
+            page_id: link.page_id,
+            page_title: link.page_title,
+            page_url: link.page_url,
+            last_synced_at: link.last_synced_at
+          }
+        end
+      }
+    end
+
+    private
+
+    def set_creative
+      @creative = Creative.find(params[:creative_id])
+    end
+
+    def ensure_read_permission
+      return if @creative.has_permission?(Current.user, :read)
+
+      render json: { error: "forbidden" }, status: :forbidden
+    end
+
+    def ensure_admin_permission
+      return if @creative.has_permission?(Current.user, :admin)
+
+      render json: { error: "forbidden" }, status: :forbidden
+    end
+
+    def linked_page_links(account)
+      return NotionPageLink.none unless account
+
+      @creative.notion_page_links.where(notion_account: account)
+    end
+
+    def integration_params
+      params.permit(:action, :parent_page_id, :page_id)
+    end
+  end
+end

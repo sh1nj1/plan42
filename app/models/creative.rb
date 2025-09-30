@@ -52,6 +52,7 @@ class Creative < ApplicationRecord
   has_many :creative_expanded_states, dependent: :delete_all
   has_many :invitations, dependent: :delete_all
   has_many :github_repository_links, dependent: :destroy
+  has_many :notion_page_links, dependent: :destroy
 
   validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }, unless: -> { origin_id.present? }
   validates :description, presence: true, unless: -> { origin_id.present? }
