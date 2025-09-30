@@ -108,6 +108,42 @@ class CreativesHelperTest < ActionView::TestCase
     assert_equal expected, html_links_to_markdown(html.strip)
   end
 
+  test "render_creative_tree_markdown exports tables without heading prefix" do
+    user = users(:one)
+    description = <<~HTML
+      <div class="trix-content">
+        <div>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Alice</td>
+                <td>3</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    HTML
+    creative = Creative.create!(user: user, description: description)
+
+    markdown = render_creative_tree_markdown([creative])
+
+    expected = <<~MD
+      | Name | Count |
+      | --- | --- |
+      | Alice | 3 |
+    MD
+    expected << "\n"
+
+    assert_equal expected, markdown
+  end
+
   test "expanded_from_expanded_state defaults to collapsed" do
     assert_not expanded_from_expanded_state(1, {})
   end

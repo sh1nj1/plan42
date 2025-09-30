@@ -197,16 +197,21 @@ module CreativesHelper
         pct = (creative.progress.to_f * 100).round
         desc = "#{desc} (#{pct}%)"
       end
-      html = desc.gsub(/<!--.*?-->/m, "").strip
-      html = html_links_to_markdown(html)
-      if level <= 4
-        md += "#{'#' * level} #{ActionView::Base.full_sanitizer.sanitize(html).strip}\n\n"
+      raw_html = desc.gsub(/<!--.*?-->/m, "").strip
+      markdown_content = html_links_to_markdown(raw_html)
+      cleaned_markdown = markdown_content.strip
+      rendered_table_block = false
+      if level <= 4 && markdown_table_block?(cleaned_markdown)
+        md += "#{cleaned_markdown}\n\n"
+        rendered_table_block = true
+      elsif level <= 4
+        md += "#{'#' * level} #{ActionView::Base.full_sanitizer.sanitize(markdown_content).strip}\n\n"
       else
         # trix-content 블록에서 내부 div의 텍스트만 추출
-        inner_html = if html =~ /<div class="trix-content">\s*<div>(.*?)<\/div>\s*<\/div>/m
+        inner_html = if raw_html =~ /<div class="trix-content">\s*<div>(.*?)<\/div>\s*<\/div>/m
           $1.strip
         else
-          ActionView::Base.full_sanitizer.sanitize(html).strip
+          ActionView::Base.full_sanitizer.sanitize(markdown_content).strip
         end
         inner = ActionView::Base.full_sanitizer.sanitize(inner_html)
         indent = "  " * (level - 5)
@@ -216,7 +221,7 @@ module CreativesHelper
       if creative.respond_to?(:children) && creative.children.present?
         md += render_creative_tree_markdown(creative.children, level + 1, with_progress)
       end
-      md += "\n" if level <= 4
+      md += "\n" if level <= 4 && !rendered_table_block
     end
     md
   end
@@ -303,6 +308,18 @@ module CreativesHelper
   end
 
   private
+
+  def markdown_table_block?(text)
+    lines = text.to_s.strip.split("\n")
+    return false if lines.length < 2
+
+    header_line = lines[0]
+    alignment_line = lines[1]
+    return false unless header_line.match?(/\A\|.*\|\z/)
+    return false unless alignment_line.match?(/\A\|[ \-:\|]+\|\z/)
+
+    true
+  end
 
   def convert_data_image_to_attachment(data_url, alt)
     if data_url =~ %r{\Adata:(image/[\w.+-]+);base64,(.+)\z}
