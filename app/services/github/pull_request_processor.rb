@@ -161,7 +161,7 @@ module Github
     def format_completed_task(task, path_exporter)
       label = task.path.presence || path_exporter.path_for(task.creative_id) || "Creative ##{task.creative_id}"
       parts = []
-      parts << "[#{task.creative_id}] #{label}"
+      parts << "#{creative_link(task.creative_id)} #{label}"
       if task.progress && task.progress < 1.0
         percentage = (task.progress * 100).round
         parts << "(progress #{percentage}%)"
@@ -173,7 +173,7 @@ module Github
     def format_suggestion(suggestion, path_exporter)
       parent_label = path_exporter.path_for(suggestion.parent_id) || "Creative ##{suggestion.parent_id}"
       parts = []
-      parts << "[#{suggestion.parent_id}] #{parent_label}"
+      parts << "#{creative_link(suggestion.parent_id)} #{parent_label}"
       parts << "→ #{suggestion.description}"
       if suggestion.progress
         percentage = (suggestion.progress * 100).round
@@ -181,6 +181,18 @@ module Github
       end
       parts << "- #{suggestion.note}" if suggestion.note.present?
       parts.join(" ")
+    end
+
+    def creative_link(id)
+      path = url_helpers.creative_path(id)
+      "[#%<id>d](%<path>s)" % { id: id, path: path }
+    rescue StandardError => e
+      logger.warn("Failed to build creative link for ##{id}: #{e.message}")
+      "##{id}"
+    end
+
+    def url_helpers
+      @url_helpers ||= Rails.application.routes.url_helpers
     end
   end
 end
