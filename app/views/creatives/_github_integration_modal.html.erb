@@ -26,6 +26,9 @@
       <div id="github-existing-connections" style="display:none;margin-top:1.25em;">
         <p style="margin-bottom:0.5em;"><%= t('creatives.index.github_integration_existing_intro', default: '이미 연동된 Repository 목록입니다:') %></p>
         <ul id="github-existing-repo-list" style="padding-left:1.2em;margin-bottom:0.75em;color:#333;"></ul>
+        <button type="button" id="github-delete-btn" class="btn btn-danger" style="display:none;">
+          <%= t('creatives.index.github_integration_delete_button', default: '연동 삭제') %>
+        </button>
       </div>
     </div>
 
