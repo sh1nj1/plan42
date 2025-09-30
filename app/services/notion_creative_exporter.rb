@@ -15,11 +15,25 @@ class NotionCreativeExporter
 
     blocks = []
     creatives.each do |creative|
-      blocks.concat(convert_creative_to_blocks(creative, level: level))
-
-      # Add children recursively
+      # Convert the creative to blocks
+      creative_blocks = convert_creative_to_blocks(creative, level: level)
+      
+      # Handle children based on the level
       if creative.respond_to?(:children) && creative.children.present?
-        blocks.concat(export_tree_blocks(creative.children, level + 1))
+        if level > 3
+          # For bullet points (level > 3), create nested structure
+          text_content = extract_text_content(creative.effective_description(nil, false).to_html.gsub(/<!--.*?-->/m, "").strip)
+          children_blocks = export_tree_blocks(creative.children, level + 1)
+          bullet_block = create_bulleted_list_item_block(text_content, children_blocks)
+          blocks << bullet_block
+        else
+          # For headings (level <= 3), add heading then children as separate blocks
+          blocks.concat(creative_blocks)
+          blocks.concat(export_tree_blocks(creative.children, level + 1))
+        end
+      else
+        # No children, just add the blocks
+        blocks.concat(creative_blocks)
       end
     end
 
@@ -190,14 +204,21 @@ class NotionCreativeExporter
     }
   end
 
-  def create_bulleted_list_item_block(text)
-    {
+  def create_bulleted_list_item_block(text, children_blocks = [])
+    block = {
       object: "block",
       type: "bulleted_list_item",
       bulleted_list_item: {
         rich_text: [ create_rich_text(text) ]
       }
     }
+    
+    # Add nested children if present
+    if children_blocks.any?
+      block[:bulleted_list_item][:children] = children_blocks
+    end
+    
+    block
   end
 
   def create_table_block(table_data)
