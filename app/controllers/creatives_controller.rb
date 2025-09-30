@@ -7,6 +7,7 @@ class CreativesController < ApplicationController
   def index
     # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
     Current.creative_share_cache = CreativeShare.where(user: Current.user).index_by(&:creative_id)
+    Current.creative_permission_cache = {}
     @expanded_state_map = CreativeExpandedState.where(user_id: Current.user.id, creative_id: params[:id]).first&.expanded_status || {}
     index_result = Creatives::IndexQuery.new(user: Current.user, params: params.to_unsafe_h).call
     @creatives = index_result.creatives || []
