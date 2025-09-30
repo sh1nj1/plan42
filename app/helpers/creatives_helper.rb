@@ -346,7 +346,7 @@ module CreativesHelper
     header_line = "| #{headers.map(&:strip).join(' | ')} |"
     alignment_line = "| #{alignment_cells.join(' | ')} |"
 
-    ([header_line, alignment_line] + body_lines).join("\n")
+    ([ header_line, alignment_line ] + body_lines).join("\n")
   end
 
   def alignment_from_html_cell(cell)

@@ -142,7 +142,7 @@ class MarkdownImporter
 
     header_html = header_cells.map { |cell| helper.markdown_links_to_html(cell, image_refs) }
     max_row_length = rows.map(&:length).max || 0
-    column_count = [header_html.length, max_row_length].max
+    column_count = [ header_html.length, max_row_length ].max
 
     row_html = rows.map do |row|
       normalized = row.first(column_count)
@@ -150,7 +150,7 @@ class MarkdownImporter
       normalized.map { |cell| helper.markdown_links_to_html(cell, image_refs) }
     end
 
-    column_count = [column_count, alignments.length].max
+    column_count = [ column_count, alignments.length ].max
     alignments = alignments.first(column_count)
     alignments.fill(nil, alignments.length...column_count)
 
