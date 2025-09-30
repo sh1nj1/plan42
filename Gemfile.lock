@@ -96,7 +96,6 @@ GEM
       rack-test (>= 0.6.3)
       regexp_parser (>= 1.5, < 3.0)
       xpath (~> 3.2)
-    closure_tree (3.6.9)
     closure_tree (9.1.1)
       activerecord (>= 7.2.0)
       with_advisory_lock (>= 7.0.0)
@@ -477,9 +476,9 @@ GEM
       base64
       websocket-extensions (>= 0.1.0)
     websocket-extensions (0.1.5)
-    xpath (3.2.0)
-      nokogiri (~> 1.8)
-    zeitwerk (2.7.3)
+    with_advisory_lock (7.0.2)
+      activerecord (>= 7.2)
+      zeitwerk (>= 2.7)
 
 PLATFORMS
   aarch64-linux
