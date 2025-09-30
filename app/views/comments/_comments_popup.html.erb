@@ -9,7 +9,8 @@
      data-approve-success-text="<%= t('comments.approve_success') %>"
      data-approve-error-text="<%= t('comments.approve_error') %>"
      data-action-update-success-text="<%= t('comments.action_update_success') %>"
-     data-action-update-error-text="<%= t('comments.action_update_error') %>">
+     data-action-update-error-text="<%= t('comments.action_update_error') %>"
+     data-search-empty-text="<%= t('comments.search_empty_prompt') %>">
   <div class="resize-handle resize-handle-left"></div>
   <div class="resize-handle resize-handle-right"></div>
   <button id="close-comments-btn" class="popup-close-btn">&times;</button>
@@ -23,6 +24,7 @@
     <textarea name="comment[content]" rows="2" required enterkeyhint="send"></textarea>
     <label><input type="checkbox" id="comment-private" name="comment[private]" /> <%= t('comments.private') %></label>
     <button class="creative-action-btn" type="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
+    <button class="creative-action-btn" id="search-comments-btn" type="button"><%= t('comments.search_button') %></button>
     <button class="creative-action-btn" id="cancel-edit-btn" type="button" style="display:none;"><%= t('app.cancel') %></button>
   </form>
 </div>
