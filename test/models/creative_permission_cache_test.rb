@@ -260,4 +260,110 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     cache_key = "creative_permission:#{@root.id}:#{@user1.id}:read"
     assert Rails.cache.exist?(cache_key)
   end
+
+  test "cache is cleared when creative parent changes" do
+    # Setup: root has share for user1, child inherits permission
+    CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+
+    # Check permissions (this caches results)
+    assert @child.has_permission?(@user1, :read)
+    assert @grandchild.has_permission?(@user1, :read)
+
+    # Verify cache exists
+    child_key = "creative_permission:#{@child.id}:#{@user1.id}:read"
+    grandchild_key = "creative_permission:#{@grandchild.id}:#{@user1.id}:read"
+    assert Rails.cache.exist?(child_key)
+    assert Rails.cache.exist?(grandchild_key)
+
+    # Create new parent with no permissions for user1
+    new_parent = Creative.create!(user: @owner, description: "New Parent")
+
+    # Move child to new parent (this should clear cache)
+    @child.update!(parent: new_parent)
+
+    # Cache should be cleared for child and its descendants
+    refute Rails.cache.exist?(child_key)
+    refute Rails.cache.exist?(grandchild_key)
+
+    # Permissions should now be denied (no inheritance from new parent)
+    refute @child.has_permission?(@user1, :read)
+    refute @grandchild.has_permission?(@user1, :read)
+  end
+
+  test "moving creative into shared branch grants access" do
+    # Setup: user1 has no permissions initially
+    refute @child.has_permission?(@user1, :read)
+
+    # Cache the denial
+    child_key = "creative_permission:#{@child.id}:#{@user1.id}:read"
+    assert_equal false, Rails.cache.read(child_key)
+
+    # Create shared parent and move child under it
+    shared_parent = Creative.create!(user: @owner, description: "Shared Parent")
+    CreativeShare.create!(creative: shared_parent, user: @user1, permission: :read)
+
+    # Move child under shared parent
+    @child.update!(parent: shared_parent)
+
+    # Cache should be cleared
+    refute Rails.cache.exist?(child_key)
+
+    # Child should now have access through inheritance
+    assert @child.has_permission?(@user1, :read)
+    assert @grandchild.has_permission?(@user1, :read)
+  end
+
+  test "cache invalidation is selective when parent changes" do
+    # Setup permissions for both users
+    CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+    CreativeShare.create!(creative: @root, user: @user2, permission: :write)
+
+    # Check permissions (caches results)
+    assert @child.has_permission?(@user1, :read)
+    assert @child.has_permission?(@user2, :write)
+
+    # Create unrelated creative with different permissions
+    other_root = Creative.create!(user: @owner, description: "Other Root")
+    other_child = Creative.create!(user: @owner, parent: other_root, description: "Other Child")
+    CreativeShare.create!(creative: other_root, user: @user1, permission: :admin)
+
+    assert other_child.has_permission?(@user1, :admin)
+
+    # Verify all caches exist
+    child_user1_key = "creative_permission:#{@child.id}:#{@user1.id}:read"
+    child_user2_key = "creative_permission:#{@child.id}:#{@user2.id}:write"
+    other_child_key = "creative_permission:#{other_child.id}:#{@user1.id}:admin"
+
+    assert Rails.cache.exist?(child_user1_key)
+    assert Rails.cache.exist?(child_user2_key)
+    assert Rails.cache.exist?(other_child_key)
+
+    # Move child to new parent
+    new_parent = Creative.create!(user: @owner, description: "New Parent")
+    @child.update!(parent: new_parent)
+
+    # Only child's caches should be cleared, not other_child's cache
+    refute Rails.cache.exist?(child_user1_key)
+    refute Rails.cache.exist?(child_user2_key)
+    assert Rails.cache.exist?(other_child_key)  # This should remain intact
+  end
+
+  test "parent change handles nil parents correctly" do
+    # Move child to root level (parent becomes nil)
+    CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+
+    # Check permission (caches result)
+    assert @child.has_permission?(@user1, :read)
+    child_key = "creative_permission:#{@child.id}:#{@user1.id}:read"
+    assert Rails.cache.exist?(child_key)
+
+    # Move child to root level (parent_id becomes nil)
+    @child.update!(parent: nil)
+
+    # Cache should be cleared
+    refute Rails.cache.exist?(child_key)
+
+    # Child should now have no access (no inheritance)
+    refute @child.has_permission?(@user1, :read)
+  end
 end

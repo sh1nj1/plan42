@@ -57,6 +57,7 @@ class Creative < ApplicationRecord
   before_validation :assign_default_user, on: :create
 
   after_save :update_parent_progress
+  after_save :clear_permission_cache_on_parent_change
   after_destroy :update_parent_progress
 
   def self.recalculate_all_progress!
@@ -202,6 +203,37 @@ class Creative < ApplicationRecord
   end
 
   private
+
+  def clear_permission_cache_on_parent_change
+    return unless saved_change_to_parent_id?
+
+    # Clear cache for this creative and all its descendants
+    # Since parent change affects permission inheritance, we need to clear all cached permissions
+    affected_creative_ids = self_and_descendants.pluck(:id)
+
+    # Get all users who have shares in the old ancestor tree and new ancestor tree
+    old_parent_id = parent_id_before_last_save
+    new_parent_id = parent_id
+
+    old_ancestor_ids = old_parent_id ? Creative.find(old_parent_id).self_and_ancestors.pluck(:id) : []
+    new_ancestor_ids = new_parent_id ? Creative.find(new_parent_id).self_and_ancestors.pluck(:id) : []
+
+    # Include the moved creative and its ancestors in the search
+    all_relevant_creative_ids = (affected_creative_ids + old_ancestor_ids + new_ancestor_ids).uniq
+
+    # Find all users who have shares in any of these creatives
+    affected_user_ids = CreativeShare.where(creative_id: all_relevant_creative_ids).pluck(:user_id).uniq
+
+    # Clear cache for affected creatives and users
+    permission_levels = [ :read, :feedback, :write, :admin ]
+    affected_user_ids.each do |user_id|
+      affected_creative_ids.each do |creative_id|
+        permission_levels.each do |level|
+          Rails.cache.delete("creative_permission:#{creative_id}:#{user_id}:#{level}")
+        end
+      end
+    end
+  end
 
   def assign_default_user
     return if user.present?
