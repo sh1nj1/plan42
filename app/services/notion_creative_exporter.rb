@@ -235,10 +235,11 @@ class NotionCreativeExporter
 
   def create_rich_text(text)
     # Notion has a 2000 character limit per text block
-    content = text.to_s
-    if content.length > 2000
-      content = content[0..1996] + "..."
-      Rails.logger.warn("NotionCreativeExporter: Truncated content from #{text.to_s.length} to 2000 characters")
+    content = text.to_s.strip
+    if content.length > 1990  # Be conservative to account for any extra characters
+      original_length = content.length
+      content = content[0..1986] + "..."  # 1987 + 3 = 1990 chars
+      Rails.logger.warn("NotionCreativeExporter: Truncated content from #{original_length} to #{content.length} characters")
     end
     
     {
