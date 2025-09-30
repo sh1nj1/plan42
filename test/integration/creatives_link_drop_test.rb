@@ -53,39 +53,42 @@ class CreativesLinkDropTest < ActionDispatch::IntegrationTest
   end
 
   test "returns 422 when linking would create a cycle under descendant" do
-    post link_drop_creatives_path, params: {
-      dragged_id: @root.id,
-      target_id: @target.id,
-      direction: "child"
-    }, as: :json
+    assert_no_difference -> { Creative.count } do
+      post link_drop_creatives_path, params: {
+        dragged_id: @root.id,
+        target_id: @target.id,
+        direction: "child"
+      }, as: :json
 
-    assert_response :unprocessable_entity
-    assert_equal 4, Creative.count
+      assert_response :unprocessable_entity
+    end
   end
 
   test "returns 422 when linking near descendant would create a cycle" do
     grandchild = Creative.create!(user: @user, parent: @target, description: "Grandchild", sequence: 0)
 
-    post link_drop_creatives_path, params: {
-      dragged_id: @root.id,
-      target_id: grandchild.id,
-      direction: "down"
-    }, as: :json
+    assert_no_difference -> { Creative.count } do
+      post link_drop_creatives_path, params: {
+        dragged_id: @root.id,
+        target_id: grandchild.id,
+        direction: "down"
+      }, as: :json
 
-    assert_response :unprocessable_entity
-    assert_equal 5, Creative.count
+      assert_response :unprocessable_entity
+    end
   end
 
   test "returns 422 when linking to descendant's linked creative" do
     linked_target = Creative.create!(origin_id: @target.id, user: @user, description: "Linked target")
 
-    post link_drop_creatives_path, params: {
-      dragged_id: @root.id,
-      target_id: linked_target.id,
-      direction: "child"
-    }, as: :json
+    assert_no_difference -> { Creative.count } do
+      post link_drop_creatives_path, params: {
+        dragged_id: @root.id,
+        target_id: linked_target.id,
+        direction: "child"
+      }, as: :json
 
-    assert_response :unprocessable_entity
-    assert_equal 5, Creative.count
+      assert_response :unprocessable_entity
+    end
   end
 end
