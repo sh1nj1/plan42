@@ -2,7 +2,8 @@ Rails.application.routes.draw do
   resource :session
   match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
   match "/auth/github/callback", to: "github_auth#callback", via: [ :get, :post ]
-  match "/auth/notion/callback", to: "notion_auth#callback", via: [ :get, :post ]
+  get "/auth/notion", to: "notion_auth#authorize"
+  get "/auth/notion/callback", to: "notion_auth#callback", as: :notion_auth_callback
   resources :passwords, param: :token
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 

@@ -130,7 +130,7 @@ class Creatives::NotionIntegrationsControllerTest < ActionDispatch::IntegrationT
   private
 
   def login_as(user)
-    session = user.sessions.create!
-    cookies.signed[:session_token] = session.id
+    user.update!(email_verified_at: Time.current)
+    post session_path, params: { email: user.email, password: "password123" }
   end
 end

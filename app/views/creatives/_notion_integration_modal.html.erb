@@ -17,8 +17,7 @@
 
     <div class="notion-wizard-step" id="notion-step-connect">
       <p id="notion-connect-message" class="notion-modal-subtext"><%= t('creatives.index.notion_integration_connect', default: 'Sign in with your Notion account to start exporting.') %></p>
-      <form id="notion-login-form" action="/auth/notion" method="post" target="notion-auth-window" style="display:none;">
-        <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+      <form id="notion-login-form" action="/auth/notion" method="get" target="notion-auth-window" style="display:none;">
       </form>
       <button type="button" id="notion-login-btn" class="btn btn-primary" data-window-width="620" data-window-height="720">
         <%= t('creatives.index.notion_login_button', default: 'Sign in with Notion') %>
