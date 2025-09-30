@@ -1,13 +1,14 @@
 require "test_helper"
 
 class FakeGithubClient
-  attr_reader :hooks_called_with, :create_calls, :update_calls
+  attr_reader :hooks_called_with, :create_calls, :update_calls, :delete_calls
 
   def initialize(hooks: [])
     @hooks = hooks
     @create_calls = []
     @update_calls = []
     @hooks_called_with = []
+    @delete_calls = []
     @error_to_raise = nil
   end
 
@@ -24,6 +25,12 @@ class FakeGithubClient
 
   def update_repository_webhook(repo_full_name, hook_id, **kwargs)
     @update_calls << [ repo_full_name, hook_id, kwargs ]
+  end
+
+  def delete_repository_webhook(repo_full_name, hook_id)
+    raise @error_to_raise if @error_to_raise
+
+    @delete_calls << [ repo_full_name, hook_id ]
   end
 
   def simulate_error!(error)
@@ -188,6 +195,59 @@ class Github::WebhookProvisionerTest < ActiveSupport::TestCase
 
     assert_nothing_raised do
       provisioner.ensure_for_links([ link ])
+    end
+  end
+
+  test "removes webhook when repository is no longer linked" do
+    webhook_url = "https://example.com/github/webhook"
+    hook = OpenStruct.new(
+      id: 456,
+      config: { "url" => webhook_url }
+    )
+
+    client = FakeGithubClient.new(hooks: [ hook ])
+    provisioner = Github::WebhookProvisioner.new(account: @account, webhook_url: webhook_url, client: client)
+
+    provisioner.remove_for_repositories([ "example/repo" ])
+
+    assert_equal [ [ "example/repo", 456 ] ], client.delete_calls
+  end
+
+  test "does not remove webhook when repository still has links" do
+    GithubRepositoryLink.create!(
+      creative: @creative,
+      github_account: @account,
+      repository_full_name: "example/repo"
+    )
+
+    webhook_url = "https://example.com/github/webhook"
+    hook = OpenStruct.new(
+      id: 456,
+      config: { "url" => webhook_url }
+    )
+
+    client = FakeGithubClient.new(hooks: [ hook ])
+    provisioner = Github::WebhookProvisioner.new(account: @account, webhook_url: webhook_url, client: client)
+
+    provisioner.remove_for_repositories([ "example/repo" ])
+
+    assert_equal [], client.delete_calls
+  end
+
+  test "ignores errors raised during webhook removal" do
+    webhook_url = "https://example.com/github/webhook"
+    hook = OpenStruct.new(
+      id: 456,
+      config: { "url" => webhook_url }
+    )
+
+    client = FakeGithubClient.new(hooks: [ hook ])
+    client.simulate_error!(Octokit::Error.new(response: { status: 500, body: "" }))
+
+    provisioner = Github::WebhookProvisioner.new(account: @account, webhook_url: webhook_url, client: client)
+
+    assert_nothing_raised do
+      provisioner.remove_for_repositories([ "example/repo" ])
     end
   end
 end

@@ -92,8 +92,12 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
   end
 
   test "destroy removes repository links for creative" do
-    assert_difference("GithubRepositoryLink.count", -1) do
-      delete creative_github_integration_path(@creative), as: :json
+    removal_args = nil
+
+    Github::WebhookProvisioner.stub(:remove_for_repositories, ->(**kwargs) { removal_args = kwargs }) do
+      assert_difference("GithubRepositoryLink.count", -1) do
+        delete creative_github_integration_path(@creative), as: :json
+      end
     end
 
     assert_response :success
@@ -103,5 +107,9 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     assert_equal [], body["selected_repositories"], "Expected no repositories after deletion"
     assert_equal({}, body["webhooks"])
     assert_empty @creative.github_repository_links.where(github_account: @github_account)
+
+    assert_equal @github_account, removal_args[:account]
+    assert_equal github_webhook_url, removal_args[:webhook_url]
+    assert_equal [ "sample-user/example" ], removal_args[:repositories]
   end
 end

@@ -99,6 +99,10 @@ module Github
       )
     end
 
+    def delete_repository_webhook(repo_full_name, hook_id)
+      client.remove_hook(repo_full_name, hook_id)
+    end
+
     private
 
     attr_reader :client
