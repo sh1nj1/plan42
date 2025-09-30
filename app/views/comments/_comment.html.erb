@@ -47,4 +47,24 @@
     </div>
   </div>
   <div class="comment-content"><%= comment.content %></div>
+  <% if comment.action.present? %>
+    <div class="comment-action-block" data-comment-id="<%= comment.id %>">
+      <details class="comment-action-details">
+        <summary class="comment-action-summary"><%= t("comments.action_summary") %></summary>
+        <div class="comment-action-body">
+          <pre class="comment-action-json" data-comment-action-json><%= formatted_comment_action(comment) %></pre>
+          <% if comment.approver == Current.user && comment.action_executed_at.blank? %>
+            <button class="edit-comment-action-btn" type="button" data-comment-id="<%= comment.id %>"><%= t("comments.edit_action_button") %></button>
+            <form class="comment-action-edit-form" data-comment-id="<%= comment.id %>" style="display:none;">
+              <textarea class="comment-action-edit-textarea" name="comment[action]" rows="8"><%= formatted_comment_action(comment) %></textarea>
+              <div class="comment-action-edit-buttons">
+                <button class="cancel-comment-action-edit-btn" type="button"><%= t("app.cancel") %></button>
+                <button class="save-comment-action-btn" type="submit"><%= t("app.save") %></button>
+              </div>
+            </form>
+          <% end %>
+        </div>
+      </details>
+    </div>
+  <% end %>
 </div>

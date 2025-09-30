@@ -40,6 +40,7 @@ Rails.application.routes.draw do
         member do
           post :convert
           post :approve
+          patch :update_action
         end
         collection do
           get :participants

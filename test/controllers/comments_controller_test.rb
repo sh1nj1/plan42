@@ -177,4 +177,101 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_nil comment.action
     assert_nil comment.approver_id
   end
+
+  test "approver can update comment action" do
+    action_payload = {
+      "action" => "update_creative",
+      "attributes" => { "progress" => 0.5 }
+    }
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate(action_payload),
+      approver: @user
+    )
+
+    updated_payload = {
+      "action" => "update_creative",
+      "attributes" => { "progress" => 0.75 }
+    }
+
+    patch update_action_creative_comment_path(@creative, comment), params: {
+      comment: { action: JSON.generate(updated_payload) }
+    }
+
+    assert_response :success
+    comment.reload
+    assert_equal updated_payload, JSON.parse(comment.action)
+  end
+
+  test "approver cannot update action with invalid payload" do
+    action_payload = {
+      "action" => "update_creative",
+      "attributes" => { "progress" => 0.5 }
+    }
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate(action_payload),
+      approver: @user
+    )
+
+    patch update_action_creative_comment_path(@creative, comment), params: {
+      comment: { action: "{ invalid json" }
+    }
+
+    assert_response :unprocessable_entity
+    body = JSON.parse(@response.body)
+    assert_equal I18n.t("comments.approve_invalid_format"), body["error"]
+    assert_equal action_payload, JSON.parse(comment.reload.action)
+  end
+
+  test "non approver cannot update comment action" do
+    approver = users(:two)
+    approver.update!(email_verified_at: Time.current)
+
+    action_payload = {
+      "action" => "update_creative",
+      "attributes" => { "progress" => 0.5 }
+    }
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: approver,
+      action: JSON.generate(action_payload),
+      approver: approver
+    )
+
+    patch update_action_creative_comment_path(@creative, comment), params: {
+      comment: { action: JSON.generate(action_payload.merge("attributes" => { "progress" => 0.7 })) }
+    }
+
+    assert_response :forbidden
+  end
+
+  test "cannot update action after execution" do
+    action_payload = {
+      "action" => "update_creative",
+      "attributes" => { "progress" => 0.5 }
+    }
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate(action_payload),
+      approver: @user,
+      action_executed_at: Time.current,
+      action_executed_by: @user
+    )
+
+    patch update_action_creative_comment_path(@creative, comment), params: {
+      comment: { action: JSON.generate(action_payload.merge("attributes" => { "progress" => 0.8 })) }
+    }
+
+    assert_response :unprocessable_entity
+    body = JSON.parse(@response.body)
+    assert_equal I18n.t("comments.approve_already_executed"), body["error"]
+  end
 end
