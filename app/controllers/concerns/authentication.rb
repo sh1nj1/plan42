@@ -23,6 +23,15 @@ module Authentication
 
     def resume_session
       Current.session ||= find_session_by_cookie
+
+      if Current.session&.user.nil?
+        Current.session.destroy if Current.session&.persisted?
+        Current.session = nil
+      end
+
+      cookies.delete(:session_id) if cookies.signed[:session_id] && Current.session.nil?
+
+      Current.session
     end
 
     def find_session_by_cookie
