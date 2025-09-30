@@ -63,13 +63,14 @@ module Creatives
       new_parent = direction == "child" ? target : target.parent
 
       if new_parent.present?
-        if new_parent.self_and_ancestors.where(id: origin.id).exists?
-          raise Error, "Invalid creatives"
-        end
+        origin_descendant_ids = origin.self_and_descendants.pluck(:id)
 
-        parent_origin = new_parent.effective_origin
-        if parent_origin.self_and_ancestors.where(id: origin.id).exists?
-          raise Error, "Invalid creatives"
+        new_parent.self_and_ancestors.each do |ancestor|
+          ancestor_origin_id = ancestor.origin_id.presence || ancestor.id
+
+          if origin_descendant_ids.include?(ancestor_origin_id)
+            raise Error, "Invalid creatives"
+          end
         end
       end
 
