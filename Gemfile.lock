@@ -482,6 +482,7 @@ GEM
     xpath (3.2.0)
       nokogiri (~> 1.8)
     zeitwerk (2.7.3)
+
 PLATFORMS
   aarch64-linux
   aarch64-linux-gnu
