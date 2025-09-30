@@ -1,6 +1,6 @@
 class CommentsController < ApplicationController
   before_action :set_creative
-  before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve ]
+  before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action ]
 
   def index
     per_page = params[:per_page].to_i
@@ -108,6 +108,34 @@ class CommentsController < ApplicationController
     rescue Comments::ActionExecutor::ExecutionError => e
       render json: { error: e.message }, status: :unprocessable_entity
     end
+  end
+
+  def update_action
+    unless @comment.approver == Current.user
+      render json: { error: I18n.t("comments.approve_not_allowed") }, status: :forbidden and return
+    end
+
+    if @comment.action_executed_at.present?
+      render json: { error: I18n.t("comments.approve_already_executed") }, status: :unprocessable_entity and return
+    end
+
+    action_payload = params.dig(:comment, :action)
+    if action_payload.blank?
+      render json: { error: I18n.t("comments.approve_missing_action") }, status: :unprocessable_entity and return
+    end
+
+    validator = Comments::ActionValidator.new(comment: @comment)
+    parsed_payload = validator.validate!(action_payload)
+    normalized_action = JSON.pretty_generate(parsed_payload)
+
+    if @comment.update(action: normalized_action)
+      render partial: "comments/comment", locals: { comment: @comment }
+    else
+      error_message = @comment.errors.full_messages.to_sentence.presence || I18n.t("comments.action_update_error")
+      render json: { error: error_message }, status: :unprocessable_entity
+    end
+  rescue Comments::ActionValidator::ValidationError => e
+    render json: { error: e.message }, status: :unprocessable_entity
   end
 
   def show

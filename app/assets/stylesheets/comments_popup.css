@@ -75,6 +75,55 @@
     margin-top:0.2em;
 }
 
+.comment-action-block {
+    margin-top: 0.6em;
+}
+
+.comment-action-summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.comment-action-json {
+    background: var(--color-section-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    margin-top: 0.4em;
+    padding: 0.5em;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 220px;
+    overflow: auto;
+    font-family: var(--font-family-monospace, 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace);
+    font-size: 0.9em;
+}
+
+.comment-action-edit-form {
+    margin-top: 0.6em;
+}
+
+.comment-action-edit-textarea {
+    width: 100%;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 0.5em;
+    font-family: var(--font-family-monospace, 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace);
+    font-size: 0.9em;
+    min-height: 160px;
+    resize: vertical;
+}
+
+.comment-action-edit-buttons {
+    margin-top: 0.4em;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5em;
+}
+
+.edit-comment-action-btn {
+    margin-top: 0.6em;
+}
+
 .comment-status-label {
     margin-left: 0.4em;
     font-size: 0.85em;

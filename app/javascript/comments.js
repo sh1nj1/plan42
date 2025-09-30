@@ -113,6 +113,40 @@ if (!window.commentsInitialized) {
             }, 2400);
         }
 
+        function getActionContainer(element) {
+            if (!element) return null;
+            return element.closest('.comment-action-block');
+        }
+
+        function openActionEditor(container) {
+            if (!container) return;
+            var jsonDisplay = container.querySelector('.comment-action-json');
+            var form = container.querySelector('.comment-action-edit-form');
+            var editBtn = container.querySelector('.edit-comment-action-btn');
+            if (!jsonDisplay || !form) return;
+            var textareaField = form.querySelector('.comment-action-edit-textarea');
+            if (!textareaField) return;
+            textareaField.value = jsonDisplay.textContent || '';
+            form.style.display = 'block';
+            if (editBtn) { editBtn.style.display = 'none'; }
+            jsonDisplay.style.display = 'none';
+            textareaField.focus();
+            if (textareaField.setSelectionRange) {
+                var length = textareaField.value.length;
+                textareaField.setSelectionRange(length, length);
+            }
+        }
+
+        function closeActionEditor(container) {
+            if (!container) return;
+            var jsonDisplay = container.querySelector('.comment-action-json');
+            var form = container.querySelector('.comment-action-edit-form');
+            var editBtn = container.querySelector('.edit-comment-action-btn');
+            if (form) { form.style.display = 'none'; }
+            if (jsonDisplay) { jsonDisplay.style.display = ''; }
+            if (editBtn) { editBtn.style.display = ''; }
+        }
+
         var closeBtn = document.getElementById('close-comments-btn');
         var participants = document.getElementById('comment-participants');
         var typingIndicator = document.getElementById('typing-indicator');
@@ -682,6 +716,20 @@ if (!window.commentsInitialized) {
                     return;
                 }
 
+                var editActionBtn = target.closest('.edit-comment-action-btn');
+                if (editActionBtn) {
+                    e.preventDefault();
+                    openActionEditor(getActionContainer(editActionBtn));
+                    return;
+                }
+
+                var cancelActionEditBtn = target.closest('.cancel-comment-action-edit-btn');
+                if (cancelActionEditBtn) {
+                    e.preventDefault();
+                    closeActionEditor(getActionContainer(cancelActionEditBtn));
+                    return;
+                }
+
                 if (target.classList.contains('delete-comment-btn')) {
                     e.preventDefault();
                     if (!confirm(popup.dataset.deleteConfirmText)) return;
@@ -760,6 +808,55 @@ if (!window.commentsInitialized) {
                     if (cancelBtn) { cancelBtn.style.display = ''; }
                     textarea.focus();
                 }
+            });
+
+            list.addEventListener('submit', function(e) {
+                var formTarget = e.target;
+                if (!(formTarget instanceof HTMLFormElement)) return;
+                if (!formTarget.classList.contains('comment-action-edit-form')) return;
+                e.preventDefault();
+                var submitButton = formTarget.querySelector('.save-comment-action-btn');
+                if (submitButton && submitButton.disabled) return;
+                if (submitButton) { submitButton.disabled = true; }
+                var textareaField = formTarget.querySelector('.comment-action-edit-textarea');
+                if (!textareaField) {
+                    if (submitButton) { submitButton.disabled = false; }
+                    return;
+                }
+                var commentId = formTarget.getAttribute('data-comment-id');
+                var creativeId = popup.dataset.creativeId;
+                var payload = textareaField.value;
+                fetch(`/creatives/${creativeId}/comments/${commentId}/update_action`, {
+                    method: 'PATCH',
+                    headers: {
+                        'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ comment: { action: payload } })
+                }).then(function(r) {
+                    if (r.ok) {
+                        return r.text();
+                    }
+                    return r.json().then(function(j) {
+                        throw new Error(j && j.error ? j.error : popup.dataset.actionUpdateErrorText);
+                    }).catch(function(err) {
+                        throw err instanceof Error ? err : new Error(popup.dataset.actionUpdateErrorText);
+                    });
+                }).then(function(html) {
+                    if (!html) { return; }
+                    var existing = document.getElementById(`comment_${commentId}`);
+                    if (existing) {
+                        existing.outerHTML = html;
+                        var updated = document.getElementById(`comment_${commentId}`);
+                        if (updated && popup.dataset.actionUpdateSuccessText) {
+                            showCopyFeedback(updated, popup.dataset.actionUpdateSuccessText);
+                        }
+                    }
+                }).catch(function(err) {
+                    alert(err && err.message ? err.message : popup.dataset.actionUpdateErrorText);
+                }).finally(function() {
+                    if (submitButton) { submitButton.disabled = false; }
+                });
             });
 
             function openFromUrl() {
