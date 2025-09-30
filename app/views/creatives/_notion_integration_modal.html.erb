@@ -67,12 +67,13 @@
     </div>
 
     <div class="notion-wizard-step" id="notion-step-summary" style="display:none;">
-      <p class="notion-modal-subtext"><%= t('creatives.index.notion_integration_summary', default: 'Ready to export your creative to Notion:') %></p>
+      <p class="notion-modal-subtext"><%= t('creatives.index.notion_integration_summary', default: 'Ready to export your creative tree to Notion:') %></p>
       <div id="notion-export-summary" style="margin:1em 0;padding:1em;background:var(--color-bg-alt);border-radius:4px;">
-        <div><strong><%= t('creatives.index.notion_creative_title', default: 'Creative:') %></strong> <span id="notion-creative-title"></span></div>
+        <div><strong><%= t('creatives.index.notion_creative_title', default: 'Root Creative:') %></strong> <span id="notion-creative-title"></span></div>
         <div><strong><%= t('creatives.index.notion_workspace', default: 'Workspace:') %></strong> <span id="notion-workspace-summary"></span></div>
         <div><strong><%= t('creatives.index.notion_export_as', default: 'Export as:') %></strong> <span id="notion-export-type-summary"></span></div>
         <div id="notion-parent-summary" style="display:none;"><strong><%= t('creatives.index.notion_parent_page', default: 'Parent page:') %></strong> <span id="notion-parent-page-summary"></span></div>
+        <div style="margin-top:0.5em;color:var(--color-text-secondary);font-size:0.9em;"><%= t('creatives.index.notion_tree_note', default: 'This will export the selected creative and all its descendants as a structured document.') %></div>
       </div>
     </div>
 

@@ -82,7 +82,12 @@ class NotionService
 
   def create_creative_page(creative, notion_link, parent_page_id)
     title = creative.description.to_plain_text.strip.presence || "Untitled Creative"
-    blocks = NotionCreativeExporter.new(creative).export_blocks
+    
+    # Export the entire tree: the creative and all its descendants
+    tree_creatives = [creative] + creative.descendants.to_a
+    Rails.logger.info("NotionService: Exporting tree with #{tree_creatives.length} creatives (root + #{creative.descendants.count} descendants)")
+    
+    blocks = NotionCreativeExporter.new(creative).export_tree_blocks(tree_creatives)
 
     # If no parent specified, search for a suitable workspace page
     parent_page_id ||= find_default_parent_page
@@ -105,7 +110,12 @@ class NotionService
 
   def update_creative_page(creative, notion_link)
     title = creative.description.to_plain_text.strip.presence || "Untitled Creative"
-    blocks = NotionCreativeExporter.new(creative).export_blocks
+    
+    # Update with the entire tree: the creative and all its descendants
+    tree_creatives = [creative] + creative.descendants.to_a
+    Rails.logger.info("NotionService: Updating tree with #{tree_creatives.length} creatives (root + #{creative.descendants.count} descendants)")
+    
+    blocks = NotionCreativeExporter.new(creative).export_tree_blocks(tree_creatives)
 
     properties = {
       title: {
