@@ -301,10 +301,12 @@ class CreativesController < ApplicationController
   def export_markdown
     creatives = if params[:parent_id]
       parent_creative = Creative.find(params[:parent_id])
-      unless parent_creative.has_permission?(Current.user, :read)
+      effective_origin = parent_creative.effective_origin
+      unless parent_creative.has_permission?(Current.user, :read) &&
+             effective_origin.has_permission?(Current.user, :read)
         render plain: t("creatives.errors.no_permission"), status: :forbidden and return
       end
-      [ parent_creative.effective_origin ]
+      [ effective_origin ]
     else
       Creative.where(parent_id: nil).map(&:effective_origin).uniq.select do |creative|
         creative.has_permission?(Current.user, :read)

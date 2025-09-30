@@ -80,6 +80,20 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_equal expected_markdown, response.body
   end
 
+  test "export markdown requires read permission on parent creative's effective origin" do
+    creative = creatives(:unconvert_target)
+    origin = creative.effective_origin
+    sign_out
+    sign_in_as(users(:two), password: "password")
+    CreativeShare.create!(creative:, user: users(:two), permission: :read)
+
+    refute origin.has_permission?(users(:two), :read)
+
+    get export_markdown_creatives_path(parent_id: creative.id), headers: { "ACCEPT" => "text/markdown" }
+
+    assert_response :forbidden
+  end
+
   test "export markdown includes only readable root creatives" do
     creative = creatives(:root_parent)
     sign_out
