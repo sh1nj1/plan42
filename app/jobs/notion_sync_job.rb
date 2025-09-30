@@ -17,10 +17,11 @@ class NotionSyncJob < ApplicationJob
         return
       end
 
-      # Update the existing Notion page with entire tree
+      # Update the existing Notion page with children as blocks
       title = creative.description.to_plain_text.strip.presence || "Untitled Creative"
-      Rails.logger.info("NotionSyncJob: Syncing tree starting from creative #{creative.id} with #{creative.descendants.count} descendants")
-      blocks = NotionCreativeExporter.new(creative).export_tree_blocks([creative])
+      children = creative.children.to_a
+      Rails.logger.info("NotionSyncJob: Syncing creative #{creative.id} as page title with #{children.count} children as blocks")
+      blocks = children.any? ? NotionCreativeExporter.new(creative).export_tree_blocks(children) : []
 
       properties = {
         title: {
