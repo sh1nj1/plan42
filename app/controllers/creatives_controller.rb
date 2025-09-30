@@ -289,6 +289,7 @@ class CreativesController < ApplicationController
 
     ActiveRecord::Base.transaction do
       comment = parent.effective_origin.comments.create!(content: markdown, user: Current.user)
+      base_creative.descendants.each(&:destroy!)
       base_creative.destroy!
     end
 
