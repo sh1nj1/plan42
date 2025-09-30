@@ -5,3 +5,43 @@ tshirt_description:
   body: <div>T-Shirt</div>
   created_at: <%= Time.now %>
   updated_at: <%= Time.now %>
+
+root_parent_description:
+  record_type: Creative
+  record_id: <%= ActiveRecord::FixtureSet.identify(:root_parent, :creatives) %>
+  name: description
+  body: <div>Root Parent</div>
+  created_at: <%= Time.now %>
+  updated_at: <%= Time.now %>
+
+unconvert_target_description:
+  record_type: Creative
+  record_id: <%= ActiveRecord::FixtureSet.identify(:unconvert_target, :creatives) %>
+  name: description
+  body: <div>Unconvert Target</div>
+  created_at: <%= Time.now %>
+  updated_at: <%= Time.now %>
+
+unconvert_child_one_description:
+  record_type: Creative
+  record_id: <%= ActiveRecord::FixtureSet.identify(:unconvert_child_one, :creatives) %>
+  name: description
+  body: <div>First child task</div>
+  created_at: <%= Time.now %>
+  updated_at: <%= Time.now %>
+
+unconvert_child_two_description:
+  record_type: Creative
+  record_id: <%= ActiveRecord::FixtureSet.identify(:unconvert_child_two, :creatives) %>
+  name: description
+  body: <div>Second child task</div>
+  created_at: <%= Time.now %>
+  updated_at: <%= Time.now %>
+
+childless_creative_description:
+  record_type: Creative
+  record_id: <%= ActiveRecord::FixtureSet.identify(:childless_creative, :creatives) %>
+  name: description
+  body: <div>Childless creative</div>
+  created_at: <%= Time.now %>
+  updated_at: <%= Time.now %>

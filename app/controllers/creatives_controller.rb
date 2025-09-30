@@ -2,7 +2,7 @@ class CreativesController < ApplicationController
   # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
   # Removed unauthenticated access to index and show actions
   # allow_unauthenticated_access only: %i[ index show ]
-  before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions slide_view ]
+  before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions slide_view unconvert ]
 
   def index
     # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
@@ -262,6 +262,35 @@ class CreativesController < ApplicationController
       select_mode: params[:select_mode] == "1",
       max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL
     ).html_safe
+  end
+
+  def unconvert
+    base_creative = @creative.effective_origin
+    parent = base_creative.parent
+    if parent.nil?
+      render json: { error: t("creatives.index.unconvert_no_parent") }, status: :unprocessable_entity and return
+    end
+
+    unless parent.has_permission?(Current.user, :feedback)
+      render json: { error: t("creatives.errors.no_permission") }, status: :forbidden and return
+    end
+
+    children = base_creative.children.order(:sequence).to_a
+    if children.empty?
+      render json: { error: t("creatives.index.unconvert_no_children") }, status: :unprocessable_entity and return
+    end
+
+    markdown = helpers.render_creative_tree_markdown(children)
+    comment = nil
+
+    ActiveRecord::Base.transaction do
+      comment = parent.effective_origin.comments.create!(content: markdown, user: Current.user)
+      children.each(&:destroy!)
+    end
+
+    render json: { comment_id: comment.id }, status: :created
+  rescue ActiveRecord::RecordInvalid => e
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
   end
 
   def export_markdown
