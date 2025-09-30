@@ -30,7 +30,7 @@ if (!window.githubIntegrationInitialized) {
     const deleteConfirm = modal.dataset.deleteConfirm || 'Github 연동을 삭제하시겠습니까?';
     const deleteSuccess = modal.dataset.deleteSuccess || 'Github 연동이 삭제되었습니다.';
     const deleteError = modal.dataset.deleteError || 'Github 연동을 삭제하지 못했습니다.';
-    const deleteButtonLabel = modal.dataset.deleteButtonLabel || '연동 삭제';
+    const deleteSelectWarning = modal.dataset.deleteSelectWarning || '삭제할 Repository를 선택하세요.';
 
     let creativeId = null;
     let currentStep = 'connect';
@@ -40,6 +40,7 @@ if (!window.githubIntegrationInitialized) {
     let webhookDetails = {};
     let geminiPrompt = '';
     let hasExistingIntegration = false;
+    let selectedReposForDeletion = new Set();
 
     function csrfToken() {
       return document.querySelector('meta[name="csrf-token"]')?.content;
@@ -53,6 +54,7 @@ if (!window.githubIntegrationInitialized) {
       webhookDetails = {};
       geminiPrompt = '';
       hasExistingIntegration = false;
+      selectedReposForDeletion = new Set();
       statusEl.textContent = '';
       errorEl.style.display = 'none';
       errorEl.textContent = '';
@@ -68,8 +70,14 @@ if (!window.githubIntegrationInitialized) {
         connectMessage.style.display = '';
       }
       if (deleteBtn) deleteBtn.style.display = 'none';
+      updateDeleteButtonState();
       if (loginBtn) loginBtn.style.display = 'inline-block';
       updateStep();
+    }
+
+    function updateDeleteButtonState() {
+      if (!deleteBtn) return;
+      deleteBtn.disabled = selectedReposForDeletion.size === 0;
     }
 
     function updateStep() {
@@ -185,9 +193,13 @@ if (!window.githubIntegrationInitialized) {
     function renderExistingConnections(repos) {
       if (!existingContainer || !existingList) return;
       existingList.innerHTML = '';
+      selectedReposForDeletion = new Set();
       if (!repos || !repos.length) {
         existingContainer.style.display = 'none';
-        if (deleteBtn) deleteBtn.style.display = 'none';
+        if (deleteBtn) {
+          deleteBtn.style.display = 'none';
+          updateDeleteButtonState();
+        }
         return;
       }
 
@@ -196,70 +208,45 @@ if (!window.githubIntegrationInitialized) {
         li.style.display = 'flex';
         li.style.alignItems = 'center';
         li.style.gap = '0.5em';
+        li.style.marginBottom = '0.4em';
+        li.style.listStyle = 'none';
+
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '0.5em';
+        label.style.cursor = 'pointer';
+        label.style.flex = '1';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = fullName;
+        checkbox.className = 'github-existing-repo-checkbox';
+        checkbox.addEventListener('change', function () {
+          if (checkbox.checked) {
+            selectedReposForDeletion.add(fullName);
+          } else {
+            selectedReposForDeletion.delete(fullName);
+          }
+          updateDeleteButtonState();
+        });
 
         const nameSpan = document.createElement('span');
         nameSpan.textContent = fullName;
         nameSpan.style.flex = '1';
-        li.appendChild(nameSpan);
 
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = deleteButtonLabel;
-        button.className = 'btn btn-danger btn-small github-delete-repo-btn';
-        button.dataset.repoFullName = fullName;
-        li.appendChild(button);
-
+        label.appendChild(checkbox);
+        label.appendChild(nameSpan);
+        li.appendChild(label);
         existingList.appendChild(li);
       });
 
       existingContainer.style.display = 'block';
-      if (deleteBtn) deleteBtn.style.display = 'inline-flex';
-      if (loginBtn) loginBtn.style.display = 'none';
-    }
-
-    function deleteRepository(fullName) {
-      if (!creativeId) {
-        alert(modal.dataset.noCreative);
-        return;
+      if (deleteBtn) {
+        deleteBtn.style.display = 'inline-flex';
+        updateDeleteButtonState();
       }
-
-      if (!window.confirm(deleteConfirm)) return;
-
-      fetch(`/creatives/${creativeId}/github_integration`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': csrfToken()
-        },
-        body: JSON.stringify({ repository: fullName })
-      })
-        .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
-        .then(function (result) {
-          if (!result.ok) {
-            showError(result.body.error || deleteError);
-            return;
-          }
-
-          selectedRepos = new Set(result.body.selected_repositories || []);
-          webhookDetails = result.body.webhooks || {};
-          geminiPrompt = result.body.github_gemini_prompt || '';
-          hasExistingIntegration = selectedRepos.size > 0;
-          if (promptInput) promptInput.value = geminiPrompt;
-          renderExistingConnections(Array.from(selectedRepos));
-          updateSummary();
-          statusEl.textContent = deleteSuccess;
-
-          if (!hasExistingIntegration) {
-            selectedOrg = null;
-            organizations = [];
-            currentStep = 'organization';
-            updateStep();
-            loadOrganizations();
-          }
-        })
-        .catch(function () {
-          showError(deleteError);
-        });
+      if (loginBtn) loginBtn.style.display = 'none';
     }
 
     function loadOrganizations() {
@@ -522,6 +509,12 @@ if (!window.githubIntegrationInitialized) {
         alert(modal.dataset.noCreative);
         return;
       }
+      clearError();
+      const selectedToDelete = Array.from(selectedReposForDeletion);
+      if (!selectedToDelete.length) {
+        showError(deleteSelectWarning);
+        return;
+      }
       if (!window.confirm(deleteConfirm)) return;
 
       fetch(`/creatives/${creativeId}/github_integration`, {
@@ -529,7 +522,8 @@ if (!window.githubIntegrationInitialized) {
         headers: {
           'Content-Type': 'application/json',
           'X-CSRF-Token': csrfToken()
-        }
+        },
+        body: JSON.stringify({ repositories: selectedToDelete })
       })
         .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
         .then(function (result) {
@@ -538,30 +532,26 @@ if (!window.githubIntegrationInitialized) {
             return;
           }
 
-          selectedRepos = new Set();
-          webhookDetails = {};
+          selectedRepos = new Set(result.body.selected_repositories || []);
+          webhookDetails = result.body.webhooks || {};
           geminiPrompt = result.body.github_gemini_prompt || '';
-          hasExistingIntegration = false;
+          hasExistingIntegration = selectedRepos.size > 0;
           if (promptInput) promptInput.value = geminiPrompt;
-          renderExistingConnections([]);
+          renderExistingConnections(Array.from(selectedRepos));
           updateSummary();
           statusEl.textContent = deleteSuccess;
-          selectedOrg = null;
-          organizations = [];
-          currentStep = 'organization';
-          updateStep();
-          loadOrganizations();
+
+          if (!hasExistingIntegration) {
+            selectedOrg = null;
+            organizations = [];
+            currentStep = 'organization';
+            updateStep();
+            loadOrganizations();
+          }
         })
         .catch(function () {
           showError(deleteError);
         });
-    });
-
-    existingList?.addEventListener('click', function (event) {
-      const button = event.target.closest('.github-delete-repo-btn');
-      if (!button) return;
-
-      deleteRepository(button.dataset.repoFullName);
     });
 
     window.addEventListener('message', function (event) {
