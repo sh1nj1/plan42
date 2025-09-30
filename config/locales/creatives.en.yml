@@ -17,7 +17,7 @@ en:
       unlink: "Unlink"
       are_you_sure_unlink: "Are you sure you want to unlink this Creative?"
       unconvert: "Unconvert"
-      unconvert_confirm: "Convert this Creative's children into a markdown comment on the parent? Children will be deleted."
+      unconvert_confirm: "Convert this Creative and its descendants into a markdown comment on the parent? This Creative and its descendants will be deleted."
       unconvert_failed: "Failed to unconvert this Creative."
       unconvert_no_parent: "Cannot unconvert because this Creative has no parent."
       unconvert_no_children: "Cannot unconvert because this Creative has no children."

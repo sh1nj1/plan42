@@ -284,12 +284,13 @@ class CreativesController < ApplicationController
       render json: { error: t("creatives.index.unconvert_no_children") }, status: :unprocessable_entity and return
     end
 
-    markdown = helpers.render_creative_tree_markdown(children)
+    markdown = helpers.render_creative_tree_markdown([ base_creative ])
     comment = nil
 
     ActiveRecord::Base.transaction do
       comment = parent.effective_origin.comments.create!(content: markdown, user: Current.user)
-      children.each(&:destroy!)
+      base_creative.descendants.each(&:destroy!)
+      base_creative.destroy!
     end
 
     render json: { comment_id: comment.id }, status: :created
