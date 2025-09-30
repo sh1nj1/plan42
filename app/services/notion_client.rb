@@ -52,31 +52,11 @@ class NotionClient
       # Give Notion a moment to fully create the page
       sleep(1)
       
-      # Test with just 1 block first to debug the API issue
-      test_block = [{
-        object: "block",
-        type: "paragraph", 
-        paragraph: {
-          rich_text: [{ type: "text", text: { content: "Test block" } }]
-        }
-      }]
-      
-      Rails.logger.info("NotionClient: Testing with single test block first")
-      begin
-        test_response = patch("blocks/#{format_id(page_id)}/children", { children: test_block })
-        Rails.logger.info("NotionClient: Test block append successful")
-        
-        # If test works, proceed with real blocks
-        blocks.each_slice(100).with_index do |block_batch, index|
-          Rails.logger.info("NotionClient: Adding batch #{index + 1} with #{block_batch.length} blocks")
-          append_blocks(page_id, block_batch)
-          Rails.logger.info("NotionClient: Successfully added batch #{index + 1}")
-        end
-      rescue => e
-        Rails.logger.error("NotionClient: Even test block failed: #{e.message}")
-        Rails.logger.error("NotionClient: URL attempted: /blocks/#{format_id(page_id)}/children")
-        Rails.logger.error("NotionClient: Test payload: #{test_block.to_json}")
-        raise e
+      # Add blocks in batches of 100
+      blocks.each_slice(100).with_index do |block_batch, index|
+        Rails.logger.info("NotionClient: Adding batch #{index + 1} with #{block_batch.length} blocks")
+        append_blocks(page_id, block_batch)
+        Rails.logger.info("NotionClient: Successfully added batch #{index + 1}")
       end
     end
     
