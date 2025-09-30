@@ -81,8 +81,20 @@ module Creatives
         return
       end
 
-      GithubRepositoryLink.transaction do
+      removed_links = GithubRepositoryLink.transaction do
+        links = linked_repository_links(account).to_a
         linked_repository_links(account).destroy_all
+        links
+      end
+
+      removed_repositories = removed_links.map(&:repository_full_name)
+
+      if removed_repositories.present?
+        Github::WebhookProvisioner.remove_for_repositories(
+          account: account,
+          repositories: removed_repositories,
+          webhook_url: github_webhook_url
+        )
       end
 
       render json: {
