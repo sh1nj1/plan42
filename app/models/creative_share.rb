@@ -28,18 +28,45 @@ class CreativeShare < ApplicationRecord
   private
 
   def clear_permission_cache
-    return unless user_id && creative_id
-
-    # Invalidate cache keys for this creative and user (all permission levels)
     permission_levels = [ :read, :feedback, :write, :admin ]
-    permission_levels.each do |level|
-      Rails.cache.delete("creative_permission:#{creative_id}:#{user_id}:#{level}")
+
+    # Get current and previous values for creative_id and user_id
+    current_creative_id = creative_id
+    current_user_id = user_id
+    previous_creative_id = saved_change_to_creative_id? ? creative_id_before_last_save : creative_id
+    previous_user_id = saved_change_to_user_id? ? user_id_before_last_save : user_id
+
+    # Collect all creative_id/user_id combinations that need cache clearing
+    combinations_to_clear = []
+
+    # Always clear current combination
+    if current_creative_id && current_user_id
+      combinations_to_clear << [ current_creative_id, current_user_id ]
     end
 
-    # Invalidate cache keys for all descendants of this creative and user
-    creative.self_and_descendants.pluck(:id).each do |descendant_id|
+    # Clear previous combination if it's different (handles creative_id or user_id changes)
+    if previous_creative_id && previous_user_id &&
+       (previous_creative_id != current_creative_id || previous_user_id != current_user_id)
+      combinations_to_clear << [ previous_creative_id, previous_user_id ]
+    end
+
+    # Clear cache for all combinations
+    combinations_to_clear.each do |creative_id_val, user_id_val|
+      # Clear for the creative itself
       permission_levels.each do |level|
-        Rails.cache.delete("creative_permission:#{descendant_id}:#{user_id}:#{level}")
+        Rails.cache.delete("creative_permission:#{creative_id_val}:#{user_id_val}:#{level}")
+      end
+
+      # Clear for all descendants of this creative
+      begin
+        creative_record = Creative.find(creative_id_val)
+        creative_record.self_and_descendants.pluck(:id).each do |descendant_id|
+          permission_levels.each do |level|
+            Rails.cache.delete("creative_permission:#{descendant_id}:#{user_id_val}:#{level}")
+          end
+        end
+      rescue ActiveRecord::RecordNotFound
+        # Creative might have been deleted, skip descendant clearing
       end
     end
   end

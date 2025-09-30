@@ -505,4 +505,159 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     assert @root.has_permission?(@user2, :write)   # Still has share
     refute @root.has_permission?(@owner, :read)    # Old owner loses access
   end
+
+  test "cache is cleared when CreativeShare creative_id changes" do
+    # Setup: Create separate creative tree to avoid inheritance
+    other_root = Creative.create!(user: @owner, description: "Other Root")
+    share = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+
+    # Check and cache permissions
+    assert @root.has_permission?(@user1, :read)      # Via share
+    refute other_root.has_permission?(@user1, :read) # No share on other_root
+
+    root_key = "creative_permission:#{@root.id}:#{@user1.id}:read"
+    other_key = "creative_permission:#{other_root.id}:#{@user1.id}:read"
+    assert_equal true, Rails.cache.read(root_key)
+    assert_equal false, Rails.cache.read(other_key)
+
+    # Move share from root to other_root
+    share.update!(creative: other_root)
+
+    # Both old and new creative caches should be cleared
+    refute Rails.cache.exist?(root_key)   # Old creative cache cleared
+    refute Rails.cache.exist?(other_key)  # New creative cache cleared
+
+    # Permissions should now be correct
+    refute @root.has_permission?(@user1, :read)      # No longer has share on root
+    assert other_root.has_permission?(@user1, :read) # Now has share on other_root
+  end
+
+  test "cache is cleared when CreativeShare user_id changes" do
+    # Setup: user1 has share, user2 has no share
+    share = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+
+    # Check and cache permissions
+    assert @root.has_permission?(@user1, :read)   # Via share
+    refute @root.has_permission?(@user2, :read)   # No share
+
+    user1_key = "creative_permission:#{@root.id}:#{@user1.id}:read"
+    user2_key = "creative_permission:#{@root.id}:#{@user2.id}:read"
+    assert_equal true, Rails.cache.read(user1_key)
+    assert_equal false, Rails.cache.read(user2_key)
+
+    # Transfer share from user1 to user2
+    share.update!(user: @user2)
+
+    # Both old and new user caches should be cleared
+    refute Rails.cache.exist?(user1_key)  # Old user cache cleared
+    refute Rails.cache.exist?(user2_key)  # New user cache cleared
+
+    # Permissions should now be correct
+    refute @root.has_permission?(@user1, :read)  # No longer has share
+    assert @root.has_permission?(@user2, :read)  # Now has share
+  end
+
+  test "cache is cleared when CreativeShare creative_id and user_id both change" do
+    # Setup complex scenario
+    share = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+
+    # Check and cache permissions
+    assert @root.has_permission?(@user1, :read)   # Via share
+    refute @child.has_permission?(@user2, :read)  # No share
+
+    old_key = "creative_permission:#{@root.id}:#{@user1.id}:read"
+    new_key = "creative_permission:#{@child.id}:#{@user2.id}:read"
+    assert_equal true, Rails.cache.read(old_key)
+    assert_equal false, Rails.cache.read(new_key)
+
+    # Move share from root+user1 to child+user2
+    share.update!(creative: @child, user: @user2)
+
+    # Both old and new combination caches should be cleared
+    refute Rails.cache.exist?(old_key)  # Old combination cleared
+    refute Rails.cache.exist?(new_key)  # New combination cleared
+
+    # Permissions should now be correct
+    refute @root.has_permission?(@user1, :read)   # Lost old share
+    assert @child.has_permission?(@user2, :read)  # Gained new share
+  end
+
+  test "cache clearing handles descendant permissions on creative_id change" do
+    # Setup: user1 has share on root (gives access to descendants)
+    share = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+
+    # Check and cache descendant permissions
+    assert @child.has_permission?(@user1, :read)      # Via root share inheritance
+    assert @grandchild.has_permission?(@user1, :read) # Via root share inheritance
+
+    child_key = "creative_permission:#{@child.id}:#{@user1.id}:read"
+    grandchild_key = "creative_permission:#{@grandchild.id}:#{@user1.id}:read"
+    assert Rails.cache.exist?(child_key)
+    assert Rails.cache.exist?(grandchild_key)
+
+    # Create new creative tree and move share there
+    other_root = Creative.create!(user: @owner, description: "Other Root")
+    other_child = Creative.create!(user: @owner, parent: other_root, description: "Other Child")
+    share.update!(creative: other_root)
+
+    # Old tree descendant caches should be cleared
+    refute Rails.cache.exist?(child_key)
+    refute Rails.cache.exist?(grandchild_key)
+
+    # Permissions should reflect the change
+    refute @child.has_permission?(@user1, :read)      # Lost access to original tree
+    refute @grandchild.has_permission?(@user1, :read) # Lost access to original tree
+    assert other_child.has_permission?(@user1, :read) # Gained access to new tree
+  end
+
+  test "cache clearing is selective when CreativeShare changes" do
+    # Setup multiple shares
+    share1 = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+    share2 = CreativeShare.create!(creative: @child, user: @user2, permission: :write)
+
+    # Cache permissions for multiple combinations
+    assert @root.has_permission?(@user1, :read)
+    assert @child.has_permission?(@user2, :write)
+    assert @grandchild.has_permission?(@user1, :read)  # Via inheritance
+
+    share1_key = "creative_permission:#{@root.id}:#{@user1.id}:read"
+    share2_key = "creative_permission:#{@child.id}:#{@user2.id}:write"
+    grandchild_key = "creative_permission:#{@grandchild.id}:#{@user1.id}:read"
+
+    assert Rails.cache.exist?(share1_key)
+    assert Rails.cache.exist?(share2_key)
+    assert Rails.cache.exist?(grandchild_key)
+
+    # Update only share1's creative_id
+    new_creative = Creative.create!(user: @owner, description: "New Creative")
+    share1.update!(creative: new_creative)
+
+    # Only share1 related caches should be cleared
+    refute Rails.cache.exist?(share1_key)    # Affected by share1 change
+    refute Rails.cache.exist?(grandchild_key) # Descendant affected by share1 change
+    assert Rails.cache.exist?(share2_key)    # Unaffected - should remain cached
+
+    # share2 permissions should still work from cache
+    assert @child.has_permission?(@user2, :write)
+  end
+
+  test "cache clearing handles CreativeShare destruction with old values" do
+    # This test ensures that when a share is destroyed, we can still clear
+    # cache even if the creative/user relationships change
+    share = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+
+    # Cache permission
+    assert @root.has_permission?(@user1, :read)
+    root_key = "creative_permission:#{@root.id}:#{@user1.id}:read"
+    assert Rails.cache.exist?(root_key)
+
+    # Destroy the share - this should clear cache
+    share.destroy!
+
+    # Cache should be cleared
+    refute Rails.cache.exist?(root_key)
+
+    # Permission should be denied
+    refute @root.has_permission?(@user1, :read)
+  end
 end
