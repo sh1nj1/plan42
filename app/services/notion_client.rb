@@ -47,9 +47,27 @@ class NotionClient
     if blocks.length > 100
       Rails.logger.info("NotionClient: Adding #{blocks.length} blocks in batches (100 per batch)")
       page_id = response["id"]
+      Rails.logger.info("NotionClient: Created page ID: #{page_id}")
+      
+      # Give Notion a moment to fully create the page
+      sleep(1)
+      
       blocks.each_slice(100).with_index do |block_batch, index|
-        Rails.logger.info("NotionClient: Adding batch #{index + 1} with #{block_batch.length} blocks")
-        append_blocks(page_id, block_batch)
+        Rails.logger.info("NotionClient: Adding batch #{index + 1} with #{block_batch.length} blocks to page #{page_id}")
+        begin
+          # Verify page exists before trying to append
+          if index == 0
+            verify_page = get_page(page_id)
+            Rails.logger.info("NotionClient: Verified page exists: #{verify_page["id"]}")
+          end
+          
+          append_blocks(page_id, block_batch)
+          Rails.logger.info("NotionClient: Successfully added batch #{index + 1}")
+        rescue => e
+          Rails.logger.error("NotionClient: Failed to add batch #{index + 1}: #{e.message}")
+          Rails.logger.error("NotionClient: Page ID being used: #{page_id}")
+          raise e
+        end
       end
     end
     
