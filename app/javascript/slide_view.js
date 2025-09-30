@@ -10,9 +10,12 @@ document.addEventListener('DOMContentLoaded', function() {
   var counterEl = document.getElementById('slide-counter');
   var linkEl = document.getElementById('slide-goto');
   var captionEl = document.getElementById('slide-caption');
+  var timerEl = document.getElementById('slide-timer');
   var startX = null;
   var slideSubscription = null;
   var lastScrollLeft = 0;
+  var timerStart = null;
+  var timerInterval = null;
 
   if (index > 0) {
     load(index, false);
@@ -70,6 +73,26 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  function updateTimer() {
+    if (!timerEl || timerStart === null) return;
+    var elapsedSeconds = Math.floor((Date.now() - timerStart) / 1000);
+    var minutes = Math.floor(elapsedSeconds / 60);
+    var seconds = elapsedSeconds % 60;
+    var formattedMinutes = minutes.toString().padStart(2, '0');
+    var formattedSeconds = seconds.toString().padStart(2, '0');
+    timerEl.textContent = formattedMinutes + ':' + formattedSeconds;
+  }
+
+  function startTimer() {
+    if (!timerEl) return;
+    timerStart = Date.now();
+    updateTimer();
+    if (timerInterval) {
+      clearInterval(timerInterval);
+    }
+    timerInterval = setInterval(updateTimer, 1000);
+  }
+
   if (window.ActionCable && rootId) {
     slideSubscription = ActionCable.createConsumer().subscriptions.create(
       { channel: 'SlideViewChannel', root_id: rootId },
@@ -110,6 +133,8 @@ document.addEventListener('DOMContentLoaded', function() {
   if (linkEl) {
     linkEl.href = '/creatives/' + ids[index];
   }
+
+  startTimer();
 
   window.addEventListener('keydown', function(e) {
     var key = e.key || e.keyCode;
