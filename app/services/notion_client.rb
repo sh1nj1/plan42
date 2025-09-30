@@ -24,7 +24,7 @@ class NotionClient
   end
 
   def get_page(page_id)
-    get("pages/#{page_id}")
+    get("pages/#{format_id(page_id)}")
   end
 
   def create_page(parent_id:, title:, blocks: [])
@@ -54,13 +54,14 @@ class NotionClient
       
       blocks.each_slice(100).with_index do |block_batch, index|
         Rails.logger.info("NotionClient: Adding batch #{index + 1} with #{block_batch.length} blocks to page #{page_id}")
+        Rails.logger.info("NotionClient: Formatted page ID for blocks API: #{format_id(page_id)}")
         begin
           # Verify page exists before trying to append
           if index == 0
             verify_page = get_page(page_id)
             Rails.logger.info("NotionClient: Verified page exists: #{verify_page["id"]}")
           end
-          
+
           append_blocks(page_id, block_batch)
           Rails.logger.info("NotionClient: Successfully added batch #{index + 1}")
         rescue => e
@@ -76,7 +77,7 @@ class NotionClient
 
   def update_page(page_id, properties: {}, blocks: nil)
     body = { properties: properties }
-    response = patch("pages/#{page_id}", body)
+    response = patch("pages/#{format_id(page_id)}", body)
 
     if blocks.present?
       replace_page_blocks(page_id, blocks)
@@ -89,7 +90,7 @@ class NotionClient
     params = { page_size: page_size }
     params[:start_cursor] = start_cursor if start_cursor.present?
 
-    get("blocks/#{page_id}/children", params)
+    get("blocks/#{format_id(page_id)}/children", params)
   end
 
   def replace_page_blocks(page_id, blocks)
@@ -118,15 +119,15 @@ class NotionClient
       Rails.logger.info("NotionClient: Appending #{blocks.length} blocks in batches")
       blocks.each_slice(100).with_index do |block_batch, index|
         Rails.logger.info("NotionClient: Appending batch #{index + 1} with #{block_batch.length} blocks")
-        post("blocks/#{page_id}/children", { children: block_batch })
+        post("blocks/#{format_id(page_id)}/children", { children: block_batch })
       end
     else
-      post("blocks/#{page_id}/children", { children: blocks })
+      post("blocks/#{format_id(page_id)}/children", { children: blocks })
     end
   end
 
   def delete_block(block_id)
-    delete("blocks/#{block_id}")
+    delete("blocks/#{format_id(block_id)}")
   end
 
   def get_workspace
@@ -186,6 +187,11 @@ class NotionClient
       "Notion-Version" => API_VERSION,
       "Content-Type" => "application/json"
     }
+  end
+
+  def format_id(id)
+    # Remove dashes from UUIDs for Notion API URLs
+    id.to_s.gsub("-", "")
   end
 
   def handle_response(response)
