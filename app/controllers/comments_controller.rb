@@ -208,7 +208,9 @@ class CommentsController < ApplicationController
       comments.each do |comment|
         next if comment.creative_id == target_origin.id
 
+        original_creative = comment.creative
         comment.update!(creative: target_origin)
+        broadcast_move_removal(comment, original_creative)
       end
     end
 
@@ -239,6 +241,15 @@ class CommentsController < ApplicationController
 
   def comment_params
     params.require(:comment).permit(:content, :private)
+  end
+
+  def broadcast_move_removal(comment, original_creative)
+    return if comment.private?
+
+    Turbo::StreamsChannel.broadcast_remove_to(
+      [ original_creative, :comments ],
+      target: view_context.dom_id(comment)
+    )
   end
 
   def build_convert_system_message(creative)
