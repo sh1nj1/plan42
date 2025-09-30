@@ -210,7 +210,9 @@ class Creative < ApplicationRecord
 
     # Clear cache for this creative and all its descendants
     # Since parent change affects permission inheritance, we need to clear all cached permissions
-    affected_creative_ids = self_and_descendants.pluck(:id)
+    # Use effective_origin.id for each creative since that's what the cache key uses
+    affected_creatives = self_and_descendants
+    affected_creative_origin_ids = affected_creatives.map { |c| c.effective_origin.id }.uniq
 
     # Get all users who have shares in the old ancestor tree and new ancestor tree
     old_parent_id = parent_id_before_last_save
@@ -220,7 +222,7 @@ class Creative < ApplicationRecord
     new_ancestor_ids = new_parent_id ? Creative.find(new_parent_id).self_and_ancestors.pluck(:id) : []
 
     # Include the moved creative and its ancestors in the search
-    all_relevant_creative_ids = (affected_creative_ids + old_ancestor_ids + new_ancestor_ids).uniq
+    all_relevant_creative_ids = (affected_creative_origin_ids + old_ancestor_ids + new_ancestor_ids).uniq
 
     # Find all users who have shares in any of these creatives
     affected_user_ids = CreativeShare.where(creative_id: all_relevant_creative_ids).pluck(:user_id).uniq
@@ -228,9 +230,9 @@ class Creative < ApplicationRecord
     # Clear cache for affected creatives and users
     permission_levels = [ :read, :feedback, :write, :admin ]
     affected_user_ids.each do |user_id|
-      affected_creative_ids.each do |creative_id|
+      affected_creative_origin_ids.each do |origin_id|
         permission_levels.each do |level|
-          Rails.cache.delete("creative_permission:#{creative_id}:#{user_id}:#{level}")
+          Rails.cache.delete("creative_permission:#{origin_id}:#{user_id}:#{level}")
         end
       end
     end
@@ -241,7 +243,9 @@ class Creative < ApplicationRecord
 
     # Clear cache for this creative and all its descendants
     # When ownership changes, permission logic changes for owners and all users
-    affected_creative_ids = self_and_descendants.pluck(:id)
+    # Use effective_origin.id for each creative since that's what the cache key uses
+    affected_creatives = self_and_descendants
+    affected_creative_origin_ids = affected_creatives.map { |c| c.effective_origin.id }.uniq
 
     # Get old and new owner IDs
     old_user_id, new_user_id = saved_change_to_user_id
@@ -255,16 +259,16 @@ class Creative < ApplicationRecord
     # Also include users who have shares in this subtree or its ancestors
     # (their permissions might change due to ownership change)
     ancestor_ids = ancestors.pluck(:id)
-    all_relevant_creative_ids = affected_creative_ids + ancestor_ids
+    all_relevant_creative_ids = affected_creative_origin_ids + ancestor_ids
     share_user_ids = CreativeShare.where(creative_id: all_relevant_creative_ids).pluck(:user_id)
     affected_user_ids.merge(share_user_ids)
 
     # Clear cache for all affected combinations
     permission_levels = [ :read, :feedback, :write, :admin ]
     affected_user_ids.each do |user_id|
-      affected_creative_ids.each do |creative_id|
+      affected_creative_origin_ids.each do |origin_id|
         permission_levels.each do |level|
-          Rails.cache.delete("creative_permission:#{creative_id}:#{user_id}:#{level}")
+          Rails.cache.delete("creative_permission:#{origin_id}:#{user_id}:#{level}")
         end
       end
     end
