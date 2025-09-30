@@ -10,7 +10,7 @@ class NotionCreativeExporter
     convert_creative_to_blocks(@creative, level: 1)
   end
 
-  def export_tree_blocks(creatives, level = 1)
+  def export_tree_blocks(creatives, level = 1, bullet_depth = 0)
     return [] if creatives.blank?
 
     blocks = []
@@ -21,15 +21,25 @@ class NotionCreativeExporter
       # Handle children based on the level
       if creative.respond_to?(:children) && creative.children.present?
         if level > 3
-          # For bullet points (level > 3), create nested structure
+          # For bullet points (level > 3), limit nesting depth to 2 levels max
           text_content = extract_text_content(creative.effective_description(nil, false).to_html.gsub(/<!--.*?-->/m, "").strip)
-          children_blocks = export_tree_blocks(creative.children, level + 1)
-          bullet_block = create_bulleted_list_item_block(text_content, children_blocks)
-          blocks << bullet_block
+          
+          if bullet_depth < 2
+            # Can still nest deeper
+            children_blocks = export_tree_blocks(creative.children, level + 1, bullet_depth + 1)
+            bullet_block = create_bulleted_list_item_block(text_content, children_blocks)
+            blocks << bullet_block
+          else
+            # Max depth reached, flatten remaining levels
+            bullet_block = create_bulleted_list_item_block(text_content)
+            blocks << bullet_block
+            # Add children as flat bullet points at same level
+            blocks.concat(export_tree_blocks(creative.children, level, bullet_depth))
+          end
         else
           # For headings (level <= 3), add heading then children as separate blocks
           blocks.concat(creative_blocks)
-          blocks.concat(export_tree_blocks(creative.children, level + 1))
+          blocks.concat(export_tree_blocks(creative.children, level + 1, 0))
         end
       else
         # No children, just add the blocks
