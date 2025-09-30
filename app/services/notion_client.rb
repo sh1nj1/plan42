@@ -28,6 +28,9 @@ class NotionClient
   end
 
   def create_page(parent_id:, title:, blocks: [])
+    Rails.logger.info("NotionClient: Creating page with #{blocks.length} blocks")
+    
+    # Notion limits page creation to 100 blocks, so create with minimal content first
     body = {
       parent: { page_id: parent_id },
       properties: {
@@ -35,10 +38,22 @@ class NotionClient
           title: [ { text: { content: title } } ]
         }
       },
-      children: blocks
+      children: blocks.length > 100 ? [] : blocks
     }
 
-    post("pages", body)
+    response = post("pages", body)
+    
+    # If we have more than 100 blocks, add them in batches after page creation
+    if blocks.length > 100
+      Rails.logger.info("NotionClient: Adding #{blocks.length} blocks in batches (100 per batch)")
+      page_id = response["id"]
+      blocks.each_slice(100).with_index do |block_batch, index|
+        Rails.logger.info("NotionClient: Adding batch #{index + 1} with #{block_batch.length} blocks")
+        append_blocks(page_id, block_batch)
+      end
+    end
+    
+    response
   end
 
   def update_page(page_id, properties: {}, blocks: nil)
@@ -60,6 +75,8 @@ class NotionClient
   end
 
   def replace_page_blocks(page_id, blocks)
+    Rails.logger.info("NotionClient: Replacing page blocks with #{blocks.length} blocks")
+    
     # First, get existing blocks
     existing_blocks = get_page_blocks(page_id)
 
@@ -68,12 +85,26 @@ class NotionClient
       delete_block(block["id"])
     end
 
-    # Add new blocks
-    append_blocks(page_id, blocks) if blocks.any?
+    # Add new blocks in batches of 100
+    if blocks.any?
+      blocks.each_slice(100).with_index do |block_batch, index|
+        Rails.logger.info("NotionClient: Adding replacement batch #{index + 1} with #{block_batch.length} blocks")
+        append_blocks(page_id, block_batch)
+      end
+    end
   end
 
   def append_blocks(page_id, blocks)
-    post("blocks/#{page_id}/children", { children: blocks })
+    # Notion also limits append operations to 100 blocks
+    if blocks.length > 100
+      Rails.logger.info("NotionClient: Appending #{blocks.length} blocks in batches")
+      blocks.each_slice(100).with_index do |block_batch, index|
+        Rails.logger.info("NotionClient: Appending batch #{index + 1} with #{block_batch.length} blocks")
+        post("blocks/#{page_id}/children", { children: block_batch })
+      end
+    else
+      post("blocks/#{page_id}/children", { children: blocks })
+    end
   end
 
   def delete_block(block_id)
