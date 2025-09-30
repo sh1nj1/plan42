@@ -896,7 +896,18 @@ if (!window.creativeRowEditorInitialized) {
           const errorMessage = unconvertBtn.dataset.error || 'Failed to unconvert.';
           unconvertBtn.disabled = true;
           saveForm()
-            .then(function() {
+            .then(function(saveResponse) {
+              if (saveResponse && saveResponse.ok === false) {
+                return saveResponse
+                  .json()
+                  .catch(function() { return {}; })
+                  .then(function(data) {
+                    alert(data && data.error ? data.error : errorMessage);
+                    const error = new Error('Save failed');
+                    error._handled = true;
+                    throw error;
+                  });
+              }
               return window.creativesApi.unconvert(creativeId);
             })
             .then(function(response) {
@@ -911,7 +922,8 @@ if (!window.creativeRowEditorInitialized) {
                   alert(data && data.error ? data.error : errorMessage);
                 });
             })
-            .catch(function() {
+            .catch(function(error) {
+              if (error && error._handled) return;
               alert(errorMessage);
             })
             .finally(function() {
