@@ -126,18 +126,23 @@ class CommentsController < ApplicationController
 
     executed_error = false
     update_success = false
+    approver_mismatch_error = false
 
     @comment.with_lock do
       @comment.reload
 
-      if @comment.action_executed_at.present?
+      if @comment.approver != Current.user
+        approver_mismatch_error = true
+      elsif @comment.action_executed_at.present?
         executed_error = true
       else
         update_success = @comment.update(action: normalized_action)
       end
     end
 
-    if executed_error
+    if approver_mismatch_error
+      render json: { error: I18n.t("comments.approve_not_allowed") }, status: :forbidden
+    elsif executed_error
       render json: { error: I18n.t("comments.approve_already_executed") }, status: :unprocessable_entity
     elsif update_success
       render partial: "comments/comment", locals: { comment: @comment }
