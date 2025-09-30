@@ -85,6 +85,8 @@ module Creatives
 
       scope = linked_repository_links(account)
 
+      removed_repositories = []
+
       if repository
         link = scope.find_by(repository_full_name: repository)
         unless link
@@ -93,12 +95,22 @@ module Creatives
         end
 
         GithubRepositoryLink.transaction do
+          removed_repositories = [link.repository_full_name]
           link.destroy!
         end
       else
         GithubRepositoryLink.transaction do
+          removed_repositories = scope.pluck(:repository_full_name)
           scope.destroy_all
         end
+      end
+
+      if removed_repositories.present?
+        Github::WebhookProvisioner.remove_for_repositories(
+          account: account,
+          repositories: removed_repositories,
+          webhook_url: github_webhook_url
+        )
       end
 
       links = linked_repository_links(account)
