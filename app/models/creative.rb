@@ -225,7 +225,16 @@ class Creative < ApplicationRecord
     all_relevant_creative_ids = (affected_creative_origin_ids + old_ancestor_ids + new_ancestor_ids).uniq
 
     # Find all users who have shares in any of these creatives
-    affected_user_ids = CreativeShare.where(creative_id: all_relevant_creative_ids).pluck(:user_id).uniq
+    share_user_ids = CreativeShare.where(creative_id: all_relevant_creative_ids).pluck(:user_id).compact
+
+    # CRITICAL: Also include owners of affected subtree and ancestor trees
+    # Owners get access via node.user_id == user&.id check, not via shares
+    subtree_owner_ids = affected_creatives.pluck(:user_id).compact
+    old_ancestor_owner_ids = old_ancestor_ids.any? ? Creative.where(id: old_ancestor_ids).pluck(:user_id).compact : []
+    new_ancestor_owner_ids = new_ancestor_ids.any? ? Creative.where(id: new_ancestor_ids).pluck(:user_id).compact : []
+
+    # Combine all affected user IDs
+    affected_user_ids = (share_user_ids + subtree_owner_ids + old_ancestor_owner_ids + new_ancestor_owner_ids).uniq
 
     # Clear cache for affected creatives and users
     permission_levels = [ :read, :feedback, :write, :admin ]
@@ -260,8 +269,14 @@ class Creative < ApplicationRecord
     # (their permissions might change due to ownership change)
     ancestor_ids = ancestors.pluck(:id)
     all_relevant_creative_ids = affected_creative_origin_ids + ancestor_ids
-    share_user_ids = CreativeShare.where(creative_id: all_relevant_creative_ids).pluck(:user_id)
+    share_user_ids = CreativeShare.where(creative_id: all_relevant_creative_ids).pluck(:user_id).compact
     affected_user_ids.merge(share_user_ids)
+
+    # CRITICAL: Also include owners of affected subtree and ancestors
+    # Owners get access via node.user_id == user&.id check, not via shares
+    subtree_owner_ids = affected_creatives.pluck(:user_id).compact
+    ancestor_owner_ids = ancestor_ids.any? ? Creative.where(id: ancestor_ids).pluck(:user_id).compact : []
+    affected_user_ids.merge(subtree_owner_ids + ancestor_owner_ids)
 
     # Clear cache for all affected combinations
     permission_levels = [ :read, :feedback, :write, :admin ]
