@@ -62,6 +62,17 @@ module Creatives
       origin = dragged.effective_origin
       new_parent = direction == "child" ? target : target.parent
 
+      if new_parent.present?
+        if new_parent.self_and_ancestors.where(id: origin.id).exists?
+          raise Error, "Invalid creatives"
+        end
+
+        parent_origin = new_parent.effective_origin
+        if parent_origin.self_and_ancestors.where(id: origin.id).exists?
+          raise Error, "Invalid creatives"
+        end
+      end
+
       new_creative = nil
       Creative.transaction do
         new_creative = Creative.create!(
