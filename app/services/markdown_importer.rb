@@ -25,9 +25,21 @@ class MarkdownImporter
       end
     end
     stack = [ [ 0, root ] ]
+    current_fence = nil
     while i < lines.size
       line = lines[i]
-      if (table_data = parse_markdown_table(lines, i))
+      if (fence_match = line.match(/^\s*(`{3,}|~{3,})/))
+        fence_marker = fence_match[1]
+        fence_char = fence_marker[0]
+        fence_length = fence_marker.length
+        if current_fence.nil?
+          current_fence = { char: fence_char, length: fence_length }
+        elsif current_fence[:char] == fence_char && fence_length >= current_fence[:length]
+          current_fence = nil
+        end
+      end
+
+      if current_fence.nil? && (table_data = parse_markdown_table(lines, i))
         table_html = build_table_html(table_data, image_refs)
         new_parent = stack.any? ? stack.last[1] : root
         c = Creative.create(user: user, parent: new_parent, description: table_html)
