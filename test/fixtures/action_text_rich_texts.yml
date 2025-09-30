@@ -30,6 +30,14 @@ unconvert_child_one_description:
   created_at: <%= Time.now %>
   updated_at: <%= Time.now %>
 
+unconvert_grandchild_description:
+  record_type: Creative
+  record_id: <%= ActiveRecord::FixtureSet.identify(:unconvert_grandchild, :creatives) %>
+  name: description
+  body: <div>Grandchild task</div>
+  created_at: <%= Time.now %>
+  updated_at: <%= Time.now %>
+
 unconvert_child_two_description:
   record_type: Creative
   record_id: <%= ActiveRecord::FixtureSet.identify(:unconvert_child_two, :creatives) %>

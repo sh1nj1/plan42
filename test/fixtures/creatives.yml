@@ -18,6 +18,11 @@ unconvert_child_one:
   parent: unconvert_target
   progress: 0.1
 
+unconvert_grandchild:
+  user: one
+  parent: unconvert_child_one
+  progress: 0.0
+
 unconvert_child_two:
   user: one
   parent: unconvert_target
