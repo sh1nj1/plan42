@@ -275,6 +275,10 @@ class CreativesController < ApplicationController
       render json: { error: t("creatives.errors.no_permission") }, status: :forbidden and return
     end
 
+    unless base_creative.has_permission?(Current.user, :admin)
+      render json: { error: t("creatives.errors.no_permission") }, status: :forbidden and return
+    end
+
     children = base_creative.children.order(:sequence).to_a
     if children.empty?
       render json: { error: t("creatives.index.unconvert_no_children") }, status: :unprocessable_entity and return

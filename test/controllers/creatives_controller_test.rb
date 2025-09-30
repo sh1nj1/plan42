@@ -42,4 +42,20 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     body = JSON.parse(response.body)
     assert_equal I18n.t("creatives.index.unconvert_no_parent"), body["error"]
   end
+
+  test "unconvert requires admin permission" do
+    creative = creatives(:unconvert_target)
+    parent = creative.parent
+    sign_out
+    sign_in_as(users(:two), password: "password")
+    CreativeShare.create!(creative: parent, user: users(:two), permission: :feedback)
+
+    assert_no_changes -> { creative.reload.children.count } do
+      post unconvert_creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    end
+
+    assert_response :forbidden
+    body = JSON.parse(response.body)
+    assert_equal I18n.t("creatives.errors.no_permission"), body["error"]
+  end
 end
