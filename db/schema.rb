@@ -86,10 +86,10 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
     t.integer "approver_id"
     t.datetime "action_executed_at"
     t.integer "action_executed_by_id"
+    t.index ["action_executed_by_id"], name: "index_comments_on_action_executed_by_id"
+    t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
-    t.index ["approver_id"], name: "index_comments_on_approver_id"
-    t.index ["action_executed_by_id"], name: "index_comments_on_action_executed_by_id"
   end
 
   create_table "creative_expanded_states", force: :cascade do |t|
@@ -392,6 +392,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
     t.datetime "updated_at", null: false
     t.string "value"
     t.integer "label_id"
+    t.index ["creative_id", "label_id"], name: "index_tags_on_creative_id_and_label_id", unique: true
+    t.index ["creative_id"], name: "index_tags_on_creative_id"
     t.index ["label_id"], name: "index_tags_on_label_id"
   end
 
@@ -427,8 +429,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
   add_foreign_key "comment_read_pointers", "users"
   add_foreign_key "comments", "creatives"
   add_foreign_key "comments", "users"
-  add_foreign_key "comments", "users", column: "approver_id"
   add_foreign_key "comments", "users", column: "action_executed_by_id"
+  add_foreign_key "comments", "users", column: "approver_id"
   add_foreign_key "creative_expanded_states", "creatives"
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"

@@ -47,6 +47,7 @@ class Creative < ApplicationRecord
 
   has_many :creative_shares, dependent: :destroy
   has_many :tags, dependent: :destroy
+  has_many :labels, through: :tags
   has_many :creative_expanded_states, dependent: :delete_all
   has_many :invitations, dependent: :delete_all
   has_many :github_repository_links, dependent: :destroy
@@ -154,7 +155,12 @@ class Creative < ApplicationRecord
   end
 
   def progress_for_tags(tag_ids, user = Current.user)
-    progress_service.progress_for_tags(tag_ids, user)
+    # 최적화된 버전 사용 가능 시 사용
+    if defined?(Creatives::OptimizedProgressService)
+      Creatives::OptimizedProgressService.new(self).progress_for_tags_optimized(tag_ids, user)
+    else
+      progress_service.progress_for_tags(tag_ids, user)
+    end
   end
 
   # Calculate progress for the subtree ignoring permission checks.

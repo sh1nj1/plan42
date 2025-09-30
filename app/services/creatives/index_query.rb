@@ -89,7 +89,11 @@ module Creatives
       return unless params[:tags].present?
       tag_ids = Array(params[:tags]).map(&:to_s)
       roots = creatives || []
-      progress_values = roots.map { |c| c.progress_for_tags(tag_ids, user) }.compact
+      
+      # 최적화된 배치 처리 사용
+      progress_map = Creatives::OptimizedProgressService.progress_for_tags_batch(roots, tag_ids, user)
+      progress_values = roots.map { |c| progress_map[c.id] }.compact
+      
       progress_values.any? ? progress_values.sum.to_f / progress_values.size : 0
     end
 
