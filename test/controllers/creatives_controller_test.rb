@@ -58,4 +58,38 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     body = JSON.parse(response.body)
     assert_equal I18n.t("creatives.errors.no_permission"), body["error"]
   end
+
+  test "export markdown requires read permission for parent creative" do
+    creative = creatives(:root_parent)
+    sign_out
+    sign_in_as(users(:two), password: "password")
+
+    get export_markdown_creatives_path(parent_id: creative.id), headers: { "ACCEPT" => "text/markdown" }
+
+    assert_response :forbidden
+  end
+
+  test "export markdown returns markdown for readable parent creative" do
+    creative = creatives(:root_parent)
+
+    get export_markdown_creatives_path(parent_id: creative.id), headers: { "ACCEPT" => "text/markdown" }
+
+    assert_response :success
+    assert_equal "text/markdown", response.media_type
+    expected_markdown = ApplicationController.helpers.render_creative_tree_markdown([ creative.effective_origin ])
+    assert_equal expected_markdown, response.body
+  end
+
+  test "export markdown includes only readable root creatives" do
+    creative = creatives(:root_parent)
+    sign_out
+    sign_in_as(users(:two), password: "password")
+    CreativeShare.create!(creative: creative, user: users(:two), permission: :read)
+
+    get export_markdown_creatives_path, headers: { "ACCEPT" => "text/markdown" }
+
+    assert_response :success
+    expected_markdown = ApplicationController.helpers.render_creative_tree_markdown([ creative.effective_origin ])
+    assert_equal expected_markdown, response.body
+  end
 end
