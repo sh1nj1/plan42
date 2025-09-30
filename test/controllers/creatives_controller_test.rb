@@ -25,15 +25,6 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_raises(ActiveRecord::RecordNotFound) { grandchild.reload }
   end
 
-  test "unconvert without children returns error" do
-    creative = creatives(:childless_creative)
-    post unconvert_creative_path(creative), headers: { "ACCEPT" => "application/json" }
-
-    assert_response :unprocessable_entity
-    body = JSON.parse(response.body)
-    assert_equal I18n.t("creatives.index.unconvert_no_children"), body["error"]
-  end
-
   test "unconvert without parent returns error" do
     creative = creatives(:root_parent)
     post unconvert_creative_path(creative), headers: { "ACCEPT" => "application/json" }

@@ -279,11 +279,6 @@ class CreativesController < ApplicationController
       render json: { error: t("creatives.errors.no_permission") }, status: :forbidden and return
     end
 
-    children = base_creative.children.order(:sequence).to_a
-    if children.empty?
-      render json: { error: t("creatives.index.unconvert_no_children") }, status: :unprocessable_entity and return
-    end
-
     markdown = helpers.render_creative_tree_markdown([ base_creative ])
     comment = nil
 
