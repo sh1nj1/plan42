@@ -58,6 +58,7 @@ class Creative < ApplicationRecord
 
   after_save :update_parent_progress
   after_save :clear_permission_cache_on_parent_change
+  after_save :clear_permission_cache_on_user_change
   after_destroy :update_parent_progress
 
   def self.recalculate_all_progress!
@@ -225,6 +226,40 @@ class Creative < ApplicationRecord
     affected_user_ids = CreativeShare.where(creative_id: all_relevant_creative_ids).pluck(:user_id).uniq
 
     # Clear cache for affected creatives and users
+    permission_levels = [ :read, :feedback, :write, :admin ]
+    affected_user_ids.each do |user_id|
+      affected_creative_ids.each do |creative_id|
+        permission_levels.each do |level|
+          Rails.cache.delete("creative_permission:#{creative_id}:#{user_id}:#{level}")
+        end
+      end
+    end
+  end
+
+  def clear_permission_cache_on_user_change
+    return unless saved_change_to_user_id?
+
+    # Clear cache for this creative and all its descendants
+    # When ownership changes, permission logic changes for owners and all users
+    affected_creative_ids = self_and_descendants.pluck(:id)
+
+    # Get old and new owner IDs
+    old_user_id, new_user_id = saved_change_to_user_id
+
+    # Find all users who might have cached permissions for these creatives
+    # We need to check both the old/new owners and users with shares
+    affected_user_ids = Set.new
+    affected_user_ids << old_user_id if old_user_id
+    affected_user_ids << new_user_id if new_user_id
+
+    # Also include users who have shares in this subtree or its ancestors
+    # (their permissions might change due to ownership change)
+    ancestor_ids = ancestors.pluck(:id)
+    all_relevant_creative_ids = affected_creative_ids + ancestor_ids
+    share_user_ids = CreativeShare.where(creative_id: all_relevant_creative_ids).pluck(:user_id)
+    affected_user_ids.merge(share_user_ids)
+
+    # Clear cache for all affected combinations
     permission_levels = [ :read, :feedback, :write, :admin ]
     affected_user_ids.each do |user_id|
       affected_creative_ids.each do |creative_id|

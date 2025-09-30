@@ -366,4 +366,143 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     # Child should now have no access (no inheritance)
     refute @child.has_permission?(@user1, :read)
   end
+
+  test "cache is cleared when creative ownership transfers" do
+    # Setup: @owner owns @root, @user1 has no access initially
+    refute @root.has_permission?(@user1, :read)
+    assert @root.has_permission?(@owner, :admin)  # Owner has full access
+
+    # Cache these results
+    user1_key = "creative_permission:#{@root.id}:#{@user1.id}:read"
+    owner_key = "creative_permission:#{@root.id}:#{@owner.id}:admin"
+    assert_equal false, Rails.cache.read(user1_key)
+    assert_equal true, Rails.cache.read(owner_key)
+
+    # Transfer ownership from @owner to @user1
+    @root.update!(user: @user1)
+
+    # Cache should be cleared for both old and new owners
+    refute Rails.cache.exist?(user1_key)
+    refute Rails.cache.exist?(owner_key)
+
+    # New permissions should be correct
+    assert @root.has_permission?(@user1, :admin)  # New owner has full access
+    refute @root.has_permission?(@owner, :read)   # Old owner loses access
+  end
+
+  test "ownership transfer clears cache for descendants" do
+    # Setup: @owner owns tree, @user1 has share on root
+    CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+
+    # Check permissions (caches results)
+    assert @child.has_permission?(@user1, :read)      # Via share inheritance
+    assert @child.has_permission?(@owner, :admin)     # Via ownership
+    assert @grandchild.has_permission?(@user1, :read) # Via share inheritance
+
+    # Verify cache exists
+    child_user1_key = "creative_permission:#{@child.id}:#{@user1.id}:read"
+    child_owner_key = "creative_permission:#{@child.id}:#{@owner.id}:admin"
+    grandchild_user1_key = "creative_permission:#{@grandchild.id}:#{@user1.id}:read"
+
+    assert Rails.cache.exist?(child_user1_key)
+    assert Rails.cache.exist?(child_owner_key)
+    assert Rails.cache.exist?(grandchild_user1_key)
+
+    # Transfer ownership of root
+    @root.update!(user: @user1)
+
+    # All descendant caches should be cleared
+    refute Rails.cache.exist?(child_user1_key)
+    refute Rails.cache.exist?(child_owner_key)
+    refute Rails.cache.exist?(grandchild_user1_key)
+
+    # New permissions should be correct
+    assert @child.has_permission?(@user1, :read)     # Inherits from root via share
+    assert @child.has_permission?(@owner, :admin)    # Still owns child directly
+    assert @grandchild.has_permission?(@user1, :read) # Inherits from root via share
+    assert @root.has_permission?(@user1, :admin)     # New owner of root
+  end
+
+  test "ownership transfer between users" do
+    # Create creative owned by @user1
+    creative = Creative.create!(user: @user1, description: "Test Creative")
+
+    # Check permission (caches result)
+    assert creative.has_permission?(@user1, :admin)
+    refute creative.has_permission?(@user2, :read)
+
+    user1_key = "creative_permission:#{creative.id}:#{@user1.id}:admin"
+    user2_key = "creative_permission:#{creative.id}:#{@user2.id}:read"
+    assert Rails.cache.exist?(user1_key)
+    assert Rails.cache.exist?(user2_key)
+
+    # Transfer ownership to @user2
+    creative.update!(user: @user2)
+
+    # Cache should be cleared for both users
+    refute Rails.cache.exist?(user1_key)
+    refute Rails.cache.exist?(user2_key)
+
+    # New permissions should be correct
+    assert creative.has_permission?(@user2, :admin)  # New owner has full access
+    refute creative.has_permission?(@user1, :read)   # Old owner loses access
+  end
+
+  test "ownership transfer is selective - unrelated creatives unaffected" do
+    # Setup two separate trees
+    tree1_root = @root  # owned by @owner
+    tree2_root = Creative.create!(user: @user2, description: "Tree 2 Root")
+    tree2_child = Creative.create!(user: @user2, parent: tree2_root, description: "Tree 2 Child")
+
+    # Give permissions and cache results
+    CreativeShare.create!(creative: tree1_root, user: @user1, permission: :read)
+    assert tree1_root.has_permission?(@user1, :read)
+    assert tree2_child.has_permission?(@user2, :admin)  # Owner access
+
+    # Verify caches exist
+    tree1_key = "creative_permission:#{tree1_root.id}:#{@user1.id}:read"
+    tree2_key = "creative_permission:#{tree2_child.id}:#{@user2.id}:admin"
+    assert Rails.cache.exist?(tree1_key)
+    assert Rails.cache.exist?(tree2_key)
+
+    # Transfer ownership of tree1 only
+    tree1_root.update!(user: @user1)
+
+    # Only tree1 cache should be cleared
+    refute Rails.cache.exist?(tree1_key)
+    assert Rails.cache.exist?(tree2_key)  # Tree2 cache should remain intact
+
+    # Tree2 permissions should still work from cache
+    assert tree2_child.has_permission?(@user2, :admin)
+  end
+
+  test "ownership transfer with existing shares" do
+    # Setup: @owner owns @root, @user1 has share, @user2 has different share
+    CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+    CreativeShare.create!(creative: @root, user: @user2, permission: :write)
+
+    # Check permissions (caches results)
+    assert @root.has_permission?(@owner, :admin)  # Owner
+    assert @root.has_permission?(@user1, :read)   # Share
+    assert @root.has_permission?(@user2, :write)  # Share
+
+    # Transfer ownership to @user1 (who already had a share)
+    @root.update!(user: @user1)
+
+    # All relevant caches should be cleared
+    owner_key = "creative_permission:#{@root.id}:#{@owner.id}:admin"
+    user1_read_key = "creative_permission:#{@root.id}:#{@user1.id}:read"
+    user1_admin_key = "creative_permission:#{@root.id}:#{@user1.id}:admin"
+    user2_key = "creative_permission:#{@root.id}:#{@user2.id}:write"
+
+    refute Rails.cache.exist?(owner_key)
+    refute Rails.cache.exist?(user1_read_key)
+    refute Rails.cache.exist?(user1_admin_key)
+    refute Rails.cache.exist?(user2_key)
+
+    # New permissions should be correct
+    assert @root.has_permission?(@user1, :admin)   # Now owner (trumps share)
+    assert @root.has_permission?(@user2, :write)   # Still has share
+    refute @root.has_permission?(@owner, :read)    # Old owner loses access
+  end
 end
