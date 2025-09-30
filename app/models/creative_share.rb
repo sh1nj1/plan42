@@ -16,6 +16,8 @@ class CreativeShare < ApplicationRecord
   validates :user_id, uniqueness: { scope: :creative_id }
 
   after_create_commit :notify_recipient, unless: :no_access?
+  after_save :clear_permission_cache
+  after_destroy :clear_permission_cache
 
   # Given ancestor_ids and ancestor_shares, returns the closest CreativeShare
   # in the ancestors. If there is no ancestor share, returns nil.
@@ -24,6 +26,10 @@ class CreativeShare < ApplicationRecord
   end
 
   private
+
+  def clear_permission_cache
+    Current.clear_permission_cache!
+  end
 
   def notify_recipient
     return unless Current.user && user
