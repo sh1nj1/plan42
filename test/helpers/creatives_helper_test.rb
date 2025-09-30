@@ -178,7 +178,7 @@ class CreativesHelperTest < ActionView::TestCase
       created = MarkdownImporter.import(markdown, parent: parent, user: user)
 
       heading = parent.children.detect { |child| child.description.body.to_html.include?("Bold Heading") }
-      paragraph = parent.children.detect { |child| child.description.body.to_html.include?("Regular") }
+      paragraph = parent.descendants.detect { |desc| desc.description.body.to_html.include?("Regular") }
 
       assert_not_nil heading, "Expected heading creative to be created"
       assert_includes heading.description.body.to_html, "<strong>Bold Heading</strong>"

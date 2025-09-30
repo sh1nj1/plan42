@@ -26,7 +26,11 @@ module Creatives
       parent = creative.parent
       return unless parent
 
-      parent.reload
+      begin
+        parent.reload
+      rescue ActiveRecord::RecordNotFound
+        return
+      end
       new_progress = if parent.children.any?
                        parent.children.map(&:progress).sum.to_f / parent.children.size
       else
