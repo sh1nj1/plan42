@@ -83,6 +83,31 @@ class CreativesHelperTest < ActionView::TestCase
     assert_equal expected, html_links_to_markdown(html.strip)
   end
 
+  test "html table escapes pipe characters in cells" do
+    html = <<~HTML
+      <table>
+        <thead>
+          <tr>
+            <th>Expression</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>A | B</td>
+            <td>Either A or B</td>
+          </tr>
+        </tbody>
+      </table>
+    HTML
+    expected = <<~MD.strip
+      | Expression | Description |
+      | --- | --- |
+      | A \| B | Either A or B |
+    MD
+    assert_equal expected, html_links_to_markdown(html.strip)
+  end
+
   test "expanded_from_expanded_state defaults to collapsed" do
     assert_not expanded_from_expanded_state(1, {})
   end

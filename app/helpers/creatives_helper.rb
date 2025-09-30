@@ -326,7 +326,7 @@ module CreativesHelper
     return "" unless header_row
 
     header_cells = header_row.css("th,td")
-    headers = header_cells.map { |cell| html_links_to_markdown(cell.inner_html).strip }
+    headers = header_cells.map { |cell| escape_markdown_table_cell(html_links_to_markdown(cell.inner_html).strip) }
 
     alignments = header_cells.map { |cell| alignment_from_html_cell(cell) }
 
@@ -337,7 +337,7 @@ module CreativesHelper
     end
 
     body_lines = body_rows.map do |row|
-      cells = row.css("th,td").map { |cell| html_links_to_markdown(cell.inner_html).strip }
+      cells = row.css("th,td").map { |cell| escape_markdown_table_cell(html_links_to_markdown(cell.inner_html).strip) }
       normalized = normalize_row_cells(cells, headers.length)
       "| #{normalized.join(' | ')} |"
     end
@@ -347,6 +347,10 @@ module CreativesHelper
     alignment_line = "| #{alignment_cells.join(' | ')} |"
 
     ([ header_line, alignment_line ] + body_lines).join("\n")
+  end
+
+  def escape_markdown_table_cell(text)
+    text.to_s.gsub(/(?<!\\)\|/, '\\|')
   end
 
   def alignment_from_html_cell(cell)
