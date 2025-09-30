@@ -20,6 +20,7 @@ if (!window.creativeRowEditorInitialized) {
     const deleteWithChildrenBtn = document.getElementById('inline-delete-with-children');
     const linkBtn = document.getElementById('inline-link');
     const unlinkBtn = document.getElementById('inline-unlink');
+    const unconvertBtn = document.getElementById('inline-unconvert');
     const closeBtn = document.getElementById('inline-close');
     const parentSuggestions = document.getElementById('parent-suggestions');
     const parentSuggestBtn = document.getElementById('inline-recommend-parent');
@@ -437,6 +438,7 @@ if (!window.creativeRowEditorInitialized) {
           if (childInput) childInput.value = '';
           if (linkBtn) linkBtn.style.display = data.origin_id ? 'none' : '';
           if (unlinkBtn) unlinkBtn.style.display = data.origin_id ? '' : 'none';
+          if (unconvertBtn) unconvertBtn.style.display = data.parent_id ? '' : 'none';
           editor.focus();
         });
     }
@@ -696,6 +698,7 @@ if (!window.creativeRowEditorInitialized) {
         progressValue.textContent = 0;
         if (linkBtn) linkBtn.style.display = '';
         if (unlinkBtn) unlinkBtn.style.display = 'none';
+        if (unconvertBtn) unconvertBtn.style.display = 'none';
         pendingSave = false;
         editor.focus();
         if (parentSuggestions) {
@@ -881,6 +884,39 @@ if (!window.creativeRowEditorInitialized) {
       if (unlinkBtn) {
         unlinkBtn.addEventListener('click', function() {
           if (confirm(unlinkBtn.dataset.confirm)) deleteCurrent(false);
+        });
+      }
+
+      if (unconvertBtn) {
+        unconvertBtn.addEventListener('click', function() {
+          const creativeId = form.dataset.creativeId;
+          if (!creativeId) return;
+          const confirmText = unconvertBtn.dataset.confirm;
+          if (confirmText && !confirm(confirmText)) return;
+          const errorMessage = unconvertBtn.dataset.error || 'Failed to unconvert.';
+          unconvertBtn.disabled = true;
+          saveForm()
+            .then(function() {
+              return window.creativesApi.unconvert(creativeId);
+            })
+            .then(function(response) {
+              if (response.ok) {
+                location.reload();
+                return;
+              }
+              return response
+                .json()
+                .catch(function() { return {}; })
+                .then(function(data) {
+                  alert(data && data.error ? data.error : errorMessage);
+                });
+            })
+            .catch(function() {
+              alert(errorMessage);
+            })
+            .finally(function() {
+              unconvertBtn.disabled = false;
+            });
         });
       }
     });

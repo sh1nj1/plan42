@@ -3,3 +3,27 @@
 tshirt:
   user: one
   progress: 0.5
+
+root_parent:
+  user: one
+  progress: 0.3
+
+unconvert_target:
+  user: one
+  parent: root_parent
+  progress: 0.2
+
+unconvert_child_one:
+  user: one
+  parent: unconvert_target
+  progress: 0.1
+
+unconvert_child_two:
+  user: one
+  parent: unconvert_target
+  progress: 0.1
+
+childless_creative:
+  user: one
+  parent: root_parent
+  progress: 0.0

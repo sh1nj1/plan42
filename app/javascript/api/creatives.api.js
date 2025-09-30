@@ -33,6 +33,17 @@ const creativesApi = {
       credentials: 'same-origin',
     });
   },
+
+  unconvert(id) {
+    return fetch(`/creatives/${id}/unconvert`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content,
+      },
+      credentials: 'same-origin',
+    });
+  },
 };
 
 export default creativesApi;

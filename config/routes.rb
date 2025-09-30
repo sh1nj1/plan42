@@ -58,6 +58,7 @@ Rails.application.routes.draw do
       get :children
       post :share, to: "creatives#share", as: :share_creative
       post :request_permission, to: "creatives#request_permission"
+      post :unconvert
       get :parent_suggestions
       get :slide_view
     end
