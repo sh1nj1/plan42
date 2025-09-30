@@ -52,23 +52,31 @@ class NotionClient
       # Give Notion a moment to fully create the page
       sleep(1)
       
-      blocks.each_slice(100).with_index do |block_batch, index|
-        Rails.logger.info("NotionClient: Adding batch #{index + 1} with #{block_batch.length} blocks to page #{page_id}")
-        Rails.logger.info("NotionClient: Formatted page ID for blocks API: #{format_id(page_id)}")
-        begin
-          # Verify page exists before trying to append
-          if index == 0
-            verify_page = get_page(page_id)
-            Rails.logger.info("NotionClient: Verified page exists: #{verify_page["id"]}")
-          end
-
+      # Test with just 1 block first to debug the API issue
+      test_block = [{
+        object: "block",
+        type: "paragraph", 
+        paragraph: {
+          rich_text: [{ type: "text", text: { content: "Test block" } }]
+        }
+      }]
+      
+      Rails.logger.info("NotionClient: Testing with single test block first")
+      begin
+        test_response = post("blocks/#{format_id(page_id)}/children", { children: test_block })
+        Rails.logger.info("NotionClient: Test block append successful")
+        
+        # If test works, proceed with real blocks
+        blocks.each_slice(100).with_index do |block_batch, index|
+          Rails.logger.info("NotionClient: Adding batch #{index + 1} with #{block_batch.length} blocks")
           append_blocks(page_id, block_batch)
           Rails.logger.info("NotionClient: Successfully added batch #{index + 1}")
-        rescue => e
-          Rails.logger.error("NotionClient: Failed to add batch #{index + 1}: #{e.message}")
-          Rails.logger.error("NotionClient: Page ID being used: #{page_id}")
-          raise e
         end
+      rescue => e
+        Rails.logger.error("NotionClient: Even test block failed: #{e.message}")
+        Rails.logger.error("NotionClient: URL attempted: /blocks/#{format_id(page_id)}/children")
+        Rails.logger.error("NotionClient: Test payload: #{test_block.to_json}")
+        raise e
       end
     end
     
@@ -190,8 +198,8 @@ class NotionClient
   end
 
   def format_id(id)
-    # Remove dashes from UUIDs for Notion API URLs
-    id.to_s.gsub("-", "")
+    # Keep dashes in UUIDs - Notion API expects them
+    id.to_s
   end
 
   def handle_response(response)
