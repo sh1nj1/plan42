@@ -19,8 +19,16 @@ export default class extends Controller {
     // Show actions for the comment owner
     const currentUserId = document.body.dataset.currentUserId;
     const commentAuthorId = this.element.dataset.userId;
+    const commentApproverId = this.element.dataset.approverId;
 
-    if (currentUserId && commentAuthorId && currentUserId === commentAuthorId) {
+    const canManageComment = () => {
+      if (!currentUserId) return false;
+      if (commentAuthorId && currentUserId === commentAuthorId) return true;
+      if (commentApproverId && currentUserId === commentApproverId) return true;
+      return false;
+    };
+
+    if (canManageComment()) {
       this.ownerButtonTargets.forEach((button) => {
         button.classList.remove('comment-owner-only')
       })
