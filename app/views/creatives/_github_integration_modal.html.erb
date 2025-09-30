@@ -1,57 +1,57 @@
 <div id="github-integration-modal"
-     data-success-message="<%= t('creatives.index.github_integration_saved', default: 'Github 연동이 저장되었습니다.') %>"
-     data-login-required="<%= t('creatives.index.github_integration_login_required', default: 'Github 계정으로 로그인하여 연동을 시작하세요.') %>"
-     data-no-creative="<%= t('creatives.index.github_integration_missing_creative', default: '연동할 Creative가 선택되지 않았습니다.') %>"
+     data-success-message="<%= t('creatives.index.github_integration_saved', default: 'Github integration saved successfully.') %>"
+     data-login-required="<%= t('creatives.index.github_integration_login_required', default: 'Sign in with your Github account to start the integration.') %>"
+     data-no-creative="<%= t('creatives.index.github_integration_missing_creative', default: 'No Creative selected for integration.') %>"
      data-webhook-url-label="<%= t('creatives.index.github_integration_webhook_url_label', default: 'Webhook URL') %>"
-     data-webhook-secret-label="<%= t('creatives.index.github_integration_webhook_secret_label', default: 'Webhook 비밀값') %>"
-     data-existing-message="<%= t('creatives.index.github_integration_existing_message', default: '이미 아래 Repository와 연동 중입니다.') %>"
-     data-delete-confirm="<%= t('creatives.index.github_integration_delete_confirm', default: 'Github 연동을 삭제하시겠습니까?') %>"
-     data-delete-success="<%= t('creatives.index.github_integration_delete_success', default: 'Github 연동이 삭제되었습니다.') %>"
-     data-delete-error="<%= t('creatives.index.github_integration_delete_error', default: 'Github 연동을 삭제하지 못했습니다.') %>"
+     data-webhook-secret-label="<%= t('creatives.index.github_integration_webhook_secret_label', default: 'Webhook secret') %>"
+     data-existing-message="<%= t('creatives.index.github_integration_existing_message', default: 'You\'re already connected to the repositories below.') %>"
+     data-delete-confirm="<%= t('creatives.index.github_integration_delete_confirm', default: 'Do you want to remove the Github integration?') %>"
+     data-delete-success="<%= t('creatives.index.github_integration_delete_success', default: 'Github integration removed successfully.') %>"
+     data-delete-error="<%= t('creatives.index.github_integration_delete_error', default: 'Failed to remove the Github integration.') %>"
      style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
   <div class="popup-box" style="min-width:360px;max-width:90vw;">
     <button type="button" id="close-github-modal" class="popup-close-btn">&times;</button>
-    <h2><%= t('creatives.index.github_integration_title', default: 'Github 연동 설정') %></h2>
+    <h2><%= t('creatives.index.github_integration_title', default: 'Configure Github integration') %></h2>
     <p id="github-integration-status" class="github-modal-status"></p>
 
     <div class="github-wizard-step" id="github-step-connect">
-      <p id="github-connect-message" class="github-modal-subtext"><%= t('creatives.index.github_integration_connect', default: 'Github 계정으로 로그인하여 연동을 시작하세요.') %></p>
+      <p id="github-connect-message" class="github-modal-subtext"><%= t('creatives.index.github_integration_connect', default: 'Sign in with your Github account to start linking.') %></p>
       <form id="github-login-form" action="/auth/github" method="post" target="github-auth-window" style="display:none;">
         <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
       </form>
       <button type="button" id="github-login-btn" class="btn btn-primary" data-window-width="620" data-window-height="720">
-        <%= t('creatives.index.github_login_button', default: 'Github 계정으로 로그인') %>
+        <%= t('creatives.index.github_login_button', default: 'Sign in with Github') %>
       </button>
       <div id="github-existing-connections" class="github-existing-connections" style="display:none;">
         <ul id="github-existing-repo-list" class="github-modal-list"></ul>
         <button type="button" id="github-delete-btn" class="btn btn-danger" style="display:none;">
-          <%= t('creatives.index.github_integration_delete_button', default: '연동 삭제') %>
+          <%= t('creatives.index.github_integration_delete_button', default: 'Remove integration') %>
         </button>
       </div>
     </div>
 
     <div class="github-wizard-step" id="github-step-organization" style="display:none;">
-      <p class="github-modal-subtext"><%= t('creatives.index.github_integration_choose_org', default: '연동할 Organization을 선택하세요.') %></p>
+      <p class="github-modal-subtext"><%= t('creatives.index.github_integration_choose_org', default: 'Select the organization that owns the repositories.') %></p>
       <div id="github-organization-list" class="github-list github-modal-list-box" style="max-height:200px;overflow:auto;"></div>
     </div>
 
     <div class="github-wizard-step" id="github-step-repositories" style="display:none;">
-      <p class="github-modal-subtext"><%= t('creatives.index.github_integration_choose_repo', default: '연동할 Repository를 선택하세요. 여러 개 선택할 수 있습니다.') %></p>
+      <p class="github-modal-subtext"><%= t('creatives.index.github_integration_choose_repo', default: 'Select repositories to link. You can choose multiple.') %></p>
       <div id="github-repository-list" class="github-list github-modal-list-box" style="max-height:240px;overflow:auto;"></div>
     </div>
 
     <div class="github-wizard-step" id="github-step-summary" style="display:none;">
-      <p class="github-modal-subtext"><%= t('creatives.index.github_integration_summary', default: '다음 Repository가 현재 Creative와 연동됩니다:') %></p>
-      <p id="github-webhook-instructions" class="github-modal-subtext" style="display:none;margin-bottom:0.5em;"><%= t('creatives.index.github_integration_webhook_instructions', default: '각 Repository에 아래의 Webhook 정보를 설정하세요.') %></p>
+      <p class="github-modal-subtext"><%= t('creatives.index.github_integration_summary', default: 'The following repositories will be linked to this Creative:') %></p>
+      <p id="github-webhook-instructions" class="github-modal-subtext" style="display:none;margin-bottom:0.5em;"><%= t('creatives.index.github_integration_webhook_instructions', default: 'Configure each repository with the webhook details below.') %></p>
       <ul id="github-selected-repos" style="padding-left:1.2em;"></ul>
-      <p id="github-summary-empty" class="github-modal-empty" style="display:none;"><%= t('creatives.index.github_integration_summary_empty', default: '선택된 Repository가 없습니다.') %></p>
+      <p id="github-summary-empty" class="github-modal-empty" style="display:none;"><%= t('creatives.index.github_integration_summary_empty', default: 'No repositories selected.') %></p>
     </div>
 
     <div class="github-wizard-step" id="github-step-prompt" style="display:none;">
-      <p class="github-modal-subtext"><%= t('creatives.index.github_integration_prompt_title', default: 'Gemini 분석 프롬프트를 검토하고 필요하다면 수정하세요.') %></p>
+      <p class="github-modal-subtext"><%= t('creatives.index.github_integration_prompt_title', default: 'Review the Gemini analysis prompt and edit it if needed.') %></p>
       <textarea id="github-gemini-prompt" style="width:100%;min-height:220px;padding:0.75em;border:1px solid var(--color-border);border-radius:4px;font-family:monospace;font-size:0.95em;"></textarea>
       <p class="github-modal-subtext" style="margin-top:0.75em;font-size:0.9em;">
-        <%= t('creatives.index.github_integration_prompt_help', default: '필요한 정보를 런타임에 삽입하기 위해 아래 자리표시자를 사용할 수 있습니다:') %>
+        <%= t('creatives.index.github_integration_prompt_help', default: 'Use the placeholders below to inject runtime details as needed:') %>
         <code>#{pr_title}</code>,
         <code>#{pr_body}</code>,
         <code>#{commit_messages}</code>,
@@ -64,10 +64,10 @@
     <div id="github-wizard-error" style="display:none;margin:0.5em 0;color:#c0392b;font-weight:bold;"></div>
 
     <div class="github-wizard-footer" style="display:flex;justify-content:space-between;gap:0.5em;margin-top:1.5em;">
-      <button type="button" id="github-prev-btn" class="btn btn-secondary" style="display:none;"><%= t('app.previous', default: '이전') %></button>
+      <button type="button" id="github-prev-btn" class="btn btn-secondary" style="display:none;"><%= t('app.previous', default: 'Previous') %></button>
       <div style="margin-left:auto;display:flex;gap:0.5em;">
-        <button type="button" id="github-next-btn" class="btn btn-primary" style="display:none;"><%= t('app.next', default: '다음') %></button>
-        <button type="button" id="github-finish-btn" class="btn btn-primary" style="display:none;"><%= t('app.finish', default: '마침') %></button>
+        <button type="button" id="github-next-btn" class="btn btn-primary" style="display:none;"><%= t('app.next', default: 'Next') %></button>
+        <button type="button" id="github-finish-btn" class="btn btn-primary" style="display:none;"><%= t('app.finish', default: 'Finish') %></button>
       </div>
     </div>
   </div>
