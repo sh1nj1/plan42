@@ -126,6 +126,12 @@ if (!window.notionIntegrationInitialized) {
           console.log('Notion integration status:', data);
           statusEl.textContent = '';
           
+          // Store the creative title from the API response
+          if (data.creative_title) {
+            window.notionCreativeTitle = data.creative_title;
+            console.log('Creative title from API:', data.creative_title);
+          }
+          
           if (data.connected) {
             workspaceInfo = data.account;
             availablePages = data.available_pages || [];
@@ -237,8 +243,9 @@ if (!window.notionIntegrationInitialized) {
 
     function updateSummary() {
       if (creativeTitleEl) {
-        const creativeElement = document.querySelector(`[data-creative-id="${creativeId}"]`);
-        const title = creativeElement?.textContent?.trim() || 'Current Creative';
+        // Use the creative title from the API response
+        const title = window.notionCreativeTitle || 'Current Creative';
+        console.log(`Creative title used: "${title}" for ID: ${creativeId}`);
         creativeTitleEl.textContent = title;
       }
 
@@ -286,6 +293,9 @@ if (!window.notionIntegrationInitialized) {
       if (exportType === 'select-parent' && selectedParentPage) {
         requestData.parent_page_id = selectedParentPage;
       }
+
+      console.log('Sending export request:', requestData);
+      console.log('Export type:', exportType, 'Selected parent page:', selectedParentPage);
 
       fetch(`/creatives/${creativeId}/notion_integration`, {
         method: 'PATCH',

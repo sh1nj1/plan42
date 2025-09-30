@@ -12,6 +12,7 @@ module Creatives
 
       render json: {
         connected: account.present?,
+        creative_title: @creative.content.presence || @creative.description.to_plain_text.strip.presence || "Untitled Creative",
         account: account && {
           workspace_name: account.workspace_name,
           workspace_id: account.workspace_id,
@@ -36,9 +37,15 @@ module Creatives
         return
       end
 
+      Rails.logger.info("Notion Integration Update: Full params = #{params.to_unsafe_h}")
+      
       integration_attributes = integration_params
+      Rails.logger.info("Notion Integration Update: integration_params = #{integration_attributes}")
+      
       action = integration_attributes[:action]
       parent_page_id = integration_attributes[:parent_page_id]
+      
+      Rails.logger.info("Notion Integration Update: action=#{action}, parent_page_id=#{parent_page_id}")
 
       begin
         case action
