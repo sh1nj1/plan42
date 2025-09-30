@@ -1,5 +1,6 @@
 require "base64"
 require "securerandom"
+require "nokogiri"
 
 module CreativesHelper
   # Shared toggle button symbol helper
@@ -190,22 +191,36 @@ module CreativesHelper
     return "" if creatives.blank?
     md = ""
     creatives.each do |creative|
-      desc = creative.effective_description(nil, false).to_s
+      desc = creative.effective_description(nil, false).to_html
       # Append progress as a percentage if available (progress is 0.0..1.0)
       if with_progress && creative.respond_to?(:progress) && !creative.progress.nil?
         pct = (creative.progress.to_f * 100).round
         desc = "#{desc} (#{pct}%)"
       end
-      html = desc.gsub(/<!--.*?-->/m, "").strip
-      html = html_links_to_markdown(html)
-      if level <= 4
-        md += "#{'#' * level} #{ActionView::Base.full_sanitizer.sanitize(html).strip}\n\n"
+      raw_html = desc.gsub(/<!--.*?-->/m, "").strip
+      markdown_content = html_links_to_markdown(raw_html)
+      cleaned_markdown = markdown_content.strip
+      rendered_table_block = false
+
+      # Extract table content from within divs if present
+      table_match = cleaned_markdown.match(/^<div[^>]*>\s*<div[^>]*>\s*(\|.*?\|(?:\n\|.*?\|)*)\s*<\/div>\s*<\/div>$/m)
+      if level <= 4 && table_match
+        table_content = table_match[1].strip
+        if markdown_table_block?(table_content)
+          md += "#{table_content}\n\n"
+          rendered_table_block = true
+        end
+      elsif level <= 4 && markdown_table_block?(cleaned_markdown)
+        md += "#{cleaned_markdown}\n\n"
+        rendered_table_block = true
+      elsif level <= 4
+        md += "#{'#' * level} #{ActionView::Base.full_sanitizer.sanitize(markdown_content).strip}\n\n"
       else
         # trix-content 블록에서 내부 div의 텍스트만 추출
-        inner_html = if html =~ /<div class="trix-content">\s*<div>(.*?)<\/div>\s*<\/div>/m
+        inner_html = if raw_html =~ /<div class="trix-content">\s*<div>(.*?)<\/div>\s*<\/div>/m
           $1.strip
         else
-          ActionView::Base.full_sanitizer.sanitize(html).strip
+          ActionView::Base.full_sanitizer.sanitize(markdown_content).strip
         end
         inner = ActionView::Base.full_sanitizer.sanitize(inner_html)
         indent = "  " * (level - 5)
@@ -215,7 +230,7 @@ module CreativesHelper
       if creative.respond_to?(:children) && creative.children.present?
         md += render_creative_tree_markdown(creative.children, level + 1, with_progress)
       end
-      md += "\n" if level <= 4
+      md += "\n" if level <= 4 && !rendered_table_block
     end
     md
   end
@@ -257,6 +272,11 @@ module CreativesHelper
     markdown = text.dup
     placeholders = {}
     index = 0
+    markdown.gsub!(%r{<table\b[^>]*>.*?</table>}im) do |match|
+      token = "__TABLE#{index}__"; index += 1
+      placeholders[token] = html_table_to_markdown(match)
+      token
+    end
     markdown.gsub!(%r{<action-text-attachment ([^>]+)>(?:</action-text-attachment>)?}) do |match|
       attrs = Hash[$1.scan(/(\S+?)="([^"]*)"/)]
       sgid = attrs["sgid"]
@@ -298,6 +318,18 @@ module CreativesHelper
 
   private
 
+  def markdown_table_block?(text)
+    lines = text.to_s.strip.split("\n")
+    return false if lines.length < 2
+
+    header_line = lines[0]
+    alignment_line = lines[1]
+    return false unless header_line.match?(/\A\|.*\|\z/)
+    return false unless alignment_line.match?(/\A\|[ \-:\|]+\|\z/)
+
+    true
+  end
+
   def convert_data_image_to_attachment(data_url, alt)
     if data_url =~ %r{\Adata:(image/[\w.+-]+);base64,(.+)\z}
       content_type = Regexp.last_match(1)
@@ -309,5 +341,76 @@ module CreativesHelper
     else
       "<img src=\"#{data_url}\" alt=\"#{alt}\" />"
     end
+  end
+
+  def html_table_to_markdown(table_html)
+    fragment = Nokogiri::HTML::DocumentFragment.parse(table_html)
+    table = fragment.at_css("table")
+    return "" unless table
+
+    header_row = table.at_css("thead tr") || table.css("tr").first
+    return "" unless header_row
+
+    header_cells = header_row.css("th,td")
+    headers = header_cells.map { |cell| escape_markdown_table_cell(html_links_to_markdown(cell.inner_html).strip) }
+
+    alignments = header_cells.map { |cell| alignment_from_html_cell(cell) }
+
+    body_rows = table.css("tbody tr")
+    if body_rows.empty?
+      all_rows = table.css("tr")
+      body_rows = all_rows.drop(1)
+    end
+
+    body_lines = body_rows.map do |row|
+      cells = row.css("th,td").map { |cell| escape_markdown_table_cell(html_links_to_markdown(cell.inner_html).strip) }
+      normalized = normalize_row_cells(cells, headers.length)
+      "| #{normalized.join(' | ')} |"
+    end
+
+    alignment_cells = normalize_row_cells(alignments, headers.length).map { |align| alignment_to_markdown(align) }
+    header_line = "| #{headers.map(&:strip).join(' | ')} |"
+    alignment_line = "| #{alignment_cells.join(' | ')} |"
+
+    ([ header_line, alignment_line ] + body_lines).join("\n")
+  end
+
+  def escape_markdown_table_cell(text)
+    text.to_s.gsub(/(?<!\\)\|/, '\\|')
+  end
+
+  def alignment_from_html_cell(cell)
+    style = cell["style"].to_s
+    align = cell["align"].to_s
+    case
+    when style =~ /text-align\s*:\s*center/i || align =~ /center/i
+      :center
+    when style =~ /text-align\s*:\s*right/i || align =~ /right/i
+      :right
+    when style =~ /text-align\s*:\s*left/i || align =~ /left/i
+      :left
+    else
+      nil
+    end
+  end
+
+  def alignment_to_markdown(alignment)
+    case alignment
+    when :center
+      ":---:"
+    when :right
+      "---:"
+    when :left
+      ":---"
+    else
+      "---"
+    end
+  end
+
+  def normalize_row_cells(cells, expected_length)
+    values = cells.dup
+    values = values.first(expected_length)
+    values.fill("", values.length...expected_length)
+    values
   end
 end
