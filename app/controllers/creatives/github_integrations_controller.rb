@@ -69,6 +69,30 @@ module Creatives
       render json: { error: e.message }, status: :unprocessable_entity
     end
 
+    def destroy
+      unless @creative.has_permission?(Current.user, :write)
+        render json: { error: "forbidden" }, status: :forbidden
+        return
+      end
+
+      account = Current.user.github_account
+      unless account
+        render json: { error: "not_connected" }, status: :unprocessable_entity
+        return
+      end
+
+      GithubRepositoryLink.transaction do
+        linked_repository_links(account).destroy_all
+      end
+
+      render json: {
+        success: true,
+        selected_repositories: [],
+        webhooks: {},
+        github_gemini_prompt: @creative.github_gemini_prompt_template
+      }
+    end
+
     private
 
     def set_creative

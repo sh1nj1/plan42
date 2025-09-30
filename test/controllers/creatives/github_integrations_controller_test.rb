@@ -90,4 +90,18 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     patch creative_github_integration_path(@creative), params: payload, as: :json
     assert_response :forbidden
   end
+
+  test "destroy removes repository links for creative" do
+    assert_difference("GithubRepositoryLink.count", -1) do
+      delete creative_github_integration_path(@creative), as: :json
+    end
+
+    assert_response :success
+    body = JSON.parse(response.body)
+
+    assert body["success"], "Expected success flag in response"
+    assert_equal [], body["selected_repositories"], "Expected no repositories after deletion"
+    assert_equal({}, body["webhooks"])
+    assert_empty @creative.github_repository_links.where(github_account: @github_account)
+  end
 end
