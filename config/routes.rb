@@ -33,7 +33,7 @@ Rails.application.routes.draw do
   end
 
   resources :creatives do
-    resource :github_integration, only: [ :show, :update ], module: :creatives
+    resource :github_integration, only: [ :show, :update, :destroy ], module: :creatives
     resources :subscribers, only: [ :create ]
     resources :creative_shares, only: [ :create, :destroy ]
       resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
