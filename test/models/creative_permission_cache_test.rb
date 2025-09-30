@@ -799,4 +799,132 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     # Regular creative permission should still work from cache
     assert regular_creative.has_permission?(@user2, :write)
   end
+
+  test "cache invalidation includes ancestor owners even when they have no shares" do
+    # Setup: Create tree where @user1 will have potential access issues
+    user1_tree = Creative.create!(user: @user1, description: "User1 Tree")
+    moveable_creative = Creative.create!(user: @owner, parent: user1_tree, description: "Moveable")
+
+    # Check permissions - @user1 doesn't get ancestor-based access in this system
+    # Only direct ownership matters: moveable_creative is owned by @owner, not @user1
+    refute moveable_creative.has_permission?(@user1, :read)   # No access without share
+    assert moveable_creative.has_permission?(@owner, :admin)  # Direct owner has access
+
+    # Cache the results
+    user1_key = "creative_permission:#{moveable_creative.id}:#{@user1.id}:read"
+    owner_key = "creative_permission:#{moveable_creative.id}:#{@owner.id}:admin"
+    assert_equal false, Rails.cache.read(user1_key)
+    assert_equal true, Rails.cache.read(owner_key)
+
+    # The critical fix: When parent changes, cache invalidation should include
+    # owners of old/new ancestor trees even if they have no shares
+    user2_tree = Creative.create!(user: @user2, description: "User2 Tree")
+    moveable_creative.update!(parent: user2_tree)
+
+    # Caches should be cleared for all owners involved (even without shares)
+    refute Rails.cache.exist?(user1_key)  # Old ancestor owner cache cleared
+    refute Rails.cache.exist?(owner_key)  # Direct owner cache cleared
+
+    # This demonstrates the fix: owner cache invalidation is now comprehensive
+  end
+
+  test "cache invalidation includes subtree and ancestor owners" do
+    # Setup: @owner owns root tree, @user1 owns a subtree
+    subtree_root = Creative.create!(user: @user1, parent: @root, description: "User1 Subtree")
+    subtree_child = Creative.create!(user: @user1, parent: subtree_root, description: "User1 Child")
+
+    # Check owner access (caches results)
+    assert subtree_child.has_permission?(@user1, :admin)  # Via direct ownership
+    refute subtree_child.has_permission?(@owner, :read)   # No ancestor ownership in this system
+    refute subtree_child.has_permission?(@user2, :read)   # No access
+
+    # Verify cache exists
+    user1_key = "creative_permission:#{subtree_child.id}:#{@user1.id}:admin"
+    owner_key = "creative_permission:#{subtree_child.id}:#{@owner.id}:read"
+    user2_key = "creative_permission:#{subtree_child.id}:#{@user2.id}:read"
+    assert Rails.cache.exist?(user1_key)
+    assert Rails.cache.exist?(owner_key)
+    assert Rails.cache.exist?(user2_key)
+
+    # Move subtree to different parent
+    new_parent = Creative.create!(user: @user2, description: "User2 Parent")
+    subtree_root.update!(parent: new_parent)
+
+    # All potentially affected owner caches should be cleared
+    refute Rails.cache.exist?(user1_key)  # Subtree owner cache cleared
+    refute Rails.cache.exist?(owner_key)  # Old ancestor owner cache cleared
+    refute Rails.cache.exist?(user2_key)  # New ancestor owner cache cleared
+
+    # The key point: all owners get their cache cleared even without shares
+  end
+
+  test "owner cache invalidation is selective - unrelated owner trees unaffected" do
+    # Setup multiple independent owner trees
+    user1_tree = Creative.create!(user: @user1, description: "User1 Independent Tree")
+    user1_child = Creative.create!(user: @user1, parent: user1_tree, description: "User1 Child")
+
+    user2_tree = Creative.create!(user: @user2, description: "User2 Independent Tree")
+    user2_child = Creative.create!(user: @user2, parent: user2_tree, description: "User2 Child")
+
+    moveable = Creative.create!(user: @owner, parent: @root, description: "Moveable")
+
+    # Check owner access (caches results)
+    assert user1_child.has_permission?(@user1, :admin)     # Own tree
+    assert user2_child.has_permission?(@user2, :admin)     # Own tree
+    assert moveable.has_permission?(@owner, :admin)        # Own tree
+
+    user1_key = "creative_permission:#{user1_child.id}:#{@user1.id}:admin"
+    user2_key = "creative_permission:#{user2_child.id}:#{@user2.id}:admin"
+    owner_key = "creative_permission:#{moveable.id}:#{@owner.id}:admin"
+
+    assert Rails.cache.exist?(user1_key)
+    assert Rails.cache.exist?(user2_key)
+    assert Rails.cache.exist?(owner_key)
+
+    # Move only moveable creative to user1's tree
+    moveable.update!(parent: user1_tree)
+
+    # Only moveable-related caches should be cleared
+    refute Rails.cache.exist?(owner_key)   # Moved creative's old owner cache cleared
+    # user1_key might be cleared due to ancestor owner invalidation, that's okay
+    assert Rails.cache.exist?(user2_key)   # Unrelated tree should remain cached
+
+    # User2's independent tree should still work from cache
+    assert user2_child.has_permission?(@user2, :admin)
+  end
+
+  test "cache invalidation comprehensive example with shares and ownership" do
+    # Complex scenario: Mix of ownership and shares to verify comprehensive invalidation
+    user1_tree = Creative.create!(user: @user1, description: "User1 Tree")
+    moveable = Creative.create!(user: @owner, parent: user1_tree, description: "Moveable")
+
+    # Give user2 a share on moveable
+    CreativeShare.create!(creative: moveable, user: @user2, permission: :read)
+
+    # Check access (caches results)
+    refute moveable.has_permission?(@user1, :read)   # No ancestor ownership in this system
+    assert moveable.has_permission?(@user2, :read)   # Via share
+    assert moveable.has_permission?(@owner, :admin)  # Via direct ownership
+
+    user1_key = "creative_permission:#{moveable.id}:#{@user1.id}:read"
+    user2_key = "creative_permission:#{moveable.id}:#{@user2.id}:read"
+    owner_key = "creative_permission:#{moveable.id}:#{@owner.id}:admin"
+
+    assert Rails.cache.exist?(user1_key)
+    assert Rails.cache.exist?(user2_key)
+    assert Rails.cache.exist?(owner_key)
+
+    # Move to root level
+    moveable.update!(parent: nil)
+
+    # All caches should be cleared (includes owners even without shares)
+    refute Rails.cache.exist?(user1_key)  # Ancestor owner cache cleared
+    refute Rails.cache.exist?(user2_key)  # Share user cache cleared
+    refute Rails.cache.exist?(owner_key)  # Direct owner cache cleared
+
+    # Verify the invalidation worked by checking permissions work correctly
+    refute moveable.has_permission?(@user1, :read)   # Still no access
+    assert moveable.has_permission?(@user2, :read)   # Still has share
+    assert moveable.has_permission?(@owner, :admin)  # Still direct owner
+  end
 end
