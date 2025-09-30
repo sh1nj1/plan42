@@ -63,8 +63,25 @@
 
 .comment-item {
     border-top: 1px solid var(--color-border);
-    padding: 0.5em 0 1.5em 0;
+    padding: 0.5em 1.8em 1.5em 0;
     position: relative;
+}
+
+.comment-item.selected-for-move {
+    background-color: var(--color-section-bg);
+    border-color: var(--color-border);
+}
+
+.comment-select {
+    position: absolute;
+    top: 0.4em;
+    right: 0.2em;
+}
+
+.comment-select-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
 }
 
 .comment-item.last-read {
@@ -136,6 +153,29 @@
     right: 0.2em;
     display: flex;
     gap: 0.2em;
+}
+
+#move-comments-btn,
+#search-comments-btn,
+#cancel-edit-btn,
+#new-comment-form button[type="submit"] {
+    margin-top: 0.5em;
+}
+
+#move-comments-btn,
+#search-comments-btn,
+#cancel-edit-btn {
+    float: right;
+    margin-right: 0.5em;
+}
+
+#new-comment-form button[type="submit"] {
+    float: right;
+}
+
+#move-comments-btn[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 .delete-comment-btn,

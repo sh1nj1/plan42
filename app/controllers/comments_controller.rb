@@ -174,6 +174,52 @@ class CommentsController < ApplicationController
     render json: data
   end
 
+  def move
+    comment_ids = Array(params[:comment_ids]).map(&:presence).compact.map(&:to_i)
+    if comment_ids.empty?
+      render json: { error: I18n.t("comments.move_no_selection") }, status: :unprocessable_entity and return
+    end
+
+    target_creative = Creative.find_by(id: params[:target_creative_id])
+    if target_creative.nil?
+      render json: { error: I18n.t("comments.move_invalid_target") }, status: :unprocessable_entity and return
+    end
+
+    target_origin = target_creative.effective_origin
+
+    unless @creative.has_permission?(Current.user, :feedback) && target_origin.has_permission?(Current.user, :feedback)
+      render json: { error: I18n.t("comments.move_not_allowed") }, status: :forbidden and return
+    end
+
+    scope = @creative.comments.where(
+      "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
+      false,
+      Current.user.id,
+      Current.user.id
+    )
+
+    comments = scope.where(id: comment_ids).to_a
+
+    if comments.length != comment_ids.length
+      render json: { error: I18n.t("comments.move_not_allowed") }, status: :forbidden and return
+    end
+
+    ActiveRecord::Base.transaction do
+      comments.each do |comment|
+        next if comment.creative_id == target_origin.id
+
+        comment.update!(creative: target_origin)
+      end
+    end
+
+    Comment.broadcast_badges(@creative)
+    Comment.broadcast_badges(target_origin) unless target_origin == @creative
+
+    render json: { success: true }
+  rescue ActiveRecord::RecordInvalid => e
+    render json: { error: e.record.errors.full_messages.to_sentence.presence || I18n.t("comments.move_error") }, status: :unprocessable_entity
+  end
+
   private
 
   def set_creative

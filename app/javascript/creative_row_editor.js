@@ -548,6 +548,7 @@ if (!window.creativeRowEditorInitialized) {
 
     function linkExistingCreative() {
       if (!currentTree || !form.dataset.creativeId || !linkModal || !linkSearchInput || !linkResults) return;
+      linkModal.dataset.context = 'creative-link';
       linkModal.style.display = 'flex';
       document.body.classList.add('no-scroll');
       linkSearchInput.value = '';
@@ -559,6 +560,8 @@ if (!window.creativeRowEditorInitialized) {
       if (!linkModal) return;
       linkModal.style.display = 'none';
       document.body.classList.remove('no-scroll');
+      delete linkModal.dataset.context;
+      linkModal.dispatchEvent(new CustomEvent('link-creative-modal:closed'));
     }
 
     function searchLinkCreatives() {
@@ -585,6 +588,17 @@ if (!window.creativeRowEditorInitialized) {
     }
 
     function linkCreativeFromLi(li) {
+      if (!linkModal) return;
+      if (linkModal.dataset.context === 'comment-move') {
+        linkModal.dispatchEvent(new CustomEvent('link-creative-modal:select', {
+          detail: {
+            id: li.dataset.id,
+            label: li.textContent
+          }
+        }));
+        closeLinkModal();
+        return;
+      }
       const fd = new FormData();
       fd.append('creative[parent_id]', form.dataset.creativeId);
       fd.append('creative[origin_id]', li.dataset.id);
