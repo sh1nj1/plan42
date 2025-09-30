@@ -8,6 +8,8 @@ class NotionClient
   end
 
   def search_pages(query: nil, start_cursor: nil, page_size: 10)
+    Rails.logger.info("NotionClient: Searching for pages with query: #{query}, page_size: #{page_size}")
+    
     body = {
       filter: { property: "object", value: "page" },
       page_size: page_size
@@ -15,7 +17,10 @@ class NotionClient
     body[:query] = query if query.present?
     body[:start_cursor] = start_cursor if start_cursor.present?
 
-    post("search", body)
+    Rails.logger.info("NotionClient: Search request body: #{body.to_json}")
+    result = post("search", body)
+    Rails.logger.info("NotionClient: Search returned #{result["results"]&.length || 0} results")
+    result
   end
 
   def get_page(page_id)
@@ -135,6 +140,9 @@ class NotionClient
   end
 
   def handle_response(response)
+    Rails.logger.info("Notion API Response: #{response.code} for #{response.request.last_uri}")
+    Rails.logger.debug("Notion API Response Body: #{response.body}")
+    
     case response.code
     when 200, 201
       response.parsed_response

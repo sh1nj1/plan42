@@ -44,9 +44,14 @@ class NotionAuthController < ApplicationController
     end
 
     begin
+      Rails.logger.info("Notion OAuth: Starting token exchange for user #{Current.user.id}")
+      
       # Exchange code for token
       token_response = exchange_code_for_token(params[:code])
+      Rails.logger.info("Notion OAuth: Token exchange successful, access_token present: #{token_response["access_token"].present?}")
+      
       user_info = fetch_user_info(token_response["access_token"])
+      Rails.logger.info("Notion OAuth: User info fetched - workspace: #{user_info["workspace_name"]}, bot_id: #{user_info["bot"]["owner"]["user"]["id"]}")
 
       # Create or update Notion account
       account = Current.user.notion_account || Current.user.build_notion_account
@@ -57,9 +62,11 @@ class NotionAuthController < ApplicationController
       account.token = token_response["access_token"]
       account.save!
 
+      Rails.logger.info("Notion OAuth: Account saved successfully for user #{Current.user.id}")
       render plain: "Success! You can close this window.", status: :ok
     rescue => e
       Rails.logger.error("Notion auth callback failed: #{e.class} #{e.message}")
+      Rails.logger.error(e.backtrace.join("\n"))
       render plain: "Authentication failed: #{e.message}", status: :internal_server_error
     ensure
       session.delete(:notion_oauth_state)

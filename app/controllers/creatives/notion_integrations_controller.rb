@@ -8,6 +8,8 @@ module Creatives
       account = Current.user.notion_account
       links = linked_page_links(account)
 
+      Rails.logger.info("Notion Integration: Showing status for user #{Current.user.id}, connected: #{account.present?}")
+
       render json: {
         connected: account.present?,
         account: account && {
@@ -22,7 +24,8 @@ module Creatives
             page_url: link.page_url,
             last_synced_at: link.last_synced_at
           }
-        end
+        end,
+        available_pages: account.present? ? fetch_available_pages(account) : []
       }
     end
 
@@ -129,6 +132,46 @@ module Creatives
 
     def integration_params
       params.permit(:action, :parent_page_id, :page_id)
+    end
+
+    def fetch_available_pages(account)
+      Rails.logger.info("Notion Integration: Fetching available pages for account #{account.id}")
+      
+      begin
+        service = NotionService.new(user: account.user)
+        pages_response = service.search_pages(page_size: 50)
+        
+        Rails.logger.info("Notion Integration: Search pages response - #{pages_response["results"]&.length || 0} pages found")
+        
+        pages = pages_response["results"]&.map do |page|
+          {
+            id: page["id"],
+            title: extract_page_title(page),
+            url: page["url"],
+            parent: page["parent"]
+          }
+        end || []
+        
+        Rails.logger.info("Notion Integration: Returning #{pages.length} formatted pages")
+        pages
+      rescue => e
+        Rails.logger.error("Notion Integration: Error fetching pages - #{e.class}: #{e.message}")
+        Rails.logger.error(e.backtrace.join("\n"))
+        []
+      end
+    end
+
+    def extract_page_title(page)
+      # Handle different title property structures
+      title_property = page.dig("properties", "title")
+      
+      if title_property && title_property["title"]
+        title_property["title"].map { |t| t.dig("text", "content") }.compact.join("")
+      elsif page["title"]
+        page["title"].map { |t| t.dig("text", "content") }.compact.join("")
+      else
+        "Untitled"
+      end
     end
   end
 end

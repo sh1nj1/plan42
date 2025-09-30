@@ -123,10 +123,15 @@ if (!window.notionIntegrationInitialized) {
       })
         .then(response => response.json())
         .then(data => {
+          console.log('Notion integration status:', data);
           statusEl.textContent = '';
           
           if (data.connected) {
             workspaceInfo = data.account;
+            availablePages = data.available_pages || [];
+            
+            console.log('Available pages:', availablePages);
+            
             if (workspaceNameEl) {
               workspaceNameEl.textContent = data.account.workspace_name || 'Notion Workspace';
             }
@@ -139,6 +144,8 @@ if (!window.notionIntegrationInitialized) {
               if (connectMessage) connectMessage.style.display = 'none';
               if (loginBtn) loginBtn.style.display = 'none';
             }
+            
+            updateParentPageSelect(); // Update the select with available pages
           } else {
             hasExistingIntegration = false;
             if (connectMessage) connectMessage.textContent = modal.dataset.loginRequired;
@@ -182,25 +189,8 @@ if (!window.notionIntegrationInitialized) {
     }
 
     function loadAvailablePages() {
-      if (!workspaceInfo) return Promise.resolve([]);
-
-      return fetch(`/creatives/${creativeId}/notion_integration`, {
-        method: 'GET',
-        headers: {
-          'X-CSRF-Token': csrfToken(),
-          'Content-Type': 'application/json'
-        }
-      })
-        .then(response => response.json())
-        .then(data => {
-          // In a real implementation, you'd fetch available pages from Notion
-          // For now, we'll just return an empty array since we don't have that endpoint
-          return [];
-        })
-        .catch(error => {
-          console.error('Error loading pages:', error);
-          return [];
-        });
+      // Pages are now loaded with the initial status call
+      return Promise.resolve(availablePages);
     }
 
     function updateParentPageOptions() {
@@ -221,6 +211,7 @@ if (!window.notionIntegrationInitialized) {
     function updateParentPageSelect() {
       if (!parentPageSelect) return;
 
+      console.log('Updating parent page select with', availablePages.length, 'pages');
       parentPageSelect.innerHTML = '';
       
       if (availablePages.length === 0) {
@@ -235,6 +226,7 @@ if (!window.notionIntegrationInitialized) {
         parentPageSelect.appendChild(defaultOption);
 
         availablePages.forEach(page => {
+          console.log('Adding page option:', page);
           const option = document.createElement('option');
           option.value = page.id;
           option.textContent = page.title || 'Untitled';
@@ -415,6 +407,7 @@ if (!window.notionIntegrationInitialized) {
     });
 
     loginBtn.addEventListener('click', function () {
+      console.log('Notion login button clicked');
       const width = parseInt(this.dataset.windowWidth) || 600;
       const height = parseInt(this.dataset.windowHeight) || 700;
       const left = (screen.width - width) / 2;
@@ -426,10 +419,12 @@ if (!window.notionIntegrationInitialized) {
       if (authWindow) {
         loginForm.target = 'notion-auth-window';
         loginForm.submit();
+        console.log('Auth form submitted to popup window');
         
         const checkClosed = setInterval(() => {
           if (authWindow.closed) {
             clearInterval(checkClosed);
+            console.log('Auth window closed, reloading integration status');
             setTimeout(() => loadIntegrationStatus(), 1000);
           }
         }, 1000);
