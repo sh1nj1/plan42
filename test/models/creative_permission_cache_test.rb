@@ -244,4 +244,20 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     assert_equal true, Rails.cache.read(write_key)
     assert_equal false, Rails.cache.read(admin_key)
   end
+
+  test "cache expiry is configurable" do
+    # Verify default cache expiry is 7 days
+    assert_equal 7.days, Rails.application.config.permission_cache_expires_in
+
+    # Grant permission
+    CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+
+    # Check permission (this should cache with configured expiry)
+    assert @root.has_permission?(@user1, :read)
+
+    # We can't easily test the actual expiry time without mocking time,
+    # but we can verify the cache entry exists
+    cache_key = "creative_permission:#{@root.id}:#{@user1.id}:read"
+    assert Rails.cache.exist?(cache_key)
+  end
 end

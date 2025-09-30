@@ -21,7 +21,7 @@ module Creatives
       # Store result in application-wide cache
       if @user
         cache_key = "creative_permission:#{base.id}:#{@user.id}:#{required_permission}"
-        Rails.cache.write(cache_key, result, expires_in: 1.hour)
+        Rails.cache.write(cache_key, result, expires_in: Rails.application.config.permission_cache_expires_in)
       end
 
       result
