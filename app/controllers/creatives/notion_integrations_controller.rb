@@ -138,7 +138,7 @@ module Creatives
     end
 
     def integration_params
-      params.permit(:action, :parent_page_id, :page_id)
+      params.require(:notion_integration).permit(:action, :parent_page_id, :page_id)
     end
 
     def fetch_available_pages(account)
