@@ -34,6 +34,7 @@ module Github
       assert_includes prompt, "Use only creatives marked [LEAF]"
       assert_includes prompt, "new creatives that are not already represented"
       assert_includes prompt, "Do not use this list for follow-up tasks"
+      assert_includes prompt, "When describing creatives, write from an end-user perspective"
     end
 
     test "handles missing commit messages and diff" do
@@ -94,6 +95,24 @@ module Github
       assert_includes prompt, "Diff: diff --git a/file.rb b/file.rb"
       assert_includes prompt, "Tree: - [1] Root > [2] Child [LEAF]"
       assert_includes prompt, "Lang: Preferred response language:"
+    end
+
+    test "uses english style guidance even when locale is ko" do
+      payload = { "pull_request" => { "title" => "Feature" } }
+      creative = creatives(:tshirt)
+      creative.user.update!(locale: "ko")
+
+      analyzer = Github::PullRequestAnalyzer.new(
+        payload: payload,
+        creative: creative,
+        paths: [ { path: "[#{creative.id}] 루트", leaf: true } ]
+      )
+
+      messages = analyzer.send(:build_messages)
+      prompt = messages.dig(0, :parts, 0, :text)
+
+      assert_includes prompt, "Preferred response language:"
+      assert_includes prompt, "When describing creatives, write from an end-user perspective"
     end
 
     test "parses structured response into tasks" do
