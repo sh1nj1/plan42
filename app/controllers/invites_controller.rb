@@ -3,7 +3,7 @@ class InvitesController < ApplicationController
   before_action :set_invitation, only: :show
 
   def create
-    creative = Creative.find(params[:creative_id])
+    creative = Creative.find(params[:creative_id]).effective_origin
     permission = params[:permission] || :read
     invitation = Invitation.create!(inviter: Current.user,
                                     creative: creative,
