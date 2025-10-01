@@ -45,20 +45,39 @@ class NotionAuthController < ApplicationController
 
     begin
       Rails.logger.info("Notion OAuth: Starting token exchange for user #{Current.user.id}")
-      
+
       # Exchange code for token
       token_response = exchange_code_for_token(params[:code])
       Rails.logger.info("Notion OAuth: Token exchange successful, access_token present: #{token_response["access_token"].present?}")
-      
+
       user_info = fetch_user_info(token_response["access_token"])
-      Rails.logger.info("Notion OAuth: User info fetched - workspace: #{user_info["workspace_name"]}, bot_id: #{user_info["bot"]["owner"]["user"]["id"]}")
+      owner_info = user_info.dig("bot", "owner") || {}
+      owner_type = owner_info["type"]
+      owner_identifier =
+        case owner_type
+        when "workspace"
+          user_info["workspace_id"]
+        when "user"
+          owner_info.dig("user", "id")
+        else
+          nil
+        end
+
+      Rails.logger.info(
+        "Notion OAuth: User info fetched - workspace: #{user_info["workspace_name"]}, " \
+        "owner_type: #{owner_type}, owner_identifier: #{owner_identifier}"
+      )
+
+      if owner_identifier.blank?
+        raise "Unable to determine Notion owner identifier from response"
+      end
 
       # Create or update Notion account
       account = Current.user.notion_account || Current.user.build_notion_account
-      account.notion_uid = user_info["bot"]["owner"]["user"]["id"]
+      account.notion_uid = owner_identifier
       account.workspace_name = user_info["workspace_name"]
       account.workspace_id = user_info["workspace_id"]
-      account.bot_id = user_info["bot"]["owner"]["user"]["id"]
+      account.bot_id = user_info.dig("bot", "id") || owner_identifier
       account.token = token_response["access_token"]
       account.save!
 
@@ -82,7 +101,7 @@ class NotionAuthController < ApplicationController
   def exchange_code_for_token(code)
     client_id = Rails.application.credentials.dig(:notion, :client_id) || ENV["NOTION_CLIENT_ID"]
     client_secret = Rails.application.credentials.dig(:notion, :client_secret) || ENV["NOTION_CLIENT_SECRET"]
-    
+
     response = HTTParty.post("https://api.notion.com/v1/oauth/token",
       headers: {
         "Authorization" => "Basic #{Base64.strict_encode64("#{client_id}:#{client_secret}")}",

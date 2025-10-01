@@ -38,13 +38,13 @@ module Creatives
       end
 
       Rails.logger.info("Notion Integration Update: Full params = #{params.to_unsafe_h}")
-      
+
       integration_attributes = integration_params
       Rails.logger.info("Notion Integration Update: integration_params = #{integration_attributes}")
-      
+
       action = integration_attributes[:action]
       parent_page_id = integration_attributes[:parent_page_id]
-      
+
       Rails.logger.info("Notion Integration Update: action=#{action}, parent_page_id=#{parent_page_id}")
 
       begin
@@ -138,18 +138,24 @@ module Creatives
     end
 
     def integration_params
-      params.require(:notion_integration).permit(:action, :parent_page_id, :page_id)
+      permitted_keys = [ :action, :parent_page_id, :page_id ]
+
+      if params[:notion_integration].present?
+        params.require(:notion_integration).permit(*permitted_keys)
+      else
+        params.permit(*permitted_keys)
+      end
     end
 
     def fetch_available_pages(account)
       Rails.logger.info("Notion Integration: Fetching available pages for account #{account.id}")
-      
+
       begin
         service = NotionService.new(user: account.user)
         pages_response = service.search_pages(page_size: 50)
-        
+
         Rails.logger.info("Notion Integration: Search pages response - #{pages_response["results"]&.length || 0} pages found")
-        
+
         pages = pages_response["results"]&.map do |page|
           {
             id: page["id"],
@@ -158,7 +164,7 @@ module Creatives
             parent: page["parent"]
           }
         end || []
-        
+
         Rails.logger.info("Notion Integration: Returning #{pages.length} formatted pages")
         pages
       rescue => e
@@ -171,7 +177,7 @@ module Creatives
     def extract_page_title(page)
       # Handle different title property structures
       title_property = page.dig("properties", "title")
-      
+
       if title_property && title_property["title"]
         title_property["title"].map { |t| t.dig("text", "content") }.compact.join("")
       elsif page["title"]
