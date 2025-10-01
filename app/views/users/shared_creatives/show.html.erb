@@ -1,0 +1,32 @@
+<h1 class="no-top-margin"><%= t("users.shared_creatives.show_title") %></h1>
+
+<% description_text = @creative.effective_description(nil, false)&.to_plain_text.to_s.strip %>
+<p>
+  <strong><%= t("users.shared_creatives.creative_label") %>:</strong>
+  <%= link_to(description_text.presence || t("users.shared_creatives.untitled"), creative_path(@creative)) %>
+</p>
+
+<% if @creative_shares.any? %>
+  <table class="shared-creatives-table">
+    <thead>
+      <tr>
+        <th><%= t("users.shared_creatives.table.shared_with") %></th>
+        <th><%= t("users.shared_creatives.table.permission") %></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @creative_shares.each do |share| %>
+        <tr>
+          <td><%= share.user.display_name %> (<%= share.user.email %>)</td>
+          <td><%= t("users.shared_creatives.permissions.#{share.permission}") %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% else %>
+  <p><%= t("users.shared_creatives.no_active_shares") %></p>
+<% end %>
+
+<p>
+  <%= link_to t("users.shared_creatives.back_to_profile"), user_path(@user) %>
+</p>

@@ -80,6 +80,24 @@ ko:
       actions: "작업"
       current_user: "현재 사용자"
       system_admin: "시스템 관리자"
+    shared_creatives:
+      title: "내가 공유한 크리에이티브"
+      none: "아직 다른 사람과 공유한 크리에이티브가 없습니다."
+      show_title: "공유 상세"
+      creative_label: "크리에이티브"
+      untitled: "제목 없는 크리에이티브"
+      no_active_shares: "현재 이 크리에이티브를 공유한 사람이 없습니다."
+      back_to_profile: "프로파일로 돌아가기"
+      table:
+        creative: "크리에이티브"
+        shared_with_count: "공유 대상 수"
+        shared_with: "공유 대상"
+        permission: "권한"
+      permissions:
+        read: "읽기"
+        feedback: "피드백"
+        write: "쓰기"
+        admin: "관리자"
   user_mailer:
     email_verification:
       subject: "이메일 인증"

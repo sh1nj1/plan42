@@ -52,4 +52,33 @@
   <%= f.submit t('users.update_profile') %>
 <% end %>
 
+<% if Current.user == @user %>
+  <section class="shared-creatives">
+    <h2><%= t('users.shared_creatives.title') %></h2>
+    <% if @shared_creatives.any? %>
+      <table class="shared-creatives-table">
+        <thead>
+          <tr>
+            <th><%= t('users.shared_creatives.table.creative') %></th>
+            <th><%= t('users.shared_creatives.table.shared_with_count') %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @shared_creatives.each do |creative| %>
+            <% description_text = creative.effective_description(nil, false)&.to_plain_text.to_s.strip %>
+            <tr>
+              <td>
+                <%= link_to(description_text.presence || t('users.shared_creatives.untitled'), user_shared_creative_path(@user, creative)) %>
+              </td>
+              <td><%= @shared_creative_counts[creative.id] %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% else %>
+      <p><%= t('users.shared_creatives.none') %></p>
+    <% end %>
+  </section>
+<% end %>
+
 <%= link_to t('users.change_password'), edit_password_user_path %>

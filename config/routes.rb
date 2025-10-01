@@ -32,6 +32,7 @@ Rails.application.routes.draw do
       get :search
       patch :notification_settings
     end
+    resources :shared_creatives, only: [ :show ], module: :users
   end
 
   resources :creatives do

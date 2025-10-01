@@ -53,6 +53,21 @@ class UsersController < ApplicationController
   # Show a single user
   def show
     @user = User.find(params[:id])
+    if Current.user == @user
+      @shared_creatives = @user.creatives
+                                .joins(:creative_shares)
+                                .where.not(creative_shares: { permission: CreativeShare.permissions[:no_access] })
+                                .distinct
+                                .order(created_at: :desc)
+      share_counts = CreativeShare.where(creative_id: @shared_creatives.map(&:id))
+                                  .where.not(permission: CreativeShare.permissions[:no_access])
+                                  .group(:creative_id)
+                                  .count
+      @shared_creative_counts = Hash.new(0).merge(share_counts)
+    else
+      @shared_creatives = []
+      @shared_creative_counts = {}
+    end
   end
 
   def destroy

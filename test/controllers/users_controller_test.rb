@@ -67,6 +67,19 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     refute @regular_user.reload.system_admin?
   end
 
+  test "current user sees shared creatives section" do
+    sign_in_as(@regular_user, password: "password")
+
+    creative = Creative.create!(user: @regular_user, description: "Profile shared creative")
+    CreativeShare.create!(creative: creative, user: @admin, permission: :read)
+
+    get user_path(@regular_user)
+
+    assert_response :success
+    assert_includes response.body, I18n.t("users.shared_creatives.title")
+    assert_includes response.body, "Profile shared creative"
+  end
+
   test "system admin cannot delete themselves" do
     sign_in_as(@admin, password: "password")
 

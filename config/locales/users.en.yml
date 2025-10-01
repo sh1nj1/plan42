@@ -80,6 +80,24 @@ en:
       actions: "Actions"
       current_user: "This is you"
       system_admin: "System admin"
+    shared_creatives:
+      title: "Creatives you've shared"
+      none: "You haven't shared any creatives yet."
+      show_title: "Shared creative details"
+      creative_label: "Creative"
+      untitled: "Untitled creative"
+      no_active_shares: "This creative is not currently shared with anyone."
+      back_to_profile: "Back to your profile"
+      table:
+        creative: "Creative"
+        shared_with_count: "People shared"
+        shared_with: "Shared with"
+        permission: "Permission"
+      permissions:
+        read: "Read"
+        feedback: "Feedback"
+        write: "Write"
+        admin: "Admin"
   user_mailer:
     email_verification:
       subject: "Verify your email"
