@@ -1,6 +1,51 @@
 import {initializeApp} from "firebase/app"
 import {getMessaging, getToken, isSupported} from "firebase/messaging"
 
+function safeLocalStorage() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    return window.localStorage
+  } catch (error) {
+    console.warn('Local storage unavailable', error)
+    return null
+  }
+}
+
+const storage = safeLocalStorage()
+let cachedClientId = null
+
+function generateClientId() {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+    return window.crypto.randomUUID()
+  }
+
+  return `device-${Math.random().toString(36).slice(2)}-${Date.now()}`
+}
+
+function getClientId() {
+  if (cachedClientId) {
+    return cachedClientId
+  }
+
+  if (storage) {
+    const storedClientId = storage.getItem('device_client_id')
+    if (storedClientId) {
+      cachedClientId = storedClientId
+      return cachedClientId
+    }
+
+    cachedClientId = generateClientId()
+    storage.setItem('device_client_id', cachedClientId)
+    return cachedClientId
+  }
+
+  cachedClientId = generateClientId()
+  return cachedClientId
+}
+
 function registerDevice(token) {
   fetch('/devices', {
     method: 'POST',
@@ -10,7 +55,7 @@ function registerDevice(token) {
     },
     body: JSON.stringify({
       device: {
-        client_id: navigator.userAgent,
+        client_id: getClientId(),
         device_type: 'web',
         app_id: 'com.vrerv.collavre.web',
         app_version: document.querySelector('meta[name=app-version]').content,
@@ -46,11 +91,13 @@ function initMessaging(registration) {
   getToken(messaging, { vapidKey: config.vapidKey, serviceWorkerRegistration: registration })
     .then((currentToken) => {
       if (currentToken) {
-          if (localStorage.getItem('fcm_token') === currentToken) {
+          if (storage && storage.getItem('fcm_token') === currentToken) {
               // ok
           } else {
               registerDevice(currentToken)
-              localStorage.setItem('fcm_token', currentToken)
+              if (storage) {
+                storage.setItem('fcm_token', currentToken)
+              }
           }
       }
     })
