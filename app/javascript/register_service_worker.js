@@ -91,14 +91,21 @@ function initMessaging(registration) {
   getToken(messaging, { vapidKey: config.vapidKey, serviceWorkerRegistration: registration })
     .then((currentToken) => {
       if (currentToken) {
-          if (storage && storage.getItem('fcm_token') === currentToken) {
-              // ok
-          } else {
-              registerDevice(currentToken)
-              if (storage) {
-                storage.setItem('fcm_token', currentToken)
-              }
+        let shouldRegister = true
+
+        if (storage) {
+          const storedToken = storage.getItem('fcm_token')
+          const storedClientId = storage.getItem('device_client_id')
+
+          shouldRegister = storedToken !== currentToken || !storedClientId
+        }
+
+        if (shouldRegister) {
+          registerDevice(currentToken)
+          if (storage) {
+            storage.setItem('fcm_token', currentToken)
           }
+        }
       }
     })
     .catch((err) => console.error('Failed to get FCM token', err))
