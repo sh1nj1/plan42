@@ -47,11 +47,12 @@
       </button>
       <button type="button"
               id="inline-unconvert"
-              class="creative-action-btn danger-link"
+              class="creative-action-btn"
               title="<%= t('creatives.index.unconvert') %>"
               data-confirm="<%= t('creatives.index.unconvert_confirm') %>"
               data-error="<%= t('creatives.index.unconvert_failed') %>">
-        &nbsp;<%= svg_tag 'comment.svg',class: 'icon-svg', width: 24, height: 24 %>
+        &nbsp;<%= svg_tag 'hierarchy-parent.svg',class: 'icon-svg', width: 24, height: 24 %>
+         <%= svg_tag 'comment.svg',class: 'icon-svg', width: 24, height: 24 %>
       </button>
       <button type="button" id="inline-unlink" class="creative-action-btn danger-link" title="<%= t('creatives.index.unlink') %>" data-confirm="<%= t('creatives.index.are_you_sure_unlink') %>" style="display:none;">
         &nbsp;<%= svg_tag 'unlink.svg',class: 'icon-svg', width: 24, height: 24 %>
