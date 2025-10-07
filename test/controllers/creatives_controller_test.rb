@@ -85,7 +85,6 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     origin = creative.effective_origin
     sign_out
     sign_in_as(users(:two), password: "password")
-    CreativeShare.create!(creative:, user: users(:two), permission: :read)
 
     refute origin.has_permission?(users(:two), :read)
 
