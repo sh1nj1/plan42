@@ -54,7 +54,14 @@ class NotionCreativeExporter
 
   def convert_creative_to_blocks(creative, level: 1)
     blocks = []
-    desc = creative.effective_description(nil, false).to_html
+    description_content = creative.effective_description(nil, false)
+    desc = if description_content.respond_to?(:to_html)
+      description_content.to_html
+    elsif description_content.present?
+      description_content.to_s
+    else
+      ""
+    end
 
     # Add progress if requested and available
     if @with_progress && creative.respond_to?(:progress) && !creative.progress.nil?
@@ -195,10 +202,12 @@ class NotionCreativeExporter
     else "heading_3"
     end
 
+    heading_key = heading_type.to_sym
+
     {
       object: "block",
       type: heading_type,
-      heading_type => {
+      heading_key => {
         rich_text: [ create_rich_text(text) ]
       }
     }
