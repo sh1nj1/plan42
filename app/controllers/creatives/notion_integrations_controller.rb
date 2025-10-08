@@ -42,7 +42,11 @@ module Creatives
       integration_attributes = integration_params
       Rails.logger.info("Notion Integration Update: integration_params = #{integration_attributes}")
 
+      request_action = request.request_parameters[:action]
       action = integration_attributes[:action]
+      if action.blank? || action.to_s == action_name
+        action = request_action.presence
+      end
       parent_page_id = integration_attributes[:parent_page_id]
 
       Rails.logger.info("Notion Integration Update: action=#{action}, parent_page_id=#{parent_page_id}")
