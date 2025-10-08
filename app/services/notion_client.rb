@@ -9,7 +9,7 @@ class NotionClient
 
   def search_pages(query: nil, start_cursor: nil, page_size: 10)
     Rails.logger.info("NotionClient: Searching for pages with query: #{query}, page_size: #{page_size}")
-    
+
     body = {
       filter: { property: "object", value: "page" },
       page_size: page_size
@@ -29,7 +29,7 @@ class NotionClient
 
   def create_page(parent_id:, title:, blocks: [])
     Rails.logger.info("NotionClient: Creating page with #{blocks.length} blocks")
-    
+
     # Notion limits page creation to 100 blocks, so create with minimal content first
     body = {
       parent: { page_id: parent_id },
@@ -42,16 +42,16 @@ class NotionClient
     }
 
     response = post("pages", body)
-    
+
     # If we have more than 100 blocks, add them in batches after page creation
     if blocks.length > 100
       Rails.logger.info("NotionClient: Adding #{blocks.length} blocks in batches (100 per batch)")
       page_id = response["id"]
       Rails.logger.info("NotionClient: Created page ID: #{page_id}")
-      
+
       # Give Notion a moment to fully create the page
       sleep(1)
-      
+
       # Add blocks in batches of 100
       blocks.each_slice(100).with_index do |block_batch, index|
         Rails.logger.info("NotionClient: Adding batch #{index + 1} with #{block_batch.length} blocks")
@@ -59,7 +59,7 @@ class NotionClient
         Rails.logger.info("NotionClient: Successfully added batch #{index + 1}")
       end
     end
-    
+
     response
   end
 
@@ -83,7 +83,7 @@ class NotionClient
 
   def replace_page_blocks(page_id, blocks)
     Rails.logger.info("NotionClient: Replacing page blocks with #{blocks.length} blocks")
-    
+
     # First, get existing blocks
     existing_blocks = get_page_blocks(page_id)
 
@@ -185,7 +185,7 @@ class NotionClient
   def handle_response(response)
     Rails.logger.info("Notion API Response: #{response.code} for #{response.request.last_uri}")
     Rails.logger.debug("Notion API Response Body: #{response.body}")
-    
+
     case response.code
     when 200, 201
       response.parsed_response

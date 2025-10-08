@@ -17,13 +17,13 @@ class NotionCreativeExporter
     creatives.each do |creative|
       # Convert the creative to blocks
       creative_blocks = convert_creative_to_blocks(creative, level: level)
-      
+
       # Handle children based on the level
       if creative.respond_to?(:children) && creative.children.present?
         if level > 3
           # For bullet points (level > 3), limit nesting depth to 2 levels max
           text_content = extract_text_content(creative.effective_description(nil, false).to_html.gsub(/<!--.*?-->/m, "").strip)
-          
+
           if bullet_depth < 2
             # Can still nest deeper
             children_blocks = export_tree_blocks(creative.children, level + 1, bullet_depth + 1)
@@ -231,12 +231,12 @@ class NotionCreativeExporter
         rich_text: [ create_rich_text(text) ]
       }
     }
-    
+
     # Add nested children if present
     if children_blocks.any?
       block[:bulleted_list_item][:children] = children_blocks
     end
-    
+
     block
   end
 
@@ -281,7 +281,7 @@ class NotionCreativeExporter
       content = content[0..1986] + "..."  # 1987 + 3 = 1990 chars
       Rails.logger.warn("NotionCreativeExporter: Truncated content from #{original_length} to #{content.length} characters")
     end
-    
+
     {
       type: "text",
       text: {

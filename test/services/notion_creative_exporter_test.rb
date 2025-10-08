@@ -18,27 +18,27 @@ class NotionCreativeExporterTest < ActiveSupport::TestCase
 
   test "should export creative as heading block" do
     blocks = @exporter.export_blocks
-    
+
     assert blocks.is_a?(Array), "Should return an array"
     assert blocks.length >= 1, "Should export at least one block"
-    
+
     block = blocks.first
     assert block.present?, "First block should not be nil"
     assert block.is_a?(Hash), "Block should be a hash"
-    
+
     assert_equal "block", block[:object]
     assert_equal "heading_1", block[:type]
-    
+
     # Check the structure more carefully
     assert block.key?(:heading_1), "Block should have heading_1 key: #{block.keys}"
     heading_data = block[:heading_1]
     assert heading_data.present?, "Heading data should be present"
     assert heading_data.key?(:rich_text), "Should have rich_text: #{heading_data.keys}"
-    
+
     rich_text = heading_data[:rich_text]
     assert rich_text.is_a?(Array), "Rich text should be array"
     assert rich_text.length > 0, "Rich text should have content"
-    
+
     text_block = rich_text.first
     assert text_block.key?(:text), "Should have text key"
     assert_equal "Test Creative Title", text_block[:text][:content]

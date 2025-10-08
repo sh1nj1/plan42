@@ -19,8 +19,6 @@ Rails.application.config.middleware.use OmniAuth::Builder do
              scope: "repo read:org admin:repo_hook",
              allow_signup: false
   end
-
-
 end
 
 OmniAuth.config.allowed_request_methods = %i[post]
