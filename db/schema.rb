@@ -86,10 +86,10 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
     t.integer "approver_id"
     t.datetime "action_executed_at"
     t.integer "action_executed_by_id"
+    t.index ["action_executed_by_id"], name: "index_comments_on_action_executed_by_id"
+    t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
-    t.index ["approver_id"], name: "index_comments_on_approver_id"
-    t.index ["action_executed_by_id"], name: "index_comments_on_action_executed_by_id"
   end
 
   create_table "creative_expanded_states", force: :cascade do |t|
@@ -225,6 +225,48 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
     t.datetime "updated_at", null: false
     t.integer "owner_id"
     t.index ["owner_id"], name: "index_labels_on_owner_id"
+  end
+
+  create_table "notion_accounts", force: :cascade do |t|
+    t.integer "user_id", null: false
+    t.string "notion_uid", null: false
+    t.string "workspace_name"
+    t.string "workspace_id"
+    t.string "bot_id"
+    t.string "token", null: false
+    t.datetime "token_expires_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["notion_uid"], name: "index_notion_accounts_on_notion_uid", unique: true
+    t.index ["user_id"], name: "index_notion_accounts_on_user_id", unique: true
+  end
+
+  create_table "notion_block_links", force: :cascade do |t|
+    t.integer "notion_page_link_id", null: false
+    t.integer "creative_id", null: false
+    t.string "block_id", null: false
+    t.string "content_hash"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["creative_id"], name: "index_notion_block_links_on_creative_id"
+    t.index ["notion_page_link_id", "block_id"], name: "index_notion_block_links_on_page_link_and_block", unique: true
+    t.index ["notion_page_link_id"], name: "index_notion_block_links_on_notion_page_link_id"
+  end
+
+  create_table "notion_page_links", force: :cascade do |t|
+    t.integer "creative_id", null: false
+    t.integer "notion_account_id", null: false
+    t.string "page_id", null: false
+    t.string "page_title"
+    t.string "page_url"
+    t.string "parent_page_id"
+    t.datetime "last_synced_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["creative_id", "page_id"], name: "index_notion_links_on_creative_and_page", unique: true
+    t.index ["creative_id"], name: "index_notion_page_links_on_creative_id"
+    t.index ["notion_account_id"], name: "index_notion_page_links_on_notion_account_id"
+    t.index ["page_id"], name: "index_notion_page_links_on_page_id", unique: true
   end
 
   create_table "sessions", force: :cascade do |t|
@@ -392,6 +434,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
     t.datetime "updated_at", null: false
     t.string "value"
     t.integer "label_id"
+    t.index ["creative_id", "label_id"], name: "index_tags_on_creative_id_and_label_id", unique: true
+    t.index ["creative_id"], name: "index_tags_on_creative_id"
     t.index ["label_id"], name: "index_tags_on_label_id"
   end
 
@@ -427,8 +471,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
   add_foreign_key "comment_read_pointers", "users"
   add_foreign_key "comments", "creatives"
   add_foreign_key "comments", "users"
-  add_foreign_key "comments", "users", column: "approver_id"
   add_foreign_key "comments", "users", column: "action_executed_by_id"
+  add_foreign_key "comments", "users", column: "approver_id"
   add_foreign_key "creative_expanded_states", "creatives"
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
@@ -445,6 +489,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
   add_foreign_key "invitations", "creatives"
   add_foreign_key "invitations", "users", column: "inviter_id"
   add_foreign_key "labels", "users", column: "owner_id"
+  add_foreign_key "notion_accounts", "users"
+  add_foreign_key "notion_page_links", "creatives"
+  add_foreign_key "notion_page_links", "notion_accounts"
   add_foreign_key "sessions", "users"
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade

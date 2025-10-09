@@ -2,6 +2,8 @@ Rails.application.routes.draw do
   resource :session
   match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
   match "/auth/github/callback", to: "github_auth#callback", via: [ :get, :post ]
+  get "/auth/notion", to: "notion_auth#authorize"
+  get "/auth/notion/callback", to: "notion_auth#callback", as: :notion_auth_callback
   resources :passwords, param: :token
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 
@@ -34,6 +36,7 @@ Rails.application.routes.draw do
 
   resources :creatives do
     resource :github_integration, only: [ :show, :update, :destroy ], module: :creatives
+    resource :notion_integration, only: [ :show, :update, :destroy ], module: :creatives
     resources :subscribers, only: [ :create ]
     resources :creative_shares, only: [ :create, :destroy ]
       resources :comments, only: [ :index, :create, :destroy, :show, :update ] do

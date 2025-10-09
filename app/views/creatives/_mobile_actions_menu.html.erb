@@ -11,6 +11,7 @@
     <% end %>
     <% if can_manage_integrations %>
       <button type="button" class="popup-menu-item" data-click-target="github-integration-btn"><%= t('creatives.index.integrations', default: '연동') %> - Github</button>
+       <button type="button" class="popup-menu-item" data-click-target="notion-integration-btn"><%= t('creatives.index.integrations', default: '연동') %> - Notion</button>
     <% end %>
     <% if @parent_creative.present? %>
       <%= button_to t('creatives.index.slide_view'), slide_view_creative_path(@parent_creative), method: :get, class: 'popup-menu-item' %>
