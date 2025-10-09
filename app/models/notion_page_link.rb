@@ -1,6 +1,7 @@
 class NotionPageLink < ApplicationRecord
   belongs_to :creative
   belongs_to :notion_account
+  has_many :notion_block_links, dependent: :destroy
 
   validates :page_id, :page_title, presence: true
   validates :page_id, uniqueness: true

@@ -241,6 +241,18 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
     t.index ["user_id"], name: "index_notion_accounts_on_user_id", unique: true
   end
 
+  create_table "notion_block_links", force: :cascade do |t|
+    t.integer "notion_page_link_id", null: false
+    t.integer "creative_id", null: false
+    t.string "block_id", null: false
+    t.string "content_hash"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["creative_id"], name: "index_notion_block_links_on_creative_id"
+    t.index ["notion_page_link_id", "block_id"], name: "index_notion_block_links_on_page_link_and_block", unique: true
+    t.index ["notion_page_link_id"], name: "index_notion_block_links_on_notion_page_link_id"
+  end
+
   create_table "notion_page_links", force: :cascade do |t|
     t.integer "creative_id", null: false
     t.integer "notion_account_id", null: false
