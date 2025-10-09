@@ -250,7 +250,6 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
     t.datetime "updated_at", null: false
     t.index ["creative_id"], name: "index_notion_block_links_on_creative_id"
     t.index ["notion_page_link_id", "block_id"], name: "index_notion_block_links_on_page_link_and_block", unique: true
-    t.index ["notion_page_link_id", "creative_id"], name: "index_notion_block_links_on_page_link_and_creative", unique: true
     t.index ["notion_page_link_id"], name: "index_notion_block_links_on_notion_page_link_id"
   end
 
