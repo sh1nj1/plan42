@@ -150,9 +150,9 @@ class NotionService
 
   def sync_child_blocks(notion_link, creative, children, exporter)
     child_ids = children.map(&:id)
-    existing_links = notion_link.notion_block_links.index_by(&:creative_id)
+    existing_links_by_creative = notion_link.notion_block_links.group_by(&:creative_id)
 
-    if existing_links.empty?
+    if existing_links_by_creative.empty?
       fetch_all_page_blocks(notion_link.page_id).each do |block|
         begin
           delete_block(block["id"])
@@ -163,14 +163,16 @@ class NotionService
     end
 
     # Delete removed creatives
-    (existing_links.keys - child_ids).each do |removed_id|
-      link = existing_links[removed_id]
-      begin
-        delete_block(link.block_id)
-      rescue NotionError => e
-        Rails.logger.warn("NotionService: Failed to delete Notion block #{link.block_id} for creative #{removed_id}: #{e.message}")
-      ensure
-        link.destroy
+    (existing_links_by_creative.keys - child_ids).each do |removed_id|
+      links = existing_links_by_creative.delete(removed_id) || []
+      links.each do |link|
+        begin
+          delete_block(link.block_id)
+        rescue NotionError => e
+          Rails.logger.warn("NotionService: Failed to delete Notion block #{link.block_id} for creative #{removed_id}: #{e.message}")
+        ensure
+          link.destroy
+        end
       end
     end
 
@@ -179,11 +181,11 @@ class NotionService
       next if exported_blocks.empty?
 
       content_hash = Digest::SHA256.hexdigest(exported_blocks.to_json)
-      link = existing_links[child.id]
+      links = existing_links_by_creative[child.id] || []
 
-      next if link.present? && link.content_hash == content_hash
+      next if links.present? && links.first.content_hash == content_hash && links.size == exported_blocks.size
 
-      if link.present?
+      links.each do |link|
         begin
           delete_block(link.block_id)
         rescue NotionError => e
@@ -194,18 +196,22 @@ class NotionService
       end
 
       response = append_blocks(notion_link.page_id, exported_blocks)
-      new_block_id = response.dig("results", 0, "id")
-      if new_block_id.blank?
-        Rails.logger.warn("NotionService: Unable to determine new block id for creative #{child.id}")
+      new_block_ids = response.fetch("results", []).filter_map { |result| result["id"] }
+
+      if new_block_ids.empty?
+        Rails.logger.warn("NotionService: Unable to determine new block ids for creative #{child.id}")
         next
       end
 
-      link = notion_link.notion_block_links.create!(
-        creative: child,
-        block_id: new_block_id,
-        content_hash: content_hash
-      )
-      existing_links[child.id] = link
+      new_links = new_block_ids.map do |block_id|
+        notion_link.notion_block_links.create!(
+          creative: child,
+          block_id: block_id,
+          content_hash: content_hash
+        )
+      end
+
+      existing_links_by_creative[child.id] = new_links
     end
   end
 

@@ -10,7 +10,7 @@ class CreateNotionBlockLinks < ActiveRecord::Migration[8.0]
 
     add_index :notion_block_links, :notion_page_link_id, name: "index_notion_block_links_on_notion_page_link_id"
     add_index :notion_block_links, :creative_id
-    add_index :notion_block_links, [:notion_page_link_id, :creative_id], unique: true, name: "index_notion_block_links_on_page_link_and_creative"
-    add_index :notion_block_links, [:notion_page_link_id, :block_id], unique: true, name: "index_notion_block_links_on_page_link_and_block"
+    add_index :notion_block_links, [ :notion_page_link_id, :creative_id ], unique: true, name: "index_notion_block_links_on_page_link_and_creative"
+    add_index :notion_block_links, [ :notion_page_link_id, :block_id ], unique: true, name: "index_notion_block_links_on_page_link_and_block"
   end
 end
