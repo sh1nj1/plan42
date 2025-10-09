@@ -32,18 +32,33 @@ class NotionAuthController < ApplicationController
       return
     end
 
-    # Verify state parameter
-    if params[:state] != session[:notion_oauth_state]
+    state_verified = false
+
+    stored_state = session[:notion_oauth_state]
+    provided_state = params[:state]
+
+    if stored_state.blank? || provided_state.blank?
       render plain: "Invalid state parameter", status: :unprocessable_entity
       return
     end
 
-    unless params[:code].present?
-      render plain: "Authorization code missing", status: :unprocessable_entity
+    stored_state = stored_state.to_s
+    provided_state = provided_state.to_s
+
+    unless stored_state.bytesize == provided_state.bytesize &&
+        ActiveSupport::SecurityUtils.secure_compare(provided_state, stored_state)
+      render plain: "Invalid state parameter", status: :unprocessable_entity
       return
     end
 
+    state_verified = true
+
     begin
+      unless params[:code].present?
+        render plain: "Authorization code missing", status: :unprocessable_entity
+        return
+      end
+
       Rails.logger.info("Notion OAuth: Starting token exchange for user #{Current.user.id}")
 
       # Exchange code for token
@@ -88,7 +103,7 @@ class NotionAuthController < ApplicationController
       Rails.logger.error(e.backtrace.join("\n"))
       render plain: "Authentication failed: #{e.message}", status: :internal_server_error
     ensure
-      session.delete(:notion_oauth_state)
+      session.delete(:notion_oauth_state) if state_verified
     end
   end
 
