@@ -150,68 +150,82 @@ class NotionService
 
   def sync_child_blocks(notion_link, creative, children, exporter)
     child_ids = children.map(&:id)
-    existing_links_by_creative = notion_link.notion_block_links.group_by(&:creative_id)
+    existing_links = notion_link.notion_block_links.includes(:creative).order(:created_at).to_a
+    existing_links_by_creative = existing_links.group_by(&:creative_id)
 
-    if existing_links_by_creative.empty?
-      fetch_all_page_blocks(notion_link.page_id).each do |block|
-        begin
-          delete_block(block["id"])
-        rescue NotionError => e
-          Rails.logger.warn("NotionService: Failed to clear existing block #{block['id']} during initial sync: #{e.message}")
-        end
-      end
+    page_blocks = existing_links.any? ? fetch_all_page_blocks(notion_link.page_id) : []
+    page_block_ids = page_blocks.map { |block| block["id"] }
+
+    block_to_creative = {}
+    existing_links.each do |link|
+      block_to_creative[link.block_id] = link.creative_id if page_block_ids.include?(link.block_id)
     end
 
-    # Delete removed creatives
-    (existing_links_by_creative.keys - child_ids).each do |removed_id|
-      links = existing_links_by_creative.delete(removed_id) || []
-      links.each do |link|
-        begin
-          delete_block(link.block_id)
-        rescue NotionError => e
-          Rails.logger.warn("NotionService: Failed to delete Notion block #{link.block_id} for creative #{removed_id}: #{e.message}")
-        ensure
-          link.destroy
-        end
-      end
-    end
+    existing_order = page_block_ids.map { |block_id| block_to_creative[block_id] }.compact.uniq
+    expected_order = child_ids.select { |id| existing_links_by_creative.key?(id) }
+    reorder_detected = existing_order != expected_order
 
-    children.each do |child|
+    removed_ids = existing_links_by_creative.keys - child_ids
+    changes_detected = removed_ids.any?
+
+    child_exports = children.map do |child|
       exported_blocks = exporter.export_tree_blocks([ child ], 1, 0)
-      next if exported_blocks.empty?
-
       content_hash = Digest::SHA256.hexdigest(exported_blocks.to_json)
       links = existing_links_by_creative[child.id] || []
+      missing_blocks = links.any? { |link| !page_block_ids.include?(link.block_id) }
 
-      next if links.present? && links.first.content_hash == content_hash && links.size == exported_blocks.size
+      if exported_blocks.empty?
+        changes_detected ||= links.present?
+      else
+        changes_detected ||= links.blank?
+        changes_detected ||= links.size != exported_blocks.size
+        changes_detected ||= links.first.content_hash != content_hash
+        changes_detected ||= missing_blocks
+      end
 
-      links.each do |link|
-        begin
-          delete_block(link.block_id)
-        rescue NotionError => e
-          Rails.logger.warn("NotionService: Failed to delete stale Notion block #{link.block_id} for creative #{child.id}: #{e.message}")
-        ensure
-          link.destroy
+      {
+        child: child,
+        exported_blocks: exported_blocks,
+        content_hash: content_hash
+      }
+    end
+
+    unless changes_detected || reorder_detected
+      return
+    end
+
+    blocks_to_clear = page_blocks.presence || fetch_all_page_blocks(notion_link.page_id)
+    blocks_to_clear.each do |block|
+      begin
+        delete_block(block["id"])
+      rescue NotionError => e
+        Rails.logger.warn("NotionService: Failed to delete Notion block #{block['id']} during resync: #{e.message}")
+      end
+    end
+
+    NotionBlockLink.transaction do
+      notion_link.notion_block_links.delete_all
+
+      child_exports.each do |data|
+        exported_blocks = data[:exported_blocks]
+        next if exported_blocks.empty?
+
+        response = append_blocks(notion_link.page_id, exported_blocks)
+        new_block_ids = response.fetch("results", []).filter_map { |result| result["id"] }
+
+        if new_block_ids.empty?
+          Rails.logger.warn("NotionService: Unable to determine new block ids for creative #{data[:child].id}")
+          next
+        end
+
+        new_block_ids.each do |block_id|
+          notion_link.notion_block_links.create!(
+            creative: data[:child],
+            block_id: block_id,
+            content_hash: data[:content_hash]
+          )
         end
       end
-
-      response = append_blocks(notion_link.page_id, exported_blocks)
-      new_block_ids = response.fetch("results", []).filter_map { |result| result["id"] }
-
-      if new_block_ids.empty?
-        Rails.logger.warn("NotionService: Unable to determine new block ids for creative #{child.id}")
-        next
-      end
-
-      new_links = new_block_ids.map do |block_id|
-        notion_link.notion_block_links.create!(
-          creative: child,
-          block_id: block_id,
-          content_hash: content_hash
-        )
-      end
-
-      existing_links_by_creative[child.id] = new_links
     end
   end
 
