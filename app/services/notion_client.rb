@@ -105,10 +105,19 @@ class NotionClient
     # Notion also limits append operations to 100 blocks
     if blocks.length > 100
       Rails.logger.info("NotionClient: Appending #{blocks.length} blocks in batches")
+      aggregated_results = []
+
       blocks.each_slice(100).with_index do |block_batch, index|
         Rails.logger.info("NotionClient: Appending batch #{index + 1} with #{block_batch.length} blocks")
-        patch("blocks/#{format_id(page_id)}/children", { children: block_batch })
+        response = patch("blocks/#{format_id(page_id)}/children", { children: block_batch })
+
+        if response.is_a?(Hash)
+          batch_results = response.fetch("results", [])
+          aggregated_results.concat(batch_results) if batch_results.any?
+        end
       end
+
+      aggregated_results.any? ? { "results" => aggregated_results } : nil
     else
       patch("blocks/#{format_id(page_id)}/children", { children: blocks })
     end

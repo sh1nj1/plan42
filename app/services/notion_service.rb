@@ -211,7 +211,8 @@ class NotionService
         next if exported_blocks.empty?
 
         response = append_blocks(notion_link.page_id, exported_blocks)
-        new_block_ids = response.fetch("results", []).filter_map { |result| result["id"] }
+        response_results = response.is_a?(Hash) ? response.fetch("results", []) : []
+        new_block_ids = response_results.filter_map { |result| result["id"] }
 
         if new_block_ids.empty?
           Rails.logger.warn("NotionService: Unable to determine new block ids for creative #{data[:child].id}")
