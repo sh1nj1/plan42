@@ -41,6 +41,7 @@ if (!window.creativeRowEditorInitialized) {
     let pendingSave = false;
     let saving = false;
     let savePromise = Promise.resolve();
+    let autoLinking = false;
 
     function treeRowElement(node) {
       return node && node.closest ? node.closest('creative-tree-row') : null;
@@ -735,15 +736,27 @@ if (!window.creativeRowEditorInitialized) {
     }
 
     function autoLinkUrls(event) {
+      if (autoLinking) return;
+
       const element = event.target;
+      const editorInstance = element.editor;
+      if (!editorInstance) return;
+
       const html = element.innerHTML;
       const linkedHtml = html.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, function(_match, prefix, url) {
         return `${prefix}<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
       });
       if (linkedHtml !== html) {
-        const selection = element.editor.getSelectedRange();
-        element.editor.loadHTML(linkedHtml);
-        element.editor.setSelectedRange(selection);
+        const selection = editorInstance.getSelectedRange();
+        autoLinking = true;
+        try {
+          editorInstance.loadHTML(linkedHtml);
+          editorInstance.setSelectedRange(selection);
+        } finally {
+          requestAnimationFrame(function() {
+            autoLinking = false;
+          });
+        }
       }
 
       element.querySelectorAll('a').forEach(function(anchor) {
