@@ -18,10 +18,16 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ comment_one.id, comment_two.id ], items.map(&:comment_id)
     assert_equal %w[new new], items.pluck(:state)
 
-    post "/comment_read_pointers/update", params: { creative_id: @creative.id }, as: :json
+    broadcasts = []
+    Turbo::StreamsChannel.stub(:broadcast_replace_to, ->(*args, **kwargs) {
+      broadcasts << { stream: args.first, target: kwargs[:target], locals: kwargs[:locals] }
+    }) do
+      post "/comment_read_pointers/update", params: { creative_id: @creative.id }, as: :json
+    end
 
     assert_response :success
     assert_equal [ comment_two.id ], CommentReadPointer.where(user: @user, creative: @creative.effective_origin).pluck(:last_read_comment_id)
     assert_equal [ "read" ], InboxItem.where(id: items.pluck(:id)).pluck(:state).uniq
+    assert broadcasts.any? { |payload| payload.dig(:locals, :count) == 0 }, "expected badge update broadcast with zero new items"
   end
 end
