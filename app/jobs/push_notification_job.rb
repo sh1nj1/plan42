@@ -1,7 +1,7 @@
 class PushNotificationJob < ApplicationJob
   queue_as :default
 
-  def perform(user_id, message:, link: nil)
+  def perform(user_id, message:, link: nil, inbox_item_id: nil)
     tokens = Device.where(user_id: user_id).pluck(:fcm_token)
     return if tokens.empty?
 
@@ -10,7 +10,7 @@ class PushNotificationJob < ApplicationJob
 
     if service && project_id
       tokens.each do |token|
-        send_v1(service, project_id, token, message, link)
+        send_v1(service, project_id, token, message, link, inbox_item_id)
       end
     elsif (client = Rails.application.config.x.fcm_client)
       client.send(tokens, {
@@ -18,14 +18,15 @@ class PushNotificationJob < ApplicationJob
           title: "새 알림",
           body: message,
           click_action: link
-        }
+        },
+        data: notification_data(link, inbox_item_id)
       })
     end
   end
 
   private
 
-  def send_v1(service, project_id, token, message, link)
+  def send_v1(service, project_id, token, message, link, inbox_item_id)
     notification = Google::Apis::FcmV1::Notification.new(
       title: "새 알림",
       body: message
@@ -39,7 +40,7 @@ class PushNotificationJob < ApplicationJob
       token: token,
       notification: notification,
       webpush: webpush,
-      data: { path: link }
+      data: notification_data(link, inbox_item_id)
     )
     Rails.logger.info("Sending push to token: #{token} with message: #{message} and link: #{link}")
 
@@ -57,6 +58,13 @@ class PushNotificationJob < ApplicationJob
       else
         raise
       end
+    end
+  end
+
+  def notification_data(link, inbox_item_id)
+    {}.tap do |data|
+      data["path"] = link if link.present?
+      data["inbox_item_id"] = inbox_item_id.to_s if inbox_item_id.present?
     end
   end
 

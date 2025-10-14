@@ -1,3 +1,5 @@
+require "uri"
+
 class InboxItem < ApplicationRecord
   belongs_to :owner, class_name: "User"
 
@@ -47,6 +49,23 @@ class InboxItem < ApplicationRecord
 
   def enqueue_push_notification
     msg = localized_message(locale: owner.locale || "en")
-    PushNotificationJob.perform_later(owner_id, message: msg, link: link)
+    PushNotificationJob.perform_later(
+      owner_id,
+      message: msg,
+      link: push_notification_link,
+      inbox_item_id: id
+    )
+  end
+
+  def push_notification_link
+    return link if link.blank?
+
+    uri = URI.parse(link)
+    query = Rack::Utils.parse_nested_query(uri.query)
+    query["inbox_item_id"] = id.to_s
+    uri.query = query.to_query.presence
+    uri.to_s
+  rescue URI::InvalidURIError
+    link
   end
 end

@@ -5,6 +5,7 @@ class ApplicationController < ActionController::Base
 
   around_action :switch_locale
   around_action :set_time_zone
+  before_action :mark_inbox_item_as_read_from_params, if: -> { params[:inbox_item_id].present? }
 
   def switch_locale(&action)
     locale = normalize_supported_locale(Current.user&.locale) ||
@@ -43,5 +44,17 @@ class ApplicationController < ActionController::Base
     return if Current.user&.system_admin?
 
     redirect_to root_path, alert: t("users.admin_required")
+  end
+
+  def mark_inbox_item_as_read_from_params
+    return unless Current.user
+
+    inbox_item = InboxItem.find_by(id: params[:inbox_item_id])
+    return unless inbox_item&.owner_id == Current.user.id
+    return if inbox_item.read?
+
+    inbox_item.update(state: "read")
+  rescue ActiveRecord::ActiveRecordError => e
+    Rails.logger.warn("Failed to mark inbox item ##{params[:inbox_item_id]} as read: #{e.message}")
   end
 end
