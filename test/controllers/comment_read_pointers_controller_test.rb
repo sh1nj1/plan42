@@ -1,0 +1,27 @@
+require "test_helper"
+
+class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
+  setup do
+    @user = users(:one)
+    @user.update!(email_verified_at: Time.current)
+    post session_path, params: { email: @user.email, password: "password" }
+    @creative = creatives(:tshirt)
+  end
+
+  test "updating pointer marks inbox comment notifications as read" do
+    commenter = users(:two)
+
+    comment_one = Comment.create!(creative: @creative, user: commenter, content: "hi there")
+    comment_two = Comment.create!(creative: @creative, user: commenter, content: "hello again")
+
+    items = InboxItem.where(owner: @user, message_key: "inbox.comment_added").order(:created_at)
+    assert_equal [ comment_one.id, comment_two.id ], items.map(&:comment_id)
+    assert_equal %w[new new], items.pluck(:state)
+
+    post "/comment_read_pointers/update", params: { creative_id: @creative.id }, as: :json
+
+    assert_response :success
+    assert_equal [ comment_two.id ], CommentReadPointer.where(user: @user, creative: @creative.effective_origin).pluck(:last_read_comment_id)
+    assert_equal [ "read" ], InboxItem.where(id: items.pluck(:id)).pluck(:state).uniq
+  end
+end

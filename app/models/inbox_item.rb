@@ -1,5 +1,7 @@
 class InboxItem < ApplicationRecord
   belongs_to :owner, class_name: "User"
+  belongs_to :comment, optional: true
+  belongs_to :creative, optional: true
 
   after_commit :broadcast_badge_update, on: %i[create update destroy] # adjust callbacks as needed
   after_create_commit :enqueue_push_notification
