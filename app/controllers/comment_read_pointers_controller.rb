@@ -21,10 +21,7 @@ class CommentReadPointersController < ApplicationController
     with_creative = base_scope.where(creative: creative)
                               .where("comment_id IS NULL OR comment_id <= ?", last_comment_id)
 
-    legacy = base_scope.where(creative_id: nil)
-                       .where("link LIKE ?", "%/creatives/#{creative.id}/%")
-
-    ids = (with_creative.pluck(:id) + legacy.pluck(:id)).uniq
+    ids = with_creative.pluck(:id)
     return if ids.empty?
 
     InboxItem.transaction do
