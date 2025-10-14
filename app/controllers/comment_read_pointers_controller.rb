@@ -27,6 +27,10 @@ class CommentReadPointersController < ApplicationController
     ids = (with_creative.pluck(:id) + legacy.pluck(:id)).uniq
     return if ids.empty?
 
-    InboxItem.where(id: ids).update_all(state: "read", updated_at: Time.current)
+    InboxItem.transaction do
+      InboxItem.where(id: ids).where.not(state: "read").find_each do |item|
+        item.update!(state: "read")
+      end
+    end
   end
 end
