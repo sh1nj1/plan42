@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_29_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.string "name", null: false
     t.text "body"
@@ -198,6 +198,10 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
     t.datetime "updated_at", null: false
     t.string "message_key"
     t.json "message_params", default: {}, null: false
+    t.integer "comment_id"
+    t.integer "creative_id"
+    t.index ["comment_id"], name: "index_inbox_items_on_comment_id"
+    t.index ["creative_id"], name: "index_inbox_items_on_creative_id"
     t.index ["owner_id"], name: "index_inbox_items_on_owner_id"
     t.index ["state"], name: "index_inbox_items_on_state"
   end
@@ -485,6 +489,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_28_105957) do
   add_foreign_key "github_accounts", "users"
   add_foreign_key "github_repository_links", "creatives"
   add_foreign_key "github_repository_links", "github_accounts"
+  add_foreign_key "inbox_items", "comments", on_delete: :nullify
+  add_foreign_key "inbox_items", "creatives", on_delete: :nullify
   add_foreign_key "inbox_items", "users", column: "owner_id"
   add_foreign_key "invitations", "creatives"
   add_foreign_key "invitations", "users", column: "inviter_id"

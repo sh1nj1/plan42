@@ -21,10 +21,17 @@ class Comment < ApplicationRecord
   private
 
   def create_inbox_item(owner, key, params = {})
+    origin = creative&.effective_origin
+    metadata = params.to_h.stringify_keys
+    metadata["comment_id"] = id
+    metadata["creative_id"] = origin&.id
+
     InboxItem.create!(
       owner: owner,
       message_key: key,
-      message_params: params,
+      message_params: metadata,
+      comment: self,
+      creative: origin,
       link: Rails.application.routes.url_helpers.creative_comment_url(
         creative,
         self,
