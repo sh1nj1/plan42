@@ -70,15 +70,19 @@ Rails.application.configure do
   # }
 
   # AWS SES SMTP
+  ses_region = Rails.application.credentials.dig(:aws, :region) || ENV["AWS_SES_REGION"]
+  ses_smtp_username = Rails.application.credentials.dig(:aws, :smtp_username) || ENV["AWS_SES_SMTP_USERNAME"]
+  ses_smtp_password = Rails.application.credentials.dig(:aws, :smtp_password) || ENV["AWS_SES_SMTP_PASSWORD"]
+
   config.action_mailer.delivery_method = :smtp
   config.action_mailer.smtp_settings = {
-    address:              "email-smtp.#{Rails.application.credentials.dig(:aws, :region)}.amazonaws.com",
+    address:              ("email-smtp.#{ses_region}.amazonaws.com" if ses_region.present?),
     port:                 587,
-    user_name:            Rails.application.credentials.dig(:aws, :smtp_username),
-    password:             Rails.application.credentials.dig(:aws, :smtp_password),
+    user_name:            ses_smtp_username,
+    password:             ses_smtp_password,
     authentication:       :plain,
     enable_starttls_auto: true
-  }
+  }.compact
 
   # Enable locale fallbacks for I18n (makes lookups for any locale fall back to
   # the I18n.default_locale when a translation cannot be found).
