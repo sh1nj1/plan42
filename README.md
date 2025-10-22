@@ -49,3 +49,7 @@ before precompiling assets. To deploy:
 
 Render will automatically create both the web service and the PostgreSQL database as specified in the `render.yaml` configuration.
 
+
+## License
+
+Collavre is distributed under the terms of the [GNU Affero General Public License v3.0](LICENSE).
