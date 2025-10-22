@@ -70,9 +70,9 @@ Rails.application.configure do
   # }
 
   # AWS SES SMTP
-  ses_region = Rails.application.credentials.dig(:aws, :region) || ENV["AWS_SES_REGION"]
-  ses_smtp_username = Rails.application.credentials.dig(:aws, :smtp_username) || ENV["AWS_SES_SMTP_USERNAME"]
-  ses_smtp_password = Rails.application.credentials.dig(:aws, :smtp_password) || ENV["AWS_SES_SMTP_PASSWORD"]
+  ses_region = ENV["AWS_SES_REGION"] || Rails.application.credentials.dig(:aws, :region)
+  ses_smtp_username = ENV["AWS_SES_SMTP_USERNAME"] || Rails.application.credentials.dig(:aws, :smtp_username)
+  ses_smtp_password = ENV["AWS_SES_SMTP_PASSWORD"] || Rails.application.credentials.dig(:aws, :smtp_password)
 
   config.action_mailer.delivery_method = :smtp
   config.action_mailer.smtp_settings = {

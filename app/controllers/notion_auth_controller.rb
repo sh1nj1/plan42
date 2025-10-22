@@ -5,7 +5,7 @@ class NotionAuthController < ApplicationController
       return
     end
 
-    client_id = Rails.application.credentials.dig(:notion, :client_id) || ENV["NOTION_CLIENT_ID"]
+    client_id = ENV["NOTION_CLIENT_ID"] || Rails.application.credentials.dig(:notion, :client_id)
     unless client_id.present?
       render plain: "Notion integration not configured", status: :internal_server_error
       return
@@ -114,8 +114,8 @@ class NotionAuthController < ApplicationController
   end
 
   def exchange_code_for_token(code)
-    client_id = Rails.application.credentials.dig(:notion, :client_id) || ENV["NOTION_CLIENT_ID"]
-    client_secret = Rails.application.credentials.dig(:notion, :client_secret) || ENV["NOTION_CLIENT_SECRET"]
+    client_id = ENV["NOTION_CLIENT_ID"] || Rails.application.credentials.dig(:notion, :client_id)
+    client_secret = ENV["NOTION_CLIENT_SECRET"] || Rails.application.credentials.dig(:notion, :client_secret)
 
     response = HTTParty.post("https://api.notion.com/v1/oauth/token",
       headers: {

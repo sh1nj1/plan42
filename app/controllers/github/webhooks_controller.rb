@@ -74,7 +74,7 @@ module Github
     end
 
     def fallback_webhook_secret
-      Rails.application.credentials.dig(:github, :webhook_secret) || ENV["GITHUB_WEBHOOK_SECRET"]
+      ENV["GITHUB_WEBHOOK_SECRET"] || Rails.application.credentials.dig(:github, :webhook_secret)
     end
 
     def parse_payload(raw_body)
