@@ -509,6 +509,7 @@ DEPENDENCIES
   capybara
   closure_tree
   debug
+  dotenv
   fcm
   google-apis-calendar_v3
   google-apis-fcm_v1

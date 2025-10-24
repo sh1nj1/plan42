@@ -1,7 +1,7 @@
 server_key = ENV["FCM_SERVER_KEY"] || Rails.application.credentials.dig(:fcm, :server_key)
 project_id = ENV["FIREBASE_PROJECT_ID"] || Rails.application.credentials.dig(:firebase, :project_id)
 project_number = ENV["FCM_SENDER_ID"] || Rails.application.credentials.dig(:fcm, :sender_id)
-service_account = "firebase-adminsdk-fbsvc@collavre.iam.gserviceaccount.com"
+service_account = ENV["FIREBASE_SERVICE_ACCOUNT"] || Rails.application.credentials.dig(:fcm, :service_account)
 
 # Use service account JSON for local development
 FCM_CREDENTIALS = ENV["GOOGLE_APPLICATION_CREDENTIALS"]
