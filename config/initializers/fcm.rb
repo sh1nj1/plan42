@@ -1,7 +1,7 @@
-server_key = Rails.application.credentials.dig(:fcm, :server_key) || ENV["FCM_SERVER_KEY"]
-project_id = Rails.application.credentials.dig(:firebase, :project_id) || ENV["FIREBASE_PROJECT_ID"]
-project_number = Rails.application.credentials.dig(:fcm, :sender_id)
-service_account = "firebase-adminsdk-fbsvc@collavre.iam.gserviceaccount.com"
+server_key = ENV["FCM_SERVER_KEY"] || Rails.application.credentials.dig(:fcm, :server_key)
+project_id = ENV["FIREBASE_PROJECT_ID"] || Rails.application.credentials.dig(:firebase, :project_id)
+project_number = ENV["FCM_SENDER_ID"] || Rails.application.credentials.dig(:fcm, :sender_id)
+service_account = ENV["FIREBASE_SERVICE_ACCOUNT"] || Rails.application.credentials.dig(:fcm, :service_account)
 
 # Use service account JSON for local development
 FCM_CREDENTIALS = ENV["GOOGLE_APPLICATION_CREDENTIALS"]
@@ -22,6 +22,8 @@ if FCM_CREDENTIALS.present? && File.exist?(FCM_CREDENTIALS)
   puts "FCM initialized with service account credentials from #{FCM_CREDENTIALS}"
 
 elsif project_id.present? && Rails.env.production?
+  Rails.logger.info "FCM initialized with service account credentials from #{service_account}"
+  puts "FCM initialized with service account credentials from #{service_account}"
   # Use Workload Identity Federation for production (AWS EC2)
   audience = "//iam.googleapis.com/projects/#{project_number}/locations/global/workloadIdentityPools/aws-pool/providers/aws-provider"
 

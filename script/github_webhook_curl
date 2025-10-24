@@ -66,7 +66,7 @@ if repo_full_name.blank?
   exit 1
 end
 
-webhook_secret = Rails.application.credentials.dig(:github, :webhook_secret) || ENV["GITHUB_WEBHOOK_SECRET"]
+webhook_secret = ENV["GITHUB_WEBHOOK_SECRET"] || Rails.application.credentials.dig(:github, :webhook_secret)
 
 if webhook_secret.blank?
   warn "error: configure GITHUB_WEBHOOK_SECRET or github.webhook_secret in credentials"

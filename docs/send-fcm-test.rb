@@ -1,5 +1,7 @@
 
 
+ENV["AWS_ACCESS_KEY_ID"] = nil
+ENV["AWS_SECRET_ACCESS_KEY"] = nil
 ENV["AWS_REGION"] = nil
 
 module Google

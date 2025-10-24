@@ -2,13 +2,13 @@
 service: collavre
 
 # Name of the container image.
-image: soonoh/collavre
+image: <%= ENV['KAMAL_REGISTRY_USER'] %>/collavre
 
 # Deploy to these servers.
 servers:
   web:
     hosts:
-      - <%= ENV['SERVER_VRERV1'] || 'vrerv1' %>
+      - <%= ENV['COLLAVRE_SERVER'] %>
     proxy: true
     # turn this off when using proxy true
 #    options:
@@ -31,7 +31,7 @@ proxy:
 registry:
   # Specify the registry server, if you're not using Docker Hub
   # server: registry.digitalocean.com / ghcr.io / ...
-  username: soonoh
+  username: <%= ENV['KAMAL_REGISTRY_USER'] %>
 
   # Always use an access token rather than real password when possible.
   password:
@@ -46,8 +46,21 @@ env:
     - GEMINI_API_KEY
     - GITHUB_CLIENT_ID
     - GITHUB_CLIENT_SECRET
+    - GOOGLE_CLIENT_ID
+    - GOOGLE_CLIENT_SECRET
     - NOTION_CLIENT_ID
     - NOTION_CLIENT_SECRET
+    - FIREBASE_API_KEY
+    - FIREBASE_AUTH_DOMAIN
+    - FIREBASE_PROJECT_ID
+    - FIREBASE_APP_ID
+    - FIREBASE_SERVICE_ACCOUNT
+    - FCM_SERVER_KEY
+    - FCM_SENDER_ID
+    - FCM_VAPID_KEY
+    - AWS_REGION
+    - AWS_SES_SMTP_USERNAME
+    - AWS_SES_SMTP_PASSWORD
   clear:
     # Run the Solid Queue Supervisor inside the web server's Puma process to do jobs.
     # When you start using multiple servers, you should split out job processing to a dedicated machine.
