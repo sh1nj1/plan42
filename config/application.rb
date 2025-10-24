@@ -20,12 +20,12 @@ module Collavre
     end
 
     # Load environment variables from .env.production if it exists
-    env_file = File.expand_path('../../.env.production', __FILE__)
+    env_file = File.expand_path("../../.env.production", __FILE__)
     if ENV["RAILS_ENV"] == "development" && File.exist?(env_file)
       # Read .env.production and extract variable names
       env_vars = File.readlines(env_file)
-                     .reject { |line| line.strip.empty? || line.start_with?('#') }
-                     .map { |line| line.split('=').first.strip }
+                     .reject { |line| line.strip.empty? || line.start_with?("#") }
+                     .map { |line| line.split("=").first.strip }
       # Only show environment variables that are defined in .env.production
       ENV.each do |key, value|
         next unless env_vars.include?(key)
