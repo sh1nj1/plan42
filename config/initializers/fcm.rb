@@ -22,6 +22,8 @@ if FCM_CREDENTIALS.present? && File.exist?(FCM_CREDENTIALS)
   puts "FCM initialized with service account credentials from #{FCM_CREDENTIALS}"
 
 elsif project_id.present? && Rails.env.production?
+  Rails.logger.info "FCM initialized with service account credentials from #{service_account}"
+  puts "FCM initialized with service account credentials from #{service_account}"
   # Use Workload Identity Federation for production (AWS EC2)
   audience = "//iam.googleapis.com/projects/#{project_number}/locations/global/workloadIdentityPools/aws-pool/providers/aws-provider"
 
