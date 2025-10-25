@@ -1,20 +1,20 @@
-# FCM 연동 설정 가이드
+# FCM Integration Setup Guide
 
-이 문서는 Collavre에서 Firebase Cloud Messaging(FCM)을 사용하여 푸시 알림을 보내기 위한 기본 설정 방법을 설명합니다.
+This document explains the baseline configuration steps required to send push notifications with Firebase Cloud Messaging (FCM) in Collavre.
 
-## 1. Firebase 프로젝트 생성
+## 1. Create a Firebase project
 
-1. [Firebase 콘솔](https://console.firebase.google.com/)에 접속하여 새 프로젝트를 생성합니다.
-2. 프로젝트 설정에서 **Cloud Messaging** 탭을 열어 `서버 키`와 `송신자 ID`(Sender ID)를 확인합니다.
+1. Visit the [Firebase Console](https://console.firebase.google.com/) and create a new project.
+2. In the project settings, open the **Cloud Messaging** tab and locate the `Server key` and `Sender ID` values.
 
-## 2. 웹 푸시 인증서 설정
+## 2. Configure the Web Push certificate
 
-1. **Cloud Messaging** 탭에서 `웹 푸시 인증서` 섹션의 **키 생성** 버튼을 눌러 VAPID 키 쌍을 발급받습니다.
-2. 생성된 `공개 키`를 프론트엔드 애플리케이션에서 사용하도록 저장합니다.
+1. In the **Cloud Messaging** tab, click **Generate key pair** in the `Web Push certificates` section to issue a VAPID key pair.
+2. Store the generated `Public key` so that your frontend application can use it.
 
-## 3. 백엔드 설정
+## 3. Backend configuration
 
-Rails 애플리케이션에서 FCM을 사용하려면 `rails credentials:edit` 명령어로 다음 값들을 추가합니다.
+To enable FCM in the Rails application, run `rails credentials:edit` and add the following values.
 
 ```yaml
 firebase:
@@ -28,9 +28,9 @@ fcm:
   vapid_key: generated_vapid_public_key
 ```
 
-## 4. 클라이언트 설정
+## 4. Client configuration
 
-웹 또는 PWA에서 FCM을 사용하려면 Firebase SDK를 로드하고 서비스를 초기화해야 합니다. 예시는 다음과 같습니다.
+To use FCM from the web or a PWA, load the Firebase SDK and initialize the service. For example:
 
 ```javascript
 import { initializeApp } from "firebase/app";
@@ -43,18 +43,18 @@ const messaging = getMessaging(app);
 
 getToken(messaging, { vapidKey: firebaseConfig.vapidKey }).then((currentToken) => {
   if (currentToken) {
-    // 서버로 토큰 전송
+    // Send the token to the server
   }
 });
 
 onMessage(messaging, (payload) => {
-  // 포그라운드 메시지 처리
+  // Handle foreground messages
 });
 ```
 
-## 5. 서버에서 푸시 메시지 보내기
+## 5. Send push messages from the server
 
-FCM 서버 키를 사용하여 알림을 전송할 수 있습니다. `fcm` gem을 사용한다면 다음과 같이 요청을 보낼 수 있습니다.
+You can send notifications by using the FCM server key. With the `fcm` gem, send a request like the following:
 
 ```ruby
 require "fcm"
@@ -63,18 +63,18 @@ fcm = FCM.new(Rails.application.credentials.dig(:fcm, :server_key))
 
 response = fcm.send(registration_ids, {
   notification: {
-    title: "새 알림",
-    body: "Inbox에 새로운 알림이 도착했습니다.",
+    title: "New notification",
+    body: "A new notification just arrived in the Inbox.",
     click_action: "https://your-app.example"
   }
 })
 ```
 
-이렇게 설정하면 Inbox에서 알림이 발생할 때 웹 또는 PWA 사용자에게 FCM을 통해 푸시 메시지를 전달할 수 있습니다.
+With this configuration, any Inbox event can trigger an FCM push notification for web or PWA users.
 
-## 6. 디바이스 등록과 푸시 전송
+## 6. Device registration and push delivery
 
-PWA 앱에서 획득한 FCM 토큰을 다음과 같이 서버로 전송하여 저장합니다.
+Send the FCM token collected in the PWA to the server and persist it as follows.
 
 ```javascript
 fetch('/devices', {
@@ -92,15 +92,15 @@ fetch('/devices', {
 });
 ```
 
-서버는 전달받은 정보를 `devices` 테이블에 저장하며, 컬럼은 다음과 같습니다.
+The server persists the payload in the `devices` table with the following columns:
 
-- `client_id`: 브라우저나 디바이스를 구분하기 위한 ID
-- `device_type`: `web`, `pwa`, `android`, `ios` 중 하나
-- `app_id`: 애플리케이션 ID
-- `app_version`: 애플리케이션 버전
-- `fcm_token`: FCM에서 발급받은 토큰
+- `client_id`: An identifier that distinguishes the browser or device.
+- `device_type`: One of `web`, `pwa`, `android`, or `ios`.
+- `app_id`: The application ID.
+- `app_version`: The application version.
+- `fcm_token`: The token issued by FCM.
 
-새로운 InboxItem이 생성될 때마다 해당 사용자의 모든 디바이스로 푸시 알림이 전송됩니다.
+Whenever a new `InboxItem` is created, a push notification is sent to every device registered for that user.
 
 ## FCM with AWS Workload Identity Federation
 

@@ -7,13 +7,13 @@
 #### A Creative should be ordered by sequence
 
 
-#### 크리에이티브 경계 표시
+#### Show creative boundaries
 
-* 개별 크리에이티브 경계 표시
-  * 마우스 오버시 크리에이티브 배경색을 변화시켜 영역을 표시
-  * 모바일에서 마우스 오버 없이 구분하기 위해 앞에 경계 블록 표시 긴 세로바를 넣음
-* 하위 영역까지 표시
-  * 하위를 가지고 expansion \(펼치기\) 액션이 있는 크리에이티브는 하위가 어디까지인지 구분 표시를 한다.
+* Highlight each individual creative.
+  * Change the creative's background color on hover to make its area clear.
+  * On mobile, add a tall leading border block so items remain distinguishable without hover.
+* Indicate the extent of child regions.
+  * When a creative supports the expansion action, show where its subtree begins and ends.
 
 #### View count
 
@@ -21,10 +21,10 @@
 #### Progress
 
 * Value range 0.0 \~ 1.0
-* 필터링 된 페이지에 대해 상위 Progress 는 재계산되어야 한다. 예를 들면, Plan 에 태그된 것만 볼 경우, 그 태그된 크리에이티브들만으로 진행률이 재계산되어야 한다.
-* 계산 방식 유연화
-  * 하위의 평균이 현재 크리에이티브의 Progress 가된다.
-  * 가중치 계산? 작업의 크기에 따른 구분이 필요할 수도 있고, 난이도등 여러 요소가 있을 수 있다.
+* Recalculate parent progress whenever the page is filtered. For example, if only creatives tagged to a Plan are visible, compute progress from that subset alone.
+* Provide flexible calculation methods.
+  * Default to averaging the progress values of child creatives.
+  * Consider weighted formulas to account for task size, difficulty, or other relevant factors.
 * Parent Creative progress should be auto\-calculated by it's children progress
 * Only leaf Creative progress can be edited by a user
 
@@ -35,15 +35,15 @@
 
 #### Printable Page
 
-* 앱의 웹페이지를 브라우저에서 출력하면, 메뉴와 팝업등의 요소가 제외되고 컨텐츠 내용만 출력된다
+* When printing the app from a browser, omit menus, popups, and other chrome so only the content is printed.
 
 #### Conversion
 
-* Idea, R&amp;D 수준의 작업은 우선 메인 문서로 기록되기 전에 탐색및 조사, 토론 등이 필요하다. 이때 이런 것은 관련 크리에이티브에 코멘트로 기록되어 토론이 될 수 있을 것이다. 이후 확정이 되면 정식 문서 내의 크리에이티브로 "전환" 된다면 좋을 것이다.
-* 코멘트는 해당 크레이이티브의 하위 크리에이티브로 전환될 수 있다.
-* 크리에이티브는 상위 크리에이티브의 코멘트로 전환될 수 있다.
-* 코멘트로 전환은 문서에서 더이상 불필요하거나 과거의 내용등을 코멘트로 전환함으로써 더이상 문서에 불필요한 내용을 남가지 않게 한다.
-* 백로그 개념은 어떻게 처리할 것인가?
+* Idea- or R&amp;D-level work often requires exploration, research, and discussion before it belongs in the main document. Capture those conversations as comments on the related creative, then convert them into official creatives once the work is finalized.
+* Allow a comment to be converted into a child creative.
+* Allow a creative to be converted into a comment on its parent.
+* Converting outdated or unnecessary items into comments helps keep the primary document focused.
+* Define how backlog items should be handled.
 
 #### Creatives should contain its tree structure even if some of the Creatives hidden by filters or permissions
 
@@ -51,13 +51,13 @@
 #### List all tags for the creative and toggle button to filter with that tag
 
 
-#### 모두 펼침 토글
+#### Expand-all toggle
 
 
 #### Text Styles
 
-* 문단 가운데 정렬
-* 문단 우측 정렬
+* Center-align paragraphs
+* Right-align paragraphs
 
 
 ### Actions
@@ -72,17 +72,17 @@
 * Only show action buttons when user over the creative row to look UI clean
 * New Creative
   * Form
-    * 다른 크리에이티브를 링크할 수 있다
-    * 취소를 누르면 이전 상태로 가야 한다.
-  * 태그 검색 상태에서 추가를 하면, 생성시 해당 태그도 모두 추가한다.
+    * Allow linking to other creatives.
+    * The cancel action should restore the previous state.
+  * When adding while a tag filter is active, apply all of those tags to the new creative.
 * Always show row action buttons when it is mobile device
 
 #### Creative menu
 
 * Add&nbsp; Creative
-  * New sub\-creative
-  * 아래에 추가 \- 현재 크리에이티브 아래에 같은 레벨로 추가
-  * New upper\-creative
+  * New sub-creative
+  * Add below — insert a sibling beneath the current creative
+  * New upper-creative
 * Import
   * Import from Markdown file.
     * Convert markdown table
@@ -108,7 +108,7 @@
 
 #### Multi\-Selection
 
-* selection 모드 일경우 기존의 Drag and Drop 에 의해 이동 기능은 중지되고, creative\-row 가 선택되어야 한다.shift key 를 누르고 드래그 하는 경우, 추가로 선택되어야 한다.alt key 를 누르고 드래그 하는 경우, 선택에서 제외되어야 한다.
+* In selection mode, disable the usual drag-and-drop reordering. Dragging with the Shift key should add items to the selection, and dragging with the Alt key should remove them.
 
 #### Attach files
 
@@ -120,19 +120,19 @@
 #### Change text
 
 
-#### 수정 모드에서 위아래 크리에이티브로 이동하여 수정할 수 있다
+#### In edit mode, allow navigating to the previous or next creative
 
 
-#### 수정 모드에서 아래에 새 크리에이티브를 추가할 수 있다
+#### In edit mode, allow adding a new creative directly below
 
 
-#### 수정모드에서 하위에 새 크리에이티브를 추가할 수 있다
+#### In edit mode, allow adding a new child creative
 
 
-#### 취소 버튼을 눌러 취소할 수 있다
+#### Provide a cancel button to discard changes
 
 
-#### 엔터키를 누르면 수정 모드로 변경
+#### Pressing Enter switches to edit mode
 
 
 #### Change progress
@@ -147,16 +147,16 @@
 #### Show only incomplete Creatives
 
 
-#### 기간안에 추가된 것만 필터
+#### Filter creatives added within a specific time range
 
 
-#### 지정된 tag 들만 필터
+#### Filter by selected tags
 
 
-#### 코멘트가 있는 것만 필터
+#### Filter to creatives that have comments
 
 
-#### 태깅되지 않은 것만 필터
+#### Filter to creatives with no tags
 
 
 #### Show Creatives only given level depth
@@ -166,75 +166,75 @@
 
 ## Commenting
 
-### 크리에이티브에 코멘트를 추가/삭제/리스트 할 수 있다.
+### Allow adding, deleting, and listing comments on a creative.
 
 
-### 댓글은 소유자만 편집및 삭제 할 수 있다
+### Only the owner can edit or delete a comment
 
 
-### Linked Creative 이면 원본에 코멘트가 등록되고 원본 코멘트를 표시해야함
+### For a Linked Creative, store comments on the origin and display the origin's comment thread
 
 
 ### Topic
 
-#### 코멘트는 2단계 상하 관계가 있다.
+#### Comments support a two-level hierarchy.
 
 
-#### 토픽 아래에 코멘트 리스트가 달린다.
+#### Display the comment list under each topic.
 
 
-#### 크레이이티브 &gt; 토픽 &gt; 코멘트 관계가 있다.
+#### Maintain the Creative &gt; Topic &gt; Comment relationship.
 
 
-#### 토픽은 하나의 히든 크리에이티브라고 보면된다.
+#### Treat a topic as a hidden creative.
 
 
 
-### 댓글 리스트
+### Comment list
 
-#### 댓글 필터시 지정된 Creative 하위로만 필터되어야 된다
+#### Comment filters should target only the selected creative's descendants.
 
 
-#### 댓글만 있는 크리에이트브만 필터할 수 있다.
+#### Provide a filter that shows only creatives with comments.
 
 
 
 ### Chat
 
-#### 개별 코멘트는 채팅처럼 작동할 수 있도록, 실시간으로 메세지가 전송되어야 한다.
+#### Individual comments should behave like chat messages with real-time delivery.
 
 
-#### 권한이 없는 사용자를 멘션하면 "피드백" 권한으로 공유할지 물어보고 공유한다
+#### When mentioning a user without access, prompt to share the creative with Feedback permission.
 
 
-#### 현재 보고 있는 화면에서 새로운 댓글이 추가되면 이동할 수 있는 링크를 포함하여 "새로운 댓글이 추가되었습니다. 댓글로 이동" 을 노티스에 표시하고, 링크를 삽입한다. 링크를 누르면 해당 댓글창이 열리면서 해당 댓글이 플래쉬 된다. 해당 링크를 누르면 해당 노티스는 사라진다.
+#### If a new comment arrives on the current screen, show a notice such as "A new comment was added. Go to comment." Include a link that opens the comment pane, highlights the comment, and clears the notice after it is used.
 
 
-#### 사용자 온라인 상태 표시
+#### Display user online status.
 
 
-#### 채팅의 참여 사용자는 Creative.user \(owner\) 가 방장 개념이고, 그외 feedback 권한을 가진 모든 사용자가 해당 채널 참여자다
+#### Chat participants include the creative owner as the host and every user with Feedback permission.
 
 
-#### AI 에이전트
+#### AI agents
 
-* AI 에이전트를 사용자가 설정하면 동료 처럼 채팅
+* When a user enables an AI agent, it should chat like a teammate.
 
 
 ### Chat \(Comment\) Commands
 
-#### 현재 쓰레드에서 논의한 내용으로 크리에이티브 생성 기능 \- [Conversion](https://plan42.vrerv.com/creatives/430) 과 유사
+#### Allow generating a creative from the current thread, similar to [Conversion](https://plan42.vrerv.com/creatives/430).
 
 
-#### 오프라인 회의\(Meeting\)
+#### Offline meetings
 
-* "/meeting " 을 입력하면, 미팅 추가 팝업이 표시되고, 현재 참여자가 모두 미팅 대상이 된다. \- 구글 캘린더 연동
-
-
-### 댓글을 수정할 수 있다.
+* Typing "/meeting " opens a dialog to schedule a meeting with all current participants; integrate with Google Calendar.
 
 
-### 코멘트에서 사용자를 멘션할 수 있다.
+### Allow editing comments.
+
+
+### Allow mentioning users in comments.
 
 
 
@@ -251,16 +251,16 @@
 
 ### Tips
 
-#### page title 위에 "드래그해서 선택을 토글할 수 있습니다." 문구를 선택 모드일때 표시 하고 닫기 버튼을 추가하여 drag\-to\-selection 기능에 대해 닫은 지 여부를 사용자에 UserLearned 에 저장?
+#### In selection mode, display the message "You can drag to toggle selection" above the page title, add a close button, and store whether the user dismissed it in UserLearned.
 
 
 
 ### Theme
 
-#### 기본 테마를 제공한다.
+#### Provide a default theme.
 
 
-#### 테마는 다음을 정한다크리에이티브 레벨별 스타일완료/미완료 스타일
+#### Themes define creative level styles and completed vs. incomplete styling.
 
 
 #### Dark Mode UI
@@ -280,12 +280,12 @@
 
 #### Tutorial
 
-* 사용자가 최초 로그인하면, 튜토리얼을 표시한다.
-* 튜토리얼 작성
-  * 6 단계의 깊이로 간단한&nbsp; 콜라브 제품을 소개하는 문서를 만들어서 튜토리얼 자체도 하나의 크리에이티브들로 구성되도록 한다.
-* 콜라브 튜토리얼
-  * 콜라브는 문서 \- 태스크 \- 채팅 통합 협업 플랫폼입니다
-  * 트리 구조와 문서크리에이티브페이지 구분 없음완료 상태 퍼센티지상위 전파 \- 평균값태그 \- 계획공유토론 \- 채팅댓글이 해당 크리에이티브에 대한 주제로 채팅처럼 실시간 확인 진행 가능참여자태스크의 할당은 롤별로 가능하며 멀티 가능기획, 디자인, 개발
+* Show a tutorial when a user logs in for the first time.
+* Tutorial content
+  * Create a six-level document that introduces the Collavre product so the tutorial itself is composed of creatives.
+* Collavre tutorial
+  * Collavre is an integrated collaboration platform for documents, tasks, and chat.
+  * Key concepts: unified tree and document/creative pages, completion percentages that roll up as averages, tags for plans and sharing, real-time discussion via comments, and role-based multi-assignment for planning, design, and development.
 
 
 ### On\-Premises
@@ -293,7 +293,7 @@
 
 ### Organisation
 
-#### Creative 는 Organisation 소유일 수 있다.Organisation 소유의 Creative 하위는 모두 조직 소유이다.
+#### A creative can be owned by the organisation, and all descendants inherit organisation ownership.
 
 
 
@@ -301,28 +301,28 @@
 
 #### Inbox Item List
 
-* 인박스에 사용자에게 전달된 메세지나 이벤트 메세지를 표시한다
-* 인박스 메세지는 "new" \(새로운\), "read" \(읽음\) 상태를 가진다
-* 앱 메뉴에 "인박스" 메뉴를 추가하고 누르면 오른쪽 슬라이드 패널로 메세지 리스트를 표시한다
-* 인박스 리스트는 안읽은 메세지를 기본으로 표시한다
-* 닫기를누르면 슬라이드가 닫힌다.
-* 인박스 리스트에 "않읽은 메시지 표시" 토글을 둔다
+* Display messages and events delivered to the user in the Inbox.
+* Inbox messages have "new" and "read" states.
+* Add an "Inbox" menu item that opens a right-hand slide-out panel listing messages.
+* Default the Inbox list to unread messages.
+* Provide a close control to dismiss the slide-out.
+* Include a "show unread messages" toggle in the Inbox list.
 
 #### Notify Inbox Message
 
-* 매일 오전 09:00 에 각 사용자의 읽지 않은 인박스 메세지 최대 10개까지를 읽어서 메일로 보낸다. 만약 메세지가 없으면 보내지 않는다.
+* At 09:00 every day, email up to ten unread Inbox messages per user; skip the email if there are no unread items.
 
 #### Inbox Message
 
-* 사용자가 코멘트를 달면, 해당 Creative 사용자의 InboxItem 을 추가한다. "{User.email} 가 "{comment}" 를 추가했습니다." 라는 메세지로 표시한다.
-* /creatives/:creative_id/comments/:comment_id 로 comment 의 url 을 만들고, 호출되면, 해당 코멘트 팝업이 표시되고 해당 comment 의 배경색이 플래쉬 되는 애니메이션이 표시된다.
-* 사용자가 크리에이티브를 공유하면, 공유받은 사용자의 인박스에 다음 메세지를 생성한다."{user} 가 \\"{short_title}\\" 을 공유했습니다." 또한 해당 메세지를 누르면 해당 /creatives/:id 로 이동한다.
-* 사용자가 인박스에서 메세지 링크를 누르면 자동 읽음 처리
+* When a user leaves a comment, add an InboxItem for the creative owner with a message such as "{User.email} added "{comment}"."
+* Expose comment URLs in the form /creatives/:creative_id/comments/:comment_id; opening the link should display the comment popup and flash-highlight the comment.
+* When a creative is shared, create an Inbox message for the recipient such as "{user} shared "{short_title}"." Clicking it should open /creatives/:id.
+* Mark an Inbox message as read automatically when the user follows its link.
 
 
 ### User Avatar
 
-#### 사용자 링크에 아바타를 표시한다.아바타 클릭시 바로 프로파일로 이동하지 않고, 팝업 메뉴를 띄운다.사용자 팝업메뉴에는 "프로파일", "로그아웃" 을 표시한다.프로파일에 아바타 변경 메뉴를 추가하고 구현한다.아바타가 없는 사용자는 빈 아바타를 사용한다.외부 아바타는 url 로 이미지를 링크한다.
+#### Display avatars alongside user links. Clicking an avatar should open a menu (Profile, Log out) instead of navigating immediately. Add avatar management to the profile, use a placeholder when no avatar is set, and allow external avatar URLs.
 
 
 
@@ -337,7 +337,7 @@
 #### Invitation
 
 * Invitation for by sharing, if the user not exists
-* 사용자는 초대 리스트를 보고 초대 결과를 확인할 수 있다
+* Users can view the invitation list and check the status of each invite.
 
 #### List shared users
 
@@ -358,35 +358,35 @@
 * Feedback permission \- can comment
 * Write permission
 * Full access permission
-* 권한은 하위 모든 노드에 적용된다.
-* 만약 특정 하위 노드에 적용하지 않고 싶으면 NONE 퍼미션을 추가해야 한다.
+* Permissions apply to every descendant node.
+* Add a NONE permission override to exclude a specific child node.
 
 
 
 ## Search
 
-### 단순 단어 매칭
+### Simple word matching
 
 
-### 검색 결과가 없음을 표시해야 한다
+### Show a "no results" message when a search fails
 
 
-### 검색시 코멘트에 정보가 있는 Creative 도 검색된다.
+### Include creatives whose relevant information lives in comments
 
 
-### 조건 검색및 정렬 \(ransack\)
+### Advanced filtering and sorting (ransack)
 
 
-### 빠른 검색, 대용량 데이터 검색
+### Fast search for large datasets
 
-#### searchkick \(Elasticsearch&nbsp; 기반\)
-
-
-#### meilisearch\-rails \(빠른 설치 \+ 간단한 설정\)
+#### searchkick (Elasticsearch-based)
 
 
+#### meilisearch-rails (quick to install and simple to configure)
 
-### 검색창이 앱 상단바에 있고, 검색어를 입력할 수 있다.
+
+
+### Place the search box in the app header and allow text input.
 
 
 
@@ -418,14 +418,14 @@
 #### Total progress for Plan
 
 
-#### 사용자는 Plan 의 이름을 바꿀 수 있다
+#### Allow users to rename a Plan
 
 
 #### Plan Timeline
 
-* 그 plan bar 는 완료 percentage 에 따라 progress bar 처름 채워주고, 이름 과 percentage 를 표시한다. 이때 이름과 percentage 는 항상 plan bar 가 있을 경우 표시되어야 한다.
-* 플랜\(계획\)은 생성일과 타겟날짜 사이를 plan bar 로 표시한다. 날짜 범위 안에서 plan bar 를 표시하고, 날짜가 스크로되어 범위가 업데이트 되면 plan bar 도 업데이트 한다.
-* 계획 리스트의 타임라인을 가로 달력을 일자별로 표시하고, 좌우로 무한 스크롤 되어서 추가 날짜가 나타날 수 있다.
+* The plan bar should fill according to the completion percentage and always display the name and percentage when present.
+* Show the plan bar between the plan's creation and target dates, updating it as the visible date range scrolls.
+* Render the plan timeline as a horizontal calendar with infinite scrolling in both directions to reveal additional dates.
 
 
 
@@ -452,7 +452,7 @@
 
 ## BI
 
-### 주간 보고 자동화
+### Automate weekly reporting
 
 
 
@@ -473,10 +473,10 @@
 
 ## Linked Creative
 
-### origin_id 가 있는 Creative 는 Linked Creative 이다.
+### A creative with an origin_id is a Linked Creative.
 
 
-### Linked Creative 는 origin Creative 로의 연결이 표시되어 클릭하면 원본으로 바로 이동 된다.
+### Linked creatives display a link to their origin so users can jump back to the source.
 
 
 
