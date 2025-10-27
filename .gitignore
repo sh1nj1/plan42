@@ -29,6 +29,9 @@
 !/tmp/storage/
 !/tmp/storage/.keep
 
+# Ignore accidentally committed SQLite database files at repo root.
+/*.sqlite3
+
 /public/assets
 
 # Ignore master key for decrypting credentials and more.

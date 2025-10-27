@@ -79,6 +79,7 @@ env:
 
     # Log everything from Rails
     # RAILS_LOG_LEVEL: debug
+    DEFAULT_MAILER_FROM: <%= ENV['DEFAULT_MAILER_FROM'] %>
 
 # Aliases are triggered with "bin/kamal <alias>". You can overwrite arguments on invocation:
 # "bin/kamal logs -r job" will tail logs from the first server in the job section.
@@ -117,9 +118,9 @@ builder:
 
 # Use a different ssh user than root
 ssh:
-  user: ec2-user
+  user: <%= ENV.fetch('KAMAL_SSH_USER', 'deploy') %>
   keys_only: true
-  keys: [ "~/.ssh/id_vrerv1.pem" ]
+  keys: [ "<%= ENV.fetch('KAMAL_SSH_KEY_PATH', '~/.ssh/id_rsa') %>" ]
   # you can set key data as below, be aware it is commented in erb also
   # key_data: ["<%#= ENV['KAMAL_SSH_PRIVATE_KEY'].lines.join("\n") %>"]
 

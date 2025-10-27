@@ -69,7 +69,7 @@ This guide explains how to set up Firebase Cloud Messaging (FCM) push notificati
 
 1. **Create or edit `.env.development.local`** in your Rails project root:
    ```bash
-   cd /Users/soonoh/project/soonoh/plan42
+   cd /path/to/your/project/plan42
    touch .env.development.local
    ```
 
