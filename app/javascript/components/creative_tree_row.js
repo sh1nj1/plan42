@@ -151,10 +151,9 @@ class CreativeTreeRow extends LitElement {
 
     const dragEnabled = !this.selectMode || this.canWrite;
     const draggableAttr = dragEnabled ? "true" : nothing;
-    const dragStartAttr = dragEnabled ? "handleDragStart(event)" : nothing;
-    const dragOverAttr = dragEnabled ? "handleDragOver(event)" : nothing;
-    const dropAttr = dragEnabled ? "handleDrop(event)" : nothing;
-    const dragLeaveAttr = dragEnabled ? "handleDragLeave(event)" : nothing;
+    const dragActions = dragEnabled
+      ? "dragstart->creatives--drag-drop#start dragover->creatives--drag-drop#over drop->creatives--drag-drop#drop dragleave->creatives--drag-drop#leave"
+      : nothing;
 
     return html`
       <div
@@ -163,10 +162,7 @@ class CreativeTreeRow extends LitElement {
         data-id=${this.creativeId ?? nothing}
         data-parent-id=${this.parentId ?? nothing}
         draggable=${draggableAttr}
-        ondragstart=${dragStartAttr}
-        ondragover=${dragOverAttr}
-        ondrop=${dropAttr}
-        ondragleave=${dragLeaveAttr}
+        data-action=${dragActions}
       >
         <div class="creative-row" data-creatives--select-mode-target="row">
           <div class="creative-row-start">

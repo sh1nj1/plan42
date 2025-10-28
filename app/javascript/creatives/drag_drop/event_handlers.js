@@ -505,7 +505,7 @@ function notifyInvalidDrop() {
   }
 }
 
-function handleDragStart(event) {
+export function handleDragStart(event) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
   if (!tree || tree.draggable === false) return;
   const row = asTreeRow(tree);
@@ -534,7 +534,7 @@ function handleDragStart(event) {
   }
 }
 
-function handleDragOver(event) {
+export function handleDragOver(event) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
   const lastRow = getLastDragOverRow();
   if (lastRow && lastRow !== tree) {
@@ -574,7 +574,7 @@ function resetDrag() {
   hideLinkHover();
 }
 
-function handleDrop(event) {
+export function handleDrop(event) {
   const targetTree = event.target.closest(DRAGGABLE_SELECTOR);
   const targetId = targetTree ? targetTree.id : '';
   clearDragHighlight(targetTree);
@@ -775,7 +775,7 @@ function handleDrop(event) {
     .finally(finalizeDrop);
 }
 
-function handleDragLeave(event) {
+export function handleDragLeave(event) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
   if (!tree || tree.draggable === false) return;
   clearDragHighlight(tree);
@@ -786,17 +786,21 @@ function handleDragEnd() {
   resetDrag();
 }
 
-export function registerGlobalHandlers() {
-  initIndicator();
-
-  window.handleDragStart = handleDragStart;
-  window.handleDragOver = handleDragOver;
-  window.handleDrop = handleDrop;
-  window.handleDragLeave = handleDragLeave;
-
+export function addGlobalListeners() {
   document.addEventListener('dragend', handleDragEnd);
   window.addEventListener('storage', handleStorageChange);
   window.addEventListener(DROP_COMPLETED_EVENT, handleDropCompletionEvent);
+}
+
+export function removeGlobalListeners() {
+  document.removeEventListener('dragend', handleDragEnd);
+  window.removeEventListener('storage', handleStorageChange);
+  window.removeEventListener(DROP_COMPLETED_EVENT, handleDropCompletionEvent);
+}
+
+export function registerGlobalHandlers() {
+  initIndicator();
+  addGlobalListeners();
 }
 
 export function hasActiveDrag() {
