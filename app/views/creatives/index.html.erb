@@ -1,11 +1,13 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
-<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor"
+<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--set-plan-modal"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"
      data-creatives--import-uploading-value="<%= t('creatives.index.import_uploading') %>"
      data-creatives--import-success-value="<%= t('creatives.index.import_success') %>"
      data-creatives--import-failed-value="<%= t('creatives.index.import_failed') %>"
-     data-creatives--import-only-markdown-value="<%= t('creatives.index.only_markdown') %>">
+     data-creatives--import-only-markdown-value="<%= t('creatives.index.only_markdown') %>"
+     data-creatives--set-plan-modal-select-one-value="<%= t('creatives.index.select_one_creative') %>"
+     data-creatives--set-plan-modal-select-plan-value="<%= t('creatives.index.select_plan_to_remove') %>">
   <div class="creative-actions-row">
   <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
   <% if @parent_creative&.parent_id.present? %>
@@ -31,8 +33,8 @@
           align: :left,
           button_classes: 'desktop-only'
         ) do %>
-      <button type="button" class="popup-menu-item" data-click-target="github-integration-btn">Github</button>
-       <button type="button" class="popup-menu-item" data-click-target="notion-integration-btn">Notion</button>
+      <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="github-integration-btn" data-action="click->click-target#trigger">Github</button>
+       <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="notion-integration-btn" data-action="click->click-target#trigger">Notion</button>
     <% end %>
   <% end %>
 
@@ -42,7 +44,7 @@
     <% end %>
   <% end %>
 
-  <button id="set-plan-btn" class="set-plan-btn" style="display:none;" data-creatives--select-mode-target="setPlan"><%= t('app.set_plan') %></button>
+  <button id="set-plan-btn" class="set-plan-btn" style="display:none;" data-creatives--select-mode-target="setPlan" data-action="click->creatives--set-plan-modal#open"><%= t('app.set_plan') %></button>
   <input type="checkbox" id="select-all-creatives" style="display:none;vertical-align:middle;" data-action="change->creatives--select-mode#toggleSelectAll" data-creatives--select-mode-target="selectAll" />
   <button id="select-creative-btn" class="select-btn" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>" data-action="click->creatives--select-mode#toggle" data-creatives--select-mode-target="toggle"><%= t('app.select') %></button>
   <% if (@parent_creative || @creative)&.has_permission?(Current.user, :admin) %>

@@ -123,8 +123,6 @@ export default class extends Controller {
         childrenDiv.innerHTML = html
         childrenDiv.dataset.loaded = 'true'
         this.initializeRows(childrenDiv)
-        if (window.attachCreativeRowEditorButtons) window.attachCreativeRowEditorButtons()
-        if (window.attachCommentButtons) window.attachCommentButtons()
         const has = !!childrenDiv.querySelector('creative-tree-row')
         row.hasChildren = has
         return has

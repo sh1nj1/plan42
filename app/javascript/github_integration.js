@@ -1,5 +1,7 @@
-if (!window.githubIntegrationInitialized) {
-  window.githubIntegrationInitialized = true;
+let githubIntegrationInitialized = false;
+
+if (!githubIntegrationInitialized) {
+  githubIntegrationInitialized = true;
 
   document.addEventListener('turbo:load', function () {
     const openBtn = document.getElementById('github-integration-btn');

@@ -41,7 +41,6 @@ export default class extends Controller {
       this.element.addEventListener('touchend', this.handleTouchEnd)
     }
 
-    window.attachCommentButtons = () => {}
     document.querySelectorAll('form[action="/session"]').forEach((form) => {
       form.addEventListener('submit', () => window.localStorage.removeItem(SIZE_STORAGE_KEY))
     })

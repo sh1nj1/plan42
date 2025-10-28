@@ -1,5 +1,7 @@
-if (!window.notionIntegrationInitialized) {
-  window.notionIntegrationInitialized = true;
+let notionIntegrationInitialized = false;
+
+if (!notionIntegrationInitialized) {
+  notionIntegrationInitialized = true;
 
   document.addEventListener('turbo:load', function () {
     const openBtn = document.getElementById('notion-integration-btn');
