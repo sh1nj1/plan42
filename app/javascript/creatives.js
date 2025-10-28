@@ -1,11 +1,9 @@
-let initialized = false;
-
 document.addEventListener('turbo:load', function() {
-  if (initialized) return;
-  initialized = true;
-
   const btn = document.getElementById('apply-tags');
   if (!btn) return;
+  if (btn.dataset.listenerAttached === 'true') return;
+  btn.dataset.listenerAttached = 'true';
+
   btn.addEventListener('click', function() {
     const checked = Array.from(document.querySelectorAll('.tag-checkbox:checked')).map((cb) => cb.value);
     let url = '/creatives';
