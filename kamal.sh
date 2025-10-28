@@ -1,1 +1,1 @@
-dotenv -f ".env.production" ./bin/kamal $@
+dotenv --overwrite -f ".env.production" ./bin/kamal $@
