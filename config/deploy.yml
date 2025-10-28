@@ -80,6 +80,7 @@ env:
     # Log everything from Rails
     # RAILS_LOG_LEVEL: debug
     DEFAULT_MAILER_FROM: <%= ENV['DEFAULT_MAILER_FROM'] %>
+    DEFAULT_URL_HOST: <%= ENV['DEFAULT_URL_HOST'] %>
 
 # Aliases are triggered with "bin/kamal <alias>". You can overwrite arguments on invocation:
 # "bin/kamal logs -r job" will tail logs from the first server in the job section.
