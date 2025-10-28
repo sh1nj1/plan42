@@ -90,57 +90,46 @@ module CreativesHelper
 
   def render_creative_tree(creatives, level = 1, select_mode: false, max_level: User::DEFAULT_DISPLAY_LEVEL)
     return "".html_safe if level > max_level
+    filter = tree_filter
     safe_join(
       creatives.map do |creative|
-        # List only commented creatives without children if listing only chats
-        filtered_children = params[:comment] == "true" ? [] : creative.children_with_permission(Current.user)
         expanded = expanded_from_expanded_state(creative.id, @expanded_state_map)
-        render_next_block = ->(level) {
-          filters = params.to_unsafe_h.except(:id, :controller, :action).present?
-          if filtered_children.any?
+
+        if !filter.visible?(creative)
+          children = filter.visible_children_of(creative)
+          render_creative_tree(children, level, select_mode: select_mode, max_level: max_level)
+        else
+          description_html = embed_youtube_iframe(creative.effective_description(params[:tags]&.first))
+          progress_html = render_creative_progress(creative, select_mode: select_mode)
+          has_children = filter.has_children?(creative)
+
+          children_html = "".html_safe
+          children_loaded = false
+          next_level = level + 1
+
+          if has_children && expanded
+            children = filter.visible_children_of(creative)
+            children_html = render_creative_tree(children, next_level, select_mode: select_mode, max_level: max_level)
+            children_loaded = true
+          end
+
+          load_params = tree_filter_query_params.merge(level: next_level, select_mode: select_mode ? 1 : 0)
+          children_container = if has_children
             content_tag(
               :div,
+              children_html,
               id: "creative-children-#{creative.id}",
               class: "creative-children",
-              style: "#{filters || expanded ? "" : "display: none;"}",
+              style: (expanded ? "" : "display: none;"),
               data: {
                 expanded: expanded,
-                loaded: (filters || expanded),
-                load_url: children_creative_path(creative, level: level, select_mode: select_mode ? 1 : 0)
+                loaded: children_loaded,
+                load_url: children_creative_path(creative, load_params)
               }
-            ) do
-              if filters || expanded
-                render_creative_tree(filtered_children, level, select_mode: select_mode, max_level: max_level)
-              else
-                "".html_safe
-              end
-            end
+            )
           else
             "".html_safe
           end
-        }
-
-        skip = false
-        if not skip and params[:tags].present?
-          tag_ids = Array(params[:tags]).map(&:to_s)
-          creative_label_ids = creative.tags.pluck(:label_id).map(&:to_s)
-          skip = (creative_label_ids & tag_ids).empty?
-        end
-        if not skip and params[:min_progress].present?
-          min_progress = params[:min_progress].to_f
-          skip = creative.progress < min_progress
-        end
-        if not skip and params[:max_progress].present?
-          max_progress = params[:max_progress].to_f
-          skip = creative.progress > max_progress
-        end
-
-        if skip
-          render_next_block.call level # skip this creative, so decrease level
-        else
-          description_html = embed_youtube_iframe(creative.effective_description(params[:tags]&.first))
-
-          progress_html = render_creative_progress(creative, select_mode: select_mode)
 
           creative_tree_row_element(
             creative: creative,
@@ -148,9 +137,9 @@ module CreativesHelper
             description_html: description_html,
             progress_html: progress_html,
             level: level,
-            has_children: filtered_children.any?,
+            has_children: has_children,
             expanded: expanded
-          ) + render_next_block.call(level + 1)
+          ) + children_container
         end
       end
     )
@@ -178,6 +167,17 @@ module CreativesHelper
     }
 
     content_tag("creative-tree-row", safe_join(templates), attrs)
+  end
+
+  def tree_filter
+    @tree_filter ||= Creatives::TreeFilter.new(user: Current.user, params: params)
+  end
+
+  def tree_filter_query_params
+    @tree_filter_query_params ||= begin
+      raw = params.to_unsafe_h
+      raw.slice("tags", "min_progress", "max_progress", "comment").compact
+    end
   end
 
   # parent_creative.expandedState[creative.id] 값 사용, parent_creative가 nil이면 controller에서 내려준 expanded_state_map[nil] 사용

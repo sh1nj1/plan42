@@ -254,7 +254,8 @@ class CreativesController < ApplicationController
     @expanded_state_map = CreativeExpandedState
                               .where(user_id: Current.user.id, creative_id: parent.id)
                               .first&.expanded_status || {}
-    children = parent.children_with_permission(Current.user)
+    filter = Creatives::TreeFilter.new(user: Current.user, params: params.to_unsafe_h)
+    children = filter.visible_children_of(parent)
     level = params[:level].to_i
     render html: helpers.render_creative_tree(
       children,
