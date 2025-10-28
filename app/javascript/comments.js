@@ -1,4 +1,5 @@
 import { copyTextToClipboard } from './utils/clipboard';
+import { createConsumer } from './services/cable';
 
 if (!window.commentsInitialized) {
     window.commentsInitialized = true;
@@ -578,7 +579,7 @@ if (!window.commentsInitialized) {
             if (!popup.dataset.creativeId) return;
             if (presenceSubscription) { presenceSubscription.unsubscribe(); }
             hasPresenceConnected = false;
-            presenceSubscription = ActionCable.createConsumer().subscriptions.create(
+            presenceSubscription = createConsumer().subscriptions.create(
                 { channel: 'CommentsPresenceChannel', creative_id: popup.dataset.creativeId },
                 {
                     connected: function() {

@@ -3,11 +3,10 @@
 - <u>0. 안전한 진입(빌드/로드 정리)</u>
   - <u>단기: 현 상태 유지. 장기: 레이아웃의 개별 [<%= javascript_include_tag %>](cci:1://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creatives_api.js:2:4-4:5)를 제거하고 [application.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/application.js:0:0-0:0) 하나만 남기도록 전환.</u>
   - <u>[application.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/application.js:0:0-0:0)에서 필요한 스크립트를 모두 import 하도록 통일.</u>
-- 1. 공통 유틸/서비스 정리
-  - `lib/api/csrf_fetch.js` 생성(모든 fetch에 CSRF 헤더/credentials 통일).
-  - `window.creativesApi` → `lib/api/creatives.js` ESM로 이전하고 import 방식으로 교체.
-  - `@rails/actioncable`를 dependency로 추가하고 `services/cable.js`에서 `createConsumer()` export. 레이아웃의 `javascript_include_tag 'actioncable'` 제거 예정.
-
+- <u>1. 공통 유틸/서비스 정리</u>
+  - <u>`lib/api/csrf_fetch.js` 생성(모든 fetch에 CSRF 헤더/credentials 통일).</u>
+  - <u>`window.creativesApi` → `lib/api/creatives.js` ESM로 이전하고 import 방식으로 교체.</u>
+  - <u>`@rails/actioncable`를 dependency로 추가하고 `services/cable.js`에서 `createConsumer()` export. 레이아웃의 `javascript_include_tag 'actioncable'` 제거 예정.</u>
 - 2. 작은 모듈부터 Stimulus 전환(Quick wins)
   - [popup_menu.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/popup_menu.js:0:0-0:0) → `controllers/popup_menu_controller.js`
   - [progress_filter_toggle.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/progress_filter_toggle.js:0:0-0:0) → `controllers/progress_filter_controller.js`
