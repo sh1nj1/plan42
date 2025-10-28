@@ -7,6 +7,11 @@ import ActionTextAttachmentLinkController from "./action_text_attachment_link_co
 import CreativesDragDropController from "./creatives/drag_drop_controller"
 import CreativesExpansionController from "./creatives/expansion_controller"
 import CreativesRowEditorController from "./creatives/row_editor_controller"
+import CommentsListController from "./comments/list_controller"
+import CommentsFormController from "./comments/form_controller"
+import CommentsPresenceController from "./comments/presence_controller"
+import CommentsMentionMenuController from "./comments/mention_menu_controller"
+import CommentsPopupController from "./comments/popup_controller"
 
 import CommentController from "./comment_controller"
 import ShareInviteController from "./share_invite_controller"
@@ -21,3 +26,8 @@ application.register("action-text-attachment-link", ActionTextAttachmentLinkCont
 application.register("creatives--drag-drop", CreativesDragDropController)
 application.register("creatives--expansion", CreativesExpansionController)
 application.register("creatives--row-editor", CreativesRowEditorController)
+application.register("comments--list", CommentsListController)
+application.register("comments--form", CommentsFormController)
+application.register("comments--presence", CommentsPresenceController)
+application.register("comments--mention-menu", CommentsMentionMenuController)
+application.register("comments--popup", CommentsPopupController)

@@ -18,15 +18,14 @@
   - <u>[creatives_drag_drop.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creatives_drag_drop.js:0:0-0:0) → `controllers/creatives/drag_drop_controller.js`</u>
   - <u>[creatives_expansion.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creatives_expansion.js:0:0-0:0) → `controllers/creatives/expansion_controller.js`</u>
   - <u>[creative_row_editor.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creative_row_editor.js:0:0-0:0) → `controllers/creatives/row_editor_controller.js` (가능하면 모달/저장/링크/자동저장 기능을 작은 private 모듈로 분리)</u>
-- 4. 댓글 시스템 분해
-  - [comments.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/comments.js:0:0-0:0)를 아래 컨트롤러로 나눔:
-    - `comments/popup_controller.js`(열기/닫기/위치/리사이즈/크기 저장)
-    - `comments/list_controller.js`(초기 로드/페이지네이션/하이라이트/읽음 처리)
-    - `comments/form_controller.js`(전송/편집/검증)
-    - `comments/presence_controller.js`(참여자/타이핑 인디케이터/ActionCable)
-    - `comments/mention_menu_controller.js`(멘션 UI)
-  - 공통 유틸: `lib/utils/markdown.js`로 `marked` import하여 SSR-safe 렌더링. CDN 의존성 제거.
-
+- <u>4. 댓글 시스템 분해</u>
+  - <u>[comments.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/comments.js:0:0-0:0)를 아래 컨트롤러로 나눔:</u>
+    - <u>`comments/popup_controller.js`(열기/닫기/위치/리사이즈/크기 저장)</u>
+    - <u>`comments/list_controller.js`(초기 로드/페이지네이션/하이라이트/읽음 처리)</u>
+    - <u>`comments/form_controller.js`(전송/편집/검증)</u>
+    - <u>`comments/presence_controller.js`(참여자/타이핑 인디케이터/ActionCable)</u>
+    - <u>`comments/mention_menu_controller.js`(멘션 UI)</u>
+  - <u>공통 유틸: `lib/utils/markdown.js`로 `marked` import하여 SSR-safe 렌더링. CDN 의존성 제거.</u>
 - 5. 의존성 정리
   - `marked`를 npm dependency로 추가하고, 컨트롤러에서 import 사용. 레이아웃의 CDN 스크립트 제거.
   - [register_service_worker.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/register_service_worker.js:0:0-0:0)는 유지하되, 필요시 `services/notifications.js`로 로직 일부 이전.
