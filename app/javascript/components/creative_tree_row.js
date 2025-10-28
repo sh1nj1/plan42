@@ -168,7 +168,7 @@ class CreativeTreeRow extends LitElement {
         ondrop=${dropAttr}
         ondragleave=${dragLeaveAttr}
       >
-        <div class="creative-row">
+        <div class="creative-row" data-creatives--select-mode-target="row">
           <div class="creative-row-start">
             <div class="creative-row-actions">
               ${this._renderCheckbox()}
@@ -190,7 +190,7 @@ class CreativeTreeRow extends LitElement {
         data-id=${this.creativeId ?? nothing}
         data-parent-id=${this.parentId ?? nothing}
       >
-        <div class="creative-row" style="background-color: transparent;">
+        <div class="creative-row" style="background-color: transparent;" data-creatives--select-mode-target="row">
           <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
             <div class="creative-title-content">
               ${unsafeHTML(this.descriptionHtml || "")}
@@ -216,6 +216,8 @@ class CreativeTreeRow extends LitElement {
         class="select-creative-checkbox"
         value=${this.creativeId ?? ""}
         style=${style}
+        data-creatives--select-mode-target="checkbox"
+        data-action="change->creatives--select-mode#checkboxChanged"
       />
     `;
   }

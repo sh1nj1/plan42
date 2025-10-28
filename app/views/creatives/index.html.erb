@@ -1,6 +1,12 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
-<div class="creative-actions-row">
+<div data-controller="creatives--import creatives--select-mode"
+     data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"
+     data-creatives--import-uploading-value="<%= t('creatives.index.import_uploading') %>"
+     data-creatives--import-success-value="<%= t('creatives.index.import_success') %>"
+     data-creatives--import-failed-value="<%= t('creatives.index.import_failed') %>"
+     data-creatives--import-only-markdown-value="<%= t('creatives.index.only_markdown') %>">
+  <div class="creative-actions-row">
   <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
   <% if @parent_creative&.parent_id.present? %>
     <%= button_to creative_path(@parent_creative.owning_parent), method: :get, aria: { label: t('.up') } do %>
@@ -36,20 +42,21 @@
     <% end %>
   <% end %>
 
-  <button id="set-plan-btn" class="set-plan-btn" style="display:none;"><%= t('app.set_plan') %></button>
-  <input type="checkbox" id="select-all-creatives" style="display:none;vertical-align:middle;" />
-  <button id="select-creative-btn" class="select-btn" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>"><%= t('app.select') %></button>
+  <button id="set-plan-btn" class="set-plan-btn" style="display:none;" data-creatives--select-mode-target="setPlan"><%= t('app.set_plan') %></button>
+  <input type="checkbox" id="select-all-creatives" style="display:none;vertical-align:middle;" data-action="change->creatives--select-mode#toggleSelectAll" data-creatives--select-mode-target="selectAll" />
+  <button id="select-creative-btn" class="select-btn" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>" data-action="click->creatives--select-mode#toggle" data-creatives--select-mode-target="toggle"><%= t('app.select') %></button>
   <% if (@parent_creative || @creative)&.has_permission?(Current.user, :admin) %>
-    <button id="delete-selection-btn" class="danger-link" style="display:none;" data-confirm="<%= t('creatives.index.are_you_sure_delete_selection') %>"><%= t('creatives.index.delete_selection') %></button>
+    <button id="delete-selection-btn" class="danger-link" style="display:none;" data-confirm="<%= t('creatives.index.are_you_sure_delete_selection') %>" data-action="click->creatives--select-mode#deleteSelected" data-creatives--select-mode-target="deleteButton"><%= t('creatives.index.delete_selection') %></button>
   <% end %>
   <button id="expand-all-btn" class="expand-btn" style="width: 36px;" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" ><span aria-hidden="true">▼</span></button>
   <button id="toggle-edit-btn" class="edit-toggle-btn mobile-only" aria-label="<%= t('.edit') %>" title="<%= t('.edit') %>">
     <span aria-hidden="true"><%= svg_tag 'edit.svg', class: 'icon-edit', width: 16, height: 16 %></span></button>
-  <button id="import-markdown-btn" class="import-btn desktop-only"><%= t('.import_markdown') %></button>
+  <button id="import-markdown-btn" class="import-btn desktop-only" data-action="click->creatives--import#toggle" data-creatives--import-target="toggle"><%= t('.import_markdown') %></button>
   <button id="export-markdown-btn" class="export-btn desktop-only" data-parent-creative-id="<%= @parent_creative&.id %>" data-error="<%= t('creatives.index.export_failed') %>"><%= t('.export_markdown') %></button>
   <%= render 'mobile_actions_menu', current_creative: current_creative, can_manage_integrations: can_manage_integrations %>
 </div>
-<%= render 'import_upload_zone' %>
+  <%= render 'import_upload_zone' %>
+
 <% if can_manage_integrations %>
   <button id="github-integration-btn" data-creative-id="<%= current_creative&.id %>" style="display:none;"></button>
   <button id="notion-integration-btn" data-creative-id="<%= current_creative&.id %>" style="display:none;"></button>
@@ -150,3 +157,4 @@
   <%= render 'github_integration_modal', creative: current_creative %>
   <%= render 'notion_integration_modal', creative: current_creative %>
 <% end %>
+</div>

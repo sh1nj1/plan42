@@ -1,5 +1,5 @@
-<div class="progress-filter-group">
+<div class="progress-filter-group" data-controller="progress-filter">
   <% states.each do |state| %>
-    <button class="progress-filter-btn<%= ' active' if current_state.to_s == state[:value].to_s %>" data-filter="<%= state[:value] %>"><%= state[:name] %></button>
+    <button class="progress-filter-btn<%= ' active' if current_state.to_s == state[:value].to_s %>" data-action="click->progress-filter#apply" data-progress-filter-target="button" data-progress-filter-filter-param="<%= state[:value] %>"><%= state[:name] %></button>
   <% end %>
 </div>

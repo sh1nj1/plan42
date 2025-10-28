@@ -37,7 +37,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
     <%= javascript_include_tag "application", "data-turbo-track": "reload", defer: true, type: "module" %>
   </head>
-  <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>">
+  <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
     <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
     <div class="notice"><%= notice %></div>
 
