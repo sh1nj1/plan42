@@ -1,8 +1,8 @@
-<div id="set-plan-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;" data-select-one="<%= t('creatives.index.select_one_creative') %>" data-select-plan="<%= t('creatives.index.select_plan_to_remove') %>">
+<div id="set-plan-modal" data-creatives--set-plan-modal-target="modal" data-action="click->creatives--set-plan-modal#backdrop" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
   <div class="popup-box" style="min-width:320px;max-width:90vw;">
-    <button id="close-set-plan-modal" class="popup-close-btn">&times;</button>
+    <button id="close-set-plan-modal" class="popup-close-btn" data-action="creatives--set-plan-modal#close">&times;</button>
     <h2><%= t('creatives.index.set_plan_title', default: 'Set Plan for Selected Creatives') %></h2>
-    <form id="set-plan-form" method="post" action="<%= creative_plan_path %>">
+    <form id="set-plan-form" method="post" action="<%= creative_plan_path %>" data-creatives--set-plan-modal-target="form" data-action="submit->creatives--set-plan-modal#submit">
       <%= csrf_meta_tags %>
       <div style="margin-bottom:1em;">
         <label for="plan-id-select"><%= t('creatives.index.select_plan', default: 'Select Plan') %></label>

@@ -1,5 +1,7 @@
-if (!window.plansTimelineScriptInitialized) {
-  window.plansTimelineScriptInitialized = true;
+let plansTimelineScriptInitialized = false;
+
+if (!plansTimelineScriptInitialized) {
+  plansTimelineScriptInitialized = true;
 
   function initPlansTimeline(container) {
     if (!container || container.dataset.initialized) return;

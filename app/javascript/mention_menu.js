@@ -1,5 +1,7 @@
-if (!window.mentionMenuInitialized) {
-  window.mentionMenuInitialized = true;
+let mentionMenuInitialized = false;
+
+if (!mentionMenuInitialized) {
+  mentionMenuInitialized = true;
 
   document.addEventListener('turbo:load', function () {
     var textarea = document.querySelector('#new-comment-form textarea');

@@ -1,7 +1,9 @@
+let trixColorPickerInitialized = false;
+
 // Adds text color and background color pickers to Trix toolbar
 
-if (!window.trixColorPickerInitialized) {
-  window.trixColorPickerInitialized = true;
+if (!trixColorPickerInitialized) {
+  trixColorPickerInitialized = true;
 
   document.addEventListener('trix-initialize', function(event) {
     const editor = event.target.editor;

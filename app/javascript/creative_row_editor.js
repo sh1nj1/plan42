@@ -1,6 +1,7 @@
 import creativesApi from './lib/api/creatives'
 
 let initialized = false;
+let creativeEditClickHandler = null;
 
 export function initializeCreativeRowEditor() {
   if (initialized) return;
@@ -159,14 +160,14 @@ export function initializeCreativeRowEditor() {
     }
 
     function initializeEventListeners() {
-      if (!window._creativeEditClickHandler) {
-        window._creativeEditClickHandler = function(e) {
+      if (!creativeEditClickHandler) {
+        creativeEditClickHandler = function(e) {
           const tree = e.detail?.treeElement || e.detail?.button?.closest('.creative-tree');
           if (!tree) return;
           e.preventDefault();
           handleEditButtonClick(tree);
         };
-        document.addEventListener('creative-edit-click', window._creativeEditClickHandler);
+        document.addEventListener('creative-edit-click', creativeEditClickHandler);
       }
 
       document.body.addEventListener('click', function(e) {
@@ -417,13 +418,6 @@ export function initializeCreativeRowEditor() {
         }
       });
     }
-
-    function attachButtons() {
-      // Most button attachments are now handled by event delegation in initializeEventListeners.
-      // We only need to handle comment buttons here, if that function exists.
-      if (window.attachCommentButtons) window.attachCommentButtons();
-    }
-    window.attachCreativeRowEditorButtons = attachButtons;
 
     function loadCreative(id) {
       creativesApi.get(id)
