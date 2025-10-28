@@ -160,6 +160,40 @@ export default class extends Controller {
     }
   }
 
+  computeReservedHeight() {
+    if (!this.listTarget) return 0
+
+    const element = this.element
+    const list = this.listTarget
+    const computedDisplay = window.getComputedStyle(element).display
+    const wasHidden = computedDisplay === 'none'
+
+    let previousDisplay
+    let previousVisibility
+    let previousPointerEvents
+
+    if (wasHidden) {
+      previousDisplay = element.style.display
+      previousVisibility = element.style.visibility
+      previousPointerEvents = element.style.pointerEvents
+      element.style.visibility = 'hidden'
+      element.style.pointerEvents = 'none'
+      element.style.display = 'block'
+    }
+
+    const containerHeight = element.offsetHeight
+    const listHeight = list.offsetHeight
+    const reserved = Math.max(0, containerHeight - listHeight)
+
+    if (wasHidden) {
+      element.style.display = previousDisplay || ''
+      element.style.visibility = previousVisibility || ''
+      element.style.pointerEvents = previousPointerEvents || ''
+    }
+
+    return reserved
+  }
+
   showPopup() {
     if (this.isMobile()) {
       this.element.style.display = 'block'
