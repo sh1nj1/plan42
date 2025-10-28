@@ -1,7 +1,10 @@
 import creativesApi from './lib/api/creatives'
 
-if (!window.creativeRowEditorInitialized) {
-  window.creativeRowEditorInitialized = true;
+let initialized = false;
+
+export function initializeCreativeRowEditor() {
+  if (initialized) return;
+  initialized = true;
 
   document.addEventListener('turbo:load', function() {
     const template = document.getElementById('inline-edit-form');

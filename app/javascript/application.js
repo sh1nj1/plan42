@@ -14,9 +14,6 @@ if (typeof window !== "undefined") {
 // Creative page modules
 import "./creatives"
 import "./plans_timeline"
-import "./creatives/drag_drop"
-import "./creatives_expansion"
-import "./creative_row_editor"
 import "./creative_row_swipe"
 import "./comments"
 import "./mention_menu"

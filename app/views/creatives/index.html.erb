@@ -1,6 +1,6 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
-<div data-controller="creatives--import creatives--select-mode"
+<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"
      data-creatives--import-uploading-value="<%= t('creatives.index.import_uploading') %>"
      data-creatives--import-success-value="<%= t('creatives.index.import_success') %>"
@@ -48,7 +48,7 @@
   <% if (@parent_creative || @creative)&.has_permission?(Current.user, :admin) %>
     <button id="delete-selection-btn" class="danger-link" style="display:none;" data-confirm="<%= t('creatives.index.are_you_sure_delete_selection') %>" data-action="click->creatives--select-mode#deleteSelected" data-creatives--select-mode-target="deleteButton"><%= t('creatives.index.delete_selection') %></button>
   <% end %>
-  <button id="expand-all-btn" class="expand-btn" style="width: 36px;" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" ><span aria-hidden="true">▼</span></button>
+  <button id="expand-all-btn" class="expand-btn" style="width: 36px;" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" data-action="click->creatives--expansion#toggleAll" data-creatives--expansion-target="expand"><span aria-hidden="true">▼</span></button>
   <button id="toggle-edit-btn" class="edit-toggle-btn mobile-only" aria-label="<%= t('.edit') %>" title="<%= t('.edit') %>">
     <span aria-hidden="true"><%= svg_tag 'edit.svg', class: 'icon-edit', width: 16, height: 16 %></span></button>
   <button id="import-markdown-btn" class="import-btn desktop-only" data-action="click->creatives--import#toggle" data-creatives--import-target="toggle"><%= t('.import_markdown') %></button>

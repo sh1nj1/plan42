@@ -14,11 +14,10 @@
   - <u>[select_mode.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/select_mode.js:0:0-0:0) → `controllers/creatives/select_mode_controller.js`</u>
   - <u>[action_text_attachment_link.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/action_text_attachment_link.js:0:0-0:0) → `controllers/action_text_attachment_link_controller.js`</u>
   - <u>각 뷰/파트셜에 `data-controller="..."`와 `data-*-target` 추가</u>
-- 3. 크리에이티브 관련 컴포넌트 전환
-  - [creatives_drag_drop.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creatives_drag_drop.js:0:0-0:0) → `controllers/creatives/drag_drop_controller.js`
-  - [creatives_expansion.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creatives_expansion.js:0:0-0:0) → `controllers/creatives/expansion_controller.js`
-  - [creative_row_editor.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creative_row_editor.js:0:0-0:0) → `controllers/creatives/row_editor_controller.js` (가능하면 모달/저장/링크/자동저장 기능을 작은 private 모듈로 분리)
-
+- <u>3. 크리에이티브 관련 컴포넌트 전환</u>
+  - <u>[creatives_drag_drop.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creatives_drag_drop.js:0:0-0:0) → `controllers/creatives/drag_drop_controller.js`</u>
+  - <u>[creatives_expansion.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creatives_expansion.js:0:0-0:0) → `controllers/creatives/expansion_controller.js`</u>
+  - <u>[creative_row_editor.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creative_row_editor.js:0:0-0:0) → `controllers/creatives/row_editor_controller.js` (가능하면 모달/저장/링크/자동저장 기능을 작은 private 모듈로 분리)</u>
 - 4. 댓글 시스템 분해
   - [comments.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/comments.js:0:0-0:0)를 아래 컨트롤러로 나눔:
     - `comments/popup_controller.js`(열기/닫기/위치/리사이즈/크기 저장)
