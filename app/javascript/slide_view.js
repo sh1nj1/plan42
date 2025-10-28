@@ -1,3 +1,5 @@
+import { createConsumer } from './services/cable'
+
 document.addEventListener('DOMContentLoaded', function() {
   var container = document.getElementById('slide-view');
   if (!container) return;
@@ -93,8 +95,8 @@ document.addEventListener('DOMContentLoaded', function() {
     timerInterval = setInterval(updateTimer, 1000);
   }
 
-  if (window.ActionCable && rootId) {
-    slideSubscription = ActionCable.createConsumer().subscriptions.create(
+  if (rootId) {
+    slideSubscription = createConsumer().subscriptions.create(
       { channel: 'SlideViewChannel', root_id: rootId },
       {
         received: function(data) {

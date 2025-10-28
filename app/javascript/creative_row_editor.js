@@ -1,3 +1,5 @@
+import creativesApi from './lib/api/creatives'
+
 if (!window.creativeRowEditorInitialized) {
   window.creativeRowEditorInitialized = true;
 
@@ -298,7 +300,7 @@ if (!window.creativeRowEditorInitialized) {
 
     function refreshRow(tree) {
       const id = tree.dataset.id;
-      window.creativesApi.get(id)
+      creativesApi.get(id)
         .then(data => {
           const link = tree.querySelector('a.unstyled-link');
           if (link) link.innerHTML = data.description || '';
@@ -316,7 +318,7 @@ if (!window.creativeRowEditorInitialized) {
       if (!container) { location.reload(); return Promise.resolve(); }
       const url = container.dataset.loadUrl;
       if (!url) { location.reload(); return Promise.resolve(); }
-      return window.creativesApi.loadChildren(url)
+      return creativesApi.loadChildren(url)
         .then(html => {
           container.innerHTML = html;
         });
@@ -333,7 +335,7 @@ if (!window.creativeRowEditorInitialized) {
       descriptionInput.value = original
             .replace(/data-trix-attachment/g, 'trix-data-attachment')
             .replace(/data-trix-attributes/g, 'trix-data-attributes');
-      savePromise = window.creativesApi.save(form.action, method, form).then(function(r) {
+      savePromise = creativesApi.save(form.action, method, form).then(function(r) {
         if (!r.ok) return r;
         return r.text().then(function(text) {
           try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
@@ -421,7 +423,7 @@ if (!window.creativeRowEditorInitialized) {
     window.attachCreativeRowEditorButtons = attachButtons;
 
     function loadCreative(id) {
-      window.creativesApi.get(id)
+      creativesApi.get(id)
         .then(data => {
           form.action = `/creatives/${data.id}`;
           form.dataset.creativeId = data.id;
@@ -532,7 +534,7 @@ if (!window.creativeRowEditorInitialized) {
       const index = trees.indexOf(tree);
       const nextId = trees[index + 1] ? trees[index + 1].dataset.id : null;
       const parentId = tree.dataset.parentId;
-      window.creativesApi.destroy(id, withChildren).then(() => {
+      creativesApi.destroy(id, withChildren).then(() => {
         const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
         const childrenTree = document.getElementById("creative-children-" + id)
         if (!withChildren && childrenTree && parentTree) {
@@ -822,7 +824,7 @@ if (!window.creativeRowEditorInitialized) {
               parentSuggestions.style.display = 'none';
               return;
             }
-            return window.creativesApi.parentSuggestions(id).then(function(data) {
+            return creativesApi.parentSuggestions(id).then(function(data) {
               parentSuggestions.innerHTML = '';
               if (data && data.length) {
                 data.forEach(function(s) {
@@ -935,7 +937,7 @@ if (!window.creativeRowEditorInitialized) {
                     throw error;
                   });
               }
-              return window.creativesApi.unconvert(creativeId);
+              return creativesApi.unconvert(creativeId);
             })
             .then(function(response) {
               if (response.ok) {
