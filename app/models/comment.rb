@@ -15,29 +15,33 @@ class Comment < ApplicationRecord
 
   # public for db migration
   def creative_snippet
-    creative.creative_snippet
+    with_existing_creative do |existing_creative|
+      existing_creative.creative_snippet
+    end
   end
 
   private
 
   def create_inbox_item(owner, key, params = {})
-    origin = creative&.effective_origin
-    metadata = params.to_h.stringify_keys
-    metadata["comment_id"] = id
-    metadata["creative_id"] = origin&.id
+    with_existing_creative do |existing_creative|
+      origin = existing_creative.effective_origin
+      metadata = params.to_h.stringify_keys
+      metadata["comment_id"] = id
+      metadata["creative_id"] = origin&.id
 
-    InboxItem.create!(
-      owner: owner,
-      message_key: key,
-      message_params: metadata,
-      comment: self,
-      creative: origin,
-      link: Rails.application.routes.url_helpers.creative_comment_url(
-        creative,
-        self,
-        Rails.application.config.action_mailer.default_url_options
+      InboxItem.create!(
+        owner: owner,
+        message_key: key,
+        message_params: metadata,
+        comment: self,
+        creative: origin,
+        link: Rails.application.routes.url_helpers.creative_comment_url(
+          existing_creative,
+          self,
+          Rails.application.config.action_mailer.default_url_options
+        )
       )
-    )
+    end
   end
 
   def mentioned_emails
@@ -68,26 +72,37 @@ class Comment < ApplicationRecord
 
   def broadcast_create
     return if private?
-    broadcast_append_later_to([ creative, :comments ], target: "comments_list")
+    with_existing_creative do |existing_creative|
+      broadcast_append_later_to([ existing_creative, :comments ], target: "comments_list")
+    end
   end
 
   def broadcast_update
     return if private?
-    broadcast_update_later_to([ creative, :comments ])
+    with_existing_creative do |existing_creative|
+      broadcast_update_later_to([ existing_creative, :comments ])
+    end
   end
 
   def broadcast_destroy
     return if private?
-    broadcast_remove_to([ creative, :comments ])
+    with_existing_creative do |existing_creative|
+      broadcast_remove_to([ existing_creative, :comments ])
+    end
   end
 
   def broadcast_badges
-    Comment.broadcast_badges(creative)
+    with_existing_creative do |existing_creative|
+      Comment.broadcast_badges(existing_creative)
+    end
   end
 
   def notify_write_users
     return if private? || !user
-    base_creative = creative.effective_origin
+    base_creative = with_existing_creative do |existing_creative|
+      existing_creative.effective_origin
+    end
+    return unless base_creative
     present_ids = CommentPresenceStore.list(base_creative.id)
     recipients = base_creative.all_shared_users(:write).map(&:user)
     recipients << base_creative.user
@@ -107,6 +122,7 @@ class Comment < ApplicationRecord
 
   def notify_mentions
     return if private?
+    return unless with_existing_creative
     mentioned_users.each do |mentioned|
       create_inbox_item(
         mentioned,
@@ -128,6 +144,13 @@ class Comment < ApplicationRecord
     self.content = CommentLinkFormatter.new(content).format
   rescue StandardError => e
     Rails.logger.warn("Comment link preview formatting failed: #{e.class} #{e.message}")
+  end
+
+  def with_existing_creative
+    creative = (@existing_creative ||= Creative.find_by(id: creative_id))
+    return unless creative
+    return creative unless block_given?
+    yield creative
   end
 
   def self.broadcast_badges(creative)
