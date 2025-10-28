@@ -1,7 +1,17 @@
 import { application } from "./application"
+import PopupMenuController from "./popup_menu_controller"
+import ProgressFilterController from "./progress_filter_controller"
+import CreativesImportController from "./creatives/import_controller"
+import CreativesSelectModeController from "./creatives/select_mode_controller"
+import ActionTextAttachmentLinkController from "./action_text_attachment_link_controller"
 
 import CommentController from "./comment_controller"
 import ShareInviteController from "./share_invite_controller"
 
 application.register("comment", CommentController)
 application.register("share-invite", ShareInviteController)
+application.register("popup-menu", PopupMenuController)
+application.register("progress-filter", ProgressFilterController)
+application.register("creatives--import", CreativesImportController)
+application.register("creatives--select-mode", CreativesSelectModeController)
+application.register("action-text-attachment-link", ActionTextAttachmentLinkController)

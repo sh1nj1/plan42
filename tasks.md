@@ -7,14 +7,13 @@
   - <u>`lib/api/csrf_fetch.js` 생성(모든 fetch에 CSRF 헤더/credentials 통일).</u>
   - <u>`window.creativesApi` → `lib/api/creatives.js` ESM로 이전하고 import 방식으로 교체.</u>
   - <u>`@rails/actioncable`를 dependency로 추가하고 `services/cable.js`에서 `createConsumer()` export. 레이아웃의 `javascript_include_tag 'actioncable'` 제거 예정.</u>
-- 2. 작은 모듈부터 Stimulus 전환(Quick wins)
-  - [popup_menu.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/popup_menu.js:0:0-0:0) → `controllers/popup_menu_controller.js`
-  - [progress_filter_toggle.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/progress_filter_toggle.js:0:0-0:0) → `controllers/progress_filter_controller.js`
-  - [creatives_import.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creatives_import.js:0:0-0:0) → `controllers/creatives/import_controller.js`
-  - [select_mode.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/select_mode.js:0:0-0:0) → `controllers/creatives/select_mode_controller.js`
-  - [action_text_attachment_link.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/action_text_attachment_link.js:0:0-0:0) → `controllers/action_text_attachment_link_controller.js`
-  - 각 뷰/파트셜에 `data-controller="..."`와 `data-*-target` 추가
-
+- <u>2. 작은 모듈부터 Stimulus 전환(Quick wins)</u>
+  - <u>[popup_menu.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/popup_menu.js:0:0-0:0) → `controllers/popup_menu_controller.js`</u>
+  - <u>[progress_filter_toggle.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/progress_filter_toggle.js:0:0-0:0) → `controllers/progress_filter_controller.js`</u>
+  - <u>[creatives_import.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creatives_import.js:0:0-0:0) → `controllers/creatives/import_controller.js`</u>
+  - <u>[select_mode.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/select_mode.js:0:0-0:0) → `controllers/creatives/select_mode_controller.js`</u>
+  - <u>[action_text_attachment_link.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/action_text_attachment_link.js:0:0-0:0) → `controllers/action_text_attachment_link_controller.js`</u>
+  - <u>각 뷰/파트셜에 `data-controller="..."`와 `data-*-target` 추가</u>
 - 3. 크리에이티브 관련 컴포넌트 전환
   - [creatives_drag_drop.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creatives_drag_drop.js:0:0-0:0) → `controllers/creatives/drag_drop_controller.js`
   - [creatives_expansion.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creatives_expansion.js:0:0-0:0) → `controllers/creatives/expansion_controller.js`
