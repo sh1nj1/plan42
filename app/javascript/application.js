@@ -4,9 +4,18 @@ import "./controllers"
 import "trix"
 import "@rails/actiontext"
 import "./register_service_worker"
+import * as ActionCable from "@rails/actioncable"
 import "./trix_color_picker"
 
+if (typeof window !== "undefined") {
+  window.ActionCable = window.ActionCable || ActionCable
+}
+
 // Creative page modules
+import "./creatives"
+import "./plans_timeline"
+import "./popup_menu"
+import "./progress_filter_toggle"
 import "./creatives/drag_drop"
 import "./api/creatives.api"
 import "./creatives_expansion"
