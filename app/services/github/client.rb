@@ -7,28 +7,28 @@ module Github
 
     def organizations
       client.organizations
-    rescue Octokit::Error => e
+    rescue Octokit::Error, Faraday::Error => e
       Rails.logger.warn("GitHub organizations fetch failed: #{e.message}")
       []
     end
 
     def repositories_for_authenticated_user
       client.repos(nil, type: "all")
-    rescue Octokit::Error => e
+    rescue Octokit::Error, Faraday::Error => e
       Rails.logger.warn("GitHub user repos fetch failed: #{e.message}")
       []
     end
 
     def repositories_for_organization(org)
       client.org_repos(org, type: "all")
-    rescue Octokit::Error => e
+    rescue Octokit::Error, Faraday::Error => e
       Rails.logger.warn("GitHub org repos fetch failed: #{e.message}")
       []
     end
 
     def pull_request_details(repo_full_name, number)
       client.pull_request(repo_full_name, number)
-    rescue Octokit::Error => e
+    rescue Octokit::Error, Faraday::Error => e
       Rails.logger.warn("GitHub PR fetch failed: #{e.message}")
       nil
     end
@@ -38,7 +38,7 @@ module Github
         .pull_request_commits(repo_full_name, number)
         .map { |commit| commit.commit&.message }
         .compact
-    rescue Octokit::Error => e
+    rescue Octokit::Error, Faraday::Error => e
       Rails.logger.warn("GitHub PR commits fetch failed: #{e.message}")
       []
     end
@@ -54,14 +54,14 @@ module Github
         DIFF
       end
       formatted.join("\n\n").presence
-    rescue Octokit::Error => e
+    rescue Octokit::Error, Faraday::Error => e
       Rails.logger.warn("GitHub PR files fetch failed: #{e.message}")
       nil
     end
 
     def repository_hooks(repo_full_name)
       client.hooks(repo_full_name)
-    rescue Octokit::Error => e
+    rescue Octokit::Error, Faraday::Error => e
       Rails.logger.warn("GitHub hooks fetch failed for #{repo_full_name}: #{e.message}")
       []
     end

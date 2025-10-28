@@ -13,6 +13,7 @@ module ActiveSupport
 
     # Add more helper methods to be used by all tests here...
     setup do
+      Rails.cache.clear
       # Rebuild the closure tree for Creatives fixture
       Creative.rebuild! if defined?(Creative)
     end
