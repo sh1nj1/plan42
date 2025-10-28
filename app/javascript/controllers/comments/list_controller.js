@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { copyTextToClipboard } from '../../utils/clipboard'
+import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 
 const COMMENTS_PER_PAGE = 10
 
@@ -94,7 +95,7 @@ export default class extends Controller {
       this.listTarget.innerHTML = html
       this.selection.clear()
       this.notifySelectionChange()
-      this.renderMarkdown(this.listTarget)
+      renderMarkdownInContainer(this.listTarget)
       this.popupController?.updatePosition()
       this.scrollToBottom()
       this.updateStickiness()
@@ -119,7 +120,7 @@ export default class extends Controller {
           return
         }
         this.listTarget.insertAdjacentHTML('beforeend', html)
-        this.renderMarkdown(this.listTarget)
+        renderMarkdownInContainer(this.listTarget)
         this.currentPage = nextPage
         this.checkAllLoaded(html)
       })
@@ -525,15 +526,6 @@ export default class extends Controller {
       item.style.display = ''
     })
     this.presenceController?.clearManualTypingMessage()
-  }
-
-  renderMarkdown(container) {
-    if (!window.marked) return
-    container.querySelectorAll('.comment-content').forEach((element) => {
-      if (element.dataset.rendered === 'true') return
-      element.innerHTML = window.marked.parse(element.textContent)
-      element.dataset.rendered = 'true'
-    })
   }
 
   observeListMutations() {

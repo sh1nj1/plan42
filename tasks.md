@@ -26,10 +26,9 @@
     - <u>`comments/presence_controller.js`(참여자/타이핑 인디케이터/ActionCable)</u>
     - <u>`comments/mention_menu_controller.js`(멘션 UI)</u>
   - <u>공통 유틸: `lib/utils/markdown.js`로 `marked` import하여 SSR-safe 렌더링. CDN 의존성 제거.</u>
-- 5. 의존성 정리
-  - `marked`를 npm dependency로 추가하고, 컨트롤러에서 import 사용. 레이아웃의 CDN 스크립트 제거.
-  - [register_service_worker.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/register_service_worker.js:0:0-0:0)는 유지하되, 필요시 `services/notifications.js`로 로직 일부 이전.
-
+- <u>5. 의존성 정리</u>
+  - <u>`marked`를 npm dependency로 추가하고, 컨트롤러에서 import 사용. 레이아웃의 CDN 스크립트 제거.</u>
+  - <u>[register_service_worker.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/register_service_worker.js:0:0-0:0)는 유지하되, 필요시 `services/notifications.js`로 로직 일부 이전.</u>
 - 6. 레이아웃 간소화
   - [application.html.erb](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/views/layouts/application.html.erb:0:0-0:0)에서 [creatives/popup_menu/progress_filter/...](cci:1://file:///Users/soonoh/project/soonoh/plan42/app/javascript/creatives_api.js:2:4-4:5) 개별 `javascript_include_tag` 제거.
   - [application.js](cci:7://file:///Users/soonoh/project/soonoh/plan42/app/javascript/application.js:0:0-0:0) 한 개만 모듈 타입으로 로드.
