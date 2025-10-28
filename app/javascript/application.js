@@ -15,7 +15,6 @@ if (typeof window !== "undefined") {
 import "./creatives"
 import "./plans_timeline"
 import "./creative_row_swipe"
-import "./comments"
 import "./mention_menu"
 import "./mobile_actions"
 import "./export_to_markdown"

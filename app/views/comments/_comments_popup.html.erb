@@ -1,5 +1,5 @@
 
-<div id="comments-popup" class="popup-box"
+<div id="comments-popup" data-controller="comments--popup comments--list comments--form comments--presence comments--mention-menu" class="popup-box"
      data-loading-text="<%= t('app.loading') %>"
      data-delete-confirm-text="<%= t("comments.delete_confirm") %>"
      data-update-comment-text="<%= t('comments.update_comment') %>"
@@ -13,21 +13,21 @@
      data-search-empty-text="<%= t('comments.search_empty_prompt') %>"
      data-move-no-selection-text="<%= t('comments.move_no_selection') %>"
      data-move-error-text="<%= t('comments.move_error') %>">
-  <div class="resize-handle resize-handle-left"></div>
-  <div class="resize-handle resize-handle-right"></div>
-  <button id="close-comments-btn" class="popup-close-btn">&times;</button>
-  <h3 id="comments-popup-title" style="margin-top:0;"><%= t('comments.comments') %></h3>
-  <div id="comment-participants"></div>
+  <div class="resize-handle resize-handle-left" data-comments--popup-target="leftHandle"></div>
+  <div class="resize-handle resize-handle-right" data-comments--popup-target="rightHandle"></div>
+  <button id="close-comments-btn" data-comments--popup-target="closeButton" class="popup-close-btn">&times;</button>
+  <h3 id="comments-popup-title" data-comments--popup-target="title" style="margin-top:0;"><%= t('comments.comments') %></h3>
+  <div id="comment-participants" data-comments--presence-target="participants" data-comments--mention-menu-target="participants"></div>
   <%= render UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <br/>
-  <div id="comments-list"><%= t('app.loading') %></div>
-  <div id="typing-indicator"></div>
-  <form id="new-comment-form" style="display:none;">
-    <textarea name="comment[content]" rows="2" required enterkeyhint="send"></textarea>
-    <label><input type="checkbox" id="comment-private" name="comment[private]" /> <%= t('comments.private') %></label>
-    <button class="creative-action-btn" type="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
-    <button class="creative-action-btn" id="move-comments-btn" type="button" disabled><%= t('comments.move_button') %></button>
-    <button class="creative-action-btn" id="search-comments-btn" type="button"><%= t('comments.search_button') %></button>
-    <button class="creative-action-btn" id="cancel-edit-btn" type="button" style="display:none;"><%= t('app.cancel') %></button>
+  <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>
+  <div id="typing-indicator" data-comments--presence-target="typingIndicator"></div>
+  <form id="new-comment-form" data-comments--popup-target="form" data-comments--form-target="form" style="display:none;">
+    <textarea name="comment[content]" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" required enterkeyhint="send"></textarea>
+    <label><input type="checkbox" id="comment-private" data-comments--form-target="privateCheckbox" data-comments--presence-target="privateCheckbox" name="comment[private]" /> <%= t('comments.private') %></label>
+    <button class="creative-action-btn" type="submit" data-comments--form-target="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
+    <button class="creative-action-btn" id="move-comments-btn" data-comments--form-target="moveButton" type="button" disabled><%= t('comments.move_button') %></button>
+    <button class="creative-action-btn" id="search-comments-btn" data-comments--form-target="searchButton" type="button"><%= t('comments.search_button') %></button>
+    <button class="creative-action-btn" id="cancel-edit-btn" data-comments--form-target="cancel" type="button" style="display:none;"><%= t('app.cancel') %></button>
   </form>
 </div>
