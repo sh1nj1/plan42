@@ -91,6 +91,9 @@ export default class extends Controller {
 
   loadInitialComments() {
     if (!this.creativeId) return
+    this.currentPage = 1
+    this.allLoaded = false
+    this.loadingMore = false
     this.fetchCommentsPage(1).then((html) => {
       this.listTarget.innerHTML = html
       this.selection.clear()
