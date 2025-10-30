@@ -1,6 +1,10 @@
-<figure class="attachment attachment--<%= blob.representable? ? "preview" : "file" %> attachment--<%= blob.filename.extension %>">
-  <% download_url = rails_blob_path(blob, disposition: :attachment) %>
+<% download_url = rails_blob_path(blob, disposition: :attachment) %>
 
+<figure
+  class="attachment attachment--<%= blob.representable? ? "preview" : "file" %> attachment--<%= blob.filename.extension %>"
+  data-url="<%= download_url %>"
+  data-filename="<%= blob.filename %>"
+>
   <% if blob.representable? %>
     <%= link_to download_url, download: blob.filename.to_s, class: "attachment__preview-link" do %>
       <%= image_tag blob.representation(resize_to_limit: local_assigns[:in_gallery] ? [ 800, 600 ] : [ 1024, 768 ]) %>
