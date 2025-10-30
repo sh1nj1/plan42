@@ -248,6 +248,14 @@ export function initializeCreativeRowEditor() {
           );
           return; // Event handled
         }
+
+        // Delegated event for #inline-link button inside inline editor
+        const inlineLinkBtn = e.target.closest('#inline-link');
+        if (inlineLinkBtn) {
+          e.preventDefault();
+          linkExistingCreative();
+          return; // Event handled
+        }
       });
     }
 
