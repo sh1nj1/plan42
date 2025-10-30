@@ -5,12 +5,22 @@ export default class extends Controller {
     const attachment = event.target.closest('action-text-attachment')
     if (!attachment) return
 
-    const url = attachment.getAttribute('url')
+    let url = attachment.getAttribute('url')
+    let filename = attachment.getAttribute('filename')
+
+    const anchor = attachment.querySelector('a[download]') || attachment.querySelector('a[href]')
+    const image = attachment.querySelector('img[src]')
+
+    if (!url && anchor) url = anchor.href
+    if (!url && image) url = image.src
     if (!url) return
+
+    if (!filename && anchor) filename = anchor.getAttribute('download') || anchor.textContent?.trim()
+    if (!filename && image) filename = image.getAttribute('alt')
+    if (!filename) filename = 'download'
 
     event.preventDefault()
 
-    const filename = attachment.getAttribute('filename') || 'download'
     const link = document.createElement('a')
     link.href = url
     link.download = filename
