@@ -15,6 +15,8 @@ export function createInlineEditor(container, {
   const root = createRoot(container)
   let suppressNextChange = false
   let focusHandler = () => {}
+  let editorReady = false
+  let pendingFocus = false
   let currentKey = DEFAULT_KEY
   let currentHtml = ""
 
@@ -22,6 +24,7 @@ export function createInlineEditor(container, {
     currentKey = key
     currentHtml = html ?? ""
     suppressNextChange = true
+    editorReady = false
     root.render(
       <InlineLexicalEditor
         initialHtml={currentHtml}
@@ -40,6 +43,13 @@ export function createInlineEditor(container, {
         }}
         onReady={(api) => {
           focusHandler = api?.focus ?? (() => {})
+          editorReady = true
+          if (pendingFocus) {
+            requestAnimationFrame(() => {
+              focusHandler()
+              pendingFocus = false
+            })
+          }
         }}
       />
     )
@@ -55,7 +65,13 @@ export function createInlineEditor(container, {
       render("", key)
     },
     focus() {
-      focusHandler()
+      pendingFocus = true
+      if (editorReady) {
+        requestAnimationFrame(() => {
+          focusHandler()
+          pendingFocus = false
+        })
+      }
     },
     destroy() {
       root.unmount()

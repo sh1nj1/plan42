@@ -776,6 +776,7 @@ export function initializeCreativeRowEditor() {
         event.preventDefault();
         if (pendingSave) saveForm();
         move(-1);
+        requestAnimationFrame(() => lexicalEditor.focus());
         return;
       }
 
@@ -783,6 +784,7 @@ export function initializeCreativeRowEditor() {
         event.preventDefault();
         if (pendingSave) saveForm();
         move(1);
+        requestAnimationFrame(() => lexicalEditor.focus());
       }
     }
 
