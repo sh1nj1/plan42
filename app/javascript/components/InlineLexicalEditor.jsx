@@ -16,9 +16,12 @@ import {ListItemNode, ListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LI
 import {LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND} from "@lexical/link"
 import {
   $createParagraphNode,
+  $createTextNode,
   $getRoot,
   $getSelection,
+  $isElementNode,
   $isRangeSelection,
+  $isTextNode,
   COMMAND_PRIORITY_LOW,
   FORMAT_TEXT_COMMAND,
   SELECTION_CHANGE_COMMAND
@@ -76,7 +79,22 @@ function InitialContentPlugin({html}) {
         return
       }
       nodes.forEach((node) => {
-        root.append(node)
+        if ($isElementNode(node)) {
+          root.append(node)
+          return
+        }
+
+        if ($isTextNode(node)) {
+          const paragraph = $createParagraphNode()
+          paragraph.append(node)
+          root.append(paragraph)
+          return
+        }
+
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode(node.getTextContent?.() || "")
+        paragraph.append(text)
+        root.append(paragraph)
       })
     })
   }, [editor, html])
