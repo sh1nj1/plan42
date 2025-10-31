@@ -1,5 +1,5 @@
 import creativesApi from './lib/api/creatives'
-import { $getCharacterOffsets, $getRoot, $getSelection, $isRangeSelection } from 'lexical'
+import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
 import { createInlineEditor } from './lexical_inline_editor'
 
 let initialized = false;
@@ -767,9 +767,8 @@ export function initializeCreativeRowEditor() {
         const selection = $getSelection();
         if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
         const [start, end] = $getCharacterOffsets(selection);
-        const total = $getRoot().getTextContentSize();
         atStart = start === 0 && end === 0;
-        atEnd = end >= total;
+        atEnd = isSelectionAtDocumentEnd(selection);
       });
 
       if (event.key === 'ArrowUp' && atStart) {
@@ -786,6 +785,32 @@ export function initializeCreativeRowEditor() {
         move(1);
         requestAnimationFrame(() => lexicalEditor.focus());
       }
+    }
+
+    function isSelectionAtDocumentEnd(selection) {
+      if (!$isRangeSelection(selection) || !selection.isCollapsed()) return false;
+
+      const focus = selection.focus;
+      let node = focus.getNode();
+      if (!node) return false;
+
+      const offset = focus.offset;
+      if ($isTextNode(node)) {
+        if (offset !== node.getTextContentSize()) return false;
+      } else if (typeof node.getChildrenSize === 'function') {
+        if (offset !== node.getChildrenSize()) return false;
+      } else {
+        // Fallback for nodes without children size (e.g., line breaks)
+        const textSize = node.getTextContentSize?.() ?? 0;
+        if (offset !== textSize) return false;
+      }
+
+      while (node && !$isRootOrShadowRoot(node)) {
+        if (node.getNextSibling()) return false;
+        node = node.getParent();
+      }
+
+      return !!node && $isRootOrShadowRoot(node);
     }
 
     progressInput.addEventListener('input', function() {
