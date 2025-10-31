@@ -5,16 +5,26 @@
     "esbuild": "^0.25.9"
   },
   "scripts": {
-    "build": "esbuild app/javascript/*.* --bundle --sourcemap --format=esm --outdir=app/assets/builds --public-path=/assets"
+    "build": "esbuild app/javascript/*.* --bundle --sourcemap --format=esm --jsx=automatic --outdir=app/assets/builds --public-path=/assets"
   },
   "dependencies": {
     "@hotwired/stimulus": "^3.2.2",
     "@hotwired/turbo-rails": "^8.0.16",
+    "@lexical/history": "^0.38.2",
+    "@lexical/html": "^0.38.2",
+    "@lexical/link": "^0.38.2",
+    "@lexical/list": "^0.38.2",
+    "@lexical/react": "^0.38.2",
+    "@lexical/rich-text": "^0.38.2",
+    "@lexical/selection": "^0.38.2",
+    "@lexical/utils": "^0.38.2",
     "@rails/actioncable": "^8.0.201",
     "@rails/actiontext": "^8.0.201",
     "firebase": "^12.2.1",
+    "lexical": "^0.38.2",
     "lit": "^3.1.2",
     "marked": "^16.4.1",
-    "trix": "^2.1.15"
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   }
 }

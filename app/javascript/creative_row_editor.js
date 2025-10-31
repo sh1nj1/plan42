@@ -1,4 +1,6 @@
 import creativesApi from './lib/api/creatives'
+import { $getCharacterOffsets, $getRoot, $getSelection, $isRangeSelection } from 'lexical'
+import { createInlineEditor } from './lexical_inline_editor'
 
 let initialized = false;
 let creativeEditClickHandler = null;
@@ -15,7 +17,7 @@ export function initializeCreativeRowEditor() {
 
     const form = document.getElementById('inline-edit-form-element');
     const descriptionInput = document.getElementById('inline-creative-description');
-    const editor = template.querySelector('trix-editor');
+    const editorContainer = template.querySelector('[data-lexical-editor-root]');
     const progressInput = document.getElementById('inline-creative-progress');
     const progressValue = document.getElementById('inline-progress-value');
     const upBtn = document.getElementById('inline-move-up');
@@ -41,13 +43,21 @@ export function initializeCreativeRowEditor() {
     const afterInput = document.getElementById('inline-after-id');
     const childInput = document.getElementById('inline-child-id');
 
+    let lexicalEditor = null;
+
+    if (!editorContainer) return;
+
+    lexicalEditor = createInlineEditor(editorContainer, {
+      onChange: onLexicalChange,
+      onKeyDown: handleEditorKeyDown
+    });
+
     let currentTree = null;
     let currentRowElement = null;
     let saveTimer = null;
     let pendingSave = false;
     let saving = false;
     let savePromise = Promise.resolve();
-    let autoLinking = false;
 
     function treeRowElement(node) {
       return node && node.closest ? node.closest('creative-tree-row') : null;
@@ -335,10 +345,6 @@ export function initializeCreativeRowEditor() {
       pendingSave = false;
       if (!form.action) return Promise.resolve();
       saving = true;
-      const original = descriptionInput.value;
-      descriptionInput.value = original
-            .replace(/data-trix-attachment/g, 'trix-data-attachment')
-            .replace(/data-trix-attributes/g, 'trix-data-attributes');
       savePromise = creativesApi.save(form.action, method, form).then(function(r) {
         if (!r.ok) return r;
         return r.text().then(function(text) {
@@ -385,7 +391,6 @@ export function initializeCreativeRowEditor() {
           }
         });
       }).finally(function() {
-        descriptionInput.value = original;
         saving = false;
       });
       return savePromise;
@@ -424,12 +429,10 @@ export function initializeCreativeRowEditor() {
         .then(data => {
           form.action = `/creatives/${data.id}`;
           form.dataset.creativeId = data.id;
-          let content = data.description || '';
-          content = content
-                .replace(/trix-data-attachment/g, 'data-trix-attachment')
-                .replace(/trix-data-attributes/g, 'data-trix-attributes');
+          const content = data.description || '';
           descriptionInput.value = content;
-          editor.editor.loadHTML(content);
+          lexicalEditor.load(content, `creative-${data.id}`);
+          pendingSave = false;
           progressInput.value = data.progress || 0;
           progressValue.textContent = data.progress || 0;
           parentInput.value = data.parent_id || '';
@@ -439,7 +442,7 @@ export function initializeCreativeRowEditor() {
           if (linkBtn) linkBtn.style.display = data.origin_id ? 'none' : '';
           if (unlinkBtn) unlinkBtn.style.display = data.origin_id ? '' : 'none';
           if (unconvertBtn) unconvertBtn.style.display = data.parent_id ? '' : 'none';
-          editor.focus();
+          lexicalEditor.focus();
         });
     }
 
@@ -707,14 +710,14 @@ export function initializeCreativeRowEditor() {
         afterInput.value = afterId || '';
         if (childInput) childInput.value = childId || '';
         descriptionInput.value = '';
-        editor.editor.loadHTML('');
+        lexicalEditor.reset(`new-${Date.now()}`);
         progressInput.value = 0;
         progressValue.textContent = 0;
         if (linkBtn) linkBtn.style.display = '';
         if (unlinkBtn) unlinkBtn.style.display = 'none';
         if (unconvertBtn) unconvertBtn.style.display = 'none';
         pendingSave = false;
-        editor.focus();
+        lexicalEditor.focus();
         if (parentSuggestions) {
           parentSuggestions.style.display = 'none';
           parentSuggestions.innerHTML = '';
@@ -734,76 +737,58 @@ export function initializeCreativeRowEditor() {
       saveTimer = setTimeout(saveForm, 5000);
     }
 
-    function autoLinkUrls(event) {
-      if (autoLinking) return;
+    function onLexicalChange(html) {
+      descriptionInput.value = html;
+      scheduleSave();
+    }
 
-      const element = event.target;
-      const editorInstance = element.editor;
+    function handleEditorKeyDown(event, editorInstance) {
       if (!editorInstance) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        hideCurrent();
+        return;
+      }
+      if (event.key === 'Enter' && event.altKey) {
+        event.preventDefault();
+        addChild();
+        return;
+      }
+      if (event.key === 'Enter' && event.shiftKey) {
+        event.preventDefault();
+        addNew();
+        return;
+      }
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
 
-      const html = element.innerHTML;
-      const linkedHtml = html.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, function(_match, prefix, url) {
-        return `${prefix}<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
+      let atStart = false;
+      let atEnd = false;
+      editorInstance.getEditorState().read(() => {
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
+        const [start, end] = $getCharacterOffsets(selection);
+        const total = $getRoot().getTextContentSize();
+        atStart = start === 0 && end === 0;
+        atEnd = end >= total;
       });
-      if (linkedHtml !== html) {
-        const selection = editorInstance.getSelectedRange();
-        autoLinking = true;
-        try {
-          editorInstance.loadHTML(linkedHtml);
-          editorInstance.setSelectedRange(selection);
-        } finally {
-          requestAnimationFrame(function() {
-            autoLinking = false;
-          });
-        }
+
+      if (event.key === 'ArrowUp' && atStart) {
+        event.preventDefault();
+        if (pendingSave) saveForm();
+        move(-1);
+        return;
       }
 
-      element.querySelectorAll('a').forEach(function(anchor) {
-        anchor.setAttribute('target', '_blank');
-        anchor.setAttribute('rel', 'noopener');
-      });
+      if (event.key === 'ArrowDown' && atEnd) {
+        event.preventDefault();
+        if (pendingSave) saveForm();
+        move(1);
+      }
     }
 
     progressInput.addEventListener('input', function() {
       progressValue.textContent = progressInput.value;
       scheduleSave();
-    });
-    editor.addEventListener('trix-change', function(event) {
-      autoLinkUrls(event);
-      scheduleSave();
-    });
-
-    editor.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        hideCurrent();
-        return;
-      }
-      if (e.key === 'Enter' && e.altKey) {
-        e.preventDefault();
-        addChild();
-        return;
-      }
-      if (e.key === 'Enter' && e.shiftKey) {
-        e.preventDefault();
-        addNew();
-        return;
-      }
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-      const range = editor.editor.getSelectedRange();
-      if (!range) return;
-      const start = range[0];
-      const end = range[1];
-      const length = editor.editor.getDocument().toString().length;
-      if (e.key === 'ArrowUp' && start === 0 && end === 0) {
-        e.preventDefault();
-        if (pendingSave) saveForm();
-        move(-1);
-      } else if (e.key === 'ArrowDown' && start >= length - 1 && end >= length - 1) {
-        e.preventDefault();
-        if (pendingSave) saveForm();
-        move(1);
-      }
     });
 
     if (parentSuggestBtn && parentSuggestions) {

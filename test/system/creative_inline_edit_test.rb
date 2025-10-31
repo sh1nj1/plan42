@@ -23,7 +23,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   end
 
   def inline_editor_field
-    find('trix-editor[input="inline-creative-description"]', wait: 5)
+    find('.lexical-content-editable', wait: 5)
   end
 
   def fill_inline_editor(text)
