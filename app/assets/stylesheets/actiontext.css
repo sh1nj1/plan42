@@ -135,6 +135,165 @@
   padding: 0.1em 0.3em;
 }
 
+.lexical-attachment {
+  position: relative;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface, #fff);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.lexical-attachment figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.lexical-attachment figure img {
+  border-radius: 8px;
+  max-width: 100%;
+  height: auto;
+}
+
+.lexical-attachment.is-selected {
+  border-color: var(--color-accent, #4f46e5);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+}
+
+.lexical-attachment__remove {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  border: 0;
+  background: rgba(15, 23, 42, 0.75);
+  color: #fff;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.lexical-attachment:hover .lexical-attachment__remove,
+.lexical-attachment.is-selected .lexical-attachment__remove {
+  opacity: 1;
+}
+
+.lexical-attachment__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.lexical-attachment__overlay--error {
+  background: rgba(220, 38, 38, 0.75);
+}
+
+.lexical-attachment__resize-handle {
+  display: none;
+  position: absolute;
+  right: 0.55rem;
+  bottom: 0.55rem;
+  width: 16px;
+  height: 16px;
+  border-right: 2px solid var(--color-accent, #4f46e5);
+  border-bottom: 2px solid var(--color-accent, #4f46e5);
+  cursor: nwse-resize;
+  opacity: 0.6;
+}
+
+.lexical-attachment__resize-handle:hover {
+  opacity: 1;
+}
+
+.lexical-attachment--image .lexical-attachment__resize-handle {
+  display: block;
+}
+
+.lexical-attachment__image-placeholder {
+  width: 100%;
+  padding-bottom: 56%;
+  border-radius: 8px;
+  background: repeating-linear-gradient(
+      45deg,
+      rgba(148, 163, 184, 0.25) 0,
+      rgba(148, 163, 184, 0.25) 10px,
+      rgba(148, 163, 184, 0.35) 10px,
+      rgba(148, 163, 184, 0.35) 20px
+    );
+  position: relative;
+}
+
+.lexical-attachment__image-placeholder::after {
+  content: "";
+  position: absolute;
+  inset: 20%;
+  border-radius: 999px;
+  border: 2px dashed rgba(100, 116, 139, 0.45);
+}
+
+.lexical-attachment__caption-input {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+  background: var(--color-surface, #fff);
+  color: inherit;
+}
+
+.lexical-attachment__caption-input:focus {
+  outline: none;
+  border-color: var(--color-accent, #4f46e5);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+.lexical-attachment__caption-size {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.lexical-attachment__file {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.lexical-attachment__file-icon {
+  font-size: 1.6rem;
+}
+
+.lexical-attachment__file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.lexical-attachment__file-name {
+  font-weight: 600;
+}
+
+.lexical-attachment__file-size {
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #6b7280);
+}
+
 /*
  * Persisted Action Text content retains the historical .trix-content class.
  */

@@ -28,6 +28,10 @@ import {
 } from "lexical"
 import {$generateHtmlFromNodes, $generateNodesFromDOM} from "@lexical/html"
 import {useLexicalComposerContext} from "@lexical/react/LexicalComposerContext"
+import ActionTextAttachmentPlugin, {
+  INSERT_ACTIONTEXT_ATTACHMENT_COMMAND
+} from "./plugins/action_text_attachment_plugin"
+import {ActionTextAttachmentNode} from "../lib/lexical/action_text_attachment_node"
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -132,6 +136,31 @@ function Toolbar({onPromptForLink}) {
     underline: false,
     strike: false
   })
+  const imageInputRef = useRef(null)
+  const fileInputRef = useRef(null)
+
+  const handleFiles = useCallback(
+    (fileList, options = {}) => {
+      if (!fileList) return
+      Array.from(fileList).forEach((file) => {
+        if (file) {
+          editor.dispatchCommand(INSERT_ACTIONTEXT_ATTACHMENT_COMMAND, {
+            file,
+            options
+          })
+        }
+      })
+    },
+    [editor]
+  )
+
+  const openImagePicker = useCallback(() => {
+    imageInputRef.current?.click()
+  }, [])
+
+  const openFilePicker = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
 
   const refreshFormats = useCallback(() => {
     const selection = $getSelection()
@@ -248,6 +277,40 @@ function Toolbar({onPromptForLink}) {
         title="Insert link">
         🔗
       </button>
+      <span className="lexical-toolbar-separator" aria-hidden="true" />
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        style={{display: "none"}}
+        onChange={(event) => {
+          handleFiles(event.target.files, {kind: "image"})
+          event.target.value = ""
+        }}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        style={{display: "none"}}
+        onChange={(event) => {
+          handleFiles(event.target.files)
+          event.target.value = ""
+        }}
+      />
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={openImagePicker}
+        title="Insert image">
+        🖼️
+      </button>
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={openFilePicker}
+        title="Attach file">
+        📎
+      </button>
     </div>
   )
 }
@@ -270,7 +333,16 @@ function ReadyPlugin({onReady}) {
   return null
 }
 
-function EditorInner({initialHtml, onChange, onKeyDown, onPromptForLink, onReady}) {
+function EditorInner({
+  initialHtml,
+  onChange,
+  onKeyDown,
+  onPromptForLink,
+  onReady,
+  onUploadStateChange,
+  directUploadUrl,
+  blobUrlTemplate
+}) {
   const [editor] = useLexicalComposerContext()
 
   return (
@@ -316,6 +388,11 @@ function EditorInner({initialHtml, onChange, onKeyDown, onPromptForLink, onReady
         <InitialContentPlugin html={initialHtml} />
         <LinkAttributesPlugin />
         <ReadyPlugin onReady={onReady} />
+        <ActionTextAttachmentPlugin
+          onUploadStateChange={onUploadStateChange}
+          directUploadUrl={directUploadUrl}
+          blobUrlTemplate={blobUrlTemplate}
+        />
       </div>
     </div>
   )
@@ -327,12 +404,23 @@ export default function InlineLexicalEditor({
   onKeyDown,
   onPromptForLink,
   onReady,
+  onUploadStateChange,
+  directUploadUrl,
+  blobUrlTemplate,
   editorKey
 }) {
   const initialConfig = useMemo(
     () => ({
       namespace: "CreativeLexicalEditor",
-      nodes: [HeadingNode, QuoteNode, ListItemNode, ListNode, LinkNode, AutoLinkNode],
+      nodes: [
+        HeadingNode,
+        QuoteNode,
+        ListItemNode,
+        ListNode,
+        LinkNode,
+        AutoLinkNode,
+        ActionTextAttachmentNode
+      ],
       onError(error) {
         throw error
       },
@@ -349,6 +437,9 @@ export default function InlineLexicalEditor({
         onKeyDown={onKeyDown}
         onPromptForLink={onPromptForLink}
         onReady={onReady}
+        onUploadStateChange={onUploadStateChange}
+        directUploadUrl={directUploadUrl}
+        blobUrlTemplate={blobUrlTemplate}
       />
     </LexicalComposer>
   )

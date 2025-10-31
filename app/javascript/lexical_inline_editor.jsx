@@ -6,7 +6,8 @@ const DEFAULT_KEY = "creative-inline-editor"
 export function createInlineEditor(container, {
   onChange,
   onKeyDown,
-  onPromptForLink
+  onPromptForLink,
+  onUploadStateChange
 } = {}) {
   if (!container) {
     throw new Error("Lexical editor container not found")
@@ -19,6 +20,8 @@ export function createInlineEditor(container, {
   let pendingFocus = false
   let currentKey = DEFAULT_KEY
   let currentHtml = ""
+  const directUploadUrl = container.dataset.directUploadUrl || null
+  const blobUrlTemplate = container.dataset.blobUrlTemplate || null
 
   function render(html, key = currentKey) {
     currentKey = key
@@ -51,6 +54,9 @@ export function createInlineEditor(container, {
             })
           }
         }}
+        onUploadStateChange={onUploadStateChange}
+        directUploadUrl={directUploadUrl}
+        blobUrlTemplate={blobUrlTemplate}
       />
     )
   }
