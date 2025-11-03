@@ -60,6 +60,20 @@ function parseDimension(value) {
   return parsed
 }
 
+function normalizeCaption(rawCaption, payload) {
+  if (!rawCaption) return ""
+  const normalized = rawCaption.replace(/•/g, " ").replace(/\s+/g, " ").trim()
+  if (!normalized) return ""
+  const defaults = new Set()
+  if (payload.filename) {
+    defaults.add(payload.filename.toLowerCase())
+  }
+  if (payload.filename && Number.isFinite(payload.filesize)) {
+    defaults.add(`${payload.filename} ${formatFileSize(payload.filesize)}`.toLowerCase())
+  }
+  return defaults.has(normalized.toLowerCase()) ? "" : normalized
+}
+
 export class ActionTextAttachmentNode extends DecoratorNode {
   constructor(payload, key) {
     super(key)
@@ -118,6 +132,10 @@ export class ActionTextAttachmentNode extends DecoratorNode {
       "action-text-attachment": (domNode) => ({
         conversion: convertActionTextAttachmentElement,
         priority: 1
+      }),
+      figure: (domNode) => ({
+        conversion: convertAttachmentFigureElement,
+        priority: 0
       })
     }
   }
@@ -161,77 +179,6 @@ export class ActionTextAttachmentNode extends DecoratorNode {
     if (heightValue) {
       element.setAttribute("data-height", String(heightValue))
     }
-
-    const figure = document.createElement("figure")
-    figure.className = `attachment ${
-      this.__payload.previewable ? "attachment--preview" : "attachment--file"
-    }`
-    if (widthValue) {
-      figure.style.width = `${widthValue}px`
-    }
-
-    if (this.__payload.previewable) {
-      const img = document.createElement("img")
-      img.src = this.__payload.url
-      img.alt = this.__payload.caption || this.__payload.filename || ""
-      if (widthValue) {
-        img.style.width = `${widthValue}px`
-        img.setAttribute("data-width", String(widthValue))
-      }
-      if (heightValue) {
-        img.style.height = `${heightValue}px`
-        img.setAttribute("data-height", String(heightValue))
-      }
-      figure.appendChild(img)
-    } else {
-      const wrapper = document.createElement("div")
-      wrapper.className = "attachment__file"
-      const icon = document.createElement("span")
-      icon.className = "attachment__file-icon"
-      icon.textContent = "📎"
-      const info = document.createElement("div")
-      info.className = "attachment__file-info"
-      const nameEl = document.createElement("span")
-      nameEl.className = "attachment__name"
-      nameEl.textContent = this.__payload.filename || "Attachment"
-      info.appendChild(nameEl)
-      if (Number.isFinite(this.__payload.filesize)) {
-        const sizeEl = document.createElement("span")
-        sizeEl.className = "attachment__size"
-        sizeEl.textContent = formatFileSize(this.__payload.filesize)
-        info.appendChild(sizeEl)
-      }
-      wrapper.appendChild(icon)
-      wrapper.appendChild(info)
-      figure.appendChild(wrapper)
-    }
-
-    const shouldRenderCaption =
-      this.__payload.caption || !this.__payload.previewable || Number.isFinite(this.__payload.filesize)
-    if (shouldRenderCaption) {
-      const figcaption = document.createElement("figcaption")
-      figcaption.className = "attachment__caption"
-      if (this.__payload.caption) {
-        const captionSpan = document.createElement("span")
-        captionSpan.className = "attachment__name"
-        captionSpan.textContent = this.__payload.caption
-        figcaption.appendChild(captionSpan)
-      } else if (this.__payload.filename) {
-        const captionSpan = document.createElement("span")
-        captionSpan.className = "attachment__name"
-        captionSpan.textContent = this.__payload.filename
-        figcaption.appendChild(captionSpan)
-      }
-      if (Number.isFinite(this.__payload.filesize)) {
-        const sizeSpan = document.createElement("span")
-        sizeSpan.className = "attachment__size"
-        sizeSpan.textContent = formatFileSize(this.__payload.filesize)
-        figcaption.appendChild(sizeSpan)
-      }
-      figure.appendChild(figcaption)
-    }
-
-    element.appendChild(figure)
     return {element}
   }
 
@@ -354,6 +301,12 @@ export function $isActionTextAttachmentNode(node) {
 }
 
 function convertActionTextAttachmentElement(domNode) {
+  if (domNode instanceof Element) {
+    const elementParent = domNode.parentElement
+    if (elementParent && elementParent.tagName === "FIGURE" && elementParent.classList.contains("attachment")) {
+      return null
+    }
+  }
   const element = domNode
   const payload = {
     sgid: element.getAttribute("sgid"),
@@ -369,6 +322,8 @@ function convertActionTextAttachmentElement(domNode) {
   const heightAttr = parseDimension(element.getAttribute("data-height"))
   if (widthAttr) payload.width = widthAttr
   if (heightAttr) payload.height = heightAttr
+
+  payload.caption = normalizeCaption(payload.caption, payload)
 
   if (!payload.previewable && isImageContentType(payload.contentType)) {
     payload.previewable = true
@@ -387,17 +342,105 @@ function convertActionTextAttachmentElement(domNode) {
       if (imgWidth && !payload.width) payload.width = imgWidth
       if (imgHeight && !payload.height) payload.height = imgHeight
       const alt = img.getAttribute("alt")
-      if (!payload.caption && alt) payload.caption = alt
+      if (!payload.caption && alt) payload.caption = normalizeCaption(alt, payload)
     }
     const caption = figure.querySelector("figcaption")
     if (caption && !payload.caption) {
-      payload.caption = extractTextContent(caption)
+      const captionClone = caption.cloneNode(true)
+      captionClone
+        .querySelectorAll(".attachment__name, .attachment__size")
+        .forEach((node) => node.remove())
+      const extraCaption = extractTextContent(captionClone)
+      payload.caption = normalizeCaption(extraCaption, payload)
     }
   }
 
+  payload.caption = normalizeCaption(payload.caption, payload)
   payload.status = STATUS_READY
   payload.progress = 100
 
+  const node = $createActionTextAttachmentNode(payload)
+  return {node}
+}
+
+function convertAttachmentFigureElement(domNode) {
+  if (!(domNode instanceof Element)) return null
+  const figure = domNode
+  if (figure.closest("action-text-attachment")) return null
+  if (typeof figure.classList?.contains !== "function" || !figure.classList.contains("attachment")) {
+    return null
+  }
+
+  let data = null
+  const dataAttr = figure.getAttribute("data-trix-attachment")
+  if (dataAttr) {
+    try {
+      data = JSON.parse(dataAttr)
+    } catch (_error) {
+      data = null
+    }
+  }
+
+  if (!data) return null
+
+  const payload = {
+    sgid: data.sgid || data.attachable_sgid || null,
+    url: data.url || "",
+    filename: data.filename || data.name || "",
+    contentType: data.contentType || data.content_type || figure.getAttribute("data-trix-content-type") || "",
+    filesize: parseInt(data.filesize ?? data.file_size ?? data.size ?? "", 10) || null,
+    caption: data.caption || "",
+    previewable:
+      data.previewable !== undefined
+        ? !!data.previewable
+        : figure.classList.contains("attachment--preview"),
+    width:
+      parseDimension(data.width ?? data.presentation?.width ?? figure.getAttribute("data-width")) || null,
+    height:
+      parseDimension(data.height ?? data.presentation?.height ?? figure.getAttribute("data-height")) || null,
+    status: STATUS_READY,
+    progress: 100
+  }
+
+  payload.caption = normalizeCaption(payload.caption, payload)
+
+  if (!payload.url) {
+    const img = figure.querySelector("img")
+    if (img?.getAttribute) {
+      payload.url = img.getAttribute("src") || ""
+      const imgWidth = parseDimension(img.getAttribute("data-width")) || parseDimension(img.getAttribute("width"))
+      const imgHeight = parseDimension(img.getAttribute("data-height")) || parseDimension(img.getAttribute("height"))
+      if (!payload.width && imgWidth) payload.width = imgWidth
+      if (!payload.height && imgHeight) payload.height = imgHeight
+      const alt = img.getAttribute("alt")
+      if (!payload.caption && alt) payload.caption = normalizeCaption(alt, payload)
+    }
+  }
+
+  if (!payload.filename) {
+    const nameEl = figure.querySelector(".attachment__name")
+    if (nameEl) {
+      payload.filename = extractTextContent(nameEl)
+    }
+  }
+
+  if (!payload.caption) {
+    const figcaption = figure.querySelector("figcaption")
+    if (figcaption) {
+      const captionClone = figcaption.cloneNode(true)
+      captionClone
+        .querySelectorAll(".attachment__name, .attachment__size")
+        .forEach((node) => node.remove())
+      const extraCaption = extractTextContent(captionClone)
+      payload.caption = normalizeCaption(extraCaption, payload)
+    }
+  }
+
+  if (!payload.previewable && isImageContentType(payload.contentType)) {
+    payload.previewable = true
+  }
+
+  payload.caption = normalizeCaption(payload.caption, payload)
   const node = $createActionTextAttachmentNode(payload)
   return {node}
 }
@@ -658,38 +701,51 @@ function ActionTextAttachmentComponent({payload, nodeKey}) {
           />
         )
       ) : (
-          <div className="lexical-attachment__file">
-            <div className="lexical-attachment__file-icon" aria-hidden="true">
-              📎
-            </div>
-            <div className="lexical-attachment__file-info">
+        <div className="lexical-attachment__file">
+          <div className="lexical-attachment__file-icon" aria-hidden="true">
+            📎
+          </div>
+          <div className="lexical-attachment__file-info">
+            {payload.url ? (
+              <a
+                href={payload.url}
+                className="lexical-attachment__file-name"
+                target="_blank"
+                rel="noopener"
+                download={payload.filename || true}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {payload.filename || "Attachment"}
+              </a>
+            ) : (
               <div className="lexical-attachment__file-name">
                 {payload.filename || "Attachment"}
               </div>
-              {Number.isFinite(payload.filesize) && (
-                <div className="lexical-attachment__file-size">
-                  {formatFileSize(payload.filesize)}
-                </div>
-              )}
-            </div>
+            )}
+            {Number.isFinite(payload.filesize) && (
+              <div className="lexical-attachment__file-size">
+                {formatFileSize(payload.filesize)}
+              </div>
+            )}
           </div>
+        </div>
+      )}
+      <figcaption>
+        <input
+          type="text"
+          className="lexical-attachment__caption-input"
+          value={payload.caption || ""}
+          placeholder={isImage ? "Add caption" : "Describe attachment"}
+          onChange={handleCaptionChange}
+          onClick={(event) => event.stopPropagation()}
+          onFocus={(event) => event.stopPropagation()}
+        />
+        {isImage && Number.isFinite(payload.filesize) && (
+          <span className="lexical-attachment__caption-size">
+            {formatFileSize(payload.filesize)}
+          </span>
         )}
-        <figcaption>
-          <input
-            type="text"
-            className="lexical-attachment__caption-input"
-            value={payload.caption || ""}
-            placeholder={isImage ? "Add caption" : "Describe attachment"}
-            onChange={handleCaptionChange}
-            onClick={(event) => event.stopPropagation()}
-            onFocus={(event) => event.stopPropagation()}
-          />
-          {Number.isFinite(payload.filesize) && (
-            <span className="lexical-attachment__caption-size">
-              {formatFileSize(payload.filesize)}
-            </span>
-          )}
-        </figcaption>
+      </figcaption>
       </figure>
       {isImage && (
         <div

@@ -287,6 +287,13 @@
 
 .lexical-attachment__file-name {
   font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+}
+
+.lexical-attachment__file-name:hover,
+.lexical-attachment__file-name:focus-visible {
+  text-decoration: underline;
 }
 
 .lexical-attachment__file-size {

@@ -33,6 +33,18 @@ import ActionTextAttachmentPlugin, {
 } from "./plugins/action_text_attachment_plugin"
 import {ActionTextAttachmentNode} from "../lib/lexical/action_text_attachment_node"
 
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return ""
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let size = bytes
+  let unitIndex = 0
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+  return `${size % 1 === 0 ? size : size.toFixed(1)} ${units[unitIndex]}`
+}
+
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
 ]
@@ -77,29 +89,198 @@ function InitialContentPlugin({html}) {
       const parser = new DOMParser()
       const doc = parser.parseFromString(html || "", "text/html")
       const container = doc.querySelector(".trix-content") || doc.body
+      const attachmentElements = Array.from(container.querySelectorAll("action-text-attachment"))
+      const attachmentBySgid = new Set()
+      const attachmentByName = new Set()
+      const attachmentByUrl = new Set()
+      attachmentElements.forEach((attachment) => {
+        const sgid = attachment.getAttribute("sgid")
+        if (sgid) attachmentBySgid.add(sgid)
+        const filename = (attachment.getAttribute("filename") || "").toLowerCase()
+        if (filename) attachmentByName.add(filename)
+        const url = attachment.getAttribute("url") || ""
+        if (url) attachmentByUrl.add(url)
+      })
+
+      container.querySelectorAll("figure.attachment").forEach((figure) => {
+        let matched = false
+        const dataAttr = figure.getAttribute("data-trix-attachment")
+        if (dataAttr) {
+          try {
+            const data = JSON.parse(dataAttr)
+            const sgid = data?.sgid || data?.attachable_sgid
+            if (sgid && attachmentBySgid.has(sgid)) matched = true
+            const name = (data?.filename || data?.name || "").toLowerCase()
+            if (!matched && name && attachmentByName.has(name)) matched = true
+          } catch (_error) {
+            // ignore parse errors
+          }
+        }
+
+        if (!matched) {
+          const nameEl = figure.querySelector(".attachment__name")
+          const normalizedName = nameEl?.textContent?.trim().toLowerCase()
+          if (normalizedName && attachmentByName.has(normalizedName)) {
+            matched = true
+          }
+        }
+
+        if (!matched) {
+          const img = figure.querySelector("img")
+          const src = img?.getAttribute("src")
+          if (src) {
+            const originless = src.replace(window.location.origin, "")
+            if (attachmentByUrl.has(src) || attachmentByUrl.has(originless)) {
+              matched = true
+            }
+          }
+        }
+
+        if (matched) {
+          figure.remove()
+        }
+      })
+
       const nodes = $generateNodesFromDOM(editor, container)
+      let lastAttachmentPayload = null
+      let removeNextBlankParagraph = false
       if (nodes.length === 0) {
         root.append($createParagraphNode())
         return
       }
       nodes.forEach((node) => {
-        if ($isElementNode(node)) {
+        if (node instanceof ActionTextAttachmentNode) {
           root.append(node)
+          const payload = node.getPayload?.()
+          if (payload) {
+            lastAttachmentPayload = {
+              filename: payload.filename || "",
+              filesize: Number.isFinite(payload.filesize) ? payload.filesize : null
+            }
+          } else {
+            lastAttachmentPayload = null
+          }
+          removeNextBlankParagraph = true
+          return
+        }
+
+        if ($isElementNode(node)) {
+          if (
+            removeNextBlankParagraph &&
+            typeof node.getType === "function" &&
+            node.getType() === "paragraph" &&
+            typeof node.getChildrenSize === "function" &&
+            node.getChildrenSize() === 0
+          ) {
+            removeNextBlankParagraph = false
+            lastAttachmentPayload = null
+            return
+          }
+          root.append(node)
+          removeNextBlankParagraph = false
+          lastAttachmentPayload = null
           return
         }
 
         if ($isTextNode(node)) {
           const paragraph = $createParagraphNode()
           paragraph.append(node)
+          const textValue = paragraph.getTextContent().trim()
+          if (lastAttachmentPayload) {
+            const expected = new Set()
+            if (lastAttachmentPayload.filename) {
+              expected.add(lastAttachmentPayload.filename)
+            }
+            if (
+              lastAttachmentPayload.filename &&
+              Number.isFinite(lastAttachmentPayload.filesize)
+            ) {
+              expected.add(
+                `${lastAttachmentPayload.filename} ${formatFileSize(lastAttachmentPayload.filesize)}`
+              )
+            }
+            if (expected.has(textValue)) {
+              lastAttachmentPayload = null
+              return
+            }
+          }
           root.append(paragraph)
+          lastAttachmentPayload = null
+          removeNextBlankParagraph = !textValue
           return
         }
 
         const paragraph = $createParagraphNode()
-        const text = $createTextNode(node.getTextContent?.() || "")
+        const textContent = node.getTextContent?.() || ""
+        if (!textContent.trim()) {
+          if (lastAttachmentPayload || removeNextBlankParagraph) {
+            lastAttachmentPayload = null
+            removeNextBlankParagraph = false
+            return
+          }
+          root.append(paragraph)
+          lastAttachmentPayload = null
+          removeNextBlankParagraph = false
+          return
+        }
+        const text = $createTextNode(textContent)
         paragraph.append(text)
+        const textValue = paragraph.getTextContent().trim()
+        if (lastAttachmentPayload) {
+          const expected = new Set()
+          if (lastAttachmentPayload.filename) {
+            expected.add(lastAttachmentPayload.filename)
+          }
+          if (
+            lastAttachmentPayload.filename &&
+            Number.isFinite(lastAttachmentPayload.filesize)
+          ) {
+            expected.add(
+              `${lastAttachmentPayload.filename} ${formatFileSize(lastAttachmentPayload.filesize)}`
+            )
+          }
+          if (expected.has(textValue)) {
+            lastAttachmentPayload = null
+            return
+          }
+        }
         root.append(paragraph)
+        lastAttachmentPayload = null
+        removeNextBlankParagraph = false
       })
+
+      let previousWasAttachment = false
+      root.getChildren().forEach((child) => {
+        if (child instanceof ActionTextAttachmentNode) {
+          previousWasAttachment = true
+          return
+        }
+        if (!previousWasAttachment) {
+          previousWasAttachment = false
+          return
+        }
+        const text = child.getTextContent?.() || ""
+        if (text.trim() === "") {
+          child.remove()
+        }
+        previousWasAttachment = false
+      })
+
+      let lastChild = root.getLastChild()
+      while (
+        lastChild &&
+        typeof lastChild.getType === "function" &&
+        lastChild.getType() === "paragraph" &&
+        typeof lastChild.getChildrenSize === "function" &&
+        lastChild.getChildrenSize() === 0
+      ) {
+        lastChild.remove()
+        lastChild = root.getLastChild()
+      }
+
+      if (root.getChildrenSize() === 0) {
+        root.append($createParagraphNode())
+      }
     })
   }, [editor, html])
 
@@ -374,6 +555,45 @@ function EditorInner({
               const innerHtml = $generateHtmlFromNodes(editorInstance)
               const parser = new DOMParser()
               const doc = parser.parseFromString(`<div>${innerHtml}</div>`, "text/html")
+              doc.querySelectorAll("action-text-attachment").forEach((attachment) => {
+                const containerParagraph = attachment.closest("p")
+                let sibling = containerParagraph?.nextElementSibling
+                while (sibling && sibling.tagName === "BR") {
+                  const toRemove = sibling
+                  sibling = sibling.nextElementSibling
+                  toRemove.remove()
+                }
+                if (
+                  sibling &&
+                  sibling.tagName === "P" &&
+                  !sibling.querySelector("action-text-attachment")
+                ) {
+                  const text = sibling.textContent || ""
+                  const hasContent = text.replace(/\s|\u00A0/g, "") !== ""
+                  const hasNonBr = Array.from(sibling.childNodes).some((node) => {
+                    return !(node.nodeType === Node.ELEMENT_NODE && node.tagName === "BR")
+                  })
+                  if (!hasContent && !hasNonBr) {
+                    sibling.remove()
+                  }
+                }
+              })
+              const bodyChildren = Array.from(doc.body.children)
+              for (let i = bodyChildren.length - 1; i >= 0; i -= 1) {
+                const element = bodyChildren[i]
+                if (element.tagName !== "P") break
+                if (element.querySelector("action-text-attachment")) break
+                const text = element.textContent || ""
+                const hasContent = text.replace(/\s|\u00A0/g, "") !== ""
+                const hasNonBr = Array.from(element.childNodes).some((node) => {
+                  return !(node.nodeType === Node.ELEMENT_NODE && node.tagName === "BR")
+                })
+                if (!hasContent && !hasNonBr) {
+                  element.remove()
+                  continue
+                }
+                break
+              }
               doc.querySelectorAll("a").forEach((anchor) => {
                 anchor.setAttribute("target", "_blank")
                 anchor.setAttribute("rel", "noopener")
