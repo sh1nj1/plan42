@@ -32,17 +32,28 @@ import ActionTextAttachmentPlugin, {
   INSERT_ACTIONTEXT_ATTACHMENT_COMMAND
 } from "./plugins/action_text_attachment_plugin"
 import {ActionTextAttachmentNode} from "../lib/lexical/action_text_attachment_node"
+import {
+  attachmentPayloadFromAttachmentElement,
+  attachmentPayloadFromFigure,
+  attachmentPayloadToHTMLElement,
+  normalizeAttachmentCaption,
+  parseDimension,
+  formatFileSize
+} from "../lib/lexical/attachment_payload"
 
-function formatFileSize(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return ""
-  const units = ["B", "KB", "MB", "GB", "TB"]
-  let size = bytes
-  let unitIndex = 0
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024
-    unitIndex += 1
+function findPreviousAttachment(element) {
+  let current = element.previousElementSibling
+  while (current) {
+    if (current.tagName === "ACTION-TEXT-ATTACHMENT") return current
+    if (typeof current.querySelector === "function") {
+      const nested = current.querySelector("action-text-attachment")
+      if (nested) return nested
+    }
+    current = current.previousElementSibling
   }
-  return `${size % 1 === 0 ? size : size.toFixed(1)} ${units[unitIndex]}`
+  const parent = element.parentElement
+  if (!parent || parent === element) return null
+  return findPreviousAttachment(parent)
 }
 
 const URL_MATCHERS = [
@@ -90,189 +101,205 @@ function InitialContentPlugin({html}) {
       const doc = parser.parseFromString(html || "", "text/html")
       const container = doc.querySelector(".trix-content") || doc.body
       const attachmentElements = Array.from(container.querySelectorAll("action-text-attachment"))
-      const attachmentBySgid = new Set()
-      const attachmentByName = new Set()
-      const attachmentByUrl = new Set()
       attachmentElements.forEach((attachment) => {
-        const sgid = attachment.getAttribute("sgid")
-        if (sgid) attachmentBySgid.add(sgid)
-        const filename = (attachment.getAttribute("filename") || "").toLowerCase()
-        if (filename) attachmentByName.add(filename)
-        const url = attachment.getAttribute("url") || ""
-        if (url) attachmentByUrl.add(url)
+        const widthAttr = attachment.getAttribute("width")
+        if (widthAttr && !attachment.hasAttribute("data-width")) {
+          attachment.setAttribute("data-width", widthAttr)
+          attachment.removeAttribute("width")
+        }
+        const heightAttr = attachment.getAttribute("height")
+        if (heightAttr && !attachment.hasAttribute("data-height")) {
+          attachment.setAttribute("data-height", heightAttr)
+          attachment.removeAttribute("height")
+        }
       })
 
       container.querySelectorAll("figure.attachment").forEach((figure) => {
-        let matched = false
+        const attachment = findPreviousAttachment(figure)
+        if (!attachment) return
+
+        let data = null
         const dataAttr = figure.getAttribute("data-trix-attachment")
         if (dataAttr) {
           try {
-            const data = JSON.parse(dataAttr)
-            const sgid = data?.sgid || data?.attachable_sgid
-            if (sgid && attachmentBySgid.has(sgid)) matched = true
-            const name = (data?.filename || data?.name || "").toLowerCase()
-            if (!matched && name && attachmentByName.has(name)) matched = true
+            data = JSON.parse(dataAttr)
           } catch (_error) {
-            // ignore parse errors
+            data = null
           }
         }
 
-        if (!matched) {
-          const nameEl = figure.querySelector(".attachment__name")
-          const normalizedName = nameEl?.textContent?.trim().toLowerCase()
-          if (normalizedName && attachmentByName.has(normalizedName)) {
-            matched = true
+        const existingFilename = attachment.getAttribute("filename") || ""
+        const existingFilesize = parseInt(attachment.getAttribute("filesize") || "", 10)
+        const filenameFromData = data?.filename || data?.name || ""
+        const img = figure.querySelector("img")
+        const filenameFromFigure = img?.getAttribute("alt") || figure.querySelector(".attachment__name")?.textContent || ""
+        const filename = existingFilename || filenameFromData || filenameFromFigure || ""
+        if (!existingFilename && filename) {
+          attachment.setAttribute("filename", filename)
+        }
+
+        const dataUrl =
+          attachment.getAttribute("url") ||
+          data?.url ||
+          data?.href ||
+          (img ? img.getAttribute("src") : "")
+        if (dataUrl) {
+          attachment.setAttribute("url", dataUrl)
+        }
+
+        const dataFilesize = parseInt(
+          data?.filesize ?? data?.file_size ?? data?.size ?? "",
+          10
+        )
+        if (!Number.isFinite(existingFilesize) && Number.isFinite(dataFilesize)) {
+          attachment.setAttribute("filesize", String(dataFilesize))
+        }
+
+        if (
+          !attachment.hasAttribute("content-type") &&
+          (data?.contentType || data?.content_type)
+        ) {
+          attachment.setAttribute(
+            "content-type",
+            data?.contentType || data?.content_type
+          )
+        }
+
+        if (
+          !attachment.hasAttribute("previewable") &&
+          (figure.classList.contains("attachment--preview") || img)
+        ) {
+          attachment.setAttribute("previewable", "true")
+        }
+
+        const widthCandidate =
+          parseDimension(
+            data?.width ??
+              data?.presentation?.width ??
+              figure.getAttribute("data-width") ??
+              (img && (img.getAttribute("data-width") || img.getAttribute("width") || img.style.width))
+          )
+        if (Number.isFinite(widthCandidate)) {
+          attachment.setAttribute("data-width", String(Math.round(widthCandidate)))
+        }
+
+        const heightCandidate =
+          parseDimension(
+            data?.height ??
+              data?.presentation?.height ??
+              figure.getAttribute("data-height") ??
+              (img && (img.getAttribute("data-height") || img.getAttribute("height") || img.style.height))
+          )
+        if (Number.isFinite(heightCandidate)) {
+          attachment.setAttribute("data-height", String(Math.round(heightCandidate)))
+        }
+
+        const figcaption = figure.querySelector("figcaption")
+        if (figcaption) {
+          const captionClone = figcaption.cloneNode(true)
+          captionClone
+            .querySelectorAll(".attachment__name, .attachment__size")
+            .forEach((node) => node.remove())
+          const captionText = captionClone.textContent || ""
+          const normalizedCaption = normalizeAttachmentCaption(captionText, {
+            filename,
+            filesize: Number.isFinite(existingFilesize)
+              ? existingFilesize
+              : Number.isFinite(dataFilesize)
+                ? dataFilesize
+                : null
+          })
+          if (normalizedCaption) {
+            attachment.setAttribute("caption", normalizedCaption)
+          } else {
+            attachment.removeAttribute("caption")
           }
         }
 
-        if (!matched) {
-          const img = figure.querySelector("img")
-          const src = img?.getAttribute("src")
-          if (src) {
-            const originless = src.replace(window.location.origin, "")
-            if (attachmentByUrl.has(src) || attachmentByUrl.has(originless)) {
-              matched = true
-            }
-          }
-        }
-
-        if (matched) {
-          figure.remove()
-        }
+        const figureWrapper = attachmentPayloadToHTMLElement(
+          attachmentPayloadFromAttachmentElement(attachment)
+        )
+        attachment.replaceWith(figureWrapper.element)
       })
 
       const nodes = $generateNodesFromDOM(editor, container)
-      let lastAttachmentPayload = null
-      let removeNextBlankParagraph = false
-      if (nodes.length === 0) {
-        root.append($createParagraphNode())
-        return
-      }
+      const appendedNodes = []
       nodes.forEach((node) => {
         if (node instanceof ActionTextAttachmentNode) {
           root.append(node)
-          const payload = node.getPayload?.()
-          if (payload) {
-            lastAttachmentPayload = {
-              filename: payload.filename || "",
-              filesize: Number.isFinite(payload.filesize) ? payload.filesize : null
-            }
-          } else {
-            lastAttachmentPayload = null
-          }
-          removeNextBlankParagraph = true
-          return
-        }
-
-        if ($isElementNode(node)) {
-          if (
-            removeNextBlankParagraph &&
-            typeof node.getType === "function" &&
-            node.getType() === "paragraph" &&
-            typeof node.getChildrenSize === "function" &&
-            node.getChildrenSize() === 0
-          ) {
-            removeNextBlankParagraph = false
-            lastAttachmentPayload = null
-            return
-          }
-          root.append(node)
-          removeNextBlankParagraph = false
-          lastAttachmentPayload = null
+          appendedNodes.push(node)
           return
         }
 
         if ($isTextNode(node)) {
           const paragraph = $createParagraphNode()
           paragraph.append(node)
-          const textValue = paragraph.getTextContent().trim()
-          if (lastAttachmentPayload) {
-            const expected = new Set()
-            if (lastAttachmentPayload.filename) {
-              expected.add(lastAttachmentPayload.filename)
-            }
-            if (
-              lastAttachmentPayload.filename &&
-              Number.isFinite(lastAttachmentPayload.filesize)
-            ) {
-              expected.add(
-                `${lastAttachmentPayload.filename} ${formatFileSize(lastAttachmentPayload.filesize)}`
-              )
-            }
-            if (expected.has(textValue)) {
-              lastAttachmentPayload = null
-              return
-            }
-          }
           root.append(paragraph)
-          lastAttachmentPayload = null
-          removeNextBlankParagraph = !textValue
+          appendedNodes.push(paragraph)
           return
         }
 
-        const paragraph = $createParagraphNode()
-        const textContent = node.getTextContent?.() || ""
-        if (!textContent.trim()) {
-          if (lastAttachmentPayload || removeNextBlankParagraph) {
-            lastAttachmentPayload = null
-            removeNextBlankParagraph = false
-            return
-          }
-          root.append(paragraph)
-          lastAttachmentPayload = null
-          removeNextBlankParagraph = false
+        if ($isElementNode(node) && node.getType?.() === "paragraph") {
+          root.append(node)
+          appendedNodes.push(node)
           return
         }
-        const text = $createTextNode(textContent)
-        paragraph.append(text)
-        const textValue = paragraph.getTextContent().trim()
-        if (lastAttachmentPayload) {
-          const expected = new Set()
-          if (lastAttachmentPayload.filename) {
-            expected.add(lastAttachmentPayload.filename)
-          }
-          if (
-            lastAttachmentPayload.filename &&
-            Number.isFinite(lastAttachmentPayload.filesize)
-          ) {
-            expected.add(
-              `${lastAttachmentPayload.filename} ${formatFileSize(lastAttachmentPayload.filesize)}`
-            )
-          }
-          if (expected.has(textValue)) {
-            lastAttachmentPayload = null
-            return
-          }
-        }
-        root.append(paragraph)
-        lastAttachmentPayload = null
-        removeNextBlankParagraph = false
+
+        root.append(node)
+        appendedNodes.push(node)
       })
 
-      let previousWasAttachment = false
-      root.getChildren().forEach((child) => {
+      if (root.getChildrenSize() === 0) {
+        const paragraph = $createParagraphNode()
+        root.append(paragraph)
+        appendedNodes.push(paragraph)
+      }
+
+      const children = root.getChildren()
+      let previousAttachmentMeta = null
+      const nodesToRemove = []
+      children.forEach((child) => {
         if (child instanceof ActionTextAttachmentNode) {
-          previousWasAttachment = true
+          const payload = child.getPayload?.()
+          previousAttachmentMeta = payload
           return
         }
-        if (!previousWasAttachment) {
-          previousWasAttachment = false
-          return
+
+        if (previousAttachmentMeta && child.getType?.() === "paragraph") {
+          const textContent = child.getTextContent?.().trim() || ""
+          const expected = new Set()
+          if (previousAttachmentMeta.filename) {
+            expected.add(previousAttachmentMeta.filename)
+          }
+          if (
+            previousAttachmentMeta.filename &&
+            Number.isFinite(previousAttachmentMeta.filesize)
+          ) {
+            expected.add(
+              `${previousAttachmentMeta.filename} ${formatFileSize(previousAttachmentMeta.filesize)}`
+            )
+          }
+          if (expected.has(textContent) || !textContent) {
+            nodesToRemove.push(child)
+            previousAttachmentMeta = null
+            return
+          }
         }
-        const text = child.getTextContent?.() || ""
-        if (text.trim() === "") {
-          child.remove()
+
+        previousAttachmentMeta = null
+      })
+
+      nodesToRemove.forEach((node) => {
+        if (node.getParent() === root) {
+          node.remove()
         }
-        previousWasAttachment = false
       })
 
       let lastChild = root.getLastChild()
       while (
         lastChild &&
-        typeof lastChild.getType === "function" &&
-        lastChild.getType() === "paragraph" &&
-        typeof lastChild.getChildrenSize === "function" &&
-        lastChild.getChildrenSize() === 0
+        lastChild.getType?.() === "paragraph" &&
+        lastChild.getChildrenSize?.() === 0
       ) {
         lastChild.remove()
         lastChild = root.getLastChild()
@@ -577,6 +604,115 @@ function EditorInner({
                     sibling.remove()
                   }
                 }
+              })
+              doc.querySelectorAll("figure.attachment").forEach((figure) => {
+                if (figure.closest("action-text-attachment")) return
+                const dataAttr = figure.getAttribute("data-trix-attachment")
+                if (!dataAttr) return
+                let data = null
+                try {
+                  data = JSON.parse(dataAttr)
+                } catch (_error) {
+                  data = null
+                }
+                if (!data) return
+                const sgid = data.sgid || data.attachable_sgid
+                if (!sgid) return
+
+                const attachment = doc.createElement("action-text-attachment")
+                attachment.setAttribute("sgid", sgid)
+                const filename = data.filename || data.name || ""
+                if (filename) {
+                  attachment.setAttribute("filename", filename)
+                }
+                const contentType = data.contentType || data.content_type
+                if (contentType) {
+                  attachment.setAttribute("content-type", contentType)
+                }
+                const url = data.url || data.href || ""
+                if (url) {
+                  attachment.setAttribute("url", url)
+                }
+                const filesize = parseInt(
+                  data.filesize ?? data.file_size ?? data.size ?? "",
+                  10
+                )
+                if (Number.isFinite(filesize)) {
+                  attachment.setAttribute("filesize", String(filesize))
+                }
+
+                const captionText = normalizeAttachmentCaption(data.caption || "", {
+                  filename,
+                  filesize
+                })
+                if (captionText) {
+                  attachment.setAttribute("caption", captionText)
+                }
+
+                const widthCandidate = parseDimensionValue(
+                  data.width ?? data.presentation?.width ??
+                    figure.getAttribute("data-width")
+                )
+                if (Number.isFinite(widthCandidate)) {
+                  attachment.setAttribute("data-width", String(Math.round(widthCandidate)))
+                }
+
+                const heightCandidate = parseDimensionValue(
+                  data.height ?? data.presentation?.height ??
+                    figure.getAttribute("data-height")
+                )
+                if (Number.isFinite(heightCandidate)) {
+                  attachment.setAttribute("data-height", String(Math.round(heightCandidate)))
+                }
+
+                const img = figure.querySelector("img")
+                if (img) {
+                  if (!attachment.hasAttribute("url")) {
+                    const imgSrc = img.getAttribute("src") || ""
+                    if (imgSrc) {
+                      attachment.setAttribute("url", imgSrc)
+                    }
+                  }
+                const imgWidth = parseDimension(
+                  img.getAttribute("data-width") ||
+                    img.getAttribute("width") ||
+                    img.style.width
+                )
+                if (!attachment.hasAttribute("data-width") && Number.isFinite(imgWidth)) {
+                  attachment.setAttribute("data-width", String(Math.round(imgWidth)))
+                }
+                const imgHeight = parseDimension(
+                  img.getAttribute("data-height") ||
+                    img.getAttribute("height") ||
+                    img.style.height
+                )
+                  if (!attachment.hasAttribute("data-height") && Number.isFinite(imgHeight)) {
+                    attachment.setAttribute("data-height", String(Math.round(imgHeight)))
+                  }
+                }
+
+                if (figure.classList.contains("attachment--preview") || img) {
+                  attachment.setAttribute("previewable", "true")
+                }
+
+                const figcaption = figure.querySelector("figcaption")
+                if (figcaption && !attachment.hasAttribute("caption")) {
+                  const captionClone = figcaption.cloneNode(true)
+                  captionClone
+                    .querySelectorAll(".attachment__name, .attachment__size")
+                    .forEach((node) => node.remove())
+                  const captionText = captionClone.textContent || ""
+                  const normalizedCaption = normalizeAttachmentCaption(captionText, {
+                    filename,
+                    filesize
+                  })
+                  if (normalizedCaption) {
+                    attachment.setAttribute("caption", normalizedCaption)
+                  }
+                }
+
+                figure.replaceWith(attachment)
+                attachment.appendChild(figure)
               })
               const bodyChildren = Array.from(doc.body.children)
               for (let i = bodyChildren.length - 1; i >= 0; i -= 1) {

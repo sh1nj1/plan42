@@ -18,6 +18,9 @@ import {
   $createActionTextAttachmentNode,
   $isActionTextAttachmentNode
 } from "../../lib/lexical/action_text_attachment_node"
+import {
+  sanitizeAttachmentPayload
+} from "../../lib/lexical/attachment_payload"
 
 export const INSERT_ACTIONTEXT_ATTACHMENT_COMMAND = createCommand("INSERT_ACTIONTEXT_ATTACHMENT_COMMAND")
 
@@ -87,13 +90,15 @@ export default function ActionTextAttachmentPlugin({
       const previewPromise = previewable ? readFileAsDataUrl(file) : Promise.resolve(null)
 
       editor.update(() => {
-        const node = $createActionTextAttachmentNode({
-          status: "uploading",
-          filename: file.name,
-          contentType: file.type,
-          filesize: file.size,
-          previewable
-        })
+        const node = $createActionTextAttachmentNode(
+          sanitizeAttachmentPayload({
+            status: "uploading",
+            filename: file.name,
+            contentType: file.type,
+            filesize: file.size,
+            previewable
+          })
+        )
         const selection = $getSelection()
         if ($isRangeSelection(selection)) {
           selection.insertNodes([node])
@@ -115,12 +120,14 @@ export default function ActionTextAttachmentPlugin({
           editor.update(() => {
             const currentNode = $getNodeByKey(nodeKey)
             if ($isActionTextAttachmentNode(currentNode)) {
-              currentNode.markUploading({
-                filename: file.name,
-                contentType: file.type,
-                filesize: file.size,
-                previewable
-              })
+              currentNode.markUploading(
+                sanitizeAttachmentPayload({
+                  filename: file.name,
+                  contentType: file.type,
+                  filesize: file.size,
+                  previewable
+                })
+              )
             }
           })
 
@@ -212,14 +219,21 @@ export default function ActionTextAttachmentPlugin({
             editor.update(() => {
               const currentNode = $getNodeByKey(nodeKey)
               if ($isActionTextAttachmentNode(currentNode)) {
-                currentNode.applyUploadResult({
-                  sgid: attributes.attachable_sgid,
-                  url,
-                  filename: attributes.filename,
-                  contentType: attributes.content_type,
-                  filesize: attributes.byte_size
-                })
+                currentNode.applyUploadResult(
+                  sanitizeAttachmentPayload({
+                    sgid: attributes.attachable_sgid,
+                    url,
+                    filename: attributes.filename,
+                    contentType: attributes.content_type,
+                    filesize: attributes.byte_size,
+                    status: "ready"
+                  })
+                )
                 currentNode.setProgress(100)
+                if (!currentNode.getNextSibling()) {
+                  const paragraph = $createParagraphNode()
+                  currentNode.insertAfter(paragraph)
+                }
               }
             })
             decrementUploads()
