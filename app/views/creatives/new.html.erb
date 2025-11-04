@@ -1,4 +1,4 @@
 <h1><%= t("creatives.index.new_creative") %></h1>
 
-<%= render "form", creative: @creative %>
-<%= link_to t("app.cancel"), (request.referer || creatives_path) %>
+<p><%= t("creatives.new.inline_editor_only_html") %></p>
+<%= link_to t("app.cancel"), creatives_path %>

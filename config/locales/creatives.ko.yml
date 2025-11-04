@@ -93,16 +93,13 @@ ko:
       progress_recalculated: "진행률을 다시 계산 했습니다."
     errors:
       no_permission: "이 작업을 수행할 권한이 없습니다."
-    form:
-      parent_creative: "상위 크리에이티브"
-      child_creative: "하위 크리에이티브"
-      description: "내용"
-      sequence: "순서"
-      progress: "진행률"
-      submit: "저장"
     inline_editor:
       placeholder: "크리에이티브를 설명해주세요…"
     edit_title: "크리에이티브 수정"
+    edit:
+      inline_editor_only_html: "크리에이티브 수정은 인라인 편집기에서 바로 진행하세요."
+    new:
+      inline_editor_only_html: "크리에이티브 추가는 트리의 인라인 편집기에서 진행하세요."
     help:
       add_child_creative: "하위 크리에이티브 추가"
     inventory:

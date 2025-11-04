@@ -93,16 +93,13 @@ en:
       progress_recalculated: "All parent progress recalculated."
     errors:
       no_permission: "You do not have permission to perform this action."
-    form:
-      parent_creative: "Parent Creative"
-      child_creative: "Child Creative"
-      description: "Contents"
-      sequence: "Sequence"
-      progress: "Progress"
-      submit: "Save"
     inline_editor:
       placeholder: "Describe the creative…"
     edit_title: "Edit creative"
+    edit:
+      inline_editor_only_html: "Editing creatives now happens directly in the inline editor."
+    new:
+      inline_editor_only_html: "Create creatives from the inline editor in the creative tree."
     help:
       add_child_creative: "Add child creative"
     inventory:

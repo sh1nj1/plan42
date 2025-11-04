@@ -122,7 +122,7 @@ class CreativesController < ApplicationController
 
   def edit
     if params[:inline]
-      render partial: "form", locals: { creative: @creative }
+      render partial: "inline_edit_form"
     end
   end
 
