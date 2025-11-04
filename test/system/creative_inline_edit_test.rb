@@ -1,4 +1,5 @@
 require "application_system_test_case"
+require "base64"
 
 class CreativeInlineEditTest < ApplicationSystemTestCase
   setup do
@@ -43,6 +44,24 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   def expand_creative(creative)
     find("#creative-#{creative.id}").hover
     find("#creative-#{creative.id} .creative-toggle-btn", wait: 5).click
+  end
+
+  def create_test_image
+    data = Base64.decode64(
+      "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAIAAAACDbGyAAAADUlEQVR42mP8/5+hHgAHuwMlv8/wNwAAAABJRU5ErkJggg=="
+    )
+    Tempfile.new(["lexical-attachment", ".png"]).tap do |file|
+      file.binmode
+      file.write(data)
+      file.rewind
+    end
+  end
+
+  def attach_inline_image(file_path)
+    input = find("input[type='file'][accept='image/*']", visible: false, wait: 5)
+    input.attach_file(file_path)
+    assert_selector ".lexical-attachment", wait: 10
+    assert_selector ".lexical-attachment.is-uploading", count: 0, wait: 10
   end
 
   test "shows saved row when starting another addition" do
@@ -133,5 +152,39 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: "New child", wait: 5
     assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: existing_child.description.to_plain_text
+  end
+
+  test "does not duplicate attachments when re-editing inline creative" do
+    file = create_test_image
+
+    begin
+      open_inline_editor(@root_creative)
+
+      fill_inline_editor("")
+
+      attach_inline_image(file.path)
+
+      close_inline_editor
+
+      @root_creative.reload
+
+      assert_selector "#creative-#{@root_creative.id} action-text-attachment",
+                      count: 1,
+                      wait: 5,
+                      visible: :all
+      assert_equal 1, @root_creative.description.body.to_html.scan(/<action-text-attachment/).length
+
+      open_inline_editor(@root_creative)
+      assert_selector ".lexical-attachment", count: 1, wait: 5
+      close_inline_editor
+
+      assert_selector "#creative-#{@root_creative.id} action-text-attachment",
+                      count: 1,
+                      wait: 5,
+                      visible: :all
+    ensure
+      file.close
+      file.unlink
+    end
   end
 end
