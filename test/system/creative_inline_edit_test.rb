@@ -46,17 +46,6 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     find("#creative-#{creative.id} .creative-toggle-btn", wait: 5).click
   end
 
-  def create_test_image
-    data = Base64.decode64(
-      "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAIAAAACDbGyAAAADUlEQVR42mP8/5+hHgAHuwMlv8/wNwAAAABJRU5ErkJggg=="
-    )
-    Tempfile.new([ "lexical-attachment", ".png" ]).tap do |file|
-      file.binmode
-      file.write(data)
-      file.rewind
-    end
-  end
-
   def attach_inline_image(file_path)
     input = find("input[type='file'][accept='image/*']", visible: false, wait: 5)
     input.attach_file(file_path)
@@ -155,36 +144,31 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   end
 
   test "does not duplicate attachments when re-editing inline creative" do
-    file = create_test_image
+    fixture_path = Rails.root.join("test/fixtures/files/small.png")
 
-    begin
-      open_inline_editor(@root_creative)
+    open_inline_editor(@root_creative)
 
-      fill_inline_editor("")
+    fill_inline_editor("")
 
-      attach_inline_image(file.path)
+    attach_inline_image(fixture_path)
 
-      close_inline_editor
+    close_inline_editor
 
-      @root_creative.reload
+    @root_creative.reload
 
-      assert_selector "#creative-#{@root_creative.id} action-text-attachment",
-                      count: 1,
-                      wait: 5,
-                      visible: :all
-      assert_equal 1, @root_creative.description.body.to_html.scan(/<action-text-attachment/).length
+    assert_selector "#creative-#{@root_creative.id} action-text-attachment",
+                    count: 1,
+                    wait: 5,
+                    visible: :all
+    assert_equal 1, @root_creative.description.body.to_html.scan(/<action-text-attachment/).length
 
-      open_inline_editor(@root_creative)
-      assert_selector ".lexical-attachment", count: 1, wait: 5
-      close_inline_editor
+    open_inline_editor(@root_creative)
+    assert_selector ".lexical-attachment", count: 1, wait: 5
+    close_inline_editor
 
-      assert_selector "#creative-#{@root_creative.id} action-text-attachment",
-                      count: 1,
-                      wait: 5,
-                      visible: :all
-    ensure
-      file.close
-      file.unlink
-    end
+    assert_selector "#creative-#{@root_creative.id} action-text-attachment",
+                    count: 1,
+                    wait: 5,
+                    visible: :all
   end
 end
