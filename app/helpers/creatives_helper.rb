@@ -219,7 +219,7 @@ module CreativesHelper
         # trix-content 블록에서 내부 div의 텍스트만 추출
         inner_html = begin
           fragment = Nokogiri::HTML.fragment(raw_html)
-          wrapper = fragment.at_css('div.trix-content')
+          wrapper = fragment.at_css("div.trix-content")
           if wrapper
             wrapper.inner_html.strip
           else

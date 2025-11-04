@@ -24,7 +24,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   end
 
   def inline_editor_field
-    find('.lexical-content-editable', wait: 5)
+    find(".lexical-content-editable", wait: 5)
   end
 
   def fill_inline_editor(text)
@@ -50,7 +50,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     data = Base64.decode64(
       "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAIAAAACDbGyAAAADUlEQVR42mP8/5+hHgAHuwMlv8/wNwAAAABJRU5ErkJggg=="
     )
-    Tempfile.new(["lexical-attachment", ".png"]).tap do |file|
+    Tempfile.new([ "lexical-attachment", ".png" ]).tap do |file|
       file.binmode
       file.write(data)
       file.rewind
