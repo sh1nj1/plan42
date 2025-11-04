@@ -3,6 +3,7 @@ import {
   attachmentPayloadFromAttachmentElement,
   attachmentPayloadFromFigure,
   attachmentPayloadToHTMLElement,
+  canonicalizeAttachmentElements,
   formatFileSize
 } from "../attachment_payload"
 
@@ -34,6 +35,16 @@ describe("attachment_payload helpers", () => {
       caption: ""
     })
     expect(formatFileSize(payload.filesize)).toBe("2 KB")
+  })
+
+  it("infers previewable from URL extension", () => {
+    const payload = sanitizeAttachmentPayload({
+      url: "https://example.com/uploads/photo.JPG",
+      contentType: null,
+      filename: "photo.JPG",
+      previewable: null
+    })
+    expect(payload.previewable).toBe(true)
   })
 
   it("parses canonical attachment element", () => {
@@ -96,5 +107,88 @@ describe("attachment_payload helpers", () => {
     const figure = element.querySelector("figure.attachment")
     expect(figure).not.toBeNull()
     expect(figure.getAttribute("data-trix-attachment")).toContain("\"filename\":\"file.csv\"")
+  })
+
+  it("ignores figure already wrapped by attachment", () => {
+    const {element} = attachmentPayloadToHTMLElement({
+      sgid: "wrapped",
+      url: "/blob/wrapped",
+      filename: "wrapped.png",
+      contentType: "image/png",
+      filesize: 100,
+      previewable: true,
+      width: 300,
+      height: 200
+    })
+    const figure = element.querySelector("figure.attachment")
+    expect(attachmentPayloadFromFigure(figure)).toBeNull()
+  })
+
+  it("deduplicates repeated attachments", () => {
+    const payload = {
+      sgid: "dup",
+      url: "/blob/dup",
+      filename: "dup.png",
+      contentType: "image/png",
+      filesize: 256,
+      previewable: true
+    }
+    const canonical = attachmentPayloadToHTMLElement(payload).element.outerHTML
+    const html = `<div>${canonical}${canonical}</div>`
+    const doc = parser.parseFromString(html, "text/html")
+
+    canonicalizeAttachmentElements(doc.body)
+
+    expect(doc.body.querySelectorAll("action-text-attachment").length).toBe(1)
+  })
+
+  it("collapses stray figure siblings into canonical attachments", () => {
+    const html = `
+      <div>
+        <p>
+          <action-text-attachment sgid="abc" url="/blob/abc" filename="photo.jpg"
+            content-type="image/jpeg" filesize="1024" previewable="true"></action-text-attachment>
+        </p>
+        <figure class="attachment attachment--preview attachment--jpeg"
+          data-trix-attachment='{"sgid":"abc","filename":"photo.jpg","contentType":"image/jpeg","filesize":1024,"previewable":true,"url":"/blob/abc"}'>
+          <img src="/blob/abc" alt="photo.jpg">
+          <figcaption class="attachment__caption">
+            <span class="attachment__name">photo.jpg</span>
+            <span class="attachment__size">1 KB</span>
+          </figcaption>
+        </figure>
+      </div>
+    `
+    const doc = parser.parseFromString(html, "text/html")
+
+    canonicalizeAttachmentElements(doc.body)
+
+    const attachments = doc.body.querySelectorAll("action-text-attachment")
+    expect(attachments.length).toBe(1)
+    expect(doc.body.querySelector("action-text-attachment > figure.attachment")).toBeNull()
+    expect(doc.body.querySelectorAll(":scope > figure.attachment").length).toBe(0)
+  })
+
+  it("keeps non-consecutive duplicate payloads", () => {
+    const payloadA = attachmentPayloadToHTMLElement({
+      sgid: "A",
+      url: "/blob/A",
+      filename: "a.png",
+      contentType: "image/png",
+      previewable: true
+    }).element.outerHTML
+    const payloadB = attachmentPayloadToHTMLElement({
+      sgid: "B",
+      url: "/blob/B",
+      filename: "b.png",
+      contentType: "image/png",
+      previewable: true
+    }).element.outerHTML
+    const html = `<div>${payloadA}${payloadB}${payloadA}</div>`
+    const doc = parser.parseFromString(html, "text/html")
+
+    canonicalizeAttachmentElements(doc.body)
+
+    expect(doc.body.querySelectorAll("action-text-attachment").length).toBe(3)
   })
 })

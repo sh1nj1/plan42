@@ -33,28 +33,9 @@ import ActionTextAttachmentPlugin, {
 } from "./plugins/action_text_attachment_plugin"
 import {ActionTextAttachmentNode} from "../lib/lexical/action_text_attachment_node"
 import {
-  attachmentPayloadFromAttachmentElement,
-  attachmentPayloadFromFigure,
-  attachmentPayloadToHTMLElement,
-  normalizeAttachmentCaption,
-  parseDimension,
+  canonicalizeAttachmentElements,
   formatFileSize
 } from "../lib/lexical/attachment_payload"
-
-function findPreviousAttachment(element) {
-  let current = element.previousElementSibling
-  while (current) {
-    if (current.tagName === "ACTION-TEXT-ATTACHMENT") return current
-    if (typeof current.querySelector === "function") {
-      const nested = current.querySelector("action-text-attachment")
-      if (nested) return nested
-    }
-    current = current.previousElementSibling
-  }
-  const parent = element.parentElement
-  if (!parent || parent === element) return null
-  return findPreviousAttachment(parent)
-}
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -100,127 +81,8 @@ function InitialContentPlugin({html}) {
       const parser = new DOMParser()
       const doc = parser.parseFromString(html || "", "text/html")
       const container = doc.querySelector(".trix-content") || doc.body
-      const attachmentElements = Array.from(container.querySelectorAll("action-text-attachment"))
-      attachmentElements.forEach((attachment) => {
-        const widthAttr = attachment.getAttribute("width")
-        if (widthAttr && !attachment.hasAttribute("data-width")) {
-          attachment.setAttribute("data-width", widthAttr)
-          attachment.removeAttribute("width")
-        }
-        const heightAttr = attachment.getAttribute("height")
-        if (heightAttr && !attachment.hasAttribute("data-height")) {
-          attachment.setAttribute("data-height", heightAttr)
-          attachment.removeAttribute("height")
-        }
-      })
 
-      container.querySelectorAll("figure.attachment").forEach((figure) => {
-        const attachment = findPreviousAttachment(figure)
-        if (!attachment) return
-
-        let data = null
-        const dataAttr = figure.getAttribute("data-trix-attachment")
-        if (dataAttr) {
-          try {
-            data = JSON.parse(dataAttr)
-          } catch (_error) {
-            data = null
-          }
-        }
-
-        const existingFilename = attachment.getAttribute("filename") || ""
-        const existingFilesize = parseInt(attachment.getAttribute("filesize") || "", 10)
-        const filenameFromData = data?.filename || data?.name || ""
-        const img = figure.querySelector("img")
-        const filenameFromFigure = img?.getAttribute("alt") || figure.querySelector(".attachment__name")?.textContent || ""
-        const filename = existingFilename || filenameFromData || filenameFromFigure || ""
-        if (!existingFilename && filename) {
-          attachment.setAttribute("filename", filename)
-        }
-
-        const dataUrl =
-          attachment.getAttribute("url") ||
-          data?.url ||
-          data?.href ||
-          (img ? img.getAttribute("src") : "")
-        if (dataUrl) {
-          attachment.setAttribute("url", dataUrl)
-        }
-
-        const dataFilesize = parseInt(
-          data?.filesize ?? data?.file_size ?? data?.size ?? "",
-          10
-        )
-        if (!Number.isFinite(existingFilesize) && Number.isFinite(dataFilesize)) {
-          attachment.setAttribute("filesize", String(dataFilesize))
-        }
-
-        if (
-          !attachment.hasAttribute("content-type") &&
-          (data?.contentType || data?.content_type)
-        ) {
-          attachment.setAttribute(
-            "content-type",
-            data?.contentType || data?.content_type
-          )
-        }
-
-        if (
-          !attachment.hasAttribute("previewable") &&
-          (figure.classList.contains("attachment--preview") || img)
-        ) {
-          attachment.setAttribute("previewable", "true")
-        }
-
-        const widthCandidate =
-          parseDimension(
-            data?.width ??
-              data?.presentation?.width ??
-              figure.getAttribute("data-width") ??
-              (img && (img.getAttribute("data-width") || img.getAttribute("width") || img.style.width))
-          )
-        if (Number.isFinite(widthCandidate)) {
-          attachment.setAttribute("data-width", String(Math.round(widthCandidate)))
-        }
-
-        const heightCandidate =
-          parseDimension(
-            data?.height ??
-              data?.presentation?.height ??
-              figure.getAttribute("data-height") ??
-              (img && (img.getAttribute("data-height") || img.getAttribute("height") || img.style.height))
-          )
-        if (Number.isFinite(heightCandidate)) {
-          attachment.setAttribute("data-height", String(Math.round(heightCandidate)))
-        }
-
-        const figcaption = figure.querySelector("figcaption")
-        if (figcaption) {
-          const captionClone = figcaption.cloneNode(true)
-          captionClone
-            .querySelectorAll(".attachment__name, .attachment__size")
-            .forEach((node) => node.remove())
-          const captionText = captionClone.textContent || ""
-          const normalizedCaption = normalizeAttachmentCaption(captionText, {
-            filename,
-            filesize: Number.isFinite(existingFilesize)
-              ? existingFilesize
-              : Number.isFinite(dataFilesize)
-                ? dataFilesize
-                : null
-          })
-          if (normalizedCaption) {
-            attachment.setAttribute("caption", normalizedCaption)
-          } else {
-            attachment.removeAttribute("caption")
-          }
-        }
-
-        const figureWrapper = attachmentPayloadToHTMLElement(
-          attachmentPayloadFromAttachmentElement(attachment)
-        )
-        attachment.replaceWith(figureWrapper.element)
-      })
+      canonicalizeAttachmentElements(container)
 
       const nodes = $generateNodesFromDOM(editor, container)
       const appendedNodes = []
@@ -582,6 +444,9 @@ function EditorInner({
               const innerHtml = $generateHtmlFromNodes(editorInstance)
               const parser = new DOMParser()
               const doc = parser.parseFromString(`<div>${innerHtml}</div>`, "text/html")
+
+              canonicalizeAttachmentElements(doc.body)
+
               doc.querySelectorAll("action-text-attachment").forEach((attachment) => {
                 const containerParagraph = attachment.closest("p")
                 let sibling = containerParagraph?.nextElementSibling
@@ -604,115 +469,6 @@ function EditorInner({
                     sibling.remove()
                   }
                 }
-              })
-              doc.querySelectorAll("figure.attachment").forEach((figure) => {
-                if (figure.closest("action-text-attachment")) return
-                const dataAttr = figure.getAttribute("data-trix-attachment")
-                if (!dataAttr) return
-                let data = null
-                try {
-                  data = JSON.parse(dataAttr)
-                } catch (_error) {
-                  data = null
-                }
-                if (!data) return
-                const sgid = data.sgid || data.attachable_sgid
-                if (!sgid) return
-
-                const attachment = doc.createElement("action-text-attachment")
-                attachment.setAttribute("sgid", sgid)
-                const filename = data.filename || data.name || ""
-                if (filename) {
-                  attachment.setAttribute("filename", filename)
-                }
-                const contentType = data.contentType || data.content_type
-                if (contentType) {
-                  attachment.setAttribute("content-type", contentType)
-                }
-                const url = data.url || data.href || ""
-                if (url) {
-                  attachment.setAttribute("url", url)
-                }
-                const filesize = parseInt(
-                  data.filesize ?? data.file_size ?? data.size ?? "",
-                  10
-                )
-                if (Number.isFinite(filesize)) {
-                  attachment.setAttribute("filesize", String(filesize))
-                }
-
-                const captionText = normalizeAttachmentCaption(data.caption || "", {
-                  filename,
-                  filesize
-                })
-                if (captionText) {
-                  attachment.setAttribute("caption", captionText)
-                }
-
-                const widthCandidate = parseDimensionValue(
-                  data.width ?? data.presentation?.width ??
-                    figure.getAttribute("data-width")
-                )
-                if (Number.isFinite(widthCandidate)) {
-                  attachment.setAttribute("data-width", String(Math.round(widthCandidate)))
-                }
-
-                const heightCandidate = parseDimensionValue(
-                  data.height ?? data.presentation?.height ??
-                    figure.getAttribute("data-height")
-                )
-                if (Number.isFinite(heightCandidate)) {
-                  attachment.setAttribute("data-height", String(Math.round(heightCandidate)))
-                }
-
-                const img = figure.querySelector("img")
-                if (img) {
-                  if (!attachment.hasAttribute("url")) {
-                    const imgSrc = img.getAttribute("src") || ""
-                    if (imgSrc) {
-                      attachment.setAttribute("url", imgSrc)
-                    }
-                  }
-                const imgWidth = parseDimension(
-                  img.getAttribute("data-width") ||
-                    img.getAttribute("width") ||
-                    img.style.width
-                )
-                if (!attachment.hasAttribute("data-width") && Number.isFinite(imgWidth)) {
-                  attachment.setAttribute("data-width", String(Math.round(imgWidth)))
-                }
-                const imgHeight = parseDimension(
-                  img.getAttribute("data-height") ||
-                    img.getAttribute("height") ||
-                    img.style.height
-                )
-                  if (!attachment.hasAttribute("data-height") && Number.isFinite(imgHeight)) {
-                    attachment.setAttribute("data-height", String(Math.round(imgHeight)))
-                  }
-                }
-
-                if (figure.classList.contains("attachment--preview") || img) {
-                  attachment.setAttribute("previewable", "true")
-                }
-
-                const figcaption = figure.querySelector("figcaption")
-                if (figcaption && !attachment.hasAttribute("caption")) {
-                  const captionClone = figcaption.cloneNode(true)
-                  captionClone
-                    .querySelectorAll(".attachment__name, .attachment__size")
-                    .forEach((node) => node.remove())
-                  const captionText = captionClone.textContent || ""
-                  const normalizedCaption = normalizeAttachmentCaption(captionText, {
-                    filename,
-                    filesize
-                  })
-                  if (normalizedCaption) {
-                    attachment.setAttribute("caption", normalizedCaption)
-                  }
-                }
-
-                figure.replaceWith(attachment)
-                attachment.appendChild(figure)
               })
               const bodyChildren = Array.from(doc.body.children)
               for (let i = bodyChildren.length - 1; i >= 0; i -= 1) {

@@ -120,12 +120,15 @@ export default function ActionTextAttachmentPlugin({
           editor.update(() => {
             const currentNode = $getNodeByKey(nodeKey)
             if ($isActionTextAttachmentNode(currentNode)) {
+              const existing = currentNode.getPayload()
               currentNode.markUploading(
                 sanitizeAttachmentPayload({
+                  ...existing,
                   filename: file.name,
-                  contentType: file.type,
-                  filesize: file.size,
-                  previewable
+                  contentType: file.type || existing.contentType,
+                  filesize: file.size ?? existing.filesize,
+                  previewable: previewable || existing.previewable,
+                  localUrl: previewable ? existing.localUrl : null
                 })
               )
             }
@@ -145,10 +148,7 @@ export default function ActionTextAttachmentPlugin({
                 editor.update(() => {
                   const currentNode = $getNodeByKey(nodeKey)
                   if ($isActionTextAttachmentNode(currentNode)) {
-                    const payload = currentNode.getPayload()
-                    if (!payload.width || !payload.height) {
-                      currentNode.setDimensions(width, height)
-                    }
+                    currentNode.setDimensions(width, height)
                   }
                 })
               })
@@ -219,6 +219,7 @@ export default function ActionTextAttachmentPlugin({
             editor.update(() => {
               const currentNode = $getNodeByKey(nodeKey)
               if ($isActionTextAttachmentNode(currentNode)) {
+                const existing = currentNode.getPayload()
                 currentNode.applyUploadResult(
                   sanitizeAttachmentPayload({
                     sgid: attributes.attachable_sgid,
@@ -226,7 +227,12 @@ export default function ActionTextAttachmentPlugin({
                     filename: attributes.filename,
                     contentType: attributes.content_type,
                     filesize: attributes.byte_size,
-                    status: "ready"
+                    status: "ready",
+                    previewable: existing.previewable || isImageFile(file),
+                    width: existing.width,
+                    height: existing.height,
+                    caption: existing.caption,
+                    localUrl: null
                   })
                 )
                 currentNode.setProgress(100)

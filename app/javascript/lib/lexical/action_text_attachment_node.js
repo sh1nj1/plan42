@@ -91,7 +91,17 @@ export class ActionTextAttachmentNode extends DecoratorNode {
 
   setPayload(updates) {
     const writable = this.getWritable()
-    writable.__payload = sanitizeAttachmentPayload({...writable.__payload, ...updates})
+    const merged = {
+      ...writable.__payload,
+      ...updates
+    }
+    if (updates.previewable === undefined) {
+      merged.previewable = writable.__payload.previewable
+    }
+    if (updates.caption === undefined) {
+      merged.caption = writable.__payload.caption
+    }
+    writable.__payload = sanitizeAttachmentPayload(merged)
   }
 
   setCaption(caption) {

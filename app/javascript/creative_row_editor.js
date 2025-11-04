@@ -429,7 +429,7 @@ export function initializeCreativeRowEditor() {
         .then(data => {
           form.action = `/creatives/${data.id}`;
           form.dataset.creativeId = data.id;
-          const content = data.description || '';
+          const content = data.description_raw_html || data.description || '';
           descriptionInput.value = content;
           lexicalEditor.load(content, `creative-${data.id}`);
           pendingSave = false;
