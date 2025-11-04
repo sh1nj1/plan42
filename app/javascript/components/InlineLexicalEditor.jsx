@@ -64,8 +64,9 @@ const theme = {
   }
 }
 
-function Placeholder() {
-  return <div className="lexical-placeholder">Describe the creative…</div>
+function Placeholder({text}) {
+  const fallback = "Describe the creative…"
+  return <div className="lexical-placeholder">{text || fallback}</div>
 }
 
 function InitialContentPlugin({html}) {
@@ -411,7 +412,8 @@ function EditorInner({
   onReady,
   onUploadStateChange,
   directUploadUrl,
-  blobUrlTemplate
+  blobUrlTemplate,
+  placeholderText
 }) {
   const [editor] = useLexicalComposerContext()
 
@@ -429,7 +431,7 @@ function EditorInner({
               }}
             />
           }
-          placeholder={<Placeholder />}
+          placeholder={<Placeholder text={placeholderText} />}
           ErrorBoundary={LexicalErrorBoundary}
         />
         <HistoryPlugin />
@@ -519,7 +521,8 @@ export default function InlineLexicalEditor({
   onUploadStateChange,
   directUploadUrl,
   blobUrlTemplate,
-  editorKey
+  editorKey,
+  placeholderText
 }) {
   const initialConfig = useMemo(
     () => ({
@@ -552,6 +555,7 @@ export default function InlineLexicalEditor({
         onUploadStateChange={onUploadStateChange}
         directUploadUrl={directUploadUrl}
         blobUrlTemplate={blobUrlTemplate}
+        placeholderText={placeholderText}
       />
     </LexicalComposer>
   )

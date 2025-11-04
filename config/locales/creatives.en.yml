@@ -100,6 +100,8 @@ en:
       sequence: "Sequence"
       progress: "Progress"
       submit: "Save"
+    inline_editor:
+      placeholder: "Describe the creative…"
     edit_title: "Edit creative"
     help:
       add_child_creative: "Add child creative"

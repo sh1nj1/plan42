@@ -22,6 +22,7 @@ export function createInlineEditor(container, {
   let currentHtml = ""
   const directUploadUrl = container.dataset.directUploadUrl || null
   const blobUrlTemplate = container.dataset.blobUrlTemplate || null
+  const placeholderText = container.dataset.placeholder || null
 
   function render(html, key = currentKey) {
     currentKey = key
@@ -32,6 +33,7 @@ export function createInlineEditor(container, {
       <InlineLexicalEditor
         initialHtml={currentHtml}
         editorKey={currentKey}
+        placeholderText={placeholderText}
         onPromptForLink={onPromptForLink ?? promptForLink}
         onKeyDown={(event, editor) => {
           if (onKeyDown) onKeyDown(event, editor)
@@ -56,7 +58,7 @@ export function createInlineEditor(container, {
         }}
         onUploadStateChange={onUploadStateChange}
         directUploadUrl={directUploadUrl}
-        blobUrlTemplate={blobUrlTemplate}
+       blobUrlTemplate={blobUrlTemplate}
       />
     )
   }
