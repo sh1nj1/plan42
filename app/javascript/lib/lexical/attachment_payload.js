@@ -186,13 +186,14 @@ export function attachmentPayloadToHTMLElement(payload, options = {}) {
       const img = document.createElement("img")
       img.src = sanitized.url
       img.alt = sanitized.caption || sanitized.filename || ""
+      img.style.maxWidth = "100%"
+      img.style.height = "auto"
       if (Number.isFinite(sanitized.width)) {
         img.setAttribute("data-width", String(Math.round(sanitized.width)))
         img.style.width = `${Math.round(sanitized.width)}px`
       }
       if (Number.isFinite(sanitized.height)) {
         img.setAttribute("data-height", String(Math.round(sanitized.height)))
-        img.style.height = `${Math.round(sanitized.height)}px`
       }
       figure.appendChild(img)
     } else {

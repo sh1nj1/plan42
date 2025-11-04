@@ -349,14 +349,16 @@ function AttachmentComponent({payload, nodeKey}) {
   const figureChildren = []
 
   if (payload.previewable && (payload.localUrl || payload.url)) {
+    const resolvedWidth = payload.width ? Math.round(payload.width) : null
     figureChildren.push(
       React.createElement("img", {
         ref: imageRef,
         src: payload.localUrl || payload.url,
         alt: payload.caption || payload.filename || "",
         style: {
-          width: payload.width ? `${Math.round(payload.width)}px` : undefined,
-          height: payload.height ? `${Math.round(payload.height)}px` : undefined
+          maxWidth: "100%",
+          width: resolvedWidth ? `${resolvedWidth}px` : undefined,
+          height: resolvedWidth ? "auto" : payload.height ? `${Math.round(payload.height)}px` : undefined
         }
       })
     )
