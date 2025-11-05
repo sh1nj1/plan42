@@ -484,11 +484,11 @@ function Toolbar({onPromptForLink}) {
         color={bgColor}
         onChange={(value) => {
           setBgColor(value)
-          applyTextStyle({"background-color": value})
+          applyTextStyle({backgroundColor: value})
         }}
         onClear={() => {
           setBgColor(DEFAULT_BG_COLOR)
-          applyTextStyle({"background-color": ""})
+          applyTextStyle({backgroundColor: ""})
         }}
       />
       <span className="lexical-toolbar-separator" aria-hidden="true" />
