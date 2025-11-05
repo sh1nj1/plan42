@@ -22,9 +22,14 @@ import {
   $isElementNode,
   $isRangeSelection,
   $isTextNode,
+  CAN_REDO_COMMAND,
+  CAN_UNDO_COMMAND,
+  COMMAND_PRIORITY_CRITICAL,
   COMMAND_PRIORITY_LOW,
   FORMAT_TEXT_COMMAND,
-  SELECTION_CHANGE_COMMAND
+  REDO_COMMAND,
+  SELECTION_CHANGE_COMMAND,
+  UNDO_COMMAND
 } from "lexical"
 import {$patchStyleText} from "@lexical/selection"
 import {$generateHtmlFromNodes, $generateNodesFromDOM} from "@lexical/html"
@@ -307,6 +312,8 @@ function Toolbar({onPromptForLink}) {
     underline: false,
     strike: false
   })
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
   const imageInputRef = useRef(null)
   const fileInputRef = useRef(null)
   const DEFAULT_FONT_COLOR = "#000000"
@@ -358,6 +365,28 @@ function Toolbar({onPromptForLink}) {
       COMMAND_PRIORITY_LOW
     )
   }, [editor, refreshFormats])
+
+  useEffect(() => {
+    return editor.registerCommand(
+      CAN_UNDO_COMMAND,
+      (payload) => {
+        setCanUndo(payload)
+        return false
+      },
+      COMMAND_PRIORITY_CRITICAL
+    )
+  }, [editor])
+
+  useEffect(() => {
+    return editor.registerCommand(
+      CAN_REDO_COMMAND,
+      (payload) => {
+        setCanRedo(payload)
+        return false
+      },
+      COMMAND_PRIORITY_CRITICAL
+    )
+  }, [editor])
 
   useEffect(() => {
     return editor.registerUpdateListener(({editorState}) => {
@@ -413,6 +442,25 @@ function Toolbar({onPromptForLink}) {
 
   return (
     <div className="lexical-toolbar">
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={() => editor.dispatchCommand(UNDO_COMMAND, undefined)}
+        disabled={!canUndo}
+        title="Undo (⌘/Ctrl+Z)"
+        aria-label="Undo">
+        ↺
+      </button>
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={() => editor.dispatchCommand(REDO_COMMAND, undefined)}
+        disabled={!canRedo}
+        title="Redo (⇧⌘/Ctrl+Z)"
+        aria-label="Redo">
+        ↻
+      </button>
+      <span className="lexical-toolbar-separator" aria-hidden="true" />
       <button
         type="button"
         className={`lexical-toolbar-btn ${formats.bold ? "active" : ""}`}
