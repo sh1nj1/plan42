@@ -23,16 +23,31 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   end
 
   def inline_editor_field
-    # find(".lexical-content-editable", wait: 5)
+    wait_for_network_idle(timeout: 10)
     inline_editor_container.find(".lexical-content-editable", wait: 5)
   end
 
   def inline_editor_container
-      find("[data-lexical-editor-root][data-editor-ready='true']", wait: 5)
+    wait_for_network_idle(timeout: 10)
+    find("[data-lexical-editor-root][data-editor-ready='true']", wait: 5)
   end
 
   def fill_inline_editor(text)
-    inline_editor_field.click.set(text)
+    wait_for_network_idle(timeout: 10)
+    attempts = 0
+
+    begin
+      field = inline_editor_field
+      field.click
+      inline_editor_field.set(text)
+    rescue Selenium::WebDriver::Error::StaleElementReferenceError
+      attempts += 1
+      raise if attempts >= 3
+
+      sleep 0.1
+      retry
+    end
+    wait_for_network_idle(timeout: 10)
   end
 
   def add_inline_child(text)
@@ -43,9 +58,11 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   def close_inline_editor
     find("#inline-close", wait: 5).click
     assert_no_selector "#inline-edit-form-element", wait: 5
+    wait_for_network_idle(timeout: 10)
   end
 
   def expand_creative(creative)
+    wait_for_network_idle(timeout: 10)
     find("#creative-#{creative.id}").hover
     find("#creative-#{creative.id} .creative-toggle-btn", wait: 5).click
   end
@@ -159,6 +176,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     close_inline_editor
 
     @root_creative.reload
+    wait_for_network_idle(timeout: 10)
 
     assert_selector "#creative-#{@root_creative.id} action-text-attachment",
                     count: 1,

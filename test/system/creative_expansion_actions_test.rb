@@ -25,19 +25,20 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     find(row_selector(@root_creative)).hover
     find("#{row_selector(@root_creative)} .creative-toggle-btn").click
 
-    child_row = find(row_selector(@child), visible: :visible)
-    child_row.find(".creative-row").hover
+    child_selector = row_selector(@child)
+    find("#{child_selector} .creative-row", visible: :visible).hover
 
-    within(child_row) do
+    within(:css, child_selector) do
       assert_selector ".edit-inline-btn", visible: :visible
       find(".edit-inline-btn").click
     end
 
     assert_selector "#inline-edit-form-element", visible: :visible
     find("#inline-close").click
+    wait_for_network_idle(timeout: 10)
 
-    child_row.find(".creative-row").hover
-    within(child_row) do
+    find("#{child_selector} .creative-row", visible: :visible).hover
+    within(:css, child_selector) do
       find("[name='show-comments-btn']").click
     end
 
@@ -47,16 +48,16 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
   test "binds edit and comment buttons after using expand all" do
     find("#expand-all-btn").click
 
-    child_row = find(row_selector(@child), visible: :visible)
-    child_row.find(".creative-row").hover
+    child_selector = row_selector(@child)
+    find("#{child_selector} .creative-row", visible: :visible).hover
 
-    within(child_row) do
+    within(:css, child_selector) do
       find("[name='show-comments-btn']").click
     end
     assert_selector "#comments-popup", visible: :visible
 
     assert_selector "#{row_selector(@child)} .edit-inline-btn"
-    within(child_row) do
+    within(:css, child_selector) do
       find(".edit-inline-btn").click
     end
 

@@ -14,4 +14,28 @@ module SystemHelpers
   rescue Capybara::NotSupportedByDriverError
     # Ignore for drivers that do not support resizing.
   end
+
+  def wait_for_network_idle(timeout: Capybara.default_max_wait_time)
+    start = Time.now
+    while Time.now - start < timeout
+      active = page.evaluate_script(<<~JS)
+      window.__pendingXHRs = window.__pendingXHRs || 0;
+      (function(){
+        if (!window.__networkHooked) {
+          const origOpen = XMLHttpRequest.prototype.open;
+          XMLHttpRequest.prototype.open = function() {
+            window.__pendingXHRs++;
+            this.addEventListener('loadend', () => window.__pendingXHRs--);
+            origOpen.apply(this, arguments);
+          };
+          window.__networkHooked = true;
+        }
+      })();
+      window.__pendingXHRs
+    JS
+
+      break if active == 0
+      sleep 0.05
+    end
+  end
 end
