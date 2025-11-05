@@ -12,6 +12,13 @@ import {
 } from "@lexical/react/LexicalAutoLinkPlugin"
 import {LexicalErrorBoundary} from "@lexical/react/LexicalErrorBoundary"
 import {HeadingNode, QuoteNode} from "@lexical/rich-text"
+import {
+  CodeNode,
+  CodeHighlightNode,
+  $createCodeNode,
+  $isCodeNode,
+  registerCodeHighlighting
+} from "@lexical/code"
 import {ListItemNode, ListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND} from "@lexical/list"
 import {LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND} from "@lexical/link"
 import {
@@ -60,6 +67,38 @@ const theme = {
     ul: "lexical-list-ul",
     ol: "lexical-list-ol",
     listitem: "lexical-list-item"
+  },
+  code: "lexical-code-block",
+  codeHighlight: {
+    atrule: "lexical-token-atrule",
+    attr: "lexical-token-attr",
+    boolean: "lexical-token-boolean",
+    builtin: "lexical-token-builtin",
+    cdata: "lexical-token-cdata",
+    char: "lexical-token-char",
+    class: "lexical-token-class",
+    comment: "lexical-token-comment",
+    constant: "lexical-token-constant",
+    deleted: "lexical-token-deleted",
+    doctype: "lexical-token-doctype",
+    entity: "lexical-token-entity",
+    function: "lexical-token-function",
+    important: "lexical-token-important",
+    inserted: "lexical-token-inserted",
+    keyword: "lexical-token-keyword",
+    namespace: "lexical-token-namespace",
+    number: "lexical-token-number",
+    operator: "lexical-token-operator",
+    prolog: "lexical-token-prolog",
+    property: "lexical-token-property",
+    punctuation: "lexical-token-punctuation",
+    regex: "lexical-token-regex",
+    selector: "lexical-token-selector",
+    string: "lexical-token-string",
+    symbol: "lexical-token-symbol",
+    tag: "lexical-token-tag",
+    url: "lexical-token-url",
+    variable: "lexical-token-variable"
   },
   link: "lexical-link",
   text: {
@@ -251,6 +290,16 @@ function LinkAttributesPlugin() {
   return null
 }
 
+function CodeHighlightingPlugin() {
+  const [editor] = useLexicalComposerContext()
+
+  useEffect(() => {
+    return registerCodeHighlighting(editor)
+  }, [editor])
+
+  return null
+}
+
 function ToolbarColorPicker({icon, title, color, onChange, onClear}) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef(null)
@@ -312,6 +361,7 @@ function Toolbar({onPromptForLink}) {
     underline: false,
     strike: false
   })
+  const [isCodeBlock, setIsCodeBlock] = useState(false)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const imageInputRef = useRef(null)
@@ -346,13 +396,19 @@ function Toolbar({onPromptForLink}) {
 
   const refreshFormats = useCallback(() => {
     const selection = $getSelection()
-    if (!$isRangeSelection(selection)) return
+    if (!$isRangeSelection(selection)) {
+      setIsCodeBlock(false)
+      return
+    }
     setFormats({
       bold: selection.hasFormat("bold"),
       italic: selection.hasFormat("italic"),
       underline: selection.hasFormat("underline"),
       strike: selection.hasFormat("strikethrough")
     })
+    const anchor = selection.anchor.getNode()
+    const topLevel = anchor.getTopLevelElement()
+    setIsCodeBlock(Boolean(topLevel && $isCodeNode(topLevel)))
   }, [])
 
   useEffect(() => {
@@ -440,6 +496,44 @@ function Toolbar({onPromptForLink}) {
     [editor]
   )
 
+  const toggleCodeBlock = useCallback(() => {
+    editor.update(() => {
+      const selection = $getSelection()
+      if (!$isRangeSelection(selection)) return
+
+      const anchorNode = selection.anchor.getNode()
+      const topLevel = anchorNode.getTopLevelElement()
+      if (!topLevel) return
+
+      if ($isCodeNode(topLevel)) {
+        const textContent = topLevel.getTextContent()
+        const lines = textContent.split("\n")
+        const firstParagraph = $createParagraphNode()
+        firstParagraph.append($createTextNode(lines[0] || ""))
+        topLevel.replace(firstParagraph)
+        let previous = firstParagraph
+        for (let index = 1; index < lines.length; index += 1) {
+          const paragraph = $createParagraphNode()
+          paragraph.append($createTextNode(lines[index]))
+          previous.insertAfter(paragraph)
+          previous = paragraph
+        }
+        firstParagraph.selectEnd()
+        return
+      }
+
+      if (topLevel.getType?.() !== "paragraph") {
+        return
+      }
+
+      const codeNode = $createCodeNode()
+      const content = topLevel.getTextContent()
+      codeNode.append($createTextNode(content || ""))
+      topLevel.replace(codeNode)
+      codeNode.selectEnd()
+    })
+  }, [editor])
+
   return (
     <div className="lexical-toolbar">
       <button
@@ -488,6 +582,13 @@ function Toolbar({onPromptForLink}) {
         onClick={() => toggleFormat("strikethrough")}
         title="Strikethrough">
         S
+      </button>
+      <button
+        type="button"
+        className={`lexical-toolbar-btn ${isCodeBlock ? "active" : ""}`}
+        onClick={toggleCodeBlock}
+        title="Code block">
+        {'</>'}
       </button>
       <span className="lexical-toolbar-separator" aria-hidden="true" />
       <button
@@ -626,6 +727,7 @@ function EditorInner({
           ErrorBoundary={LexicalErrorBoundary}
         />
         <HistoryPlugin />
+        <CodeHighlightingPlugin />
         <ListPlugin />
         <LinkPlugin />
         <AutoLinkPlugin matchers={URL_MATCHERS} />
@@ -722,6 +824,8 @@ export default function InlineLexicalEditor({
       nodes: [
         HeadingNode,
         QuoteNode,
+        CodeNode,
+        CodeHighlightNode,
         ListItemNode,
         ListNode,
         LinkNode,
