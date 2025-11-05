@@ -29,6 +29,9 @@ export function createInlineEditor(container, {
     currentHtml = html ?? ""
     suppressNextChange = true
     editorReady = false
+    if (container.dataset) {
+      container.dataset.editorReady = "false"
+    }
     root.render(
       <InlineLexicalEditor
         initialHtml={currentHtml}
@@ -49,6 +52,9 @@ export function createInlineEditor(container, {
         onReady={(api) => {
           focusHandler = api?.focus ?? (() => {})
           editorReady = true
+          if (container.dataset) {
+            container.dataset.editorReady = "true"
+          }
           if (pendingFocus) {
             requestAnimationFrame(() => {
               focusHandler()
@@ -82,6 +88,9 @@ export function createInlineEditor(container, {
       }
     },
     destroy() {
+      if (container.dataset) {
+        delete container.dataset.editorReady
+      }
       root.unmount()
     }
   }

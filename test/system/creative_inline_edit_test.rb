@@ -23,7 +23,12 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   end
 
   def inline_editor_field
-    find(".lexical-content-editable", wait: 5)
+    # find(".lexical-content-editable", wait: 5)
+    inline_editor_container.find(".lexical-content-editable", wait: 5)
+  end
+
+  def inline_editor_container
+      find("[data-lexical-editor-root][data-editor-ready='true']", wait: 5)
   end
 
   def fill_inline_editor(text)
