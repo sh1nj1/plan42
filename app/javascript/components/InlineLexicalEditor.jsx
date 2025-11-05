@@ -26,6 +26,7 @@ import {
   FORMAT_TEXT_COMMAND,
   SELECTION_CHANGE_COMMAND
 } from "lexical"
+import {$patchStyleText} from "@lexical/selection"
 import {$generateHtmlFromNodes, $generateNodesFromDOM} from "@lexical/html"
 import {useLexicalComposerContext} from "@lexical/react/LexicalComposerContext"
 import ActionTextAttachmentPlugin, {
@@ -36,6 +37,7 @@ import {
   canonicalizeAttachmentElements,
   formatFileSize
 } from "../lib/lexical/attachment_payload"
+import {syncLexicalStyleAttributes} from "../lib/lexical/style_attributes"
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -73,6 +75,43 @@ function InitialContentPlugin({html}) {
   const [editor] = useLexicalComposerContext()
   const lastApplied = useRef(null)
 
+  const collectDomTextStyles = useCallback((container) => {
+    const styles = []
+    if (!container) return styles
+    const ownerDocument = container.ownerDocument || document
+    const walker = ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+    let current = walker.nextNode()
+    while (current) {
+      const parent = current.parentElement
+      let styleText = parent?.getAttribute?.("style") || ""
+      const colorAttr = parent?.dataset?.lexicalColor
+      const bgAttr = parent?.dataset?.lexicalBackgroundColor
+
+      if ((!styleText || !styleText.trim()) && (colorAttr || bgAttr)) {
+        const declarations = []
+        if (colorAttr) declarations.push(`color: ${colorAttr}`)
+        if (bgAttr) declarations.push(`background-color: ${bgAttr}`)
+        styleText = declarations.join("; ")
+      } else {
+        const lower = styleText.toLowerCase()
+        const fragments = []
+        if (colorAttr && !lower.includes("color:")) {
+          fragments.push(`color: ${colorAttr}`)
+        }
+        if (bgAttr && !lower.includes("background-color:")) {
+          fragments.push(`background-color: ${bgAttr}`)
+        }
+        if (fragments.length > 0) {
+          styleText = `${styleText}${styleText.trim().endsWith(";") || !styleText.trim() ? "" : ";"} ${fragments.join("; ")}`.trim()
+        }
+      }
+
+      styles.push(styleText || "")
+      current = walker.nextNode()
+    }
+    return styles
+  }, [])
+
   useEffect(() => {
     if (lastApplied.current === html) return
     lastApplied.current = html
@@ -84,6 +123,8 @@ function InitialContentPlugin({html}) {
       const container = doc.querySelector(".trix-content") || doc.body
 
       canonicalizeAttachmentElements(container)
+      syncLexicalStyleAttributes(container)
+      const collectedStyles = collectDomTextStyles(container)
 
       const nodes = $generateNodesFromDOM(editor, container)
       const appendedNodes = []
@@ -158,6 +199,12 @@ function InitialContentPlugin({html}) {
         }
       })
 
+      const textNodes = root.getAllTextNodes()
+      textNodes.forEach((textNode, index) => {
+        const style = collectedStyles[index]
+        textNode.setStyle(style || "")
+      })
+
       let lastChild = root.getLastChild()
       while (
         lastChild &&
@@ -172,7 +219,7 @@ function InitialContentPlugin({html}) {
         root.append($createParagraphNode())
       }
     })
-  }, [editor, html])
+  }, [collectDomTextStyles, editor, html])
 
   return null
 }
@@ -199,6 +246,59 @@ function LinkAttributesPlugin() {
   return null
 }
 
+function ToolbarColorPicker({icon, title, color, onChange, onClear}) {
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef(null)
+  const popoverRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handleClick = (event) => {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(event.target) &&
+        triggerRef.current &&
+        !triggerRef.current.contains(event.target)
+      ) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [open])
+
+  return (
+    <div className="lexical-toolbar-color" title={title}>
+      <button
+        type="button"
+        className="lexical-toolbar-btn lexical-toolbar-color__trigger"
+        onClick={() => setOpen((prev) => !prev)}
+        ref={triggerRef}>
+        <span className="lexical-toolbar-color__swatch" style={{backgroundColor: color}} />
+        {icon}
+      </button>
+      {open ? (
+        <div className="lexical-toolbar-color__popover" ref={popoverRef}>
+          <input
+            type="color"
+            value={color}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          <button
+            type="button"
+            className="lexical-toolbar-btn lexical-toolbar-btn--small"
+            onClick={() => {
+              onClear()
+              setOpen(false)
+            }}>
+            ✕
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function Toolbar({onPromptForLink}) {
   const [editor] = useLexicalComposerContext()
   const [formats, setFormats] = useState({
@@ -209,6 +309,10 @@ function Toolbar({onPromptForLink}) {
   })
   const imageInputRef = useRef(null)
   const fileInputRef = useRef(null)
+  const DEFAULT_FONT_COLOR = "#000000"
+  const DEFAULT_BG_COLOR = "#ffffff"
+  const [fontColor, setFontColor] = useState(DEFAULT_FONT_COLOR)
+  const [bgColor, setBgColor] = useState(DEFAULT_BG_COLOR)
 
   const handleFiles = useCallback(
     (fileList, options = {}) => {
@@ -295,6 +399,18 @@ function Toolbar({onPromptForLink}) {
     }
   }, [editor, onPromptForLink])
 
+  const applyTextStyle = useCallback(
+    (style) => {
+      editor.update(() => {
+        const selection = $getSelection()
+        if ($isRangeSelection(selection)) {
+          $patchStyleText(selection, style)
+        }
+      })
+    },
+    [editor]
+  )
+
   return (
     <div className="lexical-toolbar">
       <button
@@ -348,6 +464,33 @@ function Toolbar({onPromptForLink}) {
         title="Insert link">
         🔗
       </button>
+      <span className="lexical-toolbar-separator" aria-hidden="true" />
+      <ToolbarColorPicker
+        icon="🎨"
+        title="Text color"
+        color={fontColor}
+        onChange={(value) => {
+          setFontColor(value)
+          applyTextStyle({color: value})
+        }}
+        onClear={() => {
+          setFontColor(DEFAULT_FONT_COLOR)
+          applyTextStyle({color: ""})
+        }}
+      />
+      <ToolbarColorPicker
+        icon="🖌️"
+        title="Background color"
+        color={bgColor}
+        onChange={(value) => {
+          setBgColor(value)
+          applyTextStyle({"background-color": value})
+        }}
+        onClear={() => {
+          setBgColor(DEFAULT_BG_COLOR)
+          applyTextStyle({"background-color": ""})
+        }}
+      />
       <span className="lexical-toolbar-separator" aria-hidden="true" />
       <input
         ref={imageInputRef}
@@ -448,6 +591,7 @@ function EditorInner({
               const doc = parser.parseFromString(`<div>${innerHtml}</div>`, "text/html")
 
               canonicalizeAttachmentElements(doc.body)
+              syncLexicalStyleAttributes(doc.body)
 
               doc.querySelectorAll("action-text-attachment").forEach((attachment) => {
                 const containerParagraph = attachment.closest("p")
