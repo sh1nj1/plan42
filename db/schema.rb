@@ -438,6 +438,8 @@ ActiveRecord::Schema[8.1].define(version: 2025_09_29_000000) do
     t.integer "label_id"
     t.datetime "updated_at", null: false
     t.string "value"
+    t.index ["creative_id", "label_id"], name: "index_tags_on_creative_id_and_label_id", unique: true
+    t.index ["creative_id"], name: "index_tags_on_creative_id"
     t.index ["label_id"], name: "index_tags_on_label_id"
   end
 
