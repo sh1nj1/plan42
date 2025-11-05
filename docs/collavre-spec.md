@@ -112,7 +112,7 @@
 
 #### Attach files
 
-* Use Trix editor's attachement
+* Use the Lexical editor's attachment pipeline (replaces the old Trix integration)
 
 
 ### Inline edit a Creative
@@ -477,7 +477,6 @@
 
 
 ### Linked creatives display a link to their origin so users can jump back to the source.
-
 
 
 

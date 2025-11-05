@@ -217,10 +217,14 @@ module CreativesHelper
         md += "#{'#' * level} #{ActionView::Base.full_sanitizer.sanitize(markdown_content).strip}\n\n"
       else
         # trix-content 블록에서 내부 div의 텍스트만 추출
-        inner_html = if raw_html =~ /<div class="trix-content">\s*<div>(.*?)<\/div>\s*<\/div>/m
-          $1.strip
-        else
-          ActionView::Base.full_sanitizer.sanitize(markdown_content).strip
+        inner_html = begin
+          fragment = Nokogiri::HTML.fragment(raw_html)
+          wrapper = fragment.at_css("div.trix-content")
+          if wrapper
+            wrapper.inner_html.strip
+          else
+            ActionView::Base.full_sanitizer.sanitize(markdown_content).strip
+          end
         end
         inner = ActionView::Base.full_sanitizer.sanitize(inner_html)
         indent = "  " * (level - 5)

@@ -38,6 +38,7 @@ class CreativesController < ApplicationController
         render json: {
           id: @creative.id,
           description: @creative.effective_description,
+          description_raw_html: @creative.description&.body&.to_html,
           origin_id: @creative.origin_id,
           parent_id: @creative.parent_id,
           progress: @creative.progress,
@@ -121,7 +122,7 @@ class CreativesController < ApplicationController
 
   def edit
     if params[:inline]
-      render partial: "form", locals: { creative: @creative }
+      render partial: "inline_edit_form"
     end
   end
 

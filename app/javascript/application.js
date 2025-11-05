@@ -1,15 +1,17 @@
 import "@hotwired/turbo-rails"
 import "./controllers"
 
-import "trix"
 import "@rails/actiontext"
+import * as ActiveStorage from "@rails/activestorage"
 import "./register_service_worker"
 import * as ActionCable from "@rails/actioncable"
-import "./trix_color_picker"
 
 if (typeof window !== "undefined") {
   window.ActionCable = window.ActionCable || ActionCable
+  window.ActiveStorage = window.ActiveStorage || ActiveStorage
 }
+
+ActiveStorage.start()
 
 // Creative page modules
 import "./creatives"
