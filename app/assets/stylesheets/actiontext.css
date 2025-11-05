@@ -188,6 +188,91 @@
   padding: 0.1em 0.3em;
 }
 
+.lexical-code-block {
+  display: block;
+  background: var(--color-code-bg, #f6f8fa);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-code-text, #1f2328);
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9em;
+  line-height: 1.5;
+  margin: 0 0 0.75rem 0;
+  overflow-x: auto;
+  padding: 0.75rem;
+  white-space: pre;
+}
+
+.lexical-code-block span {
+  background: transparent;
+  border: 0;
+}
+
+.lexical-code-block code {
+  display: block;
+  white-space: inherit;
+}
+
+.lexical-token-comment,
+.lexical-token-prolog,
+.lexical-token-doctype,
+.lexical-token-cdata {
+  color: #6a737d;
+}
+
+.lexical-token-punctuation {
+  color: #393a34;
+}
+
+.lexical-token-property,
+.lexical-token-tag,
+.lexical-token-constant,
+.lexical-token-symbol,
+.lexical-token-deleted,
+.lexical-token-boolean,
+.lexical-token-number {
+  color: #b31d28;
+}
+
+.lexical-token-selector,
+.lexical-token-attr,
+.lexical-token-string,
+.lexical-token-char,
+.lexical-token-builtin,
+.lexical-token-inserted {
+  color: #1a7f37;
+}
+
+.lexical-token-operator,
+.lexical-token-entity,
+.lexical-token-url,
+.lexical-token-variable {
+  color: #9a6e3a;
+}
+
+.lexical-token-atrule,
+.lexical-token-keyword,
+.lexical-token-class,
+.lexical-token-classname,
+.lexical-token-namespace {
+  color: #0550ae;
+}
+
+.lexical-token-function,
+.lexical-token-important {
+  color: #bc4c00;
+}
+
+.lexical-token-regex {
+  color: #1a7f37;
+}
+
+.lexical-token-tag,
+.lexical-token-selector,
+.lexical-token-keyword {
+  font-weight: 600;
+}
+
 .lexical-attachment {
   position: relative;
   margin: 0.75rem 0;
