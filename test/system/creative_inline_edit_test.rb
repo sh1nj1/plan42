@@ -103,9 +103,11 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   test "supports keyboard shortcuts for add and close" do
     open_inline_editor(@root_creative)
     inline_editor_field.send_keys([ :alt, :enter ])
+    sleep 0.5
 
     fill_inline_editor("First child")
     inline_editor_field.send_keys([ :shift, :enter ])
+    sleep 0.5
 
     fill_inline_editor("Second child")
     inline_editor_field.send_keys(:escape)
