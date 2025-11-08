@@ -18,6 +18,23 @@ body {
     margin: 0;
 }
 
+.turbo-progress-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--color-link);
+    z-index: 1200;
+    pointer-events: none;
+}
+
+@supports (top: env(safe-area-inset-top)) {
+    .turbo-progress-bar {
+        top: env(safe-area-inset-top);
+    }
+}
+
 .no-top-margin {
     margin-block-start: 0;
     margin-block-end: 0.5em;
