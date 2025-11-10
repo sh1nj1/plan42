@@ -59,4 +59,16 @@ class CreativeLinkedTest < ActiveSupport::TestCase
 
     refute_includes children, linked
   end
+
+  test "origin children do not include linked clones" do
+    CreativeShare.create!(creative: @creative, user: @shared_user, permission: :read)
+    @creative.create_linked_creative_for_user(@shared_user)
+
+    linked = Creative.find_by!(origin_id: @creative.id, user_id: @shared_user.id)
+    linked.update!(parent: @creative)
+
+    origin_children = @creative.children_with_permission(@owner)
+
+    refute_includes origin_children, linked
+  end
 end
