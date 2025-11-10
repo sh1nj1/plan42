@@ -47,4 +47,16 @@ class CreativeLinkedTest < ActiveSupport::TestCase
     other_user = User.create!(email: "linked-other@example.com", password: "secret", name: "Other")
     refute @creative.has_permission?(other_user)
   end
+
+  test "linked creative children do not include the linked record itself" do
+    CreativeShare.create!(creative: @creative, user: @shared_user, permission: :read)
+    @creative.create_linked_creative_for_user(@shared_user)
+
+    linked = Creative.find_by!(origin_id: @creative.id, user_id: @shared_user.id)
+    linked.update!(parent: @creative)
+
+    children = linked.children_with_permission(@shared_user)
+
+    refute_includes children, linked
+  end
 end

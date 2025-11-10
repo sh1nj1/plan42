@@ -80,7 +80,7 @@ class Creative < ApplicationRecord
   # Returns only children for which the user has at least the given permission (default: :read)
   def children_with_permission(user = nil, min_permission = :read)
     user ||= Current.user
-    effective_origin.children.select do |child|
+    effective_origin.children.reject { |child| child.id == id }.select do |child|
       child.has_permission?(user, min_permission)
     end
   end
