@@ -1,6 +1,7 @@
 require "base64"
 require "securerandom"
 require "nokogiri"
+require "set"
 
 module CreativesHelper
   # Shared toggle button symbol helper
@@ -88,72 +89,94 @@ module CreativesHelper
     )
   end
 
-  def render_creative_tree(creatives, level = 1, select_mode: false, max_level: User::DEFAULT_DISPLAY_LEVEL)
+  def render_creative_tree(creatives, level = 1, select_mode: false, max_level: User::DEFAULT_DISPLAY_LEVEL, visited_ids: nil)
     return "".html_safe if level > max_level
-    safe_join(
-      creatives.map do |creative|
-        # List only commented creatives without children if listing only chats
-        filtered_children = params[:comment] == "true" ? [] : creative.children_with_permission(Current.user)
-        expanded = expanded_from_expanded_state(creative.id, @expanded_state_map)
-        render_next_block = ->(level) {
-          filters = params.to_unsafe_h.except(:id, :controller, :action).present?
-          if filtered_children.any?
-            content_tag(
-              :div,
-              id: "creative-children-#{creative.id}",
-              class: "creative-children",
-              style: "#{filters || expanded ? "" : "display: none;"}",
-              data: {
-                expanded: expanded,
-                loaded: (filters || expanded),
-                load_url: children_creative_path(creative, level: level, select_mode: select_mode ? 1 : 0)
-              }
-            ) do
-              if filters || expanded
-                render_creative_tree(filtered_children, level, select_mode: select_mode, max_level: max_level)
-              else
-                "".html_safe
-              end
-            end
+
+    visited_ids ||= Set.new
+
+    rows = creatives.each_with_object([]) do |creative, collection|
+      next if creative.nil?
+      next if visited_ids.include?(creative.id)
+
+      current_path = visited_ids.dup
+      current_path.add(creative.id)
+
+      filtered_children = if params[:comment] == "true"
+                            []
+      else
+                            creative.children_with_permission(Current.user)
+      end
+      filtered_children = filtered_children.reject { |child| current_path.include?(child.id) }
+      filtered_children = filtered_children.uniq(&:id)
+
+      expanded = expanded_from_expanded_state(creative.id, @expanded_state_map)
+      filters = params.to_unsafe_h.except(:id, :controller, :action).present?
+
+      render_children = lambda do |child_level|
+        return "".html_safe if filtered_children.empty? || child_level > max_level
+
+        content_tag(
+          :div,
+          id: "creative-children-#{creative.id}",
+          class: "creative-children",
+          style: "#{filters || expanded ? "" : "display: none;"}",
+          data: {
+            expanded: expanded,
+            loaded: (filters || expanded),
+            load_url: children_creative_path(creative, level: child_level, select_mode: select_mode ? 1 : 0)
+          }
+        ) do
+          if filters || expanded
+            render_creative_tree(
+              filtered_children,
+              child_level,
+              select_mode: select_mode,
+              max_level: max_level,
+              visited_ids: current_path
+            )
           else
             "".html_safe
           end
-        }
-
-        skip = false
-        if not skip and params[:tags].present?
-          tag_ids = Array(params[:tags]).map(&:to_s)
-          creative_label_ids = creative.tags.pluck(:label_id).map(&:to_s)
-          skip = (creative_label_ids & tag_ids).empty?
-        end
-        if not skip and params[:min_progress].present?
-          min_progress = params[:min_progress].to_f
-          skip = creative.progress < min_progress
-        end
-        if not skip and params[:max_progress].present?
-          max_progress = params[:max_progress].to_f
-          skip = creative.progress > max_progress
-        end
-
-        if skip
-          render_next_block.call level # skip this creative, so decrease level
-        else
-          description_html = embed_youtube_iframe(creative.effective_description(params[:tags]&.first))
-
-          progress_html = render_creative_progress(creative, select_mode: select_mode)
-
-          creative_tree_row_element(
-            creative: creative,
-            select_mode: select_mode,
-            description_html: description_html,
-            progress_html: progress_html,
-            level: level,
-            has_children: filtered_children.any?,
-            expanded: expanded
-          ) + render_next_block.call(level + 1)
         end
       end
-    )
+
+      skip = false
+      if !skip && params[:tags].present?
+        tag_ids = Array(params[:tags]).map(&:to_s)
+        creative_label_ids = creative.tags.pluck(:label_id).map(&:to_s)
+        skip = (creative_label_ids & tag_ids).empty?
+      end
+      if !skip && params[:min_progress].present?
+        min_progress = params[:min_progress].to_f
+        skip = creative.progress < min_progress
+      end
+      if !skip && params[:max_progress].present?
+        max_progress = params[:max_progress].to_f
+        skip = creative.progress > max_progress
+      end
+
+      if skip
+        collection << render_children.call(level)
+        next
+      end
+
+      description_html = embed_youtube_iframe(creative.effective_description(params[:tags]&.first))
+      progress_html = render_creative_progress(creative, select_mode: select_mode)
+
+      collection << (
+        creative_tree_row_element(
+          creative: creative,
+          select_mode: select_mode,
+          description_html: description_html,
+          progress_html: progress_html,
+          level: level,
+          has_children: filtered_children.any?,
+          expanded: expanded
+        ) + render_children.call(level + 1)
+      )
+    end
+
+    safe_join(rows)
   end
 
   def creative_tree_row_element(creative:, select_mode:, description_html:, progress_html:, level:, has_children:, expanded:)

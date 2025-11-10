@@ -2,6 +2,11 @@ require "test_helper"
 
 class CreativesHelperTest < ActionView::TestCase
   include CreativesHelper
+  include ApplicationHelper
+
+  def turbo_stream_from(*)
+    "".html_safe
+  end
   test "markdown_links_to_html converts markdown link to HTML" do
     input = "Check [link](https://example.com)"
     expected = "Check <a href=\"https://example.com\">link</a>"
@@ -189,5 +194,23 @@ class CreativesHelperTest < ActionView::TestCase
       created.each(&:destroy)
       parent.destroy
     end
+  end
+
+  test "render_creative_tree avoids infinite recursion when linked creatives appear in search results" do
+    owner = users(:one)
+    Current.session = OpenStruct.new(user: owner)
+
+    root = Creative.create!(user: owner, description: "Root", sequence: 0)
+    linked = Creative.create!(origin: root, user: owner, parent: root, sequence: 0)
+
+    @expanded_state_map = {}
+    @controller.params = ActionController::Parameters.new(search: "Linked")
+
+    output = render_creative_tree([ linked ], 1, select_mode: false, max_level: User::DEFAULT_DISPLAY_LEVEL)
+
+    assert_includes output, "<creative-tree-row"
+    assert_equal 1, output.scan("<creative-tree-row").length
+  ensure
+    Current.reset
   end
 end
