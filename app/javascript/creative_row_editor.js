@@ -186,6 +186,16 @@ export function initializeCreativeRowEditor() {
       }
     }
 
+    function attachTemplate(tree) {
+      if (!tree) return;
+      const childrenContainer = tree.querySelector('.creative-children');
+      if (childrenContainer && childrenContainer.parentNode === tree) {
+        tree.insertBefore(template, childrenContainer);
+      } else {
+        tree.appendChild(template);
+      }
+    }
+
     async function handleEditButtonClick(tree) {
       if (!tree) return;
 
@@ -200,7 +210,7 @@ export function initializeCreativeRowEditor() {
       currentRowElement = treeRowElement(tree);
       hideRow(tree);
       tree.draggable = false;
-      tree.appendChild(template);
+      attachTemplate(tree);
       template.style.display = 'block';
       loadCreative(tree.dataset.id);
     }
@@ -523,7 +533,7 @@ export function initializeCreativeRowEditor() {
       currentTree = target;
       currentRowElement = treeRowElement(target);
       hideRow(target);
-      target.appendChild(template);
+      attachTemplate(target);
       template.style.display = 'block';
       beforeNewOrMove(wasNew, prev, prevParent).then(() => {
         loadCreative(target.dataset.id);
@@ -750,7 +760,7 @@ export function initializeCreativeRowEditor() {
           }
           currentTree = newTree;
           currentRowElement = rowComponent;
-          newTree.appendChild(template);
+          attachTemplate(newTree);
           template.style.display = 'block';
           form.action = '/creatives';
           methodInput.value = '';
