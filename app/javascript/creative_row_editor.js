@@ -624,8 +624,8 @@ export function initializeCreativeRowEditor() {
         linkResults.innerHTML = '';
         return;
       }
-      fetch(`/creatives.json?search=${encodeURIComponent(query)}&simple=true`)
-        .then(r => r.json())
+      creativesApi
+        .search(query, { simple: true })
         .then(results => {
           linkResults.innerHTML = '';
           if (Array.isArray(results)) {
@@ -653,16 +653,7 @@ export function initializeCreativeRowEditor() {
         closeLinkModal();
         return;
       }
-      const fd = new FormData();
-      fd.append('creative[parent_id]', form.dataset.creativeId);
-      fd.append('creative[origin_id]', li.dataset.id);
-      fd.append('authenticity_token', document.querySelector('meta[name="csrf-token"]').content);
-      fetch('/creatives', {
-        method: 'POST',
-        headers: { 'Accept': 'application/json' },
-        body: fd,
-        credentials: 'same-origin'
-      }).then(() => {
+      creativesApi.linkExisting(form.dataset.creativeId, li.dataset.id).then(() => {
         closeLinkModal();
         refreshChildren(currentTree).then(() => refreshRow(currentTree));
       });
