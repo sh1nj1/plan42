@@ -18,6 +18,8 @@ export default class extends Controller {
     this.reservedHeight = 0
     this.resizing = null
     this.touchStartY = null
+    this.openFromUrlObserver = null
+    this.openFromUrlTimeout = null
     this.handleCreativeClick = this.handleCreativeClick.bind(this)
     this.handleTouchStart = this.handleTouchStart.bind(this)
     this.handleTouchEnd = this.handleTouchEnd.bind(this)
@@ -49,6 +51,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this.clearPendingOpenFromUrl()
     document.removeEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     window.removeEventListener('online', this.handleOnline)
     window.removeEventListener('focus', this.handleWindowFocus)
@@ -345,8 +348,40 @@ export default class extends Controller {
     }
 
     if (!commentId || !creativeId) return
-    const button = document.querySelector(`[name="show-comments-btn"][data-creative-id="${creativeId}"]`)
-    if (!button) return
-    this.open(button, { highlightId: commentId })
+    const selector = `[name="show-comments-btn"][data-creative-id="${creativeId}"]`
+    const tryOpenWithButton = () => {
+      const button = document.querySelector(selector)
+      if (!button) return false
+      this.clearPendingOpenFromUrl()
+      this.open(button, { highlightId: commentId })
+      return true
+    }
+
+    if (tryOpenWithButton()) return
+
+    if (this.openFromUrlObserver) this.openFromUrlObserver.disconnect()
+    this.openFromUrlObserver = new MutationObserver(() => {
+      if (tryOpenWithButton()) {
+        this.clearPendingOpenFromUrl()
+      }
+    })
+    this.openFromUrlObserver.observe(document.body, { childList: true, subtree: true })
+
+    if (this.openFromUrlTimeout) window.clearTimeout(this.openFromUrlTimeout)
+    this.openFromUrlTimeout = window.setTimeout(() => {
+      this.clearPendingOpenFromUrl()
+    }, 5000)
   }
+
+  clearPendingOpenFromUrl() {
+    if (this.openFromUrlObserver) {
+      this.openFromUrlObserver.disconnect()
+      this.openFromUrlObserver = null
+    }
+    if (this.openFromUrlTimeout) {
+      window.clearTimeout(this.openFromUrlTimeout)
+      this.openFromUrlTimeout = null
+    }
+  }
+
 }

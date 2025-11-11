@@ -146,14 +146,16 @@ export default class extends Controller {
 
   markCommentsRead() {
     if (!this.creativeId) return
-    fetch('/comment_read_pointers/update', {
-      method: 'POST',
-      headers: {
-        'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ creative_id: this.creativeId }),
-    })
+      window.setTimeout(() => {
+          fetch('/comment_read_pointers/update', {
+              method: 'POST',
+              headers: {
+                  'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+                  'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ creative_id: this.creativeId }),
+          })
+      }, 2000);
   }
 
   handleScroll() {
