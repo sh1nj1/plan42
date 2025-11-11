@@ -68,6 +68,7 @@ module Creatives
 
         subtree_ids = base_creative.subtree_ids
         creatives = Creative
+                      .distinct
                       .joins(:rich_text_description)
                       .left_joins(:comments)
                       .where(id: subtree_ids)
@@ -76,6 +77,7 @@ module Creatives
         [ creatives, base_creative ]
       else
         creatives = Creative
+                      .distinct
                       .joins(:rich_text_description)
                       .left_joins(:comments)
                       .where("action_text_rich_texts.body LIKE :q OR comments.content LIKE :q", q: query)

@@ -93,7 +93,7 @@ module CreativesHelper
     safe_join(
       creatives.map do |creative|
         # List only commented creatives without children if listing only chats
-        filtered_children = params[:comment] == "true" ? [] : creative.children_with_permission(Current.user)
+        filtered_children = params[:comment] == "true" || params[:search].present? ? [] : creative.children_with_permission(Current.user)
         expanded = expanded_from_expanded_state(creative.id, @expanded_state_map)
         render_next_block = ->(level) {
           filters = params.to_unsafe_h.except(:id, :controller, :action).present?
