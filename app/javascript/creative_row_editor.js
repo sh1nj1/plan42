@@ -2,6 +2,10 @@ import creativesApi from './lib/api/creatives'
 import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
 import { createInlineEditor } from './lexical_inline_editor'
 
+const BULLET_STARTING_LEVEL = 3;
+const HEADING_INDENT_STEP_EM = 0.4;
+const BULLET_INDENT_STEP_PX = 30;
+
 let initialized = false;
 let creativeEditClickHandler = null;
 
@@ -144,6 +148,30 @@ export function initializeCreativeRowEditor() {
       return readRowLevel(normalized);
     }
 
+    function editorPaddingForLevel(level) {
+      if (typeof level !== 'number' || Number.isNaN(level) || level <= 1) {
+        return '0px';
+      }
+      if (level <= BULLET_STARTING_LEVEL) {
+        const emValue = (level - 1) * HEADING_INDENT_STEP_EM;
+        return emValue ? `${emValue}em` : '0px';
+      }
+      const pxValue = (level - BULLET_STARTING_LEVEL) * BULLET_INDENT_STEP_PX;
+      return `${pxValue}px`;
+    }
+
+    function syncInlineEditorPadding(source) {
+      if (!template) return;
+      let level = null;
+      if (typeof source === 'number') {
+        level = source;
+      } else if (source) {
+        level = readRowLevel(source);
+      }
+      const paddingValue = editorPaddingForLevel(level);
+      template.style.paddingLeft = paddingValue;
+    }
+
     function removeTreeElement(tree) {
       if (!tree) return;
       const row = treeRowElement(tree);
@@ -208,6 +236,7 @@ export function initializeCreativeRowEditor() {
       }
       currentTree = tree;
       currentRowElement = treeRowElement(tree);
+      syncInlineEditorPadding(currentRowElement);
       hideRow(tree);
       tree.draggable = false;
       attachTemplate(tree);
@@ -532,6 +561,7 @@ export function initializeCreativeRowEditor() {
       const prevParent = parentInput.value;
       currentTree = target;
       currentRowElement = treeRowElement(target);
+      syncInlineEditorPadding(currentRowElement);
       hideRow(target);
       attachTemplate(target);
       template.style.display = 'block';
@@ -751,6 +781,7 @@ export function initializeCreativeRowEditor() {
           }
           currentTree = newTree;
           currentRowElement = rowComponent;
+          syncInlineEditorPadding(level);
           attachTemplate(newTree);
           template.style.display = 'block';
           form.action = '/creatives';
