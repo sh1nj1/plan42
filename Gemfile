@@ -55,6 +55,7 @@ gem "omniauth-rails_csrf_protection"
 gem "omniauth-github"
 gem "httparty"
 gem "octokit"
+gem "ruby_llm"
 
 gem "dotenv", groups: [ :development, :test ]
 
