@@ -83,4 +83,13 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
 
     assert_nil CreativeExpandedState.find_by(user: @user, creative: @root_creative)
   end
+
+  test "visiting a comment share link opens popup and highlights comment" do
+    comment = Comment.create!(creative: @child, user: @user, content: "Shared comment")
+
+    visit creative_comment_path(@child, comment)
+
+    assert_selector "#comments-popup", visible: :visible
+    assert_selector "#comment_#{comment.id}.highlight-flash", wait: 5
+  end
 end

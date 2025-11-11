@@ -322,9 +322,28 @@ export default class extends Controller {
 
   openFromUrl() {
     const params = new URLSearchParams(window.location.search)
-    const commentId = params.get('comment_id')
-    const match = window.location.pathname.match(/\/creatives\/(\d+)/)
-    const creativeId = match ? match[1] : params.get('id')
+    let commentId = params.get('comment_id')
+    if (!commentId) {
+      const pathCommentMatch = window.location.pathname.match(/\/creatives\/\d+\/comments\/(\d+)/)
+      if (pathCommentMatch) {
+        commentId = pathCommentMatch[1]
+      }
+    }
+    if (!commentId) {
+      const hashMatch = window.location.hash.match(/comment_(\d+)/)
+      if (hashMatch) {
+        commentId = hashMatch[1]
+      }
+    }
+
+    let creativeId = params.get('id')
+    if (!creativeId) {
+      const pathCreativeMatch = window.location.pathname.match(/\/creatives\/(\d+)/)
+      if (pathCreativeMatch) {
+        creativeId = pathCreativeMatch[1]
+      }
+    }
+
     if (!commentId || !creativeId) return
     const button = document.querySelector(`[name="show-comments-btn"][data-creative-id="${creativeId}"]`)
     if (!button) return
