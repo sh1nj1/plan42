@@ -193,13 +193,19 @@ class Creative < ApplicationRecord
   def all_shared_users(required_permission = :no_access)
     base_creative = effective_origin
     ancestor_ids = [ base_creative.id ] + base_creative.ancestors.pluck(:id)
-    # only return users with closest permission, user can have multiple shares in the ancestors
-    shares = CreativeShare.where(creative_id: ancestor_ids)
-                 .where("permission >= ?", CreativeShare.permissions[required_permission.to_s])
-                 .includes(:user)
+    required_permission_level = CreativeShare.permissions.fetch(required_permission.to_s)
+
+    shares = CreativeShare.where(creative_id: ancestor_ids).includes(:user)
     shares_for_user_hash = shares.group_by(&:user_id)
-    shares_for_user_hash.map do |user_id, user_shares|
-      CreativeShare.closest_parent_share(ancestor_ids, user_shares)
+
+    shares_for_user_hash.filter_map do |_user_id, user_shares|
+      closest_share = CreativeShare.closest_parent_share(ancestor_ids, user_shares)
+      next unless closest_share
+
+      closest_permission_level = CreativeShare.permissions.fetch(closest_share.permission.to_s)
+      next if closest_permission_level < required_permission_level
+
+      closest_share
     end
   end
 
