@@ -144,4 +144,22 @@ class CreativeTest < ActiveSupport::TestCase
   ensure
     Current.reset
   end
+
+  test "all_shared_users excludes users with no_access override" do
+    owner = User.create!(email: "share-owner@example.com", password: "secret", name: "Owner")
+    shared_user = User.create!(email: "share-shared@example.com", password: "secret", name: "Shared")
+    Current.session = Struct.new(:user).new(owner)
+
+    root = Creative.create!(user: owner, description: "Root")
+    child = Creative.create!(user: owner, parent: root, description: "Child")
+
+    CreativeShare.create!(creative: root, user: shared_user, permission: :feedback)
+    CreativeShare.create!(creative: child, user: shared_user, permission: :no_access)
+
+    shared_users = child.all_shared_users(:feedback).map(&:user)
+
+    assert_not_includes shared_users, shared_user
+  ensure
+    Current.reset
+  end
 end
