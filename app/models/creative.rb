@@ -80,9 +80,7 @@ class Creative < ApplicationRecord
   def deletable_by?(user)
     return false unless user
 
-    return true if has_permission?(user, :admin)
-
-    return false unless origin_id.present?
+    return has_permission?(user, :admin) unless origin_id.present?
 
     linked_user_id = self[:user_id]
     return false unless linked_user_id
@@ -93,7 +91,7 @@ class Creative < ApplicationRecord
     share_exists = CreativeShare.exists?(creative_id: origin_creative.id, user_id: linked_user_id)
     return false if share_exists
 
-    origin_creative.user_id == user.id
+    has_permission?(user, :admin) && origin_creative.user_id == user.id
   end
 
   # Returns only children for which the user has at least the given permission (default: :read)

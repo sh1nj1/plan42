@@ -168,9 +168,7 @@ class CreativeTest < ActiveSupport::TestCase
     origin = Creative.create!(user: owner, description: "Origin")
     linked = Creative.create!(origin: origin, user: owner)
 
-    linked.stub(:has_permission?, false) do
-      assert linked.deletable_by?(owner)
-    end
+    assert linked.deletable_by?(owner)
   end
 
   test "deletable_by? blocks removal when creative share exists" do
@@ -180,9 +178,7 @@ class CreativeTest < ActiveSupport::TestCase
     CreativeShare.create!(creative: origin, user: shared, permission: :read)
     linked = Creative.create!(origin: origin, user: shared)
 
-    linked.stub(:has_permission?, false) do
-      refute linked.deletable_by?(owner)
-    end
+    refute linked.deletable_by?(owner)
   end
 
   test "deletable_by? blocks non-owner without share" do
@@ -191,8 +187,6 @@ class CreativeTest < ActiveSupport::TestCase
     origin = Creative.create!(user: owner, description: "Origin")
     linked = Creative.create!(origin: origin, user: other)
 
-    linked.stub(:has_permission?, false) do
-      refute linked.deletable_by?(other)
-    end
+    refute linked.deletable_by?(other)
   end
 end
