@@ -693,10 +693,20 @@ export function initializeCreativeRowEditor() {
         closeLinkModal();
         return;
       }
-      creativesApi.linkExisting(form.dataset.creativeId, li.dataset.id).then(() => {
-        closeLinkModal();
-        refreshChildren(currentTree).then(() => refreshRow(currentTree));
-      });
+      creativesApi
+        .linkExisting(form.dataset.creativeId, li.dataset.id)
+        .then(() => {
+          closeLinkModal();
+          refreshChildren(currentTree).then(() => refreshRow(currentTree));
+        })
+        .catch((error) => {
+          const data = error?.data;
+          const message = (data?.errors && data.errors[0])
+            || data?.error
+            || linkModal?.dataset?.error
+            || 'Failed to link creative.';
+          alert(message);
+        });
     }
 
     function handleLinkResultClick(e) {

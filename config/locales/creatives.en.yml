@@ -15,6 +15,7 @@ en:
       are_you_sure_delete_with_children: "Are you sure you want to delete this Creative and ALL its children? This cannot be undone."
       link: "Link"
       unlink: "Unlink"
+      link_failed: "Failed to link Creative."
       are_you_sure_unlink: "Are you sure you want to unlink this Creative?"
       unconvert: "Unconvert"
       unconvert_confirm: "Convert this Creative and its descendants into a markdown comment on the parent? This Creative and its descendants will be deleted."
@@ -93,6 +94,7 @@ en:
       progress_recalculated: "All parent progress recalculated."
     errors:
       no_permission: "You do not have permission to perform this action."
+      linked_origin: "Linked creatives cannot be linked again. Please link the original Creative."
     inline_editor:
       placeholder: "Describe the creative…"
     edit_title: "Edit creative"

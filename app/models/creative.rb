@@ -57,6 +57,7 @@ class Creative < ApplicationRecord
 
   validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }, unless: -> { origin_id.present? }
   validates :description, presence: true, unless: -> { origin_id.present? }
+  validate :origin_must_be_original, if: -> { origin_id.present? }
 
   before_validation :assign_default_user, on: :create
 
@@ -214,6 +215,13 @@ class Creative < ApplicationRecord
   end
 
   private
+
+  def origin_must_be_original
+    return if origin.blank?
+    return if origin.origin_id.blank?
+
+    errors.add(:base, I18n.t("creatives.errors.linked_origin", default: "Linked creatives cannot be linked again. Please link the original Creative."))
+  end
 
   def clear_permission_cache_on_parent_change
     return unless saved_change_to_parent_id?

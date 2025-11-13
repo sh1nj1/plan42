@@ -15,6 +15,7 @@ ko:
       are_you_sure_delete_with_children: "이 항목과 모든 하위 항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
       link: "링크"
       unlink: "링크 해제"
+      link_failed: "크리에이티브를 링크하지 못했습니다."
       are_you_sure_unlink: "링크된 크리에이티브를 삭제하시겠습니까?"
       unconvert: "역전환"
       unconvert_confirm: "현재 크리에이티브와 모든 하위 항목을 마크다운 코멘트로 변환해 상위 크리에이티브에 추가하고 삭제할까요?"
@@ -93,6 +94,7 @@ ko:
       progress_recalculated: "진행률을 다시 계산 했습니다."
     errors:
       no_permission: "이 작업을 수행할 권한이 없습니다."
+      linked_origin: "링크된 크리에이티브는 다시 링크할 수 없습니다. 원본을 링크해주세요."
     inline_editor:
       placeholder: "크리에이티브를 설명해주세요…"
     edit_title: "크리에이티브 수정"

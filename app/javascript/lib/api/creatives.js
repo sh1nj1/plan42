@@ -48,6 +48,20 @@ export function linkExisting(parentId, originId) {
     method: 'POST',
     headers: JSON_HEADERS,
     body,
+  }).then(async (response) => {
+    if (!response.ok) {
+      let data = null
+      try {
+        data = await response.json()
+      } catch (error) {
+        data = null
+      }
+      const err = new Error('Failed to link creative')
+      err.response = response
+      if (data != null) err.data = data
+      throw err
+    }
+    return response.json()
   })
 }
 
