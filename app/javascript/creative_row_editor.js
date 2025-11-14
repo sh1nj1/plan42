@@ -1097,6 +1097,16 @@ function formatProgressDisplay(value) {
         addNew();
         return;
       }
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === '.') {
+        event.preventDefault();
+        levelDown();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === ',') {
+        event.preventDefault();
+        levelUp();
+        return;
+      }
       if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
 
       let atStart = false;
