@@ -28,10 +28,13 @@
         <button type="button" id="inline-add" class="creative-action-btn add-creative-btn">
           &nbsp;<%= svg_tag 'add.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
-        <button type="button" id="inline-add-child" class="creative-action-btn add-creative-btn">
+        <button type="button" id="inline-level-down" class="creative-action-btn add-creative-btn">
           &nbsp;
-          <%= svg_tag 'hierarchy-child.svg',class: 'icon-svg', width: 16, height: 16 %>
-          <%= svg_tag 'add.svg',class: 'icon-svg', width: 24, height: 24 %>
+          <%= svg_tag 'hierarchy-child.svg',class: 'icon-svg', width: 24, height: 24 %>
+        </button>
+        <button type="button" id="inline-level-up" class="creative-action-btn add-creative-btn">
+          &nbsp;
+          <%= svg_tag 'hierarchy-parent.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
         <button type="button" id="inline-delete" class="creative-action-btn danger-link" title="<%= t('creatives.index.delete_only_this') %>" data-confirm="<%= t('creatives.index.are_you_sure_delete_only_this') %>">
           &nbsp;<%= svg_tag 'trash-bold-outline.svg',class: 'icon-svg', width: 24, height: 24 %>
