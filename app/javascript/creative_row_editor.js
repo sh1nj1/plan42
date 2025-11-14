@@ -27,7 +27,8 @@ export function initializeCreativeRowEditor() {
     const upBtn = document.getElementById('inline-move-up');
     const downBtn = document.getElementById('inline-move-down');
     const addBtn = document.getElementById('inline-add');
-    const addChildBtn = document.getElementById('inline-add-child');
+    const levelDownBtn = document.getElementById('inline-level-down');
+    const levelUpBtn = document.getElementById('inline-level-up');
     const deleteBtn = document.getElementById('inline-delete');
     const deleteWithChildrenBtn = document.getElementById('inline-delete-with-children');
     const linkBtn = document.getElementById('inline-link');
@@ -110,6 +111,179 @@ function formatProgressDisplay(value) {
         return row || node;
       }
       return node;
+    }
+
+    function childrenContainerForTree(tree) {
+      if (!tree) return null;
+      const treeId = tree.dataset?.id;
+      if (treeId) {
+        const byId = document.getElementById(`creative-children-${treeId}`);
+        if (byId) return byId;
+      }
+      if (tree.children && tree.children.length > 0) {
+        for (const child of tree.children) {
+          if (child && child.classList && child.classList.contains('creative-children')) {
+            return child;
+          }
+        }
+      }
+      const row = treeRowElement(tree);
+      if (row) {
+        let sibling = row.nextElementSibling;
+        while (sibling) {
+          if (sibling.matches?.('creative-tree-row')) break;
+          if (sibling.classList?.contains('creative-children')) return sibling;
+          sibling = sibling.nextElementSibling;
+        }
+      }
+      return null;
+    }
+
+    function buildChildrenLoadUrl(parentId, childLevel, selectMode) {
+      const params = new URLSearchParams();
+      params.set('level', String(childLevel));
+      params.set('select_mode', selectMode ? '1' : '0');
+      return `/creatives/${parentId}/children?${params.toString()}`;
+    }
+
+    function ensureChildrenContainer(tree) {
+      if (!tree) return null;
+      let container = childrenContainerForTree(tree);
+      if (container) return container;
+      const parentId = tree.dataset?.id;
+      if (!parentId) return null;
+      container = document.createElement('div');
+      container.className = 'creative-children';
+      container.id = `creative-children-${parentId}`;
+      const parentRow = treeRowElement(tree);
+      const parentLevel = readRowLevel(parentRow) || 1;
+      const childLevel = parentLevel + 1;
+      const selectModeActive = parentRow?.hasAttribute?.('select-mode') ? 1 : 0;
+      container.dataset.loadUrl = buildChildrenLoadUrl(parentId, childLevel, selectModeActive);
+      container.dataset.expanded = 'true';
+      container.dataset.loaded = 'true';
+      const row = treeRowElement(tree);
+      const parentContainer = row?.parentNode || tree.parentNode;
+      if (parentContainer) {
+        const afterRow = row?.nextSibling;
+        if (afterRow) {
+          parentContainer.insertBefore(container, afterRow);
+        } else {
+          parentContainer.appendChild(container);
+        }
+      } else {
+        tree.appendChild(container);
+      }
+      return container;
+    }
+
+    function expandChildrenContainer(container) {
+      if (!container) return;
+      container.style.display = '';
+      if (container.dataset) {
+        container.dataset.expanded = 'true';
+        container.dataset.loaded = 'true';
+      }
+    }
+
+    function moveTreeBlock(tree, targetContainer, referenceNode = null) {
+      if (!tree || !targetContainer) return;
+      const row = treeRowElement(tree);
+      if (!row) return;
+      const nodesToMove = [row];
+      const childContainer = childrenContainerForTree(tree);
+      if (childContainer) nodesToMove.push(childContainer);
+      nodesToMove.forEach((node) => {
+        if (!node) return;
+        if (referenceNode) {
+          targetContainer.insertBefore(node, referenceNode);
+        } else {
+          targetContainer.appendChild(node);
+        }
+      });
+    }
+
+    function listAllTreeNodes() {
+      const root = document.getElementById('creatives');
+      if (root) return Array.from(root.querySelectorAll('.creative-tree'));
+      return Array.from(document.querySelectorAll('.creative-tree'));
+    }
+
+    function findPreviousTree(tree) {
+      if (!tree) return null;
+      const nodes = listAllTreeNodes();
+      const index = nodes.indexOf(tree);
+      if (index <= 0) return null;
+      return nodes[index - 1];
+    }
+
+    function getTreeLevel(tree) {
+      if (!tree) return 1;
+      const levelValue = Number(tree.dataset?.level);
+      if (!Number.isNaN(levelValue) && levelValue > 0) {
+        return levelValue;
+      }
+      const row = treeRowElement(tree);
+      return readRowLevel(row) || 1;
+    }
+
+    function updateTreeLevels(tree, delta) {
+      if (!tree || !delta) return;
+      const currentLevel = Number(tree.dataset?.level) || 1;
+      const nextLevel = Math.max(1, currentLevel + delta);
+      tree.dataset.level = String(nextLevel);
+      const row = treeRowElement(tree);
+      if (row) {
+        row.setAttribute('level', nextLevel);
+        row.level = nextLevel;
+        row.requestUpdate?.();
+      }
+      const container = childrenContainerForTree(tree);
+      if (!container) return;
+      Array.from(container.children || []).forEach((childRow) => {
+        if (!childRow.matches?.('creative-tree-row')) return;
+        const childTree = childRow.querySelector('.creative-tree');
+        if (childTree) {
+          updateTreeLevels(childTree, delta);
+        }
+      });
+    }
+
+    function setTreeLevel(tree, targetLevel) {
+      if (!tree || typeof targetLevel !== 'number') return;
+      const currentLevel = Number(tree.dataset?.level) || 1;
+      const delta = targetLevel - currentLevel;
+      if (delta === 0) return;
+      updateTreeLevels(tree, delta);
+    }
+
+    function updateParentChildrenState(parentId) {
+      if (!parentId) return;
+      const parentTree = document.getElementById(`creative-${parentId}`);
+      if (!parentTree) return;
+      const parentRow = treeRowElement(parentTree);
+      if (!parentRow) return;
+      const container = childrenContainerForTree(parentTree);
+      const hasChildren = Boolean(container && container.querySelector('creative-tree-row'));
+      if (hasChildren) {
+        parentRow.setAttribute('has-children', '');
+        parentRow.hasChildren = true;
+        expandChildrenContainer(container);
+      } else {
+        parentRow.removeAttribute('has-children');
+        parentRow.hasChildren = false;
+        if (container) container.style.display = 'none';
+      }
+      parentRow.requestUpdate?.();
+    }
+
+    function persistStructureChange(newParentId, { beforeId = '', afterId = '' } = {}) {
+      parentInput.value = newParentId || '';
+      beforeInput.value = beforeId || '';
+      afterInput.value = afterId || '';
+      if (childInput) childInput.value = '';
+      pendingSave = true;
+      scheduleSave();
     }
 
     function readRowLevel(row) {
@@ -274,7 +448,7 @@ function formatProgressDisplay(value) {
         }
 
         // Delegated event for .add-creative-btn
-        const addBtn = e.target.closest('.add-creative-btn:not(#inline-add):not(#inline-add-child)');
+        const addBtn = e.target.closest('.add-creative-btn:not(#inline-add):not(#inline-level-down):not(#inline-level-up)');
         if (addBtn) {
           e.preventDefault();
           if (template.style.display === 'block') {
@@ -411,9 +585,9 @@ function formatProgressDisplay(value) {
 
     function refreshChildren(tree) {
       const container = tree.querySelector('.creative-children');
-      if (!container) { location.reload(); return Promise.resolve(); }
+      if (!container) { return Promise.resolve(); }
       const url = container.dataset.loadUrl;
-      if (!url) { location.reload(); return Promise.resolve(); }
+      if (!url) { return Promise.resolve(); }
       return creativesApi.loadChildren(url)
         .then(html => {
           container.innerHTML = html;
@@ -480,10 +654,9 @@ function formatProgressDisplay(value) {
       });
     }
 
-    function hideCurrent(reload = true) {
-      if (reload && typeof reload.preventDefault === 'function') {
-        reload.preventDefault();
-        reload = true;
+    function hideCurrent(event) {
+      if (event?.preventDefault) {
+        event.preventDefault();
       }
       if (!currentTree) return Promise.resolve();
       const tree = currentTree;
@@ -503,13 +676,10 @@ function formatProgressDisplay(value) {
             const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
             if (parentTree) {
               refreshChildren(parentTree);
-            } else {
-              if (reload) location.reload();
             }
           } else {
             showRow(tree);
             refreshRow(tree);
-            if (reload) location.reload();
           }
         });
       };
@@ -622,6 +792,78 @@ function formatProgressDisplay(value) {
         const beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
         startNew(parentId, container, insertBefore, beforeId);
       });
+    }
+
+    function levelDown() {
+      if (!currentTree) return;
+      const previousTree = findPreviousTree(currentTree);
+      if (!previousTree) return;
+      const previousId = previousTree.dataset?.id;
+      if (!previousId || previousId === currentTree.dataset?.id) return;
+      if (currentTree.dataset?.parentId === previousId) return;
+      const targetContainer = ensureChildrenContainer(previousTree);
+      if (!targetContainer) return;
+      expandChildrenContainer(targetContainer);
+      const oldParentId = currentTree.dataset?.parentId || '';
+      moveTreeBlock(currentTree, targetContainer);
+      currentTree.dataset.parentId = previousId;
+      if (currentRowElement) {
+        currentRowElement.setAttribute('parent-id', previousId);
+        currentRowElement.parentId = previousId;
+        currentRowElement.removeAttribute('is-root');
+        currentRowElement.isRoot = false;
+        currentRowElement.requestUpdate?.();
+      }
+      updateParentChildrenState(previousId);
+      if (oldParentId) updateParentChildrenState(oldParentId);
+      const newLevel = getTreeLevel(previousTree) + 1;
+      setTreeLevel(currentTree, newLevel);
+      syncInlineEditorPadding(newLevel);
+      persistStructureChange(previousId);
+      lexicalEditor.focus();
+    }
+
+    function levelUp() {
+      if (!currentTree) return;
+      const parentId = currentTree.dataset?.parentId;
+      if (!parentId) return;
+      const parentTree = document.getElementById(`creative-${parentId}`);
+      if (!parentTree) return;
+      const targetContainer = treeContainerElement(parentTree);
+      if (!targetContainer) return;
+      const insertionPoint = nodeAfterTreeBlock(parentTree);
+      moveTreeBlock(currentTree, targetContainer, insertionPoint || null);
+      const grandParentId = parentTree.dataset?.parentId || '';
+      if (grandParentId) {
+        currentTree.dataset.parentId = grandParentId;
+      } else {
+        delete currentTree.dataset.parentId;
+      }
+      if (currentRowElement) {
+        if (grandParentId) {
+          currentRowElement.setAttribute('parent-id', grandParentId);
+          currentRowElement.parentId = grandParentId;
+          currentRowElement.removeAttribute('is-root');
+          currentRowElement.isRoot = false;
+        } else {
+          currentRowElement.removeAttribute('parent-id');
+          currentRowElement.parentId = null;
+          currentRowElement.setAttribute('is-root', '');
+          currentRowElement.isRoot = true;
+        }
+        currentRowElement.requestUpdate?.();
+      }
+      updateParentChildrenState(parentId);
+      updateParentChildrenState(grandParentId);
+      if (targetContainer.classList?.contains('creative-children')) {
+        expandChildrenContainer(targetContainer);
+      }
+      const grandParentTree = grandParentId ? document.getElementById(`creative-${grandParentId}`) : null;
+      const newLevel = grandParentTree ? getTreeLevel(grandParentTree) + 1 : 1;
+      setTreeLevel(currentTree, newLevel);
+      syncInlineEditorPadding(newLevel);
+      persistStructureChange(grandParentId);
+      lexicalEditor.focus();
     }
 
     function deleteCurrent(withChildren) {
@@ -979,8 +1221,12 @@ function formatProgressDisplay(value) {
       addBtn.addEventListener('click', addNew);
     }
 
-    if (addChildBtn) {
-      addChildBtn.addEventListener('click', addChild);
+    if (levelDownBtn) {
+      levelDownBtn.addEventListener('click', levelDown);
+    }
+
+    if (levelUpBtn) {
+      levelUpBtn.addEventListener('click', levelUp);
     }
 
     if (deleteBtn) {
