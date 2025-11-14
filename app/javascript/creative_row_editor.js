@@ -189,7 +189,6 @@ function formatProgressDisplay(value) {
       const selectModeActive = parentRow?.hasAttribute?.('select-mode') ? 1 : 0;
       container.dataset.loadUrl = buildChildrenLoadUrl(parentId, childLevel, selectModeActive);
       container.dataset.expanded = 'true';
-      container.dataset.loaded = 'true';
       const row = treeRowElement(tree);
       const parentContainer = row?.parentNode || tree.parentNode;
       if (parentContainer) {
@@ -210,7 +209,6 @@ function formatProgressDisplay(value) {
       container.style.display = '';
       if (container.dataset) {
         container.dataset.expanded = 'true';
-        container.dataset.loaded = 'true';
       }
     }
 
@@ -1129,12 +1127,12 @@ function formatProgressDisplay(value) {
         addNew();
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === '.') {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === '.' || event.key === '>')) {
         event.preventDefault();
         levelDown();
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === ',') {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === ',' || event.key === '<')) {
         event.preventDefault();
         levelUp();
         return;
