@@ -195,4 +195,24 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
                     wait: 5,
                     visible: :all
   end
+
+  test "level down nests under previous sibling instead of its descendants" do
+    previous_child = Creative.create!(description: "Existing child", user: @user, parent: @root_creative)
+    target_root = Creative.create!(description: "Target root", user: @user)
+
+    visit creatives_path
+
+    expand_creative(@root_creative)
+
+    open_inline_editor(target_root)
+
+    find("#inline-level-down", wait: 5).click
+    wait_for_network_idle(timeout: 10)
+
+    target_root.reload
+    assert_equal @root_creative.id, target_root.parent_id
+    refute_equal previous_child.id, target_root.parent_id
+
+    assert_selector "#creative-children-#{@root_creative.id} #creative-#{target_root.id}", wait: 5
+  end
 end
