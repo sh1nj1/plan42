@@ -15,7 +15,7 @@ export function parentSuggestions(id) {
 }
 
 export function loadChildren(url) {
-  return csrfFetch(url).then((response) => response.text())
+  return csrfFetch(url, { headers: JSON_HEADERS }).then((response) => response.json())
 }
 
 export function search(query, { simple = false } = {}) {

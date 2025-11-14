@@ -1,6 +1,7 @@
 import creativesApi from './lib/api/creatives'
 import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
 import { createInlineEditor } from './lexical_inline_editor'
+import { renderCreativeTree, dispatchCreativeTreeUpdated } from './creatives/tree_renderer'
 
 const BULLET_STARTING_LEVEL = 3;
 const HEADING_INDENT_STEP_EM = 0.4;
@@ -624,8 +625,11 @@ function formatProgressDisplay(value) {
       const url = container.dataset.loadUrl;
       if (!url) { return Promise.resolve(); }
       return creativesApi.loadChildren(url)
-        .then(html => {
-          container.innerHTML = html;
+        .then(data => {
+          const nodes = Array.isArray(data?.creatives) ? data.creatives : [];
+          renderCreativeTree(container, nodes);
+          container.dataset.loaded = 'true';
+          dispatchCreativeTreeUpdated(container);
         });
     }
 

@@ -18,7 +18,19 @@ class CreativesController < ApplicationController
     respond_to do |format|
       format.html
       format.json do
-        render json: serialize_creatives(@creatives)
+        if params[:simple].present?
+          render json: serialize_creatives(@creatives)
+        else
+          builder = Creatives::TreeBuilder.new(
+            user: Current.user,
+            params: params,
+            view_context: view_context,
+            expanded_state_map: @expanded_state_map,
+            select_mode: false,
+            max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL
+          )
+          render json: { creatives: builder.build(@creatives, level: 1) }
+        end
       end
     end
   end
@@ -257,12 +269,27 @@ class CreativesController < ApplicationController
                               .first&.expanded_status || {}
     children = parent.children_with_permission(Current.user)
     level = params[:level].to_i
-    render html: helpers.render_creative_tree(
-      children,
-      level,
-      select_mode: params[:select_mode] == "1",
-      max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL
-    ).html_safe
+    respond_to do |format|
+      format.html do
+        render html: helpers.render_creative_tree(
+          children,
+          level,
+          select_mode: params[:select_mode] == "1",
+          max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL
+        ).html_safe
+      end
+      format.json do
+        builder = Creatives::TreeBuilder.new(
+          user: Current.user,
+          params: params,
+          view_context: view_context,
+          expanded_state_map: @expanded_state_map,
+          select_mode: params[:select_mode] == "1",
+          max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL
+        )
+        render json: { creatives: builder.build(children, level: level.zero? ? 1 : level) }
+      end
+    end
   end
 
   def unconvert

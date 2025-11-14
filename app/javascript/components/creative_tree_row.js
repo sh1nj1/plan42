@@ -161,6 +161,7 @@ class CreativeTreeRow extends LitElement {
         id=${this.domId ?? nothing}
         data-id=${this.creativeId ?? nothing}
         data-parent-id=${this.parentId ?? nothing}
+        data-level=${this.level ?? nothing}
         draggable=${draggableAttr}
         data-action=${dragActions}
       >
