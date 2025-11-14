@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import csrfFetch from '../../lib/api/csrf_fetch'
+import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 
 export default class extends Controller {
   static targets = ['expand']
@@ -8,12 +9,15 @@ export default class extends Controller {
     this.allExpanded = false
     this.currentCreativeId = null
     this.handleToggleEvent = this.handleToggleEvent.bind(this)
+    this.handleTreeUpdated = this.handleTreeUpdated.bind(this)
     this.element.addEventListener('creative-toggle-click', this.handleToggleEvent)
+    this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
     this.setup()
   }
 
   disconnect() {
     this.element.removeEventListener('creative-toggle-click', this.handleToggleEvent)
+    this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
   }
 
   toggleAll(event) {
@@ -34,6 +38,10 @@ export default class extends Controller {
     const row = event.detail?.component
     if (!row) return
     this.toggleRow(row)
+  }
+
+  handleTreeUpdated() {
+    this.initializeRows(this.element)
   }
 
   setup() {
@@ -117,15 +125,25 @@ export default class extends Controller {
       return Promise.resolve(false)
     }
 
-    return fetch(url)
-      .then((response) => response.text())
-      .then((html) => {
-        childrenDiv.innerHTML = html
+    return fetch(url, { headers: { Accept: 'application/json' } })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Failed to load children: ${response.status}`)
+        return response.json()
+      })
+      .then((data) => {
+        const nodes = Array.isArray(data?.creatives) ? data.creatives : []
+        renderCreativeTree(childrenDiv, nodes)
         childrenDiv.dataset.loaded = 'true'
-        this.initializeRows(childrenDiv)
+        dispatchCreativeTreeUpdated(childrenDiv)
         const has = !!childrenDiv.querySelector('creative-tree-row')
         row.hasChildren = has
         return has
+      })
+      .catch((error) => {
+        console.error(error)
+        row.hasChildren = false
+        childrenDiv.dataset.loaded = 'true'
+        return false
       })
   }
 

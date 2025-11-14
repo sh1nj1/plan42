@@ -134,22 +134,33 @@
       ) %>
 <% end %>
 
-<div id="creatives">
-  <% if @creatives.present? %>
-    <%= render_creative_tree(@creatives, 1, select_mode: false, max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL) %>
-  <% else %>
-    <% if params[:search].present? %>
-      <p style="text-align: center;"><%= t('.no_search_results') %></p>
-    <% elsif params[:id] && @creative && !@creative.has_permission?(Current.user, :read) %>
-      <p style="text-align: center;"><%= t('.no_permission') %></p>
-      <div style="text-align: center;">
-        <%= button_to t('.request_permission'), request_permission_creative_path(@creative), method: :post %>
-      </div>
-    <% else %>
-      <p style="text-align: center;"><%= params[:id] ? t('.no_sub_creatives') : t('.no_creatives') %></p>
-    <% end %>
-  <% end %>
-</div>
+<%
+  empty_html = nil
+  if (@creatives || []).blank?
+    if params[:search].present?
+      empty_html = content_tag(:p, t('.no_search_results'), style: 'text-align: center;')
+    elsif params[:id] && @creative && !@creative.has_permission?(Current.user, :read)
+      message = content_tag(:p, t('.no_permission'), style: 'text-align: center;')
+      action = content_tag(:div, button_to(t('.request_permission'), request_permission_creative_path(@creative), method: :post), style: 'text-align: center;')
+      empty_html = message + action
+    else
+      text = params[:id] ? t('.no_sub_creatives') : t('.no_creatives')
+      empty_html = content_tag(:p, text, style: 'text-align: center;')
+    end
+  end
+  tree_params = request.query_parameters.merge(format: :json)
+  tree_url = creatives_path(tree_params)
+%>
+
+<%= tag.div(
+      empty_html,
+      id: 'creatives',
+      data: {
+        controller: 'creatives--tree',
+        'creatives--tree-url-value': tree_url,
+        'creatives--tree-empty-html-value': empty_html.to_s
+      }
+    ) %>
 
 <%= render 'comments/comments_popup' %>
 <%= render 'inline_edit_form' %>

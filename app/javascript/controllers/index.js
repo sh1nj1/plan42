@@ -7,6 +7,7 @@ import ActionTextAttachmentLinkController from "./action_text_attachment_link_co
 import CreativesDragDropController from "./creatives/drag_drop_controller"
 import CreativesExpansionController from "./creatives/expansion_controller"
 import CreativesRowEditorController from "./creatives/row_editor_controller"
+import CreativesTreeController from "./creatives/tree_controller"
 import CommentsListController from "./comments/list_controller"
 import CommentsFormController from "./comments/form_controller"
 import CommentsPresenceController from "./comments/presence_controller"
@@ -28,6 +29,7 @@ application.register("action-text-attachment-link", ActionTextAttachmentLinkCont
 application.register("creatives--drag-drop", CreativesDragDropController)
 application.register("creatives--expansion", CreativesExpansionController)
 application.register("creatives--row-editor", CreativesRowEditorController)
+application.register("creatives--tree", CreativesTreeController)
 application.register("comments--list", CommentsListController)
 application.register("comments--form", CommentsFormController)
 application.register("comments--presence", CommentsPresenceController)
