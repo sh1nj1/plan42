@@ -23,7 +23,7 @@
   <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>
   <div id="typing-indicator" data-comments--presence-target="typingIndicator"></div>
   <form id="new-comment-form" data-comments--popup-target="form" data-comments--form-target="form" style="display:none;">
-    <textarea name="comment[content]" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" required enterkeyhint="send"></textarea>
+    <textarea class="shared-input-surface" name="comment[content]" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" required enterkeyhint="send"></textarea>
     <label><input type="checkbox" id="comment-private" data-comments--form-target="privateCheckbox" data-comments--presence-target="privateCheckbox" name="comment[private]" /> <%= t('comments.private') %></label>
     <button class="creative-action-btn" type="submit" data-comments--form-target="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
     <button class="creative-action-btn" id="move-comments-btn" data-comments--form-target="moveButton" type="button" disabled><%= t('comments.move_button') %></button>

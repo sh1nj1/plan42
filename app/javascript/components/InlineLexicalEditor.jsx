@@ -716,7 +716,7 @@ function EditorInner({
         <RichTextPlugin
           contentEditable={
             <ContentEditable
-              className="lexical-content-editable"
+              className="lexical-content-editable shared-input-surface"
               onKeyDown={(event) => {
                 if (!onKeyDown) return
                 onKeyDown(event, editor)
