@@ -241,7 +241,15 @@ function formatProgressDisplay(value) {
       const nodes = listAllTreeNodes();
       const index = nodes.indexOf(tree);
       if (index <= 0) return null;
-      return nodes[index - 1];
+      const currentLevel = getTreeLevel(tree);
+      for (let i = index - 1; i >= 0; i--) {
+        const candidate = nodes[i];
+        if (!candidate) continue;
+        const candidateLevel = getTreeLevel(candidate);
+        if (candidateLevel === currentLevel) return candidate;
+        if (candidateLevel < currentLevel) return null;
+      }
+      return null;
     }
 
     function getTreeLevel(tree) {
