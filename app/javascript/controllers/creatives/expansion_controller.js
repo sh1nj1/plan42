@@ -40,8 +40,12 @@ export default class extends Controller {
     this.toggleRow(row)
   }
 
-  handleTreeUpdated() {
-    this.initializeRows(this.element)
+  handleTreeUpdated(event) {
+    const container =
+      event?.target && typeof event.target.querySelectorAll === 'function'
+        ? event.target
+        : this.element
+    this.initializeRows(container || this.element)
   }
 
   setup() {
