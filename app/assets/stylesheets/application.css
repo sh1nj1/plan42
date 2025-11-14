@@ -105,36 +105,39 @@ nav button:hover,
     filter: brightness(var(--hover-brightness));
 }
 
-#search {
-    line-height: 2.1;
-    font-size: 1.125em;
-    background: var(--color-bg);
-    color: var(--color-btn-text);
-    padding:0.3em; border-radius:4px; border:1px solid var(--color-border);
-    margin-right: 0.2em;
-}
-
-input[type="text"],
-input[type="number"],
-input[type="url"],
-input[type="date"],
+.shared-input-surface,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="file"]),
 select,
 textarea {
+    line-height: 2.1;
+    font-size: 1.125em;
     background: var(--color-bg);
     color: var(--color-btn-text);
     padding: 0.3em;
     border-radius: 4px;
     border: 1px solid var(--color-border);
-    font-size: 16px; /* Prevent iOS zoom on focus */
+}
+
+#search {
+    margin-right: 0.2em;
+}
+
+.shared-input-surface:focus,
+.shared-input-surface:focus-visible,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="file"]):focus,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="file"]):focus-visible,
+select:focus,
+select:focus-visible,
+textarea:focus,
+textarea:focus-visible {
+    border-color: var(--color-link);
+    box-shadow: 0 0 0 2px var(--color-link);
+    outline: none;
 }
 
 select option {
     background: var(--color-bg);
     color: var(--color-btn-text);
-}
-input[type="email"],
-input[type="password"] {
-    font-size: 16px; /* Prevent iOS zoom on focus */
 }
 
 main {

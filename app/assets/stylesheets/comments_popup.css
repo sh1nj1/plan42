@@ -44,9 +44,6 @@
 #new-comment-form textarea {
   width: 94%;
   resize: vertical;
-  border-radius: 6px;
-  border: 1px solid var(--color-border);
-  padding: 0.5em;
   font-size: 16px; /* Prevent iOS zoom on focus */
 }
 

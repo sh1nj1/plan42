@@ -4,7 +4,7 @@
     sans-serif;
   --color-bg: #f7f7f8;
   --color-text: #202123;
-  --color-link: #0a83d7;
+  --color-link: #185ABC;
   --color-nav-bg: #ffffff;
   --color-section-bg: #ffffff;
   --color-btn-bg: #f1f2f4;
@@ -23,7 +23,7 @@
 body.dark-mode {
   --color-bg: #212121;
   --color-text: #eaeaea;
-  --color-link: #6a9eff;
+  --color-link: #185ABC;
   --color-nav-bg: #181818;
   --color-section-bg: #181818;
   --color-btn-bg: #333543;

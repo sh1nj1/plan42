@@ -64,8 +64,15 @@ export function initializeCreativeRowEditor() {
     let saving = false;
     let savePromise = Promise.resolve();
     let uploadsPending = false;
-    let uploadCompletionPromise = null;
-    let resolveUploadCompletion = null;
+let uploadCompletionPromise = null;
+let resolveUploadCompletion = null;
+
+function formatProgressDisplay(value) {
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) return '0%';
+  const percentage = Math.round(numeric * 100);
+  return `${percentage}%`;
+}
 
     function treeRowElement(node) {
       return node && node.closest ? node.closest('creative-tree-row') : null;
@@ -524,7 +531,7 @@ export function initializeCreativeRowEditor() {
           lexicalEditor.load(content, `creative-${data.id}`);
           pendingSave = false;
           progressInput.value = data.progress || 0;
-          progressValue.textContent = data.progress || 0;
+          progressValue.textContent = formatProgressDisplay(progressInput.value);
           parentInput.value = data.parent_id || '';
           beforeInput.value = '';
           afterInput.value = '';
@@ -794,7 +801,7 @@ export function initializeCreativeRowEditor() {
           descriptionInput.value = '';
           lexicalEditor.reset(`new-${Date.now()}`);
           progressInput.value = 0;
-          progressValue.textContent = 0;
+          progressValue.textContent = formatProgressDisplay(0);
           if (linkBtn) linkBtn.style.display = '';
           if (unlinkBtn) unlinkBtn.style.display = 'none';
           if (unconvertBtn) unconvertBtn.style.display = 'none';
@@ -903,7 +910,7 @@ export function initializeCreativeRowEditor() {
     }
 
     progressInput.addEventListener('input', function() {
-      progressValue.textContent = progressInput.value;
+      progressValue.textContent = formatProgressDisplay(progressInput.value);
       scheduleSave();
     });
 
