@@ -135,6 +135,49 @@ textarea:focus-visible {
     outline: none;
 }
 
+.stacked-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: min(28rem, 100%);
+}
+
+.stacked-form .stacked-form-control,
+.stacked-form .primary-action-button {
+    width: 100%;
+    display: block;
+    box-sizing: border-box;
+}
+
+.stacked-form input[type="password"] {
+    max-width: 100%;
+}
+
+.primary-action-button {
+    background: var(--color-btn-bg);
+    color: var(--color-btn-text);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 0.45em 0.9em;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.primary-action-button:hover,
+.primary-action-button:focus-visible {
+    filter: brightness(var(--hover-brightness));
+    outline: none;
+}
+
+.auth-alt-action {
+    margin-top: 1rem;
+}
+
+.auth-alt-action__form {
+    display: inline;
+}
+
 select option {
     background: var(--color-bg);
     color: var(--color-btn-text);
