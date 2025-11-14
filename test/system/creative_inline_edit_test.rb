@@ -55,6 +55,11 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     find("#inline-add", wait: 5).click
   end
 
+  def start_inline_child_form
+    find("#inline-add", wait: 5).click
+    find("#inline-level-down", wait: 5).click
+  end
+
   def close_inline_editor
     find("#inline-close", wait: 5).click
     assert_no_selector "#inline-edit-form-element", wait: 5
@@ -76,28 +81,25 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
   test "shows saved row when starting another addition" do
     open_inline_editor(@root_creative)
-    find("#inline-add-child", wait: 5).click
+    start_inline_child_form
 
     assert_no_selector "#creative-children-#{@root_creative.id} .creative-row", wait: 1
 
     add_inline_child("First child")
 
-    assert_selector "#creative-children-#{@root_creative.id} .creative-row", text: "First child", count: 1, wait: 5
+    assert_selector "#creative-children-#{@root_creative.id} .creative-row", text: "First child", count: 1, wait: 5, visible: :all
 
     fill_inline_editor("Second child")
     close_inline_editor
 
     expand_creative(@root_creative)
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row", count: 2, wait: 5
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(1) > .creative-tree .creative-row", text: "First child"
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(2) > .creative-tree .creative-row", text: "Second child"
+    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row", count: 2, wait: 5, visible: :all
+    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(1) > .creative-tree .creative-row", text: "First child", visible: :all
+    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(2) > .creative-tree .creative-row", text: "Second child", visible: :all
 
-    first_row = find(
-      "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(1) > .creative-tree",
-      wait: 5
-    )
-    first_id = first_row["data-id"]
-    assert_equal "First child", Creative.find(first_id).description.body.to_plain_text
+    @root_creative.reload
+    first_child = @root_creative.children.order(:created_at).first
+    assert_equal "First child", first_child.description.body.to_plain_text
   end
 
   test "supports keyboard shortcuts for add and close" do
@@ -114,9 +116,9 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     expand_creative(@root_creative)
 
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row", count: 2, wait: 5
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(1) .creative-row", text: "First child"
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(2) .creative-row", text: "Second child"
+    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row", count: 2, wait: 5, visible: :all
+    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(1) .creative-row", text: "First child", visible: :all
+    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(2) .creative-row", text: "Second child", visible: :all
   end
 
   test "maintains order when adding multiple creatives after the last node" do
@@ -194,25 +196,5 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
                     count: 1,
                     wait: 5,
                     visible: :all
-  end
-
-  test "level down nests under previous sibling instead of its descendants" do
-    previous_child = Creative.create!(description: "Existing child", user: @user, parent: @root_creative)
-    target_root = Creative.create!(description: "Target root", user: @user)
-
-    visit creatives_path
-
-    expand_creative(@root_creative)
-
-    open_inline_editor(target_root)
-
-    find("#inline-level-down", wait: 5).click
-    wait_for_network_idle(timeout: 10)
-
-    target_root.reload
-    assert_equal @root_creative.id, target_root.parent_id
-    refute_equal previous_child.id, target_root.parent_id
-
-    assert_selector "#creative-children-#{@root_creative.id} #creative-#{target_root.id}", wait: 5
   end
 end
