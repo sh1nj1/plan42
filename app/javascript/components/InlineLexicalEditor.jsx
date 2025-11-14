@@ -543,7 +543,7 @@ function Toolbar({onPromptForLink}) {
         disabled={!canUndo}
         title="Undo (⌘/Ctrl+Z)"
         aria-label="Undo">
-        ↺
+          ↩
       </button>
       <button
         type="button"
@@ -552,7 +552,7 @@ function Toolbar({onPromptForLink}) {
         disabled={!canRedo}
         title="Redo (⇧⌘/Ctrl+Z)"
         aria-label="Redo">
-        ↻
+          ↪
       </button>
       <span className="lexical-toolbar-separator" aria-hidden="true" />
       <button
