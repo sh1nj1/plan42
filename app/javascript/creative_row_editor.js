@@ -189,6 +189,7 @@ function formatProgressDisplay(value) {
       const selectModeActive = parentRow?.hasAttribute?.('select-mode') ? 1 : 0;
       container.dataset.loadUrl = buildChildrenLoadUrl(parentId, childLevel, selectModeActive);
       container.dataset.expanded = 'true';
+      if (container.dataset.loaded) delete container.dataset.loaded;
       const row = treeRowElement(tree);
       const parentContainer = row?.parentNode || tree.parentNode;
       if (parentContainer) {
