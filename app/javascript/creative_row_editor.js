@@ -79,6 +79,34 @@ function formatProgressDisplay(value) {
       return node && node.closest ? node.closest('creative-tree-row') : null;
     }
 
+    function siblingTreeRow(row, direction) {
+      if (!row) return null;
+      const step = direction === 'previous' ? 'previousSibling' : 'nextSibling';
+      let node = row[step];
+      while (node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          node = node[step];
+          continue;
+        }
+        if (node.matches?.('creative-tree-row')) return node;
+        if (node.classList?.contains?.('creative-children')) {
+          node = node[step];
+          continue;
+        }
+        node = node[step];
+      }
+      return null;
+    }
+
+    function siblingOrderingForRow(row) {
+      const beforeRow = siblingTreeRow(row, 'next');
+      const afterRow = siblingTreeRow(row, 'previous');
+      return {
+        beforeId: beforeRow ? creativeIdFrom(beforeRow) : '',
+        afterId: afterRow ? creativeIdFrom(afterRow) : ''
+      };
+    }
+
     function treeContainerElement(tree) {
       if (!tree) return null;
       const row = treeRowElement(tree);
@@ -819,7 +847,9 @@ function formatProgressDisplay(value) {
       const newLevel = getTreeLevel(previousTree) + 1;
       setTreeLevel(currentTree, newLevel);
       syncInlineEditorPadding(newLevel);
-      persistStructureChange(previousId);
+      const row = treeRowElement(currentTree);
+      const ordering = siblingOrderingForRow(row);
+      persistStructureChange(previousId, ordering);
       lexicalEditor.focus();
     }
 
@@ -862,7 +892,9 @@ function formatProgressDisplay(value) {
       const newLevel = grandParentTree ? getTreeLevel(grandParentTree) + 1 : 1;
       setTreeLevel(currentTree, newLevel);
       syncInlineEditorPadding(newLevel);
-      persistStructureChange(grandParentId);
+      const row = treeRowElement(currentTree);
+      const ordering = siblingOrderingForRow(row);
+      persistStructureChange(grandParentId, ordering);
       lexicalEditor.focus();
     }
 
