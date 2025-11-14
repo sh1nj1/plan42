@@ -1,0 +1,149 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'digest'
+require 'fileutils'
+require 'find'
+require 'pathname'
+
+ROOT = Pathname.new(__dir__).join('..').realpath
+ASSET_DIR = ROOT.join('public')
+HASH_PREFIX_LENGTH = 10
+PNG_SIZE = 512
+SEARCH_DIRECTORIES = %w[app config public lib].freeze
+TEXT_EXTENSIONS = %w[
+  .rb .erb .html .json .yml .yaml .js .ts .tsx .jsx .css .scss .sass .md .txt .rake .xml
+].freeze
+SKIP_DIRECTORIES = %w[.git tmp log node_modules vendor/bundle].freeze
+
+def hashed_basename(hash)
+  "icon-#{hash}"
+end
+
+def hashed_svg_paths
+  Dir.glob(ASSET_DIR.join('icon-*.svg'))
+end
+
+def select_source_svg
+  svgs = hashed_svg_paths
+  if svgs.empty?
+    warn 'No public/icon-*.svg file found. Add one before running.'
+    exit 1
+  end
+  svgs.max_by { |path| File.mtime(path) }
+end
+
+def compute_hash(svg_path)
+  Digest::SHA256.file(svg_path).hexdigest[0, HASH_PREFIX_LENGTH]
+end
+
+def rename_svg_if_needed(current_path, new_basename)
+  current = Pathname.new(current_path)
+  target = ASSET_DIR.join("#{new_basename}.svg")
+  return target unless current.exist? && current != target
+
+  FileUtils.mv(current, target)
+  puts "Renamed #{current.relative_path_from(ROOT)} -> #{target.relative_path_from(ROOT)}"
+  target
+end
+
+def command_available?(command)
+  system('which', command, out: File::NULL, err: File::NULL)
+end
+
+def generate_png(new_basename)
+  svg_input = ASSET_DIR.join("#{new_basename}.svg")
+  png_output = ASSET_DIR.join("#{new_basename}.png")
+
+  command =
+    if command_available?('rsvg-convert')
+      %W[rsvg-convert -w #{PNG_SIZE} -h #{PNG_SIZE} -o #{png_output} #{svg_input}]
+    else
+      %W[magick #{svg_input} -background none -resize #{PNG_SIZE}x#{PNG_SIZE} #{png_output}]
+    end
+
+  success = system(*command)
+  raise 'Failed to generate PNG derivative' unless success
+  puts "Wrote #{png_output.relative_path_from(ROOT)}"
+end
+
+def text_file?(path)
+  ext = File.extname(path)
+  return true if ext.empty?
+  TEXT_EXTENSIONS.include?(ext)
+end
+
+def skip_path?(path)
+  SKIP_DIRECTORIES.any? { |dir| path.include?("/#{dir}/") }
+end
+
+def collect_previous_basenames
+  Dir.glob(ASSET_DIR.join('icon-*.{svg,png}')).map do |path|
+    File.basename(path, File.extname(path))
+  end.uniq
+end
+
+def update_references(old_basenames, new_basename)
+  return if old_basenames.empty?
+
+  updated_files = []
+  SEARCH_DIRECTORIES.each do |relative_dir|
+    absolute_dir = ROOT.join(relative_dir)
+    next unless absolute_dir.exist?
+
+    Find.find(absolute_dir) do |path|
+      next if skip_path?(path)
+      next unless File.file?(path)
+      next unless text_file?(path)
+
+      content = File.read(path, encoding: Encoding::UTF_8)
+      new_content = replace_basenames(content, old_basenames, new_basename)
+      next if new_content == content
+
+      File.write(path, new_content, encoding: Encoding::UTF_8)
+      updated_files << Pathname.new(path).relative_path_from(ROOT)
+    rescue ArgumentError
+      next
+    end
+  end
+
+  return if updated_files.empty?
+
+  puts 'Updated references in:'
+  updated_files.each { |relative| puts "  - #{relative}" }
+end
+
+def replace_basenames(content, old_basenames, new_basename)
+  old_basenames.each do |old|
+    %w[.svg .png].each do |ext|
+      content = content.gsub("#{old}#{ext}", "#{new_basename}#{ext}")
+    end
+  end
+  content
+end
+
+def clean_old_assets(old_basenames)
+  old_basenames.each do |old|
+    %w[.svg .png].each do |ext|
+      path = ASSET_DIR.join("#{old}#{ext}")
+      next unless path.exist?
+
+      FileUtils.rm_f(path)
+      puts "Removed #{path.relative_path_from(ROOT)}"
+    end
+  end
+end
+
+old_basenames = collect_previous_basenames
+source_svg = select_source_svg
+hash = compute_hash(source_svg)
+new_basename = hashed_basename(hash)
+
+rename_svg_if_needed(source_svg, new_basename)
+generate_png(new_basename)
+
+aliases_to_replace = old_basenames - [new_basename]
+update_references(aliases_to_replace, new_basename)
+clean_old_assets(aliases_to_replace)
+
+puts "Icon assets synchronized with fingerprint #{hash}."
