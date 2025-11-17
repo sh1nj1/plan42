@@ -24,41 +24,45 @@ module Creatives
     def build_nodes(creatives, level:)
       return [] if level > max_level
 
-      creatives.filter_map do |creative|
-        build_node(creative, level: level)
+      creatives.flat_map do |creative|
+        build_nodes_for_creative(creative, level: level)
       end
     end
 
-    def build_node(creative, level:)
-      return nil if skip_creative?(creative)
-
+    def build_nodes_for_creative(creative, level:)
       filtered_children = filtered_children_for(creative)
       expanded = expanded?(creative.id)
+      skip = skip_creative?(creative)
       child_level = level + 1
-      load_children_now = filters_applied? || expanded
-      children_nodes = load_children_now ? build_nodes(filtered_children, level: child_level) : []
+      child_render_level = skip ? level : child_level
+      load_children_now = filters_applied? || expanded || skip
+      children_nodes = load_children_now ? build_nodes(filtered_children, level: child_render_level) : []
 
-      {
-        id: creative.id,
-        dom_id: "creative-#{creative.id}",
-        parent_id: creative.parent_id,
-        level: level,
-        select_mode: !!select_mode,
+      return children_nodes if skip
+
+      [
+        {
+          id: creative.id,
+          dom_id: "creative-#{creative.id}",
+          parent_id: creative.parent_id,
+          level: level,
+          select_mode: !!select_mode,
         can_write: creative.has_permission?(user, :write),
         has_children: filtered_children.any?,
         expanded: expanded,
         is_root: creative.parent.nil?,
         link_url: view_context.creative_path(creative),
         templates: template_payload_for(creative),
-        children_container: children_container_payload(
-          creative,
-          filtered_children,
-          child_level: child_level,
-          children_nodes: children_nodes,
-          expanded: expanded,
-          load_children_now: load_children_now
-        )
-      }
+          children_container: children_container_payload(
+            creative,
+            filtered_children,
+            child_level: child_level,
+            children_nodes: children_nodes,
+            expanded: expanded,
+            load_children_now: load_children_now
+          )
+        }
+      ]
     end
 
     def skip_creative?(creative)
