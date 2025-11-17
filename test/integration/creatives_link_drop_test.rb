@@ -25,8 +25,9 @@ class CreativesLinkDropTest < ActionDispatch::IntegrationTest
     linked = Creative.find(parsed["creative_id"])
     assert_equal @dragged.id, linked.origin_id
     assert_equal @target.id, linked.parent_id
-    assert_includes parsed["html"], "creative-tree"
-    assert_includes parsed["html"], "has-children"
+    assert_kind_of Array, parsed["nodes"]
+    assert_equal parsed["creative_id"], parsed["nodes"].dig(0, "id")
+    assert_equal "creative-#{parsed["creative_id"]}", parsed["nodes"].dig(0, "dom_id")
   end
 
   test "inserts linked creative before target when moving up" do
