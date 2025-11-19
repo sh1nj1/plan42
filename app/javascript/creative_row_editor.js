@@ -1224,7 +1224,13 @@ function formatProgressDisplay(value) {
         levelUp();
         return;
       }
-      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+      const normalizedKey = typeof event.key === 'string' ? event.key.toLowerCase() : '';
+      const isArrowUp = event.key === 'ArrowUp';
+      const isArrowDown = event.key === 'ArrowDown';
+      const isCtrlP = normalizedKey === 'p' && (event.ctrlKey || event.metaKey);
+      const isCtrlN = normalizedKey === 'n' && (event.ctrlKey || event.metaKey);
+
+      if (!(isArrowUp || isArrowDown || isCtrlP || isCtrlN)) return;
 
       let atStart = false;
       let atEnd = false;
@@ -1236,7 +1242,7 @@ function formatProgressDisplay(value) {
         atEnd = isSelectionAtDocumentEnd(selection);
       });
 
-      if (event.key === 'ArrowUp' && atStart) {
+      if ((isArrowUp || isCtrlP) && atStart) {
         event.preventDefault();
         if (pendingSave) saveForm();
         move(-1);
@@ -1244,7 +1250,7 @@ function formatProgressDisplay(value) {
         return;
       }
 
-      if (event.key === 'ArrowDown' && atEnd) {
+      if ((isArrowDown || isCtrlN) && atEnd) {
         event.preventDefault();
         if (pendingSave) saveForm();
         move(1);
