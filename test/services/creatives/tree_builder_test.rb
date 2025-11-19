@@ -48,6 +48,18 @@ module Creatives
       assert_equal [ 1 ], nodes.pluck(:level)
     end
 
+    test "includes inline editor payload data" do
+      creative = Creative.create!(user: @user, progress: 0.42, description: "Inline Data")
+
+      builder = build_tree_builder
+      nodes = builder.build([ creative ])
+
+      payload = nodes.first[:inline_editor_payload]
+      assert_equal creative.effective_description, payload[:description_raw_html]
+      assert_in_delta creative.progress, payload[:progress]
+      assert_nil payload[:origin_id]
+    end
+
     private
 
     def build_tree_builder(params = {})

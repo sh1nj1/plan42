@@ -46,6 +46,7 @@ class CreativesController < ApplicationController
           origin_id: @creative.origin_id,
           parent_id: @creative.parent_id,
           progress: @creative.progress,
+          progress_html: view_context.render_creative_progress(@creative),
           depth: depth,
           prompt: @creative.prompt_for(Current.user)
         }

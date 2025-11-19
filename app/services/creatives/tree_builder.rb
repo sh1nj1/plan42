@@ -47,12 +47,13 @@ module Creatives
           parent_id: creative.parent_id,
           level: level,
           select_mode: !!select_mode,
-        can_write: creative.has_permission?(user, :write),
-        has_children: filtered_children.any?,
-        expanded: expanded,
-        is_root: creative.parent.nil?,
-        link_url: view_context.creative_path(creative),
-        templates: template_payload_for(creative),
+          can_write: creative.has_permission?(user, :write),
+          has_children: filtered_children.any?,
+          expanded: expanded,
+          is_root: creative.parent.nil?,
+          link_url: view_context.creative_path(creative),
+          templates: template_payload_for(creative),
+          inline_editor_payload: inline_editor_payload_for(creative),
           children_container: children_container_payload(
             creative,
             filtered_children,
@@ -112,6 +113,14 @@ module Creatives
         edit_icon_html: edit_icon_html,
         edit_off_icon_html: edit_off_icon_html,
         origin_link_html: origin_link_html_for(creative)
+      }
+    end
+
+    def inline_editor_payload_for(creative)
+      {
+        description_raw_html: creative.effective_description(nil, true),
+        progress: creative.progress,
+        origin_id: creative.origin_id
       }
     end
 
