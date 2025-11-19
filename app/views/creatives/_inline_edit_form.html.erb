@@ -36,14 +36,29 @@
           &nbsp;
           <%= svg_tag 'hierarchy-parent.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
-        <button type="button" id="inline-delete" class="creative-action-btn danger-link" title="<%= t('creatives.index.delete_only_this') %>" data-confirm="<%= t('creatives.index.are_you_sure_delete_only_this') %>">
-          &nbsp;<%= svg_tag 'trash-bold-outline.svg',class: 'icon-svg', width: 24, height: 24 %>
-        </button>
-        <button type="button" id="inline-delete-with-children" class="creative-action-btn danger-link" title="<%= t('creatives.index.delete_with_children') %>" data-confirm="<%= t('creatives.index.are_you_sure_delete_with_children') %>">
-          &nbsp;
-          <%= svg_tag 'hierarchy-child.svg',class: 'icon-svg', width: 16, height: 16 %>
-          <%= svg_tag 'trash-bold-outline.svg',class: 'icon-svg', width: 24, height: 24 %>
-        </button>
+        <% inline_delete_button_content = capture do %>
+          &nbsp;<%= svg_tag 'trash-bold-outline.svg', class: 'icon-svg', width: 24, height: 24 %>
+        <% end %>
+        <%= render PopupMenuComponent.new(
+              button_content: inline_delete_button_content,
+              button_classes: 'creative-action-btn danger-link',
+              menu_id: 'inline-delete-popup-menu'
+            ) do %>
+          <button type="button"
+                  id="inline-delete"
+                  class="popup-menu-item danger-link"
+                  title="<%= t('creatives.index.delete_only_this') %>"
+                  data-confirm="<%= t('creatives.index.are_you_sure_delete_only_this') %>">
+            <%= t('creatives.index.delete_only_this') %>
+          </button>
+          <button type="button"
+                  id="inline-delete-with-children"
+                  class="popup-menu-item danger-link"
+                  title="<%= t('creatives.index.delete_with_children') %>"
+                  data-confirm="<%= t('creatives.index.are_you_sure_delete_with_children') %>">
+            <%= t('creatives.index.delete_with_children') %>
+          </button>
+        <% end %>
         <button type="button" id="inline-link" class="creative-action-btn" title="<%= t('creatives.index.link') %>">
           &nbsp;<%= svg_tag 'link.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
