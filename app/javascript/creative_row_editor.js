@@ -80,6 +80,90 @@ function formatProgressDisplay(value) {
       return node && node.closest ? node.closest('creative-tree-row') : null;
     }
 
+    function hasDatasetValue(element, key) {
+      if (!element || !element.dataset) return false;
+      return Object.prototype.hasOwnProperty.call(element.dataset, key);
+    }
+
+    function setRowDatasetValue(row, key, value) {
+      if (!row || !row.dataset) return;
+      if (value === undefined || value === null) {
+        delete row.dataset[key];
+      } else {
+        row.dataset[key] = String(value);
+      }
+    }
+
+    function updateRowFromData(row, data) {
+      if (!row || !data) return;
+      const descriptionHtml = data.description || '';
+      const rawHtml = data.description_raw_html || descriptionHtml;
+      row.descriptionHtml = descriptionHtml;
+      setRowDatasetValue(row, 'descriptionHtml', descriptionHtml);
+      setRowDatasetValue(row, 'descriptionRawHtml', rawHtml);
+      if (data.progress_html != null) {
+        row.progressHtml = data.progress_html;
+        setRowDatasetValue(row, 'progressHtml', data.progress_html);
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'progress')) {
+        setRowDatasetValue(row, 'progressValue', data.progress ?? '');
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'origin_id')) {
+        setRowDatasetValue(row, 'originId', data.origin_id ?? '');
+      }
+      if (typeof row.requestUpdate === 'function') {
+        row.requestUpdate();
+      }
+    }
+
+    function inlinePayloadFromTree(tree) {
+      if (!tree) return null;
+      const row = treeRowElement(tree);
+      if (!row) return null;
+      const hasDescription = hasDatasetValue(row, 'descriptionRawHtml') || hasDatasetValue(row, 'descriptionHtml');
+      const hasProgress = hasDatasetValue(row, 'progressValue');
+      if (!hasDescription || !hasProgress) return null;
+      const rawHtml = hasDatasetValue(row, 'descriptionRawHtml') ? row.dataset.descriptionRawHtml : row.dataset.descriptionHtml || '';
+      const description = row.dataset.descriptionHtml || rawHtml || '';
+      const progressValue = Number(row.dataset.progressValue ?? 0);
+      const parentId = tree.dataset?.parentId || '';
+      return {
+        id: tree.dataset?.id,
+        description,
+        description_raw_html: rawHtml,
+        origin_id: row.dataset?.originId || '',
+        parent_id: parentId,
+        progress: Number.isNaN(progressValue) ? 0 : progressValue
+      };
+    }
+
+    function applyCreativeData(data, tree) {
+      if (!data) return;
+      const creativeId = data.id;
+      if (!creativeId) return;
+      form.action = `/creatives/${creativeId}`;
+      form.dataset.creativeId = creativeId;
+      const content = data.description_raw_html || data.description || '';
+      descriptionInput.value = content;
+      lexicalEditor.load(content, `creative-${creativeId}`);
+      pendingSave = false;
+      const progressNumber = Number(data.progress ?? 0);
+      const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
+      progressInput.value = normalizedProgress;
+      progressValue.textContent = formatProgressDisplay(progressInput.value);
+      const fallbackParent = tree?.dataset?.parentId || '';
+      parentInput.value = data.parent_id ?? fallbackParent ?? '';
+      beforeInput.value = '';
+      afterInput.value = '';
+      if (childInput) childInput.value = '';
+      const originId = data.origin_id || '';
+      if (linkBtn) linkBtn.style.display = originId ? 'none' : '';
+      if (unlinkBtn) unlinkBtn.style.display = originId ? '' : 'none';
+      const effectiveParent = parentInput.value;
+      if (unconvertBtn) unconvertBtn.style.display = effectiveParent ? '' : 'none';
+      lexicalEditor.focus();
+    }
+
     function siblingTreeRow(row, direction) {
       if (!row) return null;
       const step = direction === 'previous' ? 'previousSibling' : 'nextSibling';
@@ -458,7 +542,7 @@ function formatProgressDisplay(value) {
       tree.draggable = false;
       attachTemplate(tree);
       template.style.display = 'block';
-      loadCreative(tree.dataset.id);
+      loadCreative(tree);
     }
 
     function initializeEventListeners() {
@@ -605,17 +689,13 @@ function formatProgressDisplay(value) {
     }
 
     function refreshRow(tree) {
-      const id = tree.dataset.id;
+      if (!tree) return;
+      const id = tree.dataset?.id;
+      if (!id) return;
+      const rowEl = treeRowElement(tree);
       creativesApi.get(id)
         .then(data => {
-          const link = tree.querySelector('a.unstyled-link');
-          if (link) link.innerHTML = data.description || '';
-          const span = tree.querySelector('.creative-row-end span');
-          if (span) {
-            span.textContent = `${Math.round((data.progress || 0) * 100)}%`;
-            span.className = data.progress == 1 ?
-              'creative-progress-complete' : 'creative-progress-incomplete';
-          }
+          updateRowFromData(rowEl, data);
         });
     }
 
@@ -627,7 +707,7 @@ function formatProgressDisplay(value) {
       return creativesApi.loadChildren(url)
         .then(data => {
           const nodes = Array.isArray(data?.creatives) ? data.creatives : [];
-          renderCreativeTree(container, nodes);
+          renderCreativeTree(container, nodes, { replace: false });
           container.dataset.loaded = 'true';
           dispatchCreativeTreeUpdated(container);
         });
@@ -730,25 +810,19 @@ function formatProgressDisplay(value) {
       return finalizeHide();
     }
 
-    function loadCreative(id) {
+    function loadCreative(tree) {
+      if (!tree) return;
+      const id = tree.dataset?.id;
+      if (!id) return;
+      const inlineData = inlinePayloadFromTree(tree);
+      if (inlineData && inlineData.id) {
+        applyCreativeData(inlineData, tree);
+        return;
+      }
       creativesApi.get(id)
         .then(data => {
-          form.action = `/creatives/${data.id}`;
-          form.dataset.creativeId = data.id;
-          const content = data.description_raw_html || data.description || '';
-          descriptionInput.value = content;
-          lexicalEditor.load(content, `creative-${data.id}`);
-          pendingSave = false;
-          progressInput.value = data.progress || 0;
-          progressValue.textContent = formatProgressDisplay(progressInput.value);
-          parentInput.value = data.parent_id || '';
-          beforeInput.value = '';
-          afterInput.value = '';
-          if (childInput) childInput.value = '';
-          if (linkBtn) linkBtn.style.display = data.origin_id ? 'none' : '';
-          if (unlinkBtn) unlinkBtn.style.display = data.origin_id ? '' : 'none';
-          if (unconvertBtn) unconvertBtn.style.display = data.parent_id ? '' : 'none';
-          lexicalEditor.focus();
+          updateRowFromData(treeRowElement(tree), data);
+          applyCreativeData(data, tree);
         });
     }
 
@@ -782,7 +856,7 @@ function formatProgressDisplay(value) {
       attachTemplate(target);
       template.style.display = 'block';
       beforeNewOrMove(wasNew, prev, prevParent).then(() => {
-        loadCreative(target.dataset.id);
+        loadCreative(target);
       });
     }
 
