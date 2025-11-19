@@ -131,7 +131,7 @@
 
 .creative-row-start {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
 }
 
 .creative-loading-indicator {
@@ -213,7 +213,7 @@
     visibility: hidden;
     display: flex;
     align-items: center;
-    align-self: stretch;
+    align-self: flex-start;
 }
 
 .creative-row:hover .creative-row-actions {
@@ -290,7 +290,7 @@
 .creative-row {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
 }
 
 .creative-row.selected {
