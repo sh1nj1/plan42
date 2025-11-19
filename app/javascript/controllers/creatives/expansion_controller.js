@@ -114,20 +114,25 @@ export default class extends Controller {
   ensureLoaded(row, childrenDiv) {
     if (!childrenDiv) {
       row.hasChildren = false
+      row.loadingChildren = false
       return Promise.resolve(false)
     }
 
     if (childrenDiv.dataset.loaded === 'true') {
       const has = !!childrenDiv.querySelector('creative-tree-row')
       row.hasChildren = has
+      row.loadingChildren = false
       return Promise.resolve(has)
     }
 
     const url = childrenDiv.dataset.loadUrl
     if (!url) {
       row.hasChildren = false
+      row.loadingChildren = false
       return Promise.resolve(false)
     }
+
+    row.loadingChildren = true
 
     return fetch(url, { headers: { Accept: 'application/json' } })
       .then((response) => {
@@ -148,6 +153,9 @@ export default class extends Controller {
         row.hasChildren = false
         childrenDiv.dataset.loaded = 'true'
         return false
+      })
+      .finally(() => {
+        row.loadingChildren = false
       })
   }
 
