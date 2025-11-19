@@ -133,11 +133,11 @@ module Creatives
     end
 
     def edit_icon_html
-      @edit_icon_html ||= view_context.svg_tag("edit.svg", class: "icon-edit")
+      @edit_icon_html ||= view_context.svg_tag("edit.svg", className: "icon-edit")
     end
 
     def edit_off_icon_html
-      @edit_off_icon_html ||= view_context.svg_tag("edit-off.svg", class: "icon-edit")
+      @edit_off_icon_html ||= view_context.svg_tag("edit-off.svg", className: "icon-edit")
     end
 
     def origin_link_html_for(creative)
