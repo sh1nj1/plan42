@@ -9,6 +9,7 @@ export default class extends Controller {
 
   connect() {
     this.abortController = null
+    this.loadingIndicator = null
     this.load()
   }
 
@@ -26,6 +27,7 @@ export default class extends Controller {
       this.abortController.abort()
     }
     this.abortController = new AbortController()
+    this.showLoadingIndicator()
 
     fetch(this.urlValue, {
       headers: { Accept: 'application/json' },
@@ -36,11 +38,13 @@ export default class extends Controller {
         return response.json()
       })
       .then((data) => {
+        this.hideLoadingIndicator()
         this.renderData(data)
       })
       .catch((error) => {
         if (error.name === 'AbortError') return
         console.error(error)
+        this.hideLoadingIndicator()
         this.showEmptyState()
       })
   }
@@ -61,5 +65,31 @@ export default class extends Controller {
   showEmptyState() {
     const html = this.hasEmptyHtmlValue ? this.emptyHtmlValue : ''
     this.element.innerHTML = html
+  }
+
+  showLoadingIndicator() {
+    if (!this.loadingIndicator) {
+      const indicator = document.createElement('div')
+      indicator.className = 'creative-tree-loading-placeholder'
+      indicator.setAttribute('role', 'status')
+      indicator.setAttribute('aria-live', 'polite')
+      indicator.setAttribute('aria-label', 'Loading creatives')
+      indicator.innerHTML = `
+        <span class="creative-loading-indicator" aria-hidden="true">
+          <span class="creative-loading-dot">.</span>
+          <span class="creative-loading-dot">.</span>
+          <span class="creative-loading-dot">.</span>
+        </span>
+      `
+      this.loadingIndicator = indicator
+    }
+    this.element.innerHTML = ''
+    this.element.appendChild(this.loadingIndicator)
+  }
+
+  hideLoadingIndicator() {
+    if (this.loadingIndicator && this.loadingIndicator.parentNode === this.element) {
+      this.element.removeChild(this.loadingIndicator)
+    }
   }
 }

@@ -20,7 +20,8 @@ class CreativeTreeRow extends LitElement {
     editIconHtml: { state: true },
     editOffIconHtml: { state: true },
     originLinkHtml: { state: true },
-    isTitle: { type: Boolean, attribute: "is-title", reflect: true }
+    isTitle: { type: Boolean, attribute: "is-title", reflect: true },
+    loadingChildren: { type: Boolean, attribute: "loading-children", reflect: true }
   };
 
   constructor() {
@@ -42,6 +43,7 @@ class CreativeTreeRow extends LitElement {
     this.originLinkHtml = "";
     this.isTitle = false;
     this._templatesExtracted = false;
+    this.loadingChildren = false;
 
     this._toggleBtn = null;
     this._editBtn = null;
@@ -247,6 +249,7 @@ class CreativeTreeRow extends LitElement {
         <a class="unstyled-link" href=${this.linkUrl || "#"}>${unsafeHTML(this.descriptionHtml || "")}</a>
       </div>
     `;
+    const indicator = this.loadingChildren ? this._renderLoadingIndicator() : nothing;
 
     if (level <= BULLET_STARTING_LEVEL) {
       const headingClass = `indent${level}`;
@@ -254,20 +257,20 @@ class CreativeTreeRow extends LitElement {
         const headingLevel = Math.max(1, Math.min(level, 6));
         switch (headingLevel) {
           case 1:
-            return html`<h1 class=${headingClass}>${toggle}${content}</h1>`;
+            return html`<h1 class=${headingClass}>${toggle}${content}${indicator}</h1>`;
           case 2:
-            return html`<h2 class=${headingClass}>${toggle}${content}</h2>`;
+            return html`<h2 class=${headingClass}>${toggle}${content}${indicator}</h2>`;
           case 3:
-            return html`<h3 class=${headingClass}>${toggle}${content}</h3>`;
+            return html`<h3 class=${headingClass}>${toggle}${content}${indicator}</h3>`;
           case 4:
-            return html`<h4 class=${headingClass}>${toggle}${content}</h4>`;
+            return html`<h4 class=${headingClass}>${toggle}${content}${indicator}</h4>`;
           case 5:
-            return html`<h5 class=${headingClass}>${toggle}${content}</h5>`;
+            return html`<h5 class=${headingClass}>${toggle}${content}${indicator}</h5>`;
           default:
-            return html`<h6 class=${headingClass}>${toggle}${content}</h6>`;
+            return html`<h6 class=${headingClass}>${toggle}${content}${indicator}</h6>`;
         }
       }
-      return html`<div class=${headingClass}>${toggle}${content}</div>`;
+      return html`<div class=${headingClass}>${toggle}${content}${indicator}</div>`;
     }
 
     const margin = level > BULLET_STARTING_LEVEL
@@ -277,8 +280,23 @@ class CreativeTreeRow extends LitElement {
     const bullet = needsBullet ? html`<div class="creative-tree-bullet"></div>` : nothing;
     return html`
       <div class="creative-tree-li" style=${margin}>
-        ${toggle}${bullet}${content}
+        ${toggle}${bullet}${content}${indicator}
       </div>
+    `;
+  }
+
+  _renderLoadingIndicator() {
+    return html`
+      <span
+        class="creative-loading-indicator"
+        role="status"
+        aria-live="polite"
+        aria-label="Loading children"
+      >
+        <span class="creative-loading-dot" aria-hidden="true">.</span>
+        <span class="creative-loading-dot" aria-hidden="true">.</span>
+        <span class="creative-loading-dot" aria-hidden="true">.</span>
+      </span>
     `;
   }
 

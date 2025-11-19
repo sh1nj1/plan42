@@ -41,11 +41,11 @@ module Creatives
       label = Label.create!(owner: @user, name: "Tagged")
       Tag.create!(creative_id: child.id, label: label)
 
-      builder = build_tree_builder(tags: [label.id])
-      nodes = builder.build([parent])
+      builder = build_tree_builder(tags: [ label.id ])
+      nodes = builder.build([ parent ])
 
-      assert_equal [child.id], nodes.pluck(:id)
-      assert_equal [1], nodes.pluck(:level)
+      assert_equal [ child.id ], nodes.pluck(:id)
+      assert_equal [ 1 ], nodes.pluck(:level)
     end
 
     private
