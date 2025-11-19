@@ -200,6 +200,7 @@
     font-size: 14px;
     margin-right: 4px;
     visibility: hidden;
+    align-self: flex-start;
 }
 
 .add-creative-btn {
@@ -212,7 +213,7 @@
 .creative-row-actions {
     visibility: hidden;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     align-self: flex-start;
 }
 
@@ -291,6 +292,7 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    padding-top: 4px; /* keep buttons visually centered with the first line */
 }
 
 .creative-row.selected {
