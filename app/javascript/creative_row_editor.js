@@ -31,7 +31,12 @@ export function initializeCreativeRowEditor() {
     const levelDownBtn = document.getElementById('inline-level-down');
     const levelUpBtn = document.getElementById('inline-level-up');
     const deleteBtn = document.getElementById('inline-delete');
-    const deleteWithChildrenBtn = document.getElementById('inline-delete-with-children');
+    const deleteModal = document.getElementById('inline-delete-modal');
+    const deleteModalMessage = document.getElementById('inline-delete-message');
+    const deleteModalCancelBtn = document.getElementById('inline-delete-cancel');
+    const deleteModalOnlyBtn = document.getElementById('inline-delete-only-action');
+    const deleteModalWithChildrenBtn = document.getElementById('inline-delete-with-children-action');
+    const deleteModalCloseBtn = document.getElementById('close-inline-delete-modal');
     const linkBtn = document.getElementById('inline-link');
     const unlinkBtn = document.getElementById('inline-unlink');
     const unconvertBtn = document.getElementById('inline-unconvert');
@@ -66,15 +71,50 @@ export function initializeCreativeRowEditor() {
     let saving = false;
     let savePromise = Promise.resolve();
     let uploadsPending = false;
-let uploadCompletionPromise = null;
-let resolveUploadCompletion = null;
+    let uploadCompletionPromise = null;
+    let resolveUploadCompletion = null;
 
-function formatProgressDisplay(value) {
-  const numeric = Number(value);
-  if (Number.isNaN(numeric)) return '0%';
-  const percentage = Math.round(numeric * 100);
-  return `${percentage}%`;
-}
+    function formatProgressDisplay(value) {
+      const numeric = Number(value);
+      if (Number.isNaN(numeric)) return '0%';
+      const percentage = Math.round(numeric * 100);
+      return `${percentage}%`;
+    }
+
+    function extractPlainTextFromHtml(html) {
+      if (!html) return '';
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      return temp.textContent?.trim() || '';
+    }
+
+    function getCreativeNameForModal() {
+      const name = form.dataset.creativeName?.trim();
+      if (name) return name;
+      return deleteModalMessage?.dataset?.untitled || '';
+    }
+
+    function updateDeleteModalMessage() {
+      if (!deleteModalMessage) return;
+      const template = deleteModalMessage.dataset?.template || '';
+      const creativeName = getCreativeNameForModal();
+      deleteModalMessage.textContent = template.includes('%{creative}')
+        ? template.split('%{creative}').join(creativeName)
+        : `${creativeName}`;
+    }
+
+    function openDeleteModal() {
+      if (!deleteModal) return;
+      updateDeleteModalMessage();
+      deleteModal.style.display = 'flex';
+      document.body.classList.add('no-scroll');
+    }
+
+    function closeDeleteModal() {
+      if (!deleteModal) return;
+      deleteModal.style.display = 'none';
+      document.body.classList.remove('no-scroll');
+    }
 
     function treeRowElement(node) {
       return node && node.closest ? node.closest('creative-tree-row') : null;
@@ -737,6 +777,7 @@ function formatProgressDisplay(value) {
           form.dataset.creativeId = data.id;
           const content = data.description_raw_html || data.description || '';
           descriptionInput.value = content;
+          form.dataset.creativeName = extractPlainTextFromHtml(content) || '';
           lexicalEditor.load(content, `creative-${data.id}`);
           pendingSave = false;
           progressInput.value = data.progress || 0;
@@ -1079,6 +1120,7 @@ function formatProgressDisplay(value) {
           form.action = '/creatives';
           methodInput.value = '';
           form.dataset.creativeId = '';
+          form.dataset.creativeName = '';
           parentInput.value = parentId || '';
           beforeInput.value = beforeId || '';
           afterInput.value = afterId || '';
@@ -1120,6 +1162,7 @@ function formatProgressDisplay(value) {
 
     function onLexicalChange(html) {
       descriptionInput.value = html;
+      form.dataset.creativeName = extractPlainTextFromHtml(html) || '';
       scheduleSave();
     }
 
@@ -1283,24 +1326,58 @@ function formatProgressDisplay(value) {
     }
 
     if (deleteBtn) {
-      deleteBtn.addEventListener('click', function() {
-        if (confirm(deleteBtn.dataset.confirm)) deleteCurrent(false);
+      deleteBtn.addEventListener('click', function(event) {
+        event.preventDefault();
+        if (!form.dataset.creativeId) return;
+        openDeleteModal();
       });
     }
 
-      if (deleteWithChildrenBtn) {
-        deleteWithChildrenBtn.addEventListener('click', function() {
-          if (confirm(deleteWithChildrenBtn.dataset.confirm)) deleteCurrent(true);
-        });
-      }
+    if (deleteModalCancelBtn) {
+      deleteModalCancelBtn.addEventListener('click', function(event) {
+        event.preventDefault();
+        closeDeleteModal();
+      });
+    }
 
-      if (linkBtn) {
-        linkBtn.addEventListener('click', linkExistingCreative);
-      }
+    if (deleteModalCloseBtn) {
+      deleteModalCloseBtn.addEventListener('click', function(event) {
+        event.preventDefault();
+        closeDeleteModal();
+      });
+    }
 
-      if (linkSearchInput) {
-        linkSearchInput.addEventListener('input', searchLinkCreatives);
-      }
+    if (deleteModal) {
+      deleteModal.addEventListener('click', function(event) {
+        if (event.target === deleteModal) {
+          closeDeleteModal();
+        }
+      });
+    }
+
+    if (deleteModalOnlyBtn) {
+      deleteModalOnlyBtn.addEventListener('click', function(event) {
+        event.preventDefault();
+        closeDeleteModal();
+        deleteCurrent(false);
+      });
+    }
+
+    if (deleteModalWithChildrenBtn) {
+      deleteModalWithChildrenBtn.addEventListener('click', function(event) {
+        event.preventDefault();
+        closeDeleteModal();
+        deleteCurrent(true);
+      });
+    }
+
+    if (linkBtn) {
+      linkBtn.addEventListener('click', linkExistingCreative);
+    }
+
+    if (linkSearchInput) {
+      linkSearchInput.addEventListener('input', searchLinkCreatives);
+    }
 
       if (linkResults) {
         linkResults.addEventListener('click', handleLinkResultClick);
