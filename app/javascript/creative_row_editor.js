@@ -31,7 +31,11 @@ export function initializeCreativeRowEditor() {
     const levelDownBtn = document.getElementById('inline-level-down');
     const levelUpBtn = document.getElementById('inline-level-up');
     const deleteBtn = document.getElementById('inline-delete');
-    const deleteWithChildrenBtn = document.getElementById('inline-delete-with-children');
+    const deleteModal = document.getElementById('inline-delete-modal');
+    const deleteMessage = document.getElementById('inline-delete-message');
+    const deleteCancelBtn = document.getElementById('inline-delete-cancel');
+    const deleteOnlyConfirmBtn = document.getElementById('inline-delete-only-confirm');
+    const deleteWithChildrenConfirmBtn = document.getElementById('inline-delete-with-children-confirm');
     const linkBtn = document.getElementById('inline-link');
     const unlinkBtn = document.getElementById('inline-unlink');
     const unconvertBtn = document.getElementById('inline-unconvert');
@@ -74,6 +78,13 @@ function formatProgressDisplay(value) {
   if (Number.isNaN(numeric)) return '0%';
   const percentage = Math.round(numeric * 100);
   return `${percentage}%`;
+}
+
+function extractPlainTextFromHtml(html) {
+  if (!html) return '';
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  return (temp.textContent || '').replace(/\s+/g, ' ').trim();
 }
 
     function treeRowElement(node) {
@@ -1006,6 +1017,41 @@ function formatProgressDisplay(value) {
       });
     }
 
+    function getCurrentCreativeName() {
+      const inlineText = extractPlainTextFromHtml(descriptionInput?.value);
+      if (inlineText) return inlineText;
+      if (currentRowElement?.dataset?.descriptionHtml) {
+        const rowText = extractPlainTextFromHtml(currentRowElement.dataset.descriptionHtml);
+        if (rowText) return rowText;
+      }
+      return deleteModal?.dataset?.defaultName || '';
+    }
+
+    function formatDeleteMessage(name) {
+      if (!deleteModal) return '';
+      const placeholder = deleteModal.dataset?.namePlaceholder || '__NAME__';
+      const template = deleteModal.dataset?.messageTemplate || '';
+      const value = name || deleteModal.dataset?.defaultName || '';
+      if (!template) return value;
+      return template.split(placeholder).join(value);
+    }
+
+    function openDeleteModal() {
+      if (!deleteModal) return;
+      const creativeName = getCurrentCreativeName();
+      if (deleteMessage) {
+        deleteMessage.textContent = formatDeleteMessage(creativeName);
+      }
+      deleteModal.style.display = 'flex';
+      document.body.classList.add('no-scroll');
+    }
+
+    function closeDeleteModal() {
+      if (!deleteModal) return;
+      deleteModal.style.display = 'none';
+      document.body.classList.remove('no-scroll');
+    }
+
     function linkExistingCreative() {
       if (!currentTree || !form.dataset.creativeId || !linkModal || !linkSearchInput || !linkResults) return;
       linkModal.dataset.context = 'creative-link';
@@ -1364,15 +1410,37 @@ function formatProgressDisplay(value) {
 
     if (deleteBtn) {
       deleteBtn.addEventListener('click', function() {
-        if (confirm(deleteBtn.dataset.confirm)) deleteCurrent(false);
+        openDeleteModal();
       });
     }
 
-      if (deleteWithChildrenBtn) {
-        deleteWithChildrenBtn.addEventListener('click', function() {
-          if (confirm(deleteWithChildrenBtn.dataset.confirm)) deleteCurrent(true);
-        });
-      }
+    if (deleteOnlyConfirmBtn) {
+      deleteOnlyConfirmBtn.addEventListener('click', function() {
+        closeDeleteModal();
+        deleteCurrent(false);
+      });
+    }
+
+    if (deleteWithChildrenConfirmBtn) {
+      deleteWithChildrenConfirmBtn.addEventListener('click', function() {
+        closeDeleteModal();
+        deleteCurrent(true);
+      });
+    }
+
+    if (deleteCancelBtn) {
+      deleteCancelBtn.addEventListener('click', function() {
+        closeDeleteModal();
+      });
+    }
+
+    if (deleteModal) {
+      deleteModal.addEventListener('click', function(event) {
+        if (event.target === deleteModal) {
+          closeDeleteModal();
+        }
+      });
+    }
 
       if (linkBtn) {
         linkBtn.addEventListener('click', linkExistingCreative);

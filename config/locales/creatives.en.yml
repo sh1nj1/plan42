@@ -95,6 +95,12 @@ en:
       no_permission: "You do not have permission to perform this action."
     inline_editor:
       placeholder: "Describe the creative…"
+      delete_modal:
+        message: "Are you sure you want to delete \"__NAME__\"?"
+        default_name: "this Creative"
+        cancel: "Cancel"
+        delete_with_children: "Delete sub-creatives too"
+        delete_only_this: "Delete only this Creative"
     edit_title: "Edit creative"
     edit:
       inline_editor_only_html: "Editing creatives now happens directly in the inline editor."
