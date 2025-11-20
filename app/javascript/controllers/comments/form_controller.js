@@ -1,7 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 
 export default class extends Controller {
-  static targets = ['form', 'textarea', 'submit', 'privateCheckbox', 'cancel', 'moveButton', 'searchButton']
+  static targets = ['form', 'textarea', 'submit', 'privateCheckbox', 'cancel', 'moveButton', 'searchButton', 'voiceButton']
 
   connect() {
     this.creativeId = null
@@ -16,6 +16,11 @@ export default class extends Controller {
     this.handleCancel = this.handleCancel.bind(this)
     this.handleMoveClick = this.handleMoveClick.bind(this)
     this.handleSearch = this.handleSearch.bind(this)
+    this.handleVoiceToggle = this.handleVoiceToggle.bind(this)
+    this.handleRecognitionStart = this.handleRecognitionStart.bind(this)
+    this.handleRecognitionEnd = this.handleRecognitionEnd.bind(this)
+    this.handleRecognitionResult = this.handleRecognitionResult.bind(this)
+    this.handleRecognitionError = this.handleRecognitionError.bind(this)
 
     this.formTarget.addEventListener('submit', this.handleSubmit)
     this.submitTarget.addEventListener('click', this.handleSend)
@@ -24,6 +29,11 @@ export default class extends Controller {
     this.cancelTarget?.addEventListener('click', this.handleCancel)
     this.moveButtonTarget?.addEventListener('click', this.handleMoveClick)
     this.searchButtonTarget?.addEventListener('click', this.handleSearch)
+    this.voiceButtonTarget?.addEventListener('click', this.handleVoiceToggle)
+
+    this.recognition = null
+    this.listening = false
+    this.recognitionActive = false
 
     this.textareaTarget.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
@@ -40,6 +50,8 @@ export default class extends Controller {
     this.cancelTarget?.removeEventListener('click', this.handleCancel)
     this.moveButtonTarget?.removeEventListener('click', this.handleMoveClick)
     this.searchButtonTarget?.removeEventListener('click', this.handleSearch)
+    this.voiceButtonTarget?.removeEventListener('click', this.handleVoiceToggle)
+    this.teardownSpeechRecognition()
   }
 
   get listController() {
@@ -172,5 +184,117 @@ export default class extends Controller {
     const query = this.textareaTarget.value.trim()
     this.presenceController?.clearManualTypingMessage()
     this.listController?.applySearchQuery(query || null)
+  }
+
+  handleVoiceToggle(event) {
+    event.preventDefault()
+    if (this.listening) {
+      this.stopSpeechRecognition()
+    } else {
+      this.startSpeechRecognition()
+    }
+  }
+
+  setupSpeechRecognition() {
+    if (this.recognition) return true
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      alert(this.element.dataset.speechUnavailableText || 'Speech recognition not supported')
+      return false
+    }
+
+    this.recognition = new SpeechRecognition()
+    this.recognition.continuous = true
+    this.recognition.interimResults = false
+    this.recognition.lang = document.documentElement.lang || 'ko-KR'
+    this.recognition.addEventListener('start', this.handleRecognitionStart)
+    this.recognition.addEventListener('end', this.handleRecognitionEnd)
+    this.recognition.addEventListener('result', this.handleRecognitionResult)
+    this.recognition.addEventListener('error', this.handleRecognitionError)
+    return true
+  }
+
+  startSpeechRecognition() {
+    if (!this.setupSpeechRecognition()) return
+    if (this.listening) return
+
+    this.listening = true
+    this.tryStartRecognition()
+  }
+
+  stopSpeechRecognition() {
+    this.listening = false
+    if (this.recognitionActive) {
+      this.recognition.stop()
+    } else {
+      this.updateVoiceButton(false)
+    }
+  }
+
+  tryStartRecognition() {
+    if (!this.recognition || this.recognitionActive) return
+    try {
+      this.recognition.start()
+    } catch (error) {
+      this.handleRecognitionError(error)
+    }
+  }
+
+  handleRecognitionStart() {
+    this.recognitionActive = true
+    this.updateVoiceButton(true)
+  }
+
+  handleRecognitionEnd() {
+    this.recognitionActive = false
+    if (this.listening) {
+      this.tryStartRecognition()
+    } else {
+      this.updateVoiceButton(false)
+    }
+  }
+
+  handleRecognitionResult(event) {
+    const transcript = Array.from(event.results)
+      .map((result) => result[0]?.transcript)
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+
+    if (!transcript) return
+
+    const currentValue = this.textareaTarget.value
+    const needsSpace = currentValue && !currentValue.endsWith(' ')
+    this.textareaTarget.value = `${currentValue}${needsSpace ? ' ' : ''}${transcript}`
+    this.textareaTarget.dispatchEvent(new Event('input'))
+    this.focusTextarea()
+  }
+
+  handleRecognitionError() {
+    this.listening = false
+    this.recognitionActive = false
+    this.updateVoiceButton(false)
+    alert(this.element.dataset.speechErrorText || 'Unable to start voice input')
+  }
+
+  updateVoiceButton(active) {
+    if (!this.voiceButtonTarget) return
+    this.voiceButtonTarget.textContent = active
+      ? this.element.dataset.voiceStopText || '중지'
+      : this.element.dataset.voiceStartText || '음성'
+    this.voiceButtonTarget.classList.toggle('voice-input-active', active)
+  }
+
+  teardownSpeechRecognition() {
+    if (!this.recognition) return
+    this.listening = false
+    this.recognitionActive = false
+    this.recognition.removeEventListener('start', this.handleRecognitionStart)
+    this.recognition.removeEventListener('end', this.handleRecognitionEnd)
+    this.recognition.removeEventListener('result', this.handleRecognitionResult)
+    this.recognition.removeEventListener('error', this.handleRecognitionError)
+    this.recognition.stop()
+    this.recognition = null
   }
 }
