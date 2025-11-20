@@ -122,6 +122,7 @@
 .lexical-content-editable {
   min-height: 6rem;
   outline: none;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -136,6 +137,7 @@
 
 .lexical-paragraph {
   margin: 0 0 0.65rem 0;
+  line-height: 1.5;
 }
 
 .lexical-heading-h1,
@@ -164,6 +166,7 @@
 
 .lexical-list-item {
   margin: 0.35rem 0;
+  line-height: 1.5;
 }
 
 .lexical-link {
