@@ -4,10 +4,12 @@ class Comment < ApplicationRecord
   belongs_to :approver, class_name: "User", optional: true
   belongs_to :action_executed_by, class_name: "User", optional: true
 
+  has_many_attached :images, dependent: :purge_later
+
   before_validation :assign_default_user, on: :create
   before_save :apply_link_previews, if: :should_apply_link_previews?
 
-  validates :content, presence: true
+  validates :content, presence: true, unless: -> { images.attached? }
 
   after_create_commit :broadcast_create, :notify_write_users, :notify_mentions, :broadcast_badges
   after_update_commit :broadcast_update

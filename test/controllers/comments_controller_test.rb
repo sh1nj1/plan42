@@ -161,6 +161,22 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_nil comment.approver_id
   end
 
+  test "user can attach images to a comment" do
+    assert_difference -> { ActiveStorage::Attachment.where(record_type: "Comment").count }, 1 do
+      post creative_comments_path(@creative), params: {
+        comment: {
+          content: "",
+          images: [ fixture_file_upload(file_fixture("small.png"), "image/png") ]
+        }
+      }
+
+      assert_response :created
+    end
+
+    comment = @creative.comments.order(:id).last
+    assert comment.images.attached?
+  end
+
   test "commenters cannot set approval attributes when updating" do
     comment = @creative.comments.create!(content: "Needs approval", user: @user)
 

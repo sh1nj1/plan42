@@ -26,12 +26,15 @@
   <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>
   <div id="typing-indicator" data-comments--presence-target="typingIndicator"></div>
   <form id="new-comment-form" data-comments--popup-target="form" data-comments--form-target="form" style="display:none;">
-    <textarea class="shared-input-surface" name="comment[content]" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" required enterkeyhint="send"></textarea>
+    <textarea class="shared-input-surface" name="comment[content]" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" enterkeyhint="send"></textarea>
+    <input type="file" id="comment-images" name="comment[images][]" accept="image/*" multiple data-comments--form-target="imageInput" style="display:none;" />
     <label><input type="checkbox" id="comment-private" data-comments--form-target="privateCheckbox" data-comments--presence-target="privateCheckbox" name="comment[private]" /> <%= t('comments.private') %></label>
     <button class="creative-action-btn" type="submit" data-comments--form-target="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
     <button class="creative-action-btn" id="move-comments-btn" data-comments--form-target="moveButton" type="button" disabled><%= t('comments.move_button') %></button>
     <button class="creative-action-btn" id="search-comments-btn" data-comments--form-target="searchButton" type="button"><%= t('comments.search_button') %></button>
     <button class="creative-action-btn" id="voice-comments-btn" data-comments--form-target="voiceButton" type="button" data-voice-state="idle"><%= t('comments.voice_button') %></button>
+    <button class="creative-action-btn" id="attach-image-btn" data-comments--form-target="imageButton" type="button"><%= t('comments.image_button') %></button>
     <button class="creative-action-btn" id="cancel-edit-btn" data-comments--form-target="cancel" type="button" style="display:none;"><%= t('app.cancel') %></button>
+    <div class="comment-attachment-list" data-comments--form-target="attachmentList" aria-live="polite"></div>
   </form>
 </div>

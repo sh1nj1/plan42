@@ -14,6 +14,7 @@ class CommentsController < ApplicationController
       Current.user.id,
       Current.user.id
     )
+    scope = scope.with_attached_images
     if params[:search].present?
       search_term = ActiveRecord::Base.sanitize_sql_like(params[:search].to_s.strip.downcase)
       scope = scope.where("LOWER(comments.content) LIKE ?", "%#{search_term}%")
@@ -244,7 +245,7 @@ class CommentsController < ApplicationController
   end
 
   def comment_params
-    params.require(:comment).permit(:content, :private)
+    params.require(:comment).permit(:content, :private, images: [])
   end
 
   def broadcast_move_removal(comment, original_creative)

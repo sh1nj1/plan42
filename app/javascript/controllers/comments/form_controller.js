@@ -1,12 +1,25 @@
 import { Controller } from '@hotwired/stimulus'
 
 export default class extends Controller {
-  static targets = ['form', 'textarea', 'submit', 'privateCheckbox', 'cancel', 'moveButton', 'searchButton', 'voiceButton']
+  static targets = [
+    'form',
+    'textarea',
+    'submit',
+    'privateCheckbox',
+    'cancel',
+    'moveButton',
+    'searchButton',
+    'voiceButton',
+    'imageInput',
+    'imageButton',
+    'attachmentList',
+  ]
 
   connect() {
     this.creativeId = null
     this.editingId = null
     this.sending = false
+    this.cachedImageFiles = []
 
     this.handleSubmit = this.handleSubmit.bind(this)
     this.handleSend = this.handleSend.bind(this)
@@ -21,6 +34,10 @@ export default class extends Controller {
     this.handleRecognitionEnd = this.handleRecognitionEnd.bind(this)
     this.handleRecognitionResult = this.handleRecognitionResult.bind(this)
     this.handleRecognitionError = this.handleRecognitionError.bind(this)
+    this.handleImageButtonClick = this.handleImageButtonClick.bind(this)
+    this.handleImageChange = this.handleImageChange.bind(this)
+    this.handleDragOver = this.handleDragOver.bind(this)
+    this.handleDrop = this.handleDrop.bind(this)
 
     this.formTarget.addEventListener('submit', this.handleSubmit)
     this.submitTarget.addEventListener('click', this.handleSend)
@@ -31,6 +48,12 @@ export default class extends Controller {
     this.searchButtonTarget?.addEventListener('click', this.handleSearch)
     this.voiceButtonTarget?.addEventListener('click', this.handleVoiceToggle)
 
+    this.imageButtonTarget?.addEventListener('click', this.handleImageButtonClick)
+    this.imageInputTarget?.addEventListener('change', this.handleImageChange)
+    this.textareaTarget.addEventListener('dragover', this.handleDragOver)
+    this.textareaTarget.addEventListener('drop', this.handleDrop)
+
+
     this.recognition = null
     this.listening = false
     this.recognitionActive = false
@@ -40,6 +63,8 @@ export default class extends Controller {
         this.handleSend(event)
       }
     })
+
+    this.updateAttachmentList()
   }
 
   disconnect() {
@@ -52,6 +77,10 @@ export default class extends Controller {
     this.searchButtonTarget?.removeEventListener('click', this.handleSearch)
     this.voiceButtonTarget?.removeEventListener('click', this.handleVoiceToggle)
     this.teardownSpeechRecognition()
+    this.imageButtonTarget?.removeEventListener('click', this.handleImageButtonClick)
+    this.imageInputTarget?.removeEventListener('change', this.handleImageChange)
+    this.textareaTarget.removeEventListener('dragover', this.handleDragOver)
+    this.textareaTarget.removeEventListener('drop', this.handleDrop)
   }
 
   get listController() {
@@ -105,6 +134,9 @@ export default class extends Controller {
     this.submitTarget.innerHTML = this.defaultSubmitHTML
     if (this.cancelTarget) this.cancelTarget.style.display = 'none'
     this.presenceController?.clearManualTypingMessage()
+    this.cachedImageFiles = []
+    this.setImageFiles([])
+    this.updateAttachmentList()
   }
 
   handleSubmit(event) {
@@ -114,7 +146,9 @@ export default class extends Controller {
 
   handleSend(event) {
     event.preventDefault()
-    if (this.sending || !this.textareaTarget.value.trim() || !this.creativeId) return
+    const hasText = this.textareaTarget.value.trim().length > 0
+    const hasImages = this.currentImageFiles().length > 0
+    if (this.sending || (!hasText && !hasImages) || !this.creativeId) return
     this.sending = true
     this.presenceController?.stoppedTyping()
 
@@ -307,5 +341,78 @@ export default class extends Controller {
     this.recognition.removeEventListener('result', this.handleRecognitionResult)
     this.recognition.removeEventListener('error', this.handleRecognitionError)
     this.recognition = null
+  }
+
+  handleImageButtonClick(event) {
+    event.preventDefault()
+    this.cachedImageFiles = this.currentImageFiles()
+    this.imageInputTarget?.click()
+  }
+
+  handleImageChange() {
+    if (!this.imageInputTarget) return
+    const newFiles = Array.from(this.imageInputTarget.files || [])
+    const existingFiles = this.cachedImageFiles?.length ? this.cachedImageFiles : this.currentImageFiles()
+    this.setImageFiles([ ...existingFiles, ...newFiles ])
+    this.cachedImageFiles = []
+    this.updateAttachmentList()
+  }
+
+  handleDragOver(event) {
+    if (this.hasImageFromDataTransfer(event.dataTransfer)) {
+      event.preventDefault()
+    }
+  }
+
+  handleDrop(event) {
+    const imageFiles = this.extractImageFiles(event.dataTransfer)
+    if (!imageFiles.length) return
+    event.preventDefault()
+    this.setImageFiles([ ...this.currentImageFiles(), ...imageFiles ])
+    this.updateAttachmentList()
+  }
+
+  extractImageFiles(dataTransfer) {
+    if (!dataTransfer) return []
+    const files = Array.from(dataTransfer.files || []).filter((file) => file.type?.startsWith('image/'))
+    if (files.length > 0) return files
+    if (!dataTransfer.items) return []
+    return Array.from(dataTransfer.items)
+      .map((item) => (item.kind === 'file' ? item.getAsFile() : null))
+      .filter((file) => file && file.type?.startsWith('image/'))
+  }
+
+  hasImageFromDataTransfer(dataTransfer) {
+    return this.extractImageFiles(dataTransfer).length > 0
+  }
+
+  setImageFiles(files) {
+    if (!this.imageInputTarget) return
+    const dataTransfer = new DataTransfer()
+    files.forEach((file) => dataTransfer.items.add(file))
+    this.imageInputTarget.files = dataTransfer.files
+  }
+
+  currentImageFiles() {
+    if (!this.imageInputTarget) return []
+    return Array.from(this.imageInputTarget.files || [])
+  }
+
+  updateAttachmentList() {
+    if (!this.attachmentListTarget) return
+    const files = this.currentImageFiles()
+    this.attachmentListTarget.innerHTML = ''
+    if (!files.length) {
+      this.attachmentListTarget.style.display = 'none'
+      return
+    }
+
+    this.attachmentListTarget.style.display = ''
+    files.forEach((file) => {
+      const item = document.createElement('span')
+      item.className = 'comment-attachment-item'
+      item.textContent = file.name
+      this.attachmentListTarget.appendChild(item)
+    })
   }
 }
