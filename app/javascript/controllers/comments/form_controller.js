@@ -271,7 +271,7 @@ export default class extends Controller {
   handleRecognitionResult(event) {
     const latestResult = event.results[event.resultIndex]
     const transcript = Array.from(latestResult || [])
-      .map((result) => result[0]?.transcript)
+      .map((result) => result?.transcript)
       .filter(Boolean)
       .join(' ')
       .trim()
