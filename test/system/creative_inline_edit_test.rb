@@ -73,7 +73,11 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   end
 
   def attach_inline_image(file_path)
-    input = find("input[type='file'][accept='image/*']", visible: false, wait: 5)
+    input = inline_editor_container.find(
+      "input[type='file'][accept='image/*']",
+      visible: false,
+      wait: 5
+    )
     input.attach_file(file_path)
     assert_selector ".lexical-attachment", wait: 10
     assert_selector ".lexical-attachment.is-uploading", count: 0, wait: 10
