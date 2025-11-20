@@ -1,4 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
+import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 
 export default class extends Controller {
   static targets = [
@@ -172,14 +173,8 @@ export default class extends Controller {
       })
       .then((html) => {
         const wasEditing = this.editingId
-        const isPrivate = this.privateCheckboxTarget?.checked
         this.resetForm()
-        if (wasEditing) {
-          this.listController?.markCommentsRead()
-        } else if (isPrivate) {
-          const listElement = document.getElementById('comments_list')
-          if (listElement) listElement.insertAdjacentHTML('beforeend', html)
-        }
+        this.renderCommentHtml(html, { replaceExisting: wasEditing })
         this.listController?.scrollToBottom()
         this.listController?.updateStickiness()
         this.listController?.markCommentsRead()
@@ -434,5 +429,30 @@ export default class extends Controller {
       item.appendChild(removeButton)
       this.attachmentListTarget.appendChild(item)
     })
+  }
+
+  renderCommentHtml(html, { replaceExisting = false } = {}) {
+    const listElement = document.getElementById('comments_list')
+    if (!listElement || !html) return
+
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(html, 'text/html')
+    const commentElement = doc.querySelector('.comment-item')
+    if (!commentElement) return
+
+    const placeholder = listElement.querySelector('#no-comments')
+    if (placeholder) placeholder.remove()
+
+    const existing = listElement.querySelector(`#${commentElement.id}`)
+    if (existing) {
+      existing.replaceWith(commentElement)
+    } else {
+      listElement.appendChild(commentElement)
+    }
+
+    renderMarkdownInContainer(commentElement)
+    if (replaceExisting) {
+      this.listController?.markCommentsRead()
+    }
   }
 }
