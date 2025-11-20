@@ -152,6 +152,8 @@ export default class extends Controller {
     this.sending = true
     this.presenceController?.stoppedTyping()
 
+    const wasPrivate = this.privateCheckboxTarget?.checked ?? false
+
     const formData = new FormData(this.formTarget)
     let url = `/creatives/${this.creativeId}/comments`
     let method = 'POST'
@@ -174,7 +176,11 @@ export default class extends Controller {
       .then((html) => {
         const wasEditing = this.editingId
         this.resetForm()
-        this.renderCommentHtml(html, { replaceExisting: wasEditing })
+        if (wasPrivate || wasEditing) {
+          this.renderCommentHtml(html, { replaceExisting: wasEditing })
+        } else {
+          this.removePlaceholder()
+        }
         this.listController?.scrollToBottom()
         this.listController?.updateStickiness()
         this.listController?.markCommentsRead()
@@ -440,8 +446,7 @@ export default class extends Controller {
     const commentElement = doc.querySelector('.comment-item')
     if (!commentElement) return
 
-    const placeholder = listElement.querySelector('#no-comments')
-    if (placeholder) placeholder.remove()
+    this.removePlaceholder()
 
     const existing = listElement.querySelector(`#${commentElement.id}`)
     if (existing) {
@@ -454,5 +459,11 @@ export default class extends Controller {
     if (replaceExisting) {
       this.listController?.markCommentsRead()
     }
+  }
+
+  removePlaceholder() {
+    const listElement = document.getElementById('comments_list')
+    const placeholder = listElement?.querySelector('#no-comments')
+    if (placeholder) placeholder.remove()
   }
 }
