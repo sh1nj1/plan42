@@ -14,7 +14,11 @@ class CommentsController < ApplicationController
       Current.user.id,
       Current.user.id
     )
-                              .order(created_at: :desc)
+    if params[:search].present?
+      search_term = ActiveRecord::Base.sanitize_sql_like(params[:search].to_s.strip)
+      scope = scope.where("comments.content ILIKE ?", "%#{search_term}%")
+    end
+    scope = scope.order(created_at: :desc)
     @comments = scope.offset((page - 1) * per_page).limit(per_page).to_a
     pointer = CommentReadPointer.find_by(user: Current.user, creative: @creative)
     last_read_comment_id = pointer&.last_read_comment_id

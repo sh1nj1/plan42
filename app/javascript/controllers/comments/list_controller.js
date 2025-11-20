@@ -60,8 +60,9 @@ export default class extends Controller {
     this.currentPage = 1
     this.allLoaded = false
     this.movingComments = false
+    this.manualSearchQuery = null
     this.listTarget.innerHTML = this.element.dataset.loadingText
-    this.clearSearchFilter()
+    this.presenceController?.clearManualTypingMessage()
     this.loadInitialComments()
   }
 
@@ -94,10 +95,11 @@ export default class extends Controller {
     this.currentPage = 1
     this.allLoaded = false
     this.loadingMore = false
+    this.selection.clear()
+    this.notifySelectionChange()
+    this.listTarget.innerHTML = this.element.dataset.loadingText
     this.fetchCommentsPage(1).then((html) => {
       this.listTarget.innerHTML = html
-      this.selection.clear()
-      this.notifySelectionChange()
       renderMarkdownInContainer(this.listTarget)
       this.popupController?.updatePosition()
       this.scrollToBottom()
@@ -133,7 +135,11 @@ export default class extends Controller {
   }
 
   fetchCommentsPage(page) {
-    return fetch(`/creatives/${this.creativeId}/comments?page=${page}`).then((response) => response.text())
+    const params = new URLSearchParams({ page })
+    if (this.manualSearchQuery) {
+      params.set('search', this.manualSearchQuery)
+    }
+    return fetch(`/creatives/${this.creativeId}/comments?${params.toString()}`).then((response) => response.text())
   }
 
   highlightComment(commentId) {
@@ -500,37 +506,12 @@ export default class extends Controller {
       })
   }
 
-  filterCommentsByQuery(query) {
-    if (!query) {
-      this.clearSearchFilter()
-      this.presenceController?.setManualTypingMessage(this.element.dataset.searchEmptyText)
-      return 0
+  applySearchQuery(query) {
+    this.manualSearchQuery = query
+    this.loadInitialComments()
+    if (this.listTarget) {
+      this.listTarget.scrollTo({ top: 0 })
     }
-    const normalized = query.toLowerCase()
-    let matches = 0
-    this.listTarget.querySelectorAll('.comment-item').forEach((item) => {
-      const contentEl = item.querySelector('.comment-content')
-      const text = contentEl ? contentEl.textContent || '' : item.textContent || ''
-      if (text.toLowerCase().includes(normalized)) {
-        item.style.display = ''
-        matches += 1
-      } else {
-        item.style.display = 'none'
-      }
-    })
-    if (matches === 0) {
-      this.presenceController?.setManualTypingMessage(this.element.dataset.searchEmptyText)
-    } else {
-      this.presenceController?.clearManualTypingMessage()
-    }
-    return matches
-  }
-
-  clearSearchFilter() {
-    this.listTarget.querySelectorAll('.comment-item').forEach((item) => {
-      item.style.display = ''
-    })
-    this.presenceController?.clearManualTypingMessage()
   }
 
   observeListMutations() {

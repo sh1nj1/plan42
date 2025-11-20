@@ -92,7 +92,6 @@ export default class extends Controller {
     this.submitTarget.innerHTML = this.defaultSubmitHTML
     if (this.cancelTarget) this.cancelTarget.style.display = 'none'
     this.presenceController?.clearManualTypingMessage()
-    this.listController?.clearSearchFilter()
   }
 
   handleSubmit(event) {
@@ -171,13 +170,7 @@ export default class extends Controller {
   handleSearch(event) {
     event.preventDefault()
     const query = this.textareaTarget.value.trim()
-    if (!query) {
-      this.listController?.clearSearchFilter()
-      this.presenceController?.setManualTypingMessage(this.element.dataset.searchEmptyText)
-      return
-    }
     this.presenceController?.clearManualTypingMessage()
-    this.listController?.filterCommentsByQuery(query)
-    this.listController?.listTarget.scrollTo({ top: 0 })
+    this.listController?.applySearchQuery(query || null)
   }
 }
