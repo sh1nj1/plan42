@@ -15,8 +15,8 @@ class CommentsController < ApplicationController
       Current.user.id
     )
     if params[:search].present?
-      search_term = ActiveRecord::Base.sanitize_sql_like(params[:search].to_s.strip)
-      scope = scope.where("comments.content ILIKE ?", "%#{search_term}%")
+      search_term = ActiveRecord::Base.sanitize_sql_like(params[:search].to_s.strip.downcase)
+      scope = scope.where("LOWER(comments.content) LIKE ?", "%#{search_term}%")
     end
     scope = scope.order(created_at: :desc)
     @comments = scope.offset((page - 1) * per_page).limit(per_page).to_a
