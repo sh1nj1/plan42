@@ -226,11 +226,19 @@ export default class extends Controller {
 
   stopSpeechRecognition() {
     this.listening = false
-    if (this.recognitionActive) {
-      this.recognition.stop()
-    } else {
-      this.updateVoiceButton(false)
+    if (this.recognition) {
+      if (this.recognitionActive) {
+        this.recognition.stop()
+      } else {
+        if (this.recognition.abort) this.recognition.abort()
+        try {
+          this.recognition.stop()
+        } catch (error) {
+          // ignore invalid state errors from stopping before start
+        }
+      }
     }
+    this.updateVoiceButton(false)
   }
 
   tryStartRecognition() {
@@ -244,6 +252,10 @@ export default class extends Controller {
 
   handleRecognitionStart() {
     this.recognitionActive = true
+    if (!this.listening) {
+      this.recognition.stop()
+      return
+    }
     this.updateVoiceButton(true)
   }
 
@@ -257,7 +269,8 @@ export default class extends Controller {
   }
 
   handleRecognitionResult(event) {
-    const transcript = Array.from(event.results)
+    const latestResult = event.results[event.resultIndex]
+    const transcript = Array.from(latestResult || [])
       .map((result) => result[0]?.transcript)
       .filter(Boolean)
       .join(' ')
