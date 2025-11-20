@@ -47,7 +47,6 @@ en:
     voice_button: "Voice"
     voice_stop: "Stop"
     speech_unavailable: "Speech recognition is not supported in this browser."
-    speech_error: "Unable to start voice input."
     move_button: "Move message"
     move_no_selection: "Select at least one message to move."
     move_error: "Unable to move messages."
