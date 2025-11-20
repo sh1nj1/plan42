@@ -27,6 +27,11 @@
     <label><input type="checkbox" id="comment-private" data-comments--form-target="privateCheckbox" data-comments--presence-target="privateCheckbox" name="comment[private]" /> <%= t('comments.private') %></label>
     <button class="creative-action-btn" type="submit" data-comments--form-target="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
     <button class="creative-action-btn" id="move-comments-btn" data-comments--form-target="moveButton" type="button" disabled><%= t('comments.move_button') %></button>
+    <button class="creative-action-btn" id="voice-input-btn" data-comments--form-target="voiceButton" type="button"
+            data-text-voice="<%= t('comments.voice_button') %>"
+            data-text-stop="<%= t('comments.voice_stop') %>">
+      <%= t('comments.voice_button') %>
+    </button>
     <button class="creative-action-btn" id="search-comments-btn" data-comments--form-target="searchButton" type="button"><%= t('comments.search_button') %></button>
     <button class="creative-action-btn" id="cancel-edit-btn" data-comments--form-target="cancel" type="button" style="display:none;"><%= t('app.cancel') %></button>
   </form>

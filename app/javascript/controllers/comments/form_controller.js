@@ -1,7 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 
 export default class extends Controller {
-  static targets = ['form', 'textarea', 'submit', 'privateCheckbox', 'cancel', 'moveButton', 'searchButton']
+  static targets = ['form', 'textarea', 'submit', 'privateCheckbox', 'cancel', 'moveButton', 'searchButton', 'voiceButton']
 
   connect() {
     this.creativeId = null
@@ -24,6 +24,7 @@ export default class extends Controller {
     this.cancelTarget?.addEventListener('click', this.handleCancel)
     this.moveButtonTarget?.addEventListener('click', this.handleMoveClick)
     this.searchButtonTarget?.addEventListener('click', this.handleSearch)
+    this.voiceButtonTarget?.addEventListener('click', this.handleVoice)
 
     this.textareaTarget.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
@@ -40,6 +41,8 @@ export default class extends Controller {
     this.cancelTarget?.removeEventListener('click', this.handleCancel)
     this.moveButtonTarget?.removeEventListener('click', this.handleMoveClick)
     this.searchButtonTarget?.removeEventListener('click', this.handleSearch)
+    this.voiceButtonTarget?.removeEventListener('click', this.handleVoice)
+    this.stopRecognition()
   }
 
   get listController() {
@@ -172,5 +175,72 @@ export default class extends Controller {
     const query = this.textareaTarget.value.trim()
     this.presenceController?.clearManualTypingMessage()
     this.listController?.applySearchQuery(query || null)
+  }
+
+  handleVoice = (event) => {
+    event.preventDefault()
+
+    if (this.recognition) {
+      this.stopRecognition()
+      return
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported in this browser.')
+      return
+    }
+
+    this.recognition = new SpeechRecognition()
+    this.recognition.continuous = true
+    this.recognition.interimResults = true
+    this.recognition.lang = document.documentElement.lang || 'ko-KR'
+
+    this.recognition.onstart = () => {
+      this.voiceButtonTarget.textContent = this.voiceButtonTarget.dataset.textStop
+      this.voiceButtonTarget.style.backgroundColor = '#4CAF50' // Green background
+      this.voiceButtonTarget.style.color = 'white'
+    }
+
+    this.recognition.onend = () => {
+      this.stopRecognition()
+    }
+
+    this.recognition.onresult = (event) => {
+      let finalTranscript = ''
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript
+        }
+      }
+
+      if (finalTranscript) {
+        const currentVal = this.textareaTarget.value
+        // Add space if there is existing content and it doesn't end with whitespace
+        const prefix = currentVal && !/\s$/.test(currentVal) ? ' ' : ''
+        this.textareaTarget.value = currentVal + prefix + finalTranscript
+        this.textareaTarget.scrollTop = this.textareaTarget.scrollHeight
+        this.textareaTarget.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    }
+
+    this.recognition.onerror = (event) => {
+      console.error('Speech recognition error', event.error)
+      this.stopRecognition()
+    }
+
+    this.recognition.start()
+  }
+
+  stopRecognition() {
+    if (this.recognition) {
+      this.recognition.stop()
+      this.recognition = null
+    }
+    if (this.voiceButtonTarget) {
+      this.voiceButtonTarget.textContent = this.voiceButtonTarget.dataset.textVoice
+      this.voiceButtonTarget.style.backgroundColor = ''
+      this.voiceButtonTarget.style.color = ''
+    }
   }
 }

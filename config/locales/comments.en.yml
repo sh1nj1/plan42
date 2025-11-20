@@ -42,6 +42,8 @@ en:
     convert_system_message: "System: Comment was converted to the [%{title}](%{url}) creative."
     convert_system_message_default_title: "Untitled"
     system_user: "System"
+    voice_button: "Voice"
+    voice_stop: "Stop"
     search_button: "Search"
     search_empty_prompt: "Please enter a search term in the chat message field."
     move_button: "Move message"
