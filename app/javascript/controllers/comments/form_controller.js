@@ -302,13 +302,11 @@ export default class extends Controller {
 
   teardownSpeechRecognition() {
     if (!this.recognition) return
-    this.listening = false
-    this.recognitionActive = false
+    this.stopSpeechRecognition()
     this.recognition.removeEventListener('start', this.handleRecognitionStart)
     this.recognition.removeEventListener('end', this.handleRecognitionEnd)
     this.recognition.removeEventListener('result', this.handleRecognitionResult)
     this.recognition.removeEventListener('error', this.handleRecognitionError)
-    this.recognition.stop()
     this.recognition = null
   }
 }
