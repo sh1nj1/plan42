@@ -36,11 +36,16 @@ class CommentsController < ApplicationController
   end
 
   def create
-    @comment = @creative.comments.build(comment_params)
-    @comment.user = Current.user
     unless @creative.has_permission?(Current.user, :feedback)
       render json: { error: I18n.t("comments.no_permission") }, status: :forbidden and return
     end
+
+    comment_attributes = comment_params.except(:images)
+    image_attachments = comment_params[:images]
+
+    @comment = @creative.comments.build(comment_attributes)
+    @comment.user = Current.user
+    @comment.images.attach(image_attachments) if image_attachments.present?
     response = Comments::CommandProcessor.new(comment: @comment, user: Current.user).call
     @comment.content = "#{@comment.content}\n\n#{response}" if response.present?
     if @comment.save
