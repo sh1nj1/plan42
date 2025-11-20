@@ -216,13 +216,25 @@
 }
 
 .comment-attachment-item {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
     background: var(--color-section-bg);
     border: 1px solid var(--color-border);
     border-radius: 4px;
     padding: 0.2em 0.4em;
     margin-right: 0.25em;
     margin-top: 0.2em;
+}
+
+.comment-attachment-remove {
+    border: none;
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+    font-size: 1em;
+    line-height: 1;
+    padding: 0 0.1em;
 }
 
 .comment-attachments {

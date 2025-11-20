@@ -123,6 +123,7 @@ export default class extends Controller {
       this.privateCheckboxTarget.checked = !!isPrivate
       this.privateCheckboxTarget.dispatchEvent(new Event('change'))
     }
+    this.clearImageAttachments()
     this.submitTarget.textContent = this.element.dataset.updateCommentText
     if (this.cancelTarget) this.cancelTarget.style.display = ''
     this.focusTextarea()
@@ -134,9 +135,7 @@ export default class extends Controller {
     this.submitTarget.innerHTML = this.defaultSubmitHTML
     if (this.cancelTarget) this.cancelTarget.style.display = 'none'
     this.presenceController?.clearManualTypingMessage()
-    this.cachedImageFiles = []
-    this.setImageFiles([])
-    this.updateAttachmentList()
+    this.clearImageAttachments()
   }
 
   handleSubmit(event) {
@@ -398,6 +397,18 @@ export default class extends Controller {
     return Array.from(this.imageInputTarget.files || [])
   }
 
+  clearImageAttachments() {
+    this.cachedImageFiles = []
+    this.setImageFiles([])
+    this.updateAttachmentList()
+  }
+
+  removeImageAttachment(index) {
+    const files = this.currentImageFiles().filter((_, fileIndex) => fileIndex !== index)
+    this.setImageFiles(files)
+    this.updateAttachmentList()
+  }
+
   updateAttachmentList() {
     if (!this.attachmentListTarget) return
     const files = this.currentImageFiles()
@@ -408,10 +419,19 @@ export default class extends Controller {
     }
 
     this.attachmentListTarget.style.display = ''
-    files.forEach((file) => {
+    files.forEach((file, index) => {
       const item = document.createElement('span')
       item.className = 'comment-attachment-item'
       item.textContent = file.name
+
+      const removeButton = document.createElement('button')
+      removeButton.type = 'button'
+      removeButton.className = 'comment-attachment-remove'
+      removeButton.setAttribute('aria-label', `Remove ${file.name}`)
+      removeButton.textContent = '×'
+      removeButton.addEventListener('click', () => this.removeImageAttachment(index))
+
+      item.appendChild(removeButton)
       this.attachmentListTarget.appendChild(item)
     })
   }
