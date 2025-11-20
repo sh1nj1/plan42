@@ -194,6 +194,13 @@
     flex-shrink: 0;
 }
 
+.voice-input-active {
+    background-color: #2ecc71;
+    color: #ffffff;
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+
 .creative-toggle-btn {
     width: 16px;
     height: 16px;
