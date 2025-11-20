@@ -10,6 +10,7 @@ class Comment < ApplicationRecord
   before_save :apply_link_previews, if: :should_apply_link_previews?
 
   validates :content, presence: true, unless: -> { images.attached? }
+  validate :images_must_be_images
 
   after_create_commit :broadcast_create, :notify_write_users, :notify_mentions, :broadcast_badges
   after_update_commit :broadcast_update
@@ -130,6 +131,16 @@ class Comment < ApplicationRecord
     self.content = CommentLinkFormatter.new(content).format
   rescue StandardError => e
     Rails.logger.warn("Comment link preview formatting failed: #{e.class} #{e.message}")
+  end
+
+  def images_must_be_images
+    return unless images.attached?
+
+    invalid_images = images.reject { |image| image.blob&.content_type&.start_with?("image/") }
+    return if invalid_images.empty?
+
+    errors.add(:images, "must be an image")
+    invalid_images.each(&:purge)
   end
 
   def self.broadcast_badges(creative)
