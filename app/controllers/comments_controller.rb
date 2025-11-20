@@ -47,6 +47,7 @@ class CommentsController < ApplicationController
       if @comment.content.match?(/\A@gemini\b/i)
         Comments::GeminiResponderJob.perform_later(@comment.id, @creative.id)
       end
+      @comment = Comment.with_attached_images.find(@comment.id)
       render partial: "comments/comment", locals: { comment: @comment }, status: :created
     else
       render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
@@ -56,6 +57,7 @@ class CommentsController < ApplicationController
   def update
     if @comment.user == Current.user
       if @comment.update(comment_params)
+        @comment = Comment.with_attached_images.find(@comment.id)
         render partial: "comments/comment", locals: { comment: @comment }
       else
         render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
