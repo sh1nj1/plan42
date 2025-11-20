@@ -20,7 +20,7 @@ export default class extends Controller {
     this.creativeId = null
     this.editingId = null
     this.sending = false
-    this.cachedImageFiles = []
+    this.cachedImageFiles = null
 
     this.handleSubmit = this.handleSubmit.bind(this)
     this.handleSend = this.handleSend.bind(this)
@@ -346,9 +346,9 @@ export default class extends Controller {
   handleImageChange() {
     if (!this.imageInputTarget) return
     const newFiles = Array.from(this.imageInputTarget.files || [])
-    const existingFiles = this.cachedImageFiles?.length ? this.cachedImageFiles : this.currentImageFiles()
+    const existingFiles = this.cachedImageFiles ?? []
     this.setImageFiles([ ...existingFiles, ...newFiles ])
-    this.cachedImageFiles = []
+    this.cachedImageFiles = null
     this.updateAttachmentList()
   }
 
@@ -393,7 +393,7 @@ export default class extends Controller {
   }
 
   clearImageAttachments() {
-    this.cachedImageFiles = []
+    this.cachedImageFiles = null
     this.setImageFiles([])
     this.updateAttachmentList()
   }
