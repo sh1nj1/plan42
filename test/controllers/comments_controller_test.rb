@@ -177,6 +177,22 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert comment.images.attached?
   end
 
+  test "rejects non-image attachments on comments" do
+    assert_no_difference [ "Comment.count", "ActiveStorage::Attachment.count", "ActiveStorage::Blob.count" ] do
+      post creative_comments_path(@creative), params: {
+        comment: {
+          content: "",
+          images: [ fixture_file_upload(file_fixture("invalid.txt"), "text/plain") ]
+        }
+      }
+
+      assert_response :unprocessable_entity
+    end
+
+    errors = JSON.parse(@response.body)["errors"]
+    assert_includes errors, "Images must be an image"
+  end
+
   test "commenters cannot set approval attributes when updating" do
     comment = @creative.comments.create!(content: "Needs approval", user: @user)
 
