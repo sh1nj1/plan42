@@ -57,8 +57,14 @@
     <div class="comment-attachments">
       <% comment.images.each do |image| %>
         <% preview_image = image.variable? ? image.variant(resize_to_limit: [ 800, 800 ]) : image %>
-        <%= link_to url_for(image, only_path: true), target: '_blank', rel: 'noopener', class: 'comment-attachment-link' do %>
-          <%= image_tag url_for(preview_image, only_path: true), class: 'comment-attachment-image', alt: '', loading: 'lazy' %>
+        <% preview_image_path =
+             if preview_image.respond_to?(:processed)
+               rails_representation_path(preview_image, only_path: true)
+             else
+               rails_blob_path(preview_image, only_path: true)
+             end %>
+        <%= link_to rails_blob_path(image, only_path: true), target: '_blank', rel: 'noopener', class: 'comment-attachment-link' do %>
+          <%= image_tag preview_image_path, class: 'comment-attachment-image', alt: '', loading: 'lazy' %>
         <% end %>
       <% end %>
     </div>
