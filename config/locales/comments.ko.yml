@@ -43,6 +43,7 @@ ko:
     convert_system_message_default_title: "제목 없음"
     system_user: "System"
     search_button: "검색"
+    image_button: "이미지"
     search_empty_prompt: "검색어 를 채팅 메세지 입력폼에 입력하시오"
     voice_button: "음성"
     voice_stop: "중지"

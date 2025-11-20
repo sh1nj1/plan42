@@ -53,6 +53,16 @@
     </div>
   </div>
   <div class="comment-content"><%= comment.content %></div>
+  <% if comment.images.attached? %>
+    <div class="comment-attachments">
+      <% comment.images.each do |image| %>
+        <% preview_image = image.variable? ? image.variant(resize_to_limit: [ 800, 800 ]) : image %>
+        <%= link_to url_for(image), target: '_blank', rel: 'noopener', class: 'comment-attachment-link' do %>
+          <%= image_tag preview_image, class: 'comment-attachment-image', alt: '', loading: 'lazy' %>
+        <% end %>
+      <% end %>
+    </div>
+  <% end %>
   <% if comment.action.present? %>
     <div class="comment-action-block" data-comment-id="<%= comment.id %>">
       <details class="comment-action-details">
