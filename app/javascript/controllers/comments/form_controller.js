@@ -289,7 +289,6 @@ export default class extends Controller {
     this.listening = false
     this.recognitionActive = false
     this.updateVoiceButton(false)
-    alert(this.element.dataset.speechErrorText || 'Unable to start voice input')
   }
 
   updateVoiceButton(active) {
