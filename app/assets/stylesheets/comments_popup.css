@@ -154,6 +154,7 @@
 
 #move-comments-btn,
 #search-comments-btn,
+#voice-comments-btn,
 #cancel-edit-btn,
 #new-comment-form button[type="submit"] {
     margin-top: 0.5em;
@@ -161,6 +162,7 @@
 
 #move-comments-btn,
 #search-comments-btn,
+#voice-comments-btn,
 #cancel-edit-btn {
     float: right;
     margin-right: 0.5em;
