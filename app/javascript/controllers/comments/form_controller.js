@@ -73,6 +73,7 @@ export default class extends Controller {
   }
 
   onPopupClosed() {
+    this.stopSpeechRecognition()
     this.resetForm()
   }
 
