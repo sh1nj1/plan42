@@ -89,6 +89,68 @@ module Github
       assert_equal suggestion.parent_id, create_action["parent_id"]
     end
 
+    test "scopes analysis and actions to linked creative subtree" do
+      user = users(:one)
+      root = Creative.create!(user: user, description: "Root")
+      linked = Creative.create!(user: user, parent: root, description: "Linked")
+      linked_child = Creative.create!(user: user, parent: linked, description: "Linked Child")
+      Creative.create!(user: user, parent: root, description: "Sibling")
+      account = GithubAccount.create!(user: user, github_uid: "2", login: "scoped", token: "token")
+      GithubRepositoryLink.create!(creative: linked, github_account: account, repository_full_name: "org/repo2")
+
+      payload = {
+        "action" => "closed",
+        "pull_request" => {
+          "title" => "Scoped PR",
+          "number" => 21,
+          "html_url" => "https://github.com/org/repo2/pull/21",
+          "body" => "Implements scoped feature",
+          "merged" => true
+        },
+        "repository" => { "full_name" => "org/repo2" }
+      }
+
+      completed_task = Github::PullRequestAnalyzer::CompletedTask.new(
+        creative_id: linked_child.id,
+        progress: 0.5,
+        path: "Linked > Linked Child"
+      )
+
+      result = Github::PullRequestAnalyzer::Result.new(
+        completed: [ completed_task ],
+        additional: [],
+        raw_response: "{}",
+        prompt: "prompt"
+      )
+
+      captured_paths = nil
+      fake_analyzer = Minitest::Mock.new
+      fake_analyzer.expect(:call, result)
+      fake_client = Minitest::Mock.new
+      fake_client.expect(:pull_request_commit_messages, [], [ "org/repo2", 21 ])
+      fake_client.expect(:pull_request_diff, "", [ "org/repo2", 21 ])
+
+      Github::Client.stub(:new, ->(_) { fake_client }) do
+        Github::PullRequestAnalyzer.stub(:new, ->(**kwargs) { captured_paths = kwargs[:paths]; fake_analyzer }) do
+          Github::PullRequestProcessor.new(payload: payload).call
+        end
+      end
+
+      fake_analyzer.verify
+      fake_client.verify
+
+      assert_equal(
+        Creatives::PathExporter.new(linked, use_effective_origin: false).full_paths_with_ids_and_progress_with_leaf,
+        captured_paths
+      )
+
+      comment = linked.comments.last
+      assert_equal linked, comment.creative
+      action_payload = JSON.parse(comment.action)
+      update_action = action_payload["actions"].first
+      assert_equal linked_child.id, update_action["creative_id"]
+    end
+
     test "ignores unmerged pull requests" do
       user = users(:one)
       creative = Creative.create!(user: user, description: "Root")

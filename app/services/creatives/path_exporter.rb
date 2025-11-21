@@ -12,8 +12,8 @@ module Creatives
       keyword_init: true
     )
 
-    def initialize(creative)
-      @creative = creative.effective_origin
+    def initialize(creative, use_effective_origin: true)
+      @creative = use_effective_origin ? creative.effective_origin : creative
     end
 
     def paths

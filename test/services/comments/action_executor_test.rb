@@ -177,6 +177,33 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
     assert_equal I18n.t("comments.approve_invalid_creative"), error.message
   end
 
+  test "rejects actions outside the linked creative subtree" do
+    root = Creative.create!(user: @user, description: "Root")
+    linked = Creative.create!(user: @user, parent: root, description: "Linked")
+    sibling = Creative.create!(user: @user, parent: root, description: "Sibling")
+
+    action_payload = {
+      "action" => "update_creative",
+      "creative_id" => sibling.id,
+      "attributes" => { "progress" => 0.5 }
+    }
+
+    comment = linked.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate(action_payload),
+      approver: @user
+    )
+
+    executor = Comments::ActionExecutor.new(comment: comment, executor: @user)
+
+    error = assert_raises(Comments::ActionExecutor::ExecutionError) do
+      executor.call
+    end
+
+    assert_equal I18n.t("comments.approve_invalid_creative"), error.message
+  end
+
   test "raises when executor no longer matches approver" do
     approver = users(:two)
 

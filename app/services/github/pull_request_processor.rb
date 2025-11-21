@@ -35,8 +35,8 @@ module Github
     attr_reader :payload, :logger
 
     def process_link(link)
-      creative = link.creative.effective_origin
-      path_exporter = Creatives::PathExporter.new(creative)
+      creative = link.creative
+      path_exporter = Creatives::PathExporter.new(creative, use_effective_origin: false)
       tree_entries = path_exporter.full_paths_with_ids_and_progress_with_leaf
       return if tree_entries.blank?
 
