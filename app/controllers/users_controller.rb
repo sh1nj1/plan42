@@ -147,21 +147,42 @@ class UsersController < ApplicationController
     per_page = 10
     @contact_page = [ params[:contact_page].to_i, 1 ].max
 
-    scope = Current.user.contacts
-                      .joins(:contact_user)
-                      .includes(contact_user: [ avatar_attachment: :blob ])
-                      .order("users.name ASC")
+    # Collect all relevant user ids (contacts, people I've shared with, people who shared with me)
+    direct_contact_ids = Current.user.contacts.pluck(:contact_user_id)
 
-    @total_contacts = scope.count
+    shared_by_me_ids = CreativeShare
+      .joins(:creative)
+      .where(creatives: { user_id: Current.user.id })
+      .where.not(permission: CreativeShare.permissions[:no_access])
+      .pluck(:user_id)
+
+    shared_with_me_ids = CreativeShare
+      .joins(:creative)
+      .where(user_id: Current.user.id)
+      .where.not(permission: CreativeShare.permissions[:no_access])
+      .pluck("creatives.user_id")
+
+    contact_user_ids = (direct_contact_ids + shared_by_me_ids + shared_with_me_ids).uniq
+
+    users_relation = User
+      .where(id: contact_user_ids)
+      .includes(avatar_attachment: :blob)
+      .order(:name)
+
+    @total_contacts = contact_user_ids.size
     @total_contact_pages = [ (@total_contacts.to_f / per_page).ceil, 1 ].max
-    @contacts = scope.offset((@contact_page - 1) * per_page).limit(per_page)
+    paged_users = users_relation.offset((@contact_page - 1) * per_page).limit(per_page)
 
-    contact_user_ids = @contacts.map(&:contact_user_id)
-    @last_login_map = Session.where(user_id: contact_user_ids).group(:user_id).maximum(:updated_at)
+    existing_contacts = Current.user.contacts.includes(contact_user: [ avatar_attachment: :blob ]).index_by(&:contact_user_id)
+    @contacts = paged_users.map do |user|
+      existing_contacts[user.id] || Contact.new(user: Current.user, contact_user: user)
+    end
+
+    @last_login_map = Session.where(user_id: paged_users.map(&:id)).group(:user_id).maximum(:updated_at)
 
     shares_from_me = CreativeShare
       .joins(:creative)
-      .where(user_id: contact_user_ids, creatives: { user_id: Current.user.id })
+      .where(user_id: paged_users.map(&:id), creatives: { user_id: Current.user.id })
       .where.not(permission: CreativeShare.permissions[:no_access])
       .includes(creative: :rich_text_description)
 
@@ -169,7 +190,7 @@ class UsersController < ApplicationController
 
     shares_to_me = CreativeShare
       .joins(:creative)
-      .where(user_id: Current.user.id, creatives: { user_id: contact_user_ids })
+      .where(user_id: Current.user.id, creatives: { user_id: paged_users.map(&:id) })
       .where.not(permission: CreativeShare.permissions[:no_access])
       .includes(creative: :rich_text_description)
 
