@@ -153,7 +153,6 @@ class UsersController < ApplicationController
     @contact_page = [ params[:contact_page].to_i, 1 ].max
 
     # Collect all relevant user ids (contacts, people I've shared with, people who shared with me)
-    direct_contact_ids = Current.user.contacts.pluck(:contact_user_id)
     creative_shares = CreativeShare.arel_table
     creatives = Creative.arel_table
 
@@ -165,25 +164,28 @@ class UsersController < ApplicationController
           .or(creative_shares[:shared_by_id].eq(nil).and(creatives[:user_id].eq(Current.user.id)))
       )
 
-    shared_by_me_ids = shared_by_me_scope.pluck(:user_id)
-
-    shared_with_me_ids = CreativeShare
+    shared_with_me_scope = CreativeShare
       .joins(:creative)
       .where(user_id: Current.user.id)
       .where.not(permission: CreativeShare.permissions[:no_access])
-      .pluck(:shared_by_id, "creatives.user_id")
-      .map { |shared_by_id, owner_id| shared_by_id || owner_id }
 
-    contact_user_ids = (direct_contact_ids + shared_by_me_ids + shared_with_me_ids).uniq
+    contact_ids_sql = [
+      Current.user.contacts.select("contact_user_id AS user_id").to_sql,
+      shared_by_me_scope.select("creative_shares.user_id AS user_id").to_sql,
+      shared_with_me_scope.select("COALESCE(creative_shares.shared_by_id, creatives.user_id) AS user_id").to_sql
+    ].join(" UNION ")
 
-    users_relation = User
-      .where(id: contact_user_ids)
-      .includes(avatar_attachment: :blob)
-      .order(:name)
+    contact_users_relation = User.where(
+      id: User.from("(#{contact_ids_sql}) AS contact_ids").select(:user_id)
+    )
 
-    @total_contacts = contact_user_ids.size
+    @total_contacts = contact_users_relation.count
     @total_contact_pages = [ (@total_contacts.to_f / per_page).ceil, 1 ].max
-    paged_users = users_relation.offset((@contact_page - 1) * per_page).limit(per_page)
+    paged_users = contact_users_relation
+      .includes(avatar_attachment: :blob)
+      .order(:name, :id)
+      .offset((@contact_page - 1) * per_page)
+      .limit(per_page)
 
     existing_contacts = Current.user.contacts.includes(contact_user: [ avatar_attachment: :blob ]).index_by(&:contact_user_id)
     @contacts = paged_users.map do |user|
