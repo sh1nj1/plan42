@@ -3,6 +3,10 @@ require_relative "boot"
 require "rails/all"
 require_relative "../lib/collavre/version"
 
+lib_path = File.expand_path("../lib", __dir__)
+$LOAD_PATH.unshift(lib_path) unless $LOAD_PATH.include?(lib_path)
+require "omniauth/rails_csrf_protection/token_verifier"
+
 # Require the gems listed in Gemfile, including any gems
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
