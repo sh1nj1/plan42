@@ -326,6 +326,13 @@ button {
     padding: 0.5em;
 }
 
+.plan-form-container form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: min(28rem, 100%);
+}
+
 .plan-bar {
     position: absolute;
     height: 20px;
