@@ -557,26 +557,6 @@ input[type="password"] {
 }
 
 /* Contact management */
-.contact-add-form {
-    margin: 1em 0;
-}
-
-.contact-add-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1em;
-    align-items: flex-end;
-}
-
-.contact-field label {
-    display: block;
-    margin-bottom: 0.25em;
-}
-
-.contact-field input[type="email"] {
-    min-width: 240px;
-}
-
 .table-scroll {
     overflow-x: auto;
 }

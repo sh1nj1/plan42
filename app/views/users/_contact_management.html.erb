@@ -1,18 +1,6 @@
 <div class="contact-management">
   <p class="text-muted"><%= t('contacts.description') %></p>
 
-  <%= form_with url: contacts_path, method: :post, scope: :contact, local: true, class: 'contact-add-form' do |f| %>
-    <div class="contact-add-row">
-      <div class="contact-field">
-        <%= f.label :email, t('contacts.add_label') %>
-        <%= f.email_field :email, placeholder: t('contacts.add_placeholder'), required: true %>
-      </div>
-      <div class="contact-actions">
-        <%= f.submit t('contacts.add_button'), class: 'btn btn-primary' %>
-      </div>
-    </div>
-  <% end %>
-
   <% if contacts.present? %>
     <div class="table-scroll">
       <table class="contacts-table">
