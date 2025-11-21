@@ -138,7 +138,7 @@ textarea:focus-visible {
 .stacked-form {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--paragraph-space-1);
     max-width: min(28rem, 100%);
 }
 
@@ -329,7 +329,7 @@ button {
 .plan-form-container form {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--paragraph-space-1);
     max-width: min(28rem, 100%);
 }
 
@@ -415,7 +415,7 @@ button {
 }
 
 #inbox-panel {
-    --inbox-spacing: 0.75em;
+    --inbox-spacing: var(--paragraph-space-1);
 }
 
 .inbox-item {
