@@ -27,7 +27,6 @@ en:
     avatar_url: "Avatar URL"
     current_avatar: "Current avatar"
     new_avatar_preview: "New avatar preview"
-    avatar_preview_placeholder: "Choose a file to preview your new avatar."
     update_profile: "Update Profile"
     delete: "Delete"
     make_system_admin: "Make system admin"

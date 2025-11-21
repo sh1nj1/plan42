@@ -14,9 +14,6 @@
             alt: t('users.new_avatar_preview'),
             class: 'avatar-preview-image avatar-preview-hidden',
             data: { avatar_preview_target: 'previewImage' } %>
-        <div class="avatar-preview-placeholder" data-avatar-preview-target="placeholder">
-          <%= t('users.avatar_preview_placeholder') %>
-        </div>
       </div>
     </div>
   </div>
@@ -36,7 +33,7 @@
     </div>
     <div>
       <%= f.label :avatar_url, t('users.avatar_url') %>
-      <%= f.text_field :avatar_url, placeholder: t('users.avatar_url') %>
+      <%= f.text_field :avatar_url, placeholder: t('users.avatar_url'), data: { avatar_preview_target: 'urlInput', action: 'avatar-preview#updateFromUrl' } %>
     </div>
     <div>
       <%= f.label :display_level, t('users.display_level') %>

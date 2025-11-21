@@ -1,47 +1,68 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["input", "previewContainer", "previewImage", "placeholder"]
+  static targets = ["input", "urlInput", "previewContainer", "previewImage"]
 
   connect() {
-    this.previewUrl = null
+    this.defaultAlt = this.previewImageTarget.alt
+    this.objectPreviewUrl = null
   }
 
   disconnect() {
-    this.revokePreview()
+    this.revokeObjectPreview()
   }
 
   update() {
     const [file] = this.inputTarget.files
 
-    this.revokePreview()
-
     if (!file) {
-      this.showPlaceholder()
+      this.renderUrlPreviewIfPresent()
       return
     }
 
+    this.revokeObjectPreview()
     const previewUrl = URL.createObjectURL(file)
-    this.previewUrl = previewUrl
+    this.objectPreviewUrl = previewUrl
 
-    this.previewImageTarget.src = previewUrl
-    this.previewImageTarget.alt = file.name
+    this.setPreview(previewUrl, file.name)
+  }
+
+  updateFromUrl() {
+    if (this.inputTarget.files.length > 0) return
+
+    this.renderUrlPreviewIfPresent()
+  }
+
+  renderUrlPreviewIfPresent() {
+    const url = this.hasUrlInputTarget ? this.urlInputTarget.value.trim() : ""
+
+    if (url === "") {
+      this.hidePreview()
+      return
+    }
+
+    this.revokeObjectPreview()
+    this.setPreview(url, url)
+  }
+
+  setPreview(src, altText) {
+    this.previewImageTarget.src = src
+    this.previewImageTarget.alt = altText || this.defaultAlt
     this.previewImageTarget.classList.remove("avatar-preview-hidden")
-    this.placeholderTarget.classList.add("avatar-preview-hidden")
     this.previewContainerTarget.classList.add("avatar-preview-visible")
   }
 
-  showPlaceholder() {
+  hidePreview() {
     this.previewImageTarget.classList.add("avatar-preview-hidden")
     this.previewImageTarget.removeAttribute("src")
-    this.placeholderTarget.classList.remove("avatar-preview-hidden")
     this.previewContainerTarget.classList.remove("avatar-preview-visible")
+    this.revokeObjectPreview()
   }
 
-  revokePreview() {
-    if (this.previewUrl) {
-      URL.revokeObjectURL(this.previewUrl)
-      this.previewUrl = null
+  revokeObjectPreview() {
+    if (this.objectPreviewUrl) {
+      URL.revokeObjectURL(this.objectPreviewUrl)
+      this.objectPreviewUrl = null
     }
   }
 }

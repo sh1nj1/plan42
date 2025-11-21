@@ -519,6 +519,10 @@ input[type="password"] {
     gap: 0.5em;
 }
 
+.avatar-preview-pane:not(.avatar-preview-visible) {
+    display: none;
+}
+
 .avatar-preview-label {
     font-weight: 600;
     color: var(--color-text, #1d1d1f);
@@ -530,10 +534,9 @@ input[type="password"] {
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px dashed var(--color-border, #c7c7cc);
     border-radius: 50%;
-    background: var(--color-surface, #f7f7f7);
-    padding: 4px;
+    background: transparent;
+    overflow: hidden;
 }
 
 .avatar-preview-image {
@@ -541,17 +544,6 @@ input[type="password"] {
     height: 100%;
     object-fit: cover;
     border-radius: 50%;
-}
-
-.avatar-preview-placeholder {
-    text-align: center;
-    color: var(--color-text-muted, #6e6e73);
-    font-size: 0.9em;
-    line-height: 1.2;
-}
-
-.avatar-preview-visible .avatar-preview-placeholder {
-    display: none;
 }
 
 .avatar-preview-hidden {

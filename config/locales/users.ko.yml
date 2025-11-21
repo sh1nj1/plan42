@@ -27,7 +27,6 @@ ko:
     avatar_url: "아바타 URL"
     current_avatar: "현재 아바타"
     new_avatar_preview: "새 아바타 미리보기"
-    avatar_preview_placeholder: "파일을 선택하면 새 아바타가 미리보기로 표시됩니다."
     update_profile: "프로파일 업데이트"
     delete: "삭제"
     make_system_admin: "시스템 관리자 지정"
