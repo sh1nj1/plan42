@@ -7,8 +7,9 @@ This document captures best practices for integrating Anthropic's Claude models 
 - Verify API access and keys are stored using the team's standard secrets management approach.
 - Note any environment variables required to initialize Claude clients.
 - Link to reusable prompts or templates that Claude-based workflows should follow.
-- Gemini-based parent recommendations now use the [`ruby_llm`](https://github.com/crmne/ruby_llm) client. Ensure `GEMINI_API_KEY`
-  is present so `RubyLLM` can configure the shared Gemini chat session via `config/initializers/ruby_llm.rb`.
+- Gemini-based parent recommendations and streaming responses (PR analysis, `@gemini` replies) now use the
+  [`ruby_llm`](https://github.com/crmne/ruby_llm) client. Ensure `GEMINI_API_KEY` is present so `RubyLLM` can configure the
+  shared Gemini chat session via `config/initializers/ruby_llm.rb`.
 
 ## Collaboration Tips
 - Keep dialogue transcripts or prompt iterations in version control when they inform product behavior.
