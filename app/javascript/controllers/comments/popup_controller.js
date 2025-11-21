@@ -82,37 +82,41 @@ export default class extends Controller {
 
   handleCreativeClick(event) {
     const button = event.detail?.button
+    const creativeId = event.detail?.creativeId
     if (!button) return
-    if (this.element.style.display === 'block' && this.element.dataset.creativeId === button.dataset.creativeId) {
+    if (
+      this.element.style.display === 'block' &&
+      this.element.dataset.creativeId === (creativeId || button.dataset.creativeId)
+    ) {
       this.close()
       return
     }
-    this.open(button)
+    this.open(button, { creativeId })
   }
 
-  open(button, { highlightId } = {}) {
+  open(button, { creativeId, highlightId } = {}) {
     this.currentButton = button
-    const creativeId = button.dataset.creativeId
+    const resolvedCreativeId = creativeId || button?.dataset.creativeId
     const canComment = button.dataset.canComment === 'true'
     const snippet = button.dataset.creativeSnippet || ''
 
-    this.element.dataset.creativeId = creativeId || ''
+    this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.titleTarget.textContent = snippet
 
     this.prepareSize()
 
     if (this.formController) {
-      this.formController.onPopupOpened({ creativeId, canComment })
+      this.formController.onPopupOpened({ creativeId: resolvedCreativeId, canComment })
     }
     if (this.listController) {
-      this.listController.onPopupOpened({ creativeId, highlightId })
+      this.listController.onPopupOpened({ creativeId: resolvedCreativeId, highlightId })
     }
     if (this.presenceController) {
-      this.presenceController.onPopupOpened({ creativeId })
+      this.presenceController.onPopupOpened({ creativeId: resolvedCreativeId })
     }
     if (this.mentionMenuController) {
-      this.mentionMenuController.onPopupOpened({ creativeId })
+      this.mentionMenuController.onPopupOpened({ creativeId: resolvedCreativeId })
     }
 
     this.showPopup()
