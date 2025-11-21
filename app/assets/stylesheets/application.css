@@ -506,3 +506,127 @@ input[type="password"] {
     max-width: 320px;
 }
 
+.profile-actions {
+    margin-top: 1em;
+}
+
+/* Tabs */
+.tab-list {
+    display: flex;
+    gap: 0.25em;
+    margin: 1.25em 0 0;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--color-border);
+    padding: 0 0.25em;
+}
+
+.tab-button {
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-text);
+    padding: 0.5em 1em;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    font-weight: 600;
+    border-bottom: none;
+    box-shadow: inset 0 -1px 0 var(--color-border);
+}
+
+.tab-button.active {
+    background: var(--color-section-bg, var(--color-bg));
+    color: var(--color-text);
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.tab-button:hover,
+.tab-button:focus-visible {
+    filter: brightness(var(--hover-brightness));
+    outline: none;
+}
+
+.tab-panels {
+    margin-top: 1em;
+}
+
+.tab-panel {
+    display: none;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
+/* Contact management */
+.table-scroll {
+    overflow-x: auto;
+}
+
+.contacts-table {
+    width: 100%;
+    min-width: 720px;
+    border-collapse: collapse;
+}
+
+.contacts-table th,
+.contacts-table td {
+    padding: 0.5em;
+    text-align: left;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: top;
+}
+
+.creative-cell {
+    min-width: 200px;
+}
+
+.creative-chip {
+    display: inline-block;
+    background: var(--color-chip-bg, var(--color-complete));
+    color: var(--color-text);
+    border-radius: 999px;
+    padding: 0.2em 0.6em;
+    margin: 0 0.25em 0.25em 0;
+    white-space: nowrap;
+    text-decoration: none;
+    border: 1px solid var(--color-border);
+}
+
+.creative-chip:hover,
+.creative-chip:focus-visible {
+    filter: brightness(var(--hover-brightness));
+    outline: none;
+}
+
+.contact-pagination {
+    margin-top: 1em;
+    display: flex;
+    align-items: center;
+    gap: 0.75em;
+}
+
+.pagination-button {
+    color: var(--color-text);
+    background: var(--color-bg);
+    text-decoration: none;
+    padding: 0.35em 0.75em;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.pagination-button:hover,
+.pagination-button:focus-visible {
+    filter: brightness(var(--hover-brightness));
+    outline: none;
+}
+
+.pagination-status {
+    color: #6b7280;
+}
+
+@media (max-width: 768px) {
+    .contacts-table {
+        min-width: 600px;
+    }
+}
+

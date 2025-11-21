@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_09_29_000000) do
+ActiveRecord::Schema[8.1].define(version: 2025_10_01_000001) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -90,6 +90,16 @@ ActiveRecord::Schema[8.1].define(version: 2025_09_29_000000) do
     t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
+  end
+
+  create_table "contacts", force: :cascade do |t|
+    t.integer "contact_user_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["contact_user_id"], name: "index_contacts_on_contact_user_id"
+    t.index ["user_id", "contact_user_id"], name: "index_contacts_on_user_id_and_contact_user_id", unique: true
+    t.index ["user_id"], name: "index_contacts_on_user_id"
   end
 
   create_table "creative_expanded_states", force: :cascade do |t|
@@ -477,6 +487,8 @@ ActiveRecord::Schema[8.1].define(version: 2025_09_29_000000) do
   add_foreign_key "comments", "users"
   add_foreign_key "comments", "users", column: "action_executed_by_id"
   add_foreign_key "comments", "users", column: "approver_id"
+  add_foreign_key "contacts", "users"
+  add_foreign_key "contacts", "users", column: "contact_user_id"
   add_foreign_key "creative_expanded_states", "creatives"
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"

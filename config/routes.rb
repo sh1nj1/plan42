@@ -79,6 +79,8 @@ Rails.application.routes.draw do
     get :count, on: :collection
   end
 
+  resources :contacts, only: [ :destroy ]
+
   resources :devices, only: [ :create ]
 
   resources :emails, only: [ :index, :show ]
