@@ -1,6 +1,7 @@
 class CreativeShare < ApplicationRecord
   belongs_to :creative
   belongs_to :user
+  belongs_to :shared_by, class_name: "User", optional: true
 
   enum :permission, {
     no_access: 0,
@@ -23,6 +24,10 @@ class CreativeShare < ApplicationRecord
   # in the ancestors. If there is no ancestor share, returns nil.
   def self.closest_parent_share(ancestor_ids, ancestor_shares)
     ancestor_shares.to_a.min_by { |s| ancestor_ids.index(s.creative_id) || Float::INFINITY }
+  end
+
+  def sharer_id
+    shared_by_id || creative.user_id
   end
 
   private
