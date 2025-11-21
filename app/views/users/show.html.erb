@@ -2,12 +2,12 @@
   <h1 class="no-top-margin"><%= t('users.details') %></h1>
 
   <div class="avatar-preview-row">
-    <div class="avatar-preview-pane">
+    <div class="avatar-preview-pane avatar-preview-current">
       <span class="avatar-preview-label"><%= t('users.current_avatar') %></span>
       <%= render AvatarComponent.new(user: @user, size: 80, classes: 'avatar') %>
     </div>
 
-    <div class="avatar-preview-pane" data-avatar-preview-target="previewContainer">
+    <div class="avatar-preview-pane avatar-preview-container" data-avatar-preview-target="previewContainer">
       <span class="avatar-preview-label"><%= t('users.new_avatar_preview') %></span>
       <div class="avatar-preview-frame">
         <%= image_tag '',
