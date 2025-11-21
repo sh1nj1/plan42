@@ -513,23 +513,35 @@ input[type="password"] {
 /* Tabs */
 .tab-list {
     display: flex;
-    gap: 0.5em;
-    margin: 1em 0;
+    gap: 0.25em;
+    margin: 1.25em 0 0;
     flex-wrap: wrap;
+    border-bottom: 1px solid var(--color-border);
+    padding: 0 0.25em;
 }
 
 .tab-button {
-    border: 1px solid var(--border-color, #ddd);
-    background: #f7f7f7;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-text);
     padding: 0.5em 1em;
-    border-radius: 6px;
+    border-radius: 8px 8px 0 0;
     cursor: pointer;
+    font-weight: 600;
+    border-bottom: none;
+    box-shadow: inset 0 -1px 0 var(--color-border);
 }
 
 .tab-button.active {
-    background: var(--color-accent, #4f46e5);
-    color: #fff;
-    border-color: var(--color-accent, #4f46e5);
+    background: var(--color-section-bg, var(--color-bg));
+    color: var(--color-text);
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.tab-button:hover,
+.tab-button:focus-visible {
+    filter: brightness(var(--hover-brightness));
+    outline: none;
 }
 
 .tab-panels {
@@ -589,14 +601,20 @@ input[type="password"] {
 
 .creative-chip {
     display: inline-block;
-    background: #f3f4f6;
+    background: var(--color-chip-bg, var(--color-complete));
+    color: var(--color-text);
     border-radius: 999px;
     padding: 0.2em 0.6em;
     margin: 0 0.25em 0.25em 0;
     white-space: nowrap;
-    color: inherit;
     text-decoration: none;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--color-border);
+}
+
+.creative-chip:hover,
+.creative-chip:focus-visible {
+    filter: brightness(var(--hover-brightness));
+    outline: none;
 }
 
 .contact-pagination {
@@ -606,9 +624,20 @@ input[type="password"] {
     gap: 0.75em;
 }
 
-.pagination-link {
-    color: var(--color-accent, #4f46e5);
+.pagination-button {
+    color: var(--color-text);
+    background: var(--color-bg);
     text-decoration: none;
+    padding: 0.35em 0.75em;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.pagination-button:hover,
+.pagination-button:focus-visible {
+    filter: brightness(var(--hover-brightness));
+    outline: none;
 }
 
 .pagination-status {

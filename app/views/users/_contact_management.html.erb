@@ -60,11 +60,11 @@
       <% prev_page = contact_page.to_i - 1 %>
       <% next_page = contact_page.to_i + 1 %>
       <% if contact_page.to_i > 1 %>
-        <%= link_to t('contacts.pagination.prev'), user_path(Current.user, tab: 'contacts', contact_page: prev_page), class: 'pagination-link' %>
+        <%= link_to t('contacts.pagination.prev'), user_path(Current.user, tab: 'contacts', contact_page: prev_page), class: 'pagination-button' %>
       <% end %>
       <span class="pagination-status"><%= t('contacts.pagination.page_info', current: contact_page, total: total_contact_pages) %></span>
       <% if contact_page.to_i < total_contact_pages.to_i %>
-        <%= link_to t('contacts.pagination.next'), user_path(Current.user, tab: 'contacts', contact_page: next_page), class: 'pagination-link' %>
+        <%= link_to t('contacts.pagination.next'), user_path(Current.user, tab: 'contacts', contact_page: next_page), class: 'pagination-button' %>
       <% end %>
     </nav>
   <% end %>
