@@ -18,6 +18,7 @@
   --color-badge-bg: red;
   --color-badge-text: white;
   --max-width: 960px;
+  --paragraph-space-1: 0.75rem;
 }
 
 body.dark-mode {
