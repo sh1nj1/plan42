@@ -233,7 +233,7 @@ module Comments
       end
 
       def allowed_creative_ids
-        @allowed_creative_ids ||= comment.creative.effective_origin.self_and_descendants.pluck(:id)
+        @allowed_creative_ids ||= comment.creative.self_and_descendants.pluck(:id)
       end
     end
   end
