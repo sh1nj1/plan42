@@ -407,9 +407,13 @@ button {
     cursor: pointer;
 }
 
+#inbox-panel {
+    --inbox-spacing: 0.75em;
+}
+
 .inbox-item {
     border-bottom: 1px solid var(--color-border);
-    padding: 0.75em;
+    padding: var(--inbox-spacing);
 }
 
 .inbox-item:last-child {
@@ -418,6 +422,10 @@ button {
 
 .inbox-item .actions button {
     margin-right: 0.5em;
+}
+
+.inbox-empty {
+    padding: var(--inbox-spacing);
 }
 
 #inbox-menu-btn {
