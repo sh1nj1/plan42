@@ -13,4 +13,15 @@ class UserTest < ActiveSupport::TestCase
     assert_not user.valid?
     assert_includes user.errors[:email], "has already been taken"
   end
+
+  test "nullifies shares created by user as sharer when destroyed" do
+    sharer = users(:two)
+    recipient = users(:three)
+    creative = creatives(:tshirt)
+
+    share = CreativeShare.create!(creative: creative, user: recipient, shared_by: sharer, permission: :read)
+
+    assert_nothing_raised { sharer.destroy! }
+    assert_nil share.reload.shared_by_id
+  end
 end

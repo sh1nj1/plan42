@@ -10,6 +10,8 @@ class User < ApplicationRecord
   has_many :comment_read_pointers, dependent: :destroy
   has_many :creative_expanded_states, dependent: :destroy
   has_many :creative_shares, dependent: :destroy
+  has_many :shared_creative_shares, class_name: "CreativeShare", foreign_key: :shared_by_id,
+                                    dependent: :nullify, inverse_of: :shared_by
   has_many :comments, dependent: :destroy
   has_many :emails, dependent: :destroy
   has_many :inbox_items, foreign_key: :owner_id, dependent: :destroy, inverse_of: :owner
