@@ -571,7 +571,7 @@ input[type="password"] {
 .contacts-table td {
     padding: 0.5em;
     text-align: left;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--color-border);
     vertical-align: top;
 }
 
