@@ -126,10 +126,10 @@ GEM
       logger
     faraday-follow_redirects (0.4.0)
       faraday (>= 1, < 3)
-    faraday-net_http (3.4.2)
-      net-http (~> 0.5)
     faraday-multipart (1.1.1)
       multipart-post (~> 2.0)
+    faraday-net_http (3.4.2)
+      net-http (~> 0.5)
     faraday-retry (2.3.2)
       faraday (~> 2.0)
     fcm (2.0.1)
@@ -228,9 +228,9 @@ GEM
     multi_json (1.17.0)
     multi_xml (0.7.2)
       bigdecimal (~> 3.1)
-    net-http (0.7.0)
     multipart-post (2.4.1)
     mutex_m (0.3.0)
+    net-http (0.7.0)
     net-imap (0.5.12)
       date
       net-protocol
