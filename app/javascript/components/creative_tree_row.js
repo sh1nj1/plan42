@@ -255,6 +255,12 @@ class CreativeTreeRow extends LitElement {
         ${toggle}${bullet}
       </div>
     `;
+    const lineBody = (contentSlot) => html`
+      <div class="creative-line-body">
+        <div class="creative-tree-lines" aria-hidden="true"></div>
+        ${contentSlot}
+      </div>
+    `;
     const content = html`
       <div class="creative-content">
         <a class="unstyled-link" href=${this.linkUrl || "#"}>${unsafeHTML(this.descriptionHtml || "")}</a>
@@ -265,7 +271,7 @@ class CreativeTreeRow extends LitElement {
     if (level <= BULLET_STARTING_LEVEL) {
       const headingLevel = Math.max(1, Math.min(level, 6));
       const headingClass = `indent${level} creative-line level-${headingLevel}`;
-      const line = html`${leading()}${content}${indicator}`;
+      const line = html`${leading()}${lineBody(html`${content}${indicator}`)}`;
       if (this.hasChildren || this.isRoot) {
         switch (headingLevel) {
           case 1:
@@ -287,7 +293,7 @@ class CreativeTreeRow extends LitElement {
 
     const needsBullet = !((this.descriptionHtml || "").includes("<li>"));
     const bullet = needsBullet ? html`<div class="creative-tree-bullet"></div>` : nothing;
-    const line = html`${leading(bullet)}${content}${indicator}`;
+    const line = html`${leading(bullet)}${lineBody(html`${content}${indicator}`)}`;
     return html`
       <div class="creative-tree-li creative-line level-6">
         ${line}
