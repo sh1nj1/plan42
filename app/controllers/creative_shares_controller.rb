@@ -33,6 +33,7 @@ class CreativeSharesController < ApplicationController
     end
 
     share = CreativeShare.find_or_initialize_by(creative: @creative, user: user)
+    share.shared_by ||= Current.user
     share.permission = permission
     if share.save and not is_param_no_access
       @creative.create_linked_creative_for_user(user)

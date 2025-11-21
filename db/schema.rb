@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_10_01_000001) do
+ActiveRecord::Schema[8.1].define(version: 2025_10_02_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -125,10 +125,12 @@ ActiveRecord::Schema[8.1].define(version: 2025_10_01_000001) do
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
     t.integer "permission", default: 0, null: false
+    t.integer "shared_by_id"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["creative_id", "user_id"], name: "index_creative_shares_on_creative_id_and_user_id", unique: true
     t.index ["creative_id"], name: "index_creative_shares_on_creative_id"
+    t.index ["shared_by_id"], name: "index_creative_shares_on_shared_by_id"
     t.index ["user_id"], name: "index_creative_shares_on_user_id"
   end
 
@@ -493,6 +495,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_10_01_000001) do
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
+  add_foreign_key "creative_shares", "users", column: "shared_by_id"
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"

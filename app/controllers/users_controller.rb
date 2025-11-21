@@ -151,8 +151,7 @@ class UsersController < ApplicationController
     direct_contact_ids = Current.user.contacts.pluck(:contact_user_id)
 
     shared_by_me_ids = CreativeShare
-      .joins(:creative)
-      .where(creatives: { user_id: Current.user.id })
+      .where(shared_by: Current.user)
       .where.not(permission: CreativeShare.permissions[:no_access])
       .pluck(:user_id)
 
@@ -160,7 +159,8 @@ class UsersController < ApplicationController
       .joins(:creative)
       .where(user_id: Current.user.id)
       .where.not(permission: CreativeShare.permissions[:no_access])
-      .pluck("creatives.user_id")
+      .pluck(:shared_by_id, "creatives.user_id")
+      .map { |shared_by_id, owner_id| shared_by_id || owner_id }
 
     contact_user_ids = (direct_contact_ids + shared_by_me_ids + shared_with_me_ids).uniq
 
@@ -181,8 +181,7 @@ class UsersController < ApplicationController
     @last_login_map = Session.where(user_id: paged_users.map(&:id)).group(:user_id).maximum(:updated_at)
 
     shares_from_me = CreativeShare
-      .joins(:creative)
-      .where(user_id: paged_users.map(&:id), creatives: { user_id: Current.user.id })
+      .where(shared_by: Current.user, user_id: paged_users.map(&:id))
       .where.not(permission: CreativeShare.permissions[:no_access])
       .includes(creative: :rich_text_description)
 
@@ -190,11 +189,11 @@ class UsersController < ApplicationController
 
     shares_to_me = CreativeShare
       .joins(:creative)
-      .where(user_id: Current.user.id, creatives: { user_id: paged_users.map(&:id) })
+      .where(user_id: Current.user.id, shared_by_id: paged_users.map(&:id))
       .where.not(permission: CreativeShare.permissions[:no_access])
       .includes(creative: :rich_text_description)
 
-    @shared_with_me = shares_to_me.group_by { |share| share.creative.user_id }
+    @shared_with_me = shares_to_me.group_by(&:sharer_id)
                                   .transform_values { |shares| shares.map(&:creative) }
   end
 
