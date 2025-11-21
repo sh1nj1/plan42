@@ -1,0 +1,71 @@
+<div class="contact-management">
+  <p class="text-muted"><%= t('contacts.description') %></p>
+
+  <%= form_with url: contacts_path, method: :post, scope: :contact, local: true, class: 'contact-add-form' do |f| %>
+    <div class="contact-add-row">
+      <div class="contact-field">
+        <%= f.label :email, t('contacts.add_label') %>
+        <%= f.email_field :email, placeholder: t('contacts.add_placeholder'), required: true %>
+      </div>
+      <div class="contact-actions">
+        <%= f.submit t('contacts.add_button'), class: 'btn btn-primary' %>
+      </div>
+    </div>
+  <% end %>
+
+  <% if contacts.present? %>
+    <div class="table-scroll">
+      <table class="contacts-table">
+        <thead>
+          <tr>
+            <th><%= t('users.table.avatar') %></th>
+            <th><%= t('users.table.name') %></th>
+            <th><%= t('users.table.email') %></th>
+            <th><%= t('users.table.last_login_at') %></th>
+            <th><%= t('contacts.table.shared_creatives') %></th>
+            <th><%= t('contacts.table.shared_with_me') %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% contacts.each do |contact| %>
+            <% contact_user = contact.contact_user %>
+            <tr>
+              <td>
+                <%= render AvatarComponent.new(
+                  user: contact_user,
+                  size: 32,
+                  classes: "avatar"
+                ) %>
+              </td>
+              <td><%= contact_user.display_name %></td>
+              <td><%= contact_user.email %></td>
+              <td><%= render_last_login_for(contact_user, last_login_map || {}) %></td>
+              <td class="creative-cell">
+                <%= render_contact_creatives(shared_by_me.fetch(contact_user.id, [])) %>
+              </td>
+              <td class="creative-cell">
+                <%= render_contact_creatives(shared_with_me.fetch(contact_user.id, [])) %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <p class="text-muted"><%= t('contacts.empty_state') %></p>
+  <% end %>
+
+  <% if total_contact_pages.to_i > 1 %>
+    <nav class="contact-pagination">
+      <% prev_page = contact_page.to_i - 1 %>
+      <% next_page = contact_page.to_i + 1 %>
+      <% if contact_page.to_i > 1 %>
+        <%= link_to t('contacts.pagination.prev'), user_path(Current.user, tab: 'contacts', contact_page: prev_page), class: 'pagination-link' %>
+      <% end %>
+      <span class="pagination-status"><%= t('contacts.pagination.page_info', current: contact_page, total: total_contact_pages) %></span>
+      <% if contact_page.to_i < total_contact_pages.to_i %>
+        <%= link_to t('contacts.pagination.next'), user_path(Current.user, tab: 'contacts', contact_page: next_page), class: 'pagination-link' %>
+      <% end %>
+    </nav>
+  <% end %>
+</div>

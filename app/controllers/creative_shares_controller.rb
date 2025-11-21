@@ -36,6 +36,8 @@ class CreativeSharesController < ApplicationController
     share.permission = permission
     if share.save and not is_param_no_access
       @creative.create_linked_creative_for_user(user)
+      Contact.ensure(user: Current.user, contact_user: user)
+      Contact.ensure(user: @creative.user, contact_user: user)
       flash[:notice] = t("creatives.share.shared")
     else
       flash[:alert] = share.errors.full_messages.to_sentence

@@ -16,6 +16,7 @@ import CommentsPopupController from "./comments/popup_controller"
 import ClickTargetController from "./click_target_controller"
 import CreativesSetPlanModalController from "./creatives/set_plan_modal_controller"
 import AvatarPreviewController from "./avatar_preview_controller"
+import TabsController from "./tabs_controller"
 
 import CommentController from "./comment_controller"
 import ShareInviteController from "./share_invite_controller"
@@ -39,3 +40,4 @@ application.register("comments--popup", CommentsPopupController)
 application.register("click-target", ClickTargetController)
 application.register("creatives--set-plan-modal", CreativesSetPlanModalController)
 application.register("avatar-preview", AvatarPreviewController)
+application.register("tabs", TabsController)

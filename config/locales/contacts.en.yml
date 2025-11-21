@@ -1,0 +1,22 @@
+en:
+  contacts:
+    description: "Manage users you have invited or share creatives with."
+    add_label: "Add user by email"
+    add_placeholder: "user@example.com"
+    add_button: "Add to list"
+    empty_state: "No managed users yet."
+    none: "None"
+    table:
+      shared_creatives: "Creatives you shared"
+      shared_with_me: "Creatives shared with you"
+    pagination:
+      prev: "Previous"
+      next: "Next"
+      page_info: "Page %{current} of %{total}"
+    notices:
+      added: "%{name} was added to your managed users."
+      removed: "User removed from your managed users."
+    errors:
+      not_found: "Could not find a user with that email."
+      self_add: "You cannot add yourself."
+      email_required: "Please enter an email to add a user."

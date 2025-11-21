@@ -72,4 +72,27 @@ module ApplicationHelper
       )
     end.html_safe
   end
+
+  def creative_title_for_display(creative, length: 12)
+    return "" unless creative
+
+    description_body = creative.effective_origin.rich_text_description&.body
+    title = description_body ? description_body.to_plain_text : ""
+    title.strip.truncate(length, omission: "...")
+  end
+
+  def render_contact_creatives(creatives)
+    return content_tag(:span, t("contacts.none"), class: "text-muted") if creatives.blank?
+
+    safe_join(creatives.map do |creative|
+      link_to(creative_title_for_display(creative), creative_path(creative), class: "creative-chip")
+    end)
+  end
+
+  def render_last_login_for(user, last_login_map)
+    timestamp = last_login_map[user.id]
+    return t("users.table.last_login_unknown") unless timestamp
+
+    I18n.l(timestamp, format: :short)
+  end
 end

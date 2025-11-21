@@ -22,6 +22,9 @@ ko:
     name: "이름"
     email: "이메일"
     change_password: "비밀번호 변경"
+    tabs:
+      profile: "프로파일"
+      user_management: "사용자 관리"
     profile: "프로파일"
     avatar: "아바타"
     avatar_url: "아바타 URL"

@@ -22,6 +22,9 @@ en:
     name: "Name"
     email: "Email"
     change_password: "Change password"
+    tabs:
+      profile: "Profile"
+      user_management: "User management"
     profile: "Profile"
     avatar: "Avatar"
     avatar_url: "Avatar URL"

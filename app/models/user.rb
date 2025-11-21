@@ -14,6 +14,9 @@ class User < ApplicationRecord
   has_many :emails, dependent: :destroy
   has_many :inbox_items, foreign_key: :owner_id, dependent: :destroy, inverse_of: :owner
   has_many :invitations, foreign_key: :inviter_id, dependent: :destroy, inverse_of: :inviter
+  has_many :contacts, dependent: :destroy
+  has_many :contact_users, through: :contacts
+  has_many :contact_memberships, class_name: "Contact", foreign_key: :contact_user_id, dependent: :destroy, inverse_of: :contact_user
   has_one :github_account, dependent: :destroy
   has_one :notion_account, dependent: :destroy
 

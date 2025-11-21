@@ -11,3 +11,9 @@ two:
   password_digest: <%= password_digest %>
   name: Two
   system_admin: false
+
+three:
+  email: three@example1.com
+  password_digest: <%= password_digest %>
+  name: Three
+  system_admin: false
