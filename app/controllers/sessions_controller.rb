@@ -39,7 +39,12 @@ class SessionsController < ApplicationController
     Invitation.transaction do
       invitation = Invitation.find_by_token_for(:invite, params[:invite_token])
       invitation.update(accepted_at: Time.current, email: user.email)
-      CreativeShare.create!(creative: invitation.creative, user: user, permission: invitation.permission)
+      CreativeShare.create!(
+        creative: invitation.creative,
+        user: user,
+        permission: invitation.permission,
+        shared_by: invitation.inviter
+      )
       invitation.creative.create_linked_creative_for_user(user)
     end
   rescue ActiveSupport::MessageVerifier::InvalidSignature

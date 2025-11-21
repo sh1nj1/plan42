@@ -19,7 +19,12 @@ class UsersController < ApplicationController
       if @user.save
         if invitation
           invitation.update(accepted_at: Time.current)
-          CreativeShare.create!(creative: invitation.creative, user: @user, permission: invitation.permission)
+          CreativeShare.create!(
+            creative: invitation.creative,
+            user: @user,
+            permission: invitation.permission,
+            shared_by: invitation.inviter
+          )
           Contact.ensure(user: invitation.inviter, contact_user: @user)
           invitation.creative.create_linked_creative_for_user(@user)
         end
@@ -149,11 +154,18 @@ class UsersController < ApplicationController
 
     # Collect all relevant user ids (contacts, people I've shared with, people who shared with me)
     direct_contact_ids = Current.user.contacts.pluck(:contact_user_id)
+    creative_shares = CreativeShare.arel_table
+    creatives = Creative.arel_table
 
-    shared_by_me_ids = CreativeShare
-      .where(shared_by: Current.user)
+    shared_by_me_scope = CreativeShare
+      .joins(:creative)
       .where.not(permission: CreativeShare.permissions[:no_access])
-      .pluck(:user_id)
+      .where(
+        creative_shares[:shared_by_id].eq(Current.user.id)
+          .or(creative_shares[:shared_by_id].eq(nil).and(creatives[:user_id].eq(Current.user.id)))
+      )
+
+    shared_by_me_ids = shared_by_me_scope.pluck(:user_id)
 
     shared_with_me_ids = CreativeShare
       .joins(:creative)
@@ -180,17 +192,20 @@ class UsersController < ApplicationController
 
     @last_login_map = Session.where(user_id: paged_users.map(&:id)).group(:user_id).maximum(:updated_at)
 
-    shares_from_me = CreativeShare
-      .where(shared_by: Current.user, user_id: paged_users.map(&:id))
-      .where.not(permission: CreativeShare.permissions[:no_access])
+    shares_from_me = shared_by_me_scope
+      .where(user_id: paged_users.map(&:id))
       .includes(creative: :rich_text_description)
 
     @shared_by_me = shares_from_me.group_by(&:user_id).transform_values { |shares| shares.map(&:creative) }
 
     shares_to_me = CreativeShare
       .joins(:creative)
-      .where(user_id: Current.user.id, shared_by_id: paged_users.map(&:id))
+      .where(user_id: Current.user.id)
       .where.not(permission: CreativeShare.permissions[:no_access])
+      .where(
+        creative_shares[:shared_by_id].in(paged_users.map(&:id))
+          .or(creative_shares[:shared_by_id].eq(nil).and(creatives[:user_id].in(paged_users.map(&:id))))
+      )
       .includes(creative: :rich_text_description)
 
     @shared_with_me = shares_to_me.group_by(&:sharer_id)
