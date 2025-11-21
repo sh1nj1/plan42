@@ -8,7 +8,7 @@ class GeminiChatClient
     - Respond in the asker's language (prefer the latest user message). Keep code and error messages in their original form.
   PROMPT
 
-  def initialize(api_key: ENV["GEMINI_API_KEY"], model: DEFAULT_MODEL, chat_factory: ->(model_id) { RubyLLM.chat(model: model_id) })
+  def initialize(api_key: ENV["GEMINI_API_KEY"], model: DEFAULT_MODEL, chat_factory: default_chat_factory)
     @api_key = api_key
     @model = model
     @chat_factory = chat_factory
@@ -38,8 +38,15 @@ class GeminiChatClient
 
   attr_reader :api_key, :model, :chat_factory
 
+  def default_chat_factory
+    lambda do |model_id, api_key|
+      RubyLLM.context { |config| config.gemini_api_key = api_key }
+             .chat(model: model_id)
+    end
+  end
+
   def build_conversation
-    chat_factory.call(model).tap do |chat|
+    chat_factory.call(model, api_key).tap do |chat|
       chat.with_instructions(SYSTEM_INSTRUCTIONS)
     end
   end

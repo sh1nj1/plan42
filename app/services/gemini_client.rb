@@ -1,7 +1,7 @@
 class GeminiClient
   DEFAULT_MODEL = "gemini-2.5-flash".freeze
 
-  def initialize(api_key: ENV["GEMINI_API_KEY"], model: DEFAULT_MODEL, chat_factory: ->(model_id) { RubyLLM.chat(model: model_id) })
+  def initialize(api_key: ENV["GEMINI_API_KEY"], model: DEFAULT_MODEL, chat_factory: default_chat_factory)
     @api_key = api_key
     @model = model
     @chat_factory = chat_factory
@@ -22,8 +22,15 @@ class GeminiClient
 
   private
 
+  def default_chat_factory
+    lambda do |model_id, api_key|
+      RubyLLM.context { |config| config.gemini_api_key = api_key }
+             .chat(model: model_id)
+    end
+  end
+
   def chat
-    @chat ||= @chat_factory.call(@model)
+    @chat ||= @chat_factory.call(@model, @api_key)
   end
 
   def build_prompt(categories, description)
