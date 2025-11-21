@@ -172,13 +172,7 @@ class CreativeTreeRow extends LitElement {
           style=${this._rowStyle()}
           data-creatives--select-mode-target="row"
         >
-          <div class="creative-row-start">
-            <div class="creative-row-actions">
-              ${this._renderCheckbox()}
-              ${this._renderActionButton()}
-            </div>
-            ${this._renderContent()}
-          </div>
+          <div class="creative-row-start">${this._renderContent()}</div>
           ${unsafeHTML(this.progressHtml || "")}
         </div>
       </div>
