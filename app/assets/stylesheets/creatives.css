@@ -111,6 +111,13 @@
     color: var(--color-muted);
     font-size: 0.9em;
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    align-self: flex-start;
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding-top: calc((var(--row-line-height, 24px) - var(--control-size, 24px)) / 2);
 }
 
 .creative-tags {
@@ -131,7 +138,22 @@
 
 .creative-row-start {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    gap: 8px;
+    flex: 1 1 auto;
+    position: relative;
+    min-width: 0;
+    padding-left: calc(var(--tree-indent-level, 0) * var(--tree-indent-step));
+    background-image: repeating-linear-gradient(
+        to right,
+        transparent 0,
+        transparent calc(var(--tree-indent-step) - 1px),
+        var(--color-border) calc(var(--tree-indent-step) - 1px),
+        var(--color-border) var(--tree-indent-step)
+    );
+    background-size: calc(var(--tree-indent-level, 0) * var(--tree-indent-step)) 100%;
+    background-repeat: no-repeat;
+    background-position: left top;
 }
 
 .creative-loading-indicator {
@@ -220,7 +242,9 @@
     visibility: hidden;
     display: flex;
     align-items: center;
-    align-self: stretch;
+    gap: 6px;
+    align-self: flex-start;
+    padding-top: calc((var(--row-line-height, 24px) - var(--control-size, 24px)) / 2);
 }
 
 .creative-row:hover .creative-row-actions {
@@ -287,7 +311,7 @@
 }
 
 .select-creative-checkbox {
-    margin-left: 6px;
+    margin-left: 0;
     width: 16px;
     height: 16px;
     cursor: pointer;
@@ -295,9 +319,12 @@
 }
 
 .creative-row {
+    --tree-indent-step: 22px;
+    --control-size: 24px;
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
+    gap: 12px;
 }
 
 .creative-row.selected {
@@ -311,7 +338,7 @@
 .creative-progress {
     color: var(--color-muted);
     font-size: 0.9em;
-    margin-left: 10px;
+    margin-left: 0;
 }
 
 .page-title {
@@ -355,18 +382,36 @@
 .indent3 {
     display: flex;
     align-items: center;
+    gap: 8px;
 }
 
 .indent1 {
-    margin-left: 0.0em;
+    margin-left: 0;
 }
 
 .indent2 {
-    margin-left: 0.2em;
+    margin-left: 0;
 }
 
 .indent3 {
-    margin-left: 0.4em;
+    margin-left: 0;
+}
+
+.creative-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    line-height: var(--row-line-height, 24px);
+    min-height: var(--row-line-height, 24px);
+}
+
+.creative-line.level-1,
+.creative-line.level-2,
+.creative-line.level-3,
+.creative-line.level-4,
+.creative-line.level-5,
+.creative-line.level-6 {
+    width: 100%;
 }
 
 .comments-btn {

@@ -167,7 +167,11 @@ class CreativeTreeRow extends LitElement {
         draggable=${draggableAttr}
         data-action=${dragActions}
       >
-        <div class="creative-row" data-creatives--select-mode-target="row">
+        <div
+          class="creative-row"
+          style=${this._rowStyle()}
+          data-creatives--select-mode-target="row"
+        >
           <div class="creative-row-start">
             <div class="creative-row-actions">
               ${this._renderCheckbox()}
@@ -189,7 +193,11 @@ class CreativeTreeRow extends LitElement {
         data-id=${this.creativeId ?? nothing}
         data-parent-id=${this.parentId ?? nothing}
       >
-        <div class="creative-row" style="background-color: transparent;" data-creatives--select-mode-target="row">
+        <div
+          class="creative-row"
+          style=${`background-color: transparent; ${this._rowStyle()}`}
+          data-creatives--select-mode-target="row"
+        >
           <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
             <div class="creative-title-content">
               ${unsafeHTML(this.descriptionHtml || "")}
@@ -252,9 +260,9 @@ class CreativeTreeRow extends LitElement {
     const indicator = this.loadingChildren ? this._renderLoadingIndicator() : nothing;
 
     if (level <= BULLET_STARTING_LEVEL) {
-      const headingClass = `indent${level}`;
+      const headingLevel = Math.max(1, Math.min(level, 6));
+      const headingClass = `indent${level} creative-line level-${headingLevel}`;
       if (this.hasChildren || this.isRoot) {
-        const headingLevel = Math.max(1, Math.min(level, 6));
         switch (headingLevel) {
           case 1:
             return html`<h1 class=${headingClass}>${toggle}${content}${indicator}</h1>`;
@@ -273,13 +281,10 @@ class CreativeTreeRow extends LitElement {
       return html`<div class=${headingClass}>${toggle}${content}${indicator}</div>`;
     }
 
-    const margin = level > BULLET_STARTING_LEVEL
-      ? `margin-left: ${(level - BULLET_STARTING_LEVEL) * 20}px;`
-      : "";
     const needsBullet = !((this.descriptionHtml || "").includes("<li>"));
     const bullet = needsBullet ? html`<div class="creative-tree-bullet"></div>` : nothing;
     return html`
-      <div class="creative-tree-li" style=${margin}>
+      <div class="creative-tree-li creative-line level-6">
         ${toggle}${bullet}${content}${indicator}
       </div>
     `;
@@ -318,6 +323,23 @@ class CreativeTreeRow extends LitElement {
 
   _toggleSymbol() {
     return this.expanded ? "▼" : "▶";
+  }
+
+  _rowLineHeight() {
+    const level = Number(this.level) || 1;
+    if (level <= 1) return 30;
+    if (level === 2) return 28;
+    if (level === 3) return 26;
+    return 24;
+  }
+
+  _indentLevel() {
+    const level = Number(this.level) || 1;
+    return Math.max(level - 1, 0);
+  }
+
+  _rowStyle() {
+    return `--row-line-height: ${this._rowLineHeight()}px; --tree-indent-level: ${this._indentLevel()};`;
   }
 
   _handleToggleClick(event) {
