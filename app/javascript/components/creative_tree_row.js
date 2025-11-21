@@ -252,6 +252,15 @@ class CreativeTreeRow extends LitElement {
   _renderContent() {
     const level = Number(this.level) || 1;
     const toggle = this._renderToggle();
+    const leading = (bullet = nothing) => html`
+      <div class="creative-line-leading">
+        <div class="creative-row-actions">
+          ${this._renderCheckbox()}
+          ${this._renderActionButton()}
+        </div>
+        ${toggle}${bullet}
+      </div>
+    `;
     const content = html`
       <div class="creative-content">
         <a class="unstyled-link" href=${this.linkUrl || "#"}>${unsafeHTML(this.descriptionHtml || "")}</a>
@@ -262,30 +271,32 @@ class CreativeTreeRow extends LitElement {
     if (level <= BULLET_STARTING_LEVEL) {
       const headingLevel = Math.max(1, Math.min(level, 6));
       const headingClass = `indent${level} creative-line level-${headingLevel}`;
+      const line = html`${leading()}${content}${indicator}`;
       if (this.hasChildren || this.isRoot) {
         switch (headingLevel) {
           case 1:
-            return html`<h1 class=${headingClass}>${toggle}${content}${indicator}</h1>`;
+            return html`<h1 class=${headingClass}>${line}</h1>`;
           case 2:
-            return html`<h2 class=${headingClass}>${toggle}${content}${indicator}</h2>`;
+            return html`<h2 class=${headingClass}>${line}</h2>`;
           case 3:
-            return html`<h3 class=${headingClass}>${toggle}${content}${indicator}</h3>`;
+            return html`<h3 class=${headingClass}>${line}</h3>`;
           case 4:
-            return html`<h4 class=${headingClass}>${toggle}${content}${indicator}</h4>`;
+            return html`<h4 class=${headingClass}>${line}</h4>`;
           case 5:
-            return html`<h5 class=${headingClass}>${toggle}${content}${indicator}</h5>`;
+            return html`<h5 class=${headingClass}>${line}</h5>`;
           default:
-            return html`<h6 class=${headingClass}>${toggle}${content}${indicator}</h6>`;
+            return html`<h6 class=${headingClass}>${line}</h6>`;
         }
       }
-      return html`<div class=${headingClass}>${toggle}${content}${indicator}</div>`;
+      return html`<div class=${headingClass}>${line}</div>`;
     }
 
     const needsBullet = !((this.descriptionHtml || "").includes("<li>"));
     const bullet = needsBullet ? html`<div class="creative-tree-bullet"></div>` : nothing;
+    const line = html`${leading(bullet)}${content}${indicator}`;
     return html`
       <div class="creative-tree-li creative-line level-6">
-        ${toggle}${bullet}${content}${indicator}
+        ${line}
       </div>
     `;
   }

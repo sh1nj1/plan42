@@ -71,7 +71,7 @@
 
 .creative-tree-li {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
 }
 .creative-content {
     min-width: min(50vw, var(--max-width) / 2);
@@ -117,7 +117,8 @@
     align-self: flex-start;
     flex-wrap: wrap;
     row-gap: 2px;
-    padding-top: calc((var(--row-line-height, 24px) - var(--control-size, 24px)) / 2);
+    line-height: var(--row-line-height, 24px);
+    min-height: var(--row-line-height, 24px);
 }
 
 .creative-tags {
@@ -224,11 +225,15 @@
 }
 
 .creative-toggle-btn {
-    width: 16px;
-    height: 16px;
+    --toggle-size: 16px;
+    width: var(--toggle-size);
+    height: var(--row-line-height, 24px);
     font-size: 14px;
     margin-right: 4px;
     visibility: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .add-creative-btn {
@@ -240,11 +245,10 @@
 
 .creative-row-actions {
     visibility: hidden;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 6px;
-    align-self: flex-start;
-    padding-top: calc((var(--row-line-height, 24px) - var(--control-size, 24px)) / 2);
+    height: var(--row-line-height, 24px);
 }
 
 .creative-row:hover .creative-row-actions {
@@ -399,10 +403,17 @@
 
 .creative-line {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     line-height: var(--row-line-height, 24px);
     min-height: var(--row-line-height, 24px);
+}
+
+.creative-line-leading {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--row-line-height, 24px);
 }
 
 .creative-line.level-1,
