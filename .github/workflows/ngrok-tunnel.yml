@@ -1,0 +1,53 @@
+name: Ngrok Tunnel (10 minutes)
+
+on:
+  push:
+
+jobs:
+  ngrok:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install ngrok
+        run: |
+          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ngrok
+
+      - name: Start ngrok tunnel for 10 minutes
+        env:
+          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
+        run: |
+          if [ -z "$NGROK_AUTHTOKEN" ]; then
+            echo "NGROK_AUTHTOKEN secret is required to start the tunnel." >&2
+            exit 1
+          fi
+
+          ngrok config add-authtoken "$NGROK_AUTHTOKEN"
+
+          ngrok tunnel --label edge=edghts_2WKlab6N1mkn4fBuqBmv1PRaXNu http://localhost:3000 > ngrok.log 2>&1 &
+          NGROK_PID=$!
+
+          # Give ngrok a few seconds to start so we can capture errors early.
+          sleep 5
+          if ! kill -0 "$NGROK_PID" 2>/dev/null; then
+            echo "ngrok failed to start. Check logs below." >&2
+            cat ngrok.log || true
+            exit 1
+          fi
+
+          echo "ngrok tunnel is running with edge label edghts_2WKlab6N1mkn4fBuqBmv1PRaXNu."
+          echo "The tunnel will stop automatically after 10 minutes."
+
+          sleep 600
+          echo "Stopping ngrok tunnel after 10 minutes."
+          kill "$NGROK_PID" || true
+          wait "$NGROK_PID" || true
+
+      - name: Show ngrok logs
+        if: always()
+        run: cat ngrok.log || true
