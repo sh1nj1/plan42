@@ -20,14 +20,14 @@ jobs:
 
       - name: Start ngrok tunnel for 10 minutes
         env:
-          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
+          NGROK_KEY: ${{ secrets.NGROK_KEY }}
         run: |
-          if [ -z "$NGROK_AUTHTOKEN" ]; then
-            echo "NGROK_AUTHTOKEN secret is required to start the tunnel." >&2
+          if [ -z "$NGROK_KEY" ]; then
+            echo "NGROK_KEY secret is required to start the tunnel." >&2
             exit 1
           fi
 
-          ngrok config add-authtoken "$NGROK_AUTHTOKEN"
+          ngrok config add-authtoken "$NGROK_KEY"
 
           ngrok tunnel --label edge=edghts_2WKlab6N1mkn4fBuqBmv1PRaXNu http://localhost:3000 > ngrok.log 2>&1 &
           NGROK_PID=$!

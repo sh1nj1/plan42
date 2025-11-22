@@ -22,7 +22,7 @@ Every `push` event triggers `.github/workflows/ngrok-tunnel.yml` to open a tunne
 ngrok tunnel --label edge=edghts_2WKlab6N1mkn4fBuqBmv1PRaXNu http://localhost:3000
 ```
 
-To enable the workflow, add an `NGROK_AUTHTOKEN` repository secret (the tunnel step fails fast when the secret is missing). The reserved edge label keeps the public URL stable while the tunnel is live; check the workflow logs for confirmation that the tunnel started and when it stopped.
+To enable the workflow, add an `NGROK_KEY` repository secret (the tunnel step fails fast when the secret is missing). The reserved edge label keeps the public URL stable while the tunnel is live; check the workflow logs for confirmation that the tunnel started and when it stopped.
 
 ### Runtime version info:
 
