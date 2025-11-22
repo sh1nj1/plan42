@@ -24,6 +24,8 @@ ngrok tunnel --label edge=edghts_2WKlab6N1mkn4fBuqBmv1PRaXNu http://localhost:30
 
 To enable the workflow, add an `NGROK_KEY` repository secret (the tunnel step fails fast when the secret is missing). The reserved edge label keeps the public URL stable while the tunnel is live; check the workflow logs for confirmation that the tunnel started and when it stopped.
 
+The workflow installs Ruby and Node dependencies, prepares the database, then launches the app with `./bin/dev` before opening the tunnel so both the Rails server and JavaScript watcher are running while ngrok is connected. When tunneling locally, start the app the same way (`./bin/dev`) before running the ngrok command.
+
 ### Runtime version info:
 
 ```bash

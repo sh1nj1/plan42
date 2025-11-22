@@ -11,6 +11,59 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Prepare database
+        env:
+          RAILS_ENV: development
+        run: bin/rails db:prepare
+
+      - name: Start Rails app with ./bin/dev
+        env:
+          PORT: 3000
+        run: |
+          gem install foreman
+
+          ./bin/dev > dev.log 2>&1 &
+          DEV_PID=$!
+          echo "DEV_PID=$DEV_PID" >> "$GITHUB_ENV"
+
+          for i in $(seq 1 30); do
+            if curl -sSf http://localhost:3000 >/dev/null; then
+              echo "Rails app is responding on http://localhost:3000"
+              break
+            fi
+
+            # Exit early if the process died while booting
+            if ! kill -0 "$DEV_PID" 2>/dev/null; then
+              echo "Rails app exited unexpectedly during boot." >&2
+              tail -n 200 dev.log || true
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          # If we never broke out of the loop by responding, fail fast.
+          if ! curl -sSf http://localhost:3000 >/dev/null; then
+            echo "Rails app did not become ready in time." >&2
+            tail -n 200 dev.log || true
+            exit 1
+          fi
+
       - name: Install ngrok
         run: |
           curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
@@ -48,6 +101,27 @@ jobs:
           kill "$NGROK_PID" || true
           wait "$NGROK_PID" || true
 
+          if [ -n "$DEV_PID" ]; then
+            echo "Stopping Rails app (pid: $DEV_PID)."
+            kill "$DEV_PID" || true
+            wait "$DEV_PID" || true
+          fi
+
       - name: Show ngrok logs
         if: always()
         run: cat ngrok.log || true
+
+      - name: Show Rails dev server logs
+        if: always()
+        run: cat dev.log || true
+
+      - name: Stop Rails dev server
+        if: always()
+        env:
+          DEV_PID: ${{ env.DEV_PID }}
+        run: |
+          if [ -n "$DEV_PID" ] && kill -0 "$DEV_PID" 2>/dev/null; then
+            echo "Stopping Rails app (pid: $DEV_PID)."
+            kill "$DEV_PID" || true
+            wait "$DEV_PID" || true
+          fi
