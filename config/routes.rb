@@ -30,7 +30,6 @@ Rails.application.routes.draw do
     collection do
       get :exists
       get :search
-      get :search
       patch :notification_settings
       get :new_ai
       post :create_ai
