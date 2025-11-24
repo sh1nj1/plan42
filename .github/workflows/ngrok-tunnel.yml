@@ -6,6 +6,8 @@ on:
 jobs:
   ngrok:
     runs-on: ubuntu-latest
+    env:
+      DEFAULT_URL_HOST: ${{ vars.DEFAULT_URL_HOST }}
 
     steps:
       - name: Checkout code
