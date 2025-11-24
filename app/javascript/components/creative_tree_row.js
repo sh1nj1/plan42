@@ -175,9 +175,7 @@ class CreativeTreeRow extends LitElement {
             ${this._renderToggle()}
             ${this._renderContent()}
           </div>
-          <div class="creative-row-end">
-             ${unsafeHTML(this.progressHtml || "")}
-          </div>
+            ${unsafeHTML(this.progressHtml || "")}
         </div>
       </div>
     `;
