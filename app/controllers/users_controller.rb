@@ -61,6 +61,7 @@ class UsersController < ApplicationController
       llm_vendor: "google", # Default to google for now
       llm_model: params[:llm_model],
       llm_api_key: params[:llm_api_key],
+      searchable: ActiveModel::Type::Boolean.new.cast(params[:searchable]),
       email_verified_at: Time.current, # Auto-verified
       created_by_id: Current.user.id
     )
@@ -76,7 +77,9 @@ class UsersController < ApplicationController
 
   def search
     term = params[:q].to_s.strip.downcase
-    users = User.where("LOWER(email) LIKE :term OR LOWER(name) LIKE :term", term: "#{term}%").limit(5)
+    users = User.where(searchable: true)
+                .where("LOWER(email) LIKE :term OR LOWER(name) LIKE :term", term: "#{term}%")
+                .limit(5)
     render json: users.map { |u| { id: u.id, name: u.display_name, email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
   end
 

@@ -20,6 +20,8 @@ ko:
       model_label: "Model"
       api_key_label: "API Key"
       api_key_help: "입력하면 시스템 기본값 대신 이 키가 사용됩니다. 암호화되어 저장됩니다."
+      searchable_label: "이 AI를 검색 및 멘션 가능하게 허용"
+      searchable_help: "활성화하면 다른 사용자가 이름으로 이 AI를 찾고 멘션할 수 있습니다."
       submit: "AI 에이전트 추가"
     create_ai:
       success: "AI 에이전트가 생성되었습니다."

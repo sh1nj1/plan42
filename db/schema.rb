@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_11_24_124521) do
+ActiveRecord::Schema[8.1].define(version: 2025_11_24_130000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -475,12 +475,14 @@ ActiveRecord::Schema[8.1].define(version: 2025_11_24_124521) do
     t.string "name", null: false
     t.boolean "notifications_enabled"
     t.string "password_digest", null: false
+    t.boolean "searchable", default: false, null: false
     t.boolean "system_admin", default: false, null: false
     t.text "system_prompt"
     t.string "theme"
     t.string "timezone"
     t.datetime "updated_at", null: false
     t.index ["email"], name: "index_users_on_email", unique: true
+    t.index ["searchable"], name: "index_users_on_searchable"
     t.index ["system_admin"], name: "index_users_on_system_admin"
   end
 

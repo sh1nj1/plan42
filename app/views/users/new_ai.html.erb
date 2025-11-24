@@ -27,6 +27,14 @@
     <small class="form-text text-muted"><%= t('users.new_ai.api_key_help') %></small>
   </div>
 
+  <div class="form-group">
+    <div class="form-check">
+      <%= form.check_box :searchable, { class: "form-check-input" }, true, false %>
+      <%= form.label :searchable, t('users.new_ai.searchable_label'), class: "form-check-label" %>
+    </div>
+    <small class="form-text text-muted"><%= t('users.new_ai.searchable_help') %></small>
+  </div>
+
   <%= form.submit t('users.new_ai.submit'), class: "primary-action-button" %>
 <% end %>
 
