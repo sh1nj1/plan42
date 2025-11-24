@@ -68,6 +68,7 @@ export function initializeCreativeRowEditor() {
     let uploadsPending = false;
     let uploadCompletionPromise = null;
     let resolveUploadCompletion = null;
+    let addNewInProgress = false;
 
     function formatProgressDisplay(value) {
       const numeric = Number(value);
@@ -863,11 +864,21 @@ export function initializeCreativeRowEditor() {
 
     function addNew() {
       if (!currentTree) return;
+
+      // Prevent multiple simultaneous calls to addNew (e.g., from Lexical onChange + keyboard event)
+      if (addNewInProgress) {
+        return;
+      }
+      addNewInProgress = true;
+      setTimeout(() => { addNewInProgress = false; }, 300);
+
       const prev = currentTree;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
+
       beforeNewOrMove(wasNew, prev, prevParent).then(() => {
         const prevCreativeId = prev.dataset.id;
+
         const childContainer = document.getElementById('creative-children-' + prevCreativeId);
         const isCollapsed = childContainer && childContainer.style.display === 'none';
         const firstChild = childContainer && childContainer.querySelector('.creative-tree');
@@ -885,6 +896,8 @@ export function initializeCreativeRowEditor() {
           insertBefore = nodeAfterTreeBlock(prev);
         }
         startNew(parentId, container, insertBefore, beforeId, afterId);
+      }).finally(() => {
+        addNewInProgress = false;
       });
     }
 
