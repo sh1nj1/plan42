@@ -138,4 +138,46 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     refute Tag.exists?(tag.id)
     refute Session.exists?(session.id)
   end
+
+  test "prepare_contacts includes shares on origin creatives for linked creatives" do
+    sign_in_as(@admin, password: "password")
+
+    # Create an origin creative owned by regular_user
+    origin_creative = Creative.create!(user: @regular_user, description: "Origin creative")
+
+    # Create a linked creative owned by admin (pointing to origin)
+    Creative.create!(
+      user: @admin,
+      description: "Linked creative",
+      origin_id: origin_creative.id
+    )
+
+    # Create another user who will be shared with
+    shared_user = User.create!(
+      email: "shared@example.com",
+      password: "password",
+      password_confirmation: "password",
+      name: "Shared User"
+    )
+
+    # Share the origin creative with shared_user (shared_by regular_user)
+    CreativeShare.create!(
+      creative: origin_creative,
+      user: shared_user,
+      permission: :feedback,
+      shared_by: @regular_user
+    )
+
+    # Access the user show page contacts tab to trigger prepare_contacts
+    get user_path(@admin, tab: "contacts")
+    assert_response :success
+
+    # Verify that shared_user appears in the contacts list
+    # This confirms that the admin sees shared_user because they own a linked creative
+    # that points to origin_creative, which is shared with shared_user
+    assert_includes response.body, shared_user.email,
+                    "Admin should see shared_user in contacts because they own a linked creative"
+    assert_includes response.body, shared_user.name,
+                    "Admin should see shared_user's name in contacts"
+  end
 end
