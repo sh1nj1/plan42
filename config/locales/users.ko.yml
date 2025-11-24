@@ -15,7 +15,6 @@ ko:
     new_ai:
       title: "AI 에이전트 추가"
       id_label: "ID"
-      id_help: "멘션에 사용됩니다 (예: @my_bot)"
       name_label: "Name"
       system_prompt_label: "System Prompt"
       model_label: "Model"

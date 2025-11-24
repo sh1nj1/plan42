@@ -81,18 +81,20 @@ class CommentsController < ApplicationController
 
     if is_owner || is_admin || is_creative_owner
       # If admin/creative owner is deleting someone else's comment, send notification
-      if (is_admin || is_creative_owner) && !is_owner && !@comment.user.ai_user?
-        InboxItem.create!(
-          owner: @comment.user,
-          creative: @creative,
-          comment: @comment,
-          message_key: "inbox.comment_deleted_by_admin",
-          message_params: {
-            admin_name: Current.user.name,
-            creative_snippet: @creative.creative_snippet
-          },
-          link: creative_path(@creative)
-        )
+      if (is_admin || is_creative_owner) && !is_owner && @comment.user.present? && !@comment.user.ai_user?
+        if @comment.user.present?
+          InboxItem.create!(
+            owner: @comment.user,
+            creative: @creative,
+            comment: @comment,
+            message_key: "inbox.comment_deleted_by_admin",
+            message_params: {
+              admin_name: Current.user.name,
+              creative_snippet: @creative.creative_snippet
+            },
+            link: creative_path(@creative)
+          )
+        end
       end
 
       @comment.destroy

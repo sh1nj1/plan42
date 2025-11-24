@@ -15,7 +15,6 @@ en:
     new_ai:
       title: "Add AI User"
       id_label: "ID"
-      id_help: "This will be used for mentions (e.g. @my_bot)"
       name_label: "Name"
       system_prompt_label: "System Prompt"
       vendor_label: "LLM Vendor"
