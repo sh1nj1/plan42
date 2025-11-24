@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_10_02_000000) do
+ActiveRecord::Schema[8.1].define(version: 2025_11_24_124521) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -450,8 +450,6 @@ ActiveRecord::Schema[8.1].define(version: 2025_10_02_000000) do
     t.integer "label_id"
     t.datetime "updated_at", null: false
     t.string "value"
-    t.index ["creative_id", "label_id"], name: "index_tags_on_creative_id_and_label_id", unique: true
-    t.index ["creative_id"], name: "index_tags_on_creative_id"
     t.index ["label_id"], name: "index_tags_on_label_id"
   end
 
@@ -460,6 +458,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_10_02_000000) do
     t.string "calendar_id"
     t.string "completion_mark", default: "", null: false
     t.datetime "created_at", null: false
+    t.integer "created_by_id"
     t.integer "display_level", default: 6, null: false
     t.string "email", null: false
     t.datetime "email_verified_at"
@@ -467,11 +466,15 @@ ActiveRecord::Schema[8.1].define(version: 2025_10_02_000000) do
     t.string "google_refresh_token"
     t.datetime "google_token_expires_at"
     t.string "google_uid"
+    t.string "llm_api_key"
+    t.string "llm_model"
+    t.string "llm_vendor"
     t.string "locale"
     t.string "name", null: false
     t.boolean "notifications_enabled"
     t.string "password_digest", null: false
     t.boolean "system_admin", default: false, null: false
+    t.text "system_prompt"
     t.string "theme"
     t.string "timezone"
     t.datetime "updated_at", null: false

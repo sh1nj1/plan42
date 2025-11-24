@@ -49,8 +49,9 @@ class CommentsController < ApplicationController
     response = Comments::CommandProcessor.new(comment: @comment, user: Current.user).call
     @comment.content = "#{@comment.content}\n\n#{response}" if response.present?
     if @comment.save
-      if @comment.content.match?(/\A@gemini\b/i)
-        Comments::GeminiResponderJob.perform_later(@comment.id, @creative.id)
+      # Trigger AI responder for any @mention at the start
+      if @comment.content.match?(/\A@/)
+        Comments::AiResponderJob.perform_later(@comment.id, @creative.id)
       end
       @comment = Comment.with_attached_images.find(@comment.id)
       render partial: "comments/comment", locals: { comment: @comment }, status: :created
@@ -74,7 +75,26 @@ class CommentsController < ApplicationController
 
   def destroy
     # @comment is set by before_action
-    if @comment.user == Current.user
+    is_owner = @comment.user == Current.user
+    is_admin = @creative.has_permission?(Current.user, :admin)
+    is_creative_owner = @creative.user == Current.user
+
+    if is_owner || is_admin || is_creative_owner
+      # If admin/creative owner is deleting someone else's comment, send notification
+      if (is_admin || is_creative_owner) && !is_owner && !@comment.user.ai_user?
+        InboxItem.create!(
+          owner: @comment.user,
+          creative: @creative,
+          comment: @comment,
+          message_key: "inbox.comment_deleted_by_admin",
+          message_params: {
+            admin_name: Current.user.name,
+            creative_snippet: @creative.creative_snippet
+          },
+          link: creative_path(@creative)
+        )
+      end
+
       @comment.destroy
       head :no_content
     else

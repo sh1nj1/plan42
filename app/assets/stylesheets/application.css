@@ -575,6 +575,26 @@ input[type="password"] {
     vertical-align: top;
 }
 
+.contacts-table th:nth-child(1),
+.contacts-table td:nth-child(1) {
+    min-width: 48px; /* avatar */
+}
+
+.contacts-table th:nth-child(2),
+.contacts-table td:nth-child(2) {
+    min-width: 82px; /* name */
+}
+
+.contacts-table th:nth-child(3),
+.contacts-table td:nth-child(3) {
+    min-width: 160px; /* email */
+}
+
+.contacts-table th:nth-child(6),
+.contacts-table td:nth-child(6) {
+    min-width: 140px; /* actions */
+}
+
 .creative-cell {
     min-width: 200px;
 }
@@ -629,4 +649,3 @@ input[type="password"] {
         min-width: 600px;
     }
 }
-

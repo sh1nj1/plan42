@@ -47,9 +47,12 @@
       <button class="copy-comment-link-btn" data-comment-id="<%= comment.id %>" data-comment-url="<%= creative_comment_url(comment.creative, comment) %>" title="<%= t('comments.copy_link_button') %>">
         <%= t('comments.copy_link_button') %>
       </button>
-      <button class="delete-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('comments.delete') %>">
-        <%= t('comments.delete_button') %>
-      </button>
+      <% can_delete = comment.user == Current.user || comment.creative.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
+      <% if can_delete %>
+        <button class="delete-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.delete') %>">
+          <%= t('comments.delete_button') %>
+        </button>
+      <% end %>
     </div>
   </div>
   <div class="comment-content"><%= comment.content %></div>
