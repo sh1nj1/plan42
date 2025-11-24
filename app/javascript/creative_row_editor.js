@@ -14,7 +14,7 @@ export function initializeCreativeRowEditor() {
   if (initialized) return;
   initialized = true;
 
-  document.addEventListener('turbo:load', function() {
+  document.addEventListener('turbo:load', function () {
     const template = document.getElementById('inline-edit-form');
     if (!template) return;
 
@@ -66,15 +66,15 @@ export function initializeCreativeRowEditor() {
     let saving = false;
     let savePromise = Promise.resolve();
     let uploadsPending = false;
-let uploadCompletionPromise = null;
-let resolveUploadCompletion = null;
+    let uploadCompletionPromise = null;
+    let resolveUploadCompletion = null;
 
-function formatProgressDisplay(value) {
-  const numeric = Number(value);
-  if (Number.isNaN(numeric)) return '0%';
-  const percentage = Math.round(numeric * 100);
-  return `${percentage}%`;
-}
+    function formatProgressDisplay(value) {
+      const numeric = Number(value);
+      if (Number.isNaN(numeric)) return '0%';
+      const percentage = Math.round(numeric * 100);
+      return `${percentage}%`;
+    }
 
     function treeRowElement(node) {
       return node && node.closest ? node.closest('creative-tree-row') : null;
@@ -547,7 +547,7 @@ function formatProgressDisplay(value) {
 
     function initializeEventListeners() {
       if (!creativeEditClickHandler) {
-        creativeEditClickHandler = function(e) {
+        creativeEditClickHandler = function (e) {
           const tree = e.detail?.treeElement || e.detail?.button?.closest('.creative-tree');
           if (!tree) return;
           e.preventDefault();
@@ -556,7 +556,7 @@ function formatProgressDisplay(value) {
         document.addEventListener('creative-edit-click', creativeEditClickHandler);
       }
 
-      document.body.addEventListener('click', function(e) {
+      document.body.addEventListener('click', function (e) {
         // Delegated event for .edit-inline-btn
         const editBtn = e.target.closest('.edit-inline-btn');
         if (editBtn) {
@@ -598,6 +598,7 @@ function formatProgressDisplay(value) {
           startNew(parentId, container, insertBefore, beforeId);
           return; // Event handled
         }
+
 
         // Delegated event for .new-root-creative-btn
         const newRootBtn = e.target.closest('.new-root-creative-btn');
@@ -714,18 +715,18 @@ function formatProgressDisplay(value) {
     }
 
     function saveForm(tree = currentTree, parentId = parentInput.value) {
-      return waitForUploads().then(function() {
+      return waitForUploads().then(function () {
         if (saving) return savePromise;
         clearTimeout(saveTimer);
         const method = methodInput.value === 'patch' ? 'PATCH' : 'POST';
         pendingSave = false;
         if (!form.action) return Promise.resolve();
         saving = true;
-        savePromise = creativesApi.save(form.action, method, form).then(function(r) {
+        savePromise = creativesApi.save(form.action, method, form).then(function (r) {
           if (!r.ok) return r;
-          return r.text().then(function(text) {
+          return r.text().then(function (text) {
             try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
-          }).then(function(data) {
+          }).then(function (data) {
             if (method === 'POST' && data.id) {
               form.action = `/creatives/${data.id}`;
               methodInput.value = 'patch';
@@ -766,7 +767,7 @@ function formatProgressDisplay(value) {
               if (tree) refreshRow(tree);
             }
           });
-        }).finally(function() {
+        }).finally(function () {
           saving = false;
         });
         return savePromise;
@@ -785,7 +786,7 @@ function formatProgressDisplay(value) {
       currentRowElement = null;
       tree.draggable = true;
 
-      const finalizeHide = function() {
+      const finalizeHide = function () {
         template.style.display = 'none';
         const p = (pendingSave || saving) ? saveForm(tree, parentId) : Promise.resolve();
         return p.then(() => {
@@ -827,16 +828,16 @@ function formatProgressDisplay(value) {
     }
 
     function beforeNewOrMove(wasNew, prev, prevParent) {
-        const needsSave = pendingSave || wasNew || saving;
-        const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
-        return p.then(() => {
-            if (wasNew && !form.dataset.creativeId) {
-                removeTreeElement(prev);
-            } else {
-                showRow(prev);
-                refreshRow(prev);
-            }
-        });
+      const needsSave = pendingSave || wasNew || saving;
+      const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
+      return p.then(() => {
+        if (wasNew && !form.dataset.creativeId) {
+          removeTreeElement(prev);
+        } else {
+          showRow(prev);
+          refreshRow(prev);
+        }
+      });
     }
 
     function move(delta) {
@@ -871,7 +872,7 @@ function formatProgressDisplay(value) {
         const isCollapsed = childContainer && childContainer.style.display === 'none';
         const firstChild = childContainer && childContainer.querySelector('.creative-tree');
         let parentId, container, insertBefore,
-            beforeId = '', afterId = '';
+          beforeId = '', afterId = '';
         if (firstChild && !isCollapsed) {
           parentId = prevCreativeId;
           container = childContainer;
@@ -1035,7 +1036,7 @@ function formatProgressDisplay(value) {
         .then(results => {
           linkResults.innerHTML = '';
           if (Array.isArray(results)) {
-            results.forEach(function(c) {
+            results.forEach(function (c) {
               const li = document.createElement('li');
               li.textContent = c.description;
               li.dataset.id = c.id;
@@ -1284,13 +1285,13 @@ function formatProgressDisplay(value) {
       return !!node && $isRootOrShadowRoot(node);
     }
 
-    progressInput.addEventListener('input', function() {
+    progressInput.addEventListener('input', function () {
       progressValue.textContent = formatProgressDisplay(progressInput.value);
       scheduleSave();
     });
 
     if (parentSuggestBtn && parentSuggestions) {
-      parentSuggestBtn.addEventListener('click', function() {
+      parentSuggestBtn.addEventListener('click', function () {
         const originalLabel = parentSuggestBtn.textContent;
         parentSuggestBtn.disabled = true;
         parentSuggestBtn.textContent = `${originalLabel}...`;
@@ -1298,16 +1299,16 @@ function formatProgressDisplay(value) {
         parentSuggestions.style.display = 'block';
 
         saveForm()
-          .then(function() {
+          .then(function () {
             const id = form.dataset.creativeId;
             if (!id) {
               parentSuggestions.style.display = 'none';
               return;
             }
-            return creativesApi.parentSuggestions(id).then(function(data) {
+            return creativesApi.parentSuggestions(id).then(function (data) {
               parentSuggestions.innerHTML = '';
               if (data && data.length) {
-                data.forEach(function(s) {
+                data.forEach(function (s) {
                   const opt = document.createElement('option');
                   opt.value = s.id;
                   opt.textContent = s.path;
@@ -1319,7 +1320,7 @@ function formatProgressDisplay(value) {
               }
             });
           })
-          .finally(function() {
+          .finally(function () {
             parentSuggestBtn.textContent = originalLabel;
             parentSuggestBtn.disabled = false;
           });
@@ -1327,11 +1328,11 @@ function formatProgressDisplay(value) {
     }
 
     if (parentSuggestions) {
-      parentSuggestions.addEventListener('change', function() {
+      parentSuggestions.addEventListener('change', function () {
         if (!this.value) return;
         parentInput.value = this.value;
         const targetId = this.value;
-        saveForm().then(function() {
+        saveForm().then(function () {
           window.location.href = `/creatives/${targetId}`;
         });
       });
@@ -1341,11 +1342,11 @@ function formatProgressDisplay(value) {
       closeBtn.addEventListener('click', hideCurrent);
     }
 
-    upBtn.addEventListener('click', function() {
+    upBtn.addEventListener('click', function () {
       if (pendingSave) saveForm();
       move(-1);
     });
-    downBtn.addEventListener('click', function() {
+    downBtn.addEventListener('click', function () {
       if (pendingSave) saveForm();
       move(1);
     });
@@ -1363,86 +1364,86 @@ function formatProgressDisplay(value) {
     }
 
     if (deleteBtn) {
-      deleteBtn.addEventListener('click', function() {
+      deleteBtn.addEventListener('click', function () {
         if (confirm(deleteBtn.dataset.confirm)) deleteCurrent(false);
       });
     }
 
-      if (deleteWithChildrenBtn) {
-        deleteWithChildrenBtn.addEventListener('click', function() {
-          if (confirm(deleteWithChildrenBtn.dataset.confirm)) deleteCurrent(true);
-        });
-      }
+    if (deleteWithChildrenBtn) {
+      deleteWithChildrenBtn.addEventListener('click', function () {
+        if (confirm(deleteWithChildrenBtn.dataset.confirm)) deleteCurrent(true);
+      });
+    }
 
-      if (linkBtn) {
-        linkBtn.addEventListener('click', linkExistingCreative);
-      }
+    if (linkBtn) {
+      linkBtn.addEventListener('click', linkExistingCreative);
+    }
 
-      if (linkSearchInput) {
-        linkSearchInput.addEventListener('input', searchLinkCreatives);
-      }
+    if (linkSearchInput) {
+      linkSearchInput.addEventListener('input', searchLinkCreatives);
+    }
 
-      if (linkResults) {
-        linkResults.addEventListener('click', handleLinkResultClick);
-        linkResults.addEventListener('keydown', handleLinkResultKeydown);
-      }
+    if (linkResults) {
+      linkResults.addEventListener('click', handleLinkResultClick);
+      linkResults.addEventListener('keydown', handleLinkResultKeydown);
+    }
 
-      if (linkCloseBtn && linkModal) {
-        linkCloseBtn.addEventListener('click', closeLinkModal);
-        linkModal.addEventListener('click', function(e) {
-          if (e.target === linkModal) closeLinkModal();
-        });
-      }
+    if (linkCloseBtn && linkModal) {
+      linkCloseBtn.addEventListener('click', closeLinkModal);
+      linkModal.addEventListener('click', function (e) {
+        if (e.target === linkModal) closeLinkModal();
+      });
+    }
 
-      if (unlinkBtn) {
-        unlinkBtn.addEventListener('click', function() {
-          if (confirm(unlinkBtn.dataset.confirm)) deleteCurrent(false);
-        });
-      }
+    if (unlinkBtn) {
+      unlinkBtn.addEventListener('click', function () {
+        if (confirm(unlinkBtn.dataset.confirm)) deleteCurrent(false);
+      });
+    }
 
-      if (unconvertBtn) {
-        unconvertBtn.addEventListener('click', function() {
-          const creativeId = form.dataset.creativeId;
-          if (!creativeId) return;
-          const confirmText = unconvertBtn.dataset.confirm;
-          if (confirmText && !confirm(confirmText)) return;
-          const errorMessage = unconvertBtn.dataset.error || 'Failed to unconvert.';
-          unconvertBtn.disabled = true;
-          saveForm()
-            .then(function(saveResponse) {
-              if (saveResponse && saveResponse.ok === false) {
-                return saveResponse
-                  .json()
-                  .catch(function() { return {}; })
-                  .then(function(data) {
-                    alert(data && data.error ? data.error : errorMessage);
-                    const error = new Error('Save failed');
-                    error._handled = true;
-                    throw error;
-                  });
-              }
-              return creativesApi.unconvert(creativeId);
-            })
-            .then(function(response) {
-              if (response.ok) {
-                location.reload();
-                return;
-              }
-              return response
+    if (unconvertBtn) {
+      unconvertBtn.addEventListener('click', function () {
+        const creativeId = form.dataset.creativeId;
+        if (!creativeId) return;
+        const confirmText = unconvertBtn.dataset.confirm;
+        if (confirmText && !confirm(confirmText)) return;
+        const errorMessage = unconvertBtn.dataset.error || 'Failed to unconvert.';
+        unconvertBtn.disabled = true;
+        saveForm()
+          .then(function (saveResponse) {
+            if (saveResponse && saveResponse.ok === false) {
+              return saveResponse
                 .json()
-                .catch(function() { return {}; })
-                .then(function(data) {
+                .catch(function () { return {}; })
+                .then(function (data) {
                   alert(data && data.error ? data.error : errorMessage);
+                  const error = new Error('Save failed');
+                  error._handled = true;
+                  throw error;
                 });
-            })
-            .catch(function(error) {
-              if (error && error._handled) return;
-              alert(errorMessage);
-            })
-            .finally(function() {
-              unconvertBtn.disabled = false;
-            });
-        });
-      }
-    });
-  }
+            }
+            return creativesApi.unconvert(creativeId);
+          })
+          .then(function (response) {
+            if (response.ok) {
+              location.reload();
+              return;
+            }
+            return response
+              .json()
+              .catch(function () { return {}; })
+              .then(function (data) {
+                alert(data && data.error ? data.error : errorMessage);
+              });
+          })
+          .catch(function (error) {
+            if (error && error._handled) return;
+            alert(errorMessage);
+          })
+          .finally(function () {
+            unconvertBtn.disabled = false;
+          });
+      });
+    }
+  });
+}

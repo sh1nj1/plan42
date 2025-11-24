@@ -167,15 +167,15 @@ class CreativeTreeRow extends LitElement {
         draggable=${draggableAttr}
         data-action=${dragActions}
       >
-        <div class="creative-row" data-creatives--select-mode-target="row">
+        <div class="creative-row level-${this.level}" data-creatives--select-mode-target="row">
           <div class="creative-row-start">
-            <div class="creative-row-actions">
-              ${this._renderCheckbox()}
-              ${this._renderActionButton()}
-            </div>
+            ${this._renderCheckbox()}
+            ${this._renderActionButton()}
+            ${this._renderTreeLines()}
+            ${this._renderToggle()}
             ${this._renderContent()}
           </div>
-          ${unsafeHTML(this.progressHtml || "")}
+            ${unsafeHTML(this.progressHtml || "")}
         </div>
       </div>
     `;
@@ -204,6 +204,16 @@ class CreativeTreeRow extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  _renderTreeLines() {
+    const level = Number(this.level) || 1;
+    const lines = [];
+    // Render a tree line for each level of depth minus 1 (since level 1 is root-ish)
+    for (let i = 1; i < level; i++) {
+      lines.push(html`<div class="tree-line"></div>`);
+    }
+    return lines;
   }
 
   _renderCheckbox() {
@@ -243,7 +253,7 @@ class CreativeTreeRow extends LitElement {
 
   _renderContent() {
     const level = Number(this.level) || 1;
-    const toggle = this._renderToggle();
+    // Toggle is now rendered outside
     const content = html`
       <div class="creative-content">
         <a class="unstyled-link" href=${this.linkUrl || "#"}>${unsafeHTML(this.descriptionHtml || "")}</a>
@@ -253,34 +263,37 @@ class CreativeTreeRow extends LitElement {
 
     if (level <= BULLET_STARTING_LEVEL) {
       const headingClass = `indent${level}`;
-      if (this.hasChildren || this.isRoot) {
-        const headingLevel = Math.max(1, Math.min(level, 6));
-        switch (headingLevel) {
-          case 1:
-            return html`<h1 class=${headingClass}>${toggle}${content}${indicator}</h1>`;
-          case 2:
-            return html`<h2 class=${headingClass}>${toggle}${content}${indicator}</h2>`;
-          case 3:
-            return html`<h3 class=${headingClass}>${toggle}${content}${indicator}</h3>`;
-          case 4:
-            return html`<h4 class=${headingClass}>${toggle}${content}${indicator}</h4>`;
-          case 5:
-            return html`<h5 class=${headingClass}>${toggle}${content}${indicator}</h5>`;
-          default:
-            return html`<h6 class=${headingClass}>${toggle}${content}${indicator}</h6>`;
-        }
+
+      // If no children, render as div instead of heading to avoid large font size
+      if (!this.hasChildren) {
+        return html`<div class=${headingClass}>${content}${indicator}</div>`;
       }
-      return html`<div class=${headingClass}>${toggle}${content}${indicator}</div>`;
+
+      // We wrap content in heading tags for semantics
+      const headingLevel = Math.max(1, Math.min(level, 6));
+      switch (headingLevel) {
+        case 1:
+          return html`<h1 class=${headingClass}>${content}${indicator}</h1>`;
+        case 2:
+          return html`<h2 class=${headingClass}>${content}${indicator}</h2>`;
+        case 3:
+          return html`<h3 class=${headingClass}>${content}${indicator}</h3>`;
+        case 4:
+          return html`<h4 class=${headingClass}>${content}${indicator}</h4>`;
+        case 5:
+          return html`<h5 class=${headingClass}>${content}${indicator}</h5>`;
+        default:
+          return html`<h6 class=${headingClass}>${content}${indicator}</h6>`;
+      }
     }
 
-    const margin = level > BULLET_STARTING_LEVEL
-      ? `margin-left: ${(level - BULLET_STARTING_LEVEL) * 20}px;`
-      : "";
+    // For deeper levels, we use div. But we don't need margin-left anymore because we have tree lines.
+    // We still keep the bullet if needed.
     const needsBullet = !((this.descriptionHtml || "").includes("<li>"));
     const bullet = needsBullet ? html`<div class="creative-tree-bullet"></div>` : nothing;
     return html`
-      <div class="creative-tree-li" style=${margin}>
-        ${toggle}${bullet}${content}${indicator}
+      <div class="creative-tree-li">
+        ${bullet}${content}${indicator}
       </div>
     `;
   }

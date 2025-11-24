@@ -1,6 +1,4 @@
-
-#creatives {
-}
+/* #creatives {} - removed empty rule */
 
 .creative-actions-row {
     margin: 0.0em 1.0em;
@@ -26,6 +24,7 @@
     box-shadow: 0 2px 8px var(--color-border);
     min-width: 220px;
 }
+
 .delete-one {
     margin-bottom: 0.5em;
 }
@@ -71,12 +70,42 @@
 
 .creative-tree-li {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    /* Changed from center to flex-start */
+    position: relative;
 }
+
+/* Tree Lines */
+.tree-line {
+    width: 10px;
+    /* Indentation width matching toggle button */
+    min-width: 10px;
+    display: flex;
+    justify-content: center;
+    position: relative;
+    align-self: stretch;
+    /* Stretch to full height of the row */
+}
+
+.tree-line::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    background-color: var(--color-border);
+    /* Thin guide line */
+    opacity: 0.5;
+}
+
 .creative-content {
     min-width: min(50vw, var(--max-width) / 2);
     max-width: calc(min(100vw, var(--max-width)) - 160px);
+    padding-top: 2px;
+    /* Slight adjustment for text baseline */
 }
+
 .creative-row:hover .creative-content {
     text-decoration: underline;
     text-decoration-color: var(--color-link);
@@ -104,6 +133,8 @@
     margin-left: 4px;
     margin-right: 8px;
     flex: 0 0 5px;
+    margin-top: 10px;
+    /* Align with first line of text (approx) */
 }
 
 .creative-row-end {
@@ -111,6 +142,10 @@
     color: var(--color-muted);
     font-size: 0.9em;
     white-space: nowrap;
+    display: flex;
+    align-items: flex-start;
+    /* Top align */
+    /* padding-top: 4px; - Removed to align comments button with edit button */
 }
 
 .creative-tags {
@@ -119,19 +154,28 @@
     white-space: nowrap;
     display: flex;
     flex-wrap: wrap;
+    padding-top: 4px;
+    /* Restore baseline alignment */
 }
 
-.creative-progress-complete {
+.creative-progress-complete,
+.creative-progress-incomplete {
     color: var(--color-complete);
+    padding-top: 4px;
+    /* Restore baseline alignment */
 }
 
 .creative-progress-incomplete {
-    /* ok */
+    color: var(--color-muted);
 }
+
+/* .creative-progress-incomplete {} - removed empty rule */
 
 .creative-row-start {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    /* Changed from center to flex-start */
+    flex-grow: 1;
 }
 
 .creative-loading-indicator {
@@ -158,9 +202,13 @@
 }
 
 @keyframes creative-loading-ellipsis {
-    0%, 60%, 100% {
+
+    0%,
+    60%,
+    100% {
         opacity: 0.2;
     }
+
     30% {
         opacity: 1;
     }
@@ -192,6 +240,8 @@
     line-height: 1;
     display: inline-flex;
     flex-shrink: 0;
+    padding-top: 4px;
+    /* Align with text */
 }
 
 .voice-input-active {
@@ -206,7 +256,15 @@
     height: 16px;
     font-size: 14px;
     margin-right: 4px;
+    margin-top: 4px;
+    /* Align with text */
     visibility: hidden;
+    /* Hidden by default on desktop */
+    /* Total width is 20px (16 + 4) */
+}
+
+.creative-row:hover .creative-toggle-btn {
+    visibility: visible;
 }
 
 .add-creative-btn {
@@ -216,28 +274,25 @@
 }
 
 
-.creative-row-actions {
+/* Replaced creative-row-actions visibility logic with direct targeting */
+.edit-inline-btn {
     visibility: hidden;
-    display: flex;
-    align-items: center;
-    align-self: stretch;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    width: 20px;
+    /* Fixed width for alignment */
 }
 
-.creative-row:hover .creative-row-actions {
+.creative-row:hover .edit-inline-btn {
     visibility: visible;
-}
-
-.creative-row:hover .creative-toggle-btn {
-    visibility: visible;
+    opacity: 1;
 }
 
 @media (max-width: 768px) {
-    .creative-row-actions {
-        visibility: visible !important;
-    }
     .creative-toggle-btn {
         visibility: visible !important;
     }
+
     .edit-inline-btn {
         max-width: 0;
         opacity: 0;
@@ -246,11 +301,13 @@
         transform: translateX(10px);
         transition: max-width 0.3s ease, opacity 0.3s ease, transform 0.3s ease;
     }
+
     .creative-row.show-edit .edit-inline-btn {
         max-width: 40px;
         opacity: 1;
         transform: translateX(0);
         pointer-events: auto;
+        visibility: visible;
     }
 }
 
@@ -273,7 +330,8 @@
         position: absolute;
         left: 0;
         width: 100%;
-        height: 6px; /* border thickness */
+        height: 6px;
+        /* border thickness */
         background: var(--color-bg);
     }
 
@@ -292,12 +350,17 @@
     height: 16px;
     cursor: pointer;
     visibility: visible;
+    margin-top: 6px;
+    /* Align with text */
 }
 
 .creative-row {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
+    /* Changed from center to flex-start */
+    padding: 2px 0;
+    /* Add some vertical padding */
 }
 
 .creative-row.selected {
@@ -312,6 +375,8 @@
     color: var(--color-muted);
     font-size: 0.9em;
     margin-left: 10px;
+    padding-top: 4px;
+    /* Align with text */
 }
 
 .page-title {
@@ -340,21 +405,51 @@
 
 .creative-row-start h1 {
     font-size: 1.3em;
+    margin: 0;
 }
 
 .creative-row-start h2 {
     font-size: 1.2em;
+    margin: 0;
 }
 
 .creative-row-start h3 {
     font-size: 1.1em;
+    margin: 0;
 }
+
+.creative-row-start h4,
+.creative-row-start h5,
+.creative-row-start h6 {
+    margin: 0;
+}
+
+/* Headings need specific alignment adjustments */
+.level-1 .creative-action-btn,
+.level-1 .select-creative-checkbox,
+.level-1 .creative-toggle-btn {
+    margin-top: 8px;
+}
+
+.level-2 .creative-action-btn,
+.level-2 .select-creative-checkbox,
+.level-2 .creative-toggle-btn {
+    margin-top: 7px;
+}
+
+.level-3 .creative-action-btn,
+.level-3 .select-creative-checkbox,
+.level-3 .creative-toggle-btn {
+    margin-top: 6px;
+}
+
 
 .indent1,
 .indent2,
 .indent3 {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    /* Changed from center to flex-start */
 }
 
 .indent1 {
@@ -374,6 +469,23 @@
     height: 28px;
     position: relative;
     color: var(--color-text);
+    margin-top: -2px;
+    /* Move higher as requested */
+}
+
+/* Ensure comments button stays high for headings, overriding generic action button margin */
+.level-1 .comments-btn,
+.level-2 .comments-btn,
+.level-3 .comments-btn {
+    margin-top: -2px;
+}
+
+/* Add spacing for headings via row padding to preserve alignment */
+.creative-row.level-1,
+.creative-row.level-2,
+.creative-row.level-3 {
+    padding-top: 6px;
+    padding-bottom: 6px;
 }
 
 .comment-icon {
