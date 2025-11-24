@@ -31,13 +31,15 @@ jobs:
           RAILS_ENV: development
         run: bin/rails db:prepare
 
-      - name: Start Rails app with ./bin/dev
+      - name: Build JavaScript assets
+        run: npm run build
+
+      - name: Start Rails app
         env:
           PORT: 3000
+          RAILS_ENV: development
         run: |
-          gem install foreman
-
-          ./bin/dev > dev.log 2>&1 &
+          bin/rails server -b 0.0.0.0 -p "$PORT" > dev.log 2>&1 &
           DEV_PID=$!
           echo "DEV_PID=$DEV_PID" >> "$GITHUB_ENV"
 
