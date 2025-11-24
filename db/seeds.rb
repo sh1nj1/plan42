@@ -7,6 +7,7 @@ default_email = ENV.fetch('DEFAULT_USER_EMAIL', 'admin@example.com')
 
 unless User.exists?(email: default_email)
   User.create!(
+    name: ENV.fetch('DEFAULT_USER_NAME', 'Admin'),
     email: default_email,
     password: ENV.fetch('DEFAULT_USER_PASSWORD', 'password123'),
     password_confirmation: ENV.fetch('DEFAULT_USER_PASSWORD', 'password123'),
