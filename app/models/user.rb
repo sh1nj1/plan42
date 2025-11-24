@@ -35,6 +35,7 @@ class User < ApplicationRecord
   attribute :timezone, :string
   attribute :locale, :string
   attribute :system_admin, :boolean, default: false
+  attribute :searchable, :boolean, default: false
 
   attribute :google_uid, :string
   attribute :google_access_token, :string

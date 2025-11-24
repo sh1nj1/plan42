@@ -63,9 +63,11 @@ class Comment < ApplicationRecord
     return User.none unless user
     emails = mentioned_emails - [ user.email.downcase ]
     names = mentioned_names - [ user.name.downcase ]
+    searchable_users = User.where(searchable: true)
+
     scope = User.none
-    scope = scope.or(User.where(email: emails)) if emails.any?
-    scope = scope.or(User.where("LOWER(name) IN (?)", names)) if names.any?
+    scope = scope.or(searchable_users.where(email: emails)) if emails.any?
+    scope = scope.or(searchable_users.where("LOWER(name) IN (?)", names)) if names.any?
     scope
   end
 
