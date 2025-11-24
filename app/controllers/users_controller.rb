@@ -156,12 +156,27 @@ class UsersController < ApplicationController
     creative_shares = CreativeShare.arel_table
     creatives = Creative.arel_table
 
+    # Find origin creative IDs for creatives owned by current user
+    # This includes both:
+    # 1. Direct creatives (where origin_id IS NULL, so we use the creative's own id)
+    # 2. Linked creatives (where origin_id points to the origin creative)
+    user_creative_origins_sql = Creative
+      .where(user_id: Current.user.id)
+      .select("COALESCE(origin_id, id) AS origin_id")
+      .to_sql
+
     shared_by_me_scope = CreativeShare
       .joins(:creative)
       .where.not(permission: CreativeShare.permissions[:no_access])
       .where(
         creative_shares[:shared_by_id].eq(Current.user.id)
-          .or(creative_shares[:shared_by_id].eq(nil).and(creatives[:user_id].eq(Current.user.id)))
+          .or(
+            creative_shares[:shared_by_id].eq(nil).and(creatives[:user_id].eq(Current.user.id))
+          )
+          .or(
+            # Include shares on origin creatives where user owns a linked creative
+            creatives[:id].in(Arel.sql("(#{user_creative_origins_sql})"))
+          )
       )
 
     shared_with_me_scope = CreativeShare
