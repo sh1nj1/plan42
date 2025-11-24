@@ -12,6 +12,8 @@ class User < ApplicationRecord
   has_many :creative_shares, dependent: :destroy
   has_many :shared_creative_shares, class_name: "CreativeShare", foreign_key: :shared_by_id,
                                     dependent: :nullify, inverse_of: :shared_by
+  belongs_to :creator, class_name: "User", foreign_key: "created_by_id", optional: true
+  has_many :created_ai_users, class_name: "User", foreign_key: "created_by_id", dependent: :destroy
   has_many :comments, dependent: :destroy
   has_many :emails, dependent: :destroy
   has_many :inbox_items, foreign_key: :owner_id, dependent: :destroy, inverse_of: :owner
@@ -38,6 +40,23 @@ class User < ApplicationRecord
   attribute :google_access_token, :string
   attribute :google_refresh_token, :string
   attribute :google_token_expires_at, :datetime
+
+  attribute :system_prompt, :string
+  attribute :llm_vendor, :string
+  attribute :llm_model, :string
+  attribute :llm_api_key, :string
+
+  encrypts :llm_api_key, deterministic: false
+
+  SUPPORTED_LLM_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro"
+  ].freeze
+
+  def ai_user?
+    llm_vendor.present?
+  end
 
   normalizes :email, with: ->(e) { e.strip.downcase }
   normalizes :timezone, with: ->(tz) do

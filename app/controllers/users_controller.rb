@@ -1,6 +1,6 @@
 class UsersController < ApplicationController
   allow_unauthenticated_access only: [ :new, :create, :exists ]
-  before_action :require_system_admin!, only: [ :index, :destroy, :grant_system_admin, :revoke_system_admin ]
+  before_action :require_system_admin!, only: [ :index, :grant_system_admin, :revoke_system_admin ]
 
   def new
     @user = User.new
@@ -45,6 +45,35 @@ class UsersController < ApplicationController
     render json: { exists: user.present? }
   end
 
+  def new_ai
+  end
+
+  def create_ai
+    ai_id = params[:ai_id].to_s.strip.downcase
+    # Construct a dummy email for the AI user
+    email = "#{ai_id}@ai.local"
+
+    @user = User.new(
+      name: params[:name],
+      email: email,
+      password: SecureRandom.hex(32), # Random password, impossible to login
+      system_prompt: params[:system_prompt],
+      llm_vendor: "google", # Default to google for now
+      llm_model: params[:llm_model],
+      llm_api_key: params[:llm_api_key],
+      email_verified_at: Time.current, # Auto-verified
+      created_by_id: Current.user.id
+    )
+
+    if @user.save
+      Contact.ensure(user: Current.user, contact_user: @user)
+      redirect_to user_path(Current.user, tab: "contacts"), notice: t("users.create_ai.success")
+    else
+      flash.now[:alert] = @user.errors.full_messages.to_sentence
+      render :new_ai, status: :unprocessable_entity
+    end
+  end
+
   def search
     term = params[:q].to_s.strip.downcase
     users = User.where("LOWER(email) LIKE :term OR LOWER(name) LIKE :term", term: "#{term}%").limit(5)
@@ -80,8 +109,18 @@ class UsersController < ApplicationController
       return
     end
 
+    allowed = Current.user.system_admin? ||
+              (@user.ai_user? && @user.created_by_id == Current.user.id)
+
+    unless allowed
+      fallback = user_path(Current.user, tab: "contacts")
+      redirect_back fallback_location: fallback, alert: t("users.destroy.not_authorized")
+      return
+    end
+
     if @user.destroy
-      redirect_to users_path, notice: t("users.destroy.success")
+      fallback = Current.user.system_admin? ? users_path : user_path(Current.user, tab: "contacts")
+      redirect_back fallback_location: fallback, notice: t("users.destroy.success")
     else
       redirect_to users_path, alert: t("users.destroy.failure")
     end

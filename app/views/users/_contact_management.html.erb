@@ -1,5 +1,10 @@
 <div class="contact-management">
-  <p class="text-muted"><%= t('contacts.description') %></p>
+  <div class="flex-row-center-between">
+    <p class="text-muted"><%= t('contacts.description') %></p>
+    <%= link_to t('users.add_ai_user'), new_ai_users_path, class: "primary-action-button" %>
+  </div>
+
+  <% show_actions = (contacts || []).any? { |c| c.contact_user.ai_user? && c.contact_user.created_by_id == Current.user.id } %>
 
   <% if contacts.present? %>
     <div class="table-scroll">
@@ -9,9 +14,11 @@
             <th><%= t('users.table.avatar') %></th>
             <th><%= t('users.table.name') %></th>
             <th><%= t('users.table.email') %></th>
-            <th><%= t('users.table.last_login_at') %></th>
             <th><%= t('contacts.table.shared_creatives') %></th>
             <th><%= t('contacts.table.shared_with_me') %></th>
+            <% if show_actions %>
+              <th><%= t('users.table.actions') %></th>
+            <% end %>
           </tr>
         </thead>
         <tbody>
@@ -27,13 +34,23 @@
               </td>
               <td><%= contact_user.display_name %></td>
               <td><%= contact_user.email %></td>
-              <td><%= render_last_login_for(contact_user, last_login_map || {}) %></td>
               <td class="creative-cell">
                 <%= render_contact_creatives(shared_by_me.fetch(contact_user.id, [])) %>
               </td>
               <td class="creative-cell">
                 <%= render_contact_creatives(shared_with_me.fetch(contact_user.id, [])) %>
               </td>
+              <% if show_actions %>
+                <td class="text-right">
+                  <% if contact_user.ai_user? && contact_user.created_by_id == Current.user.id %>
+                    <%= button_to t('users.destroy.delete_ai_user'),
+                                  user_path(contact_user),
+                                  method: :delete,
+                                  form: { data: { turbo_confirm: t('users.destroy.confirm_ai') } },
+                                  class: "danger-link" %>
+                  <% end %>
+                </td>
+              <% end %>
             </tr>
           <% end %>
         </tbody>

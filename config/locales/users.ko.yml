@@ -11,6 +11,19 @@ ko:
       sign_up: "회원가입"
       back_to_sign_in: "로그인 화면으로 돌아가기"
       success_sign_up: "회원가입이 완료되었습니다. 이메일을 확인해 인증해주세요."
+    add_ai_user: "AI 에이전트 추가"
+    new_ai:
+      title: "AI 에이전트 추가"
+      id_label: "ID"
+      id_help: "멘션에 사용됩니다 (예: @my_bot)"
+      name_label: "Name"
+      system_prompt_label: "System Prompt"
+      model_label: "Model"
+      api_key_label: "API Key"
+      api_key_help: "입력하면 시스템 기본값 대신 이 키가 사용됩니다. 암호화되어 저장됩니다."
+      submit: "AI 에이전트 추가"
+    create_ai:
+      success: "AI 에이전트가 생성되었습니다."
     sessions:
       new:
         forgot_password: "비밀번호를 잊으셨나요?"
@@ -71,6 +84,9 @@ ko:
       success: "사용자와 모든 관련 데이터가 삭제되었습니다."
       failure: "사용자를 삭제하지 못했습니다."
       cannot_delete_self: "자신의 계정은 삭제할 수 없습니다."
+      not_authorized: "AI 에이전트는 생성자 또는 시스템 관리자만 삭제할 수 있습니다."
+      delete_ai_user: "AI 에이전트 삭제"
+      confirm_ai: "AI 에이전트의 모든 정보를 삭제하시겠습니까?"
     table:
       avatar: "아바타"
       name: "이름"

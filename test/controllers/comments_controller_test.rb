@@ -340,4 +340,112 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     body = JSON.parse(@response.body)
     assert_equal I18n.t("comments.approve_already_executed"), body["error"]
   end
+
+  test "comment owner can delete their own comment" do
+    comment = @creative.comments.create!(content: "My comment", user: @user)
+
+    assert_difference("Comment.count", -1) do
+      delete creative_comment_path(@creative, comment)
+    end
+
+    assert_response :no_content
+  end
+
+  test "creative owner can delete any comment" do
+    other_user = users(:two)
+    other_user.update!(email_verified_at: Time.current)
+    comment = @creative.comments.create!(content: "Other user comment", user: other_user)
+
+    assert_difference("Comment.count", -1) do
+      assert_difference("InboxItem.count", 1) do
+        delete creative_comment_path(@creative, comment)
+      end
+    end
+
+    assert_response :no_content
+
+    # Verify inbox notification was created
+    inbox_item = InboxItem.order(:id).last
+    assert_equal other_user, inbox_item.owner
+    assert_equal "inbox.comment_deleted_by_admin", inbox_item.message_key
+    assert_equal @user.name, inbox_item.message_params["admin_name"]
+  end
+
+  test "admin user can delete any comment" do
+    other_user = users(:two)
+    other_user.update!(email_verified_at: Time.current)
+
+    # Create a creative owned by other_user
+    other_creative = Creative.create!(user: other_user, description: "Other creative", progress: 0.0)
+
+    # Share with admin permission to @user
+    CreativeShare.create!(creative: other_creative, user: @user, permission: :admin, shared_by: other_user)
+
+    # Create comment by other_user
+    comment = other_creative.comments.create!(content: "Comment to delete", user: other_user)
+
+    assert_difference("Comment.count", -1) do
+      assert_difference("InboxItem.count", 1) do
+        delete creative_comment_path(other_creative, comment)
+      end
+    end
+
+    assert_response :no_content
+  end
+
+  test "non-owner non-admin cannot delete comment" do
+    other_user = users(:two)
+    other_user.update!(email_verified_at: Time.current)
+    comment = @creative.comments.create!(content: "Protected comment", user: other_user)
+
+    # Login as a different user
+    third_user = User.create!(
+      name: "Third User",
+      email: "third@example.com",
+      password: "password",
+      email_verified_at: Time.current
+    )
+    delete session_path
+    post session_path, params: { email: third_user.email, password: "password" }
+
+    assert_no_difference("Comment.count") do
+      delete creative_comment_path(@creative, comment)
+    end
+
+    assert_response :forbidden
+  end
+
+  test "deleting AI user comment does not create inbox notification" do
+    ai_user = User.create!(
+      name: "AI Bot",
+      email: "aibot@ai.local",
+      password: SecureRandom.hex(32),
+      llm_vendor: "google",
+      llm_model: "gemini-2.5-flash",
+      system_prompt: "I am a bot",
+      email_verified_at: Time.current
+    )
+
+    comment = @creative.comments.create!(content: "AI response", user: ai_user)
+
+    assert_difference("Comment.count", -1) do
+      assert_no_difference("InboxItem.count") do
+        delete creative_comment_path(@creative, comment)
+      end
+    end
+
+    assert_response :no_content
+  end
+
+  test "comment owner deleting own comment does not create inbox notification" do
+    comment = @creative.comments.create!(content: "My own comment", user: @user)
+
+    assert_difference("Comment.count", -1) do
+      assert_no_difference("InboxItem.count") do
+        delete creative_comment_path(@creative, comment)
+      end
+    end
+
+    assert_response :no_content
+  end
 end

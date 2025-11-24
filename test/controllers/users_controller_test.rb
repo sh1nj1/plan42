@@ -139,6 +139,59 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     refute Session.exists?(session.id)
   end
 
+  test "ai user creator can delete their ai user without being admin" do
+    sign_in_as(@regular_user, password: "password")
+
+    ai_user = User.create!(
+      name: "MyBot",
+      email: "mybot@ai.local",
+      password: "password",
+      llm_vendor: "google",
+      llm_model: "gemini-2.5-flash",
+      system_prompt: "You are a bot.",
+      created_by_id: @regular_user.id,
+      email_verified_at: Time.current
+    )
+
+    assert_difference("User.count", -1) do
+      delete user_path(ai_user)
+    end
+
+    assert_redirected_to user_path(@regular_user, tab: "contacts")
+    follow_redirect!
+    assert_equal I18n.t("users.destroy.success"), flash[:notice]
+  end
+
+  test "non creator non admin cannot delete ai user" do
+    sign_in_as(@regular_user, password: "password")
+
+    creator = User.create!(
+      email: "creator@example.com",
+      password: "password",
+      password_confirmation: "password",
+      name: "Creator"
+    )
+
+    ai_user = User.create!(
+      name: "MyBot",
+      email: "mybot2@ai.local",
+      password: "password",
+      llm_vendor: "google",
+      llm_model: "gemini-2.5-flash",
+      system_prompt: "You are a bot.",
+      created_by_id: creator.id,
+      email_verified_at: Time.current
+    )
+
+    assert_no_difference("User.count") do
+      delete user_path(ai_user)
+    end
+
+    assert_redirected_to user_path(@regular_user, tab: "contacts")
+    follow_redirect!
+    assert_equal I18n.t("users.destroy.not_authorized"), flash[:alert]
+  end
+
   test "prepare_contacts includes shares on origin creatives for linked creatives" do
     sign_in_as(@admin, password: "password")
 
@@ -179,5 +232,55 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
                     "Admin should see shared_user in contacts because they own a linked creative"
     assert_includes response.body, shared_user.name,
                     "Admin should see shared_user's name in contacts"
+  end
+
+  test "ai user creator sees delete button in contacts" do
+    sign_in_as(@regular_user, password: "password")
+
+    ai_user = User.create!(
+      name: "MyBot",
+      email: "mybot3@ai.local",
+      password: "password",
+      llm_vendor: "google",
+      llm_model: "gemini-2.5-flash",
+      system_prompt: "You are a bot.",
+      created_by_id: @regular_user.id,
+      email_verified_at: Time.current
+    )
+
+    Contact.ensure(user: @regular_user, contact_user: ai_user)
+
+    get user_path(@regular_user, tab: "contacts")
+    assert_response :success
+    assert_includes response.body, I18n.t("users.destroy.delete_ai_user")
+    assert_includes response.body, I18n.t("users.destroy.confirm_ai")
+  end
+
+  test "non creator does not see delete button for ai user contact" do
+    sign_in_as(@regular_user, password: "password")
+
+    creator = User.create!(
+      email: "creator2@example.com",
+      password: "password",
+      password_confirmation: "password",
+      name: "Creator2"
+    )
+
+    ai_user = User.create!(
+      name: "OtherBot",
+      email: "otherbot@ai.local",
+      password: "password",
+      llm_vendor: "google",
+      llm_model: "gemini-2.5-flash",
+      system_prompt: "You are a bot.",
+      created_by_id: creator.id,
+      email_verified_at: Time.current
+    )
+
+    Contact.ensure(user: @regular_user, contact_user: ai_user)
+
+    get user_path(@regular_user, tab: "contacts")
+    assert_response :success
+    refute_includes response.body, I18n.t("users.destroy.delete_ai_user")
   end
 end
