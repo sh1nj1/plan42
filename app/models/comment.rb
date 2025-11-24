@@ -63,11 +63,17 @@ class Comment < ApplicationRecord
     return User.none unless user
     emails = mentioned_emails - [ user.email.downcase ]
     names = mentioned_names - [ user.name.downcase ]
-    searchable_users = User.where(searchable: true)
+
+    origin = creative.effective_origin
+    permitted_users = [ origin.user ].compact + origin.all_shared_users(:feedback).map(&:user)
+    permitted_user_ids = permitted_users.compact.map(&:id)
+
+    mentionable_users = User.where(searchable: true)
+    mentionable_users = mentionable_users.or(User.where(id: permitted_user_ids)) if permitted_user_ids.any?
 
     scope = User.none
-    scope = scope.or(searchable_users.where(email: emails)) if emails.any?
-    scope = scope.or(searchable_users.where("LOWER(name) IN (?)", names)) if names.any?
+    scope = scope.or(mentionable_users.where(email: emails)) if emails.any?
+    scope = scope.or(mentionable_users.where("LOWER(name) IN (?)", names)) if names.any?
     scope
   end
 
