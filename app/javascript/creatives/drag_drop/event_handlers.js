@@ -24,7 +24,7 @@ import {
   hasDraggedState,
 } from './state';
 import { createMoveContext, applyMove, revertMove } from './operations';
-import { sendNewOrder, sendLinkedCreative } from '../../api/drag_drop.api';
+import { sendNewOrder, sendLinkedCreative } from '../../lib/api/drag_drop';
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 
 const childZoneRatio = 0.3;
@@ -667,17 +667,17 @@ export function handleDrop(event) {
   if (event.shiftKey) {
     const snapshot = { ...draggedState };
     resetDrag();
-    
+
     if (isMultiDrag) {
       // Handle multiple linked creatives
-      const promises = draggedIds.map(draggedId => 
+      const promises = draggedIds.map(draggedId =>
         sendLinkedCreative({
           draggedId,
           targetId: targetId.replace('creative-', ''),
           direction,
         })
       );
-      
+
       Promise.all(promises)
         .then(() => window.location.reload())
         .catch((error) => console.error('Failed to create linked creatives', error));
@@ -719,12 +719,12 @@ export function handleDrop(event) {
   const dropSignalDetails = isMultiDrag
     ? null
     : {
-        creativeId: draggedNumericId,
-        treeId: draggedState.treeId,
-        sourceWindowId: draggedState.sourceWindowId,
-        targetTreeId: targetId,
-        direction,
-      };
+      creativeId: draggedNumericId,
+      treeId: draggedState.treeId,
+      sourceWindowId: draggedState.sourceWindowId,
+      targetTreeId: targetId,
+      direction,
+    };
 
   resetDrag();
 

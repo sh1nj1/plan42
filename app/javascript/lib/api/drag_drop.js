@@ -1,6 +1,4 @@
-function csrfToken() {
-  return document.querySelector('meta[name="csrf-token"]')?.content;
-}
+import csrfFetch from './csrf_fetch';
 
 export function sendNewOrder({ draggedId, draggedIds, targetId, direction }) {
   const payload = { target_id: targetId, direction };
@@ -10,22 +8,20 @@ export function sendNewOrder({ draggedId, draggedIds, targetId, direction }) {
     payload.dragged_id = draggedId;
   }
 
-  return fetch('/creatives/reorder', {
+  return csrfFetch('/creatives/reorder', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-CSRF-Token': csrfToken(),
     },
     body: JSON.stringify(payload),
   });
 }
 
 export function sendLinkedCreative({ draggedId, targetId, direction }) {
-  return fetch('/creatives/link_drop', {
+  return csrfFetch('/creatives/link_drop', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-CSRF-Token': csrfToken(),
     },
     body: JSON.stringify({ dragged_id: draggedId, target_id: targetId, direction }),
   }).then((response) => {
