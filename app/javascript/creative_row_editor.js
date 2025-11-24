@@ -599,20 +599,6 @@ export function initializeCreativeRowEditor() {
           return; // Event handled
         }
 
-        // Handle inline-level-down (create child)
-        const levelDownBtn = e.target.closest('#inline-level-down');
-        if (levelDownBtn) {
-          e.preventDefault();
-          if (!currentTree) return;
-
-          const parentId = currentTree.dataset.id;
-          saveForm().then(() => {
-            const container = ensureChildrenContainer(currentTree);
-            expandChildrenContainer(container);
-            startNew(parentId, container, container.firstElementChild, '');
-          });
-          return;
-        }
 
         // Delegated event for .new-root-creative-btn
         const newRootBtn = e.target.closest('.new-root-creative-btn');
