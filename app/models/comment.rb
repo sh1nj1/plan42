@@ -65,11 +65,7 @@ class Comment < ApplicationRecord
     names = mentioned_names - [ user.name.downcase ]
 
     origin = creative.effective_origin
-    permitted_users = [ origin.user ].compact + origin.all_shared_users(:feedback).map(&:user)
-    permitted_user_ids = permitted_users.compact.map(&:id)
-
-    mentionable_users = User.where(searchable: true)
-    mentionable_users = mentionable_users.or(User.where(id: permitted_user_ids)) if permitted_user_ids.any?
+    mentionable_users = User.mentionable_for(origin)
 
     scope = User.none
     scope = scope.or(mentionable_users.where(email: emails)) if emails.any?

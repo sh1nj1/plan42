@@ -234,6 +234,83 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
                     "Admin should see shared_user's name in contacts"
   end
 
+  test "mention search includes feedback permitted users even if not searchable" do
+    sign_in_as(@regular_user, password: "password")
+
+    creative = Creative.create!(user: @regular_user, description: "Searchable creative")
+    permitted = User.create!(
+      email: "feedback@example.com",
+      password: "password",
+      password_confirmation: "password",
+      name: "Feedback User",
+      searchable: false
+    )
+    impostor = User.create!(
+      email: "feedback-impostor@example.com",
+      password: "password",
+      password_confirmation: "password",
+      name: "Feedback Impostor",
+      searchable: false
+    )
+    CreativeShare.create!(creative: creative, user: permitted, permission: :feedback)
+
+    get search_users_path, params: { q: "feedback", creative_id: creative.id }
+    assert_response :success
+    results = JSON.parse(response.body)
+
+    emails = results.map { |u| u["email"] }
+    assert_includes emails, permitted.email
+    refute_includes emails, impostor.email
+  end
+
+  test "mention search falls back to searchable users without creative context" do
+    sign_in_as(@regular_user, password: "password")
+
+    searchable_user = User.create!(
+      email: "searchable@example.com",
+      password: "password",
+      password_confirmation: "password",
+      name: "Searchable User",
+      searchable: true
+    )
+    User.create!(
+      email: "hidden@example.com",
+      password: "password",
+      password_confirmation: "password",
+      name: "Hidden User",
+      searchable: false
+    )
+
+    get search_users_path, params: { q: "searchable" }
+    assert_response :success
+    results = JSON.parse(response.body)
+
+    emails = results.map { |u| u["email"] }
+    assert_includes emails, searchable_user.email
+    assert_equal 1, results.length
+  end
+
+  test "ai user defaults to non-searchable when checkbox is unchecked" do
+    sign_in_as(@regular_user, password: "password")
+
+    assert_difference("User.count", 1) do
+      post create_ai_users_path, params: {
+        ai_id: "nobot",
+        name: "No Bot",
+        system_prompt: "You are a helpful bot.",
+        llm_model: User::SUPPORTED_LLM_MODELS.first
+      }
+    end
+
+    ai_user = User.find_by(email: "nobot@ai.local")
+    assert_not_nil ai_user
+    refute ai_user.searchable?
+
+    assert_redirected_to user_path(@regular_user, tab: "contacts")
+    follow_redirect!
+    assert_equal I18n.t("users.create_ai.success"), flash[:notice]
+  end
+
   test "ai user creator sees delete button in contacts" do
     sign_in_as(@regular_user, password: "password")
 

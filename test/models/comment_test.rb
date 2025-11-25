@@ -61,7 +61,7 @@ class CommentTest < ActiveSupport::TestCase
   test "creates a single inbox item for mentioned users" do
     owner = User.create!(email: "mentions-owner@example.com", password: "secret", name: "Owner")
     commenter = User.create!(email: "mentions-commenter@example.com", password: "secret", name: "Commenter")
-    mentioned = User.create!(email: "mentions-mentioned@example.com", password: "secret", name: "Mentioned")
+    mentioned = User.create!(email: "mentions-mentioned@example.com", password: "secret", name: "Mentioned", searchable: true)
     creative = Creative.create!(user: owner, description: "Root")
 
     comment = nil
