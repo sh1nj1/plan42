@@ -191,6 +191,7 @@ export function initializeCreativeRowEditor() {
       const effectiveParent = parentInput.value;
       if (unconvertBtn) unconvertBtn.style.display = effectiveParent ? '' : 'none';
       lexicalEditor.focus();
+      updateActionButtonStates();
     }
 
     function siblingTreeRow(row, direction) {
@@ -521,6 +522,46 @@ export function initializeCreativeRowEditor() {
       return uploadCompletionPromise;
     }
 
+    function updateActionButtonStates() {
+      const hasCurrent = Boolean(currentTree);
+      const trees = hasCurrent ? listAllTreeNodes() : [];
+      const index = hasCurrent ? trees.indexOf(currentTree) : -1;
+      const hasCreativeId = Boolean(form.dataset?.creativeId);
+
+      if (upBtn) upBtn.disabled = !(hasCurrent && index > 0);
+      if (downBtn) downBtn.disabled = !(hasCurrent && index >= 0 && index < trees.length - 1);
+
+      let canLevelDown = false;
+      if (hasCurrent) {
+        const previousTree = findPreviousTree(currentTree);
+        const previousId = previousTree?.dataset?.id;
+        canLevelDown = Boolean(previousTree && previousId && previousId !== currentTree.dataset?.parentId);
+      }
+      if (levelDownBtn) levelDownBtn.disabled = !canLevelDown;
+
+      let canLevelUp = false;
+      if (hasCurrent) {
+        const parentId = currentTree.dataset?.parentId;
+        const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
+        const targetContainer = parentTree ? treeContainerElement(parentTree) : null;
+        canLevelUp = Boolean(parentId && parentTree && targetContainer);
+      }
+      if (levelUpBtn) levelUpBtn.disabled = !canLevelUp;
+
+      if (deleteBtn) deleteBtn.disabled = !hasCreativeId;
+      if (deleteWithChildrenBtn) deleteWithChildrenBtn.disabled = !hasCreativeId;
+      if (linkBtn) linkBtn.disabled = !hasCreativeId || linkBtn.style.display === 'none';
+      if (unlinkBtn) unlinkBtn.disabled = !hasCreativeId || unlinkBtn.style.display === 'none';
+      if (unconvertBtn) {
+        const unconvertVisible = unconvertBtn.style.display !== 'none';
+        const hasParent = Boolean(parentInput.value);
+        unconvertBtn.disabled = !(hasCreativeId && hasParent && unconvertVisible);
+      }
+
+      if (addBtn) addBtn.disabled = !hasCurrent;
+      if (closeBtn) closeBtn.disabled = uploadsPending || !hasCurrent;
+    }
+
     function waitForUploads() {
       return uploadsPending ? getUploadCompletion() : Promise.resolve();
     }
@@ -542,6 +583,7 @@ export function initializeCreativeRowEditor() {
         uploadCompletionPromise = null;
         resolveUploadCompletion = null;
       }
+      updateActionButtonStates();
     }
 
     function attachTemplate(tree) {
@@ -572,6 +614,7 @@ export function initializeCreativeRowEditor() {
       attachTemplate(tree);
       template.style.display = 'block';
       loadCreative(tree);
+      updateActionButtonStates();
     }
 
     function initializeEventListeners() {
@@ -809,6 +852,7 @@ export function initializeCreativeRowEditor() {
                 deletedIds.forEach(deleteAttachment);
               }
             }
+            updateActionButtonStates();
           });
         }).finally(function () {
           saving = false;
@@ -828,6 +872,7 @@ export function initializeCreativeRowEditor() {
       currentTree = null;
       currentRowElement = null;
       tree.draggable = true;
+      updateActionButtonStates();
 
       const finalizeHide = function () {
         template.style.display = 'none';
@@ -902,6 +947,7 @@ export function initializeCreativeRowEditor() {
       beforeNewOrMove(wasNew, prev, prevParent).then(() => {
         loadCreative(target);
       });
+      updateActionButtonStates();
     }
 
     function addNew() {
@@ -992,6 +1038,7 @@ export function initializeCreativeRowEditor() {
       const ordering = siblingOrderingForRow(row);
       persistStructureChange(previousId, ordering);
       lexicalEditor.focus();
+      updateActionButtonStates();
     }
 
     function levelUp() {
@@ -1037,6 +1084,7 @@ export function initializeCreativeRowEditor() {
       const ordering = siblingOrderingForRow(row);
       persistStructureChange(grandParentId, ordering);
       lexicalEditor.focus();
+      updateActionButtonStates();
     }
 
     function deleteCurrent(withChildren) {
@@ -1222,6 +1270,7 @@ export function initializeCreativeRowEditor() {
           if (unconvertBtn) unconvertBtn.style.display = 'none';
           pendingSave = false;
           lexicalEditor.focus();
+          updateActionButtonStates();
           if (parentSuggestions) {
             parentSuggestions.style.display = 'none';
             parentSuggestions.innerHTML = '';
