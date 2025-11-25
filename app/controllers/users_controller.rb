@@ -81,6 +81,10 @@ class UsersController < ApplicationController
     return render json: [] if term.blank?
 
     creative = Creative.find_by(id: params[:creative_id])
+
+    if creative.present? && !creative.has_permission?(Current.user, :read)
+      head :forbidden and return
+    end
     users = User.mentionable_for(creative)
                 .where("LOWER(email) LIKE :term OR LOWER(name) LIKE :term", term: "#{term}%")
                 .distinct
