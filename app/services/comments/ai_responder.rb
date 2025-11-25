@@ -19,9 +19,10 @@ module Comments
       mentioned_name = match[1].strip
 
       # 2. Find AI User by name (case-insensitive) that is searchable/mentionable
-      ai_user = User.where(searchable: true)
-                    .where("LOWER(name) = ?", mentioned_name.downcase)
-                    .find { |u| u.ai_user? }
+      mentionable_users = User.mentionable_for(creative)
+      ai_user = mentionable_users
+                  .where("LOWER(name) = ?", mentioned_name.downcase)
+                  .find { |u| u.ai_user? }
 
       return unless ai_user
 

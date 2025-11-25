@@ -3,13 +3,14 @@ let mentionMenuInitialized = false;
 if (!mentionMenuInitialized) {
   mentionMenuInitialized = true;
 
-  document.addEventListener('turbo:load', function () {
-    var textarea = document.querySelector('#new-comment-form textarea');
-    var menu = document.getElementById('mention-menu');
-    if (!textarea || !menu) return;
+    document.addEventListener('turbo:load', function () {
+      var textarea = document.querySelector('#new-comment-form textarea');
+      var menu = document.getElementById('mention-menu');
+      var popup = document.getElementById('comments-popup');
+      if (!textarea || !menu) return;
 
-    var list = menu.querySelector('.mention-results');
-    var fetchTimer;
+      var list = menu.querySelector('.mention-results');
+      var fetchTimer;
 
     function position() {
       var rect = textarea.getBoundingClientRect();
@@ -58,7 +59,12 @@ if (!mentionMenuInitialized) {
         if (q.length === 0) { hide(); return; }
         clearTimeout(fetchTimer);
         fetchTimer = setTimeout(function () {
-          fetch('/users/search?q=' + encodeURIComponent(q))
+          var url = new URL('/users/search', window.location.origin);
+          url.searchParams.set('q', q);
+          if (popup && popup.dataset.creativeId) {
+            url.searchParams.set('creative_id', popup.dataset.creativeId);
+          }
+          fetch(url, { headers: { 'Accept': 'application/json' } })
             .then(function (r) { return r.ok ? r.json() : []; })
             .then(show)
             .catch(function () { });

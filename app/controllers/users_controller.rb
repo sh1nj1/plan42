@@ -52,6 +52,7 @@ class UsersController < ApplicationController
     ai_id = params[:ai_id].to_s.strip.downcase
     # Construct a dummy email for the AI user
     email = "#{ai_id}@ai.local"
+    searchable = ActiveModel::Type::Boolean.new.cast(params.fetch(:searchable, false))
 
     @user = User.new(
       name: params[:name],
@@ -61,7 +62,7 @@ class UsersController < ApplicationController
       llm_vendor: "google", # Default to google for now
       llm_model: params[:llm_model],
       llm_api_key: params[:llm_api_key],
-      searchable: ActiveModel::Type::Boolean.new.cast(params[:searchable]),
+      searchable: searchable,
       email_verified_at: Time.current, # Auto-verified
       created_by_id: Current.user.id
     )
@@ -77,8 +78,12 @@ class UsersController < ApplicationController
 
   def search
     term = params[:q].to_s.strip.downcase
-    users = User.where(searchable: true)
+    return render json: [] if term.blank?
+
+    creative = Creative.find_by(id: params[:creative_id])
+    users = User.mentionable_for(creative)
                 .where("LOWER(email) LIKE :term OR LOWER(name) LIKE :term", term: "#{term}%")
+                .distinct
                 .limit(5)
     render json: users.map { |u| { id: u.id, name: u.display_name, email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
   end

@@ -59,6 +59,16 @@ class User < ApplicationRecord
     llm_vendor.present?
   end
 
+  def self.mentionable_for(creative)
+    scope = where(searchable: true)
+    return scope unless creative
+
+    origin = creative.effective_origin
+    permitted_users = [ origin.user ].compact + origin.all_shared_users(:feedback).map(&:user)
+    permitted_ids = permitted_users.compact.map(&:id)
+    permitted_ids.any? ? scope.or(where(id: permitted_ids)) : scope
+  end
+
   normalizes :email, with: ->(e) { e.strip.downcase }
   normalizes :timezone, with: ->(tz) do
     tz = tz.to_s.strip
