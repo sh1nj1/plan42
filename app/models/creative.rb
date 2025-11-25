@@ -59,6 +59,7 @@ class Creative < ApplicationRecord
   validates :description, presence: true, unless: -> { origin_id.present? }
 
   before_validation :assign_default_user, on: :create
+  before_validation :redirect_parent_to_origin
 
   after_save :update_parent_progress
   after_save :clear_permission_cache_on_parent_change
@@ -310,5 +311,11 @@ class Creative < ApplicationRecord
 
   def progress_service
     @progress_service ||= Creatives::ProgressService.new(self)
+  end
+
+  def redirect_parent_to_origin
+    if parent&.origin_id.present?
+      self.parent = parent.origin
+    end
   end
 end
