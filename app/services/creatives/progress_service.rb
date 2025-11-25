@@ -22,7 +22,9 @@ module Creatives
     end
 
     def update_parent_progress!
-      creative.linked_creatives.update_all(progress: creative[:progress])
+      creative.linked_creatives.find_each do |linked|
+        linked.update(progress: creative.progress)
+      end
       parent = creative.parent
       return unless parent
 

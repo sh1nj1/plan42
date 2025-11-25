@@ -682,10 +682,14 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     # Move linked creative to different parent
     new_parent = Creative.create!(user: @owner, description: "New Parent")
     linked_creative.update!(parent: new_parent)
+    linked_creative.reload
 
-    # Cache should be cleared for linked creative (origin_id) and its descendants
+    # Cache should be cleared for linked creative (origin_id)
     refute Rails.cache.exist?(origin_key)        # Linked creative cache cleared
-    refute Rails.cache.exist?(linked_child_key)  # Descendant cache cleared
+
+    # Linked child is reparented to root by redirect_parent_to_origin, so it is NOT a descendant of linked_creative
+    # Therefore its cache should NOT be cleared when linked_creative moves
+    assert Rails.cache.exist?(linked_child_key)  # Descendant cache NOT cleared
 
     # Permissions should still work correctly
     assert linked_creative.has_permission?(@user1, :read)  # Still has access via origin share
@@ -763,7 +767,10 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
 
     # Both caches should be cleared (origin for linked creative, direct id for child)
     refute Rails.cache.exist?(origin_key)
-    refute Rails.cache.exist?(child_key)
+
+    # Linked child is reparented to root by redirect_parent_to_origin, so it is NOT a descendant of linked_creative
+    # Therefore its cache should NOT be cleared when linked_creative moves
+    assert Rails.cache.exist?(child_key)
 
     # Permissions should still work
     assert linked_creative.has_permission?(@user1, :read)  # Still via origin share
