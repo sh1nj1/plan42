@@ -164,6 +164,7 @@ textarea:focus-visible {
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
+    text-decoration: none;
 }
 
 .primary-action-button:hover,
