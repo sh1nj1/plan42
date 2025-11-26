@@ -147,6 +147,14 @@ export function initializeCreativeRowEditor() {
       };
     }
 
+    function isHtmlEmpty(html) {
+      if (!html) return true;
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      if (temp.querySelector('img')) return false;
+      return (temp.textContent || '').trim().length === 0;
+    }
+
     function applyCreativeData(data, tree) {
       if (!data) return;
       const creativeId = data.id;
@@ -728,6 +736,12 @@ export function initializeCreativeRowEditor() {
       return waitForUploads().then(function () {
         if (saving) return savePromise;
         clearTimeout(saveTimer);
+
+        if (isHtmlEmpty(descriptionInput.value)) {
+          pendingSave = false;
+          return Promise.resolve();
+        }
+
         const method = methodInput.value === 'patch' ? 'PATCH' : 'POST';
         pendingSave = false;
         if (!form.action) return Promise.resolve();

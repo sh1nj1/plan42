@@ -123,9 +123,9 @@ export class ImageNode extends DecoratorNode {
                 alt={this.__altText}
                 onClick={handleClick}
                 style={{
-                    width: this.__width === "inherit" ? "100%" : this.__width,
+                    width: this.__width === "inherit" ? "auto" : this.__width,
                     height: this.__height === "inherit" ? "auto" : this.__height,
-                    maxWidth: this.__maxWidth,
+                    maxWidth: "100%",
                     cursor: "default",
                 }}
             />
