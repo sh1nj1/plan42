@@ -262,7 +262,7 @@ class UsersController < ApplicationController
 
     shares_from_me = shared_by_me_scope
       .where(user_id: paged_users.map(&:id))
-      .includes(creative: :rich_text_description)
+      .includes(:creative)
 
     @shared_by_me = shares_from_me.group_by(&:user_id).transform_values { |shares| shares.map(&:creative) }
 
@@ -274,7 +274,7 @@ class UsersController < ApplicationController
         creative_shares[:shared_by_id].in(paged_users.map(&:id))
           .or(creative_shares[:shared_by_id].eq(nil).and(creatives[:user_id].in(paged_users.map(&:id))))
       )
-      .includes(creative: :rich_text_description)
+      .includes(:creative)
 
     @shared_with_me = shares_to_me.group_by(&:sharer_id)
                                   .transform_values { |shares| shares.map(&:creative) }
