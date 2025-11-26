@@ -255,8 +255,8 @@ class CreativeTreeRow extends LitElement {
     const level = Number(this.level) || 1;
     // Toggle is now rendered outside
     const content = html`
-      <div class="creative-content">
-        <a class="unstyled-link" href=${this.linkUrl || "#"}>${unsafeHTML(this.descriptionHtml || "")}</a>
+      <div class="creative-content" @click=${this._handleContentClick}>
+        ${unsafeHTML(this.descriptionHtml || "")}
       </div>
     `;
     const indicator = this.loadingChildren ? this._renderLoadingIndicator() : nothing;
@@ -381,6 +381,27 @@ class CreativeTreeRow extends LitElement {
       bubbles: true,
       composed: true
     }));
+  }
+
+  _handleContentClick(event) {
+    // Check if the clicked element is an interactive element or inside one
+    const target = event.target;
+    if (target.tagName === 'A' || target.closest('a') ||
+      target.tagName === 'BUTTON' || target.closest('button') ||
+      target.tagName === 'INPUT' || target.closest('input') ||
+      target.tagName === 'IMG') {
+      // Allow default behavior for these elements (e.g. download link, image click)
+      return;
+    }
+
+    // If not interactive, navigate to the linkUrl
+    if (this.linkUrl && this.linkUrl !== "#") {
+      if (window.Turbo) {
+        window.Turbo.visit(this.linkUrl);
+      } else {
+        window.location.href = this.linkUrl;
+      }
+    }
   }
 }
 
