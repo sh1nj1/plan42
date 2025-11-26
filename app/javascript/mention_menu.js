@@ -93,21 +93,15 @@ if (!mentionMenuInitialized) {
 
       var key = event.key;
       var isCtrl = event.ctrlKey || event.metaKey;
-      if (key === 'Tab') {
+      if (key === 'Tab' || key === 'Enter') {
         event.preventDefault();
-        if (list.children.length > 0) {
-          setActiveIndex(0);
-          selectActive();
-        }
+        selectActive();
       } else if (key === 'ArrowDown' || (isCtrl && key.toLowerCase() === 'n')) {
         event.preventDefault();
         setActiveIndex(activeIndex + 1);
       } else if (key === 'ArrowUp' || (isCtrl && key.toLowerCase() === 'p')) {
         event.preventDefault();
         setActiveIndex(activeIndex - 1);
-      } else if (key === 'Enter') {
-        event.preventDefault();
-        selectActive();
       }
     });
 
