@@ -61,11 +61,17 @@ export default class extends Controller {
 
     this.textareaTarget.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
+        if (this.isMentionMenuVisible()) return
         this.handleSend(event)
       }
     })
 
     this.updateAttachmentList()
+  }
+
+  isMentionMenuVisible() {
+    const menu = document.getElementById('mention-menu')
+    return menu?.style.display === 'block'
   }
 
   disconnect() {
