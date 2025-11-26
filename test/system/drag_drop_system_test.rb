@@ -31,7 +31,7 @@ class DragDropSystemTest < ApplicationSystemTestCase
     assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: "Task B", wait: 5
     assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: "Task A", wait: 5
 
-    order = @root.reload.children.order(:sequence).map { |c| c.description.to_plain_text }
+    order = @root.reload.children.order(:sequence).map { |c| ActionController::Base.helpers.strip_tags(c.description) }
     assert_equal [ "Task B", "Task A" ], order
   end
 end

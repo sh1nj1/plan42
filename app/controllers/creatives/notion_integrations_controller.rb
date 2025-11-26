@@ -12,7 +12,7 @@ module Creatives
 
       render json: {
         connected: account.present?,
-        creative_title: @creative.description.to_plain_text.strip.presence || "Untitled Creative",
+        creative_title: helpers.strip_tags(@creative.description).strip.presence || "Untitled Creative",
         account: account && {
           workspace_name: account.workspace_name,
           workspace_id: account.workspace_id,

@@ -7,7 +7,7 @@
     <% cache @creative do %>
       <% if @creative.parent %>
         <h1>
-          <%= @creative.parent.description %>
+          <%= sanitize @creative.parent.description %>
         </h1>
       <% end %>
       <div>

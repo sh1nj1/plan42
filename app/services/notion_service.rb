@@ -91,7 +91,7 @@ class NotionService
   end
 
   def create_creative_page(creative, notion_link, parent_page_id)
-    title = creative.description.to_plain_text.strip.presence || "Untitled Creative"
+    title = ActionController::Base.helpers.strip_tags(creative.description).strip.presence || "Untitled Creative"
 
     # Export only the children - the page title serves as the root creative
     children = creative.children.to_a
@@ -122,7 +122,7 @@ class NotionService
   end
 
   def update_creative_page(creative, notion_link)
-    title = creative.description.to_plain_text.strip.presence || "Untitled Creative"
+    title = ActionController::Base.helpers.strip_tags(creative.description).strip.presence || "Untitled Creative"
 
     # Update with only the children - page title serves as the root creative
     children = creative.children.to_a

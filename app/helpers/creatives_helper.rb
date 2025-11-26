@@ -99,7 +99,7 @@ module CreativesHelper
     return "" if creatives.blank?
     md = ""
     creatives.each do |creative|
-      desc = creative.effective_description(nil, false).to_html
+      desc = creative.effective_description(nil, false)
       # Append progress as a percentage if available (progress is 0.0..1.0)
       if with_progress && creative.respond_to?(:progress) && !creative.progress.nil?
         pct = (creative.progress.to_f * 100).round
@@ -249,7 +249,7 @@ module CreativesHelper
       ext = Mime::Type.lookup(content_type).symbol.to_s
       filename = "import-#{SecureRandom.hex}.#{ext}"
       blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new(data), filename: filename, content_type: content_type)
-      ActionText::Attachment.from_attachable(blob, caption: alt).to_html
+      "<img src=\"#{Rails.application.routes.url_helpers.rails_blob_url(blob, only_path: true)}\" alt=\"#{alt}\" />"
     else
       "<img src=\"#{data_url}\" alt=\"#{alt}\" />"
     end

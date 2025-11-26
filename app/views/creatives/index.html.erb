@@ -88,10 +88,10 @@
 
 <% if @parent_creative %>
   <% content_for :head do %>
-    <meta property="og:title" content="<%= @parent_creative.effective_origin.description.to_plain_text %>">
+    <meta property="og:title" content="<%= strip_tags(@parent_creative.effective_origin.description) %>">
   <% end %>
   <% title_templates = [
-        content_tag(:template, data: { part: "description" }) { @parent_creative.effective_description },
+        content_tag(:template, data: { part: "description" }) { sanitize @parent_creative.effective_description },
         content_tag(:template, data: { part: "progress" }) { render_creative_progress(@parent_creative) }
       ] %>
   <% if @parent_creative.origin_id.present? %>

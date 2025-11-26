@@ -17,11 +17,11 @@ class GeminiParentRecommender
     paths = {}
     categories.each do |c|
       path_sequences = c.ancestors.reverse + [ c ]
-      path = path_sequences.map { |node| node.rich_text_description&.to_plain_text }.join(" > ")
+      path = path_sequences.map { |node| ActionController::Base.helpers.strip_tags(node.description) }.join(" > ")
       paths[path_sequences.last.id] = path unless path_sequences.empty?
     end
     ids = @client.recommend_parent_ids(paths.map { |id, path| { id: id, path: path } },
-                                       creative.rich_text_description&.to_plain_text.to_s)
+                                       ActionController::Base.helpers.strip_tags(creative.description).to_s)
     ids.map { |id| { id: id, path: paths[id] } }.compact
   end
 end

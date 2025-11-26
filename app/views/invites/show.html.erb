@@ -1,5 +1,5 @@
 <h1 class="no-top-margin"><%= t('.title') %></h1>
-<p><%= t('invites.show.invited_by', inviter: @invitation.inviter.display_name, email: @invitation.inviter.email, creative: @invitation.creative.effective_origin.description.to_plain_text) %></p>
+<p><%= t('invites.show.invited_by', inviter: @invitation.inviter.display_name, email: @invitation.inviter.email, creative: strip_tags(@invitation.creative.effective_origin.description)) %></p>
 <p><%= t('invites.show.prompt') %></p>
 <p>
   <%= link_to t('invites.show.login'), new_session_path(invite_token: params[:token]) %> |

@@ -42,7 +42,7 @@ class CreativesController < ApplicationController
         render json: {
           id: @creative.id,
           description: @creative.effective_description,
-          description_raw_html: @creative.description&.body&.to_html,
+          description_raw_html: @creative.description,
           origin_id: @creative.origin_id,
           parent_id: @creative.parent_id,
           progress: @creative.progress,
@@ -176,7 +176,7 @@ class CreativesController < ApplicationController
       return head :unprocessable_entity
     end
 
-    short_title = creative.effective_origin.description.to_plain_text.truncate(10)
+    short_title = helpers.strip_tags(creative.effective_origin.description).truncate(10)
 
     InboxItem.create!(
       owner: creative.user,
@@ -358,7 +358,7 @@ class CreativesController < ApplicationController
 
     def serialize_creatives(collection)
       if params[:simple].present?
-        collection.map { |c| { id: c.id, description: c.effective_origin.description.to_plain_text } }
+        collection.map { |c| { id: c.id, description: helpers.strip_tags(c.effective_origin.description) } }
       else
         collection.map { |c| { id: c.id, description: c.effective_description } }
       end

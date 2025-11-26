@@ -34,7 +34,7 @@ class Creative < ApplicationRecord
   end
 
   has_many :subscribers, dependent: :destroy
-  has_rich_text :description
+  # has_rich_text :description
   has_many :comments, dependent: :destroy
   has_many :comment_read_pointers, dependent: :delete_all
 
@@ -112,19 +112,23 @@ class Creative < ApplicationRecord
       return variation_tag.value if variation_tag&.value.present?
     end
     if origin_id.nil?
-      description = rich_text_description&.body
+      description_val = description
     else
-      description = origin.rich_text_description&.body
+      description_val = origin.description
     end
     if html
-      description&.to_s || ""
+      description_val&.to_s || ""
     else
-      description
+      # For plain text, we might need to strip tags if description is HTML
+      # But the original code used rich_text_description&.body which returns ActionText::Content
+      # which has to_s (HTML) and to_plain_text.
+      # Since we now store raw HTML, we should strip tags for plain text.
+      ActionController::Base.helpers.strip_tags(description_val&.to_s || "")
     end
   end
 
   def creative_snippet
-    effective_origin.description.to_plain_text.truncate(24, omission: "...")
+    ActionController::Base.helpers.strip_tags(effective_origin.description).truncate(24, omission: "...")
   end
 
   def progress

@@ -84,7 +84,7 @@ module Comments
       return memo if memo.present?
 
       base_summary = creative.effective_description(false, false)
-      base_summary&.to_plain_text
+      base_summary
     end
 
     def event_description

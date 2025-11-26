@@ -3,7 +3,7 @@
 <% if defined?(@invitation) && @invitation.present? %>
   <p>
     <strong><%= t('creatives.index.share_creative') %>:</strong>
-    <%= @invitation.creative.effective_origin.description.to_plain_text %>
+    <%= strip_tags(@invitation.creative.effective_origin.description) %>
   </p>
 <% end %>
 

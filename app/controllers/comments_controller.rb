@@ -287,7 +287,7 @@ class CommentsController < ApplicationController
   end
 
   def build_convert_system_message(creative)
-    title = creative.description&.to_plain_text.to_s.strip
+    title = helpers.strip_tags(creative.description).to_s.strip
     title = I18n.t("comments.convert_system_message_default_title") if title.blank?
     url = creative_path(creative)
     I18n.t("comments.convert_system_message", title: title, url: url)
