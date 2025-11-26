@@ -256,6 +256,25 @@ creative-tree-row.show-edit .creative-row {
     /* Align with text */
 }
 
+.creative-action-btn:disabled,
+.popup-menu-toggle:disabled,
+.popup-menu .popup-menu-item:disabled {
+    opacity: 0.4;
+    color: var(--color-muted);
+    cursor: not-allowed;
+    filter: grayscale(100%);
+}
+
+.creative-action-btn:disabled .icon-svg,
+.popup-menu-toggle:disabled .icon-svg,
+.popup-menu .popup-menu-item:disabled .icon-svg {
+    opacity: 0.75;
+}
+
+.popup-menu-toggle:disabled {
+    pointer-events: none;
+}
+
 .voice-input-active {
     background-color: #2ecc71;
     color: #ffffff;

@@ -203,4 +203,28 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
                     wait: 5,
                     visible: :all
   end
+
+  test "disables inline actions when unavailable" do
+    Creative.create!(description: "Second root", user: @user)
+
+    visit creatives_path
+
+    open_inline_editor(@root_creative)
+
+    assert_selector "#inline-move-up[disabled]", wait: 5
+    assert_selector "#inline-level-down[disabled]", wait: 5
+    assert_selector "#inline-level-up[disabled]", wait: 5
+    assert_no_selector "#inline-move-down[disabled]", wait: 5
+
+    find("#inline-move-down", wait: 5).click
+    wait_for_network_idle(timeout: 10)
+
+    assert_no_selector "#inline-move-up[disabled]", wait: 5
+    assert_no_selector "#inline-level-down[disabled]", wait: 5
+
+    find("#inline-level-down", wait: 5).click
+    wait_for_network_idle(timeout: 10)
+
+    assert_no_selector "#inline-level-up[disabled]", wait: 5
+  end
 end
