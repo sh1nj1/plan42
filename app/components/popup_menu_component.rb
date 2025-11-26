@@ -12,7 +12,7 @@ class PopupMenuComponent < ViewComponent::Base
   def button_options
     defaults = {
       type: "button",
-      class: ["popup-menu-toggle", button_classes.presence].compact.join(" "),
+      class: [ "popup-menu-toggle", button_classes.presence ].compact.join(" "),
       data: {
         action: "click->popup-menu#toggle",
         popup_menu_target: "button"
@@ -22,7 +22,7 @@ class PopupMenuComponent < ViewComponent::Base
     return defaults if button_attributes.blank?
 
     defaults.deep_merge(button_attributes) do |key, this_val, other_val|
-      key == :class ? [this_val, other_val].compact.join(" ") : other_val
+      key == :class ? [ this_val, other_val ].compact.join(" ") : other_val
     end
   end
 end
