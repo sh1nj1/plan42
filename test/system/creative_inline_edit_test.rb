@@ -214,7 +214,6 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     assert_selector "#inline-move-up[disabled]", wait: 5
     assert_selector "#inline-level-down[disabled]", wait: 5
     assert_selector "#inline-level-up[disabled]", wait: 5
-    assert_no_selector "#inline-delete-toggle[disabled]", wait: 5
     assert_no_selector "#inline-move-down[disabled]", wait: 5
 
     find("#inline-move-down", wait: 5).click
@@ -227,10 +226,5 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     wait_for_network_idle(timeout: 10)
 
     assert_no_selector "#inline-level-up[disabled]", wait: 5
-
-    find("#inline-add", wait: 5).click
-    wait_for_network_idle(timeout: 10)
-
-    assert_selector "#inline-delete-toggle[disabled]", wait: 5
   end
 end

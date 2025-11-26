@@ -43,8 +43,6 @@ export function initializeCreativeRowEditor() {
     const levelUpBtn = document.getElementById('inline-level-up');
     const deleteBtn = document.getElementById('inline-delete');
     const deleteWithChildrenBtn = document.getElementById('inline-delete-with-children');
-    const deleteToggleBtn = document.getElementById('inline-delete-toggle');
-    const deleteMenu = document.getElementById('inline-delete-popup-menu');
     const linkBtn = document.getElementById('inline-link');
     const unlinkBtn = document.getElementById('inline-unlink');
     const unconvertBtn = document.getElementById('inline-unconvert');
@@ -550,10 +548,8 @@ export function initializeCreativeRowEditor() {
       }
       if (levelUpBtn) levelUpBtn.disabled = !canLevelUp;
 
-      if (deleteToggleBtn) {
-        deleteToggleBtn.disabled = !hasCreativeId;
-        if (deleteToggleBtn.disabled && deleteMenu) deleteMenu.style.display = 'none';
-      }
+      if (deleteBtn) deleteBtn.disabled = !hasCreativeId;
+      if (deleteWithChildrenBtn) deleteWithChildrenBtn.disabled = !hasCreativeId;
       if (linkBtn) linkBtn.disabled = !hasCreativeId || linkBtn.style.display === 'none';
       if (unlinkBtn) unlinkBtn.disabled = !hasCreativeId || unlinkBtn.style.display === 'none';
       if (unconvertBtn) {
