@@ -384,6 +384,21 @@
     font-size: 1.4em;
 }
 
+.creative-row-end {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5em;
+    flex-shrink: 0;
+}
+
+/* Constrain images within creative-row to prevent overflow */
+.creative-row img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
 .creative-origin-link {
     display: inline-flex;
     align-items: center;
