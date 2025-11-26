@@ -58,8 +58,7 @@ module Creatives
       query = "%#{params[:search]}%"
       if params[:simple].present?
         creatives = Creative
-                      .joins(:rich_text_description)
-                      .where("action_text_rich_texts.body LIKE :q", q: query)
+                      .where("description LIKE :q", q: query)
                       .select { |c| readable?(c) }
         [ creatives, nil ]
       elsif params[:id].present?
@@ -69,18 +68,16 @@ module Creatives
         subtree_ids = base_creative.subtree_ids
         creatives = Creative
                       .distinct
-                      .joins(:rich_text_description)
                       .left_joins(:comments)
                       .where(id: subtree_ids)
-                      .where("action_text_rich_texts.body LIKE :q OR comments.content LIKE :q", q: query)
+                      .where("description LIKE :q OR comments.content LIKE :q", q: query)
                       .select { |c| readable?(c) }
         [ creatives, base_creative ]
       else
         creatives = Creative
                       .distinct
-                      .joins(:rich_text_description)
                       .left_joins(:comments)
-                      .where("action_text_rich_texts.body LIKE :q OR comments.content LIKE :q", q: query)
+                      .where("description LIKE :q OR comments.content LIKE :q", q: query)
                       .where(origin_id: nil)
                       .select { |c| readable?(c) }
         [ creatives, nil ]

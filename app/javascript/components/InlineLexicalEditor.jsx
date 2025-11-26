@@ -1,17 +1,17 @@
-import {useCallback, useEffect, useMemo, useRef, useState} from "react"
-import {LexicalComposer} from "@lexical/react/LexicalComposer"
-import {RichTextPlugin} from "@lexical/react/LexicalRichTextPlugin"
-import {ContentEditable} from "@lexical/react/LexicalContentEditable"
-import {HistoryPlugin} from "@lexical/react/LexicalHistoryPlugin"
-import {OnChangePlugin} from "@lexical/react/LexicalOnChangePlugin"
-import {ListPlugin} from "@lexical/react/LexicalListPlugin"
-import {LinkPlugin} from "@lexical/react/LexicalLinkPlugin"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { LexicalComposer } from "@lexical/react/LexicalComposer"
+import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin"
+import { ContentEditable } from "@lexical/react/LexicalContentEditable"
+import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin"
+import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin"
+import { ListPlugin } from "@lexical/react/LexicalListPlugin"
+import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin"
 import {
   AutoLinkPlugin,
   createLinkMatcherWithRegExp
 } from "@lexical/react/LexicalAutoLinkPlugin"
-import {LexicalErrorBoundary} from "@lexical/react/LexicalErrorBoundary"
-import {HeadingNode, QuoteNode} from "@lexical/rich-text"
+import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary"
+import { HeadingNode, QuoteNode } from "@lexical/rich-text"
 import {
   CodeNode,
   CodeHighlightNode,
@@ -19,8 +19,8 @@ import {
   $isCodeNode,
   registerCodeHighlighting
 } from "@lexical/code"
-import {ListItemNode, ListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND} from "@lexical/list"
-import {LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND} from "@lexical/link"
+import { ListItemNode, ListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
+import { LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
 import {
   $createParagraphNode,
   $createTextNode,
@@ -38,18 +38,18 @@ import {
   SELECTION_CHANGE_COMMAND,
   UNDO_COMMAND
 } from "lexical"
-import {$patchStyleText} from "@lexical/selection"
-import {$generateHtmlFromNodes, $generateNodesFromDOM} from "@lexical/html"
-import {useLexicalComposerContext} from "@lexical/react/LexicalComposerContext"
-import ActionTextAttachmentPlugin, {
-  INSERT_ACTIONTEXT_ATTACHMENT_COMMAND
-} from "./plugins/action_text_attachment_plugin"
-import {ActionTextAttachmentNode} from "../lib/lexical/action_text_attachment_node"
-import {
-  canonicalizeAttachmentElements,
-  formatFileSize
-} from "../lib/lexical/attachment_payload"
-import {syncLexicalStyleAttributes} from "../lib/lexical/style_attributes"
+import { $patchStyleText } from "@lexical/selection"
+import { $generateHtmlFromNodes, $generateNodesFromDOM } from "@lexical/html"
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
+import FileUploadPlugin, {
+  INSERT_IMAGE_COMMAND,
+  INSERT_FILE_COMMAND
+} from "./plugins/image_upload_plugin"
+import { ImageNode } from "../lib/lexical/image_node"
+import { AttachmentNode } from "../lib/lexical/attachment_node"
+import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
+import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
+import { updateResponsiveImages } from "../lib/responsive_images"
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -110,12 +110,12 @@ const theme = {
   }
 }
 
-function Placeholder({text}) {
+function Placeholder({ text }) {
   const fallback = "Describe the creative…"
   return <div className="lexical-placeholder">{text || fallback}</div>
 }
 
-function InitialContentPlugin({html}) {
+function InitialContentPlugin({ html }) {
   const [editor] = useLexicalComposerContext()
   const lastApplied = useRef(null)
 
@@ -161,24 +161,37 @@ function InitialContentPlugin({html}) {
     lastApplied.current = html
     editor.update(() => {
       const root = $getRoot()
-      root.clear()
+      // Explicitly remove all children to ensure it's empty
+      root.getChildren().forEach((child) => child.remove())
+
       const parser = new DOMParser()
       const doc = parser.parseFromString(html || "", "text/html")
-      const container = doc.querySelector(".trix-content") || doc.body
+      // No more .trix-content wrapper
+      const container = doc.body
 
-      canonicalizeAttachmentElements(container)
       syncLexicalStyleAttributes(container)
       const collectedStyles = collectDomTextStyles(container)
-
       const nodes = $generateNodesFromDOM(editor, container)
-      const appendedNodes = []
-      nodes.forEach((node) => {
-        if (node instanceof ActionTextAttachmentNode) {
-          root.append(node)
-          appendedNodes.push(node)
-          return
-        }
 
+      // Filter out duplicate image nodes if any
+      const uniqueNodes = []
+      const seenImages = new Set()
+
+      nodes.forEach(node => {
+        // Check if the node is an ImageNode and if it has a getSrc method
+        if (node.getType() === 'image' && typeof node.getSrc === 'function') {
+          const src = node.getSrc()
+          if (!seenImages.has(src)) {
+            seenImages.add(src)
+            uniqueNodes.push(node)
+          }
+        } else {
+          uniqueNodes.push(node)
+        }
+      })
+
+      const appendedNodes = []
+      uniqueNodes.forEach((node) => {
         if ($isTextNode(node)) {
           const paragraph = $createParagraphNode()
           paragraph.append(node)
@@ -202,46 +215,6 @@ function InitialContentPlugin({html}) {
         root.append(paragraph)
         appendedNodes.push(paragraph)
       }
-
-      const children = root.getChildren()
-      let previousAttachmentMeta = null
-      const nodesToRemove = []
-      children.forEach((child) => {
-        if (child instanceof ActionTextAttachmentNode) {
-          const payload = child.getPayload?.()
-          previousAttachmentMeta = payload
-          return
-        }
-
-        if (previousAttachmentMeta && child.getType?.() === "paragraph") {
-          const textContent = child.getTextContent?.().trim() || ""
-          const expected = new Set()
-          if (previousAttachmentMeta.filename) {
-            expected.add(previousAttachmentMeta.filename)
-          }
-          if (
-            previousAttachmentMeta.filename &&
-            Number.isFinite(previousAttachmentMeta.filesize)
-          ) {
-            expected.add(
-              `${previousAttachmentMeta.filename} ${formatFileSize(previousAttachmentMeta.filesize)}`
-            )
-          }
-          if (expected.has(textContent) || !textContent) {
-            nodesToRemove.push(child)
-            previousAttachmentMeta = null
-            return
-          }
-        }
-
-        previousAttachmentMeta = null
-      })
-
-      nodesToRemove.forEach((node) => {
-        if (node.getParent() === root) {
-          node.remove()
-        }
-      })
 
       const textNodes = root.getAllTextNodes()
       textNodes.forEach((textNode, index) => {
@@ -300,7 +273,7 @@ function CodeHighlightingPlugin() {
   return null
 }
 
-function ToolbarColorPicker({icon, title, color, onChange, onClear}) {
+function ToolbarColorPicker({ icon, title, color, onChange, onClear }) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef(null)
   const popoverRef = useRef(null)
@@ -328,7 +301,7 @@ function ToolbarColorPicker({icon, title, color, onChange, onClear}) {
         className="lexical-toolbar-btn lexical-toolbar-color__trigger"
         onClick={() => setOpen((prev) => !prev)}
         ref={triggerRef}>
-        <span className="lexical-toolbar-color__swatch" style={{backgroundColor: color}} />
+        <span className="lexical-toolbar-color__swatch" style={{ backgroundColor: color }} />
         {icon}
       </button>
       {open ? (
@@ -353,7 +326,7 @@ function ToolbarColorPicker({icon, title, color, onChange, onClear}) {
   )
 }
 
-function Toolbar({onPromptForLink}) {
+function Toolbar({ onPromptForLink }) {
   const [editor] = useLexicalComposerContext()
   const [formats, setFormats] = useState({
     bold: false,
@@ -376,7 +349,8 @@ function Toolbar({onPromptForLink}) {
       if (!fileList) return
       Array.from(fileList).forEach((file) => {
         if (file) {
-          editor.dispatchCommand(INSERT_ACTIONTEXT_ATTACHMENT_COMMAND, {
+          // Use INSERT_FILE_COMMAND which handles both images and files
+          editor.dispatchCommand(INSERT_FILE_COMMAND, {
             file,
             options
           })
@@ -445,7 +419,7 @@ function Toolbar({onPromptForLink}) {
   }, [editor])
 
   useEffect(() => {
-    return editor.registerUpdateListener(({editorState}) => {
+    return editor.registerUpdateListener(({ editorState }) => {
       editorState.read(refreshFormats)
     })
   }, [editor, refreshFormats])
@@ -543,7 +517,7 @@ function Toolbar({onPromptForLink}) {
         disabled={!canUndo}
         title="Undo (⌘/Ctrl+Z)"
         aria-label="Undo">
-          ↩
+        ↩
       </button>
       <button
         type="button"
@@ -552,7 +526,7 @@ function Toolbar({onPromptForLink}) {
         disabled={!canRedo}
         title="Redo (⇧⌘/Ctrl+Z)"
         aria-label="Redo">
-          ↪
+        ↪
       </button>
       <span className="lexical-toolbar-separator" aria-hidden="true" />
       <button
@@ -620,11 +594,11 @@ function Toolbar({onPromptForLink}) {
         color={fontColor}
         onChange={(value) => {
           setFontColor(value)
-          applyTextStyle({color: value})
+          applyTextStyle({ color: value })
         }}
         onClear={() => {
           setFontColor(DEFAULT_FONT_COLOR)
-          applyTextStyle({color: ""})
+          applyTextStyle({ color: "" })
         }}
       />
       <ToolbarColorPicker
@@ -633,11 +607,11 @@ function Toolbar({onPromptForLink}) {
         color={bgColor}
         onChange={(value) => {
           setBgColor(value)
-          applyTextStyle({"background-color": value})
+          applyTextStyle({ "background-color": value })
         }}
         onClear={() => {
           setBgColor(DEFAULT_BG_COLOR)
-          applyTextStyle({"background-color": ""})
+          applyTextStyle({ "background-color": "" })
         }}
       />
       <span className="lexical-toolbar-separator" aria-hidden="true" />
@@ -645,16 +619,16 @@ function Toolbar({onPromptForLink}) {
         ref={imageInputRef}
         type="file"
         accept="image/*"
-        style={{display: "none"}}
+        style={{ display: "none" }}
         onChange={(event) => {
-          handleFiles(event.target.files, {kind: "image"})
+          handleFiles(event.target.files, { kind: "image" })
           event.target.value = ""
         }}
       />
       <input
         ref={fileInputRef}
         type="file"
-        style={{display: "none"}}
+        style={{ display: "none" }}
         onChange={(event) => {
           handleFiles(event.target.files)
           event.target.value = ""
@@ -678,7 +652,7 @@ function Toolbar({onPromptForLink}) {
   )
 }
 
-function ReadyPlugin({onReady}) {
+function ReadyPlugin({ onReady }) {
   const [editor] = useLexicalComposerContext()
 
   useEffect(() => {
@@ -705,7 +679,8 @@ function EditorInner({
   onUploadStateChange,
   directUploadUrl,
   blobUrlTemplate,
-  placeholderText
+  placeholderText,
+  deletedAttachmentsRef
 }) {
   const [editor] = useLexicalComposerContext()
 
@@ -740,67 +715,30 @@ function EditorInner({
               const parser = new DOMParser()
               const doc = parser.parseFromString(`<div>${innerHtml}</div>`, "text/html")
 
-              canonicalizeAttachmentElements(doc.body)
-              syncLexicalStyleAttributes(doc.body)
+              const rootElement = editorInstance.getRootElement()
 
-              doc.querySelectorAll("action-text-attachment").forEach((attachment) => {
-                const containerParagraph = attachment.closest("p")
-                let sibling = containerParagraph?.nextElementSibling
-                while (sibling && sibling.tagName === "BR") {
-                  const toRemove = sibling
-                  sibling = sibling.nextElementSibling
-                  toRemove.remove()
-                }
-                if (
-                  sibling &&
-                  sibling.tagName === "P" &&
-                  !sibling.querySelector("action-text-attachment")
-                ) {
-                  const text = sibling.textContent || ""
-                  const hasContent = text.replace(/\s|\u00A0/g, "") !== ""
-                  const hasNonBr = Array.from(sibling.childNodes).some((node) => {
-                    return !(node.nodeType === Node.ELEMENT_NODE && node.tagName === "BR")
-                  })
-                  if (!hasContent && !hasNonBr) {
-                    sibling.remove()
-                  }
-                }
-              })
-              const bodyChildren = Array.from(doc.body.children)
-              for (let i = bodyChildren.length - 1; i >= 0; i -= 1) {
-                const element = bodyChildren[i]
-                if (element.tagName !== "P") break
-                if (element.querySelector("action-text-attachment")) break
-                const text = element.textContent || ""
-                const hasContent = text.replace(/\s|\u00A0/g, "") !== ""
-                const hasNonBr = Array.from(element.childNodes).some((node) => {
-                  return !(node.nodeType === Node.ELEMENT_NODE && node.tagName === "BR")
-                })
-                if (!hasContent && !hasNonBr) {
-                  element.remove()
-                  continue
-                }
-                break
-              }
+              syncLexicalStyleAttributes(doc.body)
+              updateResponsiveImages(doc.body, rootElement?.clientWidth)
+
               doc.querySelectorAll("a").forEach((anchor) => {
                 anchor.setAttribute("target", "_blank")
                 anchor.setAttribute("rel", "noopener")
               })
               serialized = doc.body.innerHTML
             })
-            const safeHtml = serialized || "<div><br></div>"
-            const wrapped = `<div class="trix-content">${safeHtml}</div>`
-            onChange(wrapped)
+            // No Trix wrapper
+            onChange(serialized)
           }}
         />
         <InitialContentPlugin html={initialHtml} />
         <LinkAttributesPlugin />
         <ReadyPlugin onReady={onReady} />
-        <ActionTextAttachmentPlugin
+        <FileUploadPlugin
           onUploadStateChange={onUploadStateChange}
           directUploadUrl={directUploadUrl}
           blobUrlTemplate={blobUrlTemplate}
         />
+        <AttachmentCleanupPlugin deletedAttachmentsRef={deletedAttachmentsRef} />
       </div>
     </div>
   )
@@ -816,7 +754,8 @@ export default function InlineLexicalEditor({
   directUploadUrl,
   blobUrlTemplate,
   editorKey,
-  placeholderText
+  placeholderText,
+  deletedAttachmentsRef
 }) {
   const initialConfig = useMemo(
     () => ({
@@ -830,7 +769,8 @@ export default function InlineLexicalEditor({
         ListNode,
         LinkNode,
         AutoLinkNode,
-        ActionTextAttachmentNode
+        ImageNode,
+        AttachmentNode
       ],
       onError(error) {
         throw error
@@ -852,7 +792,9 @@ export default function InlineLexicalEditor({
         directUploadUrl={directUploadUrl}
         blobUrlTemplate={blobUrlTemplate}
         placeholderText={placeholderText}
+        deletedAttachmentsRef={deletedAttachmentsRef}
       />
     </LexicalComposer>
   )
 }
+

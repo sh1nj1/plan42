@@ -1,5 +1,5 @@
 <p>
   <%= t('invitation_mailer.invite.message_html',
-         creative: @invitation.creative.effective_origin.description.to_plain_text,
+         creative: strip_tags(@invitation.creative.effective_origin.description),
          link: link_to(t('app.here'), invite_url(token: @invitation.generate_token_for(:invite)))) %>
 </p>

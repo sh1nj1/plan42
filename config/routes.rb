@@ -101,4 +101,7 @@ Rails.application.routes.draw do
 
   post "/creative_expanded_states/toggle", to: "creative_expanded_states#toggle"
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
+
+  # Attachment deletion
+  delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment
 end

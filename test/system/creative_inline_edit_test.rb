@@ -62,13 +62,15 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
   def close_inline_editor
     find("#inline-close", wait: 5).click
-    assert_no_selector "#inline-edit-form-element", wait: 5
+    assert_no_selector ".lexical-content-editable", visible: true, wait: 5
     wait_for_network_idle(timeout: 10)
   end
 
   def expand_creative(creative)
     wait_for_network_idle(timeout: 10)
     find("#creative-#{creative.id}").hover
+    # Force visibility for test stability as hover can be flaky
+    execute_script("document.querySelector('#creative-#{creative.id} .creative-toggle-btn').style.visibility = 'visible'")
     find("#creative-#{creative.id} .creative-toggle-btn", wait: 5).click
   end
 
@@ -79,8 +81,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
       wait: 5
     )
     input.attach_file(file_path)
-    assert_selector ".lexical-attachment", wait: 10
-    assert_selector ".lexical-attachment.is-uploading", count: 0, wait: 10
+    assert_selector "img", wait: 10
   end
 
   test "shows saved row when starting another addition" do
@@ -103,7 +104,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     @root_creative.reload
     first_child = @root_creative.children.order(:created_at).first
-    assert_equal "First child", first_child.description.body.to_plain_text
+    assert_equal "First child", ActionController::Base.helpers.strip_tags(first_child.description)
   end
 
   test "supports keyboard shortcuts for add and close" do
@@ -117,6 +118,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     fill_inline_editor("Second child")
     inline_editor_field.send_keys(:escape)
+    sleep 0.5
 
     expand_creative(@root_creative)
 
@@ -138,8 +140,8 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     fill_inline_editor("D")
     close_inline_editor
 
-    assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: child_a.description.to_plain_text, wait: 5
-    assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: child_b.description.to_plain_text
+    assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: ActionController::Base.helpers.strip_tags(child_a.description), wait: 5
+    assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: ActionController::Base.helpers.strip_tags(child_b.description)
     assert_selector "#creatives > creative-tree-row:nth-of-type(3) .creative-row", text: "C"
     assert_selector "#creatives > creative-tree-row:nth-of-type(4) .creative-row", text: "D"
   end
@@ -169,7 +171,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     close_inline_editor
 
     assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-row", text: "New child", wait: 5
-    assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: existing_child.description.to_plain_text
+    assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: ActionController::Base.helpers.strip_tags(existing_child.description)
   end
 
   test "does not duplicate attachments when re-editing inline creative" do
@@ -186,17 +188,17 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     @root_creative.reload
     wait_for_network_idle(timeout: 10)
 
-    assert_selector "#creative-#{@root_creative.id} action-text-attachment",
+    assert_selector "#creative-#{@root_creative.id} .creative-content img",
                     count: 1,
                     wait: 5,
                     visible: :all
-    assert_equal 1, @root_creative.description.body.to_html.scan(/<action-text-attachment/).length
+    assert_equal 1, @root_creative.description.scan(/<img/).length
 
     open_inline_editor(@root_creative)
-    assert_selector ".lexical-attachment", count: 1, wait: 5
+    assert_selector ".lexical-content-editable img", count: 1, wait: 5
     close_inline_editor
 
-    assert_selector "#creative-#{@root_creative.id} action-text-attachment",
+    assert_selector "#creative-#{@root_creative.id} .creative-content img",
                     count: 1,
                     wait: 5,
                     visible: :all

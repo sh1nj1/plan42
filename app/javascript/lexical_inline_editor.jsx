@@ -1,4 +1,4 @@
-import {createRoot} from "react-dom/client"
+import { createRoot } from "react-dom/client"
 import InlineLexicalEditor from "./components/InlineLexicalEditor"
 
 const DEFAULT_KEY = "creative-inline-editor"
@@ -15,7 +15,7 @@ export function createInlineEditor(container, {
 
   const root = createRoot(container)
   let suppressNextChange = false
-  let focusHandler = () => {}
+  let focusHandler = () => { }
   let editorReady = false
   let pendingFocus = false
   let currentKey = DEFAULT_KEY
@@ -24,11 +24,14 @@ export function createInlineEditor(container, {
   const blobUrlTemplate = container.dataset.blobUrlTemplate || null
   const placeholderText = container.dataset.placeholder || null
 
+  const deletedAttachmentsRef = { current: [] }
+
   function render(html, key = currentKey) {
     currentKey = key
     currentHtml = html ?? ""
     suppressNextChange = true
     editorReady = false
+    deletedAttachmentsRef.current = []
     if (container.dataset) {
       container.dataset.editorReady = "false"
     }
@@ -50,7 +53,7 @@ export function createInlineEditor(container, {
           onChange?.(value)
         }}
         onReady={(api) => {
-          focusHandler = api?.focus ?? (() => {})
+          focusHandler = api?.focus ?? (() => { })
           editorReady = true
           if (container.dataset) {
             container.dataset.editorReady = "true"
@@ -64,7 +67,8 @@ export function createInlineEditor(container, {
         }}
         onUploadStateChange={onUploadStateChange}
         directUploadUrl={directUploadUrl}
-       blobUrlTemplate={blobUrlTemplate}
+        blobUrlTemplate={blobUrlTemplate}
+        deletedAttachmentsRef={deletedAttachmentsRef}
       />
     )
   }
@@ -92,6 +96,11 @@ export function createInlineEditor(container, {
         delete container.dataset.editorReady
       }
       root.unmount()
+    },
+    getDeletedAttachments() {
+      const ids = Array.from(deletedAttachmentsRef.current || [])
+      deletedAttachmentsRef.current = []
+      return ids
     }
   }
 }

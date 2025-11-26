@@ -1,4 +1,5 @@
 import { LitElement, html, nothing } from "lit";
+import DOMPurify from "dompurify";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 
 const BULLET_STARTING_LEVEL = 3;
@@ -67,6 +68,12 @@ class CreativeTreeRow extends LitElement {
     this._attachHandlers();
   }
 
+  _setDescriptionHtml(markup) {
+    const sanitized = DOMPurify.sanitize(markup ?? "");
+    this.descriptionHtml = sanitized;
+    this.dataset.descriptionHtml = sanitized;
+  }
+
   _extractTemplates() {
     if (this._templatesExtracted) return;
     const templates = this.querySelectorAll("template[data-part]");
@@ -81,7 +88,7 @@ class CreativeTreeRow extends LitElement {
     if (templates.length === 0) {
       // The element might have been restored from a Turbo snapshot where we no longer
       // have template nodes, so fall back to any cached markup stored in data attributes.
-      if (hasCached("descriptionHtml")) this.descriptionHtml = this.dataset.descriptionHtml;
+      if (hasCached("descriptionHtml")) this._setDescriptionHtml(this.dataset.descriptionHtml);
       if (hasCached("progressHtml")) this.progressHtml = this.dataset.progressHtml;
       if (hasCached("editIconHtml")) this.editIconHtml = this.dataset.editIconHtml;
       if (hasCached("editOffIconHtml")) this.editOffIconHtml = this.dataset.editOffIconHtml;
@@ -90,7 +97,7 @@ class CreativeTreeRow extends LitElement {
       // If we lack cached markup (older snapshots), attempt to extract from the existing DOM.
       if (!hasCached("descriptionHtml") && existingTree) {
         const content = existingTree.querySelector(".creative-content");
-        ensureCached("descriptionHtml", content ? content.innerHTML : "");
+        this._setDescriptionHtml(content ? content.innerHTML : "");
       }
       if (!hasCached("progressHtml") && existingTree) {
         const progressNode = existingTree.querySelector(".creative-row > :last-child");
@@ -102,8 +109,7 @@ class CreativeTreeRow extends LitElement {
         const markup = template.innerHTML;
         switch (part) {
           case "description":
-            this.descriptionHtml = markup;
-            this.dataset.descriptionHtml = markup;
+            this._setDescriptionHtml(markup);
             break;
           case "progress":
             this.progressHtml = markup;
@@ -255,8 +261,8 @@ class CreativeTreeRow extends LitElement {
     const level = Number(this.level) || 1;
     // Toggle is now rendered outside
     const content = html`
-      <div class="creative-content">
-        <a class="unstyled-link" href=${this.linkUrl || "#"}>${unsafeHTML(this.descriptionHtml || "")}</a>
+      <div class="creative-content" @click=${this._handleContentClick}>
+        ${unsafeHTML(this.descriptionHtml || "")}
       </div>
     `;
     const indicator = this.loadingChildren ? this._renderLoadingIndicator() : nothing;
@@ -381,6 +387,27 @@ class CreativeTreeRow extends LitElement {
       bubbles: true,
       composed: true
     }));
+  }
+
+  _handleContentClick(event) {
+    // Check if the clicked element is an interactive element or inside one
+    const target = event.target;
+    if (target.tagName === 'A' || target.closest('a') ||
+      target.tagName === 'BUTTON' || target.closest('button') ||
+      target.tagName === 'INPUT' || target.closest('input') ||
+      target.tagName === 'IMG') {
+      // Allow default behavior for these elements (e.g. download link, image click)
+      return;
+    }
+
+    // If not interactive, navigate to the linkUrl
+    if (this.linkUrl && this.linkUrl !== "#") {
+      if (window.Turbo) {
+        window.Turbo.visit(this.linkUrl);
+      } else {
+        window.location.href = this.linkUrl;
+      }
+    }
   }
 }
 

@@ -52,7 +52,7 @@ class CreativesHelperTest < ActionView::TestCase
   test "base64 image link converts" do
     md = "Image: ![alt](data:image/png;base64,aGk=)"
     html = markdown_links_to_html(md)
-    assert_match(/<action-text-attachment[^>]+content-type=\"image\/png\"[^>]+caption=\"alt\"[^>]*>/, html)
+    assert_match(/<img[^>]+src=\"[^\"]*\"[^>]*alt=\"alt\"[^>]*\/?>/, html)
     back = html_links_to_markdown(html)
     assert_equal md, back
   end
@@ -60,7 +60,7 @@ class CreativesHelperTest < ActionView::TestCase
   test "reference style base64 image converts" do
     md = "Look ![][img1]\n\n[img1]: <data:image/png;base64,aGk=>"
     html = markdown_links_to_html(md)
-    assert_match(/<action-text-attachment[^>]+content-type=\"image\/png\"[^>]*>/, html)
+    assert_match(/<img[^>]+src=\"[^\"]*\"[^>]*\/?>/, html)
     back = html_links_to_markdown(html)
     assert_equal "Look ![](data:image/png;base64,aGk=)", back
   end
@@ -177,14 +177,14 @@ class CreativesHelperTest < ActionView::TestCase
     begin
       created = MarkdownImporter.import(markdown, parent: parent, user: user)
 
-      heading = parent.children.detect { |child| child.description.body.to_html.include?("Bold Heading") }
-      paragraph = parent.descendants.detect { |desc| desc.description.body.to_html.include?("Regular") }
+      heading = parent.children.detect { |child| child.description.to_s.include?("Bold Heading") }
+      paragraph = parent.descendants.detect { |desc| desc.description.to_s.include?("Regular") }
 
       assert_not_nil heading, "Expected heading creative to be created"
-      assert_includes heading.description.body.to_html, "<strong>Bold Heading</strong>"
+      assert_includes heading.description.to_s, "<strong>Bold Heading</strong>"
 
       assert_not_nil paragraph, "Expected paragraph creative to be created"
-      assert_includes paragraph.description.body.to_html, "<strong>bold</strong>"
+      assert_includes paragraph.description.to_s, "<strong>bold</strong>"
     ensure
       created.each(&:destroy)
       parent.destroy

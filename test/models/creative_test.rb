@@ -5,6 +5,7 @@ class CreativeTest < ActiveSupport::TestCase
   #   assert true
   # end
   include ActionMailer::TestHelper
+  include ActiveJob::TestHelper
 
   test "sends email notifications when back in stock" do
     creative = creatives(:tshirt)
@@ -88,6 +89,28 @@ class CreativeTest < ActiveSupport::TestCase
     Current.reset
   end
 
+  test "destroying creative purges attachments referenced in description" do
+    user = User.create!(email: "creative-blob@example.com", password: "secret", name: "Blob Owner")
+    Current.session = Struct.new(:user).new(user)
+
+    blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new("hello world"),
+      filename: "hello.txt",
+      content_type: "text/plain"
+    )
+
+    blob_path = Rails.application.routes.url_helpers.rails_blob_path(blob, only_path: true)
+    creative = Creative.create!(user: user, description: "<a href=\"#{blob_path}\">Download</a>")
+
+    perform_enqueued_jobs do
+      creative.destroy
+    end
+
+    refute ActiveStorage::Blob.exists?(blob.id)
+  ensure
+    Current.reset
+  end
+
   test "updates ancestors when reparenting" do
     user = User.create!(email: "ancestor@example.com", password: "secret", name: "Ancestor")
     Current.session = Struct.new(:user).new(user)
@@ -118,6 +141,15 @@ class CreativeTest < ActiveSupport::TestCase
     creative = Creative.create!(user: user, description: "Slide")
 
     assert_nil creative.prompt_for(user)
+  end
+
+  test "effective_description returns plain text when html flag is false" do
+    creative = Creative.new(description: "<p>Hello <strong>world</strong></p>")
+
+    plain_text = creative.effective_description(nil, false)
+
+    assert_kind_of String, plain_text
+    assert_equal "Hello world", plain_text.strip
   end
 
   test "assigns parent user when parent present" do

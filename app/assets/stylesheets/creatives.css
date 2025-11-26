@@ -41,6 +41,10 @@
     position: relative;
 }
 
+creative-tree-row.show-edit .creative-row {
+    display: none !important;
+}
+
 .creative-tree.child-drop-indicator-active::after {
     content: '↳';
     position: absolute;
@@ -104,6 +108,14 @@
     max-width: calc(min(100vw, var(--max-width)) - 160px);
     padding-top: 2px;
     /* Slight adjustment for text baseline */
+}
+
+/* Allow attachments and images to be clickable independently of the parent link */
+.creative-content a[download],
+.creative-content img {
+    pointer-events: auto;
+    position: relative;
+    z-index: 1;
 }
 
 .creative-row:hover .creative-content {
@@ -382,6 +394,13 @@
 .page-title {
     margin-left: 1.5em;
     font-size: 1.4em;
+}
+
+/* Constrain images within creative-row to prevent overflow */
+.creative-row img {
+    max-width: 100%;
+    height: auto;
+    display: block;
 }
 
 .creative-origin-link {

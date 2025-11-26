@@ -77,7 +77,7 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
     end
 
     child = @creative.reload.children.order(:created_at).last
-    assert_equal "New idea", child.description.to_plain_text.strip
+    assert_equal "New idea", ActionController::Base.helpers.strip_tags(child.description).strip
     assert_in_delta 0.25, child.progress
     assert_equal @creative.user, child.user
   end
@@ -112,7 +112,7 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
     child.reload
     assert_in_delta 1.0, child.progress
     new_child = @creative.children.order(:created_at).last
-    assert_equal "Follow up", new_child.description.to_plain_text.strip
+    assert_equal "Follow up", ActionController::Base.helpers.strip_tags(new_child.description).strip
     assert_equal @creative, new_child.parent
   end
 

@@ -18,7 +18,7 @@ class NotionSyncJob < ApplicationJob
       end
 
       # Update the existing Notion page with children as blocks
-      title = creative.description.to_plain_text.strip.presence || "Untitled Creative"
+      title = ActionController::Base.helpers.strip_tags(creative.description).strip.presence || "Untitled Creative"
       children = creative.children.to_a
       Rails.logger.info("NotionSyncJob: Syncing creative #{creative.id} as page title with #{children.count} children as blocks")
       blocks = children.any? ? NotionCreativeExporter.new(creative).export_tree_blocks(children, 1, 0) : []

@@ -34,7 +34,7 @@ class Creative < ApplicationRecord
   end
 
   has_many :subscribers, dependent: :destroy
-  has_rich_text :description
+  # has_rich_text :description
   has_many :comments, dependent: :destroy
   has_many :comment_read_pointers, dependent: :delete_all
 
@@ -65,6 +65,7 @@ class Creative < ApplicationRecord
   after_save :clear_permission_cache_on_parent_change
   after_save :clear_permission_cache_on_user_change
   after_destroy :update_parent_progress
+  after_destroy_commit :purge_description_attachments
 
   def self.recalculate_all_progress!
     Creatives::ProgressService.recalculate_all!
@@ -112,19 +113,23 @@ class Creative < ApplicationRecord
       return variation_tag.value if variation_tag&.value.present?
     end
     if origin_id.nil?
-      description = rich_text_description&.body
+      description_val = description
     else
-      description = origin.rich_text_description&.body
+      description_val = origin.description
     end
     if html
-      description&.to_s || ""
+      description_val&.to_s || ""
     else
-      description
+      # For plain text, we might need to strip tags if description is HTML
+      # But the original code used rich_text_description&.body which returns ActionText::Content
+      # which has to_s (HTML) and to_plain_text.
+      # Since we now store raw HTML, we should strip tags for plain text.
+      ActionController::Base.helpers.strip_tags(description_val&.to_s || "")
     end
   end
 
   def creative_snippet
-    effective_origin.description.to_plain_text.truncate(24, omission: "...")
+    ActionController::Base.helpers.strip_tags(effective_origin.description || "").truncate(24, omission: "...")
   end
 
   def progress
@@ -215,6 +220,42 @@ class Creative < ApplicationRecord
   end
 
   private
+
+  def purge_description_attachments
+    return if description.blank?
+
+    signed_ids = extract_signed_ids_from_description
+    return if signed_ids.empty?
+
+    signed_ids.each do |signed_id|
+      begin
+        blob = ActiveStorage::Blob.find_signed(signed_id)
+        next unless blob
+
+        # Skip purging if another creative still references the blob
+        next if Creative.where.not(id: id)
+                        .where("description LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%")
+                        .exists?
+
+        blob.purge
+      rescue ActiveRecord::RecordNotFound, ActiveSupport::MessageVerifier::InvalidSignature
+        Rails.logger.warn("Creative##{id}: could not find blob for signed_id=#{signed_id}")
+      rescue => e
+        Rails.logger.error("Creative##{id}: failed to purge blob #{signed_id}: #{e.message}")
+      end
+    end
+  end
+
+  def extract_signed_ids_from_description
+    return [] if description.blank?
+
+    html = description.to_s
+
+    ids = html.scan(%r{/rails/active_storage/blobs/(?:redirect|proxy)/([^/?#]+)}).flatten
+    ids += html.scan(%r{/rails/active_storage/blobs/([^/?#]+)}).flatten
+
+    ids.uniq
+  end
 
   def clear_permission_cache_on_parent_change
     return unless saved_change_to_parent_id?

@@ -29,7 +29,7 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
     assert_not_nil invitation.clicked_at
     assert_match inviter.display_name, response.body
     assert_match inviter.email, response.body
-    assert_match creative.description.to_plain_text, response.body
+    assert_match ActionController::Base.helpers.strip_tags(creative.description), response.body
     assert_select "a[href=?]", new_session_path(invite_token: token),
                   text: I18n.t("invites.show.login")
     assert_select "a[href=?]", new_user_path(invite_token: token),

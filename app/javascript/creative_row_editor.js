@@ -10,6 +10,17 @@ const BULLET_INDENT_STEP_PX = 30;
 let initialized = false;
 let creativeEditClickHandler = null;
 
+function deleteAttachment(signedId) {
+  if (!signedId) return;
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+  fetch(`/attachments/${signedId}`, {
+    method: 'DELETE',
+    headers: {
+      'X-CSRF-Token': csrfToken,
+    },
+  }).catch(err => console.error('Error deleting attachment:', err));
+}
+
 export function initializeCreativeRowEditor() {
   if (initialized) return;
   initialized = true;
@@ -112,6 +123,15 @@ export function initializeCreativeRowEditor() {
       if (Object.prototype.hasOwnProperty.call(data, 'origin_id')) {
         setRowDatasetValue(row, 'originId', data.origin_id ?? '');
       }
+      if (Object.prototype.hasOwnProperty.call(data, 'has_children')) {
+        if (data.has_children) {
+          row.setAttribute('has-children', '');
+          row.hasChildren = true;
+        } else {
+          row.removeAttribute('has-children');
+          row.hasChildren = false;
+        }
+      }
       if (typeof row.requestUpdate === 'function') {
         row.requestUpdate();
       }
@@ -138,6 +158,14 @@ export function initializeCreativeRowEditor() {
       };
     }
 
+    function isHtmlEmpty(html) {
+      if (!html) return true;
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      if (temp.querySelector('img')) return false;
+      return (temp.textContent || '').trim().length === 0;
+    }
+
     function applyCreativeData(data, tree) {
       if (!data) return;
       const creativeId = data.id;
@@ -146,7 +174,7 @@ export function initializeCreativeRowEditor() {
       form.dataset.creativeId = creativeId;
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
-      lexicalEditor.load(content, `creative-${creativeId}`);
+      lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
       pendingSave = false;
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
@@ -719,6 +747,12 @@ export function initializeCreativeRowEditor() {
       return waitForUploads().then(function () {
         if (saving) return savePromise;
         clearTimeout(saveTimer);
+
+        if (isHtmlEmpty(descriptionInput.value)) {
+          pendingSave = false;
+          return Promise.resolve();
+        }
+
         const method = methodInput.value === 'patch' ? 'PATCH' : 'POST';
         pendingSave = false;
         if (!form.action) return Promise.resolve();
@@ -766,6 +800,14 @@ export function initializeCreativeRowEditor() {
               if (parentTree) refreshRow(parentTree);
             } else if (method === 'PATCH') {
               if (tree) refreshRow(tree);
+            }
+
+            // Delete removed attachments after successful save
+            if (lexicalEditor && typeof lexicalEditor.getDeletedAttachments === 'function') {
+              const deletedIds = lexicalEditor.getDeletedAttachments();
+              if (deletedIds && deletedIds.length > 0) {
+                deletedIds.forEach(deleteAttachment);
+              }
             }
           });
         }).finally(function () {

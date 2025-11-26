@@ -19,7 +19,7 @@ class PermissionRequestTest < ActionDispatch::IntegrationTest
     assert_equal "inbox.permission_requested", item.message_key
     message = item.localized_message
     assert_includes message, "Requester"
-    expected_short = @creative.description.to_plain_text.truncate(10)
+    expected_short = ActionController::Base.helpers.strip_tags(@creative.description).truncate(10)
     assert_includes message, expected_short
     assert_includes item.link, "share_request=#{CGI.escape(@requester.email)}"
   end

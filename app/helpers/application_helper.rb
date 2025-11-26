@@ -76,8 +76,8 @@ module ApplicationHelper
   def creative_title_for_display(creative, length: 12)
     return "" unless creative
 
-    description_body = creative.effective_origin.rich_text_description&.body
-    title = description_body ? description_body.to_plain_text : ""
+    description_body = creative.effective_origin.description
+    title = description_body ? strip_tags(description_body) : ""
     title.strip.truncate(length, omission: "...")
   end
 
