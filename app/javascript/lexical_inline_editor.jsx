@@ -31,6 +31,7 @@ export function createInlineEditor(container, {
     currentHtml = html ?? ""
     suppressNextChange = true
     editorReady = false
+    deletedAttachmentsRef.current = []
     if (container.dataset) {
       container.dataset.editorReady = "false"
     }
@@ -97,7 +98,9 @@ export function createInlineEditor(container, {
       root.unmount()
     },
     getDeletedAttachments() {
-      return deletedAttachmentsRef.current
+      const ids = Array.from(deletedAttachmentsRef.current || [])
+      deletedAttachmentsRef.current = []
+      return ids
     }
   }
 }

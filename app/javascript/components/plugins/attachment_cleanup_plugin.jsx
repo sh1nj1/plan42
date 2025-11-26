@@ -10,32 +10,12 @@ function extractSignedIdFromUrl(url) {
     // URL format: /rails/active_storage/blobs/redirect/:signed_id/:filename
     // or: /rails/active_storage/blobs/proxy/:signed_id/:filename
     // or: /rails/active_storage/blobs/:signed_id/:filename
-    const match = url.match(/\/rails\/active_storage\/blobs\/(?:redirect|proxy)\/([^\/]+)\//)
-    if (match) return match[1]
+    const redirectMatch = url.match(/\/rails\/active_storage\/blobs\/(?:redirect|proxy)\/([^\/?#]+)(?=[\/?#]|$)/)
+    if (redirectMatch) return redirectMatch[1]
 
     // Fallback for direct blob URLs without redirect/proxy
-    const directMatch = url.match(/\/rails\/active_storage\/blobs\/([^\/]+)\//)
+    const directMatch = url.match(/\/rails\/active_storage\/blobs\/([^\/?#]+)(?=[\/?#]|$)/)
     return directMatch ? directMatch[1] : null
-}
-
-async function deleteAttachment(signedId) {
-    if (!signedId) return
-
-    try {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content
-        const response = await fetch(`/attachments/${signedId}`, {
-            method: 'DELETE',
-            headers: {
-                'X-CSRF-Token': csrfToken,
-            },
-        })
-
-        if (!response.ok) {
-            console.error('Failed to delete attachment:', response.statusText)
-        }
-    } catch (error) {
-        console.error('Error deleting attachment:', error)
-    }
 }
 
 function getAllAttachmentUrls(editor) {
@@ -64,13 +44,14 @@ function getAllAttachmentUrls(editor) {
 export default function AttachmentCleanupPlugin({ deletedAttachmentsRef }) {
     const [editor] = useLexicalComposerContext()
     const allSeenUrlsRef = useRef(new Set())
+    const removedSignedIdsRef = useRef(new Set())
 
     useEffect(() => {
         // Initialize with current URLs
         const initialUrls = getAllAttachmentUrls(editor)
         initialUrls.forEach(url => allSeenUrlsRef.current.add(url))
 
-        return editor.registerUpdateListener(({ editorState }) => {
+        const unregister = editor.registerUpdateListener(({ editorState }) => {
             editorState.read(() => {
                 const currentUrls = getAllAttachmentUrls(editor)
 
@@ -80,16 +61,25 @@ export default function AttachmentCleanupPlugin({ deletedAttachmentsRef }) {
                 // Calculate removed URLs (seen but not currently present)
                 const removedUrls = Array.from(allSeenUrlsRef.current).filter(url => !currentUrls.has(url))
 
-                // Update the ref with signed IDs of removed attachments
-                if (deletedAttachmentsRef) {
-                    const removedSignedIds = removedUrls
-                        .map(url => extractSignedIdFromUrl(url))
-                        .filter(Boolean)
+                const removedSignedIds = removedUrls
+                    .map(url => extractSignedIdFromUrl(url))
+                    .filter(Boolean)
 
-                    deletedAttachmentsRef.current = removedSignedIds
+                removedSignedIds.forEach(id => removedSignedIdsRef.current.add(id))
+
+                if (deletedAttachmentsRef) {
+                    deletedAttachmentsRef.current = Array.from(removedSignedIdsRef.current)
                 }
             })
         })
+
+        return () => {
+            unregister()
+            removedSignedIdsRef.current.clear()
+            if (deletedAttachmentsRef) {
+                deletedAttachmentsRef.current = []
+            }
+        }
     }, [editor, deletedAttachmentsRef])
 
     return null
