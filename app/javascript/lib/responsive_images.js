@@ -1,8 +1,10 @@
-export function updateResponsiveImages(container) {
+export function updateResponsiveImages(container, targetWidth) {
     if (!container) return
 
     const images = container.querySelectorAll("img")
-    const containerWidth = container.clientWidth
+    const containerWidth = typeof targetWidth === "number" ? targetWidth : container.clientWidth
+
+    if (!containerWidth || Number.isNaN(containerWidth) || containerWidth <= 0) return
 
     images.forEach((img) => {
         const src = img.getAttribute("src")

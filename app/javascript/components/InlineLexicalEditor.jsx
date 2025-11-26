@@ -714,8 +714,10 @@ function EditorInner({
               const parser = new DOMParser()
               const doc = parser.parseFromString(`<div>${innerHtml}</div>`, "text/html")
 
+              const rootElement = editorInstance.getRootElement()
+
               syncLexicalStyleAttributes(doc.body)
-              updateResponsiveImages(doc.body)
+              updateResponsiveImages(doc.body, rootElement?.clientWidth)
 
               doc.querySelectorAll("a").forEach((anchor) => {
                 anchor.setAttribute("target", "_blank")
