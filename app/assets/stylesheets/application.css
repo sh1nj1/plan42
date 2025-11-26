@@ -246,6 +246,13 @@ button {
     cursor: pointer;
 }
 
+button:disabled,
+a.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: none !important;
+}
+
 #plans-list-area {
     max-width: 960px;
     margin: 0.5em auto;
