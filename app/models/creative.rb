@@ -128,7 +128,7 @@ class Creative < ApplicationRecord
   end
 
   def creative_snippet
-    ActionController::Base.helpers.strip_tags(effective_origin.description).truncate(24, omission: "...")
+    ActionController::Base.helpers.strip_tags(effective_origin.description || "").truncate(24, omission: "...")
   end
 
   def progress

@@ -18,13 +18,13 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     end
     assert_response :no_content
     @creative.reload
-    titles = @creative.children.order(:id).map { |c| c.description.to_plain_text.strip }
+    titles = @creative.children.order(:id).map { |c| ActionController::Base.helpers.strip_tags(c.description).strip }
     assert_equal [ "First", "Second" ], titles
 
     system_comment = @creative.comments.order(:id).last
     assert_nil system_comment.user
     first_child = @creative.children.order(:id).first
-    expected_title = first_child.description.to_plain_text.strip
+    expected_title = ActionController::Base.helpers.strip_tags(first_child.description).strip
     expected_message = I18n.t(
       "comments.convert_system_message",
       title: expected_title,

@@ -16,8 +16,8 @@ class PptImporterTest < ActiveSupport::TestCase
       created = PptImporter.import(tmp, parent: parent, user: user, create_root: false)
 
       assert_equal 2, created.length
-      slide1_html = created.first.description.body.to_html
-      slide2_html = created.second.description.body.to_html
+      slide1_html = created.first.description
+      slide2_html = created.second.description
 
       assert_includes slide1_html, "<p>Slide 1</p>"
       assert_includes slide1_html, "img src=\"data:image/png;base64"

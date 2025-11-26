@@ -99,7 +99,7 @@ module CreativesHelper
     return "" if creatives.blank?
     md = ""
     creatives.each do |creative|
-      desc = creative.effective_description(nil, false)
+      desc = creative.effective_description(nil, true)
       # Append progress as a percentage if available (progress is 0.0..1.0)
       if with_progress && creative.respond_to?(:progress) && !creative.progress.nil?
         pct = (creative.progress.to_f * 100).round
@@ -202,6 +202,27 @@ module CreativesHelper
         ""
       end
     end
+    # Handle blob URLs in img tags (convert back to base64 data URLs)
+    markdown.gsub!(%r{<img [^>]*src=["'](/rails/active_storage/blobs/[^"']+)["'][^>]*alt=["']([^"']*)["'][^>]*>}) do
+      blob_path = $1
+      alt_text = $2
+      # Extract signed_id from path like /rails/active_storage/blobs/redirect/:signed_id/:filename
+      if blob_path =~ %r{/rails/active_storage/blobs/(?:redirect|proxy)/([^/]+)/}
+        signed_id = $1
+        begin
+          blob = ActiveStorage::Blob.find_signed(signed_id)
+          data = Base64.strict_encode64(blob.download)
+          token = "__IMG#{index}__"; index += 1
+          placeholders[token] = "![#{alt_text}](data:#{blob.content_type};base64,#{data})"
+          token
+        rescue => e
+          # If blob not found, keep original
+          match
+        end
+      else
+        match
+      end
+    end
     markdown.gsub!(/<img [^>]*src=['"](data:[^'"]+)['"][^>]*alt=['"]([^'"]*)['"][^>]*>/) do
       token = "__IMG#{index}__"; index += 1
       placeholders[token] = "![#{$2}](#{$1})"
@@ -225,6 +246,8 @@ module CreativesHelper
     end
     markdown.gsub!(/([\\*\[\]()!#~+\-])/) { "\\#{$1}" }
     placeholders.each { |k, v| markdown.gsub!(k, v) }
+    # Strip remaining HTML tags (like divs) that aren't converted to markdown
+    markdown.gsub!(/<[^>]+>/, "")
     markdown
   end
 

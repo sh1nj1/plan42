@@ -27,7 +27,7 @@ module Creatives
         direction: "up"
       )
 
-      order = @root.reload.children.order(:sequence).map { |creative| creative.description.to_plain_text }
+      order = @root.reload.children.order(:sequence).map { |creative| ActionController::Base.helpers.strip_tags(creative.description) }
       assert_equal [ "C", "A", "B", "D" ], order
     end
 
@@ -40,10 +40,10 @@ module Creatives
         direction: "child"
       )
 
-      root_order = @root.reload.children.order(:sequence).map { |creative| creative.description.to_plain_text }
+      root_order = @root.reload.children.order(:sequence).map { |creative| ActionController::Base.helpers.strip_tags(creative.description) }
       assert_equal [ "C", "D" ], root_order
 
-      child_order = new_parent.reload.children.order(:sequence).map { |creative| creative.description.to_plain_text }
+      child_order = new_parent.reload.children.order(:sequence).map { |creative| ActionController::Base.helpers.strip_tags(creative.description) }
       assert_equal [ "A", "B" ], child_order
     end
 

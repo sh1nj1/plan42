@@ -19,7 +19,7 @@ class CommentTest < ActiveSupport::TestCase
       item = InboxItem.where(owner: recipient).last
       assert_equal "inbox.comment_added", item.message_key
       assert_includes item.localized_message, commenter.name
-      assert_includes item.localized_message, creative.description.to_plain_text
+      assert_includes item.localized_message, ActionController::Base.helpers.strip_tags(creative.description)
       assert_equal comment, item.comment
       assert_equal origin, item.creative
       assert_equal comment.id, item.message_params["comment_id"]

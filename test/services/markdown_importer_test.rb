@@ -15,7 +15,7 @@ class MarkdownImporterTest < ActiveSupport::TestCase
     table_creative = created.last
     table_creative.reload
 
-    html = table_creative.rich_text_description.body.to_html
+    html = table_creative.description
     assert_includes html, "<table>"
     assert_includes html, "<td>Alice</td>"
     assert_includes html, "<td>5</td>"
@@ -37,7 +37,7 @@ class MarkdownImporterTest < ActiveSupport::TestCase
 
     created = MarkdownImporter.import(markdown, parent: parent, user: user)
 
-    html_fragments = created.map { |creative| creative.reload.rich_text_description.body.to_html }
+    html_fragments = created.map { |creative| creative.reload.description }
 
     code_block_html = html_fragments.find { |html| html.include?("| key | value |") }
     assert_not_nil code_block_html, "Expected code block content to be preserved"
