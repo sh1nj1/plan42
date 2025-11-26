@@ -62,7 +62,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
   def close_inline_editor
     find("#inline-close", wait: 5).click
-    assert_no_selector "#inline-edit-form-element", wait: 5
+    assert_no_selector ".lexical-content-editable", visible: true, wait: 5
     wait_for_network_idle(timeout: 10)
   end
 
@@ -185,17 +185,17 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     @root_creative.reload
     wait_for_network_idle(timeout: 10)
 
-    assert_selector "#creative-#{@root_creative.id} img",
+    assert_selector "#creative-#{@root_creative.id} .creative-content img",
                     count: 1,
                     wait: 5,
                     visible: :all
     assert_equal 1, @root_creative.description.scan(/<img/).length
 
     open_inline_editor(@root_creative)
-    assert_selector "img", count: 1, wait: 5
+    assert_selector ".lexical-content-editable img", count: 1, wait: 5
     close_inline_editor
 
-    assert_selector "#creative-#{@root_creative.id} img",
+    assert_selector "#creative-#{@root_creative.id} .creative-content img",
                     count: 1,
                     wait: 5,
                     visible: :all

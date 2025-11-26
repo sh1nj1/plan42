@@ -112,6 +112,15 @@ export function initializeCreativeRowEditor() {
       if (Object.prototype.hasOwnProperty.call(data, 'origin_id')) {
         setRowDatasetValue(row, 'originId', data.origin_id ?? '');
       }
+      if (Object.prototype.hasOwnProperty.call(data, 'has_children')) {
+        if (data.has_children) {
+          row.setAttribute('has-children', '');
+          row.hasChildren = true;
+        } else {
+          row.removeAttribute('has-children');
+          row.hasChildren = false;
+        }
+      }
       if (typeof row.requestUpdate === 'function') {
         row.requestUpdate();
       }

@@ -48,7 +48,8 @@ class CreativesController < ApplicationController
           progress: @creative.progress,
           progress_html: view_context.render_creative_progress(@creative),
           depth: depth,
-          prompt: @creative.prompt_for(Current.user)
+          prompt: @creative.prompt_for(Current.user),
+          has_children: @creative.children.exists?
         }
       end
     end
