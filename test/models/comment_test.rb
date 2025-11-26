@@ -102,4 +102,15 @@ class CommentTest < ActiveSupport::TestCase
   ensure
     Current.reset
   end
+
+  test "moves comments on linked creatives to the origin" do
+    owner = users(:one)
+    viewer = users(:two)
+    origin = Creative.create!(user: owner, description: "Origin Creative")
+    linked = Creative.create!(user: viewer, origin: origin)
+
+    comment = linked.comments.create!(user: viewer, content: "hello from linked")
+
+    assert_equal origin, comment.creative
+  end
 end
