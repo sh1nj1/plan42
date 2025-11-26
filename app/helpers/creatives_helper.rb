@@ -203,7 +203,7 @@ module CreativesHelper
       end
     end
     # Handle blob URLs in img tags (convert back to base64 data URLs)
-    markdown.gsub!(%r{<img [^>]*src=["'](/rails/active_storage/blobs/[^"']+)["'][^>]*alt=["']([^"']*)["'][^>]*>}) do
+    markdown.gsub!(%r{<img [^>]*src=["'](/rails/active_storage/blobs/[^"']+)["'][^>]*alt=["']([^"']*)["'][^>]*>}) do |match|
       blob_path = $1
       alt_text = $2
       # Extract signed_id from path like /rails/active_storage/blobs/redirect/:signed_id/:filename
