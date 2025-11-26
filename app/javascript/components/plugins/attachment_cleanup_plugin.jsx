@@ -7,8 +7,10 @@ import { $isAttachmentNode } from "../../lib/lexical/attachment_node"
 function extractSignedIdFromUrl(url) {
     if (!url) return null
 
-    // URL format: /rails/active_storage/blobs/:signed_id/:filename
-    const match = url.match(/\/rails\/active_storage\/blobs\/([^\/]+)\//)
+    // URL format: /rails/active_storage/blobs/redirect/:signed_id/:filename
+    // or: /rails/active_storage/blobs/proxy/:signed_id/:filename
+    // or: /rails/active_storage/blobs/:signed_id/:filename
+    const match = url.match(/\/rails\/active_storage\/blobs\/(?:redirect|proxy\/)?([^\/]+)\//)
     return match ? match[1] : null
 }
 
