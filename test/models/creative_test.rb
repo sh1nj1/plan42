@@ -5,6 +5,7 @@ class CreativeTest < ActiveSupport::TestCase
   #   assert true
   # end
   include ActionMailer::TestHelper
+  include ActiveJob::TestHelper
 
   test "sends email notifications when back in stock" do
     creative = creatives(:tshirt)
@@ -85,6 +86,28 @@ class CreativeTest < ActiveSupport::TestCase
 
     assert_empty CreativeExpandedState.where(creative_id: creative.id)
 
+    Current.reset
+  end
+
+  test "destroying creative purges attachments referenced in description" do
+    user = User.create!(email: "creative-blob@example.com", password: "secret", name: "Blob Owner")
+    Current.session = Struct.new(:user).new(user)
+
+    blob = ActiveStorage::Blob.create_after_upload!(
+      io: StringIO.new("hello world"),
+      filename: "hello.txt",
+      content_type: "text/plain"
+    )
+
+    blob_path = Rails.application.routes.url_helpers.rails_blob_path(blob, only_path: true)
+    creative = Creative.create!(user: user, description: "<a href=\"#{blob_path}\">Download</a>")
+
+    perform_enqueued_jobs do
+      creative.destroy
+    end
+
+    refute ActiveStorage::Blob.exists?(blob.id)
+  ensure
     Current.reset
   end
 
