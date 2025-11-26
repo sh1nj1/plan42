@@ -10,8 +10,12 @@ function extractSignedIdFromUrl(url) {
     // URL format: /rails/active_storage/blobs/redirect/:signed_id/:filename
     // or: /rails/active_storage/blobs/proxy/:signed_id/:filename
     // or: /rails/active_storage/blobs/:signed_id/:filename
-    const match = url.match(/\/rails\/active_storage\/blobs\/(?:redirect|proxy\/)?([^\/]+)\//)
-    return match ? match[1] : null
+    const match = url.match(/\/rails\/active_storage\/blobs\/(?:redirect|proxy)\/([^\/]+)\//)
+    if (match) return match[1]
+
+    // Fallback for direct blob URLs without redirect/proxy
+    const directMatch = url.match(/\/rails\/active_storage\/blobs\/([^\/]+)\//)
+    return directMatch ? directMatch[1] : null
 }
 
 async function deleteAttachment(signedId) {
