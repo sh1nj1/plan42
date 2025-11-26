@@ -679,7 +679,8 @@ function EditorInner({
   onUploadStateChange,
   directUploadUrl,
   blobUrlTemplate,
-  placeholderText
+  placeholderText,
+  deletedAttachmentsRef
 }) {
   const [editor] = useLexicalComposerContext()
 
@@ -737,7 +738,7 @@ function EditorInner({
           directUploadUrl={directUploadUrl}
           blobUrlTemplate={blobUrlTemplate}
         />
-        <AttachmentCleanupPlugin />
+        <AttachmentCleanupPlugin deletedAttachmentsRef={deletedAttachmentsRef} />
       </div>
     </div>
   )
@@ -753,7 +754,8 @@ export default function InlineLexicalEditor({
   directUploadUrl,
   blobUrlTemplate,
   editorKey,
-  placeholderText
+  placeholderText,
+  deletedAttachmentsRef
 }) {
   const initialConfig = useMemo(
     () => ({
@@ -790,7 +792,9 @@ export default function InlineLexicalEditor({
         directUploadUrl={directUploadUrl}
         blobUrlTemplate={blobUrlTemplate}
         placeholderText={placeholderText}
+        deletedAttachmentsRef={deletedAttachmentsRef}
       />
     </LexicalComposer>
   )
 }
+

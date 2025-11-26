@@ -10,6 +10,17 @@ const BULLET_INDENT_STEP_PX = 30;
 let initialized = false;
 let creativeEditClickHandler = null;
 
+function deleteAttachment(signedId) {
+  if (!signedId) return;
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+  fetch(`/attachments/${signedId}`, {
+    method: 'DELETE',
+    headers: {
+      'X-CSRF-Token': csrfToken,
+    },
+  }).catch(err => console.error('Error deleting attachment:', err));
+}
+
 export function initializeCreativeRowEditor() {
   if (initialized) return;
   initialized = true;
@@ -789,6 +800,14 @@ export function initializeCreativeRowEditor() {
               if (parentTree) refreshRow(parentTree);
             } else if (method === 'PATCH') {
               if (tree) refreshRow(tree);
+            }
+
+            // Delete removed attachments after successful save
+            if (lexicalEditor && typeof lexicalEditor.getDeletedAttachments === 'function') {
+              const deletedIds = lexicalEditor.getDeletedAttachments();
+              if (deletedIds && deletedIds.length > 0) {
+                deletedIds.forEach(deleteAttachment);
+              }
             }
           });
         }).finally(function () {

@@ -55,35 +55,36 @@ function getAllAttachmentUrls(editor) {
     return urls
 }
 
-export default function AttachmentCleanupPlugin() {
+export default function AttachmentCleanupPlugin({ deletedAttachmentsRef }) {
     const [editor] = useLexicalComposerContext()
-    const previousUrlsRef = useRef(new Set())
+    const allSeenUrlsRef = useRef(new Set())
 
     useEffect(() => {
         // Initialize with current URLs
-        previousUrlsRef.current = getAllAttachmentUrls(editor)
+        const initialUrls = getAllAttachmentUrls(editor)
+        initialUrls.forEach(url => allSeenUrlsRef.current.add(url))
 
         return editor.registerUpdateListener(({ editorState }) => {
             editorState.read(() => {
                 const currentUrls = getAllAttachmentUrls(editor)
-                const previousUrls = previousUrlsRef.current
 
-                // Find URLs that were removed
-                const removedUrls = Array.from(previousUrls).filter(url => !currentUrls.has(url))
+                // Add any new URLs to allSeenUrls
+                currentUrls.forEach(url => allSeenUrlsRef.current.add(url))
 
-                // Delete attachments for removed URLs
-                removedUrls.forEach(url => {
-                    const signedId = extractSignedIdFromUrl(url)
-                    if (signedId) {
-                        deleteAttachment(signedId)
-                    }
-                })
+                // Calculate removed URLs (seen but not currently present)
+                const removedUrls = Array.from(allSeenUrlsRef.current).filter(url => !currentUrls.has(url))
 
-                // Update previous URLs
-                previousUrlsRef.current = currentUrls
+                // Update the ref with signed IDs of removed attachments
+                if (deletedAttachmentsRef) {
+                    const removedSignedIds = removedUrls
+                        .map(url => extractSignedIdFromUrl(url))
+                        .filter(Boolean)
+
+                    deletedAttachmentsRef.current = removedSignedIds
+                }
             })
         })
-    }, [editor])
+    }, [editor, deletedAttachmentsRef])
 
     return null
 }

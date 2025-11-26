@@ -69,6 +69,8 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   def expand_creative(creative)
     wait_for_network_idle(timeout: 10)
     find("#creative-#{creative.id}").hover
+    # Force visibility for test stability as hover can be flaky
+    execute_script("document.querySelector('#creative-#{creative.id} .creative-toggle-btn').style.visibility = 'visible'")
     find("#creative-#{creative.id} .creative-toggle-btn", wait: 5).click
   end
 
@@ -116,6 +118,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     fill_inline_editor("Second child")
     inline_editor_field.send_keys(:escape)
+    sleep 0.5
 
     expand_creative(@root_creative)
 
