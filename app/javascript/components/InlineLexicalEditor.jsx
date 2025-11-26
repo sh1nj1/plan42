@@ -41,10 +41,12 @@ import {
 import { $patchStyleText } from "@lexical/selection"
 import { $generateHtmlFromNodes, $generateNodesFromDOM } from "@lexical/html"
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
-import ImageUploadPlugin, {
-  INSERT_IMAGE_COMMAND
+import FileUploadPlugin, {
+  INSERT_IMAGE_COMMAND,
+  INSERT_FILE_COMMAND
 } from "./plugins/image_upload_plugin"
 import { ImageNode } from "../lib/lexical/image_node"
+import { AttachmentNode } from "../lib/lexical/attachment_node"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
 import { updateResponsiveImages } from "../lib/responsive_images"
 
@@ -327,7 +329,8 @@ function Toolbar({ onPromptForLink }) {
       if (!fileList) return
       Array.from(fileList).forEach((file) => {
         if (file) {
-          editor.dispatchCommand(INSERT_IMAGE_COMMAND, {
+          // Use INSERT_FILE_COMMAND which handles both images and files
+          editor.dispatchCommand(INSERT_FILE_COMMAND, {
             file,
             options
           })
@@ -707,7 +710,7 @@ function EditorInner({
         <InitialContentPlugin html={initialHtml} />
         <LinkAttributesPlugin />
         <ReadyPlugin onReady={onReady} />
-        <ImageUploadPlugin
+        <FileUploadPlugin
           onUploadStateChange={onUploadStateChange}
           directUploadUrl={directUploadUrl}
           blobUrlTemplate={blobUrlTemplate}
@@ -741,7 +744,8 @@ export default function InlineLexicalEditor({
         ListNode,
         LinkNode,
         AutoLinkNode,
-        ImageNode
+        ImageNode,
+        AttachmentNode
       ],
       onError(error) {
         throw error

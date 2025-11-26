@@ -14,8 +14,10 @@ import {
 } from "lexical"
 
 import { $createImageNode } from "../../lib/lexical/image_node"
+import { $createAttachmentNode } from "../../lib/lexical/attachment_node"
 
 export const INSERT_IMAGE_COMMAND = createCommand("INSERT_IMAGE_COMMAND")
+export const INSERT_FILE_COMMAND = createCommand("INSERT_FILE_COMMAND")
 
 function isImageFile(file) {
     if (!file) return false
@@ -23,7 +25,7 @@ function isImageFile(file) {
     return /\.(bmp|gif|jpe?g|png|svg|webp)$/i.test(file.name || "")
 }
 
-export default function ImageUploadPlugin({
+export default function FileUploadPlugin({
     onUploadStateChange,
     directUploadUrl,
     blobUrlTemplate
@@ -32,7 +34,9 @@ export default function ImageUploadPlugin({
 
     const startDirectUpload = useCallback(
         (file) => {
-            if (!file || !isImageFile(file)) return
+            if (!file) return
+
+            const isImage = isImageFile(file)
 
             // Notify start
             if (onUploadStateChange) onUploadStateChange(true)
@@ -67,22 +71,32 @@ export default function ImageUploadPlugin({
                     .replace(":filename", encodeURIComponent(attributes.filename))
 
                 editor.update(() => {
-                    const imageNode = $createImageNode({
-                        src: url,
-                        altText: attributes.filename,
-                        maxWidth: 800 // Default max width
-                    })
+                    let node
+
+                    if (isImage) {
+                        node = $createImageNode({
+                            src: url,
+                            altText: attributes.filename,
+                            maxWidth: 800 // Default max width
+                        })
+                    } else {
+                        node = $createAttachmentNode({
+                            src: url,
+                            filename: attributes.filename,
+                            filesize: file.size
+                        })
+                    }
 
                     const selection = $getSelection()
                     if ($isRangeSelection(selection)) {
-                        selection.insertNodes([imageNode])
+                        selection.insertNodes([node])
                         // Insert a paragraph after so user can continue typing
                         const paragraph = $createParagraphNode()
-                        imageNode.insertAfter(paragraph)
+                        node.insertAfter(paragraph)
                         paragraph.selectStart()
                     } else {
                         const root = $getRoot()
-                        root.append(imageNode)
+                        root.append(node)
                         const paragraph = $createParagraphNode()
                         root.append(paragraph)
                         paragraph.selectStart()
@@ -105,16 +119,22 @@ export default function ImageUploadPlugin({
                 COMMAND_PRIORITY_EDITOR
             ),
             editor.registerCommand(
+                INSERT_FILE_COMMAND,
+                (payload) => {
+                    if (!payload || !payload.file) return false
+                    startDirectUpload(payload.file)
+                    return true
+                },
+                COMMAND_PRIORITY_EDITOR
+            ),
+            editor.registerCommand(
                 PASTE_COMMAND,
                 (event) => {
                     const files = event.clipboardData?.files
                     if (!files || files.length === 0) return false
 
-                    const imageFiles = Array.from(files).filter(isImageFile)
-                    if (imageFiles.length === 0) return false
-
                     event.preventDefault()
-                    imageFiles.forEach((file) => {
+                    Array.from(files).forEach((file) => {
                         startDirectUpload(file)
                     })
                     return true
@@ -127,11 +147,8 @@ export default function ImageUploadPlugin({
                     const files = event.dataTransfer?.files
                     if (!files || files.length === 0) return false
 
-                    const imageFiles = Array.from(files).filter(isImageFile)
-                    if (imageFiles.length === 0) return false
-
                     event.preventDefault()
-                    imageFiles.forEach((file) => {
+                    Array.from(files).forEach((file) => {
                         startDirectUpload(file)
                     })
                     return true
