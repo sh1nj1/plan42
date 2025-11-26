@@ -47,6 +47,7 @@ import FileUploadPlugin, {
 } from "./plugins/image_upload_plugin"
 import { ImageNode } from "../lib/lexical/image_node"
 import { AttachmentNode } from "../lib/lexical/attachment_node"
+import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
 import { updateResponsiveImages } from "../lib/responsive_images"
 
@@ -715,6 +716,7 @@ function EditorInner({
           directUploadUrl={directUploadUrl}
           blobUrlTemplate={blobUrlTemplate}
         />
+        <AttachmentCleanupPlugin />
       </div>
     </div>
   )
