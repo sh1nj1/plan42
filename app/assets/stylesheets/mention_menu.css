@@ -22,3 +22,7 @@
 .mention-item:hover {
   background: var(--color-drag-over);
 }
+
+.mention-item.active {
+  background: var(--color-drag-over);
+}
