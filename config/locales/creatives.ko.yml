@@ -85,6 +85,12 @@ ko:
       share_deleted: "공유가 삭제 되었습니다."
       select_one_creative: "하나 이상의 크리에이티브를 선택하세요."
       select_plan_to_remove: "제거할 플랜을 선택하세요."
+      inline_move_up_tooltip: "이전 크리에이티브로 이동 (위쪽 화살표 / Ctrl+P)"
+      inline_move_down_tooltip: "다음 크리에이티브로 이동 (아래쪽 화살표 / Ctrl+N)"
+      inline_add_sibling_tooltip: "형제 크리에이티브 추가 (Shift+Enter)"
+      inline_level_down_tooltip: "들여쓰기 / 자식으로 이동 (Ctrl/Cmd+Shift+.)"
+      inline_level_up_tooltip: "내어쓰기 / 상위로 이동 (Ctrl/Cmd+Shift+,)"
+      inline_close_tooltip: "편집기 닫기 (Esc)"
     share:
       shared: "크리에이티브가 성공적으로 공유되었습니다."
       already_shared_in_parent: "크리에이티브가 상위 크리에이티브에 이미 공유되었습니다."

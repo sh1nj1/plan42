@@ -19,20 +19,20 @@
         <span id="inline-progress-value">0%</span>
       </div>
       <div style="margin-top:0.5em;">
-        <button type="button" id="inline-move-up" class="creative-action-btn">
+        <button type="button" id="inline-move-up" class="creative-action-btn" title="<%= t('creatives.index.inline_move_up_tooltip') %>">
           &nbsp;<%= svg_tag 'arrow-up.svg', class: 'icon-svg', width: 24, height: 24 %>
         </button>
-        <button type="button" id="inline-move-down" class="creative-action-btn">
+        <button type="button" id="inline-move-down" class="creative-action-btn" title="<%= t('creatives.index.inline_move_down_tooltip') %>">
           &nbsp;<%= svg_tag 'arrow-down.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
-        <button type="button" id="inline-add" class="creative-action-btn add-creative-btn">
+        <button type="button" id="inline-add" class="creative-action-btn add-creative-btn" title="<%= t('creatives.index.inline_add_sibling_tooltip') %>">
           &nbsp;<%= svg_tag 'add.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
-        <button type="button" id="inline-level-down" class="creative-action-btn add-creative-btn">
+        <button type="button" id="inline-level-down" class="creative-action-btn add-creative-btn" title="<%= t('creatives.index.inline_level_down_tooltip') %>">
           &nbsp;
           <%= svg_tag 'hierarchy-child.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
-        <button type="button" id="inline-level-up" class="creative-action-btn add-creative-btn">
+        <button type="button" id="inline-level-up" class="creative-action-btn add-creative-btn" title="<%= t('creatives.index.inline_level_up_tooltip') %>">
           &nbsp;
           <%= svg_tag 'hierarchy-parent.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
@@ -75,11 +75,11 @@
         <button type="button" id="inline-unlink" class="creative-action-btn danger-link" title="<%= t('creatives.index.unlink') %>" data-confirm="<%= t('creatives.index.are_you_sure_unlink') %>" style="display:none;">
           &nbsp;<%= svg_tag 'unlink.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
-        <button type="button" id="inline-close" class="creative-action-btn">
+        <button type="button" id="inline-close" class="creative-action-btn" title="<%= t('creatives.index.inline_close_tooltip') %>">
           &nbsp;<%= svg_tag 'close.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
       </div>
-      <button type="button" id="inline-recommend-parent" class="creative-action-btn" style="margin-top:0.5em;">✨<%= t('creatives.index.recommend_parent') %></button>
+      <button type="button" id="inline-recommend-parent" class="creative-action-btn" style="margin-top:0.5em;" title="<%= t('creatives.index.recommend_parent') %>">✨<%= t('creatives.index.recommend_parent') %></button>
       <select id="parent-suggestions" size="5" style="display:none;margin-top:0.5em;width:100%;"></select>
     </div>
   </form>

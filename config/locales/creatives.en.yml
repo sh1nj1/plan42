@@ -85,6 +85,12 @@ en:
       share_deleted: "The share are deleted."
       select_one_creative: "Please select at least one Creative."
       select_plan_to_remove: "Please select a Plan to remove."
+      inline_move_up_tooltip: "Move to previous creative (Arrow Up / Ctrl+P)"
+      inline_move_down_tooltip: "Move to next creative (Arrow Down / Ctrl+N)"
+      inline_add_sibling_tooltip: "Add sibling (Shift+Enter)"
+      inline_level_down_tooltip: "Indent / add as child (Ctrl/Cmd+Shift+.)"
+      inline_level_up_tooltip: "Outdent / move up a level (Ctrl/Cmd+Shift+,)"
+      inline_close_tooltip: "Close editor (Esc)"
     share:
       shared: "Creative shared successfully."
       already_shared_in_parent: "Creative already shared in parent creative."
