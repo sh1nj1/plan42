@@ -93,7 +93,7 @@ class CreativeTest < ActiveSupport::TestCase
     user = User.create!(email: "creative-blob@example.com", password: "secret", name: "Blob Owner")
     Current.session = Struct.new(:user).new(user)
 
-    blob = ActiveStorage::Blob.create_after_upload!(
+    blob = ActiveStorage::Blob.create_and_upload!(
       io: StringIO.new("hello world"),
       filename: "hello.txt",
       content_type: "text/plain"
