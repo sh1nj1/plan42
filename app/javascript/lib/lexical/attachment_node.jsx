@@ -105,7 +105,9 @@ export class AttachmentNode extends DecoratorNode {
 
         const handleClick = (e) => {
             // Stop propagation to prevent creative-row navigation
+            // and prevent default to stop parent link navigation
             e.stopPropagation()
+            // Don't prevent default - we want the download to work
         }
 
         return (

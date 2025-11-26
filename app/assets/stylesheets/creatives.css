@@ -106,6 +106,14 @@
     /* Slight adjustment for text baseline */
 }
 
+/* Allow attachments and images to be clickable independently of the parent link */
+.creative-content a[download],
+.creative-content img {
+    pointer-events: auto;
+    position: relative;
+    z-index: 1;
+}
+
 .creative-row:hover .creative-content {
     text-decoration: underline;
     text-decoration-color: var(--color-link);

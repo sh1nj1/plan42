@@ -112,7 +112,9 @@ export class ImageNode extends DecoratorNode {
     decorate() {
         const handleClick = (e) => {
             // Stop propagation to prevent creative-row navigation
+            // and prevent default to stop parent link navigation
             e.stopPropagation()
+            e.preventDefault()
         }
 
         return (
