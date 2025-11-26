@@ -145,9 +145,17 @@
   margin: 0 0 0.5rem 0;
 }
 
-.lexical-heading-h1 { font-size: 1.35rem; }
-.lexical-heading-h2 { font-size: 1.2rem; }
-.lexical-heading-h3 { font-size: 1.1rem; }
+.lexical-heading-h1 {
+  font-size: 1.35rem;
+}
+
+.lexical-heading-h2 {
+  font-size: 1.2rem;
+}
+
+.lexical-heading-h3 {
+  font-size: 1.1rem;
+}
 
 .lexical-quote {
   border-left: 0.25rem solid var(--color-border);
@@ -172,10 +180,22 @@
   text-decoration-thickness: 1px;
 }
 
-.lexical-text-bold { font-weight: 600; }
-.lexical-text-italic { font-style: italic; }
-.lexical-text-underline { text-decoration: underline; }
-.lexical-text-strike { text-decoration: line-through; }
+.lexical-text-bold {
+  font-weight: 600;
+}
+
+.lexical-text-italic {
+  font-style: italic;
+}
+
+.lexical-text-underline {
+  text-decoration: underline;
+}
+
+.lexical-text-strike {
+  text-decoration: line-through;
+}
+
 .lexical-text-code {
   background: rgba(135, 143, 161, 0.15);
   border-radius: 4px;
@@ -363,13 +383,11 @@
   width: 100%;
   padding-bottom: 56%;
   border-radius: 8px;
-  background: repeating-linear-gradient(
-      45deg,
+  background: repeating-linear-gradient(45deg,
       rgba(148, 163, 184, 0.25) 0,
       rgba(148, 163, 184, 0.25) 10px,
       rgba(148, 163, 184, 0.35) 10px,
-      rgba(148, 163, 184, 0.35) 20px
-    );
+      rgba(148, 163, 184, 0.35) 20px);
   position: relative;
 }
 
@@ -516,7 +534,7 @@
   text-align: center;
 }
 
-.trix-content .attachment__caption .attachment__name + .attachment__size::before {
+.trix-content .attachment__caption .attachment__name+.attachment__size::before {
   content: " \2022 ";
 }
 
@@ -556,27 +574,4 @@
 .trix-content .attachment-gallery.attachment-gallery--4 .attachment {
   flex-basis: 50%;
   max-width: 50%;
-}
-
-/*
- * Override original gallery rules to support the Action Text shadow wrapper.
- */
-.trix-content .attachment-gallery > action-text-attachment,
-.trix-content .attachment-gallery > .attachment {
-  flex: 1 0 33%;
-  padding: 0 0.5em;
-  max-width: 33%;
-}
-
-.trix-content .attachment-gallery.attachment-gallery--2 > action-text-attachment,
-.trix-content .attachment-gallery.attachment-gallery--2 > .attachment,
-.trix-content .attachment-gallery.attachment-gallery--4 > action-text-attachment,
-.trix-content .attachment-gallery.attachment-gallery--4 > .attachment {
-  flex-basis: 50%;
-  max-width: 50%;
-}
-
-.trix-content action-text-attachment .attachment {
-  padding: 0 !important;
-  max-width: 100% !important;
 }

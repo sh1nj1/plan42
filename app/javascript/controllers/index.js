@@ -3,7 +3,6 @@ import PopupMenuController from "./popup_menu_controller"
 import ProgressFilterController from "./progress_filter_controller"
 import CreativesImportController from "./creatives/import_controller"
 import CreativesSelectModeController from "./creatives/select_mode_controller"
-import ActionTextAttachmentLinkController from "./action_text_attachment_link_controller"
 import CreativesDragDropController from "./creatives/drag_drop_controller"
 import CreativesExpansionController from "./creatives/expansion_controller"
 import CreativesRowEditorController from "./creatives/row_editor_controller"
@@ -27,7 +26,6 @@ application.register("popup-menu", PopupMenuController)
 application.register("progress-filter", ProgressFilterController)
 application.register("creatives--import", CreativesImportController)
 application.register("creatives--select-mode", CreativesSelectModeController)
-application.register("action-text-attachment-link", ActionTextAttachmentLinkController)
 application.register("creatives--drag-drop", CreativesDragDropController)
 application.register("creatives--expansion", CreativesExpansionController)
 application.register("creatives--row-editor", CreativesRowEditorController)
