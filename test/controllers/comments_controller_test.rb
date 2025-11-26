@@ -33,6 +33,45 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal expected_message, system_comment.content
   end
 
+  test "creative admin can convert another user's comment" do
+    other_user = users(:two)
+    other_user.update!(email_verified_at: Time.current)
+
+    shared_creative = Creative.create!(user: other_user, description: "Shared Creative", progress: 0.0)
+    CreativeShare.create!(creative: shared_creative, user: @user, permission: :admin, shared_by: other_user)
+
+    comment = shared_creative.comments.create!(content: "- Shared task", user: other_user)
+
+    assert_difference("Creative.count", 1) do
+      assert_no_difference("Comment.count") do
+        post convert_creative_comment_path(shared_creative, comment)
+      end
+    end
+
+    assert_response :no_content
+    shared_creative.reload
+    converted_child = shared_creative.children.order(:id).last
+    assert_equal "Shared task", ActionController::Base.helpers.strip_tags(converted_child.description).strip
+    assert_equal other_user, converted_child.user
+  end
+
+  test "converted creatives inherit parent creative user" do
+    commenter = users(:two)
+    commenter.update!(email_verified_at: Time.current)
+
+    comment = @creative.comments.create!(content: "- Cross user task", user: commenter)
+
+    assert_difference("Creative.count", 1) do
+      assert_no_difference("Comment.count") do
+        post convert_creative_comment_path(@creative, comment)
+      end
+    end
+
+    assert_response :no_content
+    child = @creative.children.order(:id).last
+    assert_equal @creative.user, child.user
+  end
+
   test "approver can execute comment action" do
     action_payload = {
       "action" => "update_creative",

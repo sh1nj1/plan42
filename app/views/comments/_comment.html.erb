@@ -32,8 +32,9 @@
     <% if comment.action_executed_at.present? %>
       <span class="comment-status-label approved-label">[<%= t('comments.approved_label') %>]</span>
     <% end %>
+    <% can_convert_comment = comment.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
     <div class="comment-action-container">
-      <button class="convert-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('comments.convert_to_creative') %>">
+      <button class="<%= ['convert-comment-btn', ('comment-owner-only' unless can_convert_comment)].compact.join(' ') %>" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('comments.convert_to_creative') %>">
         <%= t('comments.convert_button') %>
       </button>
       <% if comment.action.present? && comment.approver == Current.user %>

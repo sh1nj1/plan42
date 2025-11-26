@@ -11,6 +11,7 @@ en:
     delete_button: "Delete"
     not_owner: "Only the comment owner can modify this."
     no_permission: "You do not have permission to comment."
+    convert_not_allowed: "Only the comment owner or a creative admin can convert this message."
     gemini: "Gemini"
     convert_button: "Convert"
     convert_to_creative: "Convert to Creative"
