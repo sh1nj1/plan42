@@ -146,7 +146,7 @@ export function initializeCreativeRowEditor() {
       form.dataset.creativeId = creativeId;
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
-      lexicalEditor.load(content, `creative-${creativeId}`);
+      lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
       pendingSave = false;
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;

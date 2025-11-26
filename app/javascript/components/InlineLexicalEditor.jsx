@@ -161,7 +161,9 @@ function InitialContentPlugin({ html }) {
     lastApplied.current = html
     editor.update(() => {
       const root = $getRoot()
-      root.clear()
+      // Explicitly remove all children to ensure it's empty
+      root.getChildren().forEach((child) => child.remove())
+
       const parser = new DOMParser()
       const doc = parser.parseFromString(html || "", "text/html")
       // No more .trix-content wrapper
@@ -169,10 +171,27 @@ function InitialContentPlugin({ html }) {
 
       syncLexicalStyleAttributes(container)
       const collectedStyles = collectDomTextStyles(container)
-
       const nodes = $generateNodesFromDOM(editor, container)
+
+      // Filter out duplicate image nodes if any
+      const uniqueNodes = []
+      const seenImages = new Set()
+
+      nodes.forEach(node => {
+        // Check if the node is an ImageNode and if it has a getSrc method
+        if (node.getType() === 'image' && typeof node.getSrc === 'function') {
+          const src = node.getSrc()
+          if (!seenImages.has(src)) {
+            seenImages.add(src)
+            uniqueNodes.push(node)
+          }
+        } else {
+          uniqueNodes.push(node)
+        }
+      })
+
       const appendedNodes = []
-      nodes.forEach((node) => {
+      uniqueNodes.forEach((node) => {
         if ($isTextNode(node)) {
           const paragraph = $createParagraphNode()
           paragraph.append(node)

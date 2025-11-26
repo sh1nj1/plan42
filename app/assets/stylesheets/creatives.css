@@ -41,6 +41,10 @@
     position: relative;
 }
 
+creative-tree-row.show-edit .creative-row {
+    display: none !important;
+}
+
 .creative-tree.child-drop-indicator-active::after {
     content: '↳';
     position: absolute;
