@@ -11,7 +11,7 @@
   --color-btn-text: #202123;
   --color-border: #e0e0e0;
   --color-muted: #666;
-  --color-complete: green;
+  --color-complete: oklch(60% 0.4 145);
   --color-chip-bg: var(--color-complete);
   --color-drag-over: #e0e0e0;
   --color-drag-over-edge: #bbb;
@@ -32,7 +32,7 @@ body.dark-mode {
   --color-btn-text: #eaeaea;
   --color-border: #333333;
   --color-muted: #aaaaaa;
-  --color-complete: green;
+  --color-complete: oklch(50% 0.4 145);
   --color-chip-bg: var(--color-complete);
   --color-drag-over: #383a40;
   --color-drag-over-edge: #777;
@@ -67,17 +67,23 @@ body {
   color: var(--color-text);
   transition: background 0.3s, color 0.3s;
 }
+
 nav {
   background: var(--color-nav-bg);
 }
+
 a {
   color: var(--color-link);
 }
-main, section.creative {
+
+main,
+section.creative {
   background: var(--color-section-bg);
 }
 
-button, input[type="button"], input[type="submit"] {
+button,
+input[type="button"],
+input[type="submit"] {
   background: var(--color-btn-bg);
   color: var(--color-btn-text);
   border: none;
