@@ -3,10 +3,10 @@
   "private": true,
   "type": "module",
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
     "esbuild": "^0.25.9",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.2.0",
-    "@testing-library/dom": "^10.4.1",
     "jsdom": "^27.1.0"
   },
   "scripts": {
@@ -26,6 +26,7 @@
     "@lexical/utils": "^0.38.2",
     "@rails/actioncable": "^8.0.201",
     "@rails/actiontext": "^8.0.201",
+    "dompurify": "^3.3.0",
     "firebase": "^12.2.1",
     "lexical": "^0.38.2",
     "lit": "^3.1.2",
