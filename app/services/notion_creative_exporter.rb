@@ -22,7 +22,7 @@ class NotionCreativeExporter
       if creative.respond_to?(:children) && creative.children.present?
         if level > 3
           # For bullet points (level > 3), limit nesting depth to 2 levels max
-          text_content = extract_text_content(creative.effective_description(nil, false).to_html.gsub(/<!--.*?-->/m, "").strip)
+          text_content = extract_text_content(creative.effective_description(nil, true).gsub(/<!--.*?-->/m, "").strip)
 
           if bullet_depth < 2
             # Can still nest deeper
@@ -54,14 +54,8 @@ class NotionCreativeExporter
 
   def convert_creative_to_blocks(creative, level: 1)
     blocks = []
-    description_content = creative.effective_description(nil, false)
-    desc = if description_content.respond_to?(:to_html)
-      description_content.to_html
-    elsif description_content.present?
-      description_content.to_s
-    else
-      ""
-    end
+    description_content = creative.effective_description(nil, true)
+    desc = description_content.present? ? description_content.to_s : ""
 
     # Add progress if requested and available
     if @with_progress && creative.respond_to?(:progress) && !creative.progress.nil?
