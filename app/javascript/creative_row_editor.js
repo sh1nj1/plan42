@@ -172,6 +172,7 @@ export function initializeCreativeRowEditor() {
       const creativeId = data.id;
       if (!creativeId) return;
       form.action = `/creatives/${creativeId}`;
+      if (methodInput) methodInput.value = 'patch';
       form.dataset.creativeId = creativeId;
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
