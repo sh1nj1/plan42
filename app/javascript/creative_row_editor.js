@@ -41,6 +41,7 @@ export function initializeCreativeRowEditor() {
     const addBtn = document.getElementById('inline-add');
     const levelDownBtn = document.getElementById('inline-level-down');
     const levelUpBtn = document.getElementById('inline-level-up');
+    const deletePopupToggle = document.getElementById('inline-delete-popup-toggle');
     const deleteBtn = document.getElementById('inline-delete');
     const deleteWithChildrenBtn = document.getElementById('inline-delete-with-children');
     const linkBtn = document.getElementById('inline-link');
@@ -548,6 +549,7 @@ export function initializeCreativeRowEditor() {
       }
       if (levelUpBtn) levelUpBtn.disabled = !canLevelUp;
 
+      if (deletePopupToggle) deletePopupToggle.disabled = !hasCreativeId;
       if (deleteBtn) deleteBtn.disabled = !hasCreativeId;
       if (deleteWithChildrenBtn) deleteWithChildrenBtn.disabled = !hasCreativeId;
       if (linkBtn) linkBtn.disabled = !hasCreativeId || linkBtn.style.display === 'none';
