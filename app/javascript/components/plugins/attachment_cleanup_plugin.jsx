@@ -54,6 +54,11 @@ export default function AttachmentCleanupPlugin({ deletedAttachmentsRef }) {
         const unregister = editor.registerUpdateListener(({ editorState }) => {
             editorState.read(() => {
                 const currentUrls = getAllAttachmentUrls(editor)
+                const currentSignedIds = new Set(
+                    Array.from(currentUrls)
+                        .map(url => extractSignedIdFromUrl(url))
+                        .filter(Boolean)
+                )
 
                 // Add any new URLs to allSeenUrls
                 currentUrls.forEach(url => allSeenUrlsRef.current.add(url))
@@ -64,6 +69,10 @@ export default function AttachmentCleanupPlugin({ deletedAttachmentsRef }) {
                 const removedSignedIds = removedUrls
                     .map(url => extractSignedIdFromUrl(url))
                     .filter(Boolean)
+
+                // If an attachment was previously removed but has been reinserted,
+                // drop it from the removal set to avoid purging restored blobs.
+                currentSignedIds.forEach(id => removedSignedIdsRef.current.delete(id))
 
                 removedSignedIds.forEach(id => removedSignedIdsRef.current.add(id))
 

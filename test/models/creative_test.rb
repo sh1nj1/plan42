@@ -143,6 +143,24 @@ class CreativeTest < ActiveSupport::TestCase
     assert_nil creative.prompt_for(user)
   end
 
+  test "effective_description returns ActionText::Content for html format" do
+    creative = Creative.new(description: "<p>Hello world</p>")
+
+    content = creative.effective_description(nil, true)
+
+    assert_respond_to content, :to_html
+    assert_includes content.to_html, "Hello world"
+  end
+
+  test "effective_description returns plain text when html flag is false" do
+    creative = Creative.new(description: "<p>Hello <strong>world</strong></p>")
+
+    plain_text = creative.effective_description(nil, false)
+
+    assert_kind_of String, plain_text
+    assert_equal "Hello world", plain_text.strip
+  end
+
   test "assigns parent user when parent present" do
     owner = User.create!(email: "creative-owner@example.com", password: "secret", name: "Owner")
     Current.session = Struct.new(:user).new(owner)

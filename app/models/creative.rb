@@ -117,15 +117,16 @@ class Creative < ApplicationRecord
     else
       description_val = origin.description
     end
-    if html
-      description_val&.to_s || ""
-    else
-      # For plain text, we might need to strip tags if description is HTML
-      # But the original code used rich_text_description&.body which returns ActionText::Content
-      # which has to_s (HTML) and to_plain_text.
-      # Since we now store raw HTML, we should strip tags for plain text.
-      ActionController::Base.helpers.strip_tags(description_val&.to_s || "")
-    end
+    description_html = description_val&.to_s || ""
+    content = ActionText::Content.new(description_html)
+
+    return content if html
+
+    # For plain text, we might need to strip tags if description is HTML
+    # But the original code used rich_text_description&.body which returns ActionText::Content
+    # which has to_s (HTML) and to_plain_text.
+    # Since we now store raw HTML, we should strip tags for plain text.
+    content.to_plain_text
   end
 
   def creative_snippet
