@@ -103,10 +103,16 @@ export class AttachmentNode extends DecoratorNode {
             return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
         }
 
+        const handleClick = (e) => {
+            // Stop propagation to prevent creative-row navigation
+            e.stopPropagation()
+        }
+
         return (
             <a
                 href={this.__src}
                 download={this.__filename}
+                onClick={handleClick}
                 style={{
                     display: "inline-flex",
                     alignItems: "center",

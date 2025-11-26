@@ -110,14 +110,21 @@ export class ImageNode extends DecoratorNode {
     }
 
     decorate() {
+        const handleClick = (e) => {
+            // Stop propagation to prevent creative-row navigation
+            e.stopPropagation()
+        }
+
         return (
             <img
                 src={this.__src}
                 alt={this.__altText}
+                onClick={handleClick}
                 style={{
                     width: this.__width === "inherit" ? "100%" : this.__width,
                     height: this.__height === "inherit" ? "auto" : this.__height,
                     maxWidth: this.__maxWidth,
+                    cursor: "default",
                 }}
             />
         )
