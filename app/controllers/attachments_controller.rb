@@ -1,6 +1,4 @@
 class AttachmentsController < ApplicationController
-  before_action :authenticate_user!
-
   # DELETE /attachments/:signed_id
   def destroy
     begin
