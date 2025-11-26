@@ -6,10 +6,12 @@ class Comment < ApplicationRecord
 
   has_many_attached :images, dependent: :purge_later
 
+  before_validation :use_origin_creative
   before_validation :assign_default_user, on: :create
   before_save :apply_link_previews, if: :should_apply_link_previews?
 
   validates :content, presence: true, unless: -> { images.attached? }
+  validate :creative_must_be_origin_creative
   validate :images_must_be_images
 
   after_create_commit :broadcast_create, :notify_write_users, :notify_mentions, :broadcast_badges
@@ -125,6 +127,18 @@ class Comment < ApplicationRecord
 
   def assign_default_user
     self.user ||= Current.user
+  end
+
+  def use_origin_creative
+    return unless creative
+    self.creative = creative.effective_origin
+  end
+
+  def creative_must_be_origin_creative
+    return unless creative
+    return unless creative.origin_id.present?
+
+    errors.add(:creative, "must be an origin creative")
   end
 
   def should_apply_link_previews?

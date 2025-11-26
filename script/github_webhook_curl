@@ -82,7 +82,8 @@ event_payload = {
     "number" => pr_number,
     "title" => title,
     "body" => body,
-    "html_url" => html_url
+    "html_url" => html_url,
+    "merged" => true
   },
   "repository" => {
     "full_name" => repo_full_name
