@@ -931,11 +931,13 @@ export function initializeCreativeRowEditor() {
       if (!id) return;
 
       // Try to use cached data from the row first for instant loading
-      // BUT only if we have actual content (description or progress)
-      // Otherwise we risk loading blank data and overwriting existing records
+      // BUT only if we have actual content in the dataset
+      // We must check the DOM element directly because inlinePayloadFromTree defaults missing values
+      const row = treeRowElement(tree);
+      const hasDescription = hasDatasetValue(row, 'descriptionRawHtml') || hasDatasetValue(row, 'descriptionHtml');
+      const hasProgress = hasDatasetValue(row, 'progressValue');
+
       const inlineData = inlinePayloadFromTree(tree);
-      const hasDescription = inlineData?.description || inlineData?.description_raw_html;
-      const hasProgress = inlineData && typeof inlineData.progress === 'number';
 
       if (inlineData && inlineData.id && (hasDescription || hasProgress)) {
         console.log('✅ Using cached data for creative', id, '- NO API CALL');
