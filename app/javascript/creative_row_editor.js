@@ -1008,11 +1008,12 @@ export function initializeCreativeRowEditor() {
 
       // CRITICAL: Capture ALL values BEFORE awaiting, because the editor may switch
       // to a different creative while we're waiting for uploads
-      const currentContent = descriptionInput.value;
-      const currentProgress = Number(progressInput.value ?? 0);
-      const currentParentId = parentInput.value || '';
-      const currentBeforeId = beforeInput.value || '';
-      const currentAfterId = afterInput.value || '';
+      let currentContent = descriptionInput.value;
+      let currentProgress = progressInput.value;
+      const currentParentId = tree.dataset.parentId || '';
+      const currentBeforeId = tree.previousElementSibling ? creativeIdFrom(tree.previousElementSibling) : '';
+      const currentAfterId = tree.nextElementSibling ? creativeIdFrom(tree.nextElementSibling) : '';
+      const startCreativeId = creativeId;
 
       // Prevent saving empty content, matching saveForm behavior
       // This avoids overwriting existing descriptions with empty strings during quick navigation
@@ -1024,6 +1025,13 @@ export function initializeCreativeRowEditor() {
       // CRITICAL: Wait for uploads to complete before queueing
       // But we already captured the values above, so switching editors won't affect us
       await waitForUploads();
+
+      // If we are still on the same creative (e.g. move awaited us), refresh the content
+      // This ensures we capture the final HTML with signed IDs instead of blob URLs
+      if (form.dataset.creativeId === startCreativeId) {
+        currentContent = descriptionInput.value;
+        currentProgress = progressInput.value;
+      }
 
       // Build request body
       // Note: before_id and after_id must be top-level params, not nested under creative[]
@@ -1088,7 +1096,7 @@ export function initializeCreativeRowEditor() {
       clearTimeout(saveTimer);
     }
 
-    function move(delta) {
+    async function move(delta) {
       if (!currentTree) return;
       const trees = Array.from(document.querySelectorAll('.creative-tree'));
       const index = trees.indexOf(currentTree);
@@ -1100,10 +1108,16 @@ export function initializeCreativeRowEditor() {
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
 
-      // Queue save if dirty (non-blocking)
+      // Queue save if dirty (non-blocking unless uploading)
       // CRITICAL: Pass 'prev' tree explicitly because currentTree will be updated immediately after
       if (!wasNew) {
-        queueSaveIfDirty(prev);
+        if (uploadsPending) {
+          // If uploading, we MUST wait for the upload to finish and the save to capture the new URL
+          // otherwise we risk saving the blob URL and losing the attachment
+          await queueSaveIfDirty(prev);
+        } else {
+          queueSaveIfDirty(prev);
+        }
       }
 
       // Update UI immediately
@@ -1140,7 +1154,7 @@ export function initializeCreativeRowEditor() {
       updateActionButtonStates();
     }
 
-    function addNew() {
+    async function addNew() {
       if (!currentTree) return;
 
       // Prevent multiple simultaneous calls to addNew (e.g., from Lexical onChange + keyboard event)
@@ -1154,10 +1168,14 @@ export function initializeCreativeRowEditor() {
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
 
-      // Queue save if dirty (non-blocking)
+      // Queue save if dirty (non-blocking unless uploading)
       // CRITICAL: Pass 'prev' tree explicitly
       if (!wasNew) {
-        queueSaveIfDirty(prev);
+        if (uploadsPending) {
+          await queueSaveIfDirty(prev);
+        } else {
+          queueSaveIfDirty(prev);
+        }
       }
 
       const handleAddNew = () => {
@@ -1197,16 +1215,20 @@ export function initializeCreativeRowEditor() {
       }
     }
 
-    function addChild() {
+    async function addChild() {
       if (!currentTree) return;
       const prev = currentTree;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
 
-      // Queue save if dirty (non-blocking)
+      // Queue save if dirty (non-blocking unless uploading)
       // CRITICAL: Pass 'prev' tree explicitly
       if (!wasNew) {
-        queueSaveIfDirty(prev);
+        if (uploadsPending) {
+          await queueSaveIfDirty(prev);
+        } else {
+          queueSaveIfDirty(prev);
+        }
       }
 
       const handleAddChild = () => {
@@ -1706,6 +1728,33 @@ export function initializeCreativeRowEditor() {
         if (confirm(deleteWithChildrenBtn.dataset.confirm)) deleteCurrent(true);
       });
     }
+
+    // Expose for testing
+    window.creativeRowEditor = {
+      setUploadsPending: (pending) => {
+        uploadsPending = pending;
+        if (pending) {
+          uploadCompletionPromise = new Promise((resolve) => {
+            resolveUploadCompletion = resolve;
+          });
+        } else if (resolveUploadCompletion) {
+          resolveUploadCompletion();
+          uploadCompletionPromise = null;
+          resolveUploadCompletion = null;
+        }
+        handleUploadStateChange(pending);
+      },
+      resolveUploadCompletion: () => {
+        if (resolveUploadCompletion) {
+          resolveUploadCompletion();
+          uploadsPending = false;
+          uploadCompletionPromise = null;
+          resolveUploadCompletion = null;
+          handleUploadStateChange(false);
+        }
+      },
+      isUploadPending: () => uploadsPending
+    };
 
     if (linkBtn) {
       linkBtn.addEventListener('click', linkExistingCreative);
