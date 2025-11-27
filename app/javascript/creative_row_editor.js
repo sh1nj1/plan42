@@ -114,20 +114,12 @@ export function initializeCreativeRowEditor() {
     // Initialize queue with current user ID to prevent cross-account data leakage
     try {
       const currentUserId = document.body.dataset.currentUserId;
-      // The original code had `if (apiQueue)` but `apiQueue` is commented out at the top.
-      // Assuming the intent is to re-enable apiQueue, but for now, keeping it as is
-      // since the import is commented out. If apiQueue is meant to be used,
-      // the import statement `import apiQueue from './lib/api/queue_manager'`
-      // would need to be uncommented.
-      // For this specific instruction, only the `applyCreativeData` function and
-      // `originIdInput` definition are explicitly requested.
-      // If apiQueue was intended to be used, it would be:
-      // if (typeof apiQueue !== 'undefined' && apiQueue) {
-      //   apiQueue.initialize(currentUserId);
-      //   apiQueue.start();
-      // } else {
-      //   console.error('CreativeRowEditor: apiQueue is undefined or not imported');
-      // }
+      if (apiQueue) {
+        apiQueue.initialize(currentUserId);
+        apiQueue.start();
+      } else {
+        console.error('CreativeRowEditor: apiQueue is undefined');
+      }
     } catch (e) {
       console.error('CreativeRowEditor: Error initializing apiQueue:', e);
     }
