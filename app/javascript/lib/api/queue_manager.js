@@ -77,9 +77,40 @@ class ApiQueueManager {
      * @returns {string} Request ID
      */
     enqueue(request) {
-        // Remove existing requests with the same dedupeKey
+        // Find and merge callbacks from existing requests with the same dedupeKey
+        let existingCallbacks = []
         if (request.dedupeKey) {
+            const existingItems = this.queue.filter(item => item.dedupeKey === request.dedupeKey)
+            existingItems.forEach(item => {
+                if (typeof item.onSuccess === 'function') {
+                    existingCallbacks.push(item.onSuccess)
+                }
+            })
+            // Remove existing requests with the same dedupeKey
             this.queue = this.queue.filter(item => item.dedupeKey !== request.dedupeKey)
+        }
+
+        // Merge new callback with existing callbacks
+        let mergedCallback = null
+        if (existingCallbacks.length > 0 || request.onSuccess) {
+            mergedCallback = () => {
+                // Run all existing callbacks first
+                existingCallbacks.forEach(cb => {
+                    try {
+                        cb()
+                    } catch (error) {
+                        console.error('Merged callback failed:', error)
+                    }
+                })
+                // Then run the new callback
+                if (typeof request.onSuccess === 'function') {
+                    try {
+                        request.onSuccess()
+                    } catch (error) {
+                        console.error('New callback failed:', error)
+                    }
+                }
+            }
         }
 
         const queueItem = {
@@ -89,7 +120,7 @@ class ApiQueueManager {
             params: request.params || null,
             body: request.body || null,
             dedupeKey: request.dedupeKey || null,
-            onSuccess: request.onSuccess || null,
+            onSuccess: mergedCallback,
             timestamp: Date.now(),
             retries: 0
         }
