@@ -47,7 +47,14 @@ export function initializeCreativeRowEditor() {
 
       // Alert the user
       // In a real app, use a toast notification. For now, alert is safe.
-      alert(`Failed to save changes. Please check your connection and try again.\nError: ${error}`);
+      // Suppress 404 errors for PATCH requests, as this likely means the item was deleted
+      // and we don't need to alert the user about it.
+      const is404 = error && error.toString().includes('404');
+      const isPatch = item && item.method === 'PATCH';
+
+      if (!(is404 && isPatch)) {
+        alert(`Failed to save changes. Please check your connection and try again.\nError: ${error}`);
+      }
 
       // If the failed item matches the current creative, mark it as dirty so it can be retried
       if (form.dataset.creativeId && item.path.includes(form.dataset.creativeId)) {
@@ -1385,6 +1392,14 @@ export function initializeCreativeRowEditor() {
       const index = trees.indexOf(tree);
       const nextId = trees[index + 1] ? trees[index + 1].dataset.id : null;
       const parentId = tree.dataset.parentId;
+
+      // CRITICAL: Remove any pending saves for this creative from the queue
+      // This prevents a race condition where a queued save fires after deletion,
+      // resulting in a 404 error and an alert to the user.
+      if (apiQueue) {
+        apiQueue.removeByDedupeKey(`creative_${id}`);
+      }
+
       creativesApi.destroy(id, withChildren).then(() => {
         const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
         const childrenTree = document.getElementById("creative-children-" + id)

@@ -342,6 +342,28 @@ class ApiQueueManager {
     }
 
     /**
+     * Remove items with a specific dedupe key
+     * @param {string} dedupeKey - Key to remove
+     */
+    removeByDedupeKey(dedupeKey) {
+        if (!dedupeKey) return
+
+        // Filter out items with the matching key
+        // CRITICAL: If processing is active, we must NOT remove the first item
+        // as it is currently being executed. Removing it would cause state inconsistency.
+        if (this.processing && this.queue.length > 0) {
+            const firstItem = this.queue[0]
+            // If the currently processing item matches, we can't stop it,
+            // but we can remove subsequent queued items.
+            const rest = this.queue.slice(1).filter(item => item.dedupeKey !== dedupeKey)
+            this.queue = [firstItem, ...rest]
+        } else {
+            this.queue = this.queue.filter(item => item.dedupeKey !== dedupeKey)
+        }
+        this.saveToLocalStorage()
+    }
+
+    /**
      * Get current queue status
      * @returns {Object} Queue status
      */
