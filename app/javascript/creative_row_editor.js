@@ -964,13 +964,18 @@ export function initializeCreativeRowEditor() {
     /**
      * Queue save if content has been modified
      * This allows UI operations to proceed without waiting for API response
+     * IMPORTANT: Waits for pending uploads to complete before queueing
      */
-    function queueSaveIfDirty() {
+    async function queueSaveIfDirty() {
       // Check both isDirty (text changes) and pendingSave (progress/structure changes)
       if (!isDirty && !pendingSave) return;
 
       const creativeId = form.dataset?.creativeId;
       if (!creativeId) return;
+
+      // CRITICAL: Wait for uploads to complete before capturing content
+      // Otherwise we'll save incomplete HTML without attachment references
+      await waitForUploads();
 
       const currentContent = descriptionInput.value;
       const currentProgress = Number(progressInput.value ?? 0);
