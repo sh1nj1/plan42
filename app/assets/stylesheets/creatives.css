@@ -256,11 +256,6 @@ creative-tree-row.show-edit .creative-row {
     /* Align with text */
 }
 
-.add-inline-btn .icon-add {
-    width: 16px;
-    height: 16px;
-}
-
 .creative-action-btn:disabled,
 .popup-menu-toggle:disabled,
 .popup-menu .popup-menu-item:disabled {
@@ -311,18 +306,15 @@ creative-tree-row.show-edit .creative-row {
 
 
 /* Replaced creative-row-actions visibility logic with direct targeting */
-.edit-inline-btn,
-.add-inline-btn {
+.edit-inline-btn {
     visibility: hidden;
     opacity: 0;
     transition: opacity 0.2s ease;
     width: 20px;
-    height: 22px;
     /* Fixed width for alignment */
 }
 
-.creative-row:hover .edit-inline-btn,
-.creative-row:hover .add-inline-btn {
+.creative-row:hover .edit-inline-btn {
     visibility: visible;
     opacity: 1;
 }
@@ -342,23 +334,6 @@ creative-tree-row.show-edit .creative-row {
     }
 
     .creative-row.show-edit .edit-inline-btn {
-        max-width: 40px;
-        opacity: 1;
-        transform: translateX(0);
-        pointer-events: auto;
-        visibility: visible;
-    }
-
-    .add-inline-btn {
-        max-width: 0;
-        opacity: 0;
-        overflow: hidden;
-        pointer-events: none;
-        transform: translateX(10px);
-        transition: max-width 0.3s ease, opacity 0.3s ease, transform 0.3s ease;
-    }
-
-    .creative-row.show-edit .add-inline-btn {
         max-width: 40px;
         opacity: 1;
         transform: translateX(0);

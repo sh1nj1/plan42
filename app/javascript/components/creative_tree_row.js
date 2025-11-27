@@ -18,7 +18,6 @@ class CreativeTreeRow extends LitElement {
     linkUrl: { attribute: "link-url" },
     descriptionHtml: { state: true },
     progressHtml: { state: true },
-    addIconHtml: { state: true },
     editIconHtml: { state: true },
     editOffIconHtml: { state: true },
     originLinkHtml: { state: true },
@@ -40,7 +39,6 @@ class CreativeTreeRow extends LitElement {
     this.linkUrl = "#";
     this.descriptionHtml = "";
     this.progressHtml = "";
-    this.addIconHtml = "";
     this.editIconHtml = "";
     this.editOffIconHtml = "";
     this.originLinkHtml = "";
@@ -49,12 +47,10 @@ class CreativeTreeRow extends LitElement {
     this.loadingChildren = false;
 
     this._toggleBtn = null;
-    this._addBtn = null;
     this._editBtn = null;
     this._commentsBtn = null;
 
     this._handleToggleClick = this._handleToggleClick.bind(this);
-    this._handleAddClick = this._handleAddClick.bind(this);
     this._handleEditClick = this._handleEditClick.bind(this);
     this._handleCommentsClick = this._handleCommentsClick.bind(this);
   }
@@ -94,7 +90,6 @@ class CreativeTreeRow extends LitElement {
       // have template nodes, so fall back to any cached markup stored in data attributes.
       if (hasCached("descriptionHtml")) this._setDescriptionHtml(this.dataset.descriptionHtml);
       if (hasCached("progressHtml")) this.progressHtml = this.dataset.progressHtml;
-      if (hasCached("addIconHtml")) this.addIconHtml = this.dataset.addIconHtml;
       if (hasCached("editIconHtml")) this.editIconHtml = this.dataset.editIconHtml;
       if (hasCached("editOffIconHtml")) this.editOffIconHtml = this.dataset.editOffIconHtml;
       if (hasCached("originLinkHtml")) this.originLinkHtml = this.dataset.originLinkHtml;
@@ -119,10 +114,6 @@ class CreativeTreeRow extends LitElement {
           case "progress":
             this.progressHtml = markup;
             this.dataset.progressHtml = markup;
-            break;
-          case "add-icon":
-            this.addIconHtml = markup;
-            this.dataset.addIconHtml = markup;
             break;
           case "edit-icon":
             this.editIconHtml = markup;
@@ -149,17 +140,14 @@ class CreativeTreeRow extends LitElement {
 
   _attachHandlers() {
     this._toggleBtn?.removeEventListener("click", this._handleToggleClick);
-    this._addBtn?.removeEventListener("click", this._handleAddClick);
     this._editBtn?.removeEventListener("click", this._handleEditClick);
     this._commentsBtn?.removeEventListener("click", this._handleCommentsClick);
 
     this._toggleBtn = this.querySelector(".creative-toggle-btn");
-    this._addBtn = this.querySelector(".add-inline-btn");
     this._editBtn = this.querySelector(".edit-inline-btn");
     this._commentsBtn = this.querySelector(".comments-btn");
 
     if (this._toggleBtn) this._toggleBtn.addEventListener("click", this._handleToggleClick, { passive: false });
-    if (this._addBtn) this._addBtn.addEventListener("click", this._handleAddClick, { passive: false });
     if (this._editBtn) this._editBtn.addEventListener("click", this._handleEditClick, { passive: false });
     if (this._commentsBtn) this._commentsBtn.addEventListener("click", this._handleCommentsClick, { passive: false });
   }
@@ -188,7 +176,7 @@ class CreativeTreeRow extends LitElement {
         <div class="creative-row level-${this.level}" data-creatives--select-mode-target="row">
           <div class="creative-row-start">
             ${this._renderCheckbox()}
-            ${this._renderActionButtons()}
+            ${this._renderActionButton()}
             ${this._renderTreeLines()}
             ${this._renderToggle()}
             ${this._renderContent()}
@@ -249,26 +237,15 @@ class CreativeTreeRow extends LitElement {
     `;
   }
 
-  _renderActionButtons() {
+  _renderActionButton() {
     if (this.canWrite) {
       return html`
-        <button type="button" class="creative-action-btn add-creative-btn add-inline-btn" data-creative-id=${this.creativeId}>
-          ${unsafeHTML(this.addIconHtml || "")}
-        </button>
         <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id=${this.creativeId}>
           ${unsafeHTML(this.editIconHtml || "")}
         </button>
       `;
     }
     return html`
-      <button
-        type="button"
-        class="creative-action-btn add-creative-btn add-inline-btn"
-        data-creative-id=${this.creativeId}
-        style="visibility: hidden"
-      >
-        ${unsafeHTML(this.addIconHtml || "")}
-      </button>
       <button
         type="button"
         class="creative-action-btn edit-inline-btn"
@@ -386,21 +363,6 @@ class CreativeTreeRow extends LitElement {
     event.preventDefault();
     event.stopPropagation();
     this.dispatchEvent(new CustomEvent("creative-edit-click", {
-      detail: {
-        creativeId: this.creativeId ?? this.getAttribute("creative-id"),
-        component: this,
-        button: event.currentTarget,
-        treeElement: this.querySelector(".creative-tree")
-      },
-      bubbles: true,
-      composed: true
-    }));
-  }
-
-  _handleAddClick(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    this.dispatchEvent(new CustomEvent("creative-add-click", {
       detail: {
         creativeId: this.creativeId ?? this.getAttribute("creative-id"),
         component: this,
