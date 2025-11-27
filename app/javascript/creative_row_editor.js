@@ -1097,10 +1097,19 @@ export function initializeCreativeRowEditor() {
       template.style.display = 'block';
 
       // Handle new creative cleanup or show previous row
+      const focusAfterMove = () => {
+        if (delta < 0 && lexicalEditor.focusAtStart) {
+          lexicalEditor.focusAtStart();
+        } else {
+          lexicalEditor.focus();
+        }
+      };
+
       if (wasNew) {
         // For new creatives, still need to save or cleanup
         beforeNewOrMove(wasNew, prev, prevParent).then(() => {
           loadCreative(target);
+          focusAfterMove();
         });
       } else {
         // For existing creatives, show the row and refresh if needed
@@ -1108,6 +1117,7 @@ export function initializeCreativeRowEditor() {
           showRow(prev);
         }
         loadCreative(target);
+        focusAfterMove();
       }
       updateActionButtonStates();
     }
