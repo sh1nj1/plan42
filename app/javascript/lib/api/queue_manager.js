@@ -37,10 +37,15 @@ class ApiQueueManager {
 
     /**
      * Save queue to localStorage
+     * Note: Items with onSuccess callbacks are excluded because functions cannot be serialized
      */
     saveToLocalStorage() {
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(this.queue))
+            // Filter out items with callbacks since they can't be serialized
+            // These are typically session-specific actions (like attachment cleanup)
+            // that don't make sense to persist across page reloads anyway
+            const serializableQueue = this.queue.filter(item => !item.onSuccess)
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(serializableQueue))
         } catch (error) {
             console.error('Failed to save API queue to localStorage:', error)
         }
