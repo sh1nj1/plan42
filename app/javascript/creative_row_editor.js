@@ -255,10 +255,15 @@ export function initializeCreativeRowEditor() {
       afterInput.value = '';
       if (childInput) childInput.value = '';
       const originId = data.origin_id || '';
+      if (originIdInput) {
+        originIdInput.value = originId;
+      }
+      originalOriginId = originId;
       if (linkBtn) linkBtn.style.display = originId ? 'none' : '';
       if (unlinkBtn) unlinkBtn.style.display = originId ? '' : 'none';
       const effectiveParent = parentInput.value;
       if (unconvertBtn) unconvertBtn.style.display = effectiveParent ? '' : 'none';
+      originalProgress = normalizedProgress;
       lexicalEditor.focus();
       updateActionButtonStates();
     }
@@ -874,7 +879,7 @@ export function initializeCreativeRowEditor() {
         // Capture values being saved to update dirty state on success
         const savedContent = descriptionInput.value;
         const savedProgress = progressInput.value;
-        const savedOriginId = originIdInput.value;
+        const savedOriginId = originIdInput ? originIdInput.value : '';
 
         savePromise = creativesApi.save(form.action, method, form).then(function (r) {
           if (!r.ok) return r;
