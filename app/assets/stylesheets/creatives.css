@@ -256,6 +256,11 @@ creative-tree-row.show-edit .creative-row {
     /* Align with text */
 }
 
+.add-inline-btn .icon-add {
+    width: 16px;
+    height: 16px;
+}
+
 .creative-action-btn:disabled,
 .popup-menu-toggle:disabled,
 .popup-menu .popup-menu-item:disabled {
@@ -312,6 +317,7 @@ creative-tree-row.show-edit .creative-row {
     opacity: 0;
     transition: opacity 0.2s ease;
     width: 20px;
+    height: 22px;
     /* Fixed width for alignment */
 }
 
