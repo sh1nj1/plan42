@@ -939,7 +939,10 @@ export function initializeCreativeRowEditor() {
 
       const inlineData = inlinePayloadFromTree(tree);
 
-      if (inlineData && inlineData.id && (hasDescription || hasProgress)) {
+      // CRITICAL: Require BOTH description AND progress to be present in the dataset
+      // If either is missing, inlinePayloadFromTree defaults it (e.g. progress=0),
+      // which would overwrite the real value on the server if we saved it.
+      if (inlineData && inlineData.id && hasDescription && hasProgress) {
         console.log('✅ Using cached data for creative', id, '- NO API CALL');
         applyCreativeData(inlineData, tree);
         return;
