@@ -12,8 +12,18 @@ class ApiQueueManager {
     constructor() {
         this.queue = []
         this.processing = false
-        this.loadFromLocalStorage()
+        this.storageKey = 'api_queue_guest' // Default fallback
         this.setupNetworkListeners()
+    }
+
+    /**
+     * Initialize the queue for a specific user
+     * @param {string|number} userId - Current user ID
+     */
+    initialize(userId) {
+        this.userId = userId
+        this.storageKey = userId ? `api_queue_${userId}` : 'api_queue_guest'
+        this.loadFromLocalStorage()
     }
 
     /**
@@ -21,12 +31,14 @@ class ApiQueueManager {
      */
     loadFromLocalStorage() {
         try {
-            const stored = localStorage.getItem(STORAGE_KEY)
+            const stored = localStorage.getItem(this.storageKey)
             if (stored) {
                 this.queue = JSON.parse(stored)
                 // Note: We don't auto-start processing here anymore.
                 // The consumer (creative_row_editor.js) must call start() explicitly
                 // after registering event listeners to avoid missing events.
+            } else {
+                this.queue = []
             }
         } catch (error) {
             console.error('Failed to load API queue from localStorage:', error)
@@ -58,7 +70,7 @@ class ApiQueueManager {
                 const { onSuccess, ...serializableItem } = item
                 return serializableItem
             })
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(serializableQueue))
+            localStorage.setItem(this.storageKey, JSON.stringify(serializableQueue))
         } catch (error) {
             console.error('Failed to save API queue to localStorage:', error)
         }

@@ -25,6 +25,9 @@ describe('ApiQueueManager', () => {
         jest.spyOn(apiQueue, 'processQueue').mockImplementation(async () => { });
         // Suppress console.error for expected errors
         jest.spyOn(console, 'error').mockImplementation(() => { });
+
+        // Initialize with test user
+        apiQueue.initialize('test_user');
     });
 
     afterEach(() => {
@@ -86,7 +89,7 @@ describe('ApiQueueManager', () => {
             onSuccess: () => { }
         });
 
-        const stored = JSON.parse(localStorage.getItem('api_queue'));
+        const stored = JSON.parse(localStorage.getItem('api_queue_test_user'));
         expect(stored).toHaveLength(1);
         expect(stored[0].onSuccess).toBeUndefined();
         expect(stored[0].path).toBe('/test');

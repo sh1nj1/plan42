@@ -58,6 +58,10 @@ export function initializeCreativeRowEditor() {
       }
     });
 
+    // Initialize queue with current user ID to prevent cross-account data leakage
+    const currentUserId = document.body.dataset.currentUserId;
+    apiQueue.initialize(currentUserId);
+
     // Start the queue processing only after listeners are registered
     // This prevents missing events if the queue processes immediately on load
     apiQueue.start();
