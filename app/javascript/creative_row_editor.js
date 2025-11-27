@@ -1015,9 +1015,9 @@ export function initializeCreativeRowEditor() {
         'creative[progress]': currentProgress
       };
 
-      if (currentParentId) {
-        body['creative[parent_id]'] = currentParentId;
-      }
+      // Always include parent_id, even if empty (for moving to root)
+      body['creative[parent_id]'] = currentParentId;
+
       if (currentBeforeId) {
         body['before_id'] = currentBeforeId;  // Top-level, not creative[before_id]
       }
