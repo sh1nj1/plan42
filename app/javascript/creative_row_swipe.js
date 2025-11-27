@@ -1,22 +1,24 @@
 let initialized = false;
+let startX = null;
+let activeRow = null;
+let allEditVisible = false;
+
+function toggleAllEdits() {
+  allEditVisible = !allEditVisible;
+  document.querySelectorAll('.creative-row').forEach(function(row) {
+    row.classList.toggle('show-edit', allEditVisible);
+  });
+}
 
 document.addEventListener('turbo:load', function() {
+  const toggleBtn = document.getElementById('toggle-edit-btn');
+  if (toggleBtn && !toggleBtn.dataset.editToggleBound) {
+    toggleBtn.addEventListener('click', toggleAllEdits);
+    toggleBtn.dataset.editToggleBound = 'true';
+  }
+
   if (initialized) return;
   initialized = true;
-
-  let startX = null;
-  let activeRow = null;
-  let allEditVisible = false;
-
-  const toggleBtn = document.getElementById('toggle-edit-btn');
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', function() {
-      allEditVisible = !allEditVisible;
-      document.querySelectorAll('.creative-row').forEach(function(row) {
-        row.classList.toggle('show-edit', allEditVisible);
-      });
-    });
-  }
 
   document.addEventListener('touchstart', function(event) {
     if (allEditVisible) return;
