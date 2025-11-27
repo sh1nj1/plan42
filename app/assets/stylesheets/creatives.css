@@ -289,13 +289,9 @@ creative-tree-row.show-edit .creative-row {
     margin-right: 4px;
     margin-top: 4px;
     /* Align with text */
-    visibility: hidden;
-    /* Hidden by default on desktop */
-    /* Total width is 20px (16 + 4) */
-}
-
-.creative-row:hover .creative-toggle-btn {
     visibility: visible;
+    /* Always visible to show expansion affordance */
+    /* Total width is 20px (16 + 4) */
 }
 
 .add-creative-btn {
