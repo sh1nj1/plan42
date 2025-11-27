@@ -2,6 +2,7 @@ import creativesApi from './lib/api/creatives'
 import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
 import { createInlineEditor } from './lexical_inline_editor'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from './creatives/tree_renderer'
+import { enqueueCreativeSave, resumeCreativeSaveQueue } from './lib/creative_inline_save_queue'
 
 const BULLET_STARTING_LEVEL = 3;
 const HEADING_INDENT_STEP_EM = 0.4;
@@ -70,6 +71,8 @@ export function initializeCreativeRowEditor() {
       onKeyDown: handleEditorKeyDown,
       onUploadStateChange: handleUploadStateChange
     });
+
+    resumeCreativeSaveQueue({ onSuccess: handleQueuedSaveSuccess });
 
     let currentTree = null;
     let currentRowElement = null;
@@ -789,6 +792,51 @@ export function initializeCreativeRowEditor() {
         });
     }
 
+    function updateProgressMarkup(markup, progressValue) {
+      if (!markup) return null;
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = markup;
+      const indicator = wrapper.querySelector('.creative-progress-complete, .creative-progress-incomplete');
+      if (!indicator) return null;
+      indicator.textContent = formatProgressDisplay(progressValue);
+      indicator.className = progressValue >= 1 ? 'creative-progress-complete' : 'creative-progress-incomplete';
+      return wrapper.innerHTML;
+    }
+
+    function applyInlineValuesToRow(tree, parentIdValue = parentInput.value) {
+      const row = treeRowElement(tree);
+      if (!row) return;
+      const descriptionHtml = descriptionInput.value || '';
+      setRowDatasetValue(row, 'descriptionHtml', descriptionHtml);
+      setRowDatasetValue(row, 'descriptionRawHtml', descriptionHtml);
+      row.descriptionHtml = descriptionHtml;
+      const progressNumber = Number(progressInput.value ?? 0);
+      const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
+      setRowDatasetValue(row, 'progressValue', normalizedProgress);
+      const nextProgressHtml = updateProgressMarkup(row.dataset?.progressHtml, normalizedProgress);
+      if (nextProgressHtml) {
+        row.progressHtml = nextProgressHtml;
+        setRowDatasetValue(row, 'progressHtml', nextProgressHtml);
+      }
+      if (parentIdValue != null) {
+        setRowDatasetValue(row, 'parentId', parentIdValue);
+        row.parentId = parentIdValue;
+        row.setAttribute('parent-id', parentIdValue);
+      }
+      row.requestUpdate?.();
+    }
+
+    function handleQueuedSaveSuccess({ meta, cleanupAttachmentIds = [] } = {}) {
+      if (Array.isArray(cleanupAttachmentIds)) {
+        cleanupAttachmentIds.forEach(deleteAttachment);
+      }
+      const creativeId = meta?.creativeId;
+      if (creativeId) {
+        const tree = document.getElementById(`creative-${creativeId}`);
+        if (tree) refreshRow(tree);
+      }
+    }
+
     function saveForm(tree = currentTree, parentId = parentInput.value) {
       return waitForUploads().then(function () {
         if (saving) return savePromise;
@@ -802,6 +850,21 @@ export function initializeCreativeRowEditor() {
         const method = methodInput.value === 'patch' ? 'PATCH' : 'POST';
         pendingSave = false;
         if (!form.action) return Promise.resolve();
+        if (method === 'PATCH') {
+          const cleanupAttachmentIds = lexicalEditor?.getDeletedAttachments?.() || [];
+          const formData = new FormData(form);
+          enqueueCreativeSave({
+            url: form.action,
+            method,
+            formData,
+            cleanupAttachmentIds,
+            meta: { creativeId: form.dataset.creativeId }
+          });
+          applyInlineValuesToRow(tree, parentId);
+          updateActionButtonStates();
+          savePromise = Promise.resolve({ queued: true });
+          return savePromise;
+        }
         saving = true;
         savePromise = creativesApi.save(form.action, method, form).then(function (r) {
           if (!r.ok) return r;
