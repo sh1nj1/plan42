@@ -204,6 +204,25 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
                     visible: :all
   end
 
+  test "asks to delete creative when inline content cleared" do
+    child = Creative.create!(description: "Child", user: @user, parent: @root_creative)
+
+    visit creative_path(@root_creative)
+
+    expand_creative(@root_creative)
+    open_inline_editor(child)
+
+    fill_inline_editor("")
+
+    accept_confirm(I18n.t("creatives.index.empty_content_delete_confirm")) do
+      close_inline_editor
+    end
+
+    wait_for_network_idle(timeout: 10)
+
+    assert_no_selector "#creative-#{child.id}", wait: 5
+  end
+
   test "disables inline actions when unavailable" do
     Creative.create!(description: "Second root", user: @user)
 

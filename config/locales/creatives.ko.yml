@@ -13,6 +13,7 @@ ko:
       are_you_sure: "정말 삭제하시겠습니까?"
       are_you_sure_delete_only_this: "이 항목만 삭제하시겠습니까? 하위 항목은 보존되고 부모에 연결됩니다."
       are_you_sure_delete_with_children: "이 항목과 모든 하위 항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+      empty_content_delete_confirm: "크리에이티브 내용이 비어 있습니다. 저장하는 대신 삭제할까요?"
       link: "링크"
       unlink: "링크 해제"
       are_you_sure_unlink: "링크된 크리에이티브를 삭제하시겠습니까?"

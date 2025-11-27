@@ -1,4 +1,4 @@
-<div id="inline-edit-form" class="inline-edit-form-shell" style="display:none;">
+<div id="inline-edit-form" class="inline-edit-form-shell" style="display:none;" data-empty-delete-confirm="<%= t('creatives.index.empty_content_delete_confirm') %>">
   <form id="inline-edit-form-element" method="post">
     <input type="hidden" id="inline-method" name="_method" value="patch" />
     <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>" />
