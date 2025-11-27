@@ -84,6 +84,11 @@ function applyRowProperties(row, node) {
     setDatasetValue(row, 'progressHtml', templates.progress_html)
     dirty = true
   }
+  if (templates.add_icon_html != null && row.addIconHtml !== templates.add_icon_html) {
+    row.addIconHtml = templates.add_icon_html
+    setDatasetValue(row, 'addIconHtml', templates.add_icon_html)
+    dirty = true
+  }
   if (templates.edit_icon_html != null && row.editIconHtml !== templates.edit_icon_html) {
     row.editIconHtml = templates.edit_icon_html
     setDatasetValue(row, 'editIconHtml', templates.edit_icon_html)
