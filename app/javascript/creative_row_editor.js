@@ -998,6 +998,15 @@ export function initializeCreativeRowEditor() {
         }
       }
 
+      // Delete removed attachments immediately to prevent orphaned files
+      // This must happen before queueing to ensure cleanup even if navigation is immediate
+      if (lexicalEditor && typeof lexicalEditor.getDeletedAttachments === 'function') {
+        const deletedIds = lexicalEditor.getDeletedAttachments();
+        if (deletedIds && deletedIds.length > 0) {
+          deletedIds.forEach(deleteAttachment);
+        }
+      }
+
       // Queue the save request
       apiQueue.enqueue({
         path: `/creatives/${creativeId}`,
