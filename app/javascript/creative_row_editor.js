@@ -956,7 +956,8 @@ export function initializeCreativeRowEditor() {
      * This allows UI operations to proceed without waiting for API response
      */
     function queueSaveIfDirty() {
-      if (!isDirty) return;
+      // Check both isDirty (text changes) and pendingSave (progress/structure changes)
+      if (!isDirty && !pendingSave) return;
 
       const creativeId = form.dataset?.creativeId;
       if (!creativeId) return;
