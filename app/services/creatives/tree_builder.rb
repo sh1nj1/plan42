@@ -110,6 +110,7 @@ module Creatives
       {
         description_html: description_html,
         progress_html: progress_html,
+        add_icon_html: add_icon_html,
         edit_icon_html: edit_icon_html,
         edit_off_icon_html: edit_off_icon_html,
         origin_link_html: origin_link_html_for(creative)
@@ -143,6 +144,10 @@ module Creatives
 
     def edit_icon_html
       @edit_icon_html ||= view_context.svg_tag("edit.svg", className: "icon-edit")
+    end
+
+    def add_icon_html
+      @add_icon_html ||= view_context.svg_tag("add.svg", className: "icon-add")
     end
 
     def edit_off_icon_html

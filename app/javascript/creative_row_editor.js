@@ -9,6 +9,7 @@ const BULLET_INDENT_STEP_PX = 30;
 
 let initialized = false;
 let creativeEditClickHandler = null;
+let creativeAddClickHandler = null;
 
 function deleteAttachment(signedId) {
   if (!signedId) return;
@@ -620,6 +621,39 @@ export function initializeCreativeRowEditor() {
       updateActionButtonStates();
     }
 
+    function handleAddButtonClick(tree, addBtn) {
+      const targetTree = tree || addBtn?.closest('.creative-tree');
+      if (template.style.display === 'block') {
+        hideCurrent();
+        return;
+      }
+
+      let parentId;
+      let container;
+      let insertBefore;
+      let beforeId = '';
+      if (targetTree) {
+        parentId = targetTree.dataset.id;
+        container = targetTree.querySelector('.creative-children');
+        if (!container) {
+          container = document.createElement('div');
+          container.className = 'creative-children';
+          container.id = 'creative-children-' + parentId;
+          targetTree.appendChild(container);
+        }
+        insertBefore = container.firstElementChild;
+        beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
+      } else {
+        parentId = addBtn?.dataset.parentId || '';
+        const rootContainer = document.getElementById('creatives');
+        container = rootContainer;
+        insertBefore = rootContainer?.firstElementChild;
+        beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
+      }
+
+      startNew(parentId, container, insertBefore, beforeId);
+    }
+
     function initializeEventListeners() {
       if (!creativeEditClickHandler) {
         creativeEditClickHandler = function (e) {
@@ -629,6 +663,14 @@ export function initializeCreativeRowEditor() {
           handleEditButtonClick(tree);
         };
         document.addEventListener('creative-edit-click', creativeEditClickHandler);
+      }
+
+      if (!creativeAddClickHandler) {
+        creativeAddClickHandler = function (e) {
+          const tree = e.detail?.treeElement || e.detail?.button?.closest('.creative-tree');
+          handleAddButtonClick(tree, e.detail?.button);
+        };
+        document.addEventListener('creative-add-click', creativeAddClickHandler);
       }
 
       document.body.addEventListener('click', function (e) {
@@ -646,31 +688,7 @@ export function initializeCreativeRowEditor() {
         const addBtn = e.target.closest('.add-creative-btn:not(#inline-add):not(#inline-level-down):not(#inline-level-up)');
         if (addBtn) {
           e.preventDefault();
-          if (template.style.display === 'block') {
-            hideCurrent();
-            return;
-          }
-          const tree = addBtn.closest('.creative-tree');
-          let parentId, container, insertBefore, beforeId = '';
-          if (tree) {
-            parentId = tree.dataset.id;
-            container = tree.querySelector('.creative-children');
-            if (!container) {
-              container = document.createElement('div');
-              container.className = 'creative-children';
-              container.id = 'creative-children-' + parentId;
-              tree.appendChild(container);
-            }
-            insertBefore = container.firstElementChild;
-            beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
-          } else {
-            parentId = addBtn.dataset.parentId || '';
-            const rootContainer = document.getElementById('creatives');
-            container = rootContainer;
-            insertBefore = rootContainer.firstElementChild;
-            beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
-          }
-          startNew(parentId, container, insertBefore, beforeId);
+          handleAddButtonClick(null, addBtn);
           return; // Event handled
         }
 
@@ -1211,6 +1229,7 @@ export function initializeCreativeRowEditor() {
         if (iconSource) {
           if (iconSource.dataset.editIconHtml) rowComponent.dataset.editIconHtml = iconSource.dataset.editIconHtml;
           if (iconSource.dataset.editOffIconHtml) rowComponent.dataset.editOffIconHtml = iconSource.dataset.editOffIconHtml;
+          if (iconSource.dataset.addIconHtml) rowComponent.dataset.addIconHtml = iconSource.dataset.addIconHtml;
         }
         if (parentId) {
           rowComponent.parentId = parentId;
