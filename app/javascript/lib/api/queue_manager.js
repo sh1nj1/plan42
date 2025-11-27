@@ -68,6 +68,7 @@ class ApiQueueManager {
      * @param {Object} request.params - URL parameters
      * @param {Object} request.body - Request body
      * @param {string} request.dedupeKey - Optional key for deduplication
+     * @param {Function} request.onSuccess - Optional callback to run after successful request
      * @returns {string} Request ID
      */
     enqueue(request) {
@@ -83,6 +84,7 @@ class ApiQueueManager {
             params: request.params || null,
             body: request.body || null,
             dedupeKey: request.dedupeKey || null,
+            onSuccess: request.onSuccess || null,
             timestamp: Date.now(),
             retries: 0
         }
@@ -111,7 +113,15 @@ class ApiQueueManager {
 
             try {
                 await this.executeRequest(item)
-                // Success - remove from queue
+                // Success - call onSuccess callback if provided
+                if (typeof item.onSuccess === 'function') {
+                    try {
+                        item.onSuccess()
+                    } catch (callbackError) {
+                        console.error('onSuccess callback failed:', callbackError)
+                    }
+                }
+                // Remove from queue
                 this.queue.shift()
                 this.saveToLocalStorage()
             } catch (error) {

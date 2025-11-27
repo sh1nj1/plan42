@@ -1000,13 +1000,11 @@ export function initializeCreativeRowEditor() {
         }
       }
 
-      // Delete removed attachments immediately to prevent orphaned files
-      // This must happen before queueing to ensure cleanup even if navigation is immediate
+      // Capture deleted attachments to delete AFTER successful save
+      // This prevents orphaned deletions if the queue request fails
+      let deletedAttachmentIds = null;
       if (lexicalEditor && typeof lexicalEditor.getDeletedAttachments === 'function') {
-        const deletedIds = lexicalEditor.getDeletedAttachments();
-        if (deletedIds && deletedIds.length > 0) {
-          deletedIds.forEach(deleteAttachment);
-        }
+        deletedAttachmentIds = lexicalEditor.getDeletedAttachments();
       }
 
       // Queue the save request
@@ -1014,7 +1012,13 @@ export function initializeCreativeRowEditor() {
         path: `/creatives/${creativeId}`,
         method: 'PATCH',
         body: body,
-        dedupeKey: `creative_${creativeId}`
+        dedupeKey: `creative_${creativeId}`,
+        // Only delete attachments after successful save
+        onSuccess: () => {
+          if (deletedAttachmentIds && deletedAttachmentIds.length > 0) {
+            deletedAttachmentIds.forEach(deleteAttachment);
+          }
+        }
       });
 
       // Reset dirty state
