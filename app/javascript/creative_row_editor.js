@@ -974,15 +974,17 @@ export function initializeCreativeRowEditor() {
       const creativeId = form.dataset?.creativeId;
       if (!creativeId) return;
 
-      // CRITICAL: Wait for uploads to complete before capturing content
-      // Otherwise we'll save incomplete HTML without attachment references
-      await waitForUploads();
-
+      // CRITICAL: Capture ALL values BEFORE awaiting, because the editor may switch
+      // to a different creative while we're waiting for uploads
       const currentContent = descriptionInput.value;
       const currentProgress = Number(progressInput.value ?? 0);
       const currentParentId = parentInput.value || '';
       const currentBeforeId = beforeInput.value || '';
       const currentAfterId = afterInput.value || '';
+
+      // CRITICAL: Wait for uploads to complete before queueing
+      // But we already captured the values above, so switching editors won't affect us
+      await waitForUploads();
 
       // Build request body
       // Note: before_id and after_id must be top-level params, not nested under creative[]
