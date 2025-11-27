@@ -32,6 +32,16 @@ export function initializeCreativeRowEditor() {
 
     initializeEventListeners();
 
+    // Listen for attachment deletions from queue manager
+    window.addEventListener('api-queue-attachments-deleted', (event) => {
+      const attachmentIds = event.detail?.attachmentIds;
+      if (attachmentIds && attachmentIds.length > 0) {
+        attachmentIds.forEach(deleteAttachment);
+      }
+    });
+
+    // ... rest of initialization
+
     const form = document.getElementById('inline-edit-form-element');
     const descriptionInput = document.getElementById('inline-creative-description');
     const editorContainer = template.querySelector('[data-lexical-editor-root]');
@@ -1003,24 +1013,24 @@ export function initializeCreativeRowEditor() {
       }
 
       // Capture deleted attachments to delete AFTER successful save
-      // This prevents orphaned deletions if the queue request fails
+      // Store as data (not callback) so it can be serialized to localStorage
       let deletedAttachmentIds = null;
       if (lexicalEditor && typeof lexicalEditor.getDeletedAttachments === 'function') {
         deletedAttachmentIds = lexicalEditor.getDeletedAttachments();
+        // Only include if there are actual IDs to delete
+        if (deletedAttachmentIds && deletedAttachmentIds.length === 0) {
+          deletedAttachmentIds = null;
+        }
       }
 
       // Queue the save request
+      // Store deletedAttachmentIds as data, not as callback, so it can be serialized
       apiQueue.enqueue({
         path: `/creatives/${creativeId}`,
         method: 'PATCH',
         body: body,
         dedupeKey: `creative_${creativeId}`,
-        // Only delete attachments after successful save
-        onSuccess: () => {
-          if (deletedAttachmentIds && deletedAttachmentIds.length > 0) {
-            deletedAttachmentIds.forEach(deleteAttachment);
-          }
-        }
+        deletedAttachmentIds: deletedAttachmentIds  // Store as data for serialization
       });
 
       // Reset dirty state

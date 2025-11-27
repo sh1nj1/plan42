@@ -37,13 +37,13 @@ class ApiQueueManager {
 
     /**
      * Save queue to localStorage
-     * Note: Items with onSuccess callbacks are excluded because functions cannot be serialized
+     * Items with onSuccess callbacks are excluded because functions cannot be serialized
+     * Items with deletedAttachmentIds are included because they're serializable data
      */
     saveToLocalStorage() {
         try {
-            // Filter out items with callbacks since they can't be serialized
-            // These are typically session-specific actions (like attachment cleanup)
-            // that don't make sense to persist across page reloads anyway
+            // Filter out items with onSuccess callbacks (non-serializable)
+            // but keep items with deletedAttachmentIds (serializable data)
             const serializableQueue = this.queue.filter(item => !item.onSuccess)
             localStorage.setItem(STORAGE_KEY, JSON.stringify(serializableQueue))
         } catch (error) {
@@ -77,17 +77,31 @@ class ApiQueueManager {
      * @returns {string} Request ID
      */
     enqueue(request) {
-        // Find and merge callbacks from existing requests with the same dedupeKey
+        // Find and merge callbacks and attachment IDs from existing requests with the same dedupeKey
         let existingCallbacks = []
+        let existingAttachmentIds = []
         if (request.dedupeKey) {
             const existingItems = this.queue.filter(item => item.dedupeKey === request.dedupeKey)
             existingItems.forEach(item => {
                 if (typeof item.onSuccess === 'function') {
                     existingCallbacks.push(item.onSuccess)
                 }
+                if (item.deletedAttachmentIds && item.deletedAttachmentIds.length > 0) {
+                    existingAttachmentIds.push(...item.deletedAttachmentIds)
+                }
             })
             // Remove existing requests with the same dedupeKey
             this.queue = this.queue.filter(item => item.dedupeKey !== request.dedupeKey)
+        }
+
+        // Merge attachment IDs
+        let mergedAttachmentIds = null
+        if (request.deletedAttachmentIds && request.deletedAttachmentIds.length > 0) {
+            existingAttachmentIds.push(...request.deletedAttachmentIds)
+        }
+        if (existingAttachmentIds.length > 0) {
+            // Remove duplicates
+            mergedAttachmentIds = [...new Set(existingAttachmentIds)]
         }
 
         // Merge new callback with existing callbacks
@@ -120,6 +134,7 @@ class ApiQueueManager {
             params: request.params || null,
             body: request.body || null,
             dedupeKey: request.dedupeKey || null,
+            deletedAttachmentIds: mergedAttachmentIds,
             onSuccess: mergedCallback,
             timestamp: Date.now(),
             retries: 0
@@ -149,7 +164,16 @@ class ApiQueueManager {
 
             try {
                 await this.executeRequest(item)
-                // Success - call onSuccess callback if provided
+                // Success - handle cleanup actions
+
+                // Dispatch event for attachment cleanup if needed
+                if (item.deletedAttachmentIds && item.deletedAttachmentIds.length > 0) {
+                    window.dispatchEvent(new CustomEvent('api-queue-attachments-deleted', {
+                        detail: { attachmentIds: item.deletedAttachmentIds }
+                    }))
+                }
+
+                // Call onSuccess callback if provided (for non-serializable actions)
                 if (typeof item.onSuccess === 'function') {
                     try {
                         item.onSuccess()
@@ -157,6 +181,7 @@ class ApiQueueManager {
                         console.error('onSuccess callback failed:', callbackError)
                     }
                 }
+
                 // Remove from queue
                 this.queue.shift()
                 this.saveToLocalStorage()
