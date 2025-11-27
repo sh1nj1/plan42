@@ -997,6 +997,8 @@ export function initializeCreativeRowEditor() {
           if (currentParentId) {
             currentTree.dataset.parentId = currentParentId;
           }
+          // Trigger Lit component re-render to show updated values
+          row.requestUpdate?.();
         }
       }
 
