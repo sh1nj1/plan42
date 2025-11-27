@@ -40,6 +40,10 @@ export function initializeCreativeRowEditor() {
       }
     });
 
+    // Start the queue processing only after listeners are registered
+    // This prevents missing events if the queue processes immediately on load
+    apiQueue.start();
+
     // ... rest of initialization
 
     const form = document.getElementById('inline-edit-form-element');

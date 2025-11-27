@@ -24,14 +24,23 @@ class ApiQueueManager {
             const stored = localStorage.getItem(STORAGE_KEY)
             if (stored) {
                 this.queue = JSON.parse(stored)
-                // Process queue on page load if there are pending items
-                if (this.queue.length > 0) {
-                    this.processQueue()
-                }
+                // Note: We don't auto-start processing here anymore.
+                // The consumer (creative_row_editor.js) must call start() explicitly
+                // after registering event listeners to avoid missing events.
             }
         } catch (error) {
             console.error('Failed to load API queue from localStorage:', error)
             this.queue = []
+        }
+    }
+
+    /**
+     * Start processing the queue
+     * Should be called after event listeners are registered
+     */
+    start() {
+        if (this.queue.length > 0) {
+            this.processQueue()
         }
     }
 
