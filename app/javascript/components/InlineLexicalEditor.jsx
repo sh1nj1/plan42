@@ -273,7 +273,7 @@ function CodeHighlightingPlugin() {
   return null
 }
 
-function ToolbarColorPicker({ icon, title, color, onChange, onClear }) {
+function ToolbarColorPicker({ icon, title, color, onChange, onClear, onMouseDown }) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef(null)
   const popoverRef = useRef(null)
@@ -299,6 +299,7 @@ function ToolbarColorPicker({ icon, title, color, onChange, onClear }) {
       <button
         type="button"
         className="lexical-toolbar-btn lexical-toolbar-color__trigger"
+        onMouseDown={onMouseDown}
         onClick={() => setOpen((prev) => !prev)}
         ref={triggerRef}>
         <span className="lexical-toolbar-color__swatch" style={{ backgroundColor: color }} />
@@ -314,6 +315,7 @@ function ToolbarColorPicker({ icon, title, color, onChange, onClear }) {
           <button
             type="button"
             className="lexical-toolbar-btn lexical-toolbar-btn--small"
+            onMouseDown={onMouseDown}
             onClick={() => {
               onClear()
               setOpen(false)
@@ -440,6 +442,12 @@ function Toolbar({ onPromptForLink }) {
     [editor]
   )
 
+  const preventToolbarFocus = useCallback((event) => {
+    // Prevent toolbar buttons from stealing focus so text selections remain intact
+    // when applying commands such as inserting links.
+    event.preventDefault()
+  }, [])
+
   const toggleLink = useCallback(() => {
     const selection = $getSelection()
     if (!$isRangeSelection(selection)) return
@@ -513,6 +521,7 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className="lexical-toolbar-btn"
+        onMouseDown={preventToolbarFocus}
         onClick={() => editor.dispatchCommand(UNDO_COMMAND, undefined)}
         disabled={!canUndo}
         title="Undo (⌘/Ctrl+Z)"
@@ -522,6 +531,7 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className="lexical-toolbar-btn"
+        onMouseDown={preventToolbarFocus}
         onClick={() => editor.dispatchCommand(REDO_COMMAND, undefined)}
         disabled={!canRedo}
         title="Redo (⇧⌘/Ctrl+Z)"
@@ -532,6 +542,7 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className={`lexical-toolbar-btn ${formats.bold ? "active" : ""}`}
+        onMouseDown={preventToolbarFocus}
         onClick={() => toggleFormat("bold")}
         title="Bold (⌘/Ctrl+B)">
         B
@@ -539,6 +550,7 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className={`lexical-toolbar-btn ${formats.italic ? "active" : ""}`}
+        onMouseDown={preventToolbarFocus}
         onClick={() => toggleFormat("italic")}
         title="Italic (⌘/Ctrl+I)">
         I
@@ -546,6 +558,7 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className={`lexical-toolbar-btn ${formats.underline ? "active" : ""}`}
+        onMouseDown={preventToolbarFocus}
         onClick={() => toggleFormat("underline")}
         title="Underline (⌘/Ctrl+U)">
         U
@@ -553,6 +566,7 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className={`lexical-toolbar-btn ${formats.strike ? "active" : ""}`}
+        onMouseDown={preventToolbarFocus}
         onClick={() => toggleFormat("strikethrough")}
         title="Strikethrough">
         S
@@ -560,6 +574,7 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className={`lexical-toolbar-btn ${isCodeBlock ? "active" : ""}`}
+        onMouseDown={preventToolbarFocus}
         onClick={toggleCodeBlock}
         title="Code block">
         {'</>'}
@@ -568,6 +583,7 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className="lexical-toolbar-btn"
+        onMouseDown={preventToolbarFocus}
         onClick={() => toggleList("bullet")}
         title="Bulleted list">
         ••
@@ -575,6 +591,7 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className="lexical-toolbar-btn"
+        onMouseDown={preventToolbarFocus}
         onClick={() => toggleList("number")}
         title="Numbered list">
         1.
@@ -583,6 +600,7 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className="lexical-toolbar-btn"
+        onMouseDown={preventToolbarFocus}
         onClick={toggleLink}
         title="Insert link">
         🔗
@@ -592,6 +610,7 @@ function Toolbar({ onPromptForLink }) {
         icon="🎨"
         title="Text color"
         color={fontColor}
+        onMouseDown={preventToolbarFocus}
         onChange={(value) => {
           setFontColor(value)
           applyTextStyle({ color: value })
@@ -605,6 +624,7 @@ function Toolbar({ onPromptForLink }) {
         icon="🖌️"
         title="Background color"
         color={bgColor}
+        onMouseDown={preventToolbarFocus}
         onChange={(value) => {
           setBgColor(value)
           applyTextStyle({ "background-color": value })
@@ -637,6 +657,7 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className="lexical-toolbar-btn"
+        onMouseDown={preventToolbarFocus}
         onClick={openImagePicker}
         title="Insert image">
         🖼️
@@ -644,6 +665,7 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className="lexical-toolbar-btn"
+        onMouseDown={preventToolbarFocus}
         onClick={openFilePicker}
         title="Attach file">
         📎
