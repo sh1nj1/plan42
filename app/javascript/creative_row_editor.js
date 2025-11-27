@@ -965,8 +965,9 @@ export function initializeCreativeRowEditor() {
      * Queue save if content has been modified
      * This allows UI operations to proceed without waiting for API response
      * IMPORTANT: Waits for pending uploads to complete before queueing
+     * @param {Element} tree - The tree element whose row should be updated (defaults to currentTree)
      */
-    async function queueSaveIfDirty() {
+    async function queueSaveIfDirty(tree = currentTree) {
       // Check both isDirty (text changes) and pendingSave (progress/structure changes)
       if (!isDirty && !pendingSave) return;
 
@@ -1002,15 +1003,16 @@ export function initializeCreativeRowEditor() {
       }
 
       // Update row dataset immediately to keep cached data fresh
-      // This prevents stale data when returning to this creative later
-      if (currentTree) {
-        const row = treeRowElement(currentTree);
+      // IMPORTANT: Use the passed tree parameter, not currentTree, because currentTree
+      // may have already been updated to point to a different creative
+      if (tree) {
+        const row = treeRowElement(tree);
         if (row) {
           row.dataset.descriptionHtml = currentContent;
           row.dataset.descriptionRawHtml = currentContent;
           row.dataset.progressValue = String(currentProgress);
           if (currentParentId) {
-            currentTree.dataset.parentId = currentParentId;
+            tree.dataset.parentId = currentParentId;
           }
           // Trigger Lit component re-render to show updated values
           row.requestUpdate?.();
@@ -1058,8 +1060,9 @@ export function initializeCreativeRowEditor() {
       const prevParent = parentInput.value;
 
       // Queue save if dirty (non-blocking)
+      // CRITICAL: Pass 'prev' tree explicitly because currentTree will be updated immediately after
       if (!wasNew) {
-        queueSaveIfDirty();
+        queueSaveIfDirty(prev);
       }
 
       // Update UI immediately
@@ -1083,7 +1086,6 @@ export function initializeCreativeRowEditor() {
         }
         loadCreative(target);
       }
-
       updateActionButtonStates();
     }
 
@@ -1102,8 +1104,9 @@ export function initializeCreativeRowEditor() {
       const prevParent = parentInput.value;
 
       // Queue save if dirty (non-blocking)
+      // CRITICAL: Pass 'prev' tree explicitly
       if (!wasNew) {
-        queueSaveIfDirty();
+        queueSaveIfDirty(prev);
       }
 
       const handleAddNew = () => {
@@ -1150,8 +1153,9 @@ export function initializeCreativeRowEditor() {
       const prevParent = parentInput.value;
 
       // Queue save if dirty (non-blocking)
+      // CRITICAL: Pass 'prev' tree explicitly
       if (!wasNew) {
-        queueSaveIfDirty();
+        queueSaveIfDirty(prev);
       }
 
       const handleAddChild = () => {
