@@ -848,11 +848,29 @@ export function initializeCreativeRowEditor() {
         pendingSave = false;
         if (!form.action) return Promise.resolve();
         saving = true;
+
+        // Capture values being saved to update dirty state on success
+        const savedContent = descriptionInput.value;
+        const savedProgress = progressInput.value;
+        const savedOriginId = originIdInput.value;
+
         savePromise = creativesApi.save(form.action, method, form).then(function (r) {
           if (!r.ok) return r;
           return r.text().then(function (text) {
             try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
           }).then(function (data) {
+            // Update dirty state to reflect successful save
+            originalContent = savedContent;
+            originalProgress = savedProgress;
+            originalOriginId = savedOriginId;
+
+            // If current values match what was just saved, clear dirty flag
+            if (descriptionInput.value === savedContent &&
+              progressInput.value === savedProgress &&
+              originIdInput.value === savedOriginId) {
+              isDirty = false;
+            }
+
             if (method === 'POST' && data.id) {
               form.action = `/creatives/${data.id}`;
               methodInput.value = 'patch';
