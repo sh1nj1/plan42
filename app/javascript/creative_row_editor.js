@@ -983,6 +983,20 @@ export function initializeCreativeRowEditor() {
         body['creative[after_id]'] = currentAfterId;
       }
 
+      // Update row dataset immediately to keep cached data fresh
+      // This prevents stale data when returning to this creative later
+      if (currentTree) {
+        const row = treeRowElement(currentTree);
+        if (row) {
+          row.dataset.descriptionHtml = currentContent;
+          row.dataset.descriptionRawHtml = currentContent;
+          row.dataset.progressValue = String(currentProgress);
+          if (currentParentId) {
+            currentTree.dataset.parentId = currentParentId;
+          }
+        }
+      }
+
       // Queue the save request
       apiQueue.enqueue({
         path: `/creatives/${creativeId}`,
