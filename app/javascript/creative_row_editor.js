@@ -1697,11 +1697,11 @@ export function initializeCreativeRowEditor() {
     }
 
     upBtn.addEventListener('click', function () {
-      if (pendingSave) saveForm();
+      // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
       move(-1);
     });
     downBtn.addEventListener('click', function () {
-      if (pendingSave) saveForm();
+      // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
       move(1);
     });
 
