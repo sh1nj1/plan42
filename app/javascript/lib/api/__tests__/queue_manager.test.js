@@ -23,6 +23,8 @@ describe('ApiQueueManager', () => {
         apiQueue.processing = false;
         // Mock processQueue to prevent auto-execution during enqueue tests
         jest.spyOn(apiQueue, 'processQueue').mockImplementation(async () => { });
+        // Suppress console.error for expected errors
+        jest.spyOn(console, 'error').mockImplementation(() => { });
     });
 
     afterEach(() => {
