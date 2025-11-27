@@ -1,6 +1,9 @@
-import {createEditor} from "lexical"
-import {ActionTextAttachmentNode, $createActionTextAttachmentNode} from "../action_text_attachment_node"
-import {sanitizeAttachmentPayload} from "../attachment_payload"
+/**
+ * @jest-environment jsdom
+ */
+import { createEditor } from "lexical"
+import { ActionTextAttachmentNode, $createActionTextAttachmentNode } from "../action_text_attachment_node"
+import { sanitizeAttachmentPayload } from "../attachment_payload"
 
 describe("ActionTextAttachmentNode", () => {
   const parser = new DOMParser()
