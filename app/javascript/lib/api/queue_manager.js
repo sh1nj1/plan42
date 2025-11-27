@@ -11,6 +11,7 @@ const MAX_RETRIES = 3
 class ApiQueueManager {
     constructor() {
         this.queue = []
+        this.failedItems = []
         this.processing = false
         this.storageKey = 'api_queue_guest' // Default fallback
         this.setupNetworkListeners()
@@ -24,6 +25,7 @@ class ApiQueueManager {
         this.userId = userId
         this.storageKey = userId ? `api_queue_${userId}` : 'api_queue_guest'
         this.loadFromLocalStorage()
+        this.loadFailedFromLocalStorage()
     }
 
     /**
@@ -43,6 +45,23 @@ class ApiQueueManager {
         } catch (error) {
             console.error('Failed to load API queue from localStorage:', error)
             this.queue = []
+        }
+    }
+
+    /**
+     * Load failed requests from localStorage so we don't lose them after reload
+     */
+    loadFailedFromLocalStorage() {
+        try {
+            const stored = localStorage.getItem(`${this.storageKey}_failed`)
+            if (stored) {
+                this.failedItems = JSON.parse(stored)
+            } else {
+                this.failedItems = []
+            }
+        } catch (error) {
+            console.error('Failed to load failed API queue from localStorage:', error)
+            this.failedItems = []
         }
     }
 
@@ -73,6 +92,17 @@ class ApiQueueManager {
             localStorage.setItem(this.storageKey, JSON.stringify(serializableQueue))
         } catch (error) {
             console.error('Failed to save API queue to localStorage:', error)
+        }
+    }
+
+    /**
+     * Persist failed items separately so they can be surfaced to the user later
+     */
+    saveFailedToLocalStorage() {
+        try {
+            localStorage.setItem(`${this.storageKey}_failed`, JSON.stringify(this.failedItems))
+        } catch (error) {
+            console.error('Failed to save failed API queue to localStorage:', error)
         }
     }
 
@@ -233,11 +263,14 @@ class ApiQueueManager {
                     this.queue.push(item)
                     this.saveToLocalStorage()
                 } else {
-                    // Max retries exceeded - remove from queue
-                    console.error('Max retries exceeded, discarding request:', item)
+                    // Max retries exceeded - move to failedItems for visibility
+                    console.error('Max retries exceeded, moving request to failed items:', item)
+                    const failedItem = { ...item, failedAt: Date.now(), lastError: error?.message }
+                    this.failedItems.push(failedItem)
+                    this.saveFailedToLocalStorage()
                     this.queue.shift()
                     this.saveToLocalStorage()
-                    this.handleFailedRequest(item, error)
+                    this.handleFailedRequest(failedItem, error)
                 }
 
                 // If network error, stop processing and wait for online event
@@ -338,7 +371,9 @@ class ApiQueueManager {
      */
     clear() {
         this.queue = []
+        this.failedItems = []
         this.saveToLocalStorage()
+        this.saveFailedToLocalStorage()
     }
 
     /**
@@ -371,6 +406,7 @@ class ApiQueueManager {
         return {
             queueLength: this.queue.length,
             processing: this.processing,
+            failedLength: this.failedItems.length,
             items: this.queue.map(item => ({
                 id: item.id,
                 path: item.path,

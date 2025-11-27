@@ -144,5 +144,10 @@ describe('ApiQueueManager', () => {
         expect(eventSpy).toHaveBeenCalledWith(expect.objectContaining({
             type: 'api-queue-request-failed'
         }));
+
+        const failedItems = JSON.parse(localStorage.getItem('api_queue_test_user_failed'));
+        expect(failedItems).toHaveLength(1);
+        expect(failedItems[0].path).toBe('/fail');
+        expect(failedItems[0].failedAt).toBeDefined();
     });
 });
