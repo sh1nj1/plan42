@@ -289,9 +289,20 @@ creative-tree-row.show-edit .creative-row {
     margin-right: 4px;
     margin-top: 4px;
     /* Align with text */
-    visibility: visible;
-    /* Always visible to show expansion affordance */
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
     /* Total width is 20px (16 + 4) */
+}
+
+creative-tree-row:not([expanded]) .creative-toggle-btn {
+    visibility: visible;
+    opacity: 1;
+}
+
+creative-tree-row[expanded] .creative-row:hover .creative-toggle-btn {
+    visibility: visible;
+    opacity: 1;
 }
 
 .add-creative-btn {
@@ -318,6 +329,7 @@ creative-tree-row.show-edit .creative-row {
 @media (max-width: 768px) {
     .creative-toggle-btn {
         visibility: visible !important;
+        opacity: 1 !important;
     }
 
     .edit-inline-btn {
