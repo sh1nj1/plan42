@@ -969,6 +969,8 @@ export function initializeCreativeRowEditor() {
       const currentAfterId = afterInput.value || '';
 
       // Build request body
+      // Note: before_id and after_id must be top-level params, not nested under creative[]
+      // because CreativesController reads params[:before_id] and params[:after_id] for positioning
       const body = {
         'creative[description]': currentContent,
         'creative[progress]': currentProgress
@@ -978,10 +980,10 @@ export function initializeCreativeRowEditor() {
         body['creative[parent_id]'] = currentParentId;
       }
       if (currentBeforeId) {
-        body['creative[before_id]'] = currentBeforeId;
+        body['before_id'] = currentBeforeId;  // Top-level, not creative[before_id]
       }
       if (currentAfterId) {
-        body['creative[after_id]'] = currentAfterId;
+        body['after_id'] = currentAfterId;  // Top-level, not creative[after_id]
       }
 
       // Update row dataset immediately to keep cached data fresh
