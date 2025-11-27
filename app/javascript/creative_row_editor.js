@@ -1549,7 +1549,7 @@ export function initializeCreativeRowEditor() {
 
       if ((isArrowUp || isCtrlP) && atStart) {
         event.preventDefault();
-        if (pendingSave) saveForm();
+        // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
         move(-1);
         requestAnimationFrame(() => lexicalEditor.focus());
         return;
@@ -1557,7 +1557,7 @@ export function initializeCreativeRowEditor() {
 
       if ((isArrowDown || isCtrlN) && atEnd) {
         event.preventDefault();
-        if (pendingSave) saveForm();
+        // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
         move(1);
         requestAnimationFrame(() => lexicalEditor.focus());
       }
