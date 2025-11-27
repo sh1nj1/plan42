@@ -40,6 +40,24 @@ export function initializeCreativeRowEditor() {
       }
     });
 
+    // Listen for failed requests to prevent silent data loss
+    window.addEventListener('api-queue-request-failed', (event) => {
+      const { item, error } = event.detail;
+      console.error('Queue request failed permanently:', item, error);
+
+      // Alert the user
+      // In a real app, use a toast notification. For now, alert is safe.
+      alert(`Failed to save changes. Please check your connection and try again.\nError: ${error}`);
+
+      // If the failed item matches the current creative, mark it as dirty so it can be retried
+      if (form.dataset.creativeId && item.path.includes(form.dataset.creativeId)) {
+        console.log('Restoring dirty state for current creative');
+        isDirty = true;
+        pendingSave = true;
+        updateActionButtonStates();
+      }
+    });
+
     // Start the queue processing only after listeners are registered
     // This prevents missing events if the queue processes immediately on load
     apiQueue.start();
