@@ -51,9 +51,13 @@ class ApiQueueManager {
      */
     saveToLocalStorage() {
         try {
-            // Filter out items with onSuccess callbacks (non-serializable)
-            // but keep items with deletedAttachmentIds (serializable data)
-            const serializableQueue = this.queue.filter(item => !item.onSuccess)
+            // Filter out onSuccess callbacks (non-serializable)
+            // but keep the items themselves
+            const serializableQueue = this.queue.map(item => {
+                // eslint-disable-next-line no-unused-vars
+                const { onSuccess, ...serializableItem } = item
+                return serializableItem
+            })
             localStorage.setItem(STORAGE_KEY, JSON.stringify(serializableQueue))
         } catch (error) {
             console.error('Failed to save API queue to localStorage:', error)
@@ -264,8 +268,18 @@ class ApiQueueManager {
 
         // Add body for POST/PATCH/PUT requests
         if (item.body && ['POST', 'PATCH', 'PUT'].includes(item.method)) {
-            // If body is FormData-like object, convert to FormData
-            if (item.body && typeof item.body === 'object') {
+            // If body is FormData, use it (or clone it if needed, but direct use is usually fine)
+            // We can iterate entries to be safe and consistent with previous fix intent
+            if (item.body instanceof FormData) {
+                const formData = new FormData()
+                // FormData.entries() iterator
+                for (const [key, value] of item.body.entries()) {
+                    formData.append(key, value)
+                }
+                options.body = formData
+            }
+            // If body is a plain object, convert to FormData
+            else if (item.body && typeof item.body === 'object') {
                 const formData = new FormData()
                 Object.keys(item.body).forEach(key => {
                     const value = item.body[key]
