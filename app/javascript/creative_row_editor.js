@@ -992,6 +992,13 @@ export function initializeCreativeRowEditor() {
       const currentBeforeId = beforeInput.value || '';
       const currentAfterId = afterInput.value || '';
 
+      // Prevent saving empty content, matching saveForm behavior
+      // This avoids overwriting existing descriptions with empty strings during quick navigation
+      if (isHtmlEmpty(currentContent)) {
+        pendingSave = false;
+        return;
+      }
+
       // CRITICAL: Wait for uploads to complete before queueing
       // But we already captured the values above, so switching editors won't affect us
       await waitForUploads();
