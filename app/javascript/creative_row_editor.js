@@ -930,17 +930,22 @@ export function initializeCreativeRowEditor() {
       const id = tree.dataset?.id;
       if (!id) return;
 
-      // Always try to use cached data from the row first for instant loading
+      // Try to use cached data from the row first for instant loading
+      // BUT only if we have actual content (description or progress)
+      // Otherwise we risk loading blank data and overwriting existing records
       const inlineData = inlinePayloadFromTree(tree);
-      if (inlineData && inlineData.id) {
+      const hasDescription = inlineData?.description || inlineData?.description_raw_html;
+      const hasProgress = inlineData && typeof inlineData.progress === 'number';
+
+      if (inlineData && inlineData.id && (hasDescription || hasProgress)) {
         console.log('✅ Using cached data for creative', id, '- NO API CALL');
         applyCreativeData(inlineData, tree);
         return;
       }
 
-      // Fallback: if no cached data, fetch from API
-      // This should rarely happen as rows are pre-rendered with data
-      console.warn('⚠️ No cached data for creative', id, '- making API call');
+      // Fallback: if no cached data or incomplete data, fetch from API
+      // This happens for lazily loaded children or rows without inline_editor_payload
+      console.warn('⚠️ Incomplete or missing cached data for creative', id, '- making API call');
       creativesApi.get(id)
         .then(data => {
           updateRowFromData(treeRowElement(tree), data);

@@ -81,7 +81,12 @@ class ApiQueueManager {
         let existingCallbacks = []
         let existingAttachmentIds = []
         if (request.dedupeKey) {
-            const existingItems = this.queue.filter(item => item.dedupeKey === request.dedupeKey)
+            // CRITICAL: Skip the first item if processing is active
+            // The first item might be currently executing in processQueue
+            // Removing it would cause shift() to remove the wrong item
+            const startIndex = this.processing ? 1 : 0
+            const existingItems = this.queue.slice(startIndex).filter(item => item.dedupeKey === request.dedupeKey)
+
             existingItems.forEach(item => {
                 if (typeof item.onSuccess === 'function') {
                     existingCallbacks.push(item.onSuccess)
@@ -90,8 +95,15 @@ class ApiQueueManager {
                     existingAttachmentIds.push(...item.deletedAttachmentIds)
                 }
             })
+
             // Remove existing requests with the same dedupeKey
-            this.queue = this.queue.filter(item => item.dedupeKey !== request.dedupeKey)
+            // CRITICAL: Keep the first item if processing is active
+            if (this.processing) {
+                const firstItem = this.queue[0]
+                this.queue = [firstItem, ...this.queue.slice(1).filter(item => item.dedupeKey !== request.dedupeKey)]
+            } else {
+                this.queue = this.queue.filter(item => item.dedupeKey !== request.dedupeKey)
+            }
         }
 
         // Merge attachment IDs
