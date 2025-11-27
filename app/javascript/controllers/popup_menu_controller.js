@@ -31,18 +31,26 @@ export default class extends Controller {
     menu.style.display = 'block'
     menu.style.transform = ''
 
+    const transforms = []
+    const viewportPadding = 4
+
     this.buttonTarget?.setAttribute('aria-expanded', 'true')
 
     requestAnimationFrame(() => {
       const rect = menu.getBoundingClientRect()
-      let shift = 0
       if (rect.right > window.innerWidth) {
-        shift = rect.right - window.innerWidth + 4
-        menu.style.transform = `translateX(-${shift}px)`
+        transforms.push(`translateX(-${rect.right - window.innerWidth + viewportPadding}px)`)
       } else if (rect.left < 0) {
-        shift = -rect.left + 4
-        menu.style.transform = `translateX(${shift}px)`
+        transforms.push(`translateX(${Math.abs(rect.left) + viewportPadding}px)`)
       }
+
+      if (rect.bottom > window.innerHeight) {
+        transforms.push(`translateY(-${rect.bottom - window.innerHeight + viewportPadding}px)`)
+      } else if (rect.top < 0) {
+        transforms.push(`translateY(${Math.abs(rect.top) + viewportPadding}px)`)
+      }
+
+      menu.style.transform = transforms.join(' ')
     })
 
     this.addOutsideClickListener()
