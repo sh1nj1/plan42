@@ -1,4 +1,5 @@
 Rails.application.routes.draw do
+  use_doorkeeper
   resource :session
   match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
   match "/auth/github/callback", to: "github_auth#callback", via: [ :get, :post ]
