@@ -1485,7 +1485,15 @@ export function initializeCreativeRowEditor() {
       linkCreativeFromLi(li);
     }
 
+    function resetOriginTracking() {
+      if (originIdInput) originIdInput.value = '';
+      originalOriginId = '';
+      if (linkBtn) linkBtn.style.display = '';
+      if (unlinkBtn) unlinkBtn.style.display = 'none';
+    }
+
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
+      resetOriginTracking();
       const performStart = () => {
         let targetContainer = container || document.getElementById('creatives');
         if (targetContainer && targetContainer.matches && targetContainer.matches('creative-tree-row')) {
@@ -1563,14 +1571,11 @@ export function initializeCreativeRowEditor() {
           beforeInput.value = beforeId || '';
           afterInput.value = afterId || '';
           if (childInput) childInput.value = childId || '';
-          if (originIdInput) originIdInput.value = '';
+          resetOriginTracking();
           descriptionInput.value = '';
           lexicalEditor.reset(`new-${Date.now()}`);
           progressInput.value = 0;
           progressValue.textContent = formatProgressDisplay(0);
-          originalOriginId = '';
-          if (linkBtn) linkBtn.style.display = '';
-          if (unlinkBtn) unlinkBtn.style.display = 'none';
           if (unconvertBtn) unconvertBtn.style.display = 'none';
           pendingSave = false;
           lexicalEditor.focus();
