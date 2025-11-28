@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client"
+import { $getRoot } from "lexical"
 import InlineLexicalEditor from "./components/InlineLexicalEditor"
 
 const DEFAULT_KEY = "creative-inline-editor"
@@ -16,6 +17,7 @@ export function createInlineEditor(container, {
   const root = createRoot(container)
   let suppressNextChange = false
   let focusHandler = () => { }
+  let editorInstance = null
   let editorReady = false
   let pendingFocus = false
   let currentKey = DEFAULT_KEY
@@ -54,6 +56,7 @@ export function createInlineEditor(container, {
         }}
         onReady={(api) => {
           focusHandler = api?.focus ?? (() => { })
+          editorInstance = api?.getEditor?.()
           editorReady = true
           if (container.dataset) {
             container.dataset.editorReady = "true"
@@ -85,6 +88,28 @@ export function createInlineEditor(container, {
     focus() {
       pendingFocus = true
       if (editorReady) {
+        requestAnimationFrame(() => {
+          focusHandler()
+          pendingFocus = false
+        })
+      }
+    },
+    focusAtStart() {
+      pendingFocus = true
+      if (editorReady && editorInstance) {
+        editorInstance.update(() => {
+          const root = $getRoot()
+          const firstChild = root.getFirstChild()
+          if (firstChild) {
+            if (firstChild.selectStart) {
+              firstChild.selectStart()
+            } else {
+              root.selectStart()
+            }
+          } else {
+            root.selectStart()
+          }
+        })
         requestAnimationFrame(() => {
           focusHandler()
           pendingFocus = false

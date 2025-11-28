@@ -1,4 +1,5 @@
 import creativesApi from './lib/api/creatives'
+import apiQueue from './lib/api/queue_manager'
 import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
 import { createInlineEditor } from './lexical_inline_editor'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from './creatives/tree_renderer'
@@ -31,6 +32,41 @@ export function initializeCreativeRowEditor() {
 
     initializeEventListeners();
 
+    // Listen for attachment deletions from queue manager
+    window.addEventListener('api-queue-attachments-deleted', (event) => {
+      const attachmentIds = event.detail?.attachmentIds;
+      if (attachmentIds && attachmentIds.length > 0) {
+        attachmentIds.forEach(deleteAttachment);
+      }
+    });
+
+    // Listen for failed requests to prevent silent data loss
+    window.addEventListener('api-queue-request-failed', (event) => {
+      const { item, error } = event.detail;
+      console.error('Queue request failed permanently:', item, error);
+
+      // Alert the user
+      // In a real app, use a toast notification. For now, alert is safe.
+      // Suppress 404 errors for PATCH requests, as this likely means the item was deleted
+      // and we don't need to alert the user about it.
+      const is404 = error && error.toString().includes('404');
+      const isPatch = item && item.method === 'PATCH';
+
+      if (!(is404 && isPatch)) {
+        alert(`Failed to save changes. Please check your connection and try again.\nError: ${error}`);
+      }
+
+      // If the failed item matches the current creative, mark it as dirty so it can be retried
+      if (form.dataset.creativeId && item.path.includes(form.dataset.creativeId)) {
+        console.log('Restoring dirty state for current creative');
+        isDirty = true;
+        pendingSave = true;
+        updateActionButtonStates();
+      }
+    });
+
+    // ... rest of initialization
+
     const form = document.getElementById('inline-edit-form-element');
     const descriptionInput = document.getElementById('inline-creative-description');
     const editorContainer = template.querySelector('[data-lexical-editor-root]');
@@ -60,16 +96,33 @@ export function initializeCreativeRowEditor() {
     const beforeInput = document.getElementById('inline-before-id');
     const afterInput = document.getElementById('inline-after-id');
     const childInput = document.getElementById('inline-child-id');
+    const originIdInput = document.getElementById('inline-origin-id');
 
     let lexicalEditor = null;
+    if (editorContainer) {
+      try {
+        lexicalEditor = createInlineEditor(editorContainer, {
+          onChange: onLexicalChange,
+          onKeyDown: handleEditorKeyDown,
+          onUploadStateChange: handleUploadStateChange
+        });
+      } catch (e) {
+        console.error('CreativeRowEditor: Failed to create inline editor', e);
+      }
+    }
 
-    if (!editorContainer) return;
-
-    lexicalEditor = createInlineEditor(editorContainer, {
-      onChange: onLexicalChange,
-      onKeyDown: handleEditorKeyDown,
-      onUploadStateChange: handleUploadStateChange
-    });
+    // Initialize queue with current user ID to prevent cross-account data leakage
+    try {
+      const currentUserId = document.body.dataset.currentUserId;
+      if (apiQueue) {
+        apiQueue.initialize(currentUserId);
+        apiQueue.start();
+      } else {
+        console.error('CreativeRowEditor: apiQueue is undefined');
+      }
+    } catch (e) {
+      console.error('CreativeRowEditor: Error initializing apiQueue:', e);
+    }
 
     let currentTree = null;
     let currentRowElement = null;
@@ -81,6 +134,10 @@ export function initializeCreativeRowEditor() {
     let uploadCompletionPromise = null;
     let resolveUploadCompletion = null;
     let addNewInProgress = false;
+    let originalContent = '';
+    let originalProgress = 0;
+    let originalOriginId = '';
+    let isDirty = false;
 
     function formatProgressDisplay(value) {
       const numeric = Number(value);
@@ -142,15 +199,22 @@ export function initializeCreativeRowEditor() {
       if (!tree) return null;
       const row = treeRowElement(tree);
       if (!row) return null;
+
+      // Relax validation - allow loading with partial data for instant UI
       const hasDescription = hasDatasetValue(row, 'descriptionRawHtml') || hasDatasetValue(row, 'descriptionHtml');
       const hasProgress = hasDatasetValue(row, 'progressValue');
-      if (!hasDescription || !hasProgress) return null;
+
+      // Only require ID to be present
+      const id = tree.dataset?.id;
+      if (!id) return null;
+
       const rawHtml = hasDatasetValue(row, 'descriptionRawHtml') ? row.dataset.descriptionRawHtml : row.dataset.descriptionHtml || '';
       const description = row.dataset.descriptionHtml || rawHtml || '';
-      const progressValue = Number(row.dataset.progressValue ?? 0);
+      const progressValue = hasProgress ? Number(row.dataset.progressValue ?? 0) : 0;
       const parentId = tree.dataset?.parentId || '';
+
       return {
-        id: tree.dataset?.id,
+        id: id,
         description,
         description_raw_html: rawHtml,
         origin_id: row.dataset?.originId || '',
@@ -178,6 +242,9 @@ export function initializeCreativeRowEditor() {
       descriptionInput.value = content;
       lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
       pendingSave = false;
+      // Track original content for dirty state detection
+      originalContent = content;
+      isDirty = false;
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
       progressInput.value = normalizedProgress;
@@ -188,10 +255,15 @@ export function initializeCreativeRowEditor() {
       afterInput.value = '';
       if (childInput) childInput.value = '';
       const originId = data.origin_id || '';
+      if (originIdInput) {
+        originIdInput.value = originId;
+      }
+      originalOriginId = originId;
       if (linkBtn) linkBtn.style.display = originId ? 'none' : '';
       if (unlinkBtn) unlinkBtn.style.display = originId ? '' : 'none';
       const effectiveParent = parentInput.value;
       if (unconvertBtn) unconvertBtn.style.display = effectiveParent ? '' : 'none';
+      originalProgress = normalizedProgress;
       lexicalEditor.focus();
       updateActionButtonStates();
     }
@@ -803,11 +875,29 @@ export function initializeCreativeRowEditor() {
         pendingSave = false;
         if (!form.action) return Promise.resolve();
         saving = true;
+
+        // Capture values being saved to update dirty state on success
+        const savedContent = descriptionInput.value;
+        const savedProgress = progressInput.value;
+        const savedOriginId = originIdInput ? originIdInput.value : '';
+
         savePromise = creativesApi.save(form.action, method, form).then(function (r) {
           if (!r.ok) return r;
           return r.text().then(function (text) {
             try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
           }).then(function (data) {
+            // Update dirty state to reflect successful save
+            originalContent = savedContent;
+            originalProgress = savedProgress;
+            originalOriginId = savedOriginId;
+
+            // If current values match what was just saved, clear dirty flag
+            if (descriptionInput.value === savedContent &&
+              progressInput.value === savedProgress &&
+              originIdInput.value === savedOriginId) {
+              isDirty = false;
+            }
+
             if (method === 'POST' && data.id) {
               form.action = `/creatives/${data.id}`;
               methodInput.value = 'patch';
@@ -906,11 +996,28 @@ export function initializeCreativeRowEditor() {
       if (!tree) return;
       const id = tree.dataset?.id;
       if (!id) return;
+
+      // Try to use cached data from the row first for instant loading
+      // BUT only if we have actual content in the dataset
+      // We must check the DOM element directly because inlinePayloadFromTree defaults missing values
+      const row = treeRowElement(tree);
+      const hasDescription = hasDatasetValue(row, 'descriptionRawHtml') || hasDatasetValue(row, 'descriptionHtml');
+      const hasProgress = hasDatasetValue(row, 'progressValue');
+
       const inlineData = inlinePayloadFromTree(tree);
-      if (inlineData && inlineData.id) {
+
+      // CRITICAL: Require BOTH description AND progress to be present in the dataset
+      // If either is missing, inlinePayloadFromTree defaults it (e.g. progress=0),
+      // which would overwrite the real value on the server if we saved it.
+      if (inlineData && inlineData.id && hasDescription && hasProgress) {
+        console.log('✅ Using cached data for creative', id, '- NO API CALL');
         applyCreativeData(inlineData, tree);
         return;
       }
+
+      // Fallback: if no cached data or incomplete data, fetch from API
+      // This happens for lazily loaded children or rows without inline_editor_payload
+      console.warn('⚠️ Incomplete or missing cached data for creative', id, '- making API call');
       creativesApi.get(id)
         .then(data => {
           updateRowFromData(treeRowElement(tree), data);
@@ -931,29 +1038,169 @@ export function initializeCreativeRowEditor() {
       });
     }
 
-    function move(delta) {
+    /**
+     * Queue save if content has been modified
+     * This allows UI operations to proceed without waiting for API response
+     * IMPORTANT: Waits for pending uploads to complete before queueing
+     * @param {Element} tree - The tree element whose row should be updated (defaults to currentTree)
+     */
+    async function queueSaveIfDirty(tree = currentTree) {
+      // Check both isDirty (text changes) and pendingSave (progress/structure changes)
+      if (!isDirty && !pendingSave) return;
+
+      const creativeId = form.dataset?.creativeId;
+      if (!creativeId) return;
+
+      // CRITICAL: Capture ALL values BEFORE awaiting, because the editor may switch
+      // to a different creative while we're waiting for uploads
+      let currentContent = descriptionInput.value;
+      let currentProgress = progressInput.value;
+      const currentParentId = tree.dataset.parentId || '';
+      const currentBeforeId = tree.previousElementSibling ? creativeIdFrom(tree.previousElementSibling) : '';
+      const currentAfterId = tree.nextElementSibling ? creativeIdFrom(tree.nextElementSibling) : '';
+      const startCreativeId = creativeId;
+
+      // Prevent saving empty content, matching saveForm behavior
+      // This avoids overwriting existing descriptions with empty strings during quick navigation
+      if (isHtmlEmpty(currentContent)) {
+        pendingSave = false;
+        return;
+      }
+
+      // CRITICAL: Wait for uploads to complete before queueing
+      // But we already captured the values above, so switching editors won't affect us
+      await waitForUploads();
+
+      // If we are still on the same creative (e.g. move awaited us), refresh the content
+      // This ensures we capture the final HTML with signed IDs instead of blob URLs
+      if (form.dataset.creativeId === startCreativeId) {
+        currentContent = descriptionInput.value;
+        currentProgress = progressInput.value;
+      }
+
+      // Build request body
+      // Note: before_id and after_id must be top-level params, not nested under creative[]
+      // because CreativesController reads params[:before_id] and params[:after_id] for positioning
+      const body = {
+        'creative[description]': currentContent,
+        'creative[progress]': currentProgress
+      };
+
+      // Always include parent_id, even if empty (for moving to root)
+      body['creative[parent_id]'] = currentParentId;
+
+      if (currentBeforeId) {
+        body['before_id'] = currentBeforeId;  // Top-level, not creative[before_id]
+      }
+      if (currentAfterId) {
+        body['after_id'] = currentAfterId;  // Top-level, not creative[after_id]
+      }
+
+      // Update row dataset immediately to keep cached data fresh
+      // IMPORTANT: Use the passed tree parameter, not currentTree, because currentTree
+      // may have already been updated to point to a different creative
+      if (tree) {
+        const row = treeRowElement(tree);
+        if (row) {
+          row.dataset.descriptionHtml = currentContent;
+          row.dataset.descriptionRawHtml = currentContent;
+          row.dataset.progressValue = String(currentProgress);
+          if (currentParentId) {
+            tree.dataset.parentId = currentParentId;
+          }
+          // Trigger Lit component re-render to show updated values
+          row.requestUpdate?.();
+        }
+      }
+
+      // Capture deleted attachments to delete AFTER successful save
+      // Store as data (not callback) so it can be serialized to localStorage
+      let deletedAttachmentIds = null;
+      if (lexicalEditor && typeof lexicalEditor.getDeletedAttachments === 'function') {
+        deletedAttachmentIds = lexicalEditor.getDeletedAttachments();
+        // Only include if there are actual IDs to delete
+        if (deletedAttachmentIds && deletedAttachmentIds.length === 0) {
+          deletedAttachmentIds = null;
+        }
+      }
+
+      // Queue the save request
+      // Store deletedAttachmentIds as data, not as callback, so it can be serialized
+      apiQueue.enqueue({
+        path: `/creatives/${creativeId}`,
+        method: 'PATCH',
+        body: body,
+        dedupeKey: `creative_${creativeId}`,
+        deletedAttachmentIds: deletedAttachmentIds  // Store as data for serialization
+      });
+      // console.warn('apiQueue.enqueue disabled for debugging');
+
+      // Reset dirty state
+      originalContent = currentContent;
+      isDirty = false;
+      pendingSave = false;
+      clearTimeout(saveTimer);
+    }
+
+    async function move(delta) {
       if (!currentTree) return;
       const trees = Array.from(document.querySelectorAll('.creative-tree'));
       const index = trees.indexOf(currentTree);
       if (index === -1) return;
       const target = trees[index + delta];
       if (!target) return;
+
       const prev = currentTree;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
+
+      // Queue save if dirty (non-blocking unless uploading)
+      // CRITICAL: Pass 'prev' tree explicitly because currentTree will be updated immediately after
+      if (!wasNew) {
+        if (uploadsPending) {
+          // If uploading, we MUST wait for the upload to finish and the save to capture the new URL
+          // otherwise we risk saving the blob URL and losing the attachment
+          await queueSaveIfDirty(prev);
+        } else {
+          queueSaveIfDirty(prev);
+        }
+      }
+
+      // Update UI immediately
       currentTree = target;
       currentRowElement = treeRowElement(target);
       syncInlineEditorPadding(currentRowElement);
       hideRow(target);
       attachTemplate(target);
       template.style.display = 'block';
-      beforeNewOrMove(wasNew, prev, prevParent).then(() => {
+
+      // Handle new creative cleanup or show previous row
+      const focusAfterMove = () => {
+        if (delta < 0 && lexicalEditor.focusAtStart) {
+          lexicalEditor.focusAtStart();
+        } else {
+          lexicalEditor.focus();
+        }
+      };
+
+      if (wasNew) {
+        // For new creatives, still need to save or cleanup
+        beforeNewOrMove(wasNew, prev, prevParent).then(() => {
+          loadCreative(target);
+          focusAfterMove();
+        });
+      } else {
+        // For existing creatives, show the row and refresh if needed
+        if (prev.querySelector('.creative-row')) {
+          showRow(prev);
+        }
         loadCreative(target);
-      });
+        focusAfterMove();
+      }
       updateActionButtonStates();
     }
 
-    function addNew() {
+    async function addNew() {
       if (!currentTree) return;
 
       // Prevent multiple simultaneous calls to addNew (e.g., from Lexical onChange + keyboard event)
@@ -967,7 +1214,17 @@ export function initializeCreativeRowEditor() {
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
 
-      beforeNewOrMove(wasNew, prev, prevParent).then(() => {
+      // Queue save if dirty (non-blocking unless uploading)
+      // CRITICAL: Pass 'prev' tree explicitly
+      if (!wasNew) {
+        if (uploadsPending) {
+          await queueSaveIfDirty(prev);
+        } else {
+          queueSaveIfDirty(prev);
+        }
+      }
+
+      const handleAddNew = () => {
         const prevCreativeId = prev.dataset.id;
 
         const childContainer = document.getElementById('creative-children-' + prevCreativeId);
@@ -987,17 +1244,40 @@ export function initializeCreativeRowEditor() {
           insertBefore = nodeAfterTreeBlock(prev);
         }
         startNew(parentId, container, insertBefore, beforeId, afterId);
-      }).finally(() => {
+      };
+
+      if (wasNew) {
+        // For new creatives, still need to save or cleanup
+        beforeNewOrMove(wasNew, prev, prevParent).then(handleAddNew).finally(() => {
+          addNewInProgress = false;
+        });
+      } else {
+        // For existing creatives, show the row if it exists and proceed
+        if (prev.querySelector('.creative-row')) {
+          showRow(prev);
+        }
+        handleAddNew();
         addNewInProgress = false;
-      });
+      }
     }
 
-    function addChild() {
+    async function addChild() {
       if (!currentTree) return;
       const prev = currentTree;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
-      beforeNewOrMove(wasNew, prev, prevParent).then(() => {
+
+      // Queue save if dirty (non-blocking unless uploading)
+      // CRITICAL: Pass 'prev' tree explicitly
+      if (!wasNew) {
+        if (uploadsPending) {
+          await queueSaveIfDirty(prev);
+        } else {
+          queueSaveIfDirty(prev);
+        }
+      }
+
+      const handleAddChild = () => {
         const parentId = prev.dataset.id;
         let container = document.getElementById('creative-children-' + parentId);
         if (!container) {
@@ -1009,7 +1289,18 @@ export function initializeCreativeRowEditor() {
         const insertBefore = container.firstElementChild;
         const beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
         startNew(parentId, container, insertBefore, beforeId);
-      });
+      };
+
+      if (wasNew) {
+        // For new creatives, still need to save or cleanup
+        beforeNewOrMove(wasNew, prev, prevParent).then(handleAddChild);
+      } else {
+        // For existing creatives, show the row if it exists and proceed
+        if (prev.querySelector('.creative-row')) {
+          showRow(prev);
+        }
+        handleAddChild();
+      }
     }
 
     function levelDown() {
@@ -1098,6 +1389,14 @@ export function initializeCreativeRowEditor() {
       const index = trees.indexOf(tree);
       const nextId = trees[index + 1] ? trees[index + 1].dataset.id : null;
       const parentId = tree.dataset.parentId;
+
+      // CRITICAL: Remove any pending saves for this creative from the queue
+      // This prevents a race condition where a queued save fires after deletion,
+      // resulting in a 404 error and an alert to the user.
+      if (apiQueue) {
+        apiQueue.removeByDedupeKey(`creative_${id}`);
+      }
+
       creativesApi.destroy(id, withChildren).then(() => {
         const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
         const childrenTree = document.getElementById("creative-children-" + id)
@@ -1186,7 +1485,15 @@ export function initializeCreativeRowEditor() {
       linkCreativeFromLi(li);
     }
 
+    function resetOriginTracking() {
+      if (originIdInput) originIdInput.value = '';
+      originalOriginId = '';
+      if (linkBtn) linkBtn.style.display = '';
+      if (unlinkBtn) unlinkBtn.style.display = 'none';
+    }
+
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
+      resetOriginTracking();
       const performStart = () => {
         let targetContainer = container || document.getElementById('creatives');
         if (targetContainer && targetContainer.matches && targetContainer.matches('creative-tree-row')) {
@@ -1264,12 +1571,11 @@ export function initializeCreativeRowEditor() {
           beforeInput.value = beforeId || '';
           afterInput.value = afterId || '';
           if (childInput) childInput.value = childId || '';
+          resetOriginTracking();
           descriptionInput.value = '';
           lexicalEditor.reset(`new-${Date.now()}`);
           progressInput.value = 0;
           progressValue.textContent = formatProgressDisplay(0);
-          if (linkBtn) linkBtn.style.display = '';
-          if (unlinkBtn) unlinkBtn.style.display = 'none';
           if (unconvertBtn) unconvertBtn.style.display = 'none';
           pendingSave = false;
           lexicalEditor.focus();
@@ -1302,6 +1608,8 @@ export function initializeCreativeRowEditor() {
 
     function onLexicalChange(html) {
       descriptionInput.value = html;
+      // Mark as dirty if content changed from original
+      isDirty = (html !== originalContent);
       scheduleSave();
     }
 
@@ -1352,7 +1660,7 @@ export function initializeCreativeRowEditor() {
 
       if ((isArrowUp || isCtrlP) && atStart) {
         event.preventDefault();
-        if (pendingSave) saveForm();
+        // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
         move(-1);
         requestAnimationFrame(() => lexicalEditor.focus());
         return;
@@ -1360,7 +1668,7 @@ export function initializeCreativeRowEditor() {
 
       if ((isArrowDown || isCtrlN) && atEnd) {
         event.preventDefault();
-        if (pendingSave) saveForm();
+        // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
         move(1);
         requestAnimationFrame(() => lexicalEditor.focus());
       }
@@ -1450,11 +1758,11 @@ export function initializeCreativeRowEditor() {
     }
 
     upBtn.addEventListener('click', function () {
-      if (pendingSave) saveForm();
+      // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
       move(-1);
     });
     downBtn.addEventListener('click', function () {
-      if (pendingSave) saveForm();
+      // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
       move(1);
     });
 
@@ -1481,6 +1789,33 @@ export function initializeCreativeRowEditor() {
         if (confirm(deleteWithChildrenBtn.dataset.confirm)) deleteCurrent(true);
       });
     }
+
+    // Expose for testing
+    window.creativeRowEditor = {
+      setUploadsPending: (pending) => {
+        uploadsPending = pending;
+        if (pending) {
+          uploadCompletionPromise = new Promise((resolve) => {
+            resolveUploadCompletion = resolve;
+          });
+        } else if (resolveUploadCompletion) {
+          resolveUploadCompletion();
+          uploadCompletionPromise = null;
+          resolveUploadCompletion = null;
+        }
+        handleUploadStateChange(pending);
+      },
+      resolveUploadCompletion: () => {
+        if (resolveUploadCompletion) {
+          resolveUploadCompletion();
+          uploadsPending = false;
+          uploadCompletionPromise = null;
+          resolveUploadCompletion = null;
+          handleUploadStateChange(false);
+        }
+      },
+      isUploadPending: () => uploadsPending
+    };
 
     if (linkBtn) {
       linkBtn.addEventListener('click', linkExistingCreative);
