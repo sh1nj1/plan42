@@ -32,9 +32,9 @@ class McpServerTest < ActionDispatch::IntegrationTest
   end
 
   test "mcp messages endpoint accepts valid token" do
-    post "/mcp/messages", 
-      params: { jsonrpc: "2.0", method: "ping", id: 1 }.to_json, 
-      headers: { 
+    post "/mcp/messages",
+      params: { jsonrpc: "2.0", method: "ping", id: 1 }.to_json,
+      headers: {
         "Authorization" => "Bearer #{@token.token}",
         "Content-Type" => "application/json"
       }

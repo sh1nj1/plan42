@@ -22,7 +22,7 @@ class ApplicationTool < ActionTool::Base
     return schema unless schema.is_a?(Hash)
 
     schema.each_with_object({}) do |(key, value), result|
-      if key == :not && value.is_a?(Hash) && value[:type] == 'null'
+      if key == :not && value.is_a?(Hash) && value[:type] == "null"
         # Skip "not: { type: 'null' }" as it causes issues with some LLMs
         next
       elsif value.is_a?(Hash)
