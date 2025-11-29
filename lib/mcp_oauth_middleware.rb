@@ -9,7 +9,7 @@ class McpOauthMiddleware
     if request.path.start_with?("/mcp")
       if valid_oauth_token?(request)
         status, headers, body = @app.call(env)
-        
+
         if request.path == "/mcp/sse"
           puts "McpOauthMiddleware: Modifying headers for #{request.path}"
           puts "Original headers: #{headers.inspect}"
@@ -20,10 +20,10 @@ class McpOauthMiddleware
         else
           puts "McpOauthMiddleware: Skipping header modification for #{request.path}"
         end
-        
-        [status, headers, body]
+
+        [ status, headers, body ]
       else
-        [401, { "Content-Type" => "application/json", "WWW-Authenticate" => 'Bearer realm="Doorkeeper"' }, [ { error: "Unauthorized" }.to_json ]]
+        [ 401, { "Content-Type" => "application/json", "WWW-Authenticate" => 'Bearer realm="Doorkeeper"' }, [ { error: "Unauthorized" }.to_json ] ]
       end
     else
       @app.call(env)

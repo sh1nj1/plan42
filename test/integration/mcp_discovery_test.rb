@@ -6,8 +6,8 @@ class McpDiscoveryTest < ActionDispatch::IntegrationTest
     assert_response :success
     json = JSON.parse(response.body)
     assert_equal "http://www.example.com/mcp", json["resource"]
-    assert_equal ["http://www.example.com"], json["authorization_servers"]
-    assert_equal ["public"], json["scopes_supported"]
+    assert_equal [ "http://www.example.com" ], json["authorization_servers"]
+    assert_equal [ "public" ], json["scopes_supported"]
   end
 
   test "oauth authorization server metadata is available" do
