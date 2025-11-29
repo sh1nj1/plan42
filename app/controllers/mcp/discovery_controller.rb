@@ -19,7 +19,7 @@ module Mcp
         token_endpoint: oauth_token_url,
         scopes_supported: [ "public" ],
         response_types_supported: [ "code" ],
-        grant_types_supported: [ "authorization_code", "refresh_token" ]
+        grant_types_supported: [ "authorization_code", "refresh_token", "client_credentials" ]
       }
     end
 
