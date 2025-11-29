@@ -82,3 +82,5 @@ group :test do
 end
 
 gem "doorkeeper", "~> 5.8"
+
+gem "rails_mcp_engine", "~> 0.1.0", :path => "../rails_mcp_engine"

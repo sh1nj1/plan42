@@ -58,4 +58,7 @@ Rails.application.configure do
 
   # Override Sessions#create rate limit for tests (Option B)
   config.x.sessions_create_rate_limit = { to: 1000, within: 1.second }
+
+  # Allow all hosts in test
+  config.hosts.clear
 end
