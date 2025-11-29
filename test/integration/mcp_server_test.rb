@@ -23,7 +23,7 @@ class McpServerTest < ActionDispatch::IntegrationTest
     get "/mcp/sse", headers: { "Authorization" => "Bearer #{@token.token}" }
     assert_response :success
     assert_equal "text/event-stream", response.content_type
-    assert_equal "max-age=0, private, must-revalidate", response.headers["Cache-Control"]
+    assert_equal "no-cache", response.headers["Cache-Control"]
   end
 
   test "mcp messages endpoint requires authentication" do
