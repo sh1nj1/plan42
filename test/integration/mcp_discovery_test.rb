@@ -17,5 +17,6 @@ class McpDiscoveryTest < ActionDispatch::IntegrationTest
     assert_equal "http://www.example.com", json["issuer"]
     assert_equal "http://www.example.com/oauth/authorize", json["authorization_endpoint"]
     assert_equal "http://www.example.com/oauth/token", json["token_endpoint"]
+    assert_equal [ "authorization_code", "refresh_token", "client_credentials" ], json["grant_types_supported"]
   end
 end
