@@ -60,4 +60,4 @@ FastMcp.mount_in_rails(
 end
 
 # Insert the OAuth middleware to protect /mcp endpoints
-Rails.application.config.middleware.insert_before FastMcp::Transports::RackTransport, McpOauthMiddleware
+Rails.application.config.middleware.insert_before Rack::ETag, McpOauthMiddleware

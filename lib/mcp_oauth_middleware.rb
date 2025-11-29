@@ -13,9 +13,12 @@ class McpOauthMiddleware
         if request.path == "/mcp/sse"
           puts "McpOauthMiddleware: Modifying headers for #{request.path}"
           puts "Original headers: #{headers.inspect}"
+          headers.delete("Cache-Control")
+          headers.delete("cache-control")
           headers["Cache-Control"] = "no-cache"
           headers["X-Accel-Buffering"] = "no"
           headers.delete("ETag")
+          headers.delete("etag")
           puts "Modified headers: #{headers.inspect}"
         else
           puts "McpOauthMiddleware: Skipping header modification for #{request.path}"
