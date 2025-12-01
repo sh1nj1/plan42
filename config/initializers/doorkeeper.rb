@@ -19,11 +19,7 @@ Doorkeeper.configure do
   #
   admin_authenticator do
     # Put your admin authentication logic here.
-    if Current.user&.system_admin?
-      head :forbidden unless Current.user.system_admin?
-    else
-      redirect_to new_session_url(return_to: request.fullpath)
-    end
+    Current.user || redirect_to(new_session_url(return_to: request.fullpath))
   end
 
   # You can use your own model classes if you need to extend (or even override) default
@@ -235,12 +231,14 @@ Doorkeeper.configure do
   # to provide the necessary support
   #
   # enable_application_owner confirmation: false
+  enable_application_owner confirmation: true
+
 
   # Define access token scopes for your provider
   # For more information go to
   # https://doorkeeper.gitbook.io/guides/ruby-on-rails/scopes
   #
-  default_scopes  :public
+  default_scopes :public
   # optional_scopes :write, :update
 
   # Allows to restrict only certain scopes for grant_type.

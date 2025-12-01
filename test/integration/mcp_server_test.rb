@@ -5,7 +5,8 @@ class McpServerTest < ActionDispatch::IntegrationTest
     @application = Doorkeeper::Application.create!(
       name: "Test Client",
       redirect_uri: "urn:ietf:wg:oauth:2.0:oob",
-      scopes: "public"
+      scopes: "public",
+      owner: users(:one)
     )
     @token = Doorkeeper::AccessToken.create!(
       application: @application,

@@ -12,6 +12,7 @@ en:
       back_to_sign_in: "Back to Sign In"
       success_sign_up: "Account created successfully! Please check your email to verify."
     add_ai_user: "Add AI User"
+    details_ai_notice: "This is an AI Agent. You can configure its settings and tools."
     new_ai:
       title: "Add AI User"
       id_label: "ID"
@@ -24,8 +25,20 @@ en:
       searchable_label: "Allow this AI to be searchable and mentionable"
       searchable_help: "When enabled, others can find and mention this AI by name."
       submit: "Add AI Agent"
+      tools_note: "You can check and test available tools after creating the agent."
     create_ai:
       success: "AI User created successfully."
+    edit_ai:
+      title: "Edit AI Agent"
+      link: "Edit"
+      not_an_ai: "This user is not an AI agent."
+      tools_title: "Available Tools"
+      tools_description: "These tools are available for the agent to use."
+      no_tools_found: "No tools found."
+      chat_title: "Chat with Agent"
+      chat_placeholder: "Type a message to test the agent..."
+    update_ai:
+      success: "AI Agent updated successfully."
     sessions:
       new:
         forgot_password: "Forgot password?"

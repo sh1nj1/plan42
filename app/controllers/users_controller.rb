@@ -46,6 +46,18 @@ class UsersController < ApplicationController
   end
 
   def new_ai
+    # Load available tools
+    @available_tools = if defined?(FastMcp)
+      ApplicationTool.descendants.map do |tool_class|
+        {
+          name: tool_class.tool_name,
+          description: tool_class.description,
+          parameters: tool_class.input_schema_to_json
+        }
+      end
+    else
+      []
+    end
   end
 
   def create_ai
@@ -62,6 +74,7 @@ class UsersController < ApplicationController
       llm_vendor: "google", # Default to google for now
       llm_model: params[:llm_model],
       llm_api_key: params[:llm_api_key],
+      tools: params[:tools] || [],
       searchable: searchable,
       email_verified_at: Time.current, # Auto-verified
       created_by_id: Current.user.id
@@ -73,6 +86,68 @@ class UsersController < ApplicationController
     else
       flash.now[:alert] = @user.errors.full_messages.to_sentence
       render :new_ai, status: :unprocessable_entity
+    end
+  end
+
+  def edit_ai
+    @user = User.find(params[:id])
+    unless @user.ai_user?
+      redirect_to user_path(@user), alert: t("users.edit_ai.not_an_ai")
+      return
+    end
+
+    # Load available tools
+    # We use FastMcp's registered tools if available, or fallback to ApplicationTool descendants
+    @available_tools = if defined?(FastMcp)
+      # Accessing the tools from the server instance might be tricky without a direct reference
+      # But we can use ApplicationTool.descendants as a good approximation
+      ApplicationTool.descendants.map do |tool_class|
+        {
+          name: tool_class.tool_name,
+          description: tool_class.description,
+          parameters: tool_class.input_schema_to_json
+        }
+      end
+    else
+      []
+    end
+  end
+
+  def update_ai
+    @user = User.find(params[:id])
+    unless @user.ai_user?
+      redirect_to user_path(@user), alert: t("users.edit_ai.not_an_ai")
+      return
+    end
+
+    allowed = Current.user.system_admin? ||
+              (@user.ai_user? && @user.created_by_id == Current.user.id)
+
+    unless allowed
+      fallback = user_path(Current.user, tab: "contacts")
+      redirect_back fallback_location: fallback, alert: t("users.destroy.not_authorized")
+      return
+    end
+
+    ai_params = params.require(:user).permit(:name, :system_prompt, :llm_model, :llm_api_key, :searchable, tools: [])
+
+    if @user.update(ai_params)
+      redirect_to edit_ai_user_path(@user), notice: t("users.update_ai.success")
+    else
+      # Re-load available tools for the view
+      @available_tools = if defined?(FastMcp)
+        ApplicationTool.descendants.map do |tool_class|
+          {
+            name: tool_class.tool_name,
+            description: tool_class.description,
+            parameters: tool_class.input_schema_to_json
+          }
+        end
+      else
+        []
+      end
+      flash.now[:alert] = @user.errors.full_messages.to_sentence
+      render :edit_ai, status: :unprocessable_entity
     end
   end
 

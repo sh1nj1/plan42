@@ -12,19 +12,33 @@ ko:
       back_to_sign_in: "로그인 화면으로 돌아가기"
       success_sign_up: "회원가입이 완료되었습니다. 이메일을 확인해 인증해주세요."
     add_ai_user: "AI 에이전트 추가"
+    details_ai_notice: "이 사용자는 AI 에이전트입니다. 설정 및 도구를 구성할 수 있습니다."
     new_ai:
       title: "AI 에이전트 추가"
       id_label: "아이디"
       name_label: "이름"
       system_prompt_label: "시스템 프롬프트"
+      vendor_label: "LLM 벤더"
       model_label: "모델"
       api_key_label: "API Key"
       api_key_help: "입력하면 시스템 기본값 대신 이 키가 사용됩니다. 암호화되어 저장됩니다."
       searchable_label: "이 AI를 검색 및 멘션 가능하게 허용"
       searchable_help: "활성화하면 다른 사용자가 이름으로 이 AI를 찾고 멘션할 수 있습니다."
       submit: "AI 에이전트 추가"
+      tools_note: "에이전트 생성 후 사용 가능한 도구를 확인하고 테스트할 수 있습니다."
     create_ai:
       success: "AI 에이전트가 생성되었습니다."
+    edit_ai:
+      title: "AI 에이전트 수정"
+      link: "수정"
+      not_an_ai: "이 사용자는 AI 에이전트가 아닙니다."
+      tools_title: "사용 가능한 도구"
+      tools_description: "에이전트가 사용할 수 있는 도구 목록입니다."
+      no_tools_found: "사용 가능한 도구가 없습니다."
+      chat_title: "에이전트와 대화하기"
+      chat_placeholder: "에이전트를 테스트하려면 메시지를 입력하세요..."
+    update_ai:
+      success: "AI 에이전트가 수정되었습니다."
     sessions:
       new:
         forgot_password: "비밀번호를 잊으셨나요?"

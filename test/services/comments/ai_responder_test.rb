@@ -52,7 +52,7 @@ module Comments
 
       fake_client = Class.new do
         def initialize(**_args); end
-        def chat(_messages)
+        def chat(_messages, tools: [])
           yield "pong" if block_given?
         end
       end

@@ -1,5 +1,10 @@
 Rails.application.routes.draw do
-  use_doorkeeper
+  mount RailsMcpEngine::Engine => "/rails_mcp_engine"
+
+  use_doorkeeper do
+    controllers applications: "oauth/applications"
+  end
+
   resource :session
   match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
   match "/auth/github/callback", to: "github_auth#callback", via: [ :get, :post ]
@@ -27,6 +32,8 @@ Rails.application.routes.draw do
       patch :update_password
       patch :grant_system_admin
       patch :revoke_system_admin
+      get :edit_ai
+      patch :update_ai
     end
     collection do
       get :exists

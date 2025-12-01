@@ -2,13 +2,6 @@
 
 class ApplicationTool < ActionTool::Base
   # write your custom logic to be shared across all tools here
-  def self.tool_name
-    if defined?(super)
-      super
-    else
-      name.underscore
-    end
-  end
 
   def self.as_json(options = {})
     {

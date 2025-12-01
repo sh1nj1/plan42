@@ -43,6 +43,7 @@
               <% if show_actions %>
                 <td class="text-right">
                   <% if contact_user.ai_user? && contact_user.created_by_id == Current.user.id %>
+                    <%= link_to t('users.edit_ai.link'), edit_ai_user_path(contact_user), class: "btn btn-sm btn-secondary mr-1" %>
                     <%= button_to t('users.destroy.delete_ai_user'),
                                   user_path(contact_user),
                                   method: :delete,

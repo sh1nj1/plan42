@@ -11,7 +11,8 @@ class OauthProviderTest < ApplicationSystemTestCase
     @application = Doorkeeper::Application.create!(
       name: "Test Client",
       redirect_uri: "urn:ietf:wg:oauth:2.0:oob",
-      scopes: "public"
+      scopes: "public",
+      owner: @user
     )
   end
 
