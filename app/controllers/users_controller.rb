@@ -120,6 +120,15 @@ class UsersController < ApplicationController
       return
     end
 
+    allowed = Current.user.system_admin? ||
+              (@user.ai_user? && @user.created_by_id == Current.user.id)
+
+    unless allowed
+      fallback = user_path(Current.user, tab: "contacts")
+      redirect_back fallback_location: fallback, alert: t("users.destroy.not_authorized")
+      return
+    end
+
     ai_params = params.require(:user).permit(:name, :system_prompt, :llm_model, :llm_api_key, :searchable, tools: [])
 
     if @user.update(ai_params)

@@ -36,4 +36,21 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_equal "gemini-1.5-pro", @ai_user.llm_model
     assert @ai_user.searchable
   end
+
+  test "should not update ai user if not authorized" do
+    other_user = users(:two)
+    sign_in_as other_user, password: "password"
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        name: "Hacked Bot Name"
+      }
+    }
+
+    assert_redirected_to user_path(other_user, tab: "contacts")
+    assert_equal "You can only delete AI Users you created or be a system administrator.", flash[:alert]
+
+    @ai_user.reload
+    assert_not_equal "Hacked Bot Name", @ai_user.name
+  end
 end
