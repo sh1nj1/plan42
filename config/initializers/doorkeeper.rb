@@ -231,6 +231,8 @@ Doorkeeper.configure do
   # to provide the necessary support
   #
   # enable_application_owner confirmation: false
+  enable_application_owner confirmation: true
+
 
   # Define access token scopes for your provider
   # For more information go to
