@@ -1,4 +1,6 @@
 Rails.application.routes.draw do
+  mount RailsMcpEngine::Engine => "/rails_mcp_engine"
+
   use_doorkeeper
   resource :session
   match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
