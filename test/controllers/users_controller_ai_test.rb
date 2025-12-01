@@ -53,4 +53,15 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     @ai_user.reload
     assert_not_equal "Hacked Bot Name", @ai_user.name
   end
+
+  test "should handle validation errors in update_ai" do
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        name: "" # Invalid name to trigger validation error
+      }
+    }
+    assert_response :unprocessable_entity
+    assert_equal "Name can't be blank", flash[:alert]
+    assert_select "form[action=?]", update_ai_user_path(@ai_user)
+  end
 end

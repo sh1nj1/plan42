@@ -134,6 +134,18 @@ class UsersController < ApplicationController
     if @user.update(ai_params)
       redirect_to edit_ai_user_path(@user), notice: t("users.update_ai.success")
     else
+      # Re-load available tools for the view
+      @available_tools = if defined?(FastMcp)
+        ApplicationTool.descendants.map do |tool_class|
+          {
+            name: tool_class.tool_name,
+            description: tool_class.description,
+            parameters: tool_class.input_schema_to_json
+          }
+        end
+      else
+        []
+      end
       flash.now[:alert] = @user.errors.full_messages.to_sentence
       render :edit_ai, status: :unprocessable_entity
     end
