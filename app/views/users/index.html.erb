@@ -26,7 +26,13 @@
                 size: 20,
                 classes: "avatar comment-presence-avatar#{' inactive' if user.sessions.empty?}" ) %>
         </td>
-        <td><%= user.display_name %></td>
+        <td>
+          <% if user.ai_user? %>
+            <%= link_to user.display_name, edit_ai_user_path(user) %>
+          <% else %>
+            <%= user.display_name %>
+          <% end %>
+        </td>
         <td><%= user.email %></td>
         <td>
           <% if last_login_at %>

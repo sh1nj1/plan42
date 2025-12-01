@@ -14,7 +14,7 @@ class AiClient
     @llm_api_key = llm_api_key
   end
 
-  def chat(contents, &block)
+  def chat(contents, tools: [], &block)
     # For now, we assume the API key is in the environment variable GEMINI_API_KEY
     # In a real generic implementation, we might need to fetch keys based on vendor.
     # Since the user request mentioned "ruby_llm", we try to use it.
@@ -46,7 +46,7 @@ class AiClient
       Rails.logger.warn "Unsupported LLM vendor '#{@vendor}'. Attempting to use default (google)."
     end
 
-    conversation = build_conversation
+    conversation = build_conversation(tools)
     add_messages(conversation, contents)
 
     response = conversation.complete do |chunk|
@@ -67,7 +67,7 @@ class AiClient
 
   attr_reader :vendor, :model, :system_prompt, :llm_api_key
 
-  def build_conversation
+  def build_conversation(tools = [])
     # Using RubyLLM.context to ensure we can potentially switch keys if we had them.
     # We explicitly set the key from ENV for now, as RubyLLM might not pick it up from global config in context?
     # Or maybe the global config was not loaded in the runner context properly?
@@ -77,6 +77,13 @@ class AiClient
     RubyLLM.context { |config| config.gemini_api_key = api_key }
            .chat(model: model).tap do |chat|
       chat.with_instructions(system_prompt)
+      if tools.any?
+        # Resolve tool names to classes using the gem's helper
+        tool_classes = Tools::MetaToolService.ruby_llm_tools(tools)
+        tool_classes.each do |tool_class|
+          chat.with_tool(tool_class)
+        end
+      end
     end
   end
 

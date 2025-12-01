@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_12_01_065949) do
+ActiveRecord::Schema[8.1].define(version: 2025_12_01_073823) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -524,6 +524,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_01_065949) do
     t.text "system_prompt"
     t.string "theme"
     t.string "timezone"
+    t.json "tools"
     t.datetime "updated_at", null: false
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["searchable"], name: "index_users_on_searchable"

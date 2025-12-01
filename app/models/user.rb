@@ -2,6 +2,7 @@ class User < ApplicationRecord
   DEFAULT_DISPLAY_LEVEL = 6
 
   has_secure_password
+  has_many :sessions, dependent: :destroy
   has_many :oauth_applications, class_name: "Doorkeeper::Application", as: :owner
   has_many :calendar_events, dependent: :destroy
   has_many :creatives, dependent: :destroy
@@ -46,6 +47,7 @@ class User < ApplicationRecord
   attribute :llm_vendor, :string
   attribute :llm_model, :string
   attribute :llm_api_key, :string
+  attribute :tools, :json, default: -> { [] }
 
   encrypts :llm_api_key, deterministic: false
 

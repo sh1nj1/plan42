@@ -1,11 +1,6 @@
-<h1 class="text-center" style="margin-top: 0;"><%= t('users.new_ai.title') %></h1>
+<h1 class="text-center" style="margin-top: 0;"><%= t('users.edit_ai.title') %></h1>
 
-<%= form_with url: create_ai_users_path, class: "stacked-form" do |form| %>
-  <div class="form-group">
-    <%= form.label :ai_id, t('users.new_ai.id_label') %>
-    <%= form.text_field :ai_id, required: true, class: "stacked-form-control", placeholder: "e.g. my_bot" %>
-  </div>
-
+<%= form_with model: @user, url: update_ai_user_path(@user), method: :patch, class: "stacked-form" do |form| %>
   <div class="form-group">
     <%= form.label :name, t('users.new_ai.name_label') %>
     <%= form.text_field :name, required: true, class: "stacked-form-control", placeholder: "e.g. My Bot" %>
@@ -13,7 +8,7 @@
 
   <div class="form-group">
     <%= form.label :system_prompt, t('users.new_ai.system_prompt_label') %>
-    <%= form.text_area :system_prompt, required: true, class: "stacked-form-control", rows: 5, value: AiClient::SYSTEM_INSTRUCTIONS %>
+    <%= form.text_area :system_prompt, required: true, class: "stacked-form-control", rows: 5 %>
   </div>
 
   <div class="form-group">
@@ -23,7 +18,7 @@
 
   <div class="form-group">
     <%= form.label :llm_api_key, t('users.new_ai.api_key_label') %>
-    <%= form.password_field :llm_api_key, class: "stacked-form-control", placeholder: "sk-..." %>
+    <%= form.password_field :llm_api_key, class: "stacked-form-control", placeholder: "sk-...", value: @user.llm_api_key %>
     <small class="form-text text-muted"><%= t('users.new_ai.api_key_help') %></small>
   </div>
 
@@ -35,7 +30,7 @@
       <div class="tools-selection">
         <% @available_tools.each do |tool| %>
           <div class="form-check mb-2">
-            <%= check_box_tag "tools[]", tool[:name], false, id: "tool_#{tool[:name]}", class: "form-check-input" %>
+            <%= check_box_tag "user[tools][]", tool[:name], (@user.tools || []).include?(tool[:name]), id: "tool_#{tool[:name]}", class: "form-check-input" %>
             <label class="form-check-label" for="tool_<%= tool[:name] %>">
               <strong><%= tool[:name] %></strong>
               <br>
@@ -61,8 +56,5 @@
     <small class="form-text text-muted"><%= t('users.new_ai.searchable_help') %></small>
   </div>
 
-  <%= form.button t('users.new_ai.submit'), type: "submit", class: "primary-action-button" %>
+  <%= form.button t('common.save'), type: "submit", class: "primary-action-button" %>
 <% end %>
-
-<br/>
-<%= link_to t('common.cancel'), user_path(Current.user, tab: 'contacts'), class: "text-center block" %>

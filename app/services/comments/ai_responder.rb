@@ -48,7 +48,7 @@ module Comments
         llm_api_key: ai_user.llm_api_key
       )
 
-      client.chat(messages) do |delta|
+      client.chat(messages, tools: ai_user.tools || []) do |delta|
         next if delta.blank?
 
         accumulator += delta
