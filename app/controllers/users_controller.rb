@@ -46,18 +46,7 @@ class UsersController < ApplicationController
   end
 
   def new_ai
-    # Load available tools
-    @available_tools = if defined?(FastMcp)
-      ApplicationTool.descendants.map do |tool_class|
-        {
-          name: tool_class.tool_name,
-          description: tool_class.description,
-          parameters: tool_class.input_schema_to_json
-        }
-      end
-    else
-      []
-    end
+    @available_tools = load_available_tools
   end
 
   def create_ai
@@ -85,6 +74,7 @@ class UsersController < ApplicationController
       redirect_to user_path(Current.user, tab: "contacts"), notice: t("users.create_ai.success")
     else
       flash.now[:alert] = @user.errors.full_messages.to_sentence
+      @available_tools = load_available_tools
       render :new_ai, status: :unprocessable_entity
     end
   end
@@ -96,21 +86,7 @@ class UsersController < ApplicationController
       return
     end
 
-    # Load available tools
-    # We use FastMcp's registered tools if available, or fallback to ApplicationTool descendants
-    @available_tools = if defined?(FastMcp)
-      # Accessing the tools from the server instance might be tricky without a direct reference
-      # But we can use ApplicationTool.descendants as a good approximation
-      ApplicationTool.descendants.map do |tool_class|
-        {
-          name: tool_class.tool_name,
-          description: tool_class.description,
-          parameters: tool_class.input_schema_to_json
-        }
-      end
-    else
-      []
-    end
+    @available_tools = load_available_tools
   end
 
   def update_ai
@@ -135,17 +111,7 @@ class UsersController < ApplicationController
       redirect_to edit_ai_user_path(@user), notice: t("users.update_ai.success")
     else
       # Re-load available tools for the view
-      @available_tools = if defined?(FastMcp)
-        ApplicationTool.descendants.map do |tool_class|
-          {
-            name: tool_class.tool_name,
-            description: tool_class.description,
-            parameters: tool_class.input_schema_to_json
-          }
-        end
-      else
-        []
-      end
+      @available_tools = load_available_tools
       flash.now[:alert] = @user.errors.full_messages.to_sentence
       render :edit_ai, status: :unprocessable_entity
     end
@@ -274,6 +240,25 @@ class UsersController < ApplicationController
   end
 
   private
+
+  def load_available_tools
+    return [] unless defined?(RailsMcpEngine)
+
+    RailsMcpEngine::Engine.build_tools!
+    tools = Tools::MetaToolService.new.call(action: "list", tool_name: nil, query: nil, arguments: nil)
+
+    Array(tools[:tools]).map do |tool|
+      {
+        name: tool[:name],
+        description: tool[:description],
+        parameters: tool[:params]
+      }
+    end
+  rescue StandardError => e
+    Rails.logger.error("Failed to load MCP tools: #{e.message}")
+    []
+  end
+
   def prepare_contacts
     per_page = 10
     @contact_page = [ params[:contact_page].to_i, 1 ].max
