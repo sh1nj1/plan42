@@ -34,7 +34,6 @@ Rails.application.routes.draw do
       patch :revoke_system_admin
       get :edit_ai
       patch :update_ai
-      post :chat_ai
     end
     collection do
       get :exists
