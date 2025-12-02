@@ -11,6 +11,7 @@ unless User.exists?(email: default_email)
     email: default_email,
     password: ENV.fetch('DEFAULT_USER_PASSWORD', 'password123'),
     password_confirmation: ENV.fetch('DEFAULT_USER_PASSWORD', 'password123'),
+    email_verified_at: Time.zone.now,
     system_admin: true
   )
   puts "Created default user with email: #{default_email}"
