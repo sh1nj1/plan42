@@ -194,4 +194,31 @@ class CreativeTest < ActiveSupport::TestCase
   ensure
     Current.reset
   end
+
+  test "deletable_by? allows linked creative removal by origin owner without share" do
+    owner = User.create!(email: "linked-owner@example.com", password: "secret", name: "Owner")
+    origin = Creative.create!(user: owner, description: "Origin")
+    linked = Creative.create!(origin: origin, user: owner)
+
+    assert linked.deletable_by?(owner)
+  end
+
+  test "deletable_by? blocks removal when creative share exists" do
+    owner = User.create!(email: "linked-share-owner@example.com", password: "secret", name: "Owner")
+    shared = User.create!(email: "linked-share-recipient@example.com", password: "secret", name: "Shared")
+    origin = Creative.create!(user: owner, description: "Origin")
+    CreativeShare.create!(creative: origin, user: shared, permission: :read)
+    linked = Creative.create!(origin: origin, user: shared)
+
+    refute linked.deletable_by?(owner)
+  end
+
+  test "deletable_by? blocks non-owner without share" do
+    owner = User.create!(email: "linked-non-owner@example.com", password: "secret", name: "Owner")
+    other = User.create!(email: "linked-non-owner-user@example.com", password: "secret", name: "Other")
+    origin = Creative.create!(user: owner, description: "Origin")
+    linked = Creative.create!(origin: origin, user: other)
+
+    refute linked.deletable_by?(other)
+  end
 end

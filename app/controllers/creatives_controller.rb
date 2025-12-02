@@ -157,7 +157,7 @@ class CreativesController < ApplicationController
 
   def destroy
     parent = @creative.parent
-    unless @creative.has_permission?(Current.user, :admin)
+    unless @creative.deletable_by?(Current.user)
       redirect_to @creative, alert: t("creatives.errors.no_permission") and return
     end
     if params[:delete_with_children]

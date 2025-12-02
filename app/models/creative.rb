@@ -79,6 +79,23 @@ class Creative < ApplicationRecord
     Creatives::PermissionChecker.new(self, user).allowed?(required_permission)
   end
 
+  def deletable_by?(user)
+    return false unless user
+
+    return has_permission?(user, :admin) unless origin_id.present?
+
+    linked_user_id = self[:user_id]
+    return false unless linked_user_id
+
+    origin_creative = origin
+    return false unless origin_creative
+
+    share_exists = CreativeShare.exists?(creative_id: origin_creative.id, user_id: linked_user_id)
+    return false if share_exists
+
+    has_permission?(user, :admin) && origin_creative.user_id == user.id
+  end
+
   # Returns only children for which the user has at least the given permission (default: :read)
   def children_with_permission(user = nil, min_permission = :read)
     user ||= Current.user
