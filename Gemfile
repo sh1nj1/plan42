@@ -84,7 +84,7 @@ end
 gem "doorkeeper", "~> 5.8"
 
 if File.exist?(File.expand_path("../rails_mcp_engine", __FILE__))
-  gem "rails_mcp_engine", "~> 0.2.0", path: "../rails_mcp_engine"
+  gem "rails_mcp_engine", "~> 0.3.0", path: "../rails_mcp_engine"
 else
-  gem "rails_mcp_engine", "~> 0.2.0"
+  gem "rails_mcp_engine", "~> 0.3.0"
 end
