@@ -1,3 +1,5 @@
+require "digest"
+
 class McpService
   # --- Registration Logic (from MetaToolService) ---
 
