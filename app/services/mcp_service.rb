@@ -34,7 +34,8 @@ class McpService
 
   # --- Creative Parsing Logic (from MetaToolWriteService) ---
 
-  def update_from_creative(creative)
+  def update_from_creative(input_creative)
+    creative = input_creative.effective_origin
     return unless creative.description.present?
 
     # Parse HTML to find code blocks
@@ -64,23 +65,20 @@ class McpService
 
     # Remove tools that are no longer in the description
     # Ensure we look at the effective origin's tools
-    target_creative = creative.effective_origin
-    target_creative.mcp_tools.where.not(name: found_tool_names).destroy_all
+    creative.mcp_tools.where.not(name: found_tool_names).destroy_all
   end
 
   private
 
-  def process_tool_definition(creative, code)
+  def process_tool_definition(input_creative, code)
+    creative = input_creative.effective_origin
     # Extract tool name using regex
     tool_name_match = code.match(/tool_name\s+["'](.+?)["']/)
     return unless tool_name_match
 
     tool_name = tool_name_match[1]
 
-    # Ensure tool is attached to the origin creative so approvals work correctly
-    # even when editing a linked creative
-    target_creative = creative.effective_origin
-    mcp_tool = McpTool.find_or_initialize_by(creative: target_creative, name: tool_name)
+    mcp_tool = McpTool.find_or_initialize_by(creative: creative, name: tool_name)
 
     # Calculate checksum to detect changes
     new_checksum = Digest::SHA256.hexdigest(code)

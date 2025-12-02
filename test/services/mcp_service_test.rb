@@ -143,7 +143,7 @@ class McpServiceTest < ActiveSupport::TestCase
     McpService.stub :register_tool_from_source, nil do
       # We need to call update_from_creative manually or via update!
       # Since update! triggers the callback, let's use that.
-      linked.update!(description: <<~HTML)
+      origin.update!(description: <<~HTML)
         <pre class="lexical-code-block">
           class Tools::LinkedTool
             extend ToolMeta
