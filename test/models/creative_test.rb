@@ -194,4 +194,20 @@ class CreativeTest < ActiveSupport::TestCase
   ensure
     Current.reset
   end
+  test "destroying creative destroys associated mcp_tools" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: "Tool Creative")
+
+    # Create a tool manually
+    tool = McpTool.create!(creative: creative, name: "cascade_tool", source_code: "class Cascade; end")
+
+    # Mock the unregistration to avoid actual engine interaction
+    McpService.stub :delete_tool, nil do
+      assert_difference("McpTool.count", -1) do
+        creative.destroy
+      end
+    end
+
+    assert_empty McpTool.where(id: tool.id)
+  end
 end
