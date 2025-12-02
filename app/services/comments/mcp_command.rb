@@ -78,6 +78,7 @@ module Comments
     end
 
     def format_response(response)
+      # TODO: i18n text
       return "Error running /#{tool_name}: #{response[:error]}" if response[:error].present?
 
       result = response[:result]
