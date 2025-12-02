@@ -1,5 +1,4 @@
 Rails.application.routes.draw do
-  mount RailsMcpEngine::Engine => "/rails_mcp_engine"
 
   use_doorkeeper do
     controllers applications: "oauth/applications"
