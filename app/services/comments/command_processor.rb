@@ -1,15 +1,13 @@
 module Comments
   class CommandProcessor
-    COMMANDS = [ CalendarCommand ].freeze
-
     def initialize(comment:, user:)
       @comment = comment
       @user = user
     end
 
     def call
-      COMMANDS.each do |command_class|
-        result = command_class.new(comment: comment, user: user).call
+      command_handlers.each do |command|
+        result = command.call
         return result if result.present?
       end
       nil
@@ -21,5 +19,17 @@ module Comments
     private
 
     attr_reader :comment, :user
+
+    def command_handlers
+      static_commands + mcp_commands
+    end
+
+    def static_commands
+      [ CalendarCommand.new(comment: comment, user: user) ]
+    end
+
+    def mcp_commands
+      McpCommandBuilder.new(comment: comment, user: user).commands
+    end
   end
 end
