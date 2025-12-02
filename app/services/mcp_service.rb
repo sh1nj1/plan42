@@ -40,6 +40,9 @@ class McpService
     # Parse HTML to find code blocks
     doc = Nokogiri::HTML.fragment(creative.description)
 
+    # Track found tools to identify removals
+    found_tool_names = []
+
     # Find all code blocks.
     # Lexical uses <pre class="lexical-code-block">.
     # Standard markdown often uses <code>.
@@ -54,9 +57,15 @@ class McpService
 
       # Check if it looks like a tool definition
       if code.include?("extend ToolMeta")
-        process_tool_definition(creative, code)
+        tool_name = process_tool_definition(creative, code)
+        found_tool_names << tool_name if tool_name
       end
     end
+
+    # Remove tools that are no longer in the description
+    # Ensure we look at the effective origin's tools
+    target_creative = creative.effective_origin
+    target_creative.mcp_tools.where.not(name: found_tool_names).destroy_all
   end
 
   private
@@ -94,6 +103,8 @@ class McpService
         notify_approval_needed(creative, mcp_tool)
       end
     end
+
+    tool_name
   end
 
   def notify_approval_needed(creative, tool)

@@ -159,4 +159,35 @@ class McpServiceTest < ActiveSupport::TestCase
     assert_equal origin, tool.creative
     assert_not_equal linked, tool.creative
   end
+
+  test "update_from_creative deletes tools removed from description" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: <<~HTML)
+      <pre class="lexical-code-block">
+        class Tools::RemovedTool
+          extend ToolMeta
+          tool_name "removed_tool"
+        end
+      </pre>
+    HTML
+
+    # Initial creation
+    McpService.stub :register_tool_from_source, nil do
+      McpService.new.update_from_creative(creative)
+    end
+
+    assert McpTool.exists?(name: "removed_tool")
+
+    # Update description removing the tool
+    # Expect delete_tool to be called via destroy callback
+    mock_service = Minitest::Mock.new
+    mock_service.expect :delete_tool, { success: "Deleted" }, [ "removed_tool" ]
+
+    Tools::MetaToolWriteService.stub :new, mock_service do
+      creative.update!(description: "<p>No tools here</p>")
+    end
+
+    mock_service.verify
+    assert_not McpTool.exists?(name: "removed_tool")
+  end
 end
