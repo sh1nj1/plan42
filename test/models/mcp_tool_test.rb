@@ -16,6 +16,20 @@ class McpToolTest < ActiveSupport::TestCase
     assert_not_nil tool.approved_at
   end
 
+  test "approve! does not set approved_at if registration fails" do
+    creative = Creative.create!(user: users(:one), description: "Test")
+    tool = McpTool.create!(creative: creative, name: "fail_tool", source_code: "invalid")
+
+    McpService.stub :register_tool_from_source, ->(_) { raise "Registration failed" } do
+      assert_raises(RuntimeError) do
+        tool.approve!
+      end
+    end
+
+    tool.reload
+    assert_nil tool.approved_at
+  end
+
   test "destroy unregisters tool via McpService" do
     creative = Creative.create!(user: users(:one), description: "Test")
     tool = McpTool.create!(creative: creative, name: "test_tool", source_code: "class Foo; end")

@@ -7,10 +7,13 @@ class McpService
     result = Tools::MetaToolWriteService.new.register_tool_from_source(source: source_code)
 
     if result[:error]
-      Rails.logger.error("Failed to register tool #{source_code}: #{result[:error]}")
+      error_msg = "Failed to register tool: #{result[:error]}"
+      Rails.logger.error(error_msg)
+      raise error_msg
     end
   rescue => e
     Rails.logger.error("Failed to register tool from source: #{e.message}")
+    raise e
   end
 
   def self.load_active_tools

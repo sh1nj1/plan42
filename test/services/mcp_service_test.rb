@@ -93,7 +93,7 @@ class McpServiceTest < ActiveSupport::TestCase
     McpService.stub :register_tool_from_source, nil do
       McpService.new.update_from_creative(creative)
     end
-    
+
     tool = McpTool.find_by(name: "stale_tool")
     tool.update!(approved_at: Time.current) # Simulate approval
 
@@ -114,8 +114,23 @@ class McpServiceTest < ActiveSupport::TestCase
     end
 
     mock_service.verify
-    
+
     tool.reload
     assert_nil tool.approved_at
+  end
+
+  test "register_tool_from_source raises error on failure" do
+    source_code = "invalid source"
+
+    mock_service = Minitest::Mock.new
+    mock_service.expect :register_tool_from_source, { error: "Syntax error" }, [], source: source_code
+
+    Tools::MetaToolWriteService.stub :new, mock_service do
+      assert_raises(RuntimeError) do
+        McpService.register_tool_from_source(source_code)
+      end
+    end
+
+    mock_service.verify
   end
 end

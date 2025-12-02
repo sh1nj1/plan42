@@ -13,9 +13,9 @@ class McpTool < ApplicationRecord
   end
 
   def approve!
-    update!(approved_at: Time.current)
     # Register the tool immediately upon approval
     McpService.register_tool_from_source(source_code)
+    update!(approved_at: Time.current)
   end
 
   private
