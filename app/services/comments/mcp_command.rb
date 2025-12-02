@@ -81,18 +81,18 @@ module Comments
       return "Error running /#{tool_name}: #{response[:error]}" if response[:error].present?
 
       result = response[:result]
-      result_text = format_result(result)
-      header = "/#{tool_name} executed"
-      result_text.present? ? "#{header}: #{result_text}" : header
-    end
-
-    def format_result(result)
-      case result
+      content = case result
       when Hash, Array
         JSON.pretty_generate(result)
       else
         result.to_s
       end
+
+      <<~HTML
+      <details><summary>#{tool_name} response</summary>
+      <pre><code>#{content}</code></pre>
+      </details>
+      HTML
     end
 
     def tool_name
