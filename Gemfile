@@ -56,6 +56,7 @@ gem "omniauth-github"
 gem "httparty"
 gem "octokit"
 gem "ruby_llm"
+gem "liquid"
 
 gem "dotenv", groups: [ :development, :test ]
 

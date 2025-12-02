@@ -35,6 +35,10 @@ module Comments
       return if payload.blank?
 
       messages = build_messages(payload, ai_user)
+      system_prompt = AiSystemPromptRenderer.render(
+        template: ai_user.system_prompt,
+        context: system_prompt_context(ai_user:, payload:)
+      )
       reply = creative.comments.create!(content: "...", user: ai_user)
 
       logger.debug("### AI Chat (#{ai_user.name}): #{messages}")
@@ -44,7 +48,7 @@ module Comments
       client = AiClient.new(
         vendor: ai_user.llm_vendor,
         model: ai_user.llm_model,
-        system_prompt: ai_user.system_prompt,
+        system_prompt: system_prompt,
         llm_api_key: ai_user.llm_api_key
       )
 
@@ -110,6 +114,29 @@ module Comments
 
       messages << { role: "user", parts: [ { text: payload } ] }
       messages
+    end
+
+    def system_prompt_context(ai_user:, payload:)
+      {
+        ai_user: {
+          id: ai_user.id,
+          name: ai_user.name,
+          llm_vendor: ai_user.llm_vendor,
+          llm_model: ai_user.llm_model
+        },
+        creative: {
+          id: creative.id,
+          description: creative.effective_description(nil, false),
+          progress: creative.progress,
+          owner_name: creative.user&.name
+        },
+        comment: {
+          id: comment.id,
+          content: comment.content,
+          user_name: comment.user&.name
+        },
+        payload: payload
+      }
     end
   end
 end

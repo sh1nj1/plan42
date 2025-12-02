@@ -15,3 +15,12 @@ This document captures best practices for integrating Anthropic's Claude models 
 - Keep dialogue transcripts or prompt iterations in version control when they inform product behavior.
 - Record evaluation results and regression checks so other agents can reuse them.
 - Cross-reference related guidance in `AGENTS.md` to maintain a cohesive developer experience.
+
+## System Prompt Templates
+- AI user system prompts are rendered as [Liquid templates](https://github.com/Shopify/liquid) so you can inject runtime context.
+- Available variables:
+  - `ai_user`: `id`, `name`, `llm_vendor`, `llm_model`.
+  - `creative`: `id`, `description` (plain text), `progress`, `owner_name`.
+  - `comment`: `id`, `content`, `user_name`.
+  - `payload`: user message text after stripping the mention prefix.
+- Templates fall back to the raw prompt if rendering fails; check Rails logs for `AI system prompt rendering failed` warnings when debugging.
