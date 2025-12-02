@@ -62,7 +62,8 @@ module Comments
 
       SUPPORTED_ACTIONS = {
         "create_creative" => :create_creative,
-        "update_creative" => :update_creative
+        "update_creative" => :update_creative,
+        "approve_tool" => :approve_tool
       }.freeze
 
       CREATIVE_ATTRIBUTES = %w[description progress].freeze
@@ -136,6 +137,16 @@ module Comments
         creative.save!
       rescue ActiveRecord::RecordInvalid => e
         raise InvalidActionError, e.record.errors.full_messages.to_sentence
+      end
+
+      def approve_tool(payload)
+        tool_name = payload["tool_name"]
+        raise InvalidActionError, "Tool name is required" if tool_name.blank?
+
+        tool = McpTool.find_by(creative: comment.creative, name: tool_name)
+        raise InvalidActionError, "Tool '#{tool_name}' not found" unless tool
+
+        tool.approve!
       end
 
       def process_action(payload)

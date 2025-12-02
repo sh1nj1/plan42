@@ -54,6 +54,7 @@ class Creative < ApplicationRecord
   has_many :github_repository_links, dependent: :destroy
   has_many :notion_page_links, dependent: :destroy
   has_many :notion_block_links, dependent: :destroy
+  has_many :mcp_tools, dependent: :destroy
 
   validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }, unless: -> { origin_id.present? }
   validates :description, presence: true, unless: -> { origin_id.present? }
@@ -66,6 +67,7 @@ class Creative < ApplicationRecord
   after_save :clear_permission_cache_on_user_change
   after_destroy :update_parent_progress
   after_destroy_commit :purge_description_attachments
+  after_save :update_mcp_tools
 
   def self.recalculate_all_progress!
     Creatives::ProgressService.recalculate_all!
@@ -358,5 +360,9 @@ class Creative < ApplicationRecord
     if parent&.origin_id.present?
       self.parent = parent.origin
     end
+  end
+
+  def update_mcp_tools
+    McpService.new.update_from_creative(self)
   end
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_12_01_073823) do
+ActiveRecord::Schema[8.1].define(version: 2025_12_02_062715) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -143,7 +143,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_01_073823) do
     t.float "progress", default: 0.0
     t.integer "sequence", default: 0, null: false
     t.datetime "updated_at", null: false
-    t.integer "user_id", null: false
+    t.integer "user_id"
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
@@ -242,6 +242,20 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_01_073823) do
     t.datetime "updated_at", null: false
     t.string "value"
     t.index ["owner_id"], name: "index_labels_on_owner_id"
+  end
+
+  create_table "mcp_tools", force: :cascade do |t|
+    t.datetime "approved_at"
+    t.string "checksum"
+    t.datetime "created_at", null: false
+    t.integer "creative_id", null: false
+    t.json "definition", default: {}
+    t.text "description"
+    t.string "name", null: false
+    t.text "source_code"
+    t.datetime "updated_at", null: false
+    t.index ["creative_id"], name: "index_mcp_tools_on_creative_id"
+    t.index ["name"], name: "index_mcp_tools_on_name", unique: true
   end
 
   create_table "notion_accounts", force: :cascade do |t|
@@ -547,7 +561,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_01_073823) do
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
-  add_foreign_key "creative_shares", "users", column: "shared_by_id"
+  add_foreign_key "creative_shares", "users", column: "shared_by_id", on_delete: :nullify
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
@@ -562,6 +576,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_01_073823) do
   add_foreign_key "invitations", "creatives"
   add_foreign_key "invitations", "users", column: "inviter_id"
   add_foreign_key "labels", "users", column: "owner_id"
+  add_foreign_key "mcp_tools", "creatives"
   add_foreign_key "notion_accounts", "users"
   add_foreign_key "notion_block_links", "creatives"
   add_foreign_key "notion_block_links", "notion_page_links"
