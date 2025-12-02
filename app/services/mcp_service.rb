@@ -68,7 +68,10 @@ class McpService
 
     tool_name = tool_name_match[1]
 
-    mcp_tool = McpTool.find_or_initialize_by(creative: creative, name: tool_name)
+    # Ensure tool is attached to the origin creative so approvals work correctly
+    # even when editing a linked creative
+    target_creative = creative.effective_origin
+    mcp_tool = McpTool.find_or_initialize_by(creative: target_creative, name: tool_name)
 
     # Calculate checksum to detect changes
     new_checksum = Digest::SHA256.hexdigest(code)

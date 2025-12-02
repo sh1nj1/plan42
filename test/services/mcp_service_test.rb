@@ -133,4 +133,30 @@ class McpServiceTest < ActiveSupport::TestCase
 
     mock_service.verify
   end
+
+  test "update_from_creative creates tool on effective_origin for linked creatives" do
+    user = users(:one)
+    origin = Creative.create!(user: user, description: "Origin")
+    linked = Creative.create!(user: user, origin: origin, description: "Linked")
+
+    # Mock registration to avoid engine calls
+    McpService.stub :register_tool_from_source, nil do
+      # We need to call update_from_creative manually or via update!
+      # Since update! triggers the callback, let's use that.
+      linked.update!(description: <<~HTML)
+        <pre class="lexical-code-block">
+          class Tools::LinkedTool
+            extend ToolMeta
+            tool_name "linked_tool"
+          end
+        </pre>
+      HTML
+    end
+
+    # Tool should be on origin
+    tool = McpTool.find_by(name: "linked_tool")
+    assert tool
+    assert_equal origin, tool.creative
+    assert_not_equal linked, tool.creative
+  end
 end
