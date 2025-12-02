@@ -85,7 +85,7 @@ export default class extends Controller {
     const creativeId = event.detail?.creativeId
     if (!button) return
     if (
-      this.element.style.display === 'block' &&
+      this.element.style.display === 'flex' &&
       this.element.dataset.creativeId === (creativeId || button.dataset.creativeId)
     ) {
       this.close()
@@ -157,56 +157,20 @@ export default class extends Controller {
       if (parsed.width) this.element.style.width = parsed.width
       if (parsed.height) {
         this.element.style.height = parsed.height
-        if (this.listController) {
-          const reserved = this.computeReservedHeight()
-          this.listController.setListHeight(this.element.offsetHeight - reserved)
-        }
       }
     } catch (error) {
       console.warn('Failed to parse comments popup size', error)
     }
   }
 
-  computeReservedHeight() {
-    if (!this.listTarget) return 0
 
-    const element = this.element
-    const list = this.listTarget
-    const computedDisplay = window.getComputedStyle(element).display
-    const wasHidden = computedDisplay === 'none'
-
-    let previousDisplay
-    let previousVisibility
-    let previousPointerEvents
-
-    if (wasHidden) {
-      previousDisplay = element.style.display
-      previousVisibility = element.style.visibility
-      previousPointerEvents = element.style.pointerEvents
-      element.style.visibility = 'hidden'
-      element.style.pointerEvents = 'none'
-      element.style.display = 'block'
-    }
-
-    const containerHeight = element.offsetHeight
-    const listHeight = list.offsetHeight
-    const reserved = Math.max(0, containerHeight - listHeight)
-
-    if (wasHidden) {
-      element.style.display = previousDisplay || ''
-      element.style.visibility = previousVisibility || ''
-      element.style.pointerEvents = previousPointerEvents || ''
-    }
-
-    return reserved
-  }
 
   showPopup() {
     if (this.isMobile()) {
-      this.element.style.display = 'block'
+      this.element.style.display = 'flex'
       this.element.classList.add('open')
     } else {
-      this.element.style.display = 'block'
+      this.element.style.display = 'flex'
     }
   }
 
@@ -239,7 +203,7 @@ export default class extends Controller {
     this.startLeft = rect.left + window.scrollX
     this.startTop = rect.top + window.scrollY
     this.startBottom = this.startTop + this.startHeight
-    this.reservedHeight = this.computeReservedHeight()
+    // this.reservedHeight = this.computeReservedHeight()
     this.element.style.left = `${this.startLeft}px`
     this.element.style.right = ''
     this.resizing = direction
@@ -276,7 +240,7 @@ export default class extends Controller {
 
     this.element.style.top = `${newTop}px`
     this.element.style.height = `${newHeight}px`
-    this.listController?.setListHeight(newHeight - this.reservedHeight)
+    // this.listController?.setListHeight(newHeight - this.reservedHeight)
   }
 
   handleResizeStop() {
@@ -310,19 +274,19 @@ export default class extends Controller {
   }
 
   handleOnline() {
-    if (this.element.style.display === 'block') {
+    if (this.element.style.display === 'flex') {
       this.listController?.loadInitialComments()
     }
   }
 
   handleWindowFocus() {
-    if (this.element.style.display === 'block') {
+    if (this.element.style.display === 'flex') {
       this.listController?.loadInitialComments()
     }
   }
 
   handleVisibilityChange() {
-    if (!document.hidden && this.element.style.display === 'block') {
+    if (!document.hidden && this.element.style.display === 'flex') {
       this.listController?.loadInitialComments()
     }
   }

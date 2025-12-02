@@ -2,9 +2,11 @@
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   padding: 1em;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   border-radius: 10px;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Share popup specific tweaks */
@@ -124,20 +126,22 @@
 }
 
 #user-menu button {
-    display: block;
-    text-align: left;
-    min-width: 100%;
+  display: block;
+  text-align: left;
+  min-width: 100%;
 }
 
 @media (max-width: 768px) {
-    #mobile-more-menu button,
-    #mobile-more-menu a {
-        display: block;
-        min-width: 100%;
-        text-align: left;
-    }
-    #mobile-more-menu .progress-filter-group {
-        display: block;
-        min-width: 100%;
-    }
+
+  #mobile-more-menu button,
+  #mobile-more-menu a {
+    display: block;
+    min-width: 100%;
+    text-align: left;
+  }
+
+  #mobile-more-menu .progress-filter-group {
+    display: block;
+    min-width: 100%;
+  }
 }

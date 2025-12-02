@@ -75,20 +75,7 @@ export default class extends Controller {
     this.movingComments = false
   }
 
-  listHeight() {
-    return this.listTarget.offsetHeight
-  }
 
-  adjustListHeight(containerHeight) {
-    const reserved = containerHeight - this.listHeight()
-    this.reservedHeight = reserved
-  }
-
-  setListHeight(height) {
-    if (height > 0) {
-      this.listTarget.style.height = `${height}px`
-    }
-  }
 
   loadInitialComments() {
     if (!this.creativeId) return
@@ -152,16 +139,16 @@ export default class extends Controller {
 
   markCommentsRead() {
     if (!this.creativeId) return
-      window.setTimeout(() => {
-          fetch('/comment_read_pointers/update', {
-              method: 'POST',
-              headers: {
-                  'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
-                  'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ creative_id: this.creativeId }),
-          })
-      }, 2000);
+    window.setTimeout(() => {
+      fetch('/comment_read_pointers/update', {
+        method: 'POST',
+        headers: {
+          'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ creative_id: this.creativeId }),
+      })
+    }, 2000);
   }
 
   handleScroll() {
