@@ -20,11 +20,14 @@ export default class extends Controller {
     this.touchStartY = null
     this.openFromUrlObserver = null
     this.openFromUrlTimeout = null
+    this.lastObservedHeight = null
+    this.resizeObserver = null
     this.handleCreativeClick = this.handleCreativeClick.bind(this)
     this.handleTouchStart = this.handleTouchStart.bind(this)
     this.handleTouchEnd = this.handleTouchEnd.bind(this)
     this.handleResizeMove = this.handleResizeMove.bind(this)
     this.handleResizeStop = this.handleResizeStop.bind(this)
+    this.handleResizeEntries = this.handleResizeEntries.bind(this)
     this.handleOnline = this.handleOnline.bind(this)
     this.handleWindowFocus = this.handleWindowFocus.bind(this)
     this.handleVisibilityChange = this.handleVisibilityChange.bind(this)
@@ -58,6 +61,11 @@ export default class extends Controller {
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     window.removeEventListener('mousemove', this.handleResizeMove)
     window.removeEventListener('mouseup', this.handleResizeStop)
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect()
+      this.resizeObserver = null
+      this.lastObservedHeight = null
+    }
     if (this.isMobile()) {
       this.element.removeEventListener('touchstart', this.handleTouchStart)
       this.element.removeEventListener('touchend', this.handleTouchEnd)
@@ -120,6 +128,7 @@ export default class extends Controller {
     }
 
     this.showPopup()
+    this.syncListHeightForContainer()
     this.updatePosition()
     document.body.classList.add('no-scroll')
   }
@@ -289,6 +298,42 @@ export default class extends Controller {
     this.resizing = null
     window.removeEventListener('mousemove', this.handleResizeMove)
     window.removeEventListener('mouseup', this.handleResizeStop)
+  }
+
+  syncListHeightForContainer() {
+    if (!this.listController) return
+    if (!this.resizeObserver) {
+      this.resizeObserver = new ResizeObserver(this.handleResizeEntries)
+    }
+    this.reservedHeight = this.computeReservedHeight()
+    this.lastObservedHeight = this.element.getBoundingClientRect().height
+    const initialHeight = this.element.offsetHeight
+    if (initialHeight) {
+      this.listController.setListHeight(initialHeight - this.reservedHeight)
+    }
+    this.resizeObserver.observe(this.element)
+  }
+
+  handleResizeEntries(entries) {
+    if (!entries || entries.length === 0 || this.resizing) return
+    const entry = entries[entries.length - 1]
+    const newHeight = entry.contentRect.height
+    if (!newHeight) return
+
+    if (!this.reservedHeight) {
+      this.reservedHeight = this.computeReservedHeight()
+    }
+
+    if (
+      this.lastObservedHeight &&
+      this.reservedHeight !== undefined &&
+      this.reservedHeight !== null &&
+      newHeight > this.lastObservedHeight
+    ) {
+      this.listController?.setListHeight(newHeight - this.reservedHeight)
+    }
+
+    this.lastObservedHeight = newHeight
   }
 
   handleTouchStart(event) {
