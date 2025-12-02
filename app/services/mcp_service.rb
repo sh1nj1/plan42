@@ -71,6 +71,11 @@ class McpService
     new_checksum = Digest::SHA256.hexdigest(code)
 
     if mcp_tool.new_record? || mcp_tool.checksum != new_checksum
+      # Unregister old tool if it exists (source changed)
+      if !mcp_tool.new_record?
+        McpService.delete_tool(tool_name)
+      end
+
       mcp_tool.source_code = code
       mcp_tool.checksum = new_checksum
       mcp_tool.approved_at = nil # Reset approval status on change

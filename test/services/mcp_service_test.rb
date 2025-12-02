@@ -77,4 +77,45 @@ class McpServiceTest < ActiveSupport::TestCase
     assert tool
     assert_includes tool.source_code, "class Tools::BrTool\n"
   end
+
+  test "update_from_creative unregisters tool when source changes" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: <<~HTML)
+      <pre class="lexical-code-block">
+        class Tools::StaleTool
+          extend ToolMeta
+          tool_name "stale_tool"
+        end
+      </pre>
+    HTML
+
+    # 1. Initial creation
+    McpService.stub :register_tool_from_source, nil do
+      McpService.new.update_from_creative(creative)
+    end
+    
+    tool = McpTool.find_by(name: "stale_tool")
+    tool.update!(approved_at: Time.current) # Simulate approval
+
+    # Expect delete_tool to be called
+    mock_service = Minitest::Mock.new
+    mock_service.expect :delete_tool, { success: "Deleted" }, [ "stale_tool" ]
+
+    Tools::MetaToolWriteService.stub :new, mock_service do
+      creative.update!(description: <<~HTML)
+        <pre class="lexical-code-block">
+          class Tools::StaleTool
+            extend ToolMeta
+            tool_name "stale_tool"
+            # Changed source
+          end
+        </pre>
+      HTML
+    end
+
+    mock_service.verify
+    
+    tool.reload
+    assert_nil tool.approved_at
+  end
 end
