@@ -160,23 +160,31 @@ module Tools
       sanitized_start = [ start_line, 1 ].max
       sanitized_count = [ [ line_count, 1 ].max, 400 ].min
 
+      root_realpath = repo_root.realpath
       absolute_path = Pathname.new(file_path)
       absolute_path = repo_root.join(absolute_path) unless absolute_path.absolute?
+      absolute_path = absolute_path.cleanpath
 
-      unless absolute_path.to_s.start_with?(repo_root.to_s)
-        return { type: "file", error: "File path must be inside the repository" }
-      end
-
-      unless absolute_path.file?
+      resolved_path = begin
+        absolute_path.realpath
+      rescue Errno::ENOENT
         return { type: "file", error: "File not found" }
       end
 
-      lines = File.readlines(absolute_path)
+      unless resolved_path.to_s.start_with?(root_realpath.to_s)
+        return { type: "file", error: "File path must be inside the repository" }
+      end
+
+      unless resolved_path.file?
+        return { type: "file", error: "File not found" }
+      end
+
+      lines = File.readlines(resolved_path)
       slice = lines.slice(sanitized_start - 1, sanitized_count) || []
 
       {
         type: "file",
-        file_path: absolute_path.relative_path_from(repo_root).to_s,
+        file_path: resolved_path.relative_path_from(root_realpath).to_s,
         start_line: sanitized_start,
         end_line: sanitized_start + slice.length - 1,
         content: slice.join
