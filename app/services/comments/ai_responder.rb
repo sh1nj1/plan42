@@ -83,37 +83,8 @@ module Comments
     attr_reader :comment, :creative, :helpers, :logger
 
     def build_messages(payload, ai_user)
-      messages = []
-      markdown = helpers.render_creative_tree_markdown([ creative ], 1, true)
-      messages << { role: "user", parts: [ { text: "Creative:\n#{markdown}" } ] }
-
-      # Fetch context history
-      # We include comments that are public or owned by the user who triggered the bot
-      # We also need to handle the roles correctly.
-      # If the comment author is the AI user itself, role is 'model'.
-      # If it's another user, role is 'user'.
-
-      creative.comments.where("comments.private = ? OR comments.user_id = ?", false, comment.user_id)
-              .order(:created_at).each do |c|
-        role = (c.user_id == ai_user.id) ? "model" : "user"
-
-        # Clean up the content if it was a mention to THIS bot
-        # Strip the mention if it matches the current bot's name to avoid confusion
-        text = c.content
-        if role == "user"
-          # Remove @BotName: or @BotName format
-          if text.match?(/\A@#{Regexp.escape(ai_user.name)}:/i)
-            text = text.sub(/\A@#{Regexp.escape(ai_user.name)}:\s*/i, "")
-          elsif text.match?(/\A@#{Regexp.escape(ai_user.name)}\s+/i)
-            text = text.sub(/\A@#{Regexp.escape(ai_user.name)}\s+/i, "")
-          end
-        end
-
-        messages << { role: role, parts: [ { text: text } ] }
-      end
-
-      messages << { role: "user", parts: [ { text: payload } ] }
-      messages
+      AiConversationBuilder.new(creative: creative, ai_user: ai_user, helpers: helpers)
+                           .build_messages(payload: payload, user_for_history: comment.user)
     end
 
     def system_prompt_context(ai_user:, payload:)
