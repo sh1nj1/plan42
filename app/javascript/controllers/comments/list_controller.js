@@ -85,7 +85,8 @@ export default class extends Controller {
     this.selection.clear()
     this.notifySelectionChange()
     this.listTarget.innerHTML = this.element.dataset.loadingText
-    this.fetchCommentsPage(1).then((html) => {
+    this.fetchCommentsPage(1, { commentId: this.highlightAfterLoad }).then(({ html, page }) => {
+      this.currentPage = page || 1
       this.listTarget.innerHTML = html
       renderMarkdownInContainer(this.listTarget)
       this.popupController?.updatePosition()
@@ -106,14 +107,14 @@ export default class extends Controller {
     this.loadingMore = true
     const nextPage = this.currentPage + 1
     this.fetchCommentsPage(nextPage)
-      .then((html) => {
+      .then(({ html, page }) => {
         if (html.trim() === '') {
           this.allLoaded = true
           return
         }
         this.listTarget.insertAdjacentHTML('beforeend', html)
         renderMarkdownInContainer(this.listTarget)
-        this.currentPage = nextPage
+        this.currentPage = page || nextPage
         this.checkAllLoaded(html)
       })
       .finally(() => {
@@ -121,12 +122,20 @@ export default class extends Controller {
       })
   }
 
-  fetchCommentsPage(page) {
+  fetchCommentsPage(page, { commentId } = {}) {
     const params = new URLSearchParams({ page })
+    if (commentId) {
+      params.set('comment_id', commentId)
+    }
     if (this.manualSearchQuery) {
       params.set('search', this.manualSearchQuery)
     }
-    return fetch(`/creatives/${this.creativeId}/comments?${params.toString()}`).then((response) => response.text())
+    return fetch(`/creatives/${this.creativeId}/comments?${params.toString()}`).then((response) =>
+      response.text().then((html) => ({
+        html,
+        page: Number(response.headers.get('X-Comments-Page')) || page,
+      })),
+    )
   }
 
   highlightComment(commentId) {

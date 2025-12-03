@@ -15,11 +15,25 @@ class CommentsController < ApplicationController
       Current.user.id
     )
     scope = scope.with_attached_images
+    target_page = page
+    if params[:comment_id].present?
+      target_comment = scope.find_by(id: params[:comment_id])
+      if target_comment
+        newer_count = scope.where(
+          "comments.created_at > ? OR (comments.created_at = ? AND comments.id > ?)",
+          target_comment.created_at,
+          target_comment.created_at,
+          target_comment.id
+        ).count
+        target_page = (newer_count / per_page) + 1
+      end
+    end
     if params[:search].present?
       search_term = ActiveRecord::Base.sanitize_sql_like(params[:search].to_s.strip.downcase)
       scope = scope.where("LOWER(comments.content) LIKE ?", "%#{search_term}%")
     end
     scope = scope.order(created_at: :desc)
+    page = target_page
     @comments = scope.offset((page - 1) * per_page).limit(per_page).to_a
     pointer = CommentReadPointer.find_by(user: Current.user, creative: @creative)
     last_read_comment_id = pointer&.last_read_comment_id
@@ -28,6 +42,7 @@ class CommentsController < ApplicationController
       last_read_comment_id = nil
     end
 
+    response.set_header("X-Comments-Page", page)
     if page <= 1
       render partial: "comments/list", locals: { comments: @comments.reverse, creative: @creative, last_read_comment_id: last_read_comment_id }
     else
