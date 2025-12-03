@@ -1,6 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 import { copyTextToClipboard } from '../../utils/clipboard'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
+import { openLinkSelection } from '../../lib/link_selection_popup'
 
 const COMMENTS_PER_PAGE = 10
 
@@ -419,44 +420,23 @@ export default class extends Controller {
       }
       return
     }
-    const linkModal = document.getElementById('link-creative-modal')
-    const linkSearchInput = document.getElementById('link-creative-search')
-    const linkResults = document.getElementById('link-creative-results')
-    if (!linkModal || !linkSearchInput || !linkResults) {
-      alert(this.element.dataset.moveErrorText)
-      return
-    }
-
-    const cleanup = () => {
-      linkModal.removeEventListener('link-creative-modal:select', handleSelect)
-      linkModal.removeEventListener('link-creative-modal:closed', handleClosed)
-    }
-
-    const handleSelect = (event) => {
-      cleanup()
-      const detail = event?.detail || {}
-      if (detail.id) {
-        this.moveSelectedComments(detail.id)
-      }
-    }
-
-    const handleClosed = () => {
-      cleanup()
-      this.movingComments = false
-      this.notifySelectionChange()
-    }
-
     this.movingComments = true
     this.notifySelectionChange()
 
-    linkModal.addEventListener('link-creative-modal:select', handleSelect)
-    linkModal.addEventListener('link-creative-modal:closed', handleClosed)
-    linkModal.dataset.context = 'comment-move'
-    linkSearchInput.value = ''
-    linkResults.innerHTML = ''
-    linkModal.style.display = 'flex'
-    document.body.classList.add('no-scroll')
-    requestAnimationFrame(() => linkSearchInput.focus())
+    const opened = openLinkSelection({
+      anchorRect: this.element.getBoundingClientRect(),
+      onSelect: (item) => this.moveSelectedComments(item.id),
+      onClose: () => {
+        this.movingComments = false
+        this.notifySelectionChange()
+      },
+    })
+
+    if (!opened) {
+      this.movingComments = false
+      this.notifySelectionChange()
+      alert(this.element.dataset.moveErrorText)
+    }
   }
 
   moveSelectedComments(targetCreativeId) {

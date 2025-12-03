@@ -86,11 +86,9 @@
   </form>
 </div>
 
-<div id="link-creative-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
-  <div class="popup-box">
-    <button type="button" id="close-link-creative-modal" class="popup-close-btn">&times;</button>
-    <h2><%= t('creatives.index.link', default: 'Link') %></h2>
-    <input type="text" id="link-creative-search" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;" placeholder="<%= t('creatives.index.search_placeholder', default: 'Search creative') %>">
-    <ul id="link-creative-results" style="list-style:none;padding:0;margin:0;max-height:300px;overflow-y:auto;"></ul>
-  </div>
+<div id="link-creative-modal" class="common-popup" style="display:none;">
+  <button type="button" id="close-link-creative-modal" class="popup-close-btn">&times;</button>
+  <h3><%= t('creatives.index.link', default: 'Link') %></h3>
+  <input type="text" id="link-creative-search" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;" placeholder="<%= t('creatives.index.search_placeholder', default: 'Search creative') %>">
+  <ul id="link-creative-results" class="common-popup-list" data-popup-list></ul>
 </div>
