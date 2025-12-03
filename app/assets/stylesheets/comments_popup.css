@@ -5,7 +5,7 @@
     /* top: 10em; */
     z-index: 1000;
     width: 420px;
-    height: 500px;
+    height: 640px;
     max-height: 80vh;
     min-width: 200px;
     min-height: 200px;
@@ -45,7 +45,7 @@
 }
 
 #new-comment-form textarea {
-    width: 94%;
+    width: 96%;
     resize: vertical;
     font-size: 16px;
     /* Prevent iOS zoom on focus */
