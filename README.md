@@ -14,6 +14,18 @@ Your creativeness is coming!
 * `bin/rails db:prepare` - Run database migrations (default to use sqlite3)
 * `bin/rails server` - Start the Rails server. When `SOLID_QUEUE_IN_PUMA` is set, the background job processor and scheduler run alongside the server. The `bin/dev` script sets this variable automatically in development.
 
+## Ngrok tunnel preview on push
+
+Every `push` event triggers `.github/workflows/ngrok-tunnel.yml` to open a tunnel with the following command for 10 minutes before shutting down automatically:
+
+```
+ngrok tunnel --label edge=edghts_2WKlab6N1mkn4fBuqBmv1PRaXNu http://localhost:3000
+```
+
+To enable the workflow, add an `NGROK_KEY` repository secret (the tunnel step fails fast when the secret is missing). The reserved edge label keeps the public URL stable while the tunnel is live; check the workflow logs for confirmation that the tunnel started and when it stopped.
+
+The workflow installs Ruby and Node dependencies, prepares the database, then launches the app with `./bin/dev` before opening the tunnel so both the Rails server and JavaScript watcher are running while ngrok is connected. When tunneling locally, start the app the same way (`./bin/dev`) before running the ngrok command.
+
 ### Runtime version info:
 
 ```bash

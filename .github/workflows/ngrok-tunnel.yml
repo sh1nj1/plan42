@@ -1,0 +1,131 @@
+name: Ngrok Tunnel (10 minutes)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ngrok:
+    runs-on: ubuntu-latest
+    env:
+      DEFAULT_URL_HOST: ${{ vars.DEFAULT_URL_HOST }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Prepare database
+        env:
+          RAILS_ENV: development
+        run: bin/rails db:prepare
+
+      - name: Build JavaScript assets
+        run: npm run build
+
+      - name: Start Rails app
+        env:
+          PORT: 3000
+          RAILS_ENV: development
+        run: |
+          bin/rails server -b 0.0.0.0 -p "$PORT" > dev.log 2>&1 &
+          DEV_PID=$!
+          echo "DEV_PID=$DEV_PID" >> "$GITHUB_ENV"
+
+          for i in $(seq 1 30); do
+            if curl -sSf http://localhost:3000 >/dev/null; then
+              echo "Rails app is responding on http://localhost:3000"
+              break
+            fi
+
+            # Exit early if the process died while booting
+            if ! kill -0 "$DEV_PID" 2>/dev/null; then
+              echo "Rails app exited unexpectedly during boot." >&2
+              tail -n 200 dev.log || true
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          # If we never broke out of the loop by responding, fail fast.
+          if ! curl -sSf http://localhost:3000 >/dev/null; then
+            echo "Rails app did not become ready in time." >&2
+            tail -n 200 dev.log || true
+            exit 1
+          fi
+
+      - name: Install ngrok
+        run: |
+          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ngrok
+
+      - name: Start ngrok tunnel for 10 minutes
+        env:
+          NGROK_KEY: ${{ secrets.NGROK_KEY }}
+        run: |
+          if [ -z "$NGROK_KEY" ]; then
+            echo "NGROK_KEY secret is required to start the tunnel." >&2
+            exit 1
+          fi
+
+          ngrok config add-authtoken "$NGROK_KEY"
+
+          ngrok tunnel --label edge=edghts_2WKlab6N1mkn4fBuqBmv1PRaXNu http://localhost:3000 > ngrok.log 2>&1 &
+          NGROK_PID=$!
+
+          # Give ngrok a few seconds to start so we can capture errors early.
+          sleep 5
+          if ! kill -0 "$NGROK_PID" 2>/dev/null; then
+            echo "ngrok failed to start. Check logs below." >&2
+            cat ngrok.log || true
+            exit 1
+          fi
+
+          echo "ngrok tunnel is running with edge label edghts_2WKlab6N1mkn4fBuqBmv1PRaXNu."
+          echo "The tunnel will stop automatically after 10 minutes."
+
+          sleep 600
+          echo "Stopping ngrok tunnel after 10 minutes."
+          kill "$NGROK_PID" || true
+          wait "$NGROK_PID" || true
+
+          if [ -n "$DEV_PID" ]; then
+            echo "Stopping Rails app (pid: $DEV_PID)."
+            kill "$DEV_PID" || true
+            wait "$DEV_PID" || true
+          fi
+
+      - name: Show ngrok logs
+        if: always()
+        run: cat ngrok.log || true
+
+      - name: Show Rails dev server logs
+        if: always()
+        run: cat dev.log || true
+
+      - name: Stop Rails dev server
+        if: always()
+        env:
+          DEV_PID: ${{ env.DEV_PID }}
+        run: |
+          if [ -n "$DEV_PID" ] && kill -0 "$DEV_PID" 2>/dev/null; then
+            echo "Stopping Rails app (pid: $DEV_PID)."
+            kill "$DEV_PID" || true
+            wait "$DEV_PID" || true
+          fi
