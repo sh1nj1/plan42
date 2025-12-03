@@ -10,6 +10,7 @@
     min-width: 200px;
     min-height: 200px;
     transition: all 0.2s;
+    max-width: calc(100vw - 0.5em) !important;
 }
 
 #comments-popup .resize-handle {
@@ -52,12 +53,10 @@
 }
 
 #new-comment-form button[type="submit"] {
-    margin-top: 0.5em;
     float: right;
 }
 
 #new-comment-form #cancel-edit-btn {
-    margin-top: 0.5em;
     float: right;
     margin-right: 0.5em;
 }
@@ -160,18 +159,22 @@
 #search-comments-btn,
 #voice-comments-btn,
 #attach-image-btn,
-#cancel-edit-btn,
-#new-comment-form button[type="submit"] {
-    margin-top: 0.5em;
-}
-
-#move-comments-btn,
-#search-comments-btn,
-#voice-comments-btn,
-#attach-image-btn,
 #cancel-edit-btn {
     float: right;
     margin-right: 0.5em;
+}
+
+.comment-bottom {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.comment-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
 }
 
 #new-comment-form button[type="submit"] {
