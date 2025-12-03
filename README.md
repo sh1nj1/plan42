@@ -10,18 +10,22 @@ Your creativeness is coming!
 
 [Ruby on Rails getting started document](https://github.com/sh1nj1/ror_getting_started/blob/main/getting_started.md)
 
-* `bin/rails credentials:edit` - Create or edit the `config/credentials.yml.enc` file and `config/master.key` file.
-* `bin/rails db:prepare` - Run database migrations (default to use sqlite3)
+### Local Development
+
+* install mise and install ruby
+  `mise install`
+* install nvm and install node
+  `nvm install`
+* `bundle install`
+* `./bin/rails db:prepare`
+* `./bin/rails db:seed`
+* `brew install vips` # for image processing (macOS)
 * `bin/rails server` - Start the Rails server. When `SOLID_QUEUE_IN_PUMA` is set, the background job processor and scheduler run alongside the server. The `bin/dev` script sets this variable automatically in development.
 
-### Runtime version info:
+### Test
 
-```bash
-store % ruby -v
-ruby 3.4.1 (2024-12-25 revision 48d4efcb85) +PRISM [arm64-darwin24]
-store % rails -v
-Rails 8.0.2
-```
+* There's minitest test `./bin/rails test && ./bin/rails test:system`
+* system test with `chrome` driver, `SYSTEM_TEST_DRIVER=chrome ./bin/rails test:system`
 
 ## JavaScript bundling
 
