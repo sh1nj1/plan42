@@ -4,7 +4,7 @@ class AutonomousAgentJob < ApplicationJob
   def perform(agent_run_id)
     agent_run = AgentRun.find_by(id: agent_run_id)
     return unless agent_run
-    return if agent_run.status == "completed" || agent_run.status == "failed"
+    return if agent_run.status == "success" || agent_run.status == "error"
 
     # Transition to running if pending
     agent_run.update!(status: "running") if agent_run.status == "pending"
@@ -72,8 +72,18 @@ class AutonomousAgentJob < ApplicationJob
       # Or maybe the agent itself decides?
 
       # TODO: Implement multi-turn loop logic if needed.
+      # Update comment if comment_id is present in context
+      if agent_run.context["comment_id"]
+        comment = Comment.find_by(id: agent_run.context["comment_id"])
+        comment&.update!(content: response_text)
+      end
     else
-      agent_run.update!(status: "failed")
+      agent_run.update!(status: "error")
+
+      if agent_run.context["comment_id"]
+        comment = Comment.find_by(id: agent_run.context["comment_id"])
+        comment&.update!(content: "Error: No response from AI agent.")
+      end
     end
 
   rescue => e
