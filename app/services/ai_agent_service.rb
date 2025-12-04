@@ -35,7 +35,7 @@ class AiAgentService
 
     # Handle the response (e.g., create a comment reply)
     # For now, we assume the context has a comment_id to reply to
-    if @context.dig("comment", "id")
+    if @context.dig("comment", "id") && response_content.present?
       reply_to_comment(@context["comment"]["id"], response_content)
     end
   end

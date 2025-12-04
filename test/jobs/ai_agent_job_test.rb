@@ -59,4 +59,30 @@ class AiAgentJobTest < ActiveJob::TestCase
     task = Task.last
     assert_equal "failed", task.status
   end
+
+  class EmptyAiClient
+    def initialize(*args); end
+    def chat(contents, tools: [], &block)
+      # Do not yield any content
+      ""
+    end
+  end
+
+  test "does not create reply if AI response is empty" do
+    AiClient.stub :new, EmptyAiClient.new do
+      perform_enqueued_jobs do
+        AiAgentJob.perform_later(@agent.id, "test_event", @context)
+      end
+    end
+
+    task = Task.last
+    assert_equal "done", task.status
+
+    # Verify Task Actions - reply_created should be missing
+    assert_equal 3, task.task_actions.count
+    assert_equal [ "start", "prompt_generated", "completion" ], task.task_actions.pluck(:action_type)
+
+    # Verify no new comment created
+    assert_equal 1, @creative.comments.count # Only the initial comment
+  end
 end
