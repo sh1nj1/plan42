@@ -23,4 +23,13 @@ class CommentsControllerEventTest < ActionDispatch::IntegrationTest
     assert_response :created
     mock.verify
   end
+
+  test "does not dispatch comment_created event for private comments" do
+    SystemEvents::Dispatcher.stub :dispatch, ->(*args) { raise "Dispatcher should not be called" } do
+      post creative_comments_path(@creative), params: { comment: { content: "Private Hello", private: true } }
+    end
+
+    assert_response :created
+    assert Comment.last.private?
+  end
 end

@@ -50,7 +50,6 @@ class CommentsController < ApplicationController
     @comment.content = "#{@comment.content}\n\n#{response}" if response.present?
     if @comment.save
       # Trigger AI responder for any @mention at the start
-      # Trigger AI responder for any @mention at the start
       # if @comment.content.match?(/\A@/)
       #   Comments::AiResponderJob.perform_later(@comment.id, @creative.id)
       # end
@@ -69,7 +68,7 @@ class CommentsController < ApplicationController
         chat: {
           content: @comment.content
         }
-      })
+      }) unless @comment.private?
       @comment = Comment.with_attached_images.find(@comment.id)
       render partial: "comments/comment", locals: { comment: @comment }, status: :created
     else
