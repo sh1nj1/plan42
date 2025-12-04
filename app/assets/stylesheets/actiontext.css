@@ -219,6 +219,28 @@
   white-space: pre;
 }
 
+.lexical-table {
+  border-collapse: collapse;
+  margin: 0 0 0.75rem 0;
+  width: 100%;
+}
+
+.lexical-table-cell,
+.lexical-table th,
+.lexical-table td {
+  border: 1px solid var(--color-border);
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+}
+
+.lexical-table-cell--selected {
+  background: rgba(3, 102, 214, 0.1);
+}
+
+.lexical-table-cell--primary-selected {
+  background: rgba(3, 102, 214, 0.2);
+}
+
 .lexical-code-block span {
   background: transparent;
   border: 0;

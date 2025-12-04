@@ -21,6 +21,8 @@ import {
 } from "@lexical/code"
 import { ListItemNode, ListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
 import { LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
+import { TablePlugin } from "@lexical/react/LexicalTablePlugin"
+import { TableCellNode, TableNode, TableRowNode, INSERT_TABLE_COMMAND } from "@lexical/table"
 import {
   $createParagraphNode,
   $createTextNode,
@@ -107,6 +109,13 @@ const theme = {
     underline: "lexical-text-underline",
     strikethrough: "lexical-text-strike",
     code: "lexical-text-code"
+  },
+  table: {
+    table: "lexical-table",
+    tableCell: "lexical-table-cell",
+    tableCellSelected: "lexical-table-cell--selected",
+    tableCellPrimarySelected: "lexical-table-cell--primary-selected",
+    tableRow: "lexical-table-row"
   }
 }
 
@@ -587,6 +596,13 @@ function Toolbar({ onPromptForLink }) {
         title="Insert link">
         🔗
       </button>
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={() => editor.dispatchCommand(INSERT_TABLE_COMMAND, { columns: 3, rows: 3, includeHeaders: false })}
+        title="Insert table">
+        🗂️
+      </button>
       <span className="lexical-toolbar-separator" aria-hidden="true" />
       <ToolbarColorPicker
         icon="🎨"
@@ -705,6 +721,7 @@ function EditorInner({
         <CodeHighlightingPlugin />
         <ListPlugin />
         <LinkPlugin />
+        <TablePlugin hasCellMerge={false} hasCellBackgroundColor={false} />
         <AutoLinkPlugin matchers={URL_MATCHERS} />
         <OnChangePlugin
           onChange={(editorState, editorInstance) => {
@@ -765,6 +782,9 @@ export default function InlineLexicalEditor({
         QuoteNode,
         CodeNode,
         CodeHighlightNode,
+        TableNode,
+        TableRowNode,
+        TableCellNode,
         ListItemNode,
         ListNode,
         LinkNode,
