@@ -49,33 +49,6 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_04_125756) do
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
   end
 
-  create_table "agent_actions", force: :cascade do |t|
-    t.integer "agent_run_id", null: false
-    t.json "arguments", default: {}
-    t.datetime "created_at", null: false
-    t.text "result"
-    t.string "status", default: "pending"
-    t.string "tool_name"
-    t.datetime "updated_at", null: false
-    t.index ["agent_run_id"], name: "index_agent_actions_on_agent_run_id"
-  end
-
-  create_table "agent_runs", force: :cascade do |t|
-    t.integer "ai_user_id", null: false
-    t.json "context", default: {}
-    t.datetime "created_at", null: false
-    t.integer "creative_id", null: false
-    t.text "goal"
-    t.integer "iteration_count", default: 0
-    t.datetime "next_run_at"
-    t.string "state", default: "planning"
-    t.string "status", default: "pending"
-    t.json "transcript", default: []
-    t.datetime "updated_at", null: false
-    t.index ["ai_user_id"], name: "index_agent_runs_on_ai_user_id"
-    t.index ["creative_id"], name: "index_agent_runs_on_creative_id"
-  end
-
   create_table "calendar_events", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "creative_id"
