@@ -31,19 +31,27 @@ class AgentClient < AiClient
     # Create a dynamic subclass to intercept the call method
     Class.new(tool_class) do
       # We need to capture agent_run_id in the closure
-      define_method :call do |args|
+      define_method :call do |*args, **kwargs, &block|
         tool_name = self.class.tool_name
+
+        provided_arguments = if kwargs.any?
+          kwargs
+        elsif args.one? && args.first.is_a?(Hash)
+          args.first
+        else
+          args
+        end
 
         action = AgentAction.create!(
           agent_run_id: agent_run_id,
           tool_name: tool_name,
-          arguments: args,
+          arguments: provided_arguments,
           status: "running"
         )
 
         begin
           # Call the original tool's call method
-          result = super(args)
+          result = super(*args, **kwargs, &block)
 
           # Update action with success
           action.update!(result: result.to_s, status: "success")
