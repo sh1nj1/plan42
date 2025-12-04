@@ -162,4 +162,33 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert user_msg_idx < agent_msg_idx
     assert agent_msg_idx < current_msg_idx
   end
+
+  test "fetches latest comments when history exceeds limit" do
+    # Create 60 comments
+    60.times do |i|
+      Comment.create!(creative: @creative, user: @owner, content: "Message #{i}", created_at: (60 - i).minutes.ago)
+    end
+
+    capture_client = nil
+
+    AiClient.stub :new, ->(**kwargs) { capture_client = MessageCaptureClient.new(**kwargs) } do
+      perform_enqueued_jobs do
+        AiAgentJob.perform_later(@agent.id, "test_event", @context)
+      end
+    end
+
+    messages = capture_client.captured_messages
+    message_texts = messages.map { |m| m[:parts][0][:text] }
+
+    # Should include "Message 59" (most recent)
+    assert_includes message_texts, "Message 59"
+
+    # Should NOT include "Message 0" (oldest)
+    assert_not_includes message_texts, "Message 0"
+
+    # Verify we have roughly 50 history items + creative context + trigger payload
+    # Exact count depends on implementation details, but should be around 52-53
+    assert messages.count > 40
+    assert messages.count < 60
+  end
 end

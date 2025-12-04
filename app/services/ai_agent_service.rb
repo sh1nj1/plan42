@@ -95,8 +95,9 @@ class AiAgentService
       # In the new system, the agent is @agent.
 
       Comment.where(creative_id: creative_id, private: false)
-             .order(:created_at)
+             .order(created_at: :desc)
              .limit(50) # Limit history to avoid context window issues
+             .reverse # Re-order to chronological for the AI
              .each do |c|
         next if c.id == @context.dig("comment", "id") # Skip the current trigger comment if it's in the list (it shouldn't be usually if we query right, but good to be safe)
 
