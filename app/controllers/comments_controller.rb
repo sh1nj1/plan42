@@ -49,10 +49,6 @@ class CommentsController < ApplicationController
     response = Comments::CommandProcessor.new(comment: @comment, user: Current.user).call
     @comment.content = "#{@comment.content}\n\n#{response}" if response.present?
     if @comment.save
-      # Trigger AI responder for any @mention at the start
-      # if @comment.content.match?(/\A@/)
-      #   Comments::AiResponderJob.perform_later(@comment.id, @creative.id)
-      # end
 
       # Dispatch system event
       SystemEvents::Dispatcher.dispatch("comment_created", {

@@ -30,6 +30,7 @@ class AiAgentService
       context: rendering_context
     ).render
 
+    # we may pass event payload also to the AI client for more context if needed - TODO
     client = AiClient.new(
       vendor: @agent.llm_vendor,
       model: @agent.llm_model,
@@ -80,6 +81,38 @@ class AiAgentService
         creative = Creative.find(creative_id)
         markdown = ApplicationController.helpers.render_creative_tree_markdown([ creative ], 1, true)
         messages << { role: "user", parts: [ { text: "Creative:\n#{markdown}" } ] }
+      end
+    end
+
+    # Add chat history
+    if @context.dig("creative", "id")
+      creative_id = @context["creative"]["id"]
+      # Fetch comments for context, excluding private ones unless owned by the user
+      # We need to be careful about which comments to include.
+      # For now, let's include non-private comments.
+
+      # We need to know who the "user" is to determine roles.
+      # In the new system, the agent is @agent.
+
+      Comment.where(creative_id: creative_id, private: false)
+             .order(:created_at)
+             .limit(50) # Limit history to avoid context window issues
+             .each do |c|
+        next if c.id == @context.dig("comment", "id") # Skip the current trigger comment if it's in the list (it shouldn't be usually if we query right, but good to be safe)
+
+        role = (c.user_id == @agent.id) ? "model" : "user"
+        content = c.content
+
+        # Strip mentions of the agent from user messages to clean up context
+        if role == "user"
+           if content.match?(/\A@#{Regexp.escape(@agent.name)}:/i)
+             content = content.sub(/\A@#{Regexp.escape(@agent.name)}:\s*/i, "")
+           elsif content.match?(/\A@#{Regexp.escape(@agent.name)}\s+/i)
+             content = content.sub(/\A@#{Regexp.escape(@agent.name)}\s+/i, "")
+           end
+        end
+
+        messages << { role: role, parts: [ { text: content } ] }
       end
     end
 

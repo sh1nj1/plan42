@@ -112,4 +112,54 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     assert_equal "You are helpful for Test Creative", capture_client.captured_system_prompt
   end
+
+  class MessageCaptureClient
+    attr_reader :captured_messages
+
+    def initialize(*args); end
+
+    def chat(messages, tools: [], &block)
+      @captured_messages = messages
+      block.call("AI Response") if block
+      "AI Response"
+    end
+  end
+
+  test "includes chat history in messages" do
+    # Create some history
+    # 1. User comment
+    Comment.create!(creative: @creative, user: @owner, content: "Previous user message", created_at: 10.minutes.ago)
+    # 2. Agent comment (simulated)
+    Comment.create!(creative: @creative, user: @agent, content: "Previous agent message", created_at: 5.minutes.ago)
+
+    capture_client = nil
+
+    AiClient.stub :new, ->(**kwargs) { capture_client = MessageCaptureClient.new(**kwargs) } do
+      perform_enqueued_jobs do
+        AiAgentJob.perform_later(@agent.id, "test_event", @context)
+      end
+    end
+
+    messages = capture_client.captured_messages
+
+    # Expected messages:
+    # 1. Creative context (system/user)
+    # 2. Previous user message
+    # 3. Previous agent message
+    # 4. Current trigger message
+
+    # Note: The exact index depends on implementation details (e.g. creative context might be first)
+    # Let's check for existence and order
+
+    user_msg_idx = messages.index { |m| m[:role] == "user" && m[:parts][0][:text] == "Previous user message" }
+    agent_msg_idx = messages.index { |m| m[:role] == "model" && m[:parts][0][:text] == "Previous agent message" }
+    current_msg_idx = messages.index { |m| m[:role] == "user" && m[:parts][0][:text] == "Hello" }
+
+    assert user_msg_idx, "Previous user message not found"
+    assert agent_msg_idx, "Previous agent message not found"
+    assert current_msg_idx, "Current message not found"
+
+    assert user_msg_idx < agent_msg_idx
+    assert agent_msg_idx < current_msg_idx
+  end
 end
