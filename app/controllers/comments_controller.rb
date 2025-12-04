@@ -42,11 +42,13 @@ class CommentsController < ApplicationController
       last_read_comment_id = nil
     end
 
+    comments_for_render = page <= 1 ? @comments.reverse : @comments
+
     response.set_header("X-Comments-Page", page)
-    if page <= 1
-      render partial: "comments/list", locals: { comments: @comments.reverse, creative: @creative, last_read_comment_id: last_read_comment_id }
+    if page <= 1 || params[:comment_id].present?
+      render partial: "comments/list", locals: { comments: comments_for_render, creative: @creative, last_read_comment_id: last_read_comment_id }
     else
-      render partial: "comments/comment", collection: @comments, as: :comment
+      render partial: "comments/comment", collection: comments_for_render, as: :comment
     end
   end
 
