@@ -50,9 +50,26 @@ class CommentsController < ApplicationController
     @comment.content = "#{@comment.content}\n\n#{response}" if response.present?
     if @comment.save
       # Trigger AI responder for any @mention at the start
-      if @comment.content.match?(/\A@/)
-        Comments::AiResponderJob.perform_later(@comment.id, @creative.id)
-      end
+      # Trigger AI responder for any @mention at the start
+      # if @comment.content.match?(/\A@/)
+      #   Comments::AiResponderJob.perform_later(@comment.id, @creative.id)
+      # end
+
+      # Dispatch system event
+      SystemEvents::Dispatcher.dispatch("comment_created", {
+        comment: {
+          id: @comment.id,
+          content: @comment.content,
+          user_id: @comment.user_id
+        },
+        creative: {
+          id: @creative.id,
+          description: @creative.description
+        },
+        chat: {
+          content: @comment.content
+        }
+      })
       @comment = Comment.with_attached_images.find(@comment.id)
       render partial: "comments/comment", locals: { comment: @comment }, status: :created
     else
