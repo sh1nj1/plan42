@@ -85,4 +85,31 @@ class AiAgentJobTest < ActiveJob::TestCase
     # Verify no new comment created
     assert_equal 1, @creative.comments.count # Only the initial comment
   end
+
+  class PromptCaptureClient
+    attr_reader :captured_system_prompt
+
+    def initialize(vendor:, model:, system_prompt:, llm_api_key:)
+      @captured_system_prompt = system_prompt
+    end
+
+    def chat(contents, tools: [], &block)
+      block.call("AI Response") if block
+      "AI Response"
+    end
+  end
+
+  test "renders system prompt with liquid context" do
+    @agent.update!(system_prompt: "You are helpful for {{ creative.description }}")
+
+    capture_client = nil
+
+    AiClient.stub :new, ->(**kwargs) { capture_client = PromptCaptureClient.new(**kwargs) } do
+      perform_enqueued_jobs do
+        AiAgentJob.perform_later(@agent.id, "test_event", @context)
+      end
+    end
+
+    assert_equal "You are helpful for Test Creative", capture_client.captured_system_prompt
+  end
 end

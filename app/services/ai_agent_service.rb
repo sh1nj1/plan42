@@ -18,10 +18,22 @@ class AiAgentService
     # Call AI Client
     response_content = ""
 
+    # Enrich context for rendering
+    rendering_context = @context.dup
+    if @context.dig("creative", "id")
+      creative = Creative.find_by(id: @context["creative"]["id"])
+      rendering_context["creative"] = creative.as_json if creative
+    end
+
+    rendered_system_prompt = AiSystemPromptRenderer.new(
+      template: @agent.system_prompt,
+      context: rendering_context
+    ).render
+
     client = AiClient.new(
       vendor: @agent.llm_vendor,
       model: @agent.llm_model,
-      system_prompt: @agent.system_prompt,
+      system_prompt: rendered_system_prompt,
       llm_api_key: @agent.llm_api_key
     )
 
