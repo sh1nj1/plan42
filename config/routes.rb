@@ -58,6 +58,7 @@ Rails.application.routes.draw do
           post :move
         end
       end
+
     collection do
       post :recalculate_progress
       post :reorder

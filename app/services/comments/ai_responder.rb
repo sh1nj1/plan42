@@ -20,6 +20,7 @@ module Comments
 
       # 2. Find AI User by name (case-insensitive) that is searchable/mentionable
       mentionable_users = User.mentionable_for(creative)
+
       ai_user = mentionable_users
                   .where("LOWER(name) = ?", mentioned_name.downcase)
                   .find { |u| u.ai_user? }
@@ -34,41 +35,22 @@ module Comments
       end
       return if payload.blank?
 
-      messages = build_messages(payload, ai_user)
-      system_prompt = AiSystemPromptRenderer.render(
-        template: ai_user.system_prompt,
-        context: system_prompt_context(ai_user:, payload:)
-      )
+
       reply = creative.comments.create!(content: "...", user: ai_user)
 
-      logger.debug("### AI Chat (#{ai_user.name}): #{messages}")
-      accumulator = ""  # No prefix - just the response
-
-      # 4. Call AI Client
-      client = AiClient.new(
-        vendor: ai_user.llm_vendor,
-        model: ai_user.llm_model,
-        system_prompt: system_prompt,
-        llm_api_key: ai_user.llm_api_key
+      # 4. Create Agent Run and Enqueue Job
+      agent_run = AgentRun.create!(
+        creative: creative,
+        ai_user: ai_user,
+        goal: payload,
+        status: "pending"
       )
+      agent_run.context = { "comment_id" => reply.id }
+      agent_run.save!
+      logger.debug("### AgentRun created: #{agent_run.id}, Context: #{agent_run.context}, Reply ID: #{reply.id}")
 
-      client.chat(messages, tools: ai_user.tools || []) do |delta|
-        next if delta.blank?
+      AutonomousAgentJob.perform_later(agent_run.id)
 
-        accumulator += delta
-        begin
-          reply.update!(content: accumulator)
-          logger.debug("### AI Chat (#{ai_user.name}): #{accumulator}")
-        rescue StandardError => e
-          logger.error("AI reply update failed: #{e.class} #{e.message}")
-        end
-      end
-
-      # If no response was received, update the reply with an error placeholder
-      if accumulator.blank?
-        reply.update!(content: "Error: No response from AI model.")
-        logger.error("AI responder: No response received for comment ##{comment.id}")
-      end
     rescue StandardError => e
       logger.error("AI responder failed: #{e.class} #{e.message}")
       begin
@@ -83,37 +65,8 @@ module Comments
     attr_reader :comment, :creative, :helpers, :logger
 
     def build_messages(payload, ai_user)
-      messages = []
-      markdown = helpers.render_creative_tree_markdown([ creative ], 1, true)
-      messages << { role: "user", parts: [ { text: "Creative:\n#{markdown}" } ] }
-
-      # Fetch context history
-      # We include comments that are public or owned by the user who triggered the bot
-      # We also need to handle the roles correctly.
-      # If the comment author is the AI user itself, role is 'model'.
-      # If it's another user, role is 'user'.
-
-      creative.comments.where("comments.private = ? OR comments.user_id = ?", false, comment.user_id)
-              .order(:created_at).each do |c|
-        role = (c.user_id == ai_user.id) ? "model" : "user"
-
-        # Clean up the content if it was a mention to THIS bot
-        # Strip the mention if it matches the current bot's name to avoid confusion
-        text = c.content
-        if role == "user"
-          # Remove @BotName: or @BotName format
-          if text.match?(/\A@#{Regexp.escape(ai_user.name)}:/i)
-            text = text.sub(/\A@#{Regexp.escape(ai_user.name)}:\s*/i, "")
-          elsif text.match?(/\A@#{Regexp.escape(ai_user.name)}\s+/i)
-            text = text.sub(/\A@#{Regexp.escape(ai_user.name)}\s+/i, "")
-          end
-        end
-
-        messages << { role: role, parts: [ { text: text } ] }
-      end
-
-      messages << { role: "user", parts: [ { text: payload } ] }
-      messages
+      AiConversationBuilder.new(creative: creative, ai_user: ai_user, helpers: helpers)
+                           .build_messages(payload: payload, user_for_history: comment.user)
     end
 
     def system_prompt_context(ai_user:, payload:)

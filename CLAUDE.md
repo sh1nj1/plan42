@@ -16,6 +16,11 @@ This document captures best practices for integrating Anthropic's Claude models 
 - Record evaluation results and regression checks so other agents can reuse them.
 - Cross-reference related guidance in `AGENTS.md` to maintain a cohesive developer experience.
 
+## Autonomous Agent Architecture
+- Use the Liquid-rendered system prompts (`AiSystemPromptRenderer`) and RubyLLM transport (`AiClient`) as the foundation for any autonomous loop.
+- A full design for running scheduled or evented agents (control loop, data model, safety guardrails, and deployment checklist) lives in [`docs/ai-autonomous-agent.md`](docs/ai-autonomous-agent.md).
+- When implementing autonomous behavior, reuse the existing comment-based memory and MCP tool registrations so every agent action remains auditable in the creative thread.
+
 ## System Prompt Templates
 - AI user system prompts are rendered as [Liquid templates](https://github.com/Shopify/liquid) so you can inject runtime context.
 - Available variables:
