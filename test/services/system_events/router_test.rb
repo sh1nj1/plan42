@@ -69,5 +69,17 @@ module SystemEvents
         assert_not_includes agents, @agent
       end
     end
+
+    test "routes based on event_name" do
+      @agent.update!(routing_expression: "event_name == 'comment_created'")
+
+      router = SystemEvents::Router.new
+      agents = router.route("comment_created", @context)
+
+      assert_includes agents, @agent
+
+      agents = router.route("other_event", @context)
+      assert_not_includes agents, @agent
+    end
   end
 end

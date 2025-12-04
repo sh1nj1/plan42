@@ -3,6 +3,7 @@ module SystemEvents
     def route(event_name, context)
       # Build the context for Liquid
       liquid_context = ContextBuilder.new(context).build
+      liquid_context["event_name"] = event_name
 
       # Find all AI agents
       agents = User.where.not(llm_vendor: nil)
