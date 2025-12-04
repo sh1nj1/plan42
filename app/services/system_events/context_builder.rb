@@ -10,7 +10,7 @@ module SystemEvents
 
       # Add helper objects/functions
       if ctx["chat"]
-        ctx["chat"]["mentioned_user"] = mentioned_user(ctx["chat"])
+        ctx["chat"]["mentioned_user"] ||= mentioned_user(ctx["chat"])
       end
 
       ctx
