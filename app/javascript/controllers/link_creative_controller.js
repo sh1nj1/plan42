@@ -1,0 +1,77 @@
+import CommonPopupController from './common_popup_controller'
+import creativesApi from '../lib/api/creatives'
+
+export default class extends CommonPopupController {
+    static targets = ['input', 'list', 'close']
+
+    connect() {
+        super.connect()
+        this.inputTarget.addEventListener('input', this.search.bind(this))
+        this.inputTarget.addEventListener('keydown', this.handleInputKeydown.bind(this))
+        this.closeTarget.addEventListener('click', () => this.close())
+
+        // Bind public methods
+        this.open = this.open.bind(this)
+    }
+
+    open(anchorRect, onSelectCallback, onCloseCallback) {
+        this.onSelectCallback = onSelectCallback
+        this.onCloseCallback = onCloseCallback
+        this.setItems([])
+        this.inputTarget.value = ''
+        super.open(anchorRect)
+
+        requestAnimationFrame(() => {
+            this.inputTarget.focus()
+        })
+    }
+
+    close() {
+        super.close()
+        if (this.onCloseCallback) {
+            this.onCloseCallback()
+        }
+        this.onSelectCallback = null
+        this.onCloseCallback = null
+    }
+
+    handleInputKeydown(event) {
+        // Delegate to CommonPopup for navigation
+        if (this.handleKey(event)) return
+
+        // Special handling for this specific popup
+        if (event.key === 'Escape') {
+            this.close()
+        }
+    }
+
+    search() {
+        const query = this.inputTarget.value.trim()
+        if (!query) {
+            this.setItems([])
+            return
+        }
+
+        creativesApi.search(query, { simple: true })
+            .then((results) => {
+                const items = Array.isArray(results)
+                    ? results.map((result) => ({ id: result.id, label: result.description }))
+                    : []
+                this.setItems(items)
+            })
+            .catch(() => this.setItems([]))
+    }
+
+    // Override select to invoke callback
+    select(item) {
+        if (this.onSelectCallback) {
+            this.onSelectCallback(item)
+        }
+        this.close()
+    }
+
+    renderItem(item) {
+        // Keep it simple as per original implementation
+        return item.label || ''
+    }
+}

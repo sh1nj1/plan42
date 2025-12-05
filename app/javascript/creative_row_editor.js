@@ -3,7 +3,7 @@ import apiQueue from './lib/api/queue_manager'
 import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
 import { createInlineEditor } from './lexical_inline_editor'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from './creatives/tree_renderer'
-import { openLinkSelection } from './lib/link_selection_popup'
+import { application } from './controllers/application'
 
 const BULLET_STARTING_LEVEL = 3;
 const HEADING_INDENT_STEP_EM = 0.4;
@@ -1410,14 +1410,16 @@ export function initializeCreativeRowEditor() {
 
     function linkExistingCreative() {
       if (!currentTree || !form.dataset.creativeId) return;
-      openLinkSelection({
-        anchorRect: linkBtn?.getBoundingClientRect(),
-        onSelect: (item) => {
+
+      const modal = document.getElementById('link-creative-modal')
+      const controller = application.getControllerForElementAndIdentifier(modal, 'link-creative')
+      if (controller) {
+        controller.open(linkBtn?.getBoundingClientRect(), (item) => {
           creativesApi.linkExisting(form.dataset.creativeId, item.id).then(() => {
             refreshChildren(currentTree).then(() => refreshRow(currentTree));
           });
-        },
-      });
+        });
+      }
     }
 
     function resetOriginTracking() {

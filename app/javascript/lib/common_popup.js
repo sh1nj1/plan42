@@ -45,8 +45,8 @@ export default class CommonPopup {
     let viewportTop = (rect?.bottom || 0) + 4
 
     const { offsetWidth: width, offsetHeight: height } = this.element
-    const maxLeft = boundsPadding + window.innerWidth - width
-    const maxTop = boundsPadding + window.innerHeight - height
+    const maxLeft = window.innerWidth - width - boundsPadding
+    const maxTop = window.innerHeight - height - boundsPadding
 
     viewportLeft = Math.max(boundsPadding, Math.min(viewportLeft, maxLeft))
     viewportTop = Math.max(boundsPadding, Math.min(viewportTop, maxTop))

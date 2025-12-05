@@ -1,7 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 import { copyTextToClipboard } from '../../utils/clipboard'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
-import { openLinkSelection } from '../../lib/link_selection_popup'
+
 
 const COMMENTS_PER_PAGE = 10
 
@@ -423,16 +423,23 @@ export default class extends Controller {
     this.movingComments = true
     this.notifySelectionChange()
 
-    const opened = openLinkSelection({
-      anchorRect: this.element.getBoundingClientRect(),
-      onSelect: (item) => this.moveSelectedComments(item.id),
-      onClose: () => {
-        this.movingComments = false
-        this.notifySelectionChange()
-      },
-    })
+    const modal = document.getElementById('link-creative-modal')
+    const controller = this.application.getControllerForElementAndIdentifier(modal, 'link-creative')
 
-    if (!opened) {
+    if (controller) {
+      controller.open(
+        this.element.getBoundingClientRect(),
+        (item) => {
+          this.moveSelectedComments(item.id)
+          this.movingComments = false
+          this.notifySelectionChange()
+        },
+        () => {
+          this.movingComments = false
+          this.notifySelectionChange()
+        }
+      )
+    } else {
       this.movingComments = false
       this.notifySelectionChange()
       alert(this.element.dataset.moveErrorText)
