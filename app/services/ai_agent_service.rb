@@ -78,9 +78,11 @@ class AiAgentService
       # But for efficiency, let's assume we fetch it if ID is present
       creative_id = @context.dig("creative", "id")
       if creative_id
-        creative = Creative.find(creative_id)
-        markdown = ApplicationController.helpers.render_creative_tree_markdown([ creative ], 1, true)
-        messages << { role: "user", parts: [ { text: "Creative:\n#{markdown}" } ] }
+        creative = Creative.find_by(id: creative_id)
+        if creative
+          markdown = ApplicationController.helpers.render_creative_tree_markdown([ creative ], 1, true)
+          messages << { role: "user", parts: [ { text: "Creative:\n#{markdown}" } ] }
+        end
       end
     end
 
