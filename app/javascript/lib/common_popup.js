@@ -34,18 +34,25 @@ export default class CommonPopup {
 
     const scrollX = window.scrollX || window.pageXOffset || 0
     const scrollY = window.scrollY || window.pageYOffset || 0
+    const offsetParent = this.element.offsetParent
+    const parentRect = offsetParent?.getBoundingClientRect?.() || { left: 0, top: 0 }
+    const parentScrollX = offsetParent?.scrollLeft || 0
+    const parentScrollY = offsetParent?.scrollTop || 0
     const boundsPadding = 8
     const rect = anchorRect || this.element.getBoundingClientRect()
 
-    let left = (rect?.left || 0) + scrollX
-    let top = (rect?.bottom || 0) + scrollY + 4
+    let viewportLeft = (rect?.left || 0)
+    let viewportTop = (rect?.bottom || 0) + 4
 
     const { offsetWidth: width, offsetHeight: height } = this.element
-    const maxLeft = scrollX + window.innerWidth - width - boundsPadding
-    const maxTop = scrollY + window.innerHeight - height - boundsPadding
+    const maxLeft = boundsPadding + window.innerWidth - width
+    const maxTop = boundsPadding + window.innerHeight - height
 
-    left = Math.max(boundsPadding + scrollX, Math.min(left, maxLeft))
-    top = Math.max(boundsPadding + scrollY, Math.min(top, maxTop))
+    viewportLeft = Math.max(boundsPadding, Math.min(viewportLeft, maxLeft))
+    viewportTop = Math.max(boundsPadding, Math.min(viewportTop, maxTop))
+
+    const left = viewportLeft - parentRect.left + parentScrollX
+    const top = viewportTop - parentRect.top + parentScrollY
 
     this.element.style.left = `${left}px`
     this.element.style.top = `${top}px`
