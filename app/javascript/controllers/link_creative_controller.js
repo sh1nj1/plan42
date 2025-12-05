@@ -27,12 +27,9 @@ export default class extends CommonPopupController {
     }
 
     close() {
+        // super.close() calls popup.hide(), which triggers dispatchClose, 
+        // where we now handle the callback. So we just need to call super.close().
         super.close()
-        if (this.onCloseCallback) {
-            this.onCloseCallback()
-        }
-        this.onSelectCallback = null
-        this.onCloseCallback = null
     }
 
     handleInputKeydown(event) {
@@ -73,5 +70,16 @@ export default class extends CommonPopupController {
     renderItem(item) {
         // Keep it simple as per original implementation
         return item.label || ''
+    }
+
+    dispatchClose(reason) {
+        if (this.onCloseCallback) {
+            this.onCloseCallback()
+            this.onCloseCallback = null
+        }
+        // Also clear the callback reference to avoid double calling if close() is called manually later
+        this.onSelectCallback = null
+
+        super.dispatchClose(reason)
     }
 }
