@@ -68,8 +68,14 @@ export default class extends CommonPopupController {
     }
 
     renderItem(item) {
-        // Keep it simple as per original implementation
-        return item.label || ''
+        // Escape HTML to prevent XSS since CommonPopup uses innerHTML
+        const text = item.label || ''
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;")
     }
 
     dispatchClose(reason) {
