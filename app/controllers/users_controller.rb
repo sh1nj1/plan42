@@ -67,7 +67,7 @@ class UsersController < ApplicationController
       searchable: searchable,
       email_verified_at: Time.current, # Auto-verified
       created_by_id: Current.user.id,
-      routing_expression: params[:routing_expression].presence || "true"
+      routing_expression: params[:routing_expression]
     )
 
     if @user.save
