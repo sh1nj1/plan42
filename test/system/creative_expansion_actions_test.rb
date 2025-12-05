@@ -92,4 +92,36 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     assert_selector "#comments-popup", visible: :visible
     assert_selector "#comment_#{comment.id}.highlight-flash", wait: 5
   end
+
+  test "reopens comments popup at stored position after resize" do
+    stored_top = "150px"
+    stored_left = "250px"
+
+    page.execute_script(<<~JS)
+      window.localStorage.setItem('commentsPopupSize', JSON.stringify({
+        width: '480px',
+        height: '520px',
+        top: '#{stored_top}',
+        left: '#{stored_left}',
+        resized: true,
+      }))
+    JS
+
+    root_selector = row_selector(@root_creative)
+    find(root_selector).hover
+    within(:css, root_selector) do
+      find("[name='show-comments-btn']").click
+    end
+
+    assert_selector "#comments-popup", visible: :visible
+
+    popup_top, popup_left = page.evaluate_script(<<~JS)
+      const popup = document.getElementById('comments-popup')
+      const styles = window.getComputedStyle(popup)
+      [styles.top, styles.left]
+    JS
+
+    assert_equal stored_top, popup_top
+    assert_equal stored_left, popup_left
+  end
 end

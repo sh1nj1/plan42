@@ -158,6 +158,12 @@ export default class extends Controller {
       if (parsed.height) {
         this.element.style.height = parsed.height
       }
+      if (parsed.top) this.element.style.top = parsed.top
+      if (parsed.left) {
+        this.element.style.left = parsed.left
+        this.element.style.right = ''
+      }
+      if (parsed.resized) this.element.dataset.resized = 'true'
     } catch (error) {
       console.warn('Failed to parse comments popup size', error)
     }
@@ -247,7 +253,13 @@ export default class extends Controller {
     if (this.resizing) {
       window.localStorage.setItem(
         SIZE_STORAGE_KEY,
-        JSON.stringify({ width: this.element.style.width, height: this.element.style.height })
+        JSON.stringify({
+          width: this.element.style.width,
+          height: this.element.style.height,
+          top: this.element.style.top,
+          left: this.element.style.left,
+          resized: true,
+        })
       )
     }
     this.resizing = null
