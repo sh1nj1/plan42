@@ -39,3 +39,5 @@ application.register("click-target", ClickTargetController)
 application.register("creatives--set-plan-modal", CreativesSetPlanModalController)
 application.register("avatar-preview", AvatarPreviewController)
 application.register("tabs", TabsController)
+import LinkCreativeController from "./link_creative_controller"
+application.register("link-creative", LinkCreativeController)

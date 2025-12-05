@@ -2,6 +2,7 @@ import { Controller } from '@hotwired/stimulus'
 import { copyTextToClipboard } from '../../utils/clipboard'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 
+
 const COMMENTS_PER_PAGE = 10
 
 export default class extends Controller {
@@ -419,44 +420,30 @@ export default class extends Controller {
       }
       return
     }
-    const linkModal = document.getElementById('link-creative-modal')
-    const linkSearchInput = document.getElementById('link-creative-search')
-    const linkResults = document.getElementById('link-creative-results')
-    if (!linkModal || !linkSearchInput || !linkResults) {
-      alert(this.element.dataset.moveErrorText)
-      return
-    }
-
-    const cleanup = () => {
-      linkModal.removeEventListener('link-creative-modal:select', handleSelect)
-      linkModal.removeEventListener('link-creative-modal:closed', handleClosed)
-    }
-
-    const handleSelect = (event) => {
-      cleanup()
-      const detail = event?.detail || {}
-      if (detail.id) {
-        this.moveSelectedComments(detail.id)
-      }
-    }
-
-    const handleClosed = () => {
-      cleanup()
-      this.movingComments = false
-      this.notifySelectionChange()
-    }
-
     this.movingComments = true
     this.notifySelectionChange()
 
-    linkModal.addEventListener('link-creative-modal:select', handleSelect)
-    linkModal.addEventListener('link-creative-modal:closed', handleClosed)
-    linkModal.dataset.context = 'comment-move'
-    linkSearchInput.value = ''
-    linkResults.innerHTML = ''
-    linkModal.style.display = 'flex'
-    document.body.classList.add('no-scroll')
-    requestAnimationFrame(() => linkSearchInput.focus())
+    const modal = document.getElementById('link-creative-modal')
+    const controller = this.application.getControllerForElementAndIdentifier(modal, 'link-creative')
+
+    if (controller) {
+      controller.open(
+        this.element.getBoundingClientRect(),
+        (item) => {
+          this.moveSelectedComments(item.id)
+          this.movingComments = false
+          this.notifySelectionChange()
+        },
+        () => {
+          this.movingComments = false
+          this.notifySelectionChange()
+        }
+      )
+    } else {
+      this.movingComments = false
+      this.notifySelectionChange()
+      alert(this.element.dataset.moveErrorText)
+    }
   }
 
   moveSelectedComments(targetCreativeId) {

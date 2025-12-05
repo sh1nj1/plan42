@@ -3,6 +3,7 @@ import apiQueue from './lib/api/queue_manager'
 import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
 import { createInlineEditor } from './lexical_inline_editor'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from './creatives/tree_renderer'
+import { application } from './controllers/application'
 
 const BULLET_STARTING_LEVEL = 3;
 const HEADING_INDENT_STEP_EM = 0.4;
@@ -86,11 +87,6 @@ export function initializeCreativeRowEditor() {
     const closeBtn = document.getElementById('inline-close');
     const parentSuggestions = document.getElementById('parent-suggestions');
     const parentSuggestBtn = document.getElementById('inline-recommend-parent');
-    const linkModal = document.getElementById('link-creative-modal');
-    const linkSearchInput = document.getElementById('link-creative-search');
-    const linkResults = document.getElementById('link-creative-results');
-    const linkCloseBtn = document.getElementById('close-link-creative-modal');
-
     const methodInput = document.getElementById('inline-method');
     const parentInput = document.getElementById('inline-parent-id');
     const beforeInput = document.getElementById('inline-before-id');
@@ -1413,76 +1409,17 @@ export function initializeCreativeRowEditor() {
     }
 
     function linkExistingCreative() {
-      if (!currentTree || !form.dataset.creativeId || !linkModal || !linkSearchInput || !linkResults) return;
-      linkModal.dataset.context = 'creative-link';
-      linkModal.style.display = 'flex';
-      document.body.classList.add('no-scroll');
-      linkSearchInput.value = '';
-      linkResults.innerHTML = '';
-      linkSearchInput.focus();
-    }
+      if (!currentTree || !form.dataset.creativeId) return;
 
-    function closeLinkModal() {
-      if (!linkModal) return;
-      linkModal.style.display = 'none';
-      document.body.classList.remove('no-scroll');
-      delete linkModal.dataset.context;
-      linkModal.dispatchEvent(new CustomEvent('link-creative-modal:closed'));
-    }
-
-    function searchLinkCreatives() {
-      const query = linkSearchInput.value.trim();
-      if (!query) {
-        linkResults.innerHTML = '';
-        return;
-      }
-      creativesApi
-        .search(query, { simple: true })
-        .then(results => {
-          linkResults.innerHTML = '';
-          if (Array.isArray(results)) {
-            results.forEach(function (c) {
-              const li = document.createElement('li');
-              li.textContent = c.description;
-              li.dataset.id = c.id;
-              li.tabIndex = 0;
-              li.setAttribute('role', 'button');
-              linkResults.appendChild(li);
-            });
-          }
+      const modal = document.getElementById('link-creative-modal')
+      const controller = application.getControllerForElementAndIdentifier(modal, 'link-creative')
+      if (controller) {
+        controller.open(linkBtn?.getBoundingClientRect(), (item) => {
+          creativesApi.linkExisting(form.dataset.creativeId, item.id).then(() => {
+            refreshChildren(currentTree).then(() => refreshRow(currentTree));
+          });
         });
-    }
-
-    function linkCreativeFromLi(li) {
-      if (!linkModal) return;
-      if (linkModal.dataset.context === 'comment-move') {
-        linkModal.dispatchEvent(new CustomEvent('link-creative-modal:select', {
-          detail: {
-            id: li.dataset.id,
-            label: li.textContent
-          }
-        }));
-        closeLinkModal();
-        return;
       }
-      creativesApi.linkExisting(form.dataset.creativeId, li.dataset.id).then(() => {
-        closeLinkModal();
-        refreshChildren(currentTree).then(() => refreshRow(currentTree));
-      });
-    }
-
-    function handleLinkResultClick(e) {
-      const li = e.target.closest('li');
-      if (!li) return;
-      linkCreativeFromLi(li);
-    }
-
-    function handleLinkResultKeydown(e) {
-      if (e.key !== 'Enter') return;
-      const li = e.target.closest('li');
-      if (!li) return;
-      e.preventDefault();
-      linkCreativeFromLi(li);
     }
 
     function resetOriginTracking() {
@@ -1819,22 +1756,6 @@ export function initializeCreativeRowEditor() {
 
     if (linkBtn) {
       linkBtn.addEventListener('click', linkExistingCreative);
-    }
-
-    if (linkSearchInput) {
-      linkSearchInput.addEventListener('input', searchLinkCreatives);
-    }
-
-    if (linkResults) {
-      linkResults.addEventListener('click', handleLinkResultClick);
-      linkResults.addEventListener('keydown', handleLinkResultKeydown);
-    }
-
-    if (linkCloseBtn && linkModal) {
-      linkCloseBtn.addEventListener('click', closeLinkModal);
-      linkModal.addEventListener('click', function (e) {
-        if (e.target === linkModal) closeLinkModal();
-      });
     }
 
     if (unlinkBtn) {
