@@ -146,6 +146,7 @@ export default class extends Controller {
     this.element.style.right = ''
     this.element.style.top = ''
     this.element.style.bottom = ''
+    delete this.element.dataset.resized
     document.body.classList.remove('no-scroll')
   }
 
