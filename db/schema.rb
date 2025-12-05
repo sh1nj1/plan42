@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_12_02_062715) do
+ActiveRecord::Schema[8.1].define(version: 2025_12_04_161133) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -513,6 +513,28 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_02_062715) do
     t.index ["label_id"], name: "index_tags_on_label_id"
   end
 
+  create_table "task_actions", force: :cascade do |t|
+    t.string "action_type"
+    t.datetime "created_at", null: false
+    t.json "payload"
+    t.json "result"
+    t.string "status", default: "pending"
+    t.integer "task_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["task_id"], name: "index_task_actions_on_task_id"
+  end
+
+  create_table "tasks", force: :cascade do |t|
+    t.integer "agent_id", null: false
+    t.datetime "created_at", null: false
+    t.string "name"
+    t.string "status", default: "pending"
+    t.string "trigger_event_name"
+    t.json "trigger_event_payload"
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_tasks_on_agent_id"
+  end
+
   create_table "users", force: :cascade do |t|
     t.string "avatar_url"
     t.string "calendar_id"
@@ -533,6 +555,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_02_062715) do
     t.string "name", null: false
     t.boolean "notifications_enabled"
     t.string "password_digest", null: false
+    t.text "routing_expression"
     t.boolean "searchable", default: false, null: false
     t.boolean "system_admin", default: false, null: false
     t.text "system_prompt"
@@ -593,4 +616,6 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_02_062715) do
   add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "subscribers", "creatives"
   add_foreign_key "tags", "labels"
+  add_foreign_key "task_actions", "tasks"
+  add_foreign_key "tasks", "users", column: "agent_id"
 end

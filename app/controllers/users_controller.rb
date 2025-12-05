@@ -66,7 +66,8 @@ class UsersController < ApplicationController
       tools: params[:tools] || [],
       searchable: searchable,
       email_verified_at: Time.current, # Auto-verified
-      created_by_id: Current.user.id
+      created_by_id: Current.user.id,
+      routing_expression: params[:routing_expression] # allow empty for not routing for now
     )
 
     if @user.save
@@ -105,7 +106,7 @@ class UsersController < ApplicationController
       return
     end
 
-    ai_params = params.require(:user).permit(:name, :system_prompt, :llm_model, :llm_api_key, :searchable, tools: [])
+    ai_params = params.require(:user).permit(:name, :system_prompt, :llm_model, :llm_api_key, :searchable, :routing_expression, tools: [])
 
     if @user.update(ai_params)
       redirect_to edit_ai_user_path(@user), notice: t("users.update_ai.success")
