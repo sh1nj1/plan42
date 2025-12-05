@@ -143,7 +143,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_04_161133) do
     t.float "progress", default: 0.0
     t.integer "sequence", default: 0, null: false
     t.datetime "updated_at", null: false
-    t.integer "user_id", null: false
+    t.integer "user_id"
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
@@ -584,7 +584,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_04_161133) do
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
-  add_foreign_key "creative_shares", "users", column: "shared_by_id"
+  add_foreign_key "creative_shares", "users", column: "shared_by_id", on_delete: :nullify
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
