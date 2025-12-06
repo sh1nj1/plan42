@@ -41,6 +41,14 @@
     flex-direction: column;
 }
 
+#comments-list::before {
+    content: '';
+    margin-top: auto;
+    /* This pushes content to the bottom when there's few items, 
+       but collapses when content overflows, preserving scroll behavior. 
+    */
+}
+
 #new-comment-form {
     margin-top: auto;
 }
