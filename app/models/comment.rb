@@ -77,7 +77,7 @@ class Comment < ApplicationRecord
 
   def broadcast_create
     return if private?
-    broadcast_append_later_to([ creative, :comments ], target: "comments_list")
+    broadcast_append_later_to([ creative, :comments ], target: "comments-list")
   end
 
   def broadcast_update

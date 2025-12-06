@@ -24,10 +24,13 @@ export default class extends Controller {
     const urlParams = new URLSearchParams(window.location.search)
     this.deepLinkCommentId = urlParams.get('comment_id') || urlParams.get('highlight_comment_id')
 
+    this.handleStreamRender = this.handleStreamRender.bind(this)
+
     this.listTarget.addEventListener('scroll', this.handleScroll)
     this.listTarget.addEventListener('change', this.handleChange)
     this.listTarget.addEventListener('click', this.handleClick)
     this.listTarget.addEventListener('submit', this.handleSubmit)
+    document.addEventListener('turbo:before-stream-render', this.handleStreamRender)
 
     this.observeListMutations()
 
@@ -45,6 +48,7 @@ export default class extends Controller {
     this.listTarget.removeEventListener('change', this.handleChange)
     this.listTarget.removeEventListener('click', this.handleClick)
     this.listTarget.removeEventListener('submit', this.handleSubmit)
+    document.removeEventListener('turbo:before-stream-render', this.handleStreamRender)
     if (this.listObserver) {
       this.listObserver.disconnect()
       this.listObserver = null
@@ -178,6 +182,7 @@ export default class extends Controller {
     this.fetchComments({ after_id: maxId })
       .then((html) => {
         if (html.trim() === '') {
+
           this.allNewerLoaded = true
           return
         }
@@ -328,6 +333,23 @@ export default class extends Controller {
 
     // Note: main comment form is handled by form_controller.js, but if it emits events here?
     // Actually form_controller handleSubmit calls this list controller? No, distinct.
+  }
+
+  handleStreamRender(event) {
+    // Only care about streams targeting our list
+    if (event.target.target !== 'comments-list') return
+
+    // If we are in "History Mode" (not all newer loaded), we BLOCK live updates.
+    // The user must scroll down or click "jump to latest" to see them.
+    // This prevents the DOM from growing or shifting while viewing history.
+    if (!this.allNewerLoaded) {
+
+      event.preventDefault()
+      // Optional: Show a "New messages" indicator?
+      // For now, strict requirement: "do not add to DOM".
+    } else {
+
+    }
   }
 
   // ... Include helper methods (handleSelectionChange, notifySelectionChange, clearSelection, etc.)
@@ -514,7 +536,10 @@ export default class extends Controller {
   scrollToBottom() {
     // In column reverse, bottom of scroll might be tricky.
     // Easiest is to set scrollTop to a large value.
-    this.listTarget.scrollTop = this.listTarget.scrollHeight
+    requestAnimationFrame(() => {
+      this.listTarget.scrollTop = this.listTarget.scrollHeight
+
+    })
   }
 
   getActionContainer(element) { return element?.closest('.comment-action-block') }
@@ -549,14 +574,14 @@ export default class extends Controller {
     this.listObserver = new MutationObserver((mutations) => {
       const hasAdded = mutations.some(m => m.addedNodes.length > 0)
       if (hasAdded) {
-        // Auto-scroll logic if user was at bottom
-        // For now, if we are loading newer, we might handle it manually.
-        // But for Turbo Stream updates from other users:
-        // If we are "live" (allNewerLoaded is true) and scrolled to bottom, stay at bottom.
-        // If we are "history" (allNewerLoaded is false), usually we don't receive turbo streams? 
-        // Wait, Turbo Stream is channel based. We ALWAYS receive it.
-        // Since list is reversed, new message prepended at Start (Bottom).
-        // If we are scrolled UP (viewing history), new header addition shouldn't disturb view.
+        // If we are sticking to bottom, force scroll to bottom on new content
+        // BUT NOT if we are explicitly loading newer pagination (infinite scroll down)
+        if (this.stickToBottom && !this.loadingNewer) {
+
+          this.scrollToBottom()
+        } else {
+
+        }
       }
     })
     this.listObserver.observe(this.listTarget, { childList: true, subtree: true })
