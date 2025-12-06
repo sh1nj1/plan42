@@ -3,10 +3,7 @@ class CommentsController < ApplicationController
   before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action ]
 
   def index
-    per_page = params[:per_page].to_i
-    per_page = 10 if per_page <= 0
-    page = params[:page].to_i
-    page = 1 if page <= 0
+    limit = 20
 
     scope = @creative.comments.where(
       "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
@@ -15,23 +12,74 @@ class CommentsController < ApplicationController
       Current.user.id
     )
     scope = scope.with_attached_images
+
     if params[:search].present?
       search_term = ActiveRecord::Base.sanitize_sql_like(params[:search].to_s.strip.downcase)
       scope = scope.where("LOWER(comments.content) LIKE ?", "%#{search_term}%")
     end
+
+    # Default order: Newest first (created_at DESC)
+    # This matches the column-reverse layout where the first item in the list is the visual bottom (Newest).
     scope = scope.order(created_at: :desc)
-    @comments = scope.offset((page - 1) * per_page).limit(per_page).to_a
+
+    @comments = if params[:around_comment_id].present?
+      # Deep linking: Load context around a specific comment
+      target_id = params[:around_comment_id].to_i
+
+      # 1. Fetch target + newer (after params[:around_comment_id])
+      # newer_scope = scope.where("id >= ?", target_id).limit(limit / 2 + 1)
+      # older_scope = scope.where("id < ?", target_id).limit(limit / 2)
+
+      # Since default order is DESC (Newest First):
+      # Newer messages have HIGHER IDs.
+      # Older messages have LOWER IDs.
+
+      # Newer bundle (including target): ID >= target_id
+      newer_bundle = scope.where("comments.id >= ?", target_id).reorder(created_at: :asc).limit(limit / 2 + 1)
+
+      # Older bundle: ID < target_id
+      older_bundle = scope.where("comments.id < ?", target_id).limit(limit / 2)
+
+      # Combine: [Newer (ASC) ... Target ... Older (DESC)]
+      # We need final output to be ASC due to restored view logic: [Oldest ... Target ... Newest]
+      (older_bundle.reverse + newer_bundle).uniq
+    elsif params[:after_id].present? && params[:before_id].present?
+        # Invalid state, prioritize before (loading older history)
+        scope.where("comments.id < ?", params[:before_id].to_i).limit(limit).to_a.reverse
+    elsif params[:before_id].present?
+      # Load OLDER messages (lower IDs)
+      # Visually scrolling UP
+      scope.where("comments.id < ?", params[:before_id].to_i).limit(limit).to_a.reverse
+    elsif params[:after_id].present?
+      # Load NEWER messages (higher IDs)
+      # Visually scrolling DOWN
+      # We want the ones immediately *after* the current newest.
+      # Since default sort is DESC (Newest first), "after" means id > after_id.
+      # But standard DESC query would give us the VERY Newest.
+      # We want the ones just above `after_id`.
+
+      # Use reorder(ASC) to get the ones immediately larger than after_id, then reverse back to DESC.
+      scope.where("comments.id > ?", params[:after_id].to_i).reorder(created_at: :asc).limit(limit)
+    else
+      # Initial Load (Latest messages)
+      scope.limit(limit).to_a.reverse
+    end
+
     pointer = CommentReadPointer.find_by(user: Current.user, creative: @creative)
     last_read_comment_id = pointer&.last_read_comment_id
-    max_id = scope.maximum(:id)
+    max_id = @creative.comments.maximum(:id) # Global max for this creative
     if last_read_comment_id && last_read_comment_id == max_id
       last_read_comment_id = nil
     end
 
-    if page <= 1
-      render partial: "comments/list", locals: { comments: @comments.reverse, creative: @creative, last_read_comment_id: last_read_comment_id }
+    if params[:after_id].present? || params[:before_id].present?
+      render partial: "comments/comment", collection: @comments, as: :comment, locals: { last_read_comment_id: last_read_comment_id }
     else
-      render partial: "comments/comment", collection: @comments, as: :comment
+      render partial: "comments/list", locals: {
+        comments: @comments,
+        creative: @creative,
+        last_read_comment_id: last_read_comment_id
+      }
     end
   end
 

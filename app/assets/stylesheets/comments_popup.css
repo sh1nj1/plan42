@@ -38,7 +38,7 @@
     flex-grow: 1;
     /* align to vertical bottom */
     display: flex;
-    flex-direction: column-reverse;
+    flex-direction: column;
 }
 
 #new-comment-form {

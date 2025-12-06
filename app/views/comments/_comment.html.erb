@@ -1,4 +1,4 @@
-<div class="comment-item <%= 'last-read' if defined?(last_read_comment_id) && last_read_comment_id && comment.id == last_read_comment_id %>" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>">
+<div class="comment-item <%= 'last-read' if defined?(last_read_comment_id) && last_read_comment_id && comment.id == last_read_comment_id %>" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>">
   <div class="comment-select">
     <input type="checkbox"
            class="comment-select-checkbox"
