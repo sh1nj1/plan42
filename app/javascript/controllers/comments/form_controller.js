@@ -472,7 +472,7 @@ export default class extends Controller {
   }
 
   renderCommentHtml(html, { replaceExisting = false } = {}) {
-    const listElement = document.getElementById('comments_list')
+    const listElement = document.getElementById('comments-list')
     if (!listElement || !html) return
 
     const parser = new DOMParser()
@@ -496,7 +496,7 @@ export default class extends Controller {
   }
 
   removePlaceholder() {
-    const listElement = document.getElementById('comments_list')
+    const listElement = document.getElementById('comments-list')
     const placeholder = listElement?.querySelector('#no-comments')
     if (placeholder) placeholder.remove()
   }
