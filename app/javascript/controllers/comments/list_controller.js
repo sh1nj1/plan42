@@ -545,7 +545,7 @@ export default class extends Controller {
     // Easiest is to set scrollTop to a large value.
     requestAnimationFrame(() => {
       this.listTarget.scrollTop = this.listTarget.scrollHeight
-
+      this.stickToBottom = true
     })
   }
 
