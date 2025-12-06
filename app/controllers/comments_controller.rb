@@ -5,13 +5,13 @@ class CommentsController < ApplicationController
   def index
     limit = 20
 
-    scope = @creative.comments.where(
+    visible_scope = @creative.comments.where(
       "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
       false,
       Current.user.id,
       Current.user.id
     )
-    scope = scope.with_attached_images
+    scope = visible_scope.with_attached_images
 
     if params[:search].present?
       search_term = ActiveRecord::Base.sanitize_sql_like(params[:search].to_s.strip.downcase)
@@ -67,7 +67,7 @@ class CommentsController < ApplicationController
 
     pointer = CommentReadPointer.find_by(user: Current.user, creative: @creative)
     last_read_comment_id = pointer&.last_read_comment_id
-    max_id = @creative.comments.maximum(:id) # Global max for this creative
+    max_id = visible_scope.maximum(:id) # Max visible ID for this user
     if last_read_comment_id && last_read_comment_id == max_id
       last_read_comment_id = nil
     end
