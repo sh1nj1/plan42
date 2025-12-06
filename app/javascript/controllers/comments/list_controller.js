@@ -495,6 +495,10 @@ export default class extends Controller {
         const existing = document.getElementById(`comment_${commentId}`)
         if (existing) existing.outerHTML = html
       })
+      .catch((error) => {
+        console.error(error)
+        alert(this.element.dataset.updateErrorText || 'Failed to update action')
+      })
       .finally(() => { if (submitButton) submitButton.disabled = false })
   }
 
