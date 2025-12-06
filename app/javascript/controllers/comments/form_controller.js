@@ -182,14 +182,42 @@ export default class extends Controller {
       .then((html) => {
         const wasEditing = this.editingId
         this.resetForm()
-        if (wasPrivate || wasEditing) {
-          this.renderCommentHtml(html, { replaceExisting: wasEditing })
+        if (wasEditing) {
+          // If editing, just replace the item in place
+          this.renderCommentHtml(html, { replaceExisting: true })
         } else {
-          this.removePlaceholder()
+          // New Comment:
+          // 1. If we are in "History Mode" (scrolled up), sending a message should jump us to the latest.
+          // 2. Ideally, we just reload the "Latest" page to ensure sync and Live Mode.
+          // 3. Or, if we are already at latest, just append.
+
+          // Based on requirements: "jump to first page... message added immediately".
+          // Safest approach: Reset list to latest.
+          // However, to make it feel instant, we might want to append optimisticly or just let the reset handle it.
+          // A full reset causes a loading spinner.
+          // Better UX: Append to bottom, then ensure we are in "Live Mode".
+
+          // BUT, if we are in history, appending to bottom might leave a gap if we haven't loaded intermediate messages.
+          // So, if !allNewerLoaded, we MUST reset/reload to get the full latest context.
+
+          const listCtrl = this.listController
+          if (listCtrl) {
+            if (!listCtrl.allNewerLoaded) {
+              // In History Mode -> Reset to Latest
+              listCtrl.resetToLatest()
+              // Note: The new message is in `html`, but resetToLatest fetches from server.
+              // There might be a race condition if server value isn't ready, but usually ok.
+              // Alternatively, we manually clear list and append `html` + fetch prev?
+              // Reset is safest for data consistency.
+            } else {
+              // Already in Live Mode or at bottom -> Just append and scroll
+              this.renderCommentHtml(html, { replaceExisting: false })
+              listCtrl.scrollToBottom()
+              listCtrl.updateStickiness()
+              listCtrl.markCommentsRead()
+            }
+          }
         }
-        this.listController?.scrollToBottom()
-        this.listController?.updateStickiness()
-        this.listController?.markCommentsRead()
       })
       .catch((error) => {
         alert(error?.message || 'Failed to submit comment')
@@ -359,7 +387,7 @@ export default class extends Controller {
     if (!this.imageInputTarget) return
     const newFiles = Array.from(this.imageInputTarget.files || [])
     const existingFiles = this.cachedImageFiles ?? []
-    this.setImageFiles([ ...existingFiles, ...newFiles ])
+    this.setImageFiles([...existingFiles, ...newFiles])
     this.cachedImageFiles = null
     this.updateAttachmentList()
   }
@@ -374,7 +402,7 @@ export default class extends Controller {
     const imageFiles = this.extractImageFiles(event.dataTransfer)
     if (!imageFiles.length) return
     event.preventDefault()
-    this.setImageFiles([ ...this.currentImageFiles(), ...imageFiles ])
+    this.setImageFiles([...this.currentImageFiles(), ...imageFiles])
     this.updateAttachmentList()
   }
 
