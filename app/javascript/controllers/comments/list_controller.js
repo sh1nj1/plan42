@@ -346,6 +346,16 @@ export default class extends Controller {
     // Only care about streams targeting our list
     if (event.target.target !== 'comments-list') return
 
+    // Deduplication: If manually appended by form_controller, block the stream echo.
+    if (event.target.action === 'append') {
+      const templateContent = event.target.templateContent || event.target.querySelector('template')?.content
+      const firstChild = templateContent?.firstElementChild
+      if (firstChild && firstChild.id && document.getElementById(firstChild.id)) {
+        event.preventDefault()
+        return
+      }
+    }
+
     // If we are in "History Mode" (not all newer loaded), we BLOCK live updates.
     // The user must scroll down or click "jump to latest" to see them.
     // This prevents the DOM from growing or shifting while viewing history.
