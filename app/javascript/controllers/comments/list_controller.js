@@ -203,6 +203,13 @@ export default class extends Controller {
     return fetch(`/creatives/${this.creativeId}/comments?${urlParams.toString()}`).then((response) => response.text())
   }
 
+  applySearchQuery(query) {
+    this.resetState()
+    this.manualSearchQuery = query
+    this.listTarget.innerHTML = this.element.dataset.loadingText || '<div class="loading-spinner">Loading...</div>'
+    this.loadInitialComments()
+  }
+
   getMinId() {
     // Standard: First element is oldest
     const items = this.listTarget.querySelectorAll('.comment-item')
