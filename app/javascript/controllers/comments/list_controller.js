@@ -541,7 +541,10 @@ export default class extends Controller {
       headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ comment_ids: commentIds, target_creative_id: targetId })
     }).then(r => r.ok ? r.json() : Promise.reject())
-      .then(() => { this.loadInitialComments() })
+      .then(() => {
+        this.selection.clear()
+        this.loadInitialComments()
+      })
       .finally(() => { this.movingComments = false; this.notifySelectionChange() })
   }
 
