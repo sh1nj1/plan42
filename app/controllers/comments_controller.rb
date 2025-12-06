@@ -42,7 +42,7 @@ class CommentsController < ApplicationController
 
       # Combine: [Newer (ASC) ... Target ... Older (DESC)]
       # We need final output to be ASC due to restored view logic: [Oldest ... Target ... Newest]
-      (older_bundle.reverse + newer_bundle).uniq
+      (older_bundle.to_a.reverse + newer_bundle.to_a).uniq
     elsif params[:after_id].present? && params[:before_id].present?
         # Invalid state, prioritize before (loading older history)
         scope.where("comments.id < ?", params[:before_id].to_i).limit(limit).to_a.reverse
