@@ -227,4 +227,20 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     assert_no_selector "#inline-level-up[disabled]", wait: 5
   end
+
+  test "renders modified content when moving down after edit" do
+    creative1 = Creative.create!(description: "Creative 1", user: @user, parent: @root_creative)
+    Creative.create!(description: "Creative 2", user: @user, parent: @root_creative)
+
+    visit creatives_path
+    expand_creative(@root_creative)
+
+    open_inline_editor(creative1)
+    fill_inline_editor("Creative 1 Modified")
+
+    find("#inline-move-down", wait: 5).click
+
+    # Verify the content of the first creative is updated in the static row
+    assert_selector "#creative-#{creative1.id} .creative-content", text: "Creative 1 Modified", wait: 5
+  end
 end
