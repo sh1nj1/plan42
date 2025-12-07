@@ -1099,10 +1099,12 @@ export function initializeCreativeRowEditor() {
         const row = treeRowElement(tree);
         if (row) {
           row.dataset.descriptionHtml = currentContent;
+          row.descriptionHtml = currentContent;
           row.dataset.descriptionRawHtml = currentContent;
           row.dataset.progressValue = String(currentProgress);
           if (currentParentId) {
             tree.dataset.parentId = currentParentId;
+            row.parentId = currentParentId;
           }
           // Trigger Lit component re-render to show updated values
           row.requestUpdate?.();
