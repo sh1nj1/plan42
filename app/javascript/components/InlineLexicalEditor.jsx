@@ -21,6 +21,8 @@ import {
 } from "@lexical/code"
 import { ListItemNode, ListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
 import { LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
+import { TableNode, TableCellNode, TableRowNode, INSERT_TABLE_COMMAND } from "@lexical/table"
+import { TablePlugin } from "@lexical/react/LexicalTablePlugin"
 import {
   $createParagraphNode,
   $createTextNode,
@@ -50,6 +52,9 @@ import { AttachmentNode } from "../lib/lexical/attachment_node"
 import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
 import { updateResponsiveImages } from "../lib/responsive_images"
+import TableCellResizer from "../lib/lexical/plugins/TableCellResizer"
+import TableHoverActionsPlugin from "../lib/lexical/plugins/TableHoverActionsPlugin"
+import TableActionMenuPlugin from "../lib/lexical/plugins/TableActionMenuPlugin"
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -107,7 +112,15 @@ const theme = {
     underline: "lexical-text-underline",
     strikethrough: "lexical-text-strike",
     code: "lexical-text-code"
-  }
+  },
+  table: "lexical-table",
+  tableCell: "lexical-table-cell",
+  tableCellHeader: "lexical-table-cell-header",
+  tableRow: "lexical-table-row",
+  tableAddColumns: "lexical-table-add-columns",
+  tableAddRows: "lexical-table-add-rows",
+  tableCellResizeHandle: "lexical-table-cell-resizer",
+  tableCellActionButtonContainer: "lexical-table-cell-action-button-container",
 }
 
 function Placeholder({ text }) {
@@ -508,6 +521,18 @@ function Toolbar({ onPromptForLink }) {
     })
   }, [editor])
 
+  const insertTable = useCallback(() => {
+    const rows = prompt("How many rows?", "3")
+    const cols = prompt("How many columns?", "3")
+    if (rows && cols) {
+      editor.dispatchCommand(INSERT_TABLE_COMMAND, {
+        columns: cols,
+        rows: rows,
+        includeHeaders: false
+      })
+    }
+  }, [editor])
+
   return (
     <div className="lexical-toolbar">
       <button
@@ -644,6 +669,13 @@ function Toolbar({ onPromptForLink }) {
       <button
         type="button"
         className="lexical-toolbar-btn"
+        onClick={insertTable}
+        title="Insert Table">
+        📅
+      </button>
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
         onClick={openFilePicker}
         title="Attach file">
         📎
@@ -683,11 +715,18 @@ function EditorInner({
   deletedAttachmentsRef
 }) {
   const [editor] = useLexicalComposerContext()
+  const [floatingAnchorElem, setFloatingAnchorElem] = useState(null)
+
+  const onRef = (_floatingAnchorElem) => {
+    if (_floatingAnchorElem !== null) {
+      setFloatingAnchorElem(_floatingAnchorElem)
+    }
+  }
 
   return (
     <div className="lexical-editor-shell">
       <Toolbar onPromptForLink={onPromptForLink} />
-      <div className="lexical-editor-inner">
+      <div className="lexical-editor-inner" ref={onRef}>
         <RichTextPlugin
           contentEditable={
             <ContentEditable
@@ -738,6 +777,10 @@ function EditorInner({
           directUploadUrl={directUploadUrl}
           blobUrlTemplate={blobUrlTemplate}
         />
+        <TablePlugin />
+        <TableCellResizer />
+        <TableHoverActionsPlugin anchorElem={floatingAnchorElem} />
+        <TableActionMenuPlugin anchorElem={floatingAnchorElem} cellMerge={true} />
         <AttachmentCleanupPlugin deletedAttachmentsRef={deletedAttachmentsRef} />
       </div>
     </div>
@@ -770,7 +813,10 @@ export default function InlineLexicalEditor({
         LinkNode,
         AutoLinkNode,
         ImageNode,
-        AttachmentNode
+        AttachmentNode,
+        TableNode,
+        TableCellNode,
+        TableRowNode
       ],
       onError(error) {
         throw error
