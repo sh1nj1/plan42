@@ -13,6 +13,7 @@ class McpService
       Rails.logger.error(error_msg)
       raise error_msg
     end
+    result
   rescue => e
     Rails.logger.error("Failed to register tool from source: #{e.message}")
     raise e
@@ -30,6 +31,7 @@ class McpService
     if result[:error]
       Rails.logger.error("Failed to delete tool #{tool_name}: #{result[:error]}")
     end
+    result
   rescue => e
     Rails.logger.error("Failed to delete tool #{tool_name}: #{e.message}")
   end

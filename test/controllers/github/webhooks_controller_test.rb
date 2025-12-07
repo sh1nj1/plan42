@@ -27,10 +27,11 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
   test "accepts webhook when signature matches repository secret" do
     body = @payload.to_json
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
-    processor = Minitest::Mock.new
-    processor.expect(:call, true)
 
-    Github::PullRequestProcessor.stub :new, ->(*) { processor } do
+    mock_router = Minitest::Mock.new
+    mock_router.expect(:route, [], [ "github.pull_request", Hash ])
+
+    SystemEvents::Router.stub :new, mock_router do
       post github_webhook_path,
            params: body,
            headers: {
@@ -42,7 +43,7 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
       assert_response :success
     end
 
-    processor.verify
+    mock_router.verify
   end
 
   test "rejects webhook when signature does not match secret" do
@@ -64,10 +65,11 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     payload_json = @payload.to_json
     form_body = URI.encode_www_form(payload: payload_json)
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, form_body)}"
-    processor = Minitest::Mock.new
-    processor.expect(:call, true)
 
-    Github::PullRequestProcessor.stub :new, ->(*) { processor } do
+    mock_router = Minitest::Mock.new
+    mock_router.expect(:route, [], [ "github.pull_request", Hash ])
+
+    SystemEvents::Router.stub :new, mock_router do
       post github_webhook_path,
            params: { payload: payload_json },
            headers: {
@@ -79,7 +81,7 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
       assert_response :success
     end
 
-    processor.verify
+    mock_router.verify
   end
 
   test "rejects webhook when event header missing" do

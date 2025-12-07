@@ -47,9 +47,10 @@ class AiAgentService
     log_action("completion", { response: response_content })
 
     # Handle the response (e.g., create a comment reply)
-    # For now, we assume the context has a comment_id to reply to
     if @context.dig("comment", "id") && response_content.present?
       reply_to_comment(@context["comment"]["id"], response_content)
+    elsif @context["github_link_id"] && response_content.present?
+      handle_github_response(response_content)
     end
   end
 
@@ -65,6 +66,8 @@ class AiAgentService
   end
 
   def build_messages
+    enrich_context_with_github_data if @context["github_link_id"]
+
     # This logic mimics the old AiResponder but adapts to the new context structure
     # We might need to fetch the creative and history based on context
 
@@ -89,39 +92,51 @@ class AiAgentService
     # Add chat history
     if @context.dig("creative", "id")
       creative_id = @context["creative"]["id"]
-      # Fetch comments for context, excluding private ones unless owned by the user
-      # We need to be careful about which comments to include.
-      # For now, let's include non-private comments.
 
-      # We need to know who the "user" is to determine roles.
-      # In the new system, the agent is @agent.
+      # Only fetch history for comment events, not PR events (unless we want PR to see comments?)
+      # For now, keep history for comments.
+      if @context.dig("comment", "id")
+        Comment.where(creative_id: creative_id, private: false)
+               .order(created_at: :desc)
+               .limit(50) # Limit history to avoid context window issues
+               .reverse # Re-order to chronological for the AI
+               .each do |c|
+          next if c.id == @context.dig("comment", "id")
 
-      Comment.where(creative_id: creative_id, private: false)
-             .order(created_at: :desc)
-             .limit(50) # Limit history to avoid context window issues
-             .reverse # Re-order to chronological for the AI
-             .each do |c|
-        next if c.id == @context.dig("comment", "id") # Skip the current trigger comment if it's in the list (it shouldn't be usually if we query right, but good to be safe)
+          role = (c.user_id == @agent.id) ? "model" : "user"
+          content = c.content
 
-        role = (c.user_id == @agent.id) ? "model" : "user"
-        content = c.content
+          # Strip mentions of the agent from user messages to clean up context
+          if role == "user"
+             if content.match?(/\A@#{Regexp.escape(@agent.name)}:/i)
+               content = content.sub(/\A@#{Regexp.escape(@agent.name)}:\s*/i, "")
+             elsif content.match?(/\A@#{Regexp.escape(@agent.name)}\s+/i)
+               content = content.sub(/\A@#{Regexp.escape(@agent.name)}\s+/i, "")
+             end
+          end
 
-        # Strip mentions of the agent from user messages to clean up context
-        if role == "user"
-           if content.match?(/\A@#{Regexp.escape(@agent.name)}:/i)
-             content = content.sub(/\A@#{Regexp.escape(@agent.name)}:\s*/i, "")
-           elsif content.match?(/\A@#{Regexp.escape(@agent.name)}\s+/i)
-             content = content.sub(/\A@#{Regexp.escape(@agent.name)}\s+/i, "")
-           end
+          messages << { role: role, parts: [ { text: content } ] }
         end
-
-        messages << { role: role, parts: [ { text: content } ] }
       end
     end
 
     # Add the trigger payload
-    payload_text = @context.dig("comment", "content") || @context.to_json
-    messages << { role: "user", parts: [ { text: payload_text } ] }
+    # For GitHub events, the system prompt contains the instructions.
+    # The payload (comment content) is added here for comment events.
+    # For PR events, do we add anything as "user" message?
+    # The system prompt has {{ context.diff }} etc.
+    # So maybe we don't need a user message for PR events, OR we add a generic "Analyze this" message.
+
+    if @context.dig("comment", "content")
+      messages << { role: "user", parts: [ { text: @context["comment"]["content"] } ] }
+    elsif @context["github_link_id"]
+      # For PRs, the system prompt does the heavy lifting, but we need at least one user message usually?
+      # Gemini usually expects a user message.
+      messages << { role: "user", parts: [ { text: "Please analyze the Pull Request based on the provided context." } ] }
+    else
+      payload_text = @context.to_json
+      messages << { role: "user", parts: [ { text: payload_text } ] }
+    end
 
     messages
   end
@@ -136,5 +151,122 @@ class AiAgentService
     )
 
     log_action("reply_created", { comment_id: reply.id, content: content })
+  end
+
+  def enrich_context_with_github_data
+    link = GithubRepositoryLink.find_by(id: @context["github_link_id"])
+    return unless link
+
+    repo_full_name = @context.dig("repository", "full_name")
+    pr_number = @context.dig("pull_request", "number")
+
+    client = Github::Client.new(link.github_account)
+
+    # Fetch Commits
+    commit_messages = client.pull_request_commit_messages(repo_full_name, pr_number)
+    formatted_commits = commit_messages.map.with_index(1) { |msg, i| "#{i}. #{msg.strip}" }.join("\n")
+
+    # Fetch Diff
+    diff = client.pull_request_diff(repo_full_name, pr_number).to_s
+    if diff.length > 10_000
+      diff = diff.slice(0, 10_000) + "\n... [Diff truncated]"
+    end
+
+    # Fetch Creative Tree
+    creative = link.creative.effective_origin
+    path_exporter = Creatives::PathExporter.new(creative, use_effective_origin: false)
+    tree_entries = path_exporter.full_paths_with_ids_and_progress_with_leaf
+    tree_lines = tree_entries.select { |e| e[:leaf] }.map { |e| "- #{e[:path]} [Leaf]" }.join("\n")
+
+    # Language
+    locale = creative.user&.locale || "en"
+    lang_instructions = "Preferred response language: #{locale}. Write all natural-language output in #{locale}."
+
+    # Update Context for Renderer
+    @context["pr_title"] = @context.dig("pull_request", "title")
+    @context["pr_body"] = @context.dig("pull_request", "body")
+    @context["commit_messages"] = formatted_commits
+    @context["diff"] = diff
+    @context["creative_tree"] = tree_lines
+    @context["language_instructions"] = lang_instructions
+
+    # Also ensure creative is set for view logic usually
+    @context["creative"] = creative.as_json
+  end
+
+  def handle_github_response(response_text)
+    link = GithubRepositoryLink.find_by(id: @context["github_link_id"])
+    return unless link
+    creative = link.creative.effective_origin
+
+    # Parse JSON
+    json_match = response_text.match(/\{[\s\S]*\}/)
+    data = {}
+    if json_match
+      begin
+        data = JSON.parse(json_match[0])
+      rescue JSON::ParserError
+        Rails.logger.warn("Failed to parse Agent JSON response")
+      end
+    end
+
+    # Build Markdown and Actions
+    lines = []
+    lines << "### GitHub PR Analysis"
+
+    completed = data["completed"] || []
+    additional = data["additional"] || []
+
+    lines << "#### Completed Creatives"
+    if completed.any?
+      completed.each do |item|
+        lines << "- Creative ##{item['creative_id']}: #{item['note']} (Progress: #{item['progress']})"
+      end
+    else
+      lines << "- None"
+    end
+
+    lines << ""
+    lines << "#### Suggested Creatives"
+    if additional.any?
+      additional.each do |item|
+        lines << "- [New] #{item['title']}: #{item['description']} (Parent: ##{item['parent_id']})"
+      end
+    else
+      lines << "- None"
+    end
+
+    lines << ""
+    lines << "<details><summary>Raw Response</summary>\n\n```json\n#{response_text}\n```\n</details>"
+
+    # Build Actions
+    actions = []
+    completed.each do |item|
+      next unless item["creative_id"]
+      actions << {
+        "action" => "update_creative",
+        "creative_id" => item["creative_id"],
+        "attributes" => { "progress" => (item["progress"] || 1.0).to_f }
+      }
+    end
+
+    additional.each do |item|
+      next unless item["parent_id"] && item["title"]
+      actions << {
+        "action" => "create_creative",
+        "parent_id" => item["parent_id"],
+        "attributes" => { "description" => item["title"], "progress" => 0.0 }
+      }
+    end
+
+    # Create Comment
+    comment_attrs = { user: @agent, content: lines.join("\n") }
+    if actions.any? && link.github_account.user
+      comment_attrs[:action] = JSON.pretty_generate({ actions: actions })
+      comment_attrs[:approver] = link.github_account.user
+    end
+
+    creative.comments.create!(comment_attrs)
+    log_action("pr_comment_created", { creative_id: creative.id })
   end
 end

@@ -13,8 +13,27 @@ module Github
 
       case event
       when "pull_request"
-        Github::PullRequestProcessor.new(payload: payload).call
-      else
+        repo_full_name = payload.dig("repository", "full_name")
+        links = GithubRepositoryLink.where(repository_full_name: repo_full_name)
+
+        if links.any?
+          links.each do |link|
+            # Dispatch event for each linked creative
+            event_payload = payload.merge(
+              "creative" => { "id" => link.creative_id },
+              "github_link_id" => link.id
+            )
+
+            # Route to agents
+            agents = SystemEvents::Router.new.route("github.pull_request", event_payload)
+            agents.each do |agent|
+              AiAgentJob.perform_later(agent.id, "github.pull_request", event_payload)
+            end
+          end
+        else
+          # Optionally dispatch a generic event if no creative is linked?
+          Rails.logger.debug("No creative linked for repo #{repo_full_name}")
+        end
         Rails.logger.debug("Unhandled GitHub event: #{event}")
       end
 

@@ -15,7 +15,8 @@ class McpServiceTest < ActiveSupport::TestCase
     mock_service.expect :register_tool_from_source, { status: "registered" }, [], source: source_code
 
     Tools::MetaToolWriteService.stub :new, mock_service do
-      McpService.register_tool_from_source(source_code)
+      result = McpService.register_tool_from_source(source_code)
+      assert_equal({ status: "registered" }, result)
     end
 
     mock_service.verify
@@ -28,7 +29,8 @@ class McpServiceTest < ActiveSupport::TestCase
     mock_service.expect :delete_tool, { success: "Tool deleted successfully" }, [ tool_name ]
 
     Tools::MetaToolWriteService.stub :new, mock_service do
-      McpService.delete_tool(tool_name)
+      result = McpService.delete_tool(tool_name)
+      assert_equal({ success: "Tool deleted successfully" }, result)
     end
 
     mock_service.verify
