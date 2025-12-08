@@ -196,6 +196,13 @@ class Creative < ApplicationRecord
 
   def update_parent_progress
     progress_service.update_parent_progress!
+
+    if saved_change_to_parent_id?
+      old_parent_id = saved_change_to_parent_id[0]
+      if old_parent_id && (old_parent = Creative.find_by(id: old_parent_id))
+        Creatives::ProgressService.new(old_parent).update_progress_from_children!
+      end
+    end
   end
 
   def all_shared_users(required_permission = :no_access)

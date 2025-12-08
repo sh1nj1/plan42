@@ -13,11 +13,17 @@ module Creatives
     def recalculate_subtree!
       if creative.origin_id.nil?
         creative.children.each { |child| self.class.new(child).recalculate_subtree! }
-        if creative.children.any?
-          creative.update(progress: creative.children.average(:progress) || 0)
-        end
+        update_progress_from_children!
       else
         self.class.new(creative.origin).recalculate_subtree!
+      end
+    end
+
+    def update_progress_from_children!
+      if creative.children.any?
+        creative.update(progress: creative.children.average(:progress) || 0)
+      else
+        creative.update(progress: 0)
       end
     end
 
