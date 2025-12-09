@@ -29,7 +29,10 @@ module Creatives
 
     def update_parent_progress!
       creative.linked_creatives.find_each do |linked|
-        linked.update(progress: creative.progress)
+        # Avoid infinite recursion: only update if semantically different
+        if (linked.progress - creative.progress).abs > 0.0001
+          linked.update(progress: creative.progress)
+        end
       end
       parent = creative.parent
       return unless parent
@@ -44,7 +47,11 @@ module Creatives
       else
                        0
       end
-      parent.update(progress: new_progress)
+
+      # Avoid infinite recursion
+      if (parent.progress - new_progress).abs > 0.0001
+        parent.update(progress: new_progress)
+      end
     end
 
     def progress_for_tags(tag_ids, user)

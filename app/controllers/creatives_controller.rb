@@ -135,7 +135,7 @@ class CreativesController < ApplicationController
   def update
     respond_to do |format|
       permitted = creative_params.to_h
-      base = @creative.effective_origin
+      base = @creative.effective_origin(Set.new)
       success = true
 
       if @creative.origin_id.present? && permitted.key?("parent_id")

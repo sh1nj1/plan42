@@ -84,20 +84,26 @@ class Creative < ApplicationRecord
   # Returns only children for which the user has at least the given permission (default: :read)
   def children_with_permission(user = nil, min_permission = :read)
     user ||= Current.user
-    effective_origin.children.select do |child|
+    effective_origin(Set.new).children.select do |child|
       child.has_permission?(user, min_permission)
     end
   end
 
   # Returns the effective attribute for linked creatives
-  def effective_attribute(attr)
+  def effective_attribute(attr, visited_ids = Set.new)
     return self[attr] if origin_id.nil? || attr.to_s == "parent_id"
-    origin.send(attr)
+    return self[attr] if visited_ids.include?(id)
+
+    visited_ids.add(id)
+    origin.effective_attribute(attr, visited_ids)
   end
 
-  def effective_origin
+  def effective_origin(visited_ids = Set.new)
     return self if origin_id.nil?
-    origin
+    return self if visited_ids.include?(id)
+
+    visited_ids.add(id)
+    origin.effective_origin(visited_ids)
   end
 
   # Compatibility helper: ancestry gem exposes `subtree_ids`, while
@@ -135,7 +141,7 @@ class Creative < ApplicationRecord
   end
 
   def progress
-    effective_attribute(:progress)
+    effective_attribute(:progress, Set.new)
   end
 
   def user
@@ -180,7 +186,7 @@ class Creative < ApplicationRecord
   # 공유 대상 사용자를 위해 Linked Creative를 생성합니다.
   # 이미 존재하거나 원본 작성자에게는 생성하지 않습니다.
   def create_linked_creative_for_user(user)
-    original = effective_origin
+    original = effective_origin(Set.new)
     return if original.user_id == user.id
     ancestor_ids = original.ancestors.pluck(:id)
     has_ancestor_share = CreativeShare.where(creative_id: ancestor_ids, user_id: user.id)
@@ -206,7 +212,7 @@ class Creative < ApplicationRecord
   end
 
   def all_shared_users(required_permission = :no_access)
-    base_creative = effective_origin
+    base_creative = effective_origin(Set.new)
     ancestor_ids = [ base_creative.id ] + base_creative.ancestors.pluck(:id)
     required_permission_level = CreativeShare.permissions.fetch(required_permission.to_s)
 
