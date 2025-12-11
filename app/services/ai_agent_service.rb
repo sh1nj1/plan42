@@ -96,7 +96,13 @@ class AiAgentService
       # We need to know who the "user" is to determine roles.
       # In the new system, the agent is @agent.
 
+      # We need to filter by topic_id to maintain conversation context
+      trigger_comment_id = @context.dig("comment", "id")
+      trigger_comment = Comment.find_by(id: trigger_comment_id)
+      topic_id = trigger_comment&.topic_id
+
       Comment.where(creative_id: creative_id, private: false)
+             .where(topic_id: topic_id)
              .order(created_at: :desc)
              .limit(50) # Limit history to avoid context window issues
              .reverse # Re-order to chronological for the AI
@@ -132,7 +138,8 @@ class AiAgentService
 
     reply = original_comment.creative.comments.create!(
       content: content,
-      user: @agent
+      user: @agent,
+      topic_id: original_comment.topic_id
     )
 
     log_action("reply_created", { comment_id: reply.id, content: content })
