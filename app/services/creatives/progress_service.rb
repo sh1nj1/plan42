@@ -10,7 +10,10 @@ module Creatives
 
     def update_progress_from_children!
       if creative.children.any?
-        creative.update(progress: creative.children.average(:progress) || 0)
+        # Use Ruby calculation to get effective progress (handling delegation for linked creatives)
+        # instead of SQL average which reads potentially stale DB columns.
+        new_progress = creative.children.map(&:progress).sum.to_f / creative.children.size
+        creative.update(progress: new_progress)
       else
         creative.update(progress: 0)
       end
