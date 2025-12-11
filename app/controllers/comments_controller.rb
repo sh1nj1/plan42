@@ -26,7 +26,7 @@ class CommentsController < ApplicationController
 
     effective_topic_id = params[:topic_id]
 
-    if params[:around_comment_id].present? && effective_topic_id.blank?
+    if params[:around_comment_id].present?
       target_id = params[:around_comment_id].to_i
       # Ensure target is visible and belongs to this creative
       target_comment = visible_scope.find_by(id: target_id)

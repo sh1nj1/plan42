@@ -163,6 +163,10 @@ export default class extends Controller {
     }
 
     get currentTopicId() {
+        const urlParams = new URLSearchParams(window.location.search)
+        const urlTopicId = urlParams.get('topic_id')
+        if (urlTopicId) return urlTopicId
+
         return localStorage.getItem(`collavre_creative_${this.creativeId}_last_topic`) || ""
     }
 
