@@ -19,11 +19,27 @@ class CommentsController < ApplicationController
     end
 
     # Filter by topic
-    if params[:topic_id].present?
-      scope = scope.where(topic_id: params[:topic_id])
-    else
-      scope = scope.where(topic_id: nil)
+    # Logic:
+    # 1. Prefer params[:topic_id] if explicit.
+    # 2. If deep linking (around_comment_id), infer from target comment if valid.
+    # 3. Default to nil (Main).
+
+    effective_topic_id = params[:topic_id]
+
+    if params[:around_comment_id].present? && effective_topic_id.blank?
+      target_id = params[:around_comment_id].to_i
+      # Ensure target is visible and belongs to this creative
+      target_comment = visible_scope.find_by(id: target_id)
+
+      if target_comment
+        effective_topic_id = target_comment.topic_id
+        # Inform frontend about the topic switch
+        response.headers["X-Topic-Id"] = effective_topic_id.to_s
+      end
     end
+
+    # Apply the Topic Filter
+    scope = scope.where(topic_id: effective_topic_id)
 
     # Default order: Newest first (created_at DESC)
     # This matches the column-reverse layout where the first item in the list is the visual bottom (Newest).
@@ -33,20 +49,7 @@ class CommentsController < ApplicationController
     @comments = if params[:around_comment_id].present?
       # Deep linking: Load context around a specific comment
       target_id = params[:around_comment_id].to_i
-      target_comment = Comment.find_by(id: target_id)
 
-      if target_comment
-        # Implicitly switch context to this comment's topic if not set
-        params[:topic_id] = target_comment.topic_id unless params[:topic_id].present?
-        # Inform frontend about the topic switch
-        response.headers["X-Topic-Id"] = target_comment.topic_id.to_s
-      end
-
-      # 1. Fetch target + newer (after params[:around_comment_id])
-      # newer_scope = scope.where("id >= ?", target_id).limit(limit / 2 + 1)
-      # older_scope = scope.where("id < ?", target_id).limit(limit / 2)
-
-      # Since default order is DESC (Newest First):
       # Newer messages have HIGHER IDs.
       # Older messages have LOWER IDs.
 
@@ -108,6 +111,11 @@ class CommentsController < ApplicationController
     image_attachments = comment_params[:images]
 
     @comment = @creative.comments.build(comment_attributes)
+
+    if @comment.topic_id.present? && !@creative.topics.where(id: @comment.topic_id).exists?
+      render json: { error: I18n.t("comments.invalid_topic") }, status: :unprocessable_entity and return
+    end
+
     @comment.user = Current.user
     @comment.images.attach(image_attachments) if image_attachments.present?
     response = Comments::CommandProcessor.new(comment: @comment, user: Current.user).call
