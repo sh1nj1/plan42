@@ -21,7 +21,9 @@
   <button id="close-comments-btn" data-comments--popup-target="closeButton" class="popup-close-btn">&times;</button>
   <h3 id="comments-popup-title" data-comments--popup-target="title"><%= t('comments.comments') %></h3>
   <div id="comment-participants" data-comments--presence-target="participants" data-comments--mention-menu-target="participants"></div>
-  <div id="comment-topics" data-comments--topics-target="list" class="comment-topics-list"></div>
+  <div id="comment-topics" data-comments--topics-target="list" class="comment-topics-list"
+       data-confirm-delete-text="<%= t('topics.delete_confirm') %>"
+       data-new-topic-placeholder="<%= t('topics.new_placeholder') %>"></div>
   <%= render UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>
   <div id="typing-indicator" data-comments--presence-target="typingIndicator"></div>

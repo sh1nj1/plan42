@@ -36,14 +36,15 @@ export default class extends Controller {
     }
 
     async loadTopics() {
-        console.log("Loading topics for creative", this.creativeId)
         if (!this.creativeId) return
 
         try {
             const response = await fetch(`/creatives/${this.creativeId}/topics`)
             if (response.ok) {
-                const topics = await response.json()
-                this.renderTopics(topics)
+                const data = await response.json()
+                const topics = Array.isArray(data) ? data : data.topics
+                const canManage = Array.isArray(data) ? false : data.can_manage
+                this.renderTopics(topics, canManage)
                 this.restoreSelection()
             }
         } catch (e) {
@@ -62,21 +63,60 @@ export default class extends Controller {
         }
     }
 
-    renderTopics(topics) {
+    renderTopics(topics, canManage = false) {
         let html = `<span class="topic-tag ${this.currentTopicId ? '' : 'active'}" data-action="click->comments--topics#select" data-id="">#Main</span>`
 
         topics.forEach(topic => {
             // Ensure comparison handles string/number difference
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
-            html += `<span class="topic-tag ${isActive}" data-action="click->comments--topics#select" data-id="${topic.id}">#${topic.name}</span>`
+            html += `<span class="topic-tag ${isActive}" data-action="click->comments--topics#select" data-id="${topic.id}">
+                        #${topic.name}`
+
+            if (canManage) {
+                html += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
+            }
+
+            html += `</span>`
         })
 
         // Add create button container
-        html += `<span class="topic-creation-container" data-comments--topics-target="creationContainer">
-              <button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>
-             </span>`
+        if (canManage) {
+            html += `<span class="topic-creation-container" data-comments--topics-target="creationContainer">
+                  <button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>
+                 </span>`
+        }
 
         this.listTarget.innerHTML = html
+    }
+
+    async deleteTopic(event) {
+        event.stopPropagation()
+        const confirmText = this.listTarget.dataset.confirmDeleteText || "This will delete all messages in this topic. Are you sure?"
+        if (!confirm(confirmText)) return
+
+        const topicId = event.target.dataset.id
+        if (!topicId) return
+
+        try {
+            const response = await fetch(`/creatives/${this.creativeId}/topics/${topicId}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                }
+            })
+
+            if (response.ok) {
+                if (String(this.currentTopicId) === String(topicId)) {
+                    this.currentTopicId = "" // Switch to Main
+                    this.dispatch("change", { detail: { topicId: "" } })
+                }
+                this.loadTopics()
+            } else {
+                alert("Failed to delete topic")
+            }
+        } catch (e) {
+            console.error("Error deleting topic", e)
+        }
     }
 
     showInput(event) {
@@ -84,7 +124,8 @@ export default class extends Controller {
         const container = this.element.querySelector('[data-comments--topics-target="creationContainer"]')
         if (!container) return
 
-        container.innerHTML = `<input type="text" class="topic-input" placeholder="New Topic" 
+        const placeholder = this.listTarget.dataset.newTopicPlaceholder || "New Topic"
+        container.innerHTML = `<input type="text" class="topic-input" placeholder="${placeholder}" 
                                   data-action="keydown->comments--topics#handleInputKey blur->comments--topics#resetInput"
                                   data-comments--topics-target="input">`
 
@@ -117,7 +158,10 @@ export default class extends Controller {
     }
 
     select(event) {
-        const id = event.target.dataset.id
+        // Ignore if clicking on delete button (though stopPropagation should handle it)
+        if (event.target.closest('.delete-topic-btn')) return
+
+        const id = event.currentTarget.dataset.id
         this.updateSelectionUI(id)
         // Dispatch event
         this.dispatch("change", { detail: { topicId: id } })

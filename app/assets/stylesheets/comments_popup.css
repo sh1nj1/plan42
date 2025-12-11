@@ -374,7 +374,9 @@
 }
 
 .topic-tag {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     padding: 0.2em 0.6em;
     border-radius: 12px;
     background: var(--color-section-bg);
