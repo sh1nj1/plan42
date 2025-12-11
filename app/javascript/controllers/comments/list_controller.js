@@ -41,6 +41,14 @@ export default class extends Controller {
       this.creativeId = this.element.dataset.creativeId
       this.loadInitialComments()
     }
+
+    this.handleTopicChange = this.handleTopicChange.bind(this)
+    this.element.addEventListener('comments--topics:change', this.handleTopicChange)
+  }
+
+  handleTopicChange(event) {
+    this.currentTopicId = event.detail.topicId
+    this.resetToLatest()
   }
 
   disconnect() {
@@ -53,6 +61,7 @@ export default class extends Controller {
       this.listObserver.disconnect()
       this.listObserver = null
     }
+    this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
   }
 
   isColumnReverse() {
@@ -199,6 +208,9 @@ export default class extends Controller {
     const urlParams = new URLSearchParams(params)
     if (this.manualSearchQuery) {
       urlParams.set('search', this.manualSearchQuery)
+    }
+    if (this.currentTopicId) {
+      urlParams.set('topic_id', this.currentTopicId)
     }
     return fetch(`/creatives/${this.creativeId}/comments?${urlParams.toString()}`).then((response) => response.text())
   }

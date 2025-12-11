@@ -67,7 +67,15 @@ export default class extends Controller {
     })
 
     this.updateAttachmentList()
+
+    this.handleTopicChange = this.handleTopicChange.bind(this)
+    this.element.addEventListener('comments--topics:change', this.handleTopicChange)
   }
+
+  handleTopicChange(event) {
+    this.currentTopicId = event.detail.topicId
+  }
+
 
   isMentionMenuVisible() {
     const menu = document.getElementById('mention-menu')
@@ -88,6 +96,7 @@ export default class extends Controller {
     this.imageInputTarget?.removeEventListener('change', this.handleImageChange)
     this.textareaTarget.removeEventListener('dragover', this.handleDragOver)
     this.textareaTarget.removeEventListener('drop', this.handleDrop)
+    this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
   }
 
   get listController() {
@@ -161,6 +170,10 @@ export default class extends Controller {
     const wasPrivate = this.privateCheckboxTarget?.checked ?? false
 
     const formData = new FormData(this.formTarget)
+    if (this.currentTopicId) {
+      formData.append('comment[topic_id]', this.currentTopicId)
+    }
+
     let url = `/creatives/${this.creativeId}/comments`
     let method = 'POST'
     if (this.editingId) {

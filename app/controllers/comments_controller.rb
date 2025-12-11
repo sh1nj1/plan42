@@ -18,9 +18,17 @@ class CommentsController < ApplicationController
       scope = scope.where("LOWER(comments.content) LIKE ?", "%#{search_term}%")
     end
 
+    # Filter by topic
+    if params[:topic_id].present?
+      scope = scope.where(topic_id: params[:topic_id])
+    else
+      scope = scope.where(topic_id: nil)
+    end
+
     # Default order: Newest first (created_at DESC)
     # This matches the column-reverse layout where the first item in the list is the visual bottom (Newest).
     scope = scope.order(created_at: :desc)
+
 
     @comments = if params[:around_comment_id].present?
       # Deep linking: Load context around a specific comment
@@ -303,7 +311,7 @@ class CommentsController < ApplicationController
         next if comment.creative_id == target_origin.id
 
         original_creative = comment.creative
-        comment.update!(creative: target_origin)
+        comment.update!(creative: target_origin, topic_id: nil)
         broadcast_move_removal(comment, original_creative)
       end
     end
@@ -334,7 +342,7 @@ class CommentsController < ApplicationController
   end
 
   def comment_params
-    params.require(:comment).permit(:content, :private, images: [])
+    params.require(:comment).permit(:content, :private, :topic_id, images: [])
   end
 
   def can_convert_comment?
