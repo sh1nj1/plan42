@@ -73,13 +73,9 @@ class Creative < ApplicationRecord
   after_destroy_commit :purge_description_attachments
   after_save :update_mcp_tools
 
-  def self.recalculate_all_progress!
-    Creatives::ProgressService.recalculate_all!
-  end
 
-  def recalculate_subtree_progress!
-    progress_service.recalculate_subtree!
-  end
+
+
 
   def has_permission?(user, required_permission = :read)
     Creatives::PermissionChecker.new(self, user).allowed?(required_permission)

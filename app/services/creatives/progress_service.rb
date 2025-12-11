@@ -2,22 +2,11 @@ require "set"
 
 module Creatives
   class ProgressService
-    def self.recalculate_all!
-      Creative.roots.find_each { |root| new(root).recalculate_subtree! }
-    end
-
     def initialize(creative)
       @creative = creative
     end
 
-    def recalculate_subtree!
-      if creative.origin_id.nil?
-        creative.children.each { |child| self.class.new(child).recalculate_subtree! }
-        update_progress_from_children!
-      else
-        self.class.new(creative.origin).recalculate_subtree!
-      end
-    end
+
 
     def update_progress_from_children!
       if creative.children.any?

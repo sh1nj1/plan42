@@ -200,10 +200,7 @@ class CreativesController < ApplicationController
     head :ok
   end
 
-  def recalculate_progress
-    Creative.recalculate_all_progress!
-    redirect_to creatives_path, notice: t("creatives.notices.progress_recalculated")
-  end
+
 
   def reorder
     dragged_ids = Array(params[:dragged_ids]).map(&:presence).compact
