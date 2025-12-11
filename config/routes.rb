@@ -59,7 +59,6 @@ Rails.application.routes.draw do
         end
       end
     collection do
-      post :recalculate_progress
       post :reorder
       post :link_drop
       get :append_as_parent, to: "creatives#append_as_parent", as: :append_as_parent_creative

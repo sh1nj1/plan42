@@ -2,28 +2,33 @@ require "set"
 
 module Creatives
   class ProgressService
-    def self.recalculate_all!
-      Creative.roots.find_each { |root| new(root).recalculate_subtree! }
-    end
-
     def initialize(creative)
       @creative = creative
     end
 
-    def recalculate_subtree!
-      if creative.origin_id.nil?
-        creative.children.each { |child| self.class.new(child).recalculate_subtree! }
-        if creative.children.any?
-          creative.update(progress: creative.children.average(:progress) || 0)
-        end
+
+
+    def update_progress_from_children!
+      if creative.children.any?
+        # Use Ruby calculation to get effective progress (handling delegation for linked creatives)
+        # instead of SQL average which reads potentially stale DB columns.
+        new_progress = creative.children.map(&:progress).sum.to_f / creative.children.size
+        creative.update(progress: new_progress)
       else
-        self.class.new(creative.origin).recalculate_subtree!
+        creative.update(progress: 0)
       end
     end
 
-    def update_parent_progress!
+    def update_parent_progress!(visited_ids = Set.new)
+      return if visited_ids.include?(creative.id)
+      visited_ids.add(creative.id)
+
       creative.linked_creatives.find_each do |linked|
-        linked.update(progress: creative.progress)
+        # Linked creatives delegate progress to origin.
+        # We don't update them directly (forbidden by validation).
+        # We must ensure their PARENTS are updated.
+        # Recurse with visited_ids to prevent cycles.
+        Creatives::ProgressService.new(linked).update_parent_progress!(visited_ids)
       end
       parent = creative.parent
       return unless parent
@@ -38,7 +43,11 @@ module Creatives
       else
                        0
       end
-      parent.update(progress: new_progress)
+
+      # Avoid infinite recursion
+      if (parent.progress - new_progress).abs > 0.0001
+        parent.update(progress: new_progress)
+      end
     end
 
     def progress_for_tags(tag_ids, user)
