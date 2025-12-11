@@ -12,7 +12,7 @@ export default class extends Controller {
 
     onPopupOpened({ creativeId }) {
         this.creativeIdValue = creativeId
-        this.loadTopics()
+        return this.loadTopics()
     }
 
     onPopupClosed() {
@@ -48,6 +48,17 @@ export default class extends Controller {
             }
         } catch (e) {
             console.error("Failed to load topics", e)
+        }
+    }
+
+    restoreSelection() {
+        const lastTopicId = this.currentTopicId
+        if (lastTopicId) {
+            // Validate it exists in list
+            const exists = this.listTarget.querySelector(`[data-id="${lastTopicId}"]`)
+            if (exists) {
+                this.select({ target: { dataset: { id: lastTopicId } } })
+            }
         }
     }
 
@@ -107,15 +118,17 @@ export default class extends Controller {
 
     select(event) {
         const id = event.target.dataset.id
-        this.currentTopicId = id
-
-        // Update UI
-        this.listTarget.querySelectorAll('.topic-tag').forEach(el => {
-            el.classList.toggle('active', el.dataset.id == id)
-        })
-
+        this.updateSelectionUI(id)
         // Dispatch event
         this.dispatch("change", { detail: { topicId: id } })
+    }
+
+    updateSelectionUI(id) {
+        this.currentTopicId = id
+        // Update UI
+        this.listTarget.querySelectorAll('.topic-tag').forEach(el => {
+            el.classList.toggle('active', String(el.dataset.id) === String(id))
+        })
     }
 
     async createTopic(name) {

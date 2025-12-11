@@ -212,7 +212,30 @@ export default class extends Controller {
     if (this.currentTopicId) {
       urlParams.set('topic_id', this.currentTopicId)
     }
-    return fetch(`/creatives/${this.creativeId}/comments?${urlParams.toString()}`).then((response) => response.text())
+    return fetch(`/creatives/${this.creativeId}/comments?${urlParams.toString()}`).then((response) => {
+      const serverTopicId = response.headers.get("X-Topic-Id")
+      if (serverTopicId !== null && serverTopicId !== undefined) {
+        // Server says we are in this topic. 
+        // If it differs from current, update state.
+        // Use loose comparison for string/number match
+        if (String(this.currentTopicId) !== String(serverTopicId)) {
+          this.currentTopicId = serverTopicId
+          // Notify topics controller to update UI
+          const event = new CustomEvent("comments--topics:update-selection", { detail: { topicId: serverTopicId } })
+          window.dispatchEvent(event)
+          // Ideally direct controller access, but event bus is safer if decoupled.
+          // Or access via popupController?
+          if (this.popupController && this.popupController.topicsController) {
+            this.popupController.topicsController.select({ target: { dataset: { id: serverTopicId } } }, true) // true = skip dispatching change event loop?
+            // Actually topicsController.select sets currentTopicId and dispatches change.
+            // We don't want to loop. 
+            // We just want to update UI and local state.
+            this.popupController.topicsController.updateSelectionUI(serverTopicId)
+          }
+        }
+      }
+      return response.text()
+    })
   }
 
   applySearchQuery(query) {
@@ -418,6 +441,9 @@ export default class extends Controller {
     if (!url && commentId && this.creativeId) {
       const baseUrl = new URL(`${window.location.origin}/creatives/${this.creativeId}`)
       baseUrl.searchParams.set('comment_id', commentId)
+      if (this.currentTopicId) {
+        baseUrl.searchParams.set('topic_id', this.currentTopicId)
+      }
       // baseUrl.hash = `comment_${commentId}` // Hash handled by generic routing, but safe to add
       url = baseUrl.toString()
     }

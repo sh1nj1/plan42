@@ -33,6 +33,14 @@ class CommentsController < ApplicationController
     @comments = if params[:around_comment_id].present?
       # Deep linking: Load context around a specific comment
       target_id = params[:around_comment_id].to_i
+      target_comment = Comment.find_by(id: target_id)
+
+      if target_comment
+        # Implicitly switch context to this comment's topic if not set
+        params[:topic_id] = target_comment.topic_id unless params[:topic_id].present?
+        # Inform frontend about the topic switch
+        response.headers["X-Topic-Id"] = target_comment.topic_id.to_s
+      end
 
       # 1. Fetch target + newer (after params[:around_comment_id])
       # newer_scope = scope.where("id >= ?", target_id).limit(limit / 2 + 1)
