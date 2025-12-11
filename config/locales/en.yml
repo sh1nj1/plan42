@@ -56,6 +56,11 @@ en:
     apply_tags: "Filter"
     here: "here"
 
+  topics:
+    delete_confirm: "This will delete all messages in this topic. Are you sure?"
+    new_placeholder: "New Topic"
+    no_permission: "You don't have permission to perform this action."
+
   inbox:
     mark_read: "Read"
     mark_unread: "Unread"

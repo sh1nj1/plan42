@@ -2,7 +2,11 @@ class TopicsController < ApplicationController
   before_action :set_creative
 
   def index
-    render json: @creative.topics.order(:created_at)
+    can_manage = @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
+    render json: {
+      topics: @creative.topics.order(:created_at),
+      can_manage: can_manage
+    }
   end
 
   def create
@@ -21,7 +25,7 @@ class TopicsController < ApplicationController
   end
 
   def destroy
-    unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
+    unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
       render json: { error: I18n.t("topics.no_permission") }, status: :forbidden and return
     end
 

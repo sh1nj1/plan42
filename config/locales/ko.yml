@@ -27,6 +27,11 @@ ko:
     apply_tags: "필터"
     here: "여기"
 
+  topics:
+    delete_confirm: "이 토픽의 모든 메시지가 삭제됩니다. 확실합니까?"
+    new_placeholder: "새 토픽"
+    no_permission: "권한이 없습니다."
+
   inbox:
     mark_read: "읽음"
     mark_unread: "안읽음"
