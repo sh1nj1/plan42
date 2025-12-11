@@ -125,7 +125,13 @@ export default class extends Controller {
       params.around_comment_id = this.highlightAfterLoad
     }
 
+    const requestTopicId = this.currentTopicId || ""
+
     this.fetchComments(params).then((html) => {
+      // If topic changed while fetching (e.g. deep link detection), discard this stale response.
+      // The topic change event will have triggered a new load.
+      if (String(this.currentTopicId || "") !== String(requestTopicId)) return
+
       this.listTarget.innerHTML = html
       renderMarkdownInContainer(this.listTarget)
       this.popupController?.updatePosition()
@@ -217,8 +223,12 @@ export default class extends Controller {
       if (serverTopicId !== null && serverTopicId !== undefined) {
         // Server says we are in this topic. 
         // If it differs from current, update state.
-        // Use loose comparison for string/number match
-        if (String(this.currentTopicId) !== String(serverTopicId)) {
+
+        // Normalize IDs to handle undefined/null/empty string consistently
+        const currentStr = (this.currentTopicId || "").toString()
+        const serverStr = serverTopicId.toString()
+
+        if (currentStr !== serverStr) {
           this.currentTopicId = serverTopicId
           // Notify topics controller to update UI
           const event = new CustomEvent("comments--topics:update-selection", { detail: { topicId: serverTopicId } })
