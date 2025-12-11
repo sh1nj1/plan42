@@ -98,7 +98,7 @@ export default class extends Controller {
     this.open(button, { creativeId })
   }
 
-  open(button, { creativeId, highlightId } = {}) {
+  async open(button, { creativeId, highlightId } = {}) {
     this.currentButton = button
     const resolvedCreativeId = creativeId || button?.dataset.creativeId
     const canComment = button.dataset.canComment === 'true'
@@ -109,6 +109,15 @@ export default class extends Controller {
     this.titleTarget.textContent = snippet
 
     this.prepareSize()
+
+    this.showPopup()
+    this.updatePosition()
+    document.body.classList.add('no-scroll')
+
+    // Load topics first to establish context
+    if (this.topicsController) {
+      await this.topicsController.onPopupOpened({ creativeId: resolvedCreativeId })
+    }
 
     if (this.formController) {
       this.formController.onPopupOpened({ creativeId: resolvedCreativeId, canComment })
@@ -122,13 +131,6 @@ export default class extends Controller {
     if (this.mentionMenuController) {
       this.mentionMenuController.onPopupOpened({ creativeId: resolvedCreativeId })
     }
-    if (this.topicsController) {
-      this.topicsController.onPopupOpened({ creativeId: resolvedCreativeId })
-    }
-
-    this.showPopup()
-    this.updatePosition()
-    document.body.classList.add('no-scroll')
   }
 
   close() {
