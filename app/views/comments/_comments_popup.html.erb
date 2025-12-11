@@ -1,5 +1,5 @@
 
-<div id="comments-popup" data-controller="comments--popup comments--list comments--form comments--presence comments--mention-menu" class="popup-box"
+<div id="comments-popup" data-controller="comments--popup comments--list comments--form comments--presence comments--mention-menu comments--topics" class="popup-box"
      data-loading-text="<%= t('app.loading') %>"
      data-delete-confirm-text="<%= t("comments.delete_confirm") %>"
      data-update-comment-text="<%= t('comments.update_comment') %>"
@@ -21,6 +21,7 @@
   <button id="close-comments-btn" data-comments--popup-target="closeButton" class="popup-close-btn">&times;</button>
   <h3 id="comments-popup-title" data-comments--popup-target="title" style="margin-top:0;"><%= t('comments.comments') %></h3>
   <div id="comment-participants" data-comments--presence-target="participants" data-comments--mention-menu-target="participants"></div>
+  <div id="comment-topics" data-comments--topics-target="list" class="comment-topics-list"></div>
   <%= render UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <br/>
   <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>

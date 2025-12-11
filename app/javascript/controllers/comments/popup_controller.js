@@ -80,6 +80,10 @@ export default class extends Controller {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--mention-menu')
   }
 
+  get topicsController() {
+    return this.application.getControllerForElementAndIdentifier(this.element, 'comments--topics')
+  }
+
   handleCreativeClick(event) {
     const button = event.detail?.button
     const creativeId = event.detail?.creativeId
@@ -118,6 +122,9 @@ export default class extends Controller {
     if (this.mentionMenuController) {
       this.mentionMenuController.onPopupOpened({ creativeId: resolvedCreativeId })
     }
+    if (this.topicsController) {
+      this.topicsController.onPopupOpened({ creativeId: resolvedCreativeId })
+    }
 
     this.showPopup()
     this.updatePosition()
@@ -136,6 +143,9 @@ export default class extends Controller {
     }
     if (this.mentionMenuController) {
       this.mentionMenuController.onPopupClosed()
+    }
+    if (this.topicsController) {
+      this.topicsController.onPopupClosed()
     }
 
     this.element.style.display = 'none'

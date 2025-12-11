@@ -58,6 +58,7 @@ Rails.application.routes.draw do
           post :move
         end
       end
+      resources :topics, only: [ :index, :create, :destroy ]
     collection do
       post :reorder
       post :link_drop

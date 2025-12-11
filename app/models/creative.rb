@@ -54,6 +54,7 @@ class Creative < ApplicationRecord
   has_many :github_repository_links, dependent: :destroy
   has_many :notion_page_links, dependent: :destroy
   has_many :notion_block_links, dependent: :destroy
+  has_many :topics, dependent: :destroy
   has_many :mcp_tools, dependent: :destroy
 
   validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }, unless: -> { origin_id.present? }
