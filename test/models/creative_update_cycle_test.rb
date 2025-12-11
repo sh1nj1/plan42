@@ -23,10 +23,13 @@ class CreativeUpdateCycleTest < ActiveSupport::TestCase
     assert_in_delta 0.5, b.reload.progress, 0.001
 
     # Trigger update on B
-    assert_nothing_raised do
+    # Trigger update on B (Linked Creative)
+    # This should now FAIL because we forbid direct updates to linked creatives
+    assert_raises(ActiveRecord::RecordInvalid) do
       b.update!(progress: 0.8)
     end
 
-    assert_in_delta 0.8, a.reload.progress, 0.001
+    # Since B cannot be updated directly, A remains unchanged by B's attempted update
+    assert_in_delta 0.5, a.reload.progress, 0.001
   end
 end

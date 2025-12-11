@@ -59,6 +59,10 @@ class Creative < ApplicationRecord
   validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }, unless: -> { origin_id.present? }
   validates :description, presence: true, unless: -> { origin_id.present? }
 
+  validate :progress_cannot_change_if_has_origin, on: :update
+  validate :description_cannot_change_if_has_origin, on: :update
+  validate :origin_cannot_be_self
+
   before_validation :assign_default_user, on: :create
   before_validation :redirect_parent_to_origin
 
@@ -145,7 +149,10 @@ class Creative < ApplicationRecord
   end
 
   def user
-    origin_id.nil? ? super : origin.user
+    target = effective_origin(Set.new)
+    return super if target == self
+
+    target.user
   end
 
   def children
@@ -377,5 +384,23 @@ class Creative < ApplicationRecord
 
   def update_mcp_tools
     McpService.new.update_from_creative(self)
+  end
+
+  def progress_cannot_change_if_has_origin
+    if origin_id.present? && will_save_change_to_progress?
+      errors.add(:progress, "cannot be changed directly when linked to an origin")
+    end
+  end
+
+  def description_cannot_change_if_has_origin
+    if origin_id.present? && will_save_change_to_description?
+      errors.add(:description, "cannot be changed directly when linked to an origin")
+    end
+  end
+
+  def origin_cannot_be_self
+    if origin_id.present? && origin_id == id
+      errors.add(:origin_id, "cannot be the same as id")
+    end
   end
 end

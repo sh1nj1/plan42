@@ -25,29 +25,4 @@ class CreativeRecursionTest < ActiveSupport::TestCase
       a.progress
     end
   end
-
-  test "avoids infinite loop when updating linked creative with propagation" do
-    user = users(:one)
-
-    # Scenario from previous bug, ensuring stability
-    a = Creative.create!(description: "A", user: user)
-    b = Creative.create!(description: "B", user: user)
-
-    b2_origin = Creative.create!(description: "B2 Origin", parent: b, user: user, progress: 0.0)
-    b2_linked = Creative.create!(description: "B2 Linked", parent: a, user: user, origin: b2_origin)
-
-    # Force updates to verify no recursion
-    assert_nothing_raised do
-      b2_linked.update!(progress: 0.5)
-    end
-
-    assert_in_delta 0.5, b2_origin.reload.progress, 0.001
-
-    # Also verify reverse update (Origin -> Linked)
-    assert_nothing_raised do
-      b2_origin.update!(progress: 0.8)
-    end
-
-    assert_in_delta 0.8, b2_linked.reload.progress, 0.001
-  end
 end

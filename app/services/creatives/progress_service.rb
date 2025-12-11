@@ -27,12 +27,16 @@ module Creatives
       end
     end
 
-    def update_parent_progress!
+    def update_parent_progress!(visited_ids = Set.new)
+      return if visited_ids.include?(creative.id)
+      visited_ids.add(creative.id)
+
       creative.linked_creatives.find_each do |linked|
-        # Avoid infinite recursion: only update if semantically different
-        if (linked.progress - creative.progress).abs > 0.0001
-          linked.update(progress: creative.progress)
-        end
+        # Linked creatives delegate progress to origin.
+        # We don't update them directly (forbidden by validation).
+        # We must ensure their PARENTS are updated.
+        # Recurse with visited_ids to prevent cycles.
+        Creatives::ProgressService.new(linked).update_parent_progress!(visited_ids)
       end
       parent = creative.parent
       return unless parent

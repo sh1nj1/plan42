@@ -138,10 +138,18 @@ class CreativesController < ApplicationController
       base = @creative.effective_origin(Set.new)
       success = true
 
+      # Handle parent_id change separately for Linked Creatives
       if @creative.origin_id.present? && permitted.key?("parent_id")
         parent_id = permitted.delete("parent_id")
         success &&= @creative.update(parent_id: parent_id)
       end
+
+      # When updating the base (Origin), we must NOT pass origin_id.
+      # Because if @creative is Linked, params might include origin_id.
+      # Passing origin_id to the Origin creative causes it to fail validation (cannot changes if has origin)
+      # or creates a self-cycle.
+      permitted.delete("origin_id")
+      permitted.delete(:origin_id)
 
       success &&= base.update(permitted)
 

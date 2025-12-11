@@ -25,8 +25,10 @@ class CreativeLinkedUpdateTest < ActiveSupport::TestCase
     # Should update B (parent of Origin) to 0.5 (average of 1 child)
     # Should update A (parent of Linked) to 0.5 (average of 1 child)
 
-    # This might cause Stack Level Too Deep if not handled correctly
-    b2_linked.update!(progress: 0.5)
+    # Action: Update B2_Linked is FORBIDDEN.
+    # The Controller handles this by finding the effective origin and updating THAT.
+    # So we simulate what the controller does: Update B2_Origin.
+    b2_origin.update!(progress: 0.5)
 
     # Verification
     b2_origin.reload
