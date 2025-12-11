@@ -44,4 +44,17 @@ class CommentsControllerSecurityTest < ActionDispatch::IntegrationTest
     # Verify comment is in the response body (partial rendering)
     assert_includes response.body, "Topic Comment"
   end
+
+  test "should not allow updating comment with topic from another creative" do
+    comment = @creative.comments.create!(content: "Original Topic", user: @user)
+
+    put creative_comment_url(@creative, comment), params: {
+      comment: {
+        topic_id: @topic.id # @topic belongs to @other_creative
+      }
+    }, xhr: true
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("comments.invalid_topic"), JSON.parse(response.body)["error"]
+  end
 end
