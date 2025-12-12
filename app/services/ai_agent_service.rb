@@ -78,8 +78,12 @@ class AiAgentService
 
     # Final save to ensure everything is consistent and trigger final callbacks
     if reply_comment
-      reply_comment.update!(content: response_content)
-      log_action("reply_created", { comment_id: reply_comment.id, content: response_content })
+      if response_content.present?
+        reply_comment.update!(content: response_content)
+        log_action("reply_created", { comment_id: reply_comment.id, content: response_content })
+      else
+        reply_comment.destroy!
+      end
     elsif target_comment_id && response_content.present?
       # Fallback if creation failed earlier or logic changed
       reply_to_comment(target_comment_id, response_content)
