@@ -58,7 +58,7 @@ export default class extends Controller {
             // Validate it exists in list
             const exists = this.listTarget.querySelector(`[data-id="${lastTopicId}"]`)
             if (exists) {
-                this.select({ target: { dataset: { id: lastTopicId } } })
+                this.selectTopic(lastTopicId)
             }
         }
     }
@@ -162,6 +162,10 @@ export default class extends Controller {
         if (event.target.closest('.delete-topic-btn')) return
 
         const id = event.currentTarget.dataset.id
+        this.selectTopic(id)
+    }
+
+    selectTopic(id) {
         this.updateSelectionUI(id)
         // Dispatch event
         this.dispatch("change", { detail: { topicId: id } })
