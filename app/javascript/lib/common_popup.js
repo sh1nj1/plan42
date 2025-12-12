@@ -71,6 +71,23 @@ export default class CommonPopup {
       li.addEventListener('mouseenter', () => this.setActiveIndex(index))
       li.addEventListener('mousedown', (event) => event.preventDefault())
       li.addEventListener('click', () => this.handleItemSelect(index))
+
+      // Handle touch events for mobile stability (prevent keyboard dismissal/double-tap issues)
+      let touchStartY = null
+      li.addEventListener('touchstart', (e) => {
+        touchStartY = e.touches[0].clientY
+      }, { passive: false })
+
+      li.addEventListener('touchend', (e) => {
+        if (touchStartY === null) return
+        const diffY = Math.abs(e.changedTouches[0].clientY - touchStartY)
+        if (diffY < 10) { // Threshold for tap vs scroll
+          e.preventDefault()
+          this.handleItemSelect(index)
+        }
+        touchStartY = null
+      })
+
       this.listElement.appendChild(li)
     })
 
