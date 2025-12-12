@@ -89,3 +89,5 @@ if File.exist?(File.expand_path("../rails_mcp_engine", __FILE__))
 else
   gem "rails_mcp_engine", "~> 0.4.0"
 end
+
+gem "mysql2", "~> 0.5.7"
