@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_12_11_080040) do
+ActiveRecord::Schema[8.1].define(version: 2025_12_15_143500) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -47,6 +47,19 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_11_080040) do
     t.bigint "blob_id", null: false
     t.string "variation_digest", null: false
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
+  end
+
+  create_table "activity_logs", force: :cascade do |t|
+    t.string "activity", null: false
+    t.integer "comment_id"
+    t.datetime "created_at", null: false
+    t.integer "creative_id"
+    t.json "log", default: {}, null: false
+    t.integer "user_id"
+    t.index ["comment_id"], name: "index_activity_logs_on_comment_id"
+    t.index ["created_at"], name: "index_activity_logs_on_created_at"
+    t.index ["creative_id"], name: "index_activity_logs_on_creative_id"
+    t.index ["user_id"], name: "index_activity_logs_on_user_id"
   end
 
   create_table "calendar_events", force: :cascade do |t|
@@ -244,6 +257,19 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_11_080040) do
     t.datetime "updated_at", null: false
     t.string "value"
     t.index ["owner_id"], name: "index_labels_on_owner_id"
+  end
+
+  create_table "llm_logs", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.text "error_message"
+    t.json "messages", default: [], null: false
+    t.string "model", null: false
+    t.text "response_content"
+    t.text "system_prompt"
+    t.json "tools", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.string "vendor", null: false
+    t.index ["created_at"], name: "index_llm_logs_on_created_at"
   end
 
   create_table "mcp_tools", force: :cascade do |t|
@@ -583,6 +609,9 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_11_080040) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "activity_logs", "comments"
+  add_foreign_key "activity_logs", "creatives"
+  add_foreign_key "activity_logs", "users"
   add_foreign_key "calendar_events", "creatives"
   add_foreign_key "calendar_events", "users"
   add_foreign_key "comment_read_pointers", "creatives"

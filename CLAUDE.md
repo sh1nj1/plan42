@@ -10,6 +10,10 @@ This document captures best practices for integrating Anthropic's Claude models 
 - Gemini-based parent recommendations and streaming responses (PR analysis, `@gemini` replies) now use the
   [`ruby_llm`](https://github.com/crmne/ruby_llm) client. Ensure `GEMINI_API_KEY` is present so `RubyLLM` can configure the
   shared Gemini chat session via `config/initializers/ruby_llm.rb`.
+- RubyLLM debugging captures every prompt and streaming response to `log/ruby_llm.log`. Logs are written at `Logger::DEBUG`
+  level with `config.log_stream_debug = true` so you can trace the exact payloads sent and returned by the LLM. Each exchange is
+  also persisted in the `ruby_llm_logs` table (vendor, model, system prompt, normalized messages, tools, response, error) for
+  auditability.
 
 ## Collaboration Tips
 - Keep dialogue transcripts or prompt iterations in version control when they inform product behavior.

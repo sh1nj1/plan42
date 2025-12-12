@@ -4,4 +4,7 @@ return unless defined?(RubyLLM)
 
 RubyLLM.configure do |config|
   config.gemini_api_key = ENV["GEMINI_API_KEY"]
+  config.log_file = Rails.root.join("log", "ruby_llm.log").to_s
+  config.log_level = Logger::DEBUG
+  config.log_stream_debug = true
 end

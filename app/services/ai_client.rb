@@ -7,14 +7,21 @@ class AiClient
     - Respond in the asker's language (prefer the latest user message). Keep code and error messages in their original form.
   PROMPT
 
-  def initialize(vendor:, model:, system_prompt:, llm_api_key: nil)
+  def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, context: {})
     @vendor = vendor
     @model = model
     @system_prompt = system_prompt
     @llm_api_key = llm_api_key
+    @context = context
   end
 
   def chat(contents, tools: [], &block)
+    normalized_messages = []
+    response_content = +""
+    error_message = nil
+    input_tokens = nil
+    output_tokens = nil
+
     # For now, we assume the API key is in the environment variable GEMINI_API_KEY
     # In a real generic implementation, we might need to fetch keys based on vendor.
     # Since the user request mentioned "ruby_llm", we try to use it.
@@ -41,31 +48,55 @@ class AiClient
     # to be omitted for agents with a different or nil vendor. We now proceed for any vendor
     # and log a warning if the vendor is unsupported.
 
-    vendor = @vendor.to_s.downcase
-    unless %w[google gemini].include?(vendor)
+    normalized_vendor = vendor.to_s.downcase
+    unless %w[google gemini].include?(normalized_vendor)
       Rails.logger.warn "Unsupported LLM vendor '#{@vendor}'. Attempting to use default (google)."
     end
 
     conversation = build_conversation(tools)
-    add_messages(conversation, contents)
+    normalized_messages = add_messages(conversation, contents)
 
     response = conversation.complete do |chunk|
       delta = extract_chunk_content(chunk)
       next if delta.blank?
 
+      response_content << delta
       yield delta if block_given?
     end
 
-    response&.content
+    if response
+      response_content = response.content.to_s if response.content.present?
+
+      # Extract token usage directly from response object (RubyLLM style)
+      if response.respond_to?(:input_tokens)
+        input_tokens = response.input_tokens
+      end
+
+      if response.respond_to?(:output_tokens)
+        output_tokens = response.output_tokens
+      end
+    end
+
+    response_content.presence
   rescue StandardError => e
+    error_message = e.message
     Rails.logger.error "AI Client error: #{e.message}"
     yield "AI Error: #{e.message}" if block_given?
     nil
+  ensure
+    log_interaction(
+      messages: normalized_messages.presence || Array(contents),
+      tools: tools,
+      response_content: response_content.presence,
+      error_message: error_message,
+      input_tokens: input_tokens,
+      output_tokens: output_tokens
+    )
   end
 
   private
 
-  attr_reader :vendor, :model, :system_prompt, :llm_api_key
+  attr_reader :vendor, :model, :system_prompt, :llm_api_key, :context
 
   def build_conversation(tools = [])
     # Using RubyLLM.context to ensure we can potentially switch keys if we had them.
@@ -88,7 +119,10 @@ class AiClient
   end
 
   def add_messages(conversation, contents)
+    normalized = []
     Array(contents).each do |message|
+      next if message.nil?
+
       role = normalize_role(message)
       next unless role
 
@@ -96,7 +130,10 @@ class AiClient
       next if text.blank?
 
       conversation.add_message(role:, content: text)
+      normalized << { role:, parts: [ { text: text } ] }
     end
+
+    normalized
   end
 
   def normalize_role(message)
@@ -126,5 +163,22 @@ class AiClient
     else
       chunk.to_s
     end
+  end
+
+  def log_interaction(messages:, tools:, response_content:, error_message: nil, input_tokens: nil, output_tokens: nil)
+    RubyLlmInteractionLogger.log(
+      vendor: @vendor,
+      model: @model,
+      system_prompt: @system_prompt,
+      messages: messages,
+      tools: tools,
+      response_content: response_content,
+      error_message: error_message,
+      creative: context&.dig(:creative),
+      user: context&.dig(:user),
+      comment: context&.dig(:comment),
+      input_tokens: input_tokens,
+      output_tokens: output_tokens
+    )
   end
 end

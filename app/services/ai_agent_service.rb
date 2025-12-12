@@ -50,7 +50,12 @@ class AiAgentService
       vendor: @agent.llm_vendor,
       model: @agent.llm_model,
       system_prompt: rendered_system_prompt,
-      llm_api_key: @agent.llm_api_key
+      llm_api_key: @agent.llm_api_key,
+      context: {
+        creative: @context.dig("creative", "id") ? Creative.find_by(id: @context["creative"]["id"]) : nil,
+        user: @agent,
+        comment: reply_comment || (@context.dig("comment", "id") ? Comment.find_by(id: @context["comment"]["id"]) : nil)
+      }
     )
 
     client.chat(messages, tools: @agent.tools || []) do |delta|
