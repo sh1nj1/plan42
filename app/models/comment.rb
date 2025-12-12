@@ -4,6 +4,7 @@ class Comment < ApplicationRecord
   belongs_to :approver, class_name: "User", optional: true
   belongs_to :action_executed_by, class_name: "User", optional: true
   belongs_to :topic, optional: true
+  has_many :activity_logs, dependent: :destroy
 
 
   has_many_attached :images, dependent: :purge_later

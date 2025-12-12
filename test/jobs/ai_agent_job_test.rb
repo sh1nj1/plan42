@@ -88,9 +88,11 @@ class AiAgentJobTest < ActiveJob::TestCase
 
   class PromptCaptureClient
     attr_reader :captured_system_prompt
+    attr_reader :captured_context
 
-    def initialize(vendor:, model:, system_prompt:, llm_api_key:)
+    def initialize(vendor:, model:, system_prompt:, llm_api_key:, context: {})
       @captured_system_prompt = system_prompt
+      @captured_context = context
     end
 
     def chat(contents, tools: [], &block)

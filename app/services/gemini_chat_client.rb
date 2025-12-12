@@ -15,23 +15,36 @@ class GeminiChatClient
   end
 
   def chat(contents, &block)
+    normalized_messages = []
+    response_content = +""
+    error_message = nil
+
     return if api_key.blank?
 
     conversation = build_conversation
-    add_messages(conversation, contents)
+    normalized_messages = add_messages(conversation, contents)
 
     response = conversation.complete do |chunk|
       delta = extract_chunk_content(chunk)
       next if delta.blank?
 
+      response_content << delta
       yield delta if block_given?
     end
 
-    response&.content
+    response_content = response&.content.to_s if response&.content.present?
+    response_content.presence
   rescue StandardError => e
+    error_message = e.message
     Rails.logger.error("Gemini chat error: #{e.message}")
     yield "Gemini error: #{e.message}" if block_given?
     nil
+  ensure
+    log_interaction(
+      messages: normalized_messages.presence || Array(contents),
+      response_content: response_content.presence,
+      error_message: error_message
+    )
   end
 
   private
@@ -52,7 +65,10 @@ class GeminiChatClient
   end
 
   def add_messages(conversation, contents)
+    normalized = []
     Array(contents).each do |message|
+      next if message.nil?
+
       role = normalize_role(message)
       next unless role
 
@@ -60,7 +76,10 @@ class GeminiChatClient
       next if text.blank?
 
       conversation.add_message(role:, content: text)
+      normalized << { role:, parts: [ { text: text } ] }
     end
+
+    normalized
   end
 
   def normalize_role(message)
@@ -90,5 +109,17 @@ class GeminiChatClient
     else
       chunk.to_s
     end
+  end
+
+  def log_interaction(messages:, response_content:, error_message: nil)
+    RubyLlmInteractionLogger.log(
+      vendor: "google",
+      model: model,
+      system_prompt: SYSTEM_INSTRUCTIONS,
+      messages: messages,
+      tools: [],
+      response_content: response_content,
+      error_message: error_message
+    )
   end
 end

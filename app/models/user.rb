@@ -26,6 +26,7 @@ class User < ApplicationRecord
   has_many :contact_memberships, class_name: "Contact", foreign_key: :contact_user_id, dependent: :destroy, inverse_of: :contact_user
   has_one :github_account, dependent: :destroy
   has_one :notion_account, dependent: :destroy
+  has_many :activity_logs, dependent: :destroy
 
   has_one_attached :avatar
 
