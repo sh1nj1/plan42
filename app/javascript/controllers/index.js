@@ -43,3 +43,6 @@ application.register("avatar-preview", AvatarPreviewController)
 application.register("tabs", TabsController)
 import LinkCreativeController from "./link_creative_controller"
 application.register("link-creative", LinkCreativeController)
+
+import ShareUserSearchController from "./share_user_search_controller"
+application.register("share-user-search", ShareUserSearchController)
