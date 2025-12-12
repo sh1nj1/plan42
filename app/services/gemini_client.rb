@@ -7,10 +7,10 @@ class GeminiClient
     @chat_factory = chat_factory
   end
 
-  def recommend_parent_ids(categories, description)
+  def recommend_parent_ids(tree_text, description)
     return [] if @api_key.blank?
 
-    prompt = build_prompt(categories, description)
+    prompt = build_prompt(tree_text, description)
     Rails.logger.info("### prompt=#{prompt}")
 
     response = chat.ask(prompt)
@@ -33,9 +33,8 @@ class GeminiClient
     @chat ||= @chat_factory.call(@model, @api_key)
   end
 
-  def build_prompt(categories, description)
-    lines = categories.map { |category| "#{category[:id]}, \"#{category[:path]}\"" }.join("\n")
-    "#{lines}\n\nGiven the above categories (id, path), which ids are the best parents for \"#{description}\"? " \
+  def build_prompt(tree_text, description)
+    "#{tree_text}\n\nGiven the above creative tree, which ids are the best parents for \"#{description}\"? " \
       "Reply with up to 5 ids separated by commas in descending order of relevance."
   end
 
