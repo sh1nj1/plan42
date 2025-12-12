@@ -123,7 +123,8 @@ export default class extends Controller {
       this.formController.onPopupOpened({ creativeId: resolvedCreativeId, canComment })
     }
     if (this.listController) {
-      this.listController.onPopupOpened({ creativeId: resolvedCreativeId, highlightId })
+      const topicId = this.topicsController ? this.topicsController.currentTopicId : undefined
+      this.listController.onPopupOpened({ creativeId: resolvedCreativeId, highlightId, topicId })
     }
     if (this.presenceController) {
       this.presenceController.onPopupOpened({ creativeId: resolvedCreativeId })

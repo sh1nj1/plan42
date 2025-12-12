@@ -80,10 +80,14 @@ export default class extends Controller {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--presence')
   }
 
-  onPopupOpened({ creativeId, highlightId } = {}) {
+  onPopupOpened({ creativeId, highlightId, topicId } = {}) {
     this.creativeId = creativeId
     // highlightId from popup args takes precedence, else fallback to URL param if first load
     this.highlightAfterLoad = highlightId || this.deepLinkCommentId
+
+    if (topicId !== undefined) {
+      this.currentTopicId = topicId
+    }
 
     // Clear URL param after using it once to avoid stuck state
     this.deepLinkCommentId = null
@@ -236,10 +240,7 @@ export default class extends Controller {
           // Ideally direct controller access, but event bus is safer if decoupled.
           // Or access via popupController?
           if (this.popupController && this.popupController.topicsController) {
-            this.popupController.topicsController.select({ target: { dataset: { id: serverTopicId } } }, true) // true = skip dispatching change event loop?
-            // Actually topicsController.select sets currentTopicId and dispatches change.
-            // We don't want to loop. 
-            // We just want to update UI and local state.
+            // Update UI and local state without dispatching change event (to avoid loop)
             this.popupController.topicsController.updateSelectionUI(serverTopicId)
           }
         }
