@@ -25,6 +25,8 @@ export default class extends Controller {
     this.handleTouchEnd = this.handleTouchEnd.bind(this)
     this.handleResizeMove = this.handleResizeMove.bind(this)
     this.handleResizeStop = this.handleResizeStop.bind(this)
+    this.handleCloseButtonTouchStart = this.handleCloseButtonTouchStart.bind(this)
+    this.handleCloseButtonTouchEnd = this.handleCloseButtonTouchEnd.bind(this)
     this.handleOnline = this.handleOnline.bind(this)
     this.handleWindowFocus = this.handleWindowFocus.bind(this)
     this.handleVisibilityChange = this.handleVisibilityChange.bind(this)
@@ -39,8 +41,11 @@ export default class extends Controller {
     this.rightHandleTarget?.addEventListener('mousedown', (event) => this.startResize(event, 'right'))
 
     if (this.isMobile()) {
+      // Handle touch events directly on the close button to resolve issues on mobile where layout shifts (e.g., keyboard dismissal) cause click events to be lost or delayed.
       this.element.addEventListener('touchstart', this.handleTouchStart)
       this.element.addEventListener('touchend', this.handleTouchEnd)
+      this.closeButtonTarget?.addEventListener('touchstart', this.handleCloseButtonTouchStart, { passive: false })
+      this.closeButtonTarget?.addEventListener('touchend', this.handleCloseButtonTouchEnd)
     }
 
     document.querySelectorAll('form[action="/session"]').forEach((form) => {
@@ -61,6 +66,8 @@ export default class extends Controller {
     if (this.isMobile()) {
       this.element.removeEventListener('touchstart', this.handleTouchStart)
       this.element.removeEventListener('touchend', this.handleTouchEnd)
+      this.closeButtonTarget?.removeEventListener('touchstart', this.handleCloseButtonTouchStart)
+      this.closeButtonTarget?.removeEventListener('touchend', this.handleCloseButtonTouchEnd)
     }
   }
 
@@ -285,6 +292,15 @@ export default class extends Controller {
       this.close()
     }
     this.touchStartY = null
+  }
+
+  handleCloseButtonTouchStart(event) {
+    event.preventDefault()
+  }
+
+  handleCloseButtonTouchEnd(event) {
+    event.preventDefault()
+    this.close()
   }
 
   handleOnline() {
