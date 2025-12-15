@@ -108,6 +108,8 @@ creative-tree-row.show-edit .creative-row {
     max-width: calc(min(100vw, var(--max-width)) - 160px);
     padding-top: 2px;
     /* Slight adjustment for text baseline */
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 /* Allow attachments and images to be clickable independently of the parent link */
