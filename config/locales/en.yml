@@ -28,6 +28,9 @@
 #       enabled: "ON"
 
 en:
+  comments:
+    activity_logs_summary: "Activity Logs"
+
   app:
     name: "Collavre"
     home: "Home"

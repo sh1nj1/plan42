@@ -93,4 +93,14 @@
       </details>
     </div>
   <% end %>
+  <% if comment.activity_logs.exists? %>
+    <div class="comment-activity-log-block">
+      <details>
+        <summary><%= t("comments.activity_logs_summary") %></summary>
+        <%= turbo_frame_tag "activity_log_details_#{comment.id}", src: creative_comment_activity_log_path(comment.creative, comment), loading: "lazy" do %>
+          Loading...
+        <% end %>
+      </details>
+    </div>
+  <% end %>
 </div>

@@ -53,6 +53,9 @@ Rails.application.routes.draw do
           post :approve
           patch :update_action
         end
+
+        resource :activity_log, only: [ :show ], module: :comments
+
         collection do
           get :participants
           post :move
