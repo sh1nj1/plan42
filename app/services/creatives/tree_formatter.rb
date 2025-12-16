@@ -15,7 +15,7 @@ module Creatives
 
     def format_node(node, depth, lines)
       indent = " " * (depth * 4)
-      desc = node.effective_description(nil, false)
+      desc = ActionController::Base.helpers.strip_tags(node.effective_description(nil, false))
       progress = node.progress || 0.0
 
       node_data = { id: node.id, progress: progress, desc: desc }
