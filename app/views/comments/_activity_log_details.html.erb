@@ -1,0 +1,23 @@
+<%= turbo_frame_tag "activity_log_details_#{comment.id}" do %>
+  <% if activity_logs.any? %>
+    <div class="activity-log-list">
+      <% activity_logs.each do |log| %>
+        <div class="activity-log-item">
+          <details>
+            <summary class="activity-log-summary">
+              <span class="activity-name"><%= log.activity %></span>
+              <span class="activity-time"><%= time_ago_in_words(log.created_at) %> ago</span>
+            </summary>
+            <div class="activity-log-body">
+              <pre class="activity-log-yaml"><code><%= log.log.to_yaml.sub(/^---\n/, '') %></code></pre>
+            </div>
+          </details>
+        </div>
+      <% end %>
+    </div>
+  <% else %>
+    <div class="activity-log-empty">
+      No activity logs available.
+    </div>
+  <% end %>
+<% end %>

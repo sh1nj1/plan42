@@ -1,4 +1,7 @@
 ko:
+  comments:
+    activity_logs_summary: "활동 기록"
+
   app:
     name: "콜라브"
     home: "홈"

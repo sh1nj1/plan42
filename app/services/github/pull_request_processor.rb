@@ -93,25 +93,6 @@ module Github
         lines << "#### 승인 시 자동 적용"
         lines << "- 이 댓글을 승인하면 완료된 Creative의 진행률이 업데이트되고 제안된 Creative가 생성됩니다."
       end
-      if result.prompt.present?
-        lines << ""
-        lines << "<details><summary>Gemini 전송 메시지</summary>"
-        lines << ""
-        lines << "```"
-        lines << result.prompt.strip
-        lines << "```"
-        lines << ""
-        lines << "</details>"
-      end
-
-      lines << ""
-      lines << "<details><summary>Gemini 응답 원문</summary>"
-      lines << ""
-      lines << "```json"
-      lines << result.raw_response.strip
-      lines << "```"
-      lines << ""
-      lines << "</details>"
 
       attributes = { user: nil, content: lines.join("\n") }
       if actions.any?
