@@ -15,10 +15,11 @@ module Creatives
 
     def format_node(node, depth, lines)
       indent = " " * (depth * 4)
-      desc = node.effective_description(nil, false).gsub('"', '\"')
+      desc = node.effective_description(nil, false)
       progress = node.progress || 0.0
 
-      lines << "#{indent}- {id: #{node.id}, progress: #{progress}, desc: \"#{desc}\"}"
+      node_data = { id: node.id, progress: progress, desc: desc }
+      lines << "#{indent}- #{node_data.to_json}"
 
       # We need to handle children. If the node is a new instance (in tests),
       # children might depend on how it's set up.

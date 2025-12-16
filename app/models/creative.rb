@@ -17,7 +17,7 @@ class Creative < ApplicationRecord
       \#{diff}
 
       Creative tree structure. Each line represents a creative node with indentation indicating depth (4 spaces per level).
-      Format: - {id: <ID>, progress: <0.0-1.0>, desc: "<Description>"}
+      Format: - {"id": <ID>, "progress": <0.0-1.0>, "desc": "<Description>"}
       \#{creative_tree}
 
       \#{language_instructions}

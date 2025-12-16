@@ -27,11 +27,11 @@ module Github
 
       # Verify new Prompt Description
       assert_includes prompt, "Creative tree structure"
-      assert_includes prompt, "Format: - {id: <ID>, progress: <0.0-1.0>, desc: \"<Description>\"}"
+      assert_includes prompt, "Format: - {\"id\": <ID>, \"progress\": <0.0-1.0>, \"desc\": \"<Description>\"}"
 
       # Verify Tree Content (using regex or substring if ID is predictable)
       # Fixture id is 754382202, desc "T-Shirt"
-      assert_includes prompt, "{id: #{creatives(:tshirt).id}, progress: 0.5, desc: \"T-Shirt\"}"
+      assert_includes prompt, "{\"id\":#{creatives(:tshirt).id},\"progress\":0.5,\"desc\":\"T-Shirt\"}"
 
       assert_includes prompt, "Do not add tasks to \"completed\" if they already show 100% progress"
       assert_includes prompt, '"creative_id"'
@@ -97,7 +97,7 @@ module Github
       assert_includes prompt, "Body: Adds improvements"
       assert_includes prompt, "Commits: 1. Refactor module"
       assert_includes prompt, "Diff: diff --git a/file.rb b/file.rb"
-      assert_includes prompt, "Tree: - {id: #{creative.id}, progress: 0.5, desc: \"T-Shirt\"}"
+      assert_includes prompt, "Tree: - {\"id\":#{creative.id},\"progress\":0.5,\"desc\":\"T-Shirt\"}"
       assert_includes prompt, "Lang: Preferred response language:"
     end
 

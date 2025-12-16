@@ -9,7 +9,7 @@ module Creatives
       result = formatter.format(root)
 
       expected = <<~TEXT.chomp
-        - {id: 1, progress: 0.5, desc: "Root"}
+        - {"id":1,"progress":0.5,"desc":"Root"}
       TEXT
 
       assert_equal expected, result
@@ -35,10 +35,10 @@ module Creatives
       result = formatter.format(root)
 
       expected = <<~TEXT.chomp
-        - {id: 1, progress: 0.0, desc: "Root"}
-            - {id: 2, progress: 1.0, desc: "Child1"}
-            - {id: 3, progress: 0.0, desc: "Child2"}
-                - {id: 4, progress: 0.0, desc: "Child2-1"}
+        - {"id":1,"progress":0.0,"desc":"Root"}
+            - {"id":2,"progress":1.0,"desc":"Child1"}
+            - {"id":3,"progress":0.0,"desc":"Child2"}
+                - {"id":4,"progress":0.0,"desc":"Child2-1"}
       TEXT
 
       assert_equal expected, result
@@ -60,9 +60,9 @@ module Creatives
       result = formatter.format([ root1, root2 ])
 
       expected = <<~TEXT.chomp
-        - {id: 1, progress: 0.0, desc: "Root1"}
-            - {id: 2, progress: 1.0, desc: "Child1"}
-        - {id: 3, progress: 1.0, desc: "Root2"}
+        - {"id":1,"progress":0.0,"desc":"Root1"}
+            - {"id":2,"progress":1.0,"desc":"Child1"}
+        - {"id":3,"progress":1.0,"desc":"Root2"}
       TEXT
 
       assert_equal expected, result
