@@ -53,10 +53,10 @@ module Github
 
     def build_messages
       pr = payload["pull_request"]
-      tree_lines = paths
-        .select { |entry| entry[:leaf] }
-        .map { |entry| "- #{entry[:path]} [LEAF]" }
-        .join("\n")
+
+      # Use shared TreeFormatter logic
+      tree_lines = Creatives::TreeFormatter.new.format(creative)
+
       pr_body = pr["body"].to_s
       commit_lines = formatted_commit_messages
       diff_text = formatted_diff

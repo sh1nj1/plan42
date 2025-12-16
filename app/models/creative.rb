@@ -16,7 +16,8 @@ class Creative < ApplicationRecord
       Pull request diff:
       \#{diff}
 
-      Creative task paths (each line is a single task path from root to leaf). Each node is shown as "[ID] Title (progress XX%)" when progress is known. Leaf creatives are marked with [LEAF] and non-leaf creatives with [BRANCH]:
+      Creative tree structure. Each line represents a creative node with indentation indicating depth (4 spaces per level).
+      Format: - {"id": <ID>, "progress": <0.0-1.0>, "desc": "<Description>"}
       \#{creative_tree}
 
       \#{language_instructions}

@@ -13,7 +13,7 @@ module Github
       analyzer = Github::PullRequestAnalyzer.new(
         payload: payload,
         creative: creatives(:tshirt),
-        paths: [ { path: "[1] Root > [2] Child", leaf: true } ],
+        paths: [], # paths argument is now ignored for tree generation
         commit_messages: [ "Refactor module", "Add tests" ],
         diff: "diff --git a/file.rb b/file.rb\n+change"
       )
@@ -24,14 +24,18 @@ module Github
       assert_includes prompt, "1. Refactor module"
       assert_includes prompt, "2. Add tests"
       assert_includes prompt, "diff --git a/file.rb b/file.rb"
-      assert_includes prompt, "Each node is shown as \"[ID] Title (progress XX%)\" when progress is known"
-      assert_includes prompt, "Leaf creatives are marked with [LEAF]"
-      assert_includes prompt, "[1] Root > [2] Child"
-      assert_includes prompt, "[LEAF]"
+
+      # Verify new Prompt Description
+      assert_includes prompt, "Creative tree structure"
+      assert_includes prompt, "Format: - {\"id\": <ID>, \"progress\": <0.0-1.0>, \"desc\": \"<Description>\"}"
+
+      # Verify Tree Content (using regex or substring if ID is predictable)
+      # Fixture id is 754382202, desc "T-Shirt"
+      assert_includes prompt, "{\"id\":#{creatives(:tshirt).id},\"progress\":0.5,\"desc\":\"T-Shirt\"}"
+
       assert_includes prompt, "Do not add tasks to \"completed\" if they already show 100% progress"
       assert_includes prompt, '"creative_id"'
       assert_includes prompt, '"parent_id"'
-      assert_includes prompt, "Use only creatives marked [LEAF]"
       assert_includes prompt, "new creatives that are not already represented"
       assert_includes prompt, "Do not use this list for follow-up tasks"
       assert_includes prompt, "When describing creatives, write from an end-user perspective"
@@ -48,7 +52,7 @@ module Github
       analyzer = Github::PullRequestAnalyzer.new(
         payload: payload,
         creative: creatives(:tshirt),
-        paths: [ { path: "[1] Root > [2] Child", leaf: false } ],
+        paths: [],
         commit_messages: [],
         diff: nil
       )
@@ -81,7 +85,7 @@ module Github
       analyzer = Github::PullRequestAnalyzer.new(
         payload: payload,
         creative: creative,
-        paths: [ { path: "[1] Root > [2] Child", leaf: true } ],
+        paths: [],
         commit_messages: [ "Refactor module" ],
         diff: "diff --git a/file.rb b/file.rb\n+change"
       )
@@ -93,9 +97,10 @@ module Github
       assert_includes prompt, "Body: Adds improvements"
       assert_includes prompt, "Commits: 1. Refactor module"
       assert_includes prompt, "Diff: diff --git a/file.rb b/file.rb"
-      assert_includes prompt, "Tree: - [1] Root > [2] Child [LEAF]"
+      assert_includes prompt, "Tree: - {\"id\":#{creative.id},\"progress\":0.5,\"desc\":\"T-Shirt\"}"
       assert_includes prompt, "Lang: Preferred response language:"
     end
+
 
     test "uses english style guidance even when locale is ko" do
       payload = { "pull_request" => { "title" => "Feature" } }
