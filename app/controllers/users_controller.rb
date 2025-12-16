@@ -120,17 +120,33 @@ class UsersController < ApplicationController
 
   def search
     term = params[:q].to_s.strip.downcase
-    return render json: [] if term.blank?
+
+    # Allow empty term for contacts scope, otherwise require term
+    if term.blank? && params[:scope] != "contacts"
+      return render json: []
+    end
 
     creative = Creative.find_by(id: params[:creative_id])
 
     if creative.present? && !creative.has_permission?(Current.user, :read)
       head :forbidden and return
     end
-    users = User.mentionable_for(creative)
-                .where("LOWER(email) LIKE :term OR LOWER(name) LIKE :term", term: "#{term}%")
-                .distinct
-                .limit(5)
+    scope = if params[:scope] == "contacts" && Current.user
+      Current.user.contact_users
+    else
+      User.mentionable_for(creative)
+    end
+
+    users = scope
+    if term.present?
+      users = users.where("LOWER(users.email) LIKE :term OR LOWER(users.name) LIKE :term", term: "#{term}%")
+    end
+
+    limit = params[:limit].to_i
+    limit = 20 if limit <= 0
+    limit = 50 if limit > 50 # Application-side cap
+
+    users = users.distinct.limit(limit)
     render json: users.map { |u| { id: u.id, name: u.display_name, email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
   end
 

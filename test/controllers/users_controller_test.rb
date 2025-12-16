@@ -360,4 +360,61 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     refute_includes response.body, I18n.t("users.destroy.delete_ai_user")
   end
+  test "search with scope contacts returns contact users" do
+    sign_in_as(@admin, password: "password")
+
+    # @admin (one) has contact @regular_user (two) from fixtures
+    get search_users_path, params: { q: "two", scope: "contacts" }
+    assert_response :success
+    results = JSON.parse(response.body)
+
+    assert_equal 1, results.length
+    assert_equal @regular_user.email, results.first["email"]
+  end
+
+  test "search with scope contacts allows empty query" do
+    sign_in_as(@admin, password: "password")
+
+    get search_users_path, params: { q: "", scope: "contacts" }
+    assert_response :success
+    results = JSON.parse(response.body)
+
+    # Should return contacts (at least one from fixtures)
+    assert_operator results.length, :>=, 1
+    emails = results.map { |u| u["email"] }
+    assert_includes emails, @regular_user.email
+  end
+
+  test "search with scope contacts respects limit" do
+    sign_in_as(@admin, password: "password")
+
+    # Create more contacts
+    25.times do |i|
+      u = User.create!(email: "contact#{i}@example.com", password: "password", name: "Contact #{i}")
+      Contact.create!(user: @admin, contact_user: u)
+    end
+
+    get search_users_path, params: { q: "", scope: "contacts", limit: 10 }
+    assert_response :success
+    results = JSON.parse(response.body)
+    assert_equal 10, results.length
+
+    # Default limit 20
+    get search_users_path, params: { q: "", scope: "contacts" }
+    results = JSON.parse(response.body)
+    assert_equal 20, results.length
+  end
+
+  test "search returns correct json structure" do
+    sign_in_as(@admin, password: "password")
+
+    get search_users_path, params: { q: "two", scope: "contacts" }
+    assert_response :success
+    result = JSON.parse(response.body).first
+
+    assert_equal @regular_user.id, result["id"]
+    assert_equal @regular_user.name, result["name"] # Should be name, not display_name if controller maps it
+    assert_equal @regular_user.email, result["email"]
+    assert result.key?("avatar_url")
+  end
 end
