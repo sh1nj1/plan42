@@ -13,9 +13,8 @@ class GeminiParentRecommender
 
     categories = Creative
                    .joins(:children)
-                   .includes(:children)
                    .distinct
-                   .select { |c| c.origin.nil? } # select only origin
+                   .where(origin_id: nil)
                    .select { |c| c.has_permission?(user, :write) }
 
     parent = creative.parent

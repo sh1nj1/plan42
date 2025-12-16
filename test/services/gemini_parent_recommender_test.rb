@@ -12,11 +12,6 @@ class GeminiParentRecommenderTest < ActiveSupport::TestCase
     Creative.create!(user: user, description: "Writable Grandchild", progress: 0.0, parent: writable_child)
 
     # Read-only or No-access creatives (owned by other)
-    # Assuming default logic: non-owners might have read or no access depending on visibility.
-    # We will mock `has_permission?` to be sure, or rely on distinct owners if that suffices.
-    # To be safe and test logic explicitly, we can mock or use specific setup if we knew the permission model well.
-    # But let's try assuming ownership = write, non-ownership = different.
-
     no_access_creative = Creative.create!(user: other_user, description: "No Access", progress: 0.0)
     # Add child to ensure it's not filtered by joins(:children) but by permission
     Creative.create!(user: other_user, description: "No Access Child", progress: 0.0, parent: no_access_creative)
@@ -52,24 +47,8 @@ class GeminiParentRecommenderTest < ActiveSupport::TestCase
 
     writable_parent = Creative.create!(user: user, description: "Writable Parent", progress: 0.0)
 
-    # Child with NO write permission (simulated)
-    # We will stub has_permission? for this specific instance if possible?
-    # Or create a scenario.
-    # Let's use stubbing.
-    restricted_child = Creative.create!(user: user, description: "Restricted Child", progress: 0.0, parent: writable_parent)
-
-    # We'll use a wrapper or define a singleton method on the instance,
-    # BUT GeminiParentRecommender fetches fresh instances from DB.
-    # So we must rely on data-driven permissions or mock the method on ALL instances of that object.
-
-    # Since `GeminiParentRecommender` queries `Creative...`, we can't easily stub the loaded objects *before* they are loaded
-    # unless we stub `Creative.distinct...`.
-
-    # However, if we assume the standard permission model:
-    # If the user is NOT the owner, and not a collaborator, they might not have write access.
-    # Let's retry creating a mixed ownership tree.
-    # Parent owned by User. Child owned by Other.
-
+    # Child is owned by another user and has no explicit shares.
+    # Therefore, `user` has no write permission on `mixed_child` and it should be filtered out.
     mixed_child = Creative.create!(user: other_user, description: "Mixed Child", progress: 0.0, parent: writable_parent)
     # Add grandchild so mixed_child is a parent
     Creative.create!(user: other_user, description: "Mixed Grandchild", progress: 0.0, parent: mixed_child)
