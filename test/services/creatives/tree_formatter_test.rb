@@ -67,5 +67,23 @@ module Creatives
 
       assert_equal expected, result
     end
+    test "formats tree correctly with manually set children association" do
+      root = Creative.new(id: 1, description: "Root", progress: 0.0)
+      child = Creative.new(id: 2, description: "Child", progress: 0.0, parent: root)
+
+      # Manually set the association target as we do in GeminiParentRecommender
+      root.association(:children).target = [ child ]
+      child.association(:children).target = [] # Ensure recursion stops without db lookup
+
+      formatter = Creatives::TreeFormatter.new
+      result = formatter.format(root)
+
+      expected = <<~TEXT.chomp
+        - {"id":1,"progress":0.0,"desc":"Root"}
+            - {"id":2,"progress":0.0,"desc":"Child"}
+      TEXT
+
+      assert_equal expected, result
+    end
   end
 end

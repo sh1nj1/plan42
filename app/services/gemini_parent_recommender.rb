@@ -13,8 +13,9 @@ class GeminiParentRecommender
 
     categories = Creative
                    .joins(:children)
+                   .includes(:children)
                    .distinct
-                   .select { |c| c.description.length <= 40 }
+                   .select { |c| c.origin.nil? } # select only origin
                    .select { |c| c.has_permission?(user, :write) }
 
     parent = creative.parent
@@ -23,7 +24,14 @@ class GeminiParentRecommender
     end
     categories = categories.uniq
 
-    top_level_categories = categories.reject { |c| categories.any? { |other| other.id == c.parent_id } }
+    # Rebuild tree in memory to avoid N+1 in TreeFormatter
+    children_map = categories.group_by(&:parent_id)
+    categories.each do |c|
+      # Manually set the children association target
+      c.association(:children).target = (children_map[c.id] || []).select { |child| child.has_permission?(user, :write) }
+    end
+    category_ids = categories.index_by(&:id)
+    top_level_categories = categories.reject { |c| category_ids.key?(c.parent_id) }
 
     tree_text = Creatives::TreeFormatter.new.format(top_level_categories)
 
