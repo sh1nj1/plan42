@@ -4,9 +4,8 @@ class McpService
   # --- Registration Logic (from MetaToolService) ---
 
   def self.register_tool_from_source(source_code)
-    # Use the engine's service to register the tool
-    # Note: We use Tools::MetaToolWriteService from rails_mcp_engine
     result = Tools::MetaToolWriteService.new.register_tool_from_source(source: source_code)
+    puts("Registered tool: #{result}")
 
     if result[:error]
       error_msg = "Failed to register tool: #{result[:error]}"
