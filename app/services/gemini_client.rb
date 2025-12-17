@@ -63,7 +63,6 @@ class GeminiClient
     RubyLlmInteractionLogger.log(
       vendor: "google",
       model: @model,
-      system_prompt: nil,
       messages: [ { role: :user, parts: [ { text: prompt } ] } ],
       tools: [],
       response_content: response_content,

@@ -41,7 +41,7 @@ class GeminiChatClient
     nil
   ensure
     log_interaction(
-      messages: normalized_messages.presence || Array(contents),
+      messages: conversation&.messages&.to_a || normalized_messages.presence || Array(contents),
       response_content: response_content.presence,
       error_message: error_message
     )
@@ -115,7 +115,6 @@ class GeminiChatClient
     RubyLlmInteractionLogger.log(
       vendor: "google",
       model: model,
-      system_prompt: SYSTEM_INSTRUCTIONS,
       messages: messages,
       tools: [],
       response_content: response_content,
