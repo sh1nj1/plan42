@@ -12,7 +12,7 @@ class McpServiceTest < ActiveSupport::TestCase
     RUBY
 
     mock_service = Minitest::Mock.new
-    mock_service.expect :register_tool_from_source, { status: "registered" }, [], source: source_code
+    mock_service.expect :register_tool_from_source, { status: "registered" }, [], source: source_code, before_call: Proc, after_call: Proc
 
     Tools::MetaToolWriteService.stub :new, mock_service do
       McpService.register_tool_from_source(source_code)
@@ -123,7 +123,7 @@ class McpServiceTest < ActiveSupport::TestCase
     source_code = "invalid source"
 
     mock_service = Minitest::Mock.new
-    mock_service.expect :register_tool_from_source, { error: "Syntax error" }, [], source: source_code
+    mock_service.expect :register_tool_from_source, { error: "Syntax error" }, [], source: source_code, before_call: Proc, after_call: Proc
 
     Tools::MetaToolWriteService.stub :new, mock_service do
       assert_raises(RuntimeError) do
