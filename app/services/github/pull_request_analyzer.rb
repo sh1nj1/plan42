@@ -8,7 +8,7 @@ module Github
 
     DIFF_MAX_LENGTH = 10_000
 
-    def initialize(payload:, creative:, paths:, commit_messages: [], diff: nil, client: GeminiChatClient.new, logger: Rails.logger)
+    def initialize(payload:, creative:, paths:, commit_messages: [], diff: nil, client: default_client, logger: Rails.logger)
       @payload = payload
       @creative = creative
       @paths = normalize_paths(paths)
@@ -49,6 +49,14 @@ module Github
     rescue StandardError => e
       logger.error("Gemini chat failed: #{e.class} #{e.message}")
       nil
+    end
+
+    def default_client
+      AiClient.new(
+        vendor: "google",
+        model: "gemini-2.5-flash",
+        system_prompt: AiClient::SYSTEM_INSTRUCTIONS
+      )
     end
 
     def build_messages
