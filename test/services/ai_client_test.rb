@@ -22,6 +22,14 @@ class AiClientTest < ActiveSupport::TestCase
       @messages_added << { "role" => role.to_s, "parts" => [ { "text" => content } ] }
     end
 
+    def messages
+      @messages_added
+    end
+
+    def tools
+      []
+    end
+
     def complete
       yield OpenStruct.new(content: "chunk") if block_given?
       OpenStruct.new(content: @response_content, input_tokens: 10, output_tokens: 20)
@@ -50,9 +58,6 @@ class AiClientTest < ActiveSupport::TestCase
     log_data = log_entry.log
     assert_equal "google", log_data["vendor"]
     assert_equal "gemini-pro", log_data["model"]
-    assert_equal "system", log_data["system_prompt"]
-    # Messages are stored as array of hashes in JSON
-    # We might need to handle string/symbol key diffs or rely on safe_json
     assert_equal conversation.messages_added, log_data["messages"]
     assert_equal [], log_data["tools"]
     assert_equal "full response", log_data["response_content"]

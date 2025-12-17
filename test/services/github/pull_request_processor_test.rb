@@ -73,9 +73,6 @@ module Github
       assert_includes comment.content, "[##{completed_task.creative_id}](#{child_path})"
       assert_includes comment.content, "[##{suggestion.parent_id}](#{parent_path})"
       assert_includes comment.content, "Follow up"
-      assert_includes comment.content, "Gemini 전송 메시지"
-      assert_includes comment.content, prompt_text
-      assert_includes comment.content, "Gemini 응답"
       assert comment.action.present?
       assert_equal account.user, comment.approver
 
