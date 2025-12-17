@@ -55,3 +55,5 @@ ko:
     move_invalid_target: "이동할 크리에이티브를 선택해주세요."
     move_not_allowed: "이 메시지를 이동할 권한이 없습니다."
     select_label: "메시지 선택"
+    calendar_command:
+      event_created: "이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})"
