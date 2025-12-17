@@ -80,14 +80,13 @@ class AiClient
   rescue StandardError => e
     error_message = e.message
     Rails.logger.error "AI Client error: #{e.message}"
-    Rails.logger.error e.backtrace.join("\n")
+    Rails.logger.debug e.backtrace.join("\n")
     yield "AI Error: #{e.message}" if block_given?
     nil
   ensure
     log_interaction(
       messages: conversation.messages.to_a || Array(contents),
-      schema: conversation.schema,
-      tools: tools,
+      tools: conversation.tools.to_a,
       response_content: response_content.presence,
       error_message: error_message,
       input_tokens: input_tokens,
@@ -110,7 +109,8 @@ class AiClient
            .chat(model: model).tap do |chat|
       chat.with_instructions(system_prompt)
       chat.on_tool_call do |tool_call|
-        Rails.logger.info("Tool call: #{JSON.pretty_generate(tool_call.to_h)}")
+        # You can do on_tool_call, on_tool_result hook by ruby llm provides
+        # Rails.logger.info("Tool call: #{JSON.pretty_generate(tool_call.to_h)}")
       end
       if tools.any?
         # Resolve tool names to classes using the gem's helper
@@ -163,13 +163,11 @@ class AiClient
     end
   end
 
-  def log_interaction(messages:, schema:, tools:, response_content:, error_message: nil, input_tokens: nil, output_tokens: nil)
+  def log_interaction(messages:, tools:, response_content:, error_message: nil, input_tokens: nil, output_tokens: nil)
     RubyLlmInteractionLogger.log(
       vendor: @vendor,
       model: @model,
-      system_prompt: @system_prompt,
       messages: messages,
-      schema: schema,
       tools: tools,
       response_content: response_content,
       error_message: error_message,

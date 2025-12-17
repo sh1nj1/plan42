@@ -2,7 +2,7 @@
 
 class RubyLlmInteractionLogger
   class << self
-    def log(vendor:, model:, schema:, system_prompt:, messages:, tools: [], response_content: nil, error_message: nil, activity: "llm_query", creative: nil, user: nil, comment: nil, input_tokens: nil, output_tokens: nil)
+    def log(vendor:, model:, messages:, tools: [], response_content: nil, error_message: nil, activity: "llm_query", creative: nil, user: nil, comment: nil, input_tokens: nil, output_tokens: nil)
       ActivityLog.create!(
         activity: activity,
         creative: creative,
@@ -11,8 +11,6 @@ class RubyLlmInteractionLogger
         log: {
           vendor: vendor.presence || "unknown",
           model: model.to_s,
-          schema: safe_json(schema || {}),
-          system_prompt: system_prompt,
           messages: safe_json(messages || []),
           tools: safe_json(tools || []),
           response_content: response_content,
