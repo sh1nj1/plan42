@@ -107,7 +107,7 @@ class AiClient
     api_key = @llm_api_key.presence || ENV["GEMINI_API_KEY"]
     RubyLLM.context { |config| config.gemini_api_key = api_key }
            .chat(model: model).tap do |chat|
-      chat.with_instructions(system_prompt)
+      chat.with_instructions(system_prompt) if system_prompt.present?
       chat.on_tool_call do |tool_call|
         # You can do on_tool_call, on_tool_result hook by ruby llm provides
         # Rails.logger.info("Tool call: #{JSON.pretty_generate(tool_call.to_h)}")

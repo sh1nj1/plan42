@@ -1,5 +1,5 @@
 class GeminiParentRecommender
-  def initialize(client: GeminiClient.new)
+  def initialize(client: default_client)
     @client = client
   end
 
@@ -34,8 +34,11 @@ class GeminiParentRecommender
 
     tree_text = Creatives::TreeFormatter.new.format(top_level_categories)
 
-    ids = @client.recommend_parent_ids(tree_text,
-                                       ActionController::Base.helpers.strip_tags(creative.description).to_s)
+    prompt = build_prompt(tree_text, ActionController::Base.helpers.strip_tags(creative.description).to_s)
+    Rails.logger.info("### prompt=#{prompt}")
+
+    response = @client.chat([ { role: :user, parts: [ { text: prompt } ] } ])
+    ids = parse_response(response)
 
     # Reconstruct paths for result
     ids.map do |id|
@@ -44,5 +47,29 @@ class GeminiParentRecommender
        path = c.ancestors.reverse.map { |a| ActionController::Base.helpers.strip_tags(a.description) } + [ ActionController::Base.helpers.strip_tags(c.description) ]
        { id: id, path: path.join(" > ") }
     end.compact
+  end
+
+  private
+
+  def default_client
+    AiClient.new(
+      vendor: "google",
+      model: "gemini-2.5-flash",
+      system_prompt: nil
+    )
+  end
+
+  def build_prompt(tree_text, description)
+    "#{tree_text}\n\nGiven the above creative tree, which ids are the best parents for \"#{description}\"? " \
+      "Reply with up to 5 ids separated by commas in descending order of relevance."
+  end
+
+  def parse_response(content)
+    return [] if content.blank?
+
+    content.to_s.split(/[\s,]+/)
+           .filter_map { |value| Integer(value, exception: false) }
+           .reject(&:zero?)
+           .first(5)
   end
 end

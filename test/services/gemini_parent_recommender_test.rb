@@ -19,15 +19,16 @@ class GeminiParentRecommenderTest < ActiveSupport::TestCase
     # Mock client to inspect the tree text
     client_mock = Minitest::Mock.new
 
-    # We expect `recommend_parent_ids` to be called.
-    # We check the passed `tree_text` to ensure it contains only writable items.
-    client_mock.expect(:recommend_parent_ids, []) do |tree_text, _desc|
-      assert_match(/Writable Parent/, tree_text)
-      assert_match(/Writable Child/, tree_text)
+    # We expect `chat` to be called with messages
+    client_mock.expect(:chat, "1, 2") do |messages|
+      prompt = messages.dig(0, :parts, 0, :text)
+
+      assert_match(/Writable Parent/, prompt)
+      assert_match(/Writable Child/, prompt)
       # Grandchild might not appear if it itself doesn't have children (it's a leaf),
       # but Writable Child is now a parent so it appears.
 
-      refute_match(/No Access/, tree_text)
+      refute_match(/No Access/, prompt)
       true
     end
 
@@ -56,10 +57,14 @@ class GeminiParentRecommenderTest < ActiveSupport::TestCase
     # We need to ensure `user` cannot write to `mixed_child`.
     # Assuming `has_permission?` returns false for other's creative.
 
+    # Mock AiClient
     client_mock = Minitest::Mock.new
-    client_mock.expect(:recommend_parent_ids, []) do |tree_text, _desc|
-      assert_match(/Writable Parent/, tree_text)
-      refute_match(/Mixed Child/, tree_text)
+
+    # We expect `chat` to be called with messages
+    client_mock.expect(:chat, "1, 2") do |messages|
+      prompt = messages.dig(0, :parts, 0, :text)
+      assert_match(/Writable Parent/, prompt)
+      refute_match(/Mixed Child/, prompt)
       true
     end
 

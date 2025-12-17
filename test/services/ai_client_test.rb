@@ -5,17 +5,22 @@ require "ostruct"
 
 class AiClientTest < ActiveSupport::TestCase
   class FakeConversation
-    attr_reader :messages_added
+    attr_reader :messages_added, :instructions_set
 
     def initialize(response_content: "final response")
       @response_content = response_content
       @messages_added = []
+      @instructions_set = nil
     end
 
-    def with_instructions(*)
+    def with_instructions(instructions)
+      @instructions_set = instructions
     end
 
     def with_tool(*)
+    end
+
+    def on_tool_call(&block)
     end
 
     def add_message(role:, content:)
@@ -34,6 +39,70 @@ class AiClientTest < ActiveSupport::TestCase
       yield OpenStruct.new(content: "chunk") if block_given?
       OpenStruct.new(content: @response_content, input_tokens: 10, output_tokens: 20)
     end
+  end
+
+  # ... existing tests ...
+
+  test "build_conversation does not set nil system prompt" do
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: nil,
+      llm_api_key: "api-key"
+    )
+
+    fake_chat = FakeConversation.new
+
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) do |model:|
+      fake_chat
+    end
+
+    mock_config = Minitest::Mock.new
+    mock_config.expect(:gemini_api_key=, nil, [ "api-key" ])
+
+    context_stub = proc do |&block|
+      block.call(mock_config) if block
+      mock_context
+    end
+
+    RubyLLM.stub(:context, context_stub) do
+      client.send(:build_conversation)
+    end
+
+    assert_nil fake_chat.instructions_set
+    mock_config.verify
+  end
+
+  test "build_conversation sets system prompt when present" do
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: "Be helpful",
+      llm_api_key: "api-key"
+    )
+
+    fake_chat = FakeConversation.new
+
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) do |model:|
+      fake_chat
+    end
+
+    mock_config = Minitest::Mock.new
+    mock_config.expect(:gemini_api_key=, nil, [ "api-key" ])
+
+    context_stub = proc do |&block|
+      block.call(mock_config) if block
+      mock_context
+    end
+
+    RubyLLM.stub(:context, context_stub) do
+      client.send(:build_conversation)
+    end
+
+    assert_equal "Be helpful", fake_chat.instructions_set
+    mock_config.verify
   end
 
   test "persists prompt and response to ruby llm logs" do
