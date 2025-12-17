@@ -1,12 +1,13 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+
+require_relative "../config/environment"
+
 require "optparse"
 require "json"
 require "openssl"
 require "shellwords"
-
-require_relative "../config/environment"
 
 options = {
   repo: nil,
