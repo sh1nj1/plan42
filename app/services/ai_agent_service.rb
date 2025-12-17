@@ -6,92 +6,94 @@ class AiAgentService
   end
 
   def call
-    # Log start action
-    log_action("start", { message: "Starting agent execution" })
+    Current.set(user: @agent) do
+      # Log start action
+      log_action("start", { message: "Starting agent execution" })
 
-    # Prepare messages for AI
-    messages = build_messages
+      # Prepare messages for AI
+      messages = build_messages
 
-    # Log prompt generation
-    log_action("prompt_generated", { messages: messages })
+      # Log prompt generation
+      log_action("prompt_generated", { messages: messages })
 
-    # Call AI Client
-    response_content = ""
+      # Call AI Client
+      response_content = ""
 
-    # Enrich context for rendering
-    rendering_context = @context.dup
-    if @context.dig("creative", "id")
-      creative = Creative.find_by(id: @context["creative"]["id"])
-      rendering_context["creative"] = creative.as_json if creative
-    end
+      # Enrich context for rendering
+      rendering_context = @context.dup
+      if @context.dig("creative", "id")
+        creative = Creative.find_by(id: @context["creative"]["id"])
+        rendering_context["creative"] = creative.as_json if creative
+      end
 
-    rendered_system_prompt = AiSystemPromptRenderer.new(
-      template: @agent.system_prompt,
-      context: rendering_context
-    ).render
+      rendered_system_prompt = AiSystemPromptRenderer.new(
+        template: @agent.system_prompt,
+        context: rendering_context
+      ).render
 
-    # Create a placeholder comment to stream into
-    target_comment_id = @context.dig("comment", "id")
-    reply_comment = nil
+      # Create a placeholder comment to stream into
+      target_comment_id = @context.dig("comment", "id")
+      reply_comment = nil
 
-    if target_comment_id
-      original_comment = Comment.find_by(id: target_comment_id)
-      if original_comment
-        reply_comment = original_comment.creative.comments.create!(
-          content: "...", # Placeholder
+      if target_comment_id
+        original_comment = Comment.find_by(id: target_comment_id)
+        if original_comment
+          reply_comment = original_comment.creative.comments.create!(
+            content: "...", # Placeholder
+            user: @agent,
+            topic_id: original_comment.topic_id
+          )
+        end
+      end
+
+      # we may pass event payload also to the AI client for more context if needed - TODO
+      client = AiClient.new(
+        vendor: @agent.llm_vendor,
+        model: @agent.llm_model,
+        system_prompt: rendered_system_prompt,
+        llm_api_key: @agent.llm_api_key,
+        context: {
+          creative: @context.dig("creative", "id") ? Creative.find_by(id: @context["creative"]["id"]) : nil,
           user: @agent,
-          topic_id: original_comment.topic_id
-        )
+          comment: reply_comment || (@context.dig("comment", "id") ? Comment.find_by(id: @context["comment"]["id"]) : nil)
+        }
+      )
+
+      client.chat(messages, tools: @agent.tools || []) do |delta|
+        response_content += delta
+
+        # Stream updates to the comment
+        if reply_comment
+          # We use update_column to avoid triggering full model callbacks/validations on every chunk
+          # but we *do* want to broadcast the update.
+          # However, calling 'update' trigger callbacks which might be heavy.
+          # Let's try direct broadcast or a lighter update.
+          # For now, let's just update the content.
+          # To avoid being too chatty we could throttle, but let's try direct updates first.
+
+          reply_comment.update_column(:content, response_content)
+
+          # Manually trigger broadcast for the content update
+          # We use broadcast_update_to to immediately stream the update
+          reply_comment.broadcast_update_to([ reply_comment.creative, :comments ])
+        end
       end
-    end
 
-    # we may pass event payload also to the AI client for more context if needed - TODO
-    client = AiClient.new(
-      vendor: @agent.llm_vendor,
-      model: @agent.llm_model,
-      system_prompt: rendered_system_prompt,
-      llm_api_key: @agent.llm_api_key,
-      context: {
-        creative: @context.dig("creative", "id") ? Creative.find_by(id: @context["creative"]["id"]) : nil,
-        user: @agent,
-        comment: reply_comment || (@context.dig("comment", "id") ? Comment.find_by(id: @context["comment"]["id"]) : nil)
-      }
-    )
+      # Log completion
+      log_action("completion", { response: response_content })
 
-    client.chat(messages, tools: @agent.tools || []) do |delta|
-      response_content += delta
-
-      # Stream updates to the comment
+      # Final save to ensure everything is consistent and trigger final callbacks
       if reply_comment
-        # We use update_column to avoid triggering full model callbacks/validations on every chunk
-        # but we *do* want to broadcast the update.
-        # However, calling 'update' trigger callbacks which might be heavy.
-        # Let's try direct broadcast or a lighter update.
-        # For now, let's just update the content.
-        # To avoid being too chatty we could throttle, but let's try direct updates first.
-
-        reply_comment.update_column(:content, response_content)
-
-        # Manually trigger broadcast for the content update
-        # We use broadcast_update_to to immediately stream the update
-        reply_comment.broadcast_update_to([ reply_comment.creative, :comments ])
+        if response_content.present?
+          reply_comment.update!(content: response_content)
+          log_action("reply_created", { comment_id: reply_comment.id, content: response_content })
+        else
+          reply_comment.destroy!
+        end
+      elsif target_comment_id && response_content.present?
+        # Fallback if creation failed earlier or logic changed
+        reply_to_comment(target_comment_id, response_content)
       end
-    end
-
-    # Log completion
-    log_action("completion", { response: response_content })
-
-    # Final save to ensure everything is consistent and trigger final callbacks
-    if reply_comment
-      if response_content.present?
-        reply_comment.update!(content: response_content)
-        log_action("reply_created", { comment_id: reply_comment.id, content: response_content })
-      else
-        reply_comment.destroy!
-      end
-    elsif target_comment_id && response_content.present?
-      # Fallback if creation failed earlier or logic changed
-      reply_to_comment(target_comment_id, response_content)
     end
   end
 

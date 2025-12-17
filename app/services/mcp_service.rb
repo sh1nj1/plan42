@@ -4,7 +4,48 @@ class McpService
   # --- Registration Logic (from MetaToolService) ---
 
   def self.register_tool_from_source(source_code)
-    result = Tools::MetaToolWriteService.new.register_tool_from_source(source: source_code)
+    # Extract tool name for logging context
+    tool_name_match = source_code.match(/tool_name\s+["'](.+?)["']/)
+    tool_name = tool_name_match ? tool_name_match[1] : "unknown_tool"
+
+    before_call = proc do |tool_instance, method_name, args|
+      # Store args for after_call access if needed, or just log start
+      # Using thread local to pass data to after_call if we want to correlate exact timing or args
+      Thread.current[:mcp_tool_args_stack] ||= []
+      Thread.current[:mcp_tool_args_stack].push(args)
+    end
+
+    after_call = proc do |tool_instance, method_name, result|
+      # Retrieve args
+      args = Thread.current[:mcp_tool_args_stack]&.pop || {}
+
+      # Create activity log
+      # We need a user to attribute this to.
+      # If executed in a background job (Task), Current.user is set.
+      # If executed via API, Current.user is set.
+      user = Current.user
+      creative = tool_instance&.try(:creative_context) rescue nil # Assuming some way to get context if needed, or nil
+
+      ActivityLog.create!(
+        activity: "tool_execution",
+        user: user,
+        creative: creative, # Optional: if we can link it back to a creative
+        log: {
+          tool_name: tool_name,
+          method: method_name,
+          args: args,
+          result: result
+        }
+      )
+    rescue => e
+      Rails.logger.error("Failed to log tool activity: #{e.message}")
+    end
+
+    result = Tools::MetaToolWriteService.new.register_tool_from_source(
+      source: source_code,
+      before_call: before_call,
+      after_call: after_call
+    )
     puts("Registered tool: #{result}")
 
     if result[:error]

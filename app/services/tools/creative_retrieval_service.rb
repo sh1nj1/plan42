@@ -10,74 +10,98 @@ module Tools
 
     tool_param :id, description: "The ID of the creative to retrieve."
     tool_param :query, description: "Text to search for in creative descriptions."
-    tool_param :level, description: "Creative tree depth to return (default: 1)."
-    tool_param :simple, description: "If true, returns a simplified flat list. If false (default), returns a tree structure with HTML."
+    tool_param :level, description: "Creative tree depth to return (default: 3).", required: false
+    tool_param :simple, description: "If true, returns a simplified flat list. If false (default), returns a tree structure with HTML.", required: false
 
-    sig { params(id: T.nilable(Integer), query: T.nilable(String), level: Integer, simple: T.nilable(T::Boolean)).returns(T::Array[T::Hash[Symbol, T.untyped]]) }
-    def call(id: nil, query: nil, level: 1, simple: false)
-      raise "Current.user is required" unless Current.user
+    sig { params(id: T.nilable(Integer), query: T.nilable(String), level: T.nilable(Integer), simple: T.nilable(T::Boolean)).returns(T::Array[T::Hash[Symbol, T.untyped]]) }
+    def call(id: nil, query: nil, level: 3, simple: false)
+      level ||= 3
+      simple ||= false
 
-      # Mock session if missing, to pass Authentication concern
-      unless Current.session
-        # Create a mock session object that responds to user and persisted?
-        # We use OpenStruct for simplicity, assuming Session interface is duck-typed enough for Authentication concern
-        require "ostruct"
-        mock_session = OpenStruct.new(user: Current.user, persisted?: false)
-        Current.session = mock_session
-      end
+      # Ensure fresh permission cache for this tool execution
+      Current.creative_share_cache = nil if Current.respond_to?(:creative_share_cache=)
+
+      # Mock session and request setup
+      setup_mock_environment
 
       controller = CreativesController.new
+      setup_controller(controller)
 
-      # Create a mock request
-      # We use Rack::MockRequest to generate a proper env
-      env = Rack::MockRequest.env_for(
-        "/creatives",
-        method: "GET",
-        params: {
-          id: id,
-          search: query,
-          simple: simple.presence,
-          level: level,
-          format: :json
-        }.compact,
-      )
+      if id.present?
+        # Get the creative details (show)
+        show_result = dispatch_request(controller, :show, id: id, format: :json)
+        return show_result if show_result.is_a?(Array) && show_result.first[:error]
 
-      controller.request = ActionDispatch::Request.new(env)
-      controller.response = ActionDispatch::Response.new
+        # Get the children (index with id acts as parent filter)
+        index_result = dispatch_request(controller, :index, id: id, search: query, simple: simple, level: level, format: :json)
+        return index_result if index_result.is_a?(Array) && index_result.first[:error]
 
-      # Stub cookies to avoid ActionDispatch::Cookies middleware dependency
-      def controller.cookies
-        @mock_cookies ||= begin
-          jar = OpenStruct.new
-          def jar.signed
-            self
-          end
-          def jar.encrypted
-            self
-          end
-          def jar.[](key)
-            nil
-          end
-          def jar.delete(key)
-            nil
-          end
-          jar
-        end
-      end
+        # Combine results
+        # show_result is expected to be a hash of the creative
+        # index_result is expected to be a list of children or simple list
 
-      # Dispatch the action
-      controller.process(:index)
+        # Parse show result
+        creative_details = JSON.parse(show_result[:body], symbolize_names: true)
 
-      # Parse the response
-      if controller.response.successful?
-        result = JSON.parse(controller.response.body, symbolize_names: true)
-        filter_result(result)
+        # Parse index result
+        children_data = JSON.parse(index_result[:body], symbolize_names: true)
+        filtered_children = filter_result(children_data)
+
+        # Merge
+        # We construct a tree node for the parent, with the children attached
+        parent_node = filter_tree([ creative_details ]).first
+        parent_node[:children] = filtered_children
+
+        [ parent_node ]
       else
-        [ { error: "Controller returned status #{controller.response.status}", body: controller.response.body } ]
+        # Normal index call
+        result = dispatch_request(controller, :index, search: query, simple: simple, level: level, format: :json)
+
+        if result[:status] == 200
+           parsed = JSON.parse(result[:body], symbolize_names: true)
+           filter_result(parsed)
+        else
+           [ { error: "Controller returned status #{result[:status]}", body: result[:body] } ]
+        end
       end
     end
 
     private
+
+    def setup_mock_environment
+      raise "Current.user is required" unless Current.user
+      unless Current.session
+        require "ostruct"
+        Current.session = OpenStruct.new(user: Current.user, persisted?: false)
+      end
+    end
+
+    def setup_controller(controller)
+      # Stub cookies
+      controller.define_singleton_method(:cookies) do
+        @mock_cookies ||= begin
+          jar = OpenStruct.new
+          def jar.signed; self; end
+          def jar.encrypted; self; end
+          def jar.[](key); nil; end
+          def jar.delete(key); nil; end
+          jar
+        end
+      end
+    end
+
+    def dispatch_request(controller, action, params)
+      env = Rack::MockRequest.env_for(
+        "/creatives",
+        method: "GET",
+        params: params.compact
+      )
+      controller.request = ActionDispatch::Request.new(env)
+      controller.response = ActionDispatch::Response.new
+      controller.process(action)
+
+      { status: controller.response.status, body: controller.response.body }
+    end
 
     def filter_result(result)
       if result.is_a?(Array)
