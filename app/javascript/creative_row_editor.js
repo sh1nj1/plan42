@@ -906,6 +906,9 @@ export function initializeCreativeRowEditor() {
                 if (rowEl) {
                   rowEl.setAttribute('creative-id', data.id);
                   rowEl.creativeId = data.id;
+                  const creativeLink = `/creatives/${data.id}`;
+                  rowEl.setAttribute('link-url', creativeLink);
+                  rowEl.linkUrl = creativeLink;
                   const levelValue = tree.dataset.level;
                   if (levelValue) {
                     rowEl.setAttribute('level', levelValue);
