@@ -6,7 +6,7 @@ module Tools
     extend ToolMeta
 
     tool_name "creative_retrieval_service"
-    tool_description "Retrieve creatives by ID or query text. without query  or ID, it will return root creatives. Returns a list of matching creatives with their details, supporting both hierarchical tree and flat list formats."
+    tool_description "Retrieve creatives by ID or query text. without query  or ID, it will return root creatives. Returns a list of matching creatives with their details, supporting both hierarchical tree and flat list formats.\n\nA Creative is a content block that functions like a task, organized in a tree structure similar to a to-do list. You can navigate the tree at any level as a structured document, with progress automatically calculated to show what’s been completed.\n\ne.g.\n- When user say creative or Test creative, it means \"Test\" creative and it's children as a writing page.\n- Summary of Test creative? - you need to search \"Test\" creatives with level 3 or more and find the title is \"Test\" or similar and make summary of that."
 
     tool_param :id, description: "The ID of the creative to retrieve."
     tool_param :query, description: "Text to search for in creative descriptions."
