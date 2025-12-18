@@ -24,21 +24,13 @@ class CommentReadPointersController < ApplicationController
   def broadcast_read_receipts(creative, comment_id)
     return unless comment_id
 
-    # Find the nearest public comment ID <= comment_id
-    effective_id = creative.comments.where(private: false).where("id <= ?", comment_id).maximum(:id)
+    # We map to the nearest PUBLIC comment to avoid leaking the existence/ID of private comments
+    # via the public action cable channel.
+    # Trade-off: Private-only threads (with no preceding public comment) will not get real-time read updates.
+    effective_id = find_nearest_public_comment_id(creative, comment_id)
     return unless effective_id
 
-    # Determine the range for this effective ID
-    # Users are legally "on" this effective ID if their actual read pointer is >= effective_id
-    # AND strictly less than the NEXT public comment ID.
-    next_public_id = creative.comments.where(private: false).where("id > ?", effective_id).minimum(:id)
-
-    query = CommentReadPointer.where(creative: creative)
-                              .where("last_read_comment_id >= ?", effective_id)
-
-    query = query.where("last_read_comment_id < ?", next_public_id) if next_public_id
-
-    users = query.includes(user: { avatar_attachment: :blob }).map(&:user)
+    users = fetch_users_on_effective_id(creative, effective_id)
 
     Turbo::StreamsChannel.broadcast_update_to(
       [ creative, :comments ],
@@ -46,6 +38,21 @@ class CommentReadPointersController < ApplicationController
       partial: "comments/read_receipts",
       locals: { read_by_users: users }
     )
+  end
+
+  def find_nearest_public_comment_id(creative, comment_id)
+    creative.comments.where(private: false).where("id <= ?", comment_id).maximum(:id)
+  end
+
+  def fetch_users_on_effective_id(creative, effective_id)
+    next_public_id = creative.comments.where(private: false).where("id > ?", effective_id).minimum(:id)
+
+    query = CommentReadPointer.where(creative: creative)
+                              .where("last_read_comment_id >= ?", effective_id)
+
+    query = query.where("last_read_comment_id < ?", next_public_id) if next_public_id
+
+    query.includes(user: { avatar_attachment: :blob }).map(&:user)
   end
 
   def mark_inbox_items_read(creative, last_comment_id)
