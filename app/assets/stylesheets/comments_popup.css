@@ -377,6 +377,7 @@
 
 #comment-participants {
     margin-bottom: 0.3em;
+    min-height: 20px;
 }
 
 #typing-indicator {
