@@ -1,4 +1,6 @@
 class InboxItem < ApplicationRecord
+  INTERPOLATION_PATTERN = /%%|%\{([\w|]+)\}|%<(\w+)>[^\d]*?\d*\.?\d*[bBdiouxXeEfgGcps]/.freeze
+
   belongs_to :owner, class_name: "User"
   belongs_to :comment, optional: true
   belongs_to :creative, optional: true
@@ -22,7 +24,7 @@ class InboxItem < ApplicationRecord
     msg =
       if message_key.present?
         params = message_params || {}
-        I18n.t(message_key, **params.symbolize_keys, locale: locale)
+        translate_message(message_key, params.symbolize_keys, locale: locale)
       else
         message
       end
@@ -31,6 +33,36 @@ class InboxItem < ApplicationRecord
   end
 
   private
+
+  def translate_message(message_key, params, locale:)
+    I18n.t(message_key, **params, locale: locale)
+  rescue I18n::MissingInterpolationArgument => e
+    missing_keys = extract_missing_keys(e.string, params)
+    fallback_params =
+      missing_keys.index_with do |missing_key|
+        default_interpolation_value(missing_key, locale: locale)
+      end
+
+    I18n.t(message_key, **params.merge(fallback_params), locale: locale)
+  end
+
+  def extract_missing_keys(translation_string, params)
+    interpolations =
+      translation_string.to_s.scan(INTERPOLATION_PATTERN).map do |match|
+        match.compact.first&.to_sym
+      end
+
+    interpolations.compact.uniq - params.keys
+  end
+
+  def default_interpolation_value(key, locale:)
+    case key.to_sym
+    when :comment_content
+      I18n.t("inbox.comment_content_unavailable", locale: locale, default: "")
+    else
+      ""
+    end
+  end
 
   def broadcast_badge_update
     # Recompute the new count for this owner:
