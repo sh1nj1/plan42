@@ -23,6 +23,8 @@ class CommentReadPointersController < ApplicationController
 
   def broadcast_read_receipts(creative, comment_id)
     return unless comment_id
+    comment = creative.comments.find_by(id: comment_id)
+    return if comment.nil? || comment.private?
 
     # Fetch all users who have this comment as their last read comment
     users = CommentReadPointer.where(creative: creative, last_read_comment_id: comment_id)
