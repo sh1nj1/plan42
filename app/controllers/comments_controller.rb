@@ -96,10 +96,27 @@ class CommentsController < ApplicationController
                                    .where.not(last_read_comment_id: nil)
                                    .includes(user: { avatar_attachment: :blob })
 
+      # Fetch all visible IDs for correct read-receipt placement transparency
+      all_visible_ids = visible_scope.order(id: :asc).pluck(:id)
+
       pointers.each do |pointer|
-        # Group users by the comment_id they have read up to
-        read_receipts[pointer.last_read_comment_id] ||= []
-        read_receipts[pointer.last_read_comment_id] << pointer.user
+        target_id = pointer.last_read_comment_id
+        next unless target_id
+
+        # Find the nearest visible comment ID <= target_id
+        idx = all_visible_ids.bsearch_index { |x| x > target_id }
+        effective_id = if idx
+          # If idx is 0, target_id is smaller than ALL visible IDs (unlikely unless deleted/invisible start)
+          idx > 0 ? all_visible_ids[idx - 1] : nil
+        else
+          # target_id is >= all visible IDs
+          all_visible_ids.last
+        end
+
+        if effective_id
+          read_receipts[effective_id] ||= []
+          read_receipts[effective_id] << pointer.user
+        end
       end
     end
 
