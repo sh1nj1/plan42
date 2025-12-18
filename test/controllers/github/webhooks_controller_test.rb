@@ -45,6 +45,43 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     processor.verify
   end
 
+  test "dispatches system event with webhook details" do
+    body = @payload.to_json
+    signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
+
+    processor = Minitest::Mock.new
+    processor.expect(:call, true)
+
+    dispatcher = Minitest::Mock.new
+    dispatcher.expect :call, nil do |event_name, context|
+      payload = context[:payload]
+
+      event_name == "github_webhook" &&
+        context[:event] == "pull_request" &&
+        context[:action] == "opened" &&
+        context[:repository] == @link.repository_full_name &&
+        payload["action"] == "opened" &&
+        payload.dig("repository", "full_name") == @link.repository_full_name
+    end
+
+    Github::PullRequestProcessor.stub :new, ->(*) { processor } do
+      SystemEvents::Dispatcher.stub :dispatch, dispatcher do
+        post github_webhook_path,
+             params: body,
+             headers: {
+               "CONTENT_TYPE" => "application/json",
+               "HTTP_X_GITHUB_EVENT" => "pull_request",
+               "HTTP_X_HUB_SIGNATURE_256" => signature
+             }
+      end
+    end
+
+    assert_response :success
+
+    processor.verify
+    dispatcher.verify
+  end
+
   test "rejects webhook when signature does not match secret" do
     body = @payload.to_json
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', 'wrong-secret', body)}"
