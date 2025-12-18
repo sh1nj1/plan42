@@ -85,6 +85,7 @@
     margin-right: 0.5em;
 }
 
+
 .comment-item {
     border-top: 1px solid var(--color-border);
     padding: 0.5em 1.8em 1.5em 0.5em;
@@ -108,10 +109,6 @@
     cursor: pointer;
 }
 
-.comment-item.last-read {
-    border-bottom: 2px solid var(--color-border);
-}
-
 .comment-content {
     margin-top: 0.2em;
 }
@@ -119,6 +116,51 @@
 .comment-action-block {
     margin-top: 0.6em;
 }
+
+
+
+
+.comment-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    min-height: 20px;
+    /* Ensure height is at least the size of the avatar */
+}
+
+.read-receipt-wrapper {
+    display: inline-flex;
+    align-items: center;
+    /* margin-left: 0.5em; -- handled by gap */
+    vertical-align: middle;
+    height: 16px;
+    /* Explicit height to match avatar */
+}
+
+.read-receipt-container {
+
+    /* Reset absolute positioning */
+    position: static;
+    width: auto;
+    display: flex;
+    pointer-events: auto;
+    z-index: auto;
+    padding: 0;
+    margin: 0;
+}
+
+.read-receipt-avatars {
+    display: flex;
+    align-items: center;
+    gap: -4px;
+    /* Slight overlap for compactness? Or keep standard gap */
+    gap: 2px;
+    background-color: transparent;
+    padding: 0;
+    border-radius: 0;
+}
+
+
 
 .comment-action-summary {
     cursor: pointer;
@@ -429,4 +471,23 @@
     font-size: 0.85em;
     width: 100px;
     outline: none;
+}
+
+.read-receipt-container {
+    display: flex;
+    align-items: center;
+    margin-top: 0.5em;
+    /* Spacing from the comment above */
+    margin-bottom: 0.5em;
+    width: 100%;
+    padding: 0 1em;
+    /* Add some padding so line doesn't touch edges */
+}
+
+.read-receipt-avatars {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 0.5em;
+    /* Space between line and avatars */
 }

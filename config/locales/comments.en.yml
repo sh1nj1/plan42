@@ -57,3 +57,4 @@ en:
     select_label: "Select message"
     calendar_command:
       event_created: "event created: [Google Calendar event](%{url})"
+    read_by: "Read by %{name}"

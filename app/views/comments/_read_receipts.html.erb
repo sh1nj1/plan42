@@ -1,0 +1,11 @@
+<% if defined?(read_by_users) && read_by_users.present? %>
+  <div class="read-receipt-container">
+    <div class="read-receipt-avatars">
+      <% read_by_users.each do |user| %>
+        <div class="read-receipt-avatar" title="<%= t('comments.read_by', name: user.display_name) %>">
+          <%= render AvatarComponent.new(user: user, size: 16, classes: 'avatar') %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+<% end %>

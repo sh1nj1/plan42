@@ -84,20 +84,32 @@ class CommentsController < ApplicationController
       scope.limit(limit).to_a.reverse
     end
 
-    pointer = CommentReadPointer.find_by(user: Current.user, creative: @creative)
-    last_read_comment_id = pointer&.last_read_comment_id
-    max_id = visible_scope.maximum(:id) # Max visible ID for this user
-    if last_read_comment_id && last_read_comment_id == max_id
-      last_read_comment_id = nil
+    read_receipts = {}
+    if @comments.any?
+      # Fetch all read pointers for this creative that point to comments in the current list
+      # We only care about pointers that match the IDs of the comments we are displaying?
+      # Or rather, we want to show the 'line' on the comment that matches the pointer.
+
+      # Optimization: Fetch all pointers for participants of this creative.
+      # Scoped to the creative.
+      pointers = CommentReadPointer.where(creative: @creative)
+                                   .where.not(last_read_comment_id: nil)
+                                   .includes(user: { avatar_attachment: :blob })
+
+      pointers.each do |pointer|
+        # Group users by the comment_id they have read up to
+        read_receipts[pointer.last_read_comment_id] ||= []
+        read_receipts[pointer.last_read_comment_id] << pointer.user
+      end
     end
 
     if params[:after_id].present? || params[:before_id].present?
-      render partial: "comments/comment", collection: @comments, as: :comment, locals: { last_read_comment_id: last_read_comment_id }
+      render partial: "comments/comment", collection: @comments, as: :comment, locals: { read_receipts: read_receipts }
     else
       render partial: "comments/list", locals: {
         comments: @comments,
         creative: @creative,
-        last_read_comment_id: last_read_comment_id
+        read_receipts: read_receipts
       }
     end
   end
