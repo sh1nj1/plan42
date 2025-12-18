@@ -21,6 +21,7 @@ export default class extends Controller {
     this.editingId = null
     this.sending = false
     this.cachedImageFiles = null
+    this.existingAttachments = []
 
     this.handleSubmit = this.handleSubmit.bind(this)
     this.handleSend = this.handleSend.bind(this)
@@ -132,14 +133,17 @@ export default class extends Controller {
     requestAnimationFrame(() => this.textareaTarget.focus())
   }
 
-  startEditing({ id, content, private: isPrivate }) {
+  startEditing({ id, content, private: isPrivate, attachments = [] }) {
     this.editingId = id
     this.textareaTarget.value = content || ''
     if (this.privateCheckboxTarget) {
       this.privateCheckboxTarget.checked = !!isPrivate
       this.privateCheckboxTarget.dispatchEvent(new Event('change'))
     }
-    this.clearImageAttachments()
+    this.cachedImageFiles = null
+    this.existingAttachments = attachments
+    this.setImageFiles([])
+    this.updateAttachmentList()
     this.submitTarget.textContent = this.element.dataset.updateCommentText
     if (this.cancelTarget) this.cancelTarget.style.display = ''
     this.focusTextarea()
@@ -447,8 +451,51 @@ export default class extends Controller {
 
   clearImageAttachments() {
     this.cachedImageFiles = null
+    this.existingAttachments = []
     this.setImageFiles([])
     this.updateAttachmentList()
+  }
+
+  removeExistingAttachment(signedId) {
+    if (!signedId) return
+    const csrfToken = document.querySelector('meta[name=csrf-token]')?.content
+    fetch(`/attachments/${signedId}`, {
+      method: 'DELETE',
+      headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Unable to delete attachment')
+        }
+        this.existingAttachments = this.existingAttachments.filter((attachment) => (attachment.signed_id || attachment.signedId) !== signedId)
+        this.updateAttachmentList()
+        this.removeAttachmentPreviewFromComment(signedId)
+      })
+      .catch((error) => {
+        console.error(error)
+        alert(this.element.dataset.attachmentDeleteErrorText || 'Failed to delete attachment')
+      })
+  }
+
+  removeAttachmentPreviewFromComment(signedId) {
+    if (!signedId || !this.editingId) return
+    const commentElement = document.getElementById(`comment_${this.editingId}`)
+    if (!commentElement) return
+
+    const attachmentLink = commentElement.querySelector(`[data-attachment-signed-id="${signedId}"]`)
+    if (attachmentLink) {
+      attachmentLink.remove()
+    }
+
+    const attachmentContainer = commentElement.querySelector('.comment-attachments')
+    if (attachmentContainer && attachmentContainer.children.length === 0) {
+      attachmentContainer.remove()
+    }
+
+    const editButton = commentElement.querySelector('.edit-comment-btn')
+    if (editButton) {
+      editButton.setAttribute('data-comment-attachments', JSON.stringify(this.existingAttachments))
+    }
   }
 
   removeImageAttachment(index) {
@@ -460,13 +507,33 @@ export default class extends Controller {
   updateAttachmentList() {
     if (!this.attachmentListTarget) return
     const files = this.currentImageFiles()
+    const attachments = this.existingAttachments || []
     this.attachmentListTarget.innerHTML = ''
-    if (!files.length) {
+    if (!files.length && !attachments.length) {
       this.attachmentListTarget.style.display = 'none'
       return
     }
 
     this.attachmentListTarget.style.display = ''
+    const fragment = document.createDocumentFragment()
+
+    attachments.forEach((attachment) => {
+      const item = document.createElement('span')
+      item.className = 'comment-attachment-item'
+      const filename = attachment.filename || attachment.name
+      item.textContent = filename
+
+      const removeButton = document.createElement('button')
+      removeButton.type = 'button'
+      removeButton.className = 'comment-attachment-remove'
+      removeButton.setAttribute('aria-label', `Remove ${filename}`)
+      removeButton.textContent = '×'
+      removeButton.addEventListener('click', () => this.removeExistingAttachment(attachment.signed_id || attachment.signedId))
+
+      item.appendChild(removeButton)
+      fragment.appendChild(item)
+    })
+
     files.forEach((file, index) => {
       const item = document.createElement('span')
       item.className = 'comment-attachment-item'
@@ -480,8 +547,10 @@ export default class extends Controller {
       removeButton.addEventListener('click', () => this.removeImageAttachment(index))
 
       item.appendChild(removeButton)
-      this.attachmentListTarget.appendChild(item)
+      fragment.appendChild(item)
     })
+
+    this.attachmentListTarget.appendChild(fragment)
   }
 
   renderCommentHtml(html, { replaceExisting = false } = {}) {

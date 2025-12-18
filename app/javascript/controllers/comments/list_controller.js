@@ -534,7 +534,17 @@ export default class extends Controller {
     const commentId = button.getAttribute('data-comment-id')
     const content = button.getAttribute('data-comment-content')
     const isPrivate = button.getAttribute('data-comment-private') === 'true'
-    this.formController?.startEditing({ id: commentId, content, private: isPrivate })
+    let attachments = []
+    const attachmentsJson = button.getAttribute('data-comment-attachments')
+    if (attachmentsJson) {
+      try {
+        attachments = JSON.parse(attachmentsJson)
+      } catch (error) {
+        console.error('Failed to parse comment attachments', error)
+      }
+    }
+
+    this.formController?.startEditing({ id: commentId, content, private: isPrivate, attachments })
   }
 
   updateCommentAction(form) {

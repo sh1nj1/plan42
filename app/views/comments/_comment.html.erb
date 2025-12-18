@@ -5,6 +5,7 @@
            value="<%= comment.id %>"
            aria-label="<%= t('comments.select_label') %>" />
   </div>
+  <% attachments_data = comment.images.map { |image| { signed_id: image.blob.signed_id, filename: image.filename.to_s } } %>
   <div>
     <%= render AvatarComponent.new(user: comment.user, size: 20, classes: 'avatar comment-avatar') %>
     <% system_prefix = "#{t('comments.system_user')}:" %>
@@ -47,7 +48,13 @@
           <%= t('comments.approve_button') %>
         </button>
       <% end %>
-      <button class="edit-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('comments.update_comment') %>">
+      <button class="edit-comment-btn comment-owner-only"
+              data-comment-target="ownerButton"
+              data-comment-id="<%= comment.id %>"
+              data-comment-content="<%= comment.content %>"
+              data-comment-private="<%= comment.private? %>"
+              data-comment-attachments="<%= attachments_data.to_json %>"
+              title="<%= t('comments.update_comment') %>">
         <%= t('comments.edit_button') %>
       </button>
       <button class="copy-comment-link-btn" data-comment-id="<%= comment.id %>" data-comment-url="<%= creative_comment_url(comment.creative, comment) %>" title="<%= t('comments.copy_link_button') %>">
@@ -72,7 +79,7 @@
              else
                rails_blob_path(preview_image, only_path: true)
              end %>
-        <%= link_to rails_blob_path(image, only_path: true), target: '_blank', rel: 'noopener', class: 'comment-attachment-link' do %>
+        <%= link_to rails_blob_path(image, only_path: true), target: '_blank', rel: 'noopener', class: 'comment-attachment-link', data: { attachment_signed_id: image.blob.signed_id, attachment_filename: image.filename.to_s } do %>
           <%= image_tag preview_image_path, class: 'comment-attachment-image', alt: '', loading: 'lazy' %>
         <% end %>
       <% end %>
