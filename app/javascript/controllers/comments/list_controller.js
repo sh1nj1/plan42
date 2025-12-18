@@ -14,6 +14,7 @@ export default class extends Controller {
     this.movingComments = false
     this.manualSearchQuery = null
     this.initialLoadComplete = false
+    this.currentUserId = document.body?.dataset?.currentUserId || null
 
     this.handleScroll = this.handleScroll.bind(this)
     this.handleChange = this.handleChange.bind(this)
@@ -291,7 +292,44 @@ export default class extends Controller {
         },
         body: JSON.stringify({ creative_id: this.creativeId }),
       })
+        .then((response) => response.json())
+        .then((data) => {
+          if (!data) return
+          const { previous_effective_comment_id: previousEffectiveId, previous_read_receipts_html: receiptsHtml } = data
+          if (previousEffectiveId && receiptsHtml) {
+            this.restorePreviousReadAvatar(previousEffectiveId, receiptsHtml)
+          }
+        })
+        .catch(() => {})
     }, 2000);
+  }
+
+  restorePreviousReadAvatar(commentId, receiptsHtml) {
+    if (!this.currentUserId || !commentId || !receiptsHtml) return
+
+    const target = document.getElementById(`read_receipts_comment_${commentId}`)
+    if (!target) return
+
+    const existingSelfAvatar = target.querySelector(`.comment-presence-avatar[data-user-id="${this.currentUserId}"]`)
+    if (existingSelfAvatar) return
+
+    const wrapper = document.createElement('div')
+    wrapper.innerHTML = receiptsHtml
+
+    const newContainer = wrapper.querySelector('.read-receipt-container')
+    if (!newContainer) return
+
+    const existingContainer = target.querySelector('.read-receipt-container')
+    if (existingContainer) {
+      const existingAvatars = existingContainer.querySelector('.read-receipt-avatars')
+      const newAvatars = newContainer.querySelector('.read-receipt-avatars')
+      if (existingAvatars && newAvatars) {
+        existingAvatars.append(...newAvatars.children)
+        return
+      }
+    }
+
+    target.appendChild(newContainer)
   }
 
   handleScroll() {
