@@ -113,6 +113,24 @@
     margin-top: 0.2em;
 }
 
+.comment-topic-link-row {
+    margin-top: 0.35em;
+}
+
+.comment-topic-link {
+    background: transparent;
+    border: none;
+    color: var(--color-primary);
+    cursor: pointer;
+    font-weight: 600;
+    padding: 0;
+}
+
+.comment-topic-link:hover,
+.comment-topic-link:focus {
+    text-decoration: underline;
+}
+
 .comment-action-block {
     margin-top: 0.6em;
 }

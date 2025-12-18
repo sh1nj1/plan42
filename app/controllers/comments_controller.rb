@@ -11,7 +11,7 @@ class CommentsController < ApplicationController
       Current.user.id,
       Current.user.id
     )
-    scope = visible_scope.with_attached_images
+    scope = visible_scope.with_attached_images.includes(:topic)
 
     if params[:search].present?
       search_term = ActiveRecord::Base.sanitize_sql_like(params[:search].to_s.strip.downcase)
@@ -39,7 +39,7 @@ class CommentsController < ApplicationController
     end
 
     # Apply the Topic Filter
-    scope = scope.where(topic_id: effective_topic_id)
+    scope = scope.where(topic_id: effective_topic_id) if effective_topic_id.present?
 
     # Default order: Newest first (created_at DESC)
     # This matches the column-reverse layout where the first item in the list is the visual bottom (Newest).
@@ -162,7 +162,7 @@ class CommentsController < ApplicationController
           content: @comment.content
         }
       }) unless @comment.private?
-      @comment = Comment.with_attached_images.find(@comment.id)
+      @comment = Comment.with_attached_images.includes(:topic).find(@comment.id)
       render partial: "comments/comment", locals: { comment: @comment }, status: :created
     else
       render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
@@ -177,7 +177,7 @@ class CommentsController < ApplicationController
       end
 
       if @comment.update(safe_params)
-        @comment = Comment.with_attached_images.find(@comment.id)
+        @comment = Comment.with_attached_images.includes(:topic).find(@comment.id)
         render partial: "comments/comment", locals: { comment: @comment }
       else
         render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity

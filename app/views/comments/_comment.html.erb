@@ -79,6 +79,13 @@
       <% end %>
     </div>
   <% end %>
+  <% if comment.topic.present? %>
+    <div class="comment-topic-link-row">
+      <button class="comment-topic-link" type="button" data-topic-id="<%= comment.topic_id %>" data-topic-name="<%= comment.topic.name %>">
+        #<%= comment.topic.name %>
+      </button>
+    </div>
+  <% end %>
   <% if comment.action.present? %>
     <div class="comment-action-block" data-comment-id="<%= comment.id %>">
       <details class="comment-action-details">

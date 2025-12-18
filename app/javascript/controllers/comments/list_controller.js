@@ -331,6 +331,16 @@ export default class extends Controller {
 
     if (target.closest('.comment-select-checkbox')) return
 
+    const topicLink = target.closest('.comment-topic-link')
+    if (topicLink) {
+      event.preventDefault()
+      const topicId = topicLink.dataset.topicId
+      if (topicId && this.popupController?.topicsController) {
+        this.popupController.topicsController.selectTopic(topicId)
+      }
+      return
+    }
+
     const copyBtn = target.closest('.copy-comment-link-btn')
     if (copyBtn) {
       event.preventDefault()
