@@ -331,6 +331,14 @@ export default class extends Controller {
 
     if (target.closest('.comment-select-checkbox')) return
 
+    const topicLink = target.closest('.comment-topic-switch')
+    if (topicLink) {
+      event.preventDefault()
+      const topicId = topicLink.getAttribute('data-topic-id')
+      this.switchToTopic(topicId)
+      return
+    }
+
     const copyBtn = target.closest('.copy-comment-link-btn')
     if (copyBtn) {
       event.preventDefault()
@@ -480,6 +488,21 @@ export default class extends Controller {
     setTimeout(() => notice.remove(), 2400)
   }
 
+  switchToTopic(topicId) {
+    if (!topicId) return
+    const topicsController = this.popupController?.topicsController
+    if (topicsController?.selectTopic) {
+      topicsController.selectTopic(topicId)
+    } else {
+      this.currentTopicId = topicId
+      this.resetToLatest()
+    }
+  }
+
+  topicQueryString() {
+    return this.currentTopicId ? `?topic_id=${encodeURIComponent(this.currentTopicId)}` : ''
+  }
+
   // API Methods
 
   deleteComment(button) {
@@ -520,7 +543,8 @@ export default class extends Controller {
     if (button.disabled) return
     button.disabled = true
     const commentId = button.getAttribute('data-comment-id')
-    fetch(`/creatives/${this.creativeId}/comments/${commentId}/approve`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
+    const topicQuery = this.topicQueryString()
+    fetch(`/creatives/${this.creativeId}/comments/${commentId}/approve${topicQuery}`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
       .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.error) }))
       .then(html => {
         if (!html) { button.disabled = false; return; }
@@ -545,7 +569,8 @@ export default class extends Controller {
     const textarea = form.querySelector('.comment-action-edit-textarea')
     const commentId = form.getAttribute('data-comment-id')
 
-    fetch(`/creatives/${this.creativeId}/comments/${commentId}/update_action`, {
+    const topicQuery = this.topicQueryString()
+    fetch(`/creatives/${this.creativeId}/comments/${commentId}/update_action${topicQuery}`, {
       method: 'PATCH',
       headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content, 'Content-Type': 'application/json' },
       body: JSON.stringify({ comment: { action: textarea.value } })

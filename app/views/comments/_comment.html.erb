@@ -1,3 +1,5 @@
+<% comment_topic = comment.topic %>
+<% current_topic_id = local_assigns[:current_topic_id] %>
 <div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>">
   <div class="comment-select">
     <input type="checkbox"
@@ -63,6 +65,11 @@
     </div>
   </div>
   <div class="comment-content"><%= comment.content %></div>
+  <% if comment_topic.present? && current_topic_id.blank? %>
+    <div class="comment-topic-link">
+      <a href="#" class="comment-topic-switch" data-topic-id="<%= comment_topic.id %>">#<%= comment_topic.name %></a>
+    </div>
+  <% end %>
   <% if comment.images.attached? %>
     <div class="comment-attachments">
       <% comment.images.each do |image| %>
