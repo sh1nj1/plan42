@@ -116,13 +116,18 @@ class CommentsController < ApplicationController
       render partial: "comments/comment",
              collection: @comments,
              as: :comment,
-             locals: { read_receipts: read_receipts, present_user_ids: present_user_ids }
+             locals: {
+               read_receipts: read_receipts,
+               present_user_ids: present_user_ids,
+               current_topic_id: effective_topic_id
+             }
     else
       render partial: "comments/list", locals: {
         comments: @comments,
         creative: @creative,
         read_receipts: read_receipts,
-        present_user_ids: present_user_ids
+        present_user_ids: present_user_ids,
+        current_topic_id: effective_topic_id
       }
     end
   end
@@ -163,7 +168,9 @@ class CommentsController < ApplicationController
         }
       }) unless @comment.private?
       @comment = Comment.with_attached_images.includes(:topic).find(@comment.id)
-      render partial: "comments/comment", locals: { comment: @comment }, status: :created
+      render partial: "comments/comment",
+             locals: { comment: @comment, current_topic_id: @comment.topic_id },
+             status: :created
     else
       render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
     end
@@ -178,7 +185,8 @@ class CommentsController < ApplicationController
 
       if @comment.update(safe_params)
         @comment = Comment.with_attached_images.includes(:topic).find(@comment.id)
-        render partial: "comments/comment", locals: { comment: @comment }
+        render partial: "comments/comment",
+               locals: { comment: @comment, current_topic_id: @comment.topic_id }
       else
         render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
       end

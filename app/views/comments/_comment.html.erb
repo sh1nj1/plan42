@@ -79,7 +79,7 @@
       <% end %>
     </div>
   <% end %>
-  <% if comment.topic.present? %>
+  <% if comment.topic.present? && local_assigns[:current_topic_id].blank? %>
     <div class="comment-topic-link-row">
       <button class="comment-topic-link" type="button" data-topic-id="<%= comment.topic_id %>" data-topic-name="<%= comment.topic.name %>">
         #<%= comment.topic.name %>
