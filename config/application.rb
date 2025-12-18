@@ -53,5 +53,31 @@ module Collavre
     # config.time_zone = "Central Time (US & Canada)"
     # config.eager_load_paths << Rails.root.join("extras")
     # config.hosts << "72237274b26d.ngrok.app"
+
+    # Set default URL options for all environments (Mailer, Controller, Background Jobs)
+    # Exclude test to avoid OpenRedirectErrors (mismatched host between request: example.com and config: localhost)
+    unless Rails.env.test?
+      url_options = {
+        host: ENV.fetch("DEFAULT_URL_HOST", "localhost"),
+        port: ENV.fetch("DEFAULT_URL_PORT", "3000"),
+        protocol: ENV.fetch("DEFAULT_URL_PROTOCOL", "http")
+      }
+
+      # Override for production where we typically just use a host without port
+      if Rails.env.production?
+        url_options = {
+          host: ENV.fetch("DEFAULT_URL_HOST", "collavre.com"),
+          protocol: "https"
+        }
+      end
+
+      config.action_mailer.default_url_options = url_options
+      config.action_controller.default_url_options = url_options
+
+      # Ensure standard URL helpers (url_for, etc.) also know the host in background jobs/broadcasts
+      config.after_initialize do
+        Rails.application.routes.default_url_options = url_options
+      end
+    end
   end
 end
