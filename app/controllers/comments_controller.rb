@@ -179,7 +179,8 @@ class CommentsController < ApplicationController
             message_key: "inbox.comment_deleted_by_admin",
             message_params: {
               admin_name: Current.user.name,
-              creative_snippet: @creative.creative_snippet
+              creative_snippet: @creative.creative_snippet,
+              comment_content: @comment.content
             },
             link: creative_path(@creative)
           )

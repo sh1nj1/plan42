@@ -74,7 +74,7 @@ en:
     creative_shared: "%{user} shared \"%{short_title}\"."
     user_mentioned: "%{user} mentioned you in \"%{creative}\": \"%{comment}\""
     permission_requested: "%{user} requested access to \"%{short_title}\"."
-    comment_deleted_by_admin: "%{admin_name} deleted your comment in \"%{creative_snippet}\"."
+    comment_deleted_by_admin: "%{admin_name} deleted your comment in \"%{creative_snippet}\": %{comment_content}"
     tool_approval_needed: "Tool '%{tool_name}' has been detected/updated. Please approve it to activate."
 
   inbox_mailer:
