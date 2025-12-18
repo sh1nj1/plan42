@@ -149,9 +149,22 @@ export default class extends Controller {
     this.formTarget.reset()
     this.editingId = null
     this.submitTarget.innerHTML = this.defaultSubmitHTML
+    this.submitTarget.disabled = false
     if (this.cancelTarget) this.cancelTarget.style.display = 'none'
     this.presenceController?.clearManualTypingMessage()
     this.clearImageAttachments()
+  }
+
+  setSendingState(isSending) {
+    if (!this.submitTarget) return
+
+    if (isSending) {
+      this.submitTarget.disabled = true
+      return
+    }
+
+    this.submitTarget.disabled = false
+    this.sending = false
   }
 
   handleSubmit(event) {
@@ -165,6 +178,7 @@ export default class extends Controller {
     const hasImages = this.currentImageFiles().length > 0
     if (this.sending || (!hasText && !hasImages) || !this.creativeId) return
     this.sending = true
+    this.setSendingState(true)
     this.presenceController?.stoppedTyping()
 
     const wasPrivate = this.privateCheckboxTarget?.checked ?? false
@@ -236,7 +250,7 @@ export default class extends Controller {
         alert(error?.message || 'Failed to submit comment')
       })
       .finally(() => {
-        this.sending = false
+        this.setSendingState(false)
       })
   }
 
