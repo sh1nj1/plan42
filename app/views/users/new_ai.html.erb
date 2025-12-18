@@ -24,12 +24,18 @@
 
   <div class="form-group">
     <%= form.label :llm_model, t('users.new_ai.model_label') %>
-    <div style="position: relative;">
+    <div style="position: relative;"
+         data-controller="llm-model"
+         data-llm-model-menu-id-value="llm-model-suggestions"
+         data-llm-model-models-value="<%= User::SUPPORTED_LLM_MODELS.to_json %>">
       <%= form.text_field :llm_model,
                           required: true,
                           class: "stacked-form-control",
                           autocomplete: "off",
-                          data: { llm_models: User::SUPPORTED_LLM_MODELS.join(',') } %>
+                          data: {
+                            llm_model_target: "input",
+                            action: "input->llm-model#search focus->llm-model#focus blur->llm-model#blur keydown->llm-model#handleKeydown"
+                          } %>
       <%= render UserMentionMenuComponent.new(menu_id: 'llm-model-suggestions') %>
     </div>
   </div>
