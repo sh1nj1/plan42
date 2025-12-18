@@ -1,5 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
-import { renderMarkdown, renderMarkdownInline } from '../lib/utils/markdown'
+import { renderCommentMarkdown } from '../lib/utils/markdown'
 
 // Connects to data-controller="comment"
 export default class extends Controller {
@@ -9,8 +9,7 @@ export default class extends Controller {
     const contentElement = this.element.querySelector('.comment-content')
     if (contentElement && contentElement.dataset.rendered !== 'true') {
       const text = contentElement.textContent || ''
-      const html = text.includes('\n') ? renderMarkdown(text).trim() : renderMarkdownInline(text).trim()
-      contentElement.innerHTML = html
+      contentElement.innerHTML = renderCommentMarkdown(text)
       contentElement.dataset.rendered = 'true'
     }
 
