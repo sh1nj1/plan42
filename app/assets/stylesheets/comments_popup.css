@@ -472,22 +472,3 @@
     width: 100px;
     outline: none;
 }
-
-.read-receipt-container {
-    display: flex;
-    align-items: center;
-    margin-top: 0.5em;
-    /* Spacing from the comment above */
-    margin-bottom: 0.5em;
-    width: 100%;
-    padding: 0 1em;
-    /* Add some padding so line doesn't touch edges */
-}
-
-.read-receipt-avatars {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0 0.5em;
-    /* Space between line and avatars */
-}
