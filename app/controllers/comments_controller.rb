@@ -84,20 +84,39 @@ class CommentsController < ApplicationController
       scope.limit(limit).to_a.reverse
     end
 
-    pointer = CommentReadPointer.find_by(user: Current.user, creative: @creative)
-    last_read_comment_id = pointer&.last_read_comment_id
-    max_id = visible_scope.maximum(:id) # Max visible ID for this user
-    if last_read_comment_id && last_read_comment_id == max_id
-      last_read_comment_id = nil
+    read_receipts = {}
+    if @comments.any?
+      # Fetch all read pointers for this creative that point to comments in the current list
+      # We only care about pointers that match the IDs of the comments we are displaying?
+      # Or rather, we want to show the 'line' on the comment that matches the pointer.
+
+      # Optimization: Fetch all pointers for participants of this creative.
+      # Scoped to the creative.
+      pointers = CommentReadPointer.where(creative: @creative)
+                                   .where.not(last_read_comment_id: nil)
+                                   .includes(user: { avatar_attachment: :blob })
+
+      # Fetch all visible IDs for correct read-receipt placement transparency
+      # Only map read receipts to PUBLIC comments.
+      # Users who read private comments will appear on the nearest preceding public comment.
+      public_ids = @creative.comments.where(private: false).order(id: :asc).pluck(:id)
+
+      pointers.each do |pointer|
+        effective_id = pointer.effective_comment_id(public_ids)
+        if effective_id
+          read_receipts[effective_id] ||= []
+          read_receipts[effective_id] << pointer.user
+        end
+      end
     end
 
     if params[:after_id].present? || params[:before_id].present?
-      render partial: "comments/comment", collection: @comments, as: :comment, locals: { last_read_comment_id: last_read_comment_id }
+      render partial: "comments/comment", collection: @comments, as: :comment, locals: { read_receipts: read_receipts }
     else
       render partial: "comments/list", locals: {
         comments: @comments,
         creative: @creative,
-        last_read_comment_id: last_read_comment_id
+        read_receipts: read_receipts
       }
     end
   end

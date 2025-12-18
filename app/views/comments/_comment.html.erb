@@ -1,4 +1,4 @@
-<div class="comment-item <%= 'last-read' if defined?(last_read_comment_id) && last_read_comment_id && comment.id == last_read_comment_id %>" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>">
+<div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>">
   <div class="comment-select">
     <input type="checkbox"
            class="comment-select-checkbox"
@@ -26,6 +26,10 @@
         datetime: timestamp.iso8601
       ) %>
     </span>
+    <span id="read_receipts_comment_<%= comment.id %>" class="read-receipt-wrapper">
+      <% users_read = defined?(read_by_users) ? read_by_users : (defined?(read_receipts) ? read_receipts[comment.id] : nil) %>
+      <%= render "comments/read_receipts", read_by_users: users_read unless comment.private? %>
+    </span>
     <% if comment.private? %>
       <span class="private-label">[<%= t('comments.private') %>]</span>
     <% end %>
@@ -34,6 +38,7 @@
     <% end %>
     <% can_convert_comment = comment.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
     <div class="comment-action-container">
+
       <button class="<%= ['convert-comment-btn', ('comment-owner-only' unless can_convert_comment)].compact.join(' ') %>" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('comments.convert_to_creative') %>">
         <%= t('comments.convert_button') %>
       </button>
@@ -103,4 +108,6 @@
       </details>
     </div>
   <% end %>
+
+
 </div>

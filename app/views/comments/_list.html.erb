@@ -1,7 +1,7 @@
 <%= turbo_stream_from [creative, :comments] %>
 <% if comments.any? %>
   <% comments.each do |comment| %>
-    <%= render partial: 'comments/comment', locals: { comment: comment, last_read_comment_id: last_read_comment_id } %>
+    <%= render partial: 'comments/comment', locals: { comment: comment, read_by_users: read_receipts&.[](comment.id) } %>
   <% end %>
 <% else %>
   <div id="no-comments"><%= t('comments.no_comments') %></div>

@@ -57,3 +57,4 @@ ko:
     select_label: "메시지 선택"
     calendar_command:
       event_created: "이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})"
+    read_by: "%{name} 님이 읽음"
