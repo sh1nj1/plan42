@@ -32,11 +32,13 @@ class CommentReadPointersController < ApplicationController
 
     users = fetch_users_on_effective_id(creative, effective_id)
 
+    present_user_ids = CommentPresenceStore.list(creative.id)
+
     Turbo::StreamsChannel.broadcast_update_to(
       [ creative, :comments ],
       target: "read_receipts_comment_#{effective_id}",
       partial: "comments/read_receipts",
-      locals: { read_by_users: users }
+      locals: { read_by_users: users, present_user_ids: present_user_ids }
     )
   end
 
