@@ -488,4 +488,31 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :no_content
   end
+
+  test "main topic view shows all comments and renders topic links" do
+    topic = @creative.topics.create!(name: "Design", user: @user)
+    main_comment = @creative.comments.create!(content: "Main lane comment", user: @user)
+    topic_comment = @creative.comments.create!(content: "Topic specific", user: @user, topic: topic)
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_includes @response.body, main_comment.content
+    assert_includes @response.body, topic_comment.content
+    assert_includes @response.body, "comment-topic-switch"
+    assert_includes @response.body, "##{topic.name}"
+  end
+
+  test "topic view hides topic links and filters comments" do
+    topic = @creative.topics.create!(name: "Design", user: @user)
+    other_comment = @creative.comments.create!(content: "Main lane comment", user: @user)
+    topic_comment = @creative.comments.create!(content: "Topic specific", user: @user, topic: topic)
+
+    get creative_comments_path(@creative), params: { topic_id: topic.id }
+
+    assert_response :success
+    assert_includes @response.body, topic_comment.content
+    assert_not_includes @response.body, other_comment.content
+    assert_not_includes @response.body, "comment-topic-switch"
+  end
 end

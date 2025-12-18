@@ -113,6 +113,21 @@
     margin-top: 0.2em;
 }
 
+.comment-topic-link {
+    margin-top: 0.25em;
+    font-size: 0.9em;
+}
+
+.comment-topic-switch {
+    color: var(--color-accent, #007bff);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.comment-topic-switch:hover {
+    text-decoration: underline;
+}
+
 .comment-action-block {
     margin-top: 0.6em;
 }

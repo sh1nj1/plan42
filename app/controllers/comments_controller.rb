@@ -11,7 +11,7 @@ class CommentsController < ApplicationController
       Current.user.id,
       Current.user.id
     )
-    scope = visible_scope.with_attached_images
+    scope = visible_scope.with_attached_images.includes(:topic)
 
     if params[:search].present?
       search_term = ActiveRecord::Base.sanitize_sql_like(params[:search].to_s.strip.downcase)
@@ -24,7 +24,7 @@ class CommentsController < ApplicationController
     # 2. If deep linking (around_comment_id), infer from target comment if valid.
     # 3. Default to nil (Main).
 
-    effective_topic_id = params[:topic_id]
+    effective_topic_id = params[:topic_id].presence
 
     if params[:around_comment_id].present?
       target_id = params[:around_comment_id].to_i
@@ -39,7 +39,7 @@ class CommentsController < ApplicationController
     end
 
     # Apply the Topic Filter
-    scope = scope.where(topic_id: effective_topic_id)
+    scope = scope.where(topic_id: effective_topic_id) if effective_topic_id.present?
 
     # Default order: Newest first (created_at DESC)
     # This matches the column-reverse layout where the first item in the list is the visual bottom (Newest).
@@ -116,13 +116,14 @@ class CommentsController < ApplicationController
       render partial: "comments/comment",
              collection: @comments,
              as: :comment,
-             locals: { read_receipts: read_receipts, present_user_ids: present_user_ids }
+             locals: { read_receipts: read_receipts, present_user_ids: present_user_ids, current_topic_id: effective_topic_id }
     else
       render partial: "comments/list", locals: {
         comments: @comments,
         creative: @creative,
         read_receipts: read_receipts,
-        present_user_ids: present_user_ids
+        present_user_ids: present_user_ids,
+        current_topic_id: effective_topic_id
       }
     end
   end
@@ -163,7 +164,7 @@ class CommentsController < ApplicationController
         }
       }) unless @comment.private?
       @comment = Comment.with_attached_images.find(@comment.id)
-      render partial: "comments/comment", locals: { comment: @comment }, status: :created
+      render partial: "comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }, status: :created
     else
       render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
     end
@@ -178,7 +179,7 @@ class CommentsController < ApplicationController
 
       if @comment.update(safe_params)
         @comment = Comment.with_attached_images.find(@comment.id)
-        render partial: "comments/comment", locals: { comment: @comment }
+        render partial: "comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
       else
         render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
       end
@@ -253,7 +254,7 @@ class CommentsController < ApplicationController
     begin
       Comments::ActionExecutor.new(comment: @comment, executor: Current.user).call
       @comment.reload
-      render partial: "comments/comment", locals: { comment: @comment }
+      render partial: "comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
     rescue Comments::ActionExecutor::ExecutionError => e
       render json: { error: e.message }, status: :unprocessable_entity
     end
@@ -294,7 +295,7 @@ class CommentsController < ApplicationController
     elsif executed_error
       render json: { error: I18n.t("comments.approve_already_executed") }, status: :unprocessable_entity
     elsif update_success
-      render partial: "comments/comment", locals: { comment: @comment }
+      render partial: "comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
     else
       error_message = @comment.errors.full_messages.to_sentence.presence || I18n.t("comments.action_update_error")
       render json: { error: error_message }, status: :unprocessable_entity
@@ -410,5 +411,9 @@ class CommentsController < ApplicationController
     title = I18n.t("comments.convert_system_message_default_title") if title.blank?
     url = creative_path(creative)
     I18n.t("comments.convert_system_message", title: title, url: url)
+  end
+
+  def current_topic_context
+    params[:topic_id].presence || params.dig(:comment, :topic_id).presence
   end
 end
