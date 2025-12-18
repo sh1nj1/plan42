@@ -100,19 +100,7 @@ class CommentsController < ApplicationController
       all_visible_ids = visible_scope.order(id: :asc).pluck(:id)
 
       pointers.each do |pointer|
-        target_id = pointer.last_read_comment_id
-        next unless target_id
-
-        # Find the nearest visible comment ID <= target_id
-        idx = all_visible_ids.bsearch_index { |x| x > target_id }
-        effective_id = if idx
-          # If idx is 0, target_id is smaller than ALL visible IDs (unlikely unless deleted/invisible start)
-          idx > 0 ? all_visible_ids[idx - 1] : nil
-        else
-          # target_id is >= all visible IDs
-          all_visible_ids.last
-        end
-
+        effective_id = pointer.effective_comment_id(all_visible_ids)
         if effective_id
           read_receipts[effective_id] ||= []
           read_receipts[effective_id] << pointer.user
