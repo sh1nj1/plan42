@@ -27,7 +27,8 @@
       ) %>
     </span>
     <span id="read_receipts_comment_<%= comment.id %>" class="read-receipt-wrapper">
-      <%= render "comments/read_receipts", read_by_users: (defined?(read_by_users) ? read_by_users : nil) %>
+      <% users_read = defined?(read_by_users) ? read_by_users : (defined?(read_receipts) ? read_receipts[comment.id] : nil) %>
+      <%= render "comments/read_receipts", read_by_users: users_read %>
     </span>
     <% if comment.private? %>
       <span class="private-label">[<%= t('comments.private') %>]</span>
