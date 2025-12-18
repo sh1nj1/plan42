@@ -408,6 +408,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal other_user, inbox_item.owner
     assert_equal "inbox.comment_deleted_by_admin", inbox_item.message_key
     assert_equal @user.name, inbox_item.message_params["admin_name"]
+    assert_equal "Other user comment", inbox_item.message_params["comment_content"]
   end
 
   test "admin user can delete any comment" do

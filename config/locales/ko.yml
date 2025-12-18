@@ -45,7 +45,8 @@ ko:
     creative_shared: "%{user} 가 \"%{short_title}\" 을 공유했습니다."
     user_mentioned: "%{user} 님이 \"%{creative}\" 에서 당신을 언급했습니다: \"%{comment}\""
     permission_requested: "%{user} 이 크리에이티브 \"%{short_title}\" 에 대한 권한 요청을 했습니다."
-    comment_deleted_by_admin: "%{admin_name} 님이 \"%{creative_snippet}\" 에서 당신의 댓글을 삭제했습니다."
+    comment_deleted_by_admin: "%{admin_name} 님이 \"%{creative_snippet}\" 에서 당신의 댓글을 삭제했습니다: %{comment_content}"
+    comment_content_unavailable: "(삭제된 댓글 내용을 표시할 수 없습니다)"
     tool_approval_needed: "도구 '%{tool_name}'가 감지/업데이트되었습니다. 활성화하려면 승인해주세요."
 
   inbox_mailer:

@@ -18,4 +18,17 @@ class InboxItemTest < ActiveSupport::TestCase
     item = InboxItem.new(message_key: "inbox.nbsp_test", owner: users(:one), message_params: {})
     assert_equal "hello world !", item.localized_message(locale: :en)
   end
+
+  test "localized message provides fallback for missing interpolation" do
+    item = InboxItem.new(
+      message_key: "inbox.comment_deleted_by_admin",
+      owner: users(:one),
+      message_params: { admin_name: "Admin User", creative_snippet: "Sample creative" }
+    )
+
+    assert_equal(
+      "Admin User deleted your comment in \"Sample creative\": (comment unavailable)",
+      item.localized_message(locale: :en)
+    )
+  end
 end
