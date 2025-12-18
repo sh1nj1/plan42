@@ -1,7 +1,7 @@
 class CommentReadPointersController < ApplicationController
   def update
     creative = Creative.find(params[:creative_id]).effective_origin
-    last_id = creative.comments.maximum(:id)
+    last_id = creative.comments.where("comments.private = ? OR comments.user_id = ?", false, Current.user.id).maximum(:id)
     pointer = CommentReadPointer.find_or_initialize_by(user: Current.user, creative: creative)
 
     previous_last_read_id = pointer.last_read_comment_id
