@@ -127,6 +127,7 @@ export default class extends Controller {
     if (data.ids) {
       this.currentPresentIds = data.ids.map((id) => parseInt(id, 10))
       this.renderParticipants(this.currentPresentIds)
+      this.updateReadReceiptPresence(this.currentPresentIds)
     }
     if (data.typing) {
       const { id, name } = data.typing
@@ -188,6 +189,8 @@ export default class extends Controller {
 
       this.participantsTarget.appendChild(wrapper)
     })
+
+    this.updateReadReceiptPresence(presentIds)
   }
 
   renderTypingIndicator() {
@@ -289,5 +292,20 @@ export default class extends Controller {
 
   isMobile() {
     return window.innerWidth <= 600
+  }
+
+  updateReadReceiptPresence(presentIds = []) {
+    const avatars = this.element.querySelectorAll('.read-receipt-avatars .comment-presence-avatar')
+    const presentLookup = new Set(presentIds)
+
+    avatars.forEach((avatar) => {
+      const userId = parseInt(avatar.dataset.userId, 10)
+      if (Number.isNaN(userId)) return
+      if (presentLookup.has(userId)) {
+        avatar.classList.remove('inactive')
+      } else {
+        avatar.classList.add('inactive')
+      }
+    })
   }
 }

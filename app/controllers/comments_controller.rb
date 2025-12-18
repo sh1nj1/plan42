@@ -84,6 +84,8 @@ class CommentsController < ApplicationController
       scope.limit(limit).to_a.reverse
     end
 
+    present_user_ids = CommentPresenceStore.list(@creative.id)
+
     read_receipts = {}
     if @comments.any?
       # Fetch all read pointers for this creative that point to comments in the current list
@@ -111,12 +113,16 @@ class CommentsController < ApplicationController
     end
 
     if params[:after_id].present? || params[:before_id].present?
-      render partial: "comments/comment", collection: @comments, as: :comment, locals: { read_receipts: read_receipts }
+      render partial: "comments/comment",
+             collection: @comments,
+             as: :comment,
+             locals: { read_receipts: read_receipts, present_user_ids: present_user_ids }
     else
       render partial: "comments/list", locals: {
         comments: @comments,
         creative: @creative,
-        read_receipts: read_receipts
+        read_receipts: read_receipts,
+        present_user_ids: present_user_ids
       }
     end
   end
