@@ -1,21 +1,33 @@
 import { Controller } from "@hotwired/stimulus"
+import { createConsumer } from "../../services/cable"
 
 export default class extends Controller {
     static targets = ["list"]
 
     connect() {
+        this.topics = []
+        this.canManageTopics = false
+        this.subscribedCreativeId = null
+        this.topicsSubscription = null
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId) {
             this.loadTopics()
+            this.subscribe()
         }
+    }
+
+    disconnect() {
+        this.unsubscribe()
     }
 
     onPopupOpened({ creativeId }) {
         this.creativeIdValue = creativeId
+        this.subscribe()
         return this.loadTopics()
     }
 
     onPopupClosed() {
+        this.unsubscribe()
         this.creativeIdValue = null
     }
 
@@ -44,7 +56,9 @@ export default class extends Controller {
                 const data = await response.json()
                 const topics = Array.isArray(data) ? data : data.topics
                 const canManage = Array.isArray(data) ? false : data.can_manage
-                this.renderTopics(topics, canManage)
+                this.topics = topics
+                this.canManageTopics = canManage
+                this.renderTopics(this.topics, this.canManageTopics)
                 this.restoreSelection()
             }
         } catch (e) {
@@ -224,5 +238,42 @@ export default class extends Controller {
         } else {
             localStorage.removeItem(`collavre_creative_${this.creativeId}_last_topic`)
         }
+    }
+
+    subscribe() {
+        const creativeId = this.creativeId
+        if (!creativeId) return
+
+        if (this.topicsSubscription && this.subscribedCreativeId === String(creativeId)) return
+
+        this.unsubscribe()
+
+        this.subscribedCreativeId = String(creativeId)
+        this.topicsSubscription = createConsumer().subscriptions.create(
+            { channel: "TopicsChannel", creative_id: creativeId },
+            {
+                received: (data) => this.handleTopicMessage(data)
+            }
+        )
+    }
+
+    unsubscribe() {
+        if (this.topicsSubscription) {
+            this.topicsSubscription.unsubscribe()
+            this.topicsSubscription = null
+        }
+        this.subscribedCreativeId = null
+    }
+
+    handleTopicMessage(data) {
+        if (!data?.topic) return
+
+        const topics = this.topics || []
+        const exists = topics.some((topic) => String(topic.id) === String(data.topic.id))
+        if (exists) return
+
+        this.topics = [...topics, data.topic]
+        this.renderTopics(this.topics, this.canManageTopics)
+        this.restoreSelection()
     }
 }

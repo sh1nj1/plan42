@@ -18,6 +18,10 @@ class TopicsController < ApplicationController
     topic.user = Current.user
 
     if topic.save
+      TopicsChannel.broadcast_to(
+        @creative,
+        { action: "created", topic: topic.slice(:id, :name) }
+      )
       render json: topic, status: :created
     else
       render json: { errors: topic.errors.full_messages }, status: :unprocessable_entity
