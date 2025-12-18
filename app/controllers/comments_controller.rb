@@ -97,10 +97,12 @@ class CommentsController < ApplicationController
                                    .includes(user: { avatar_attachment: :blob })
 
       # Fetch all visible IDs for correct read-receipt placement transparency
-      all_visible_ids = visible_scope.order(id: :asc).pluck(:id)
+      # Only map read receipts to PUBLIC comments.
+      # Users who read private comments will appear on the nearest preceding public comment.
+      public_ids = @creative.comments.where(private: false).order(id: :asc).pluck(:id)
 
       pointers.each do |pointer|
-        effective_id = pointer.effective_comment_id(all_visible_ids)
+        effective_id = pointer.effective_comment_id(public_ids)
         if effective_id
           read_receipts[effective_id] ||= []
           read_receipts[effective_id] << pointer.user
