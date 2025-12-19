@@ -5,6 +5,7 @@ class CommentReadPointersController < ApplicationController
     pointer = CommentReadPointer.find_or_initialize_by(user: Current.user, creative: creative)
 
     previous_last_read_id = pointer.last_read_comment_id
+    previous_effective_id = find_nearest_public_comment_id(creative, previous_last_read_id)
     pointer.last_read_comment_id = last_id
     pointer.save!
 
@@ -16,7 +17,12 @@ class CommentReadPointersController < ApplicationController
     end
     broadcast_read_receipts(creative, last_id)
 
-    render json: { success: true }
+    render json: {
+      success: true,
+      previous_last_read_comment_id: previous_last_read_id,
+      previous_effective_comment_id: previous_effective_id,
+      previous_read_receipts_html: previous_read_receipts_html(previous_effective_id, creative)
+    }
   end
 
   private
@@ -55,6 +61,19 @@ class CommentReadPointersController < ApplicationController
     query = query.where("last_read_comment_id < ?", next_public_id) if next_public_id
 
     query.includes(user: { avatar_attachment: :blob }).map(&:user)
+  end
+
+  def previous_read_receipts_html(previous_effective_id, creative)
+    return unless previous_effective_id
+
+    render_to_string(
+      partial: "comments/read_receipts",
+      formats: [ :html ],
+      locals: {
+        read_by_users: [ Current.user ],
+        present_user_ids: CommentPresenceStore.list(creative.id)
+      }
+    )
   end
 
   def mark_inbox_items_read(creative, last_comment_id)
