@@ -1,5 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
-import { createConsumer } from '../../services/cable'
+import { createSubscription } from '../../services/cable'
 
 const TYPING_TIMEOUT = 3000
 
@@ -101,7 +101,7 @@ export default class extends Controller {
     if (!this.creativeId) return
     this.unsubscribe()
     this.hasPresenceConnected = false
-    this.presenceSubscription = createConsumer().subscriptions.create(
+    this.presenceSubscription = createSubscription(
       { channel: 'CommentsPresenceChannel', creative_id: this.creativeId },
       {
         connected: () => {

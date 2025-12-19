@@ -3,15 +3,19 @@ import { createConsumer as actionCableCreateConsumer } from '@rails/actioncable'
 let singletonConsumer
 
 export function createConsumer(...args) {
-  if (args.length > 0) {
-    return actionCableCreateConsumer(...args)
-  }
-
   if (!singletonConsumer) {
-    singletonConsumer = actionCableCreateConsumer()
+    singletonConsumer = actionCableCreateConsumer(...args)
+  } else if (args.length > 0) {
+    console.warn(
+      '[ActionCable] Ignoring createConsumer arguments because a singleton consumer already exists.',
+    )
   }
 
   return singletonConsumer
+}
+
+export function createSubscription(identifier, callbacks = {}) {
+  return createConsumer().subscriptions.create(identifier, callbacks)
 }
 
 export function resetConsumer() {
@@ -23,5 +27,6 @@ export function resetConsumer() {
 
 export default {
   createConsumer,
+  createSubscription,
   resetConsumer,
 }

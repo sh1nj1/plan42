@@ -20,6 +20,11 @@ This document captures best practices for integrating Anthropic's Claude models 
 - Record evaluation results and regression checks so other agents can reuse them.
 - Cross-reference related guidance in `AGENTS.md` to maintain a cohesive developer experience.
 
+## Realtime Conventions
+- ActionCable connections should use the singleton consumer defined in `app/javascript/services/cable.js`.
+- Prefer `createSubscription` for new realtime subscriptions to keep a single WebSocket per browser session.
+- Turbo Streams rely on the global ActionCable consumer configured in `app/javascript/application.js`.
+
 ## System Prompt Templates
 - AI user system prompts are rendered as [Liquid templates](https://github.com/Shopify/liquid) so you can inject runtime context.
 - Available variables:
