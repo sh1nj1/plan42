@@ -7,7 +7,7 @@ const DEFAULT_KEY = "creative-inline-editor"
 export function createInlineEditor(container, {
   onChange,
   onKeyDown,
-  onPromptForLink,
+
   onUploadStateChange
 } = {}) {
   if (!container) {
@@ -42,7 +42,7 @@ export function createInlineEditor(container, {
         initialHtml={currentHtml}
         editorKey={currentKey}
         placeholderText={placeholderText}
-        onPromptForLink={onPromptForLink ?? promptForLink}
+        // onPromptForLink removed
         onKeyDown={(event, editor) => {
           if (onKeyDown) onKeyDown(event, editor)
         }}
@@ -130,21 +130,4 @@ export function createInlineEditor(container, {
   }
 }
 
-function promptForLink({ selectionText } = {}) {
-  const trimmedSelection = (selectionText || "").trim()
-  const selectionIsUrl = /^https?:\/\/[^\s<]+$/i.test(trimmedSelection)
-  const labelInput = window.prompt("Link label", trimmedSelection)
-  if (labelInput === null) return null
-  const urlInput = window.prompt("Link URL", selectionIsUrl ? trimmedSelection : "")
-  if (urlInput === null) return null
-  const trimmedUrl = urlInput.trim()
-  if (!trimmedUrl) return null
-  let normalizedUrl = trimmedUrl
-  try {
-    normalizedUrl = new URL(trimmedUrl, window.location.origin).toString()
-  } catch (_error) {
-    normalizedUrl = trimmedUrl
-  }
-  const finalLabel = labelInput.trim() || normalizedUrl
-  return { label: finalLabel, url: normalizedUrl }
-}
+
