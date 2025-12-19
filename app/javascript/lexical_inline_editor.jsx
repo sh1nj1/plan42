@@ -130,13 +130,21 @@ export function createInlineEditor(container, {
   }
 }
 
-function promptForLink() {
-  const value = window.prompt("Enter a URL")
-  if (!value) return null
+function promptForLink({ selectionText } = {}) {
+  const trimmedSelection = (selectionText || "").trim()
+  const selectionIsUrl = /^https?:\/\/[^\s<]+$/i.test(trimmedSelection)
+  const labelInput = window.prompt("Link label", trimmedSelection)
+  if (labelInput === null) return null
+  const urlInput = window.prompt("Link URL", selectionIsUrl ? trimmedSelection : "")
+  if (urlInput === null) return null
+  const trimmedUrl = urlInput.trim()
+  if (!trimmedUrl) return null
+  let normalizedUrl = trimmedUrl
   try {
-    const url = new URL(value, window.location.origin)
-    return url.toString()
+    normalizedUrl = new URL(trimmedUrl, window.location.origin).toString()
   } catch (_error) {
-    return value.trim() || null
+    normalizedUrl = trimmedUrl
   }
+  const finalLabel = labelInput.trim() || normalizedUrl
+  return { label: finalLabel, url: normalizedUrl }
 }

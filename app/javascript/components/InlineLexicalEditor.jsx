@@ -20,7 +20,7 @@ import {
   registerCodeHighlighting
 } from "@lexical/code"
 import { ListItemNode, ListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
-import { LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
+import { $createLinkNode, LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
 import {
   $createParagraphNode,
   $createTextNode,
@@ -452,10 +452,24 @@ function Toolbar({ onPromptForLink }) {
       editor.dispatchCommand(TOGGLE_LINK_COMMAND, null)
       return
     }
-    const nextUrl = onPromptForLink?.()
-    if (nextUrl) {
-      editor.dispatchCommand(TOGGLE_LINK_COMMAND, nextUrl)
+    const selectionText = selection.getTextContent()
+    const linkData = onPromptForLink?.({ selectionText })
+    if (!linkData) return
+    const { label, url } = linkData
+    if (!url) return
+    const finalLabel = (label || "").trim() || url
+    if (selectionText && selectionText.trim() === finalLabel) {
+      editor.dispatchCommand(TOGGLE_LINK_COMMAND, url)
+      return
     }
+    editor.update(() => {
+      const nextSelection = $getSelection()
+      if (!$isRangeSelection(nextSelection)) return
+      const linkNode = $createLinkNode(url)
+      linkNode.append($createTextNode(finalLabel))
+      nextSelection.insertNodes([linkNode])
+      linkNode.selectEnd()
+    })
   }, [editor, onPromptForLink])
 
   const applyTextStyle = useCallback(
@@ -797,4 +811,3 @@ export default function InlineLexicalEditor({
     </LexicalComposer>
   )
 }
-
