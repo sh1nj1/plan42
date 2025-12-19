@@ -471,7 +471,6 @@
     padding: 0.1em 0.4em;
     border-radius: 8px;
     font-weight: bold;
-    border: 1px solid white;
 }
 
 /* Hide the topic link if the message is displayed within that topic's context */
