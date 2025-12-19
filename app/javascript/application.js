@@ -1,3 +1,4 @@
+import "./cable_config"
 import "@hotwired/turbo-rails"
 import "./controllers"
 
@@ -7,7 +8,6 @@ import "./register_service_worker"
 import * as ActionCable from "@rails/actioncable"
 
 if (typeof window !== "undefined") {
-  window.ActionCable = window.ActionCable || ActionCable
   window.ActiveStorage = window.ActiveStorage || ActiveStorage
 }
 

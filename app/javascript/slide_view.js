@@ -1,4 +1,4 @@
-import { createConsumer } from './services/cable'
+import { createSubscription } from './services/cable'
 
 document.addEventListener('DOMContentLoaded', function() {
   var container = document.getElementById('slide-view');
@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   if (rootId) {
-    slideSubscription = createConsumer().subscriptions.create(
+    slideSubscription = createSubscription(
       { channel: 'SlideViewChannel', root_id: rootId },
       {
         received: function(data) {

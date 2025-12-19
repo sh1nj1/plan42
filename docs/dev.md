@@ -20,6 +20,21 @@ Resolution:
 
 `docker volume inspect plan42_storage`
 
+### ActionCable single WebSocket usage
+
+Use the singleton consumer in `app/javascript/services/cable.js` to keep a single WebSocket
+connection per browser session. Create subscriptions with `createSubscription(identifier, callbacks)`
+and avoid calling `createConsumer()` with arguments after the singleton is initialized, since
+those arguments are ignored to prevent extra sockets.
+Turbo Streams (inbox updates, chat message delivery, and badge counters) use the same connection
+via the global `window.ActionCable.createConsumer` override in `app/javascript/application.js`.
+
+**Troubleshooting Duplicate Connections**:
+If you see two WebSocket connections (one for App, one for Turbo), it means Turbo is bypassing the singleton.
+This happens because `turbo-rails` imports `ActionCable` directly, ignoring `window` patches when bundled.
+**Fix**: Explicitly set the consumer in `cable_config.js` by importing `setConsumer` from Turbo Rails internals
+(e.g. `../../node_modules/@hotwired/turbo-rails/.../cable.js`) and injecting the singleton.
+
 ### send data to javascript
 
 Pass Translations via Data Attributes (Recommended for External JS Files)
@@ -121,4 +136,3 @@ Rails.application.credentials.dig(:aws, :smtp_username)
 Rails.application.credentials.dig(:aws, :smtp_password)
 Rails.application.credentials.dig(:aws, :region)
 ```
-
