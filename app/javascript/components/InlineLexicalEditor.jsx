@@ -330,11 +330,24 @@ function ToolbarColorPicker({ icon, title, color, onChange, onClear }) {
 function LinkPopup({ initialLabel, initialUrl, onConfirm, onCancel }) {
   const [label, setLabel] = useState(initialLabel || "")
   const [url, setUrl] = useState(initialUrl || "")
+  const popupRef = useRef(null)
 
   useEffect(() => {
     setLabel(initialLabel || "")
     setUrl(initialUrl || "")
   }, [initialLabel, initialUrl])
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (popupRef.current && !popupRef.current.contains(event.target)) {
+        onCancel()
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [onCancel])
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter") {
@@ -349,6 +362,7 @@ function LinkPopup({ initialLabel, initialUrl, onConfirm, onCancel }) {
 
   return (
     <div
+      ref={popupRef}
       className="lexical-link-popup stacked-form"
       style={{
         position: "absolute",
@@ -362,6 +376,24 @@ function LinkPopup({ initialLabel, initialUrl, onConfirm, onCancel }) {
         border: "1px solid var(--color-border)",
         minWidth: "260px"
       }}>
+      <button
+        type="button"
+        onClick={onCancel}
+        style={{
+          position: "absolute",
+          top: "8px",
+          right: "8px",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: "var(--color-muted, #999)",
+          fontSize: "1.2rem",
+          lineHeight: 1,
+          padding: "0 4px"
+        }}
+        title="Close">
+        ×
+      </button>
       <div>
         <label style={{ display: "block", fontSize: "0.8em", fontWeight: "bold", marginBottom: "0.25rem", color: "var(--color-text)" }}>Label</label>
         <input
@@ -384,20 +416,7 @@ function LinkPopup({ initialLabel, initialUrl, onConfirm, onCancel }) {
           style={{ width: "100%", boxSizing: "border-box" }}
         />
       </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
-        <button
-          type="button"
-          onClick={onCancel}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--color-text)",
-            padding: "0.45em 0.9em",
-            fontSize: "0.9rem"
-          }}>
-          Cancel
-        </button>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.5rem" }}>
         <button
           type="button"
           className="primary-action-button"
