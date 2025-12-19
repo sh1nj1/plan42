@@ -1,21 +1,33 @@
 import { Controller } from "@hotwired/stimulus"
+import { createSubscription } from "../../services/cable"
 
 export default class extends Controller {
     static targets = ["list"]
 
     connect() {
+        this.topics = []
+        this.canManageTopics = false
+        this.subscribedCreativeId = null
+        this.topicsSubscription = null
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId) {
             this.loadTopics()
+            this.subscribe()
         }
+    }
+
+    disconnect() {
+        this.unsubscribe()
     }
 
     onPopupOpened({ creativeId }) {
         this.creativeIdValue = creativeId
+        this.subscribe()
         return this.loadTopics()
     }
 
     onPopupClosed() {
+        this.unsubscribe()
         this.creativeIdValue = null
     }
 
@@ -44,7 +56,9 @@ export default class extends Controller {
                 const data = await response.json()
                 const topics = Array.isArray(data) ? data : data.topics
                 const canManage = Array.isArray(data) ? false : data.can_manage
-                this.renderTopics(topics, canManage)
+                this.topics = topics
+                this.canManageTopics = canManage
+                this.renderTopics(this.topics, this.canManageTopics)
                 this.restoreSelection()
             }
         } catch (e) {
@@ -224,5 +238,67 @@ export default class extends Controller {
         } else {
             localStorage.removeItem(`collavre_creative_${this.creativeId}_last_topic`)
         }
+    }
+
+    subscribe() {
+        const creativeId = this.creativeId
+        if (!creativeId) return
+
+        if (this.topicsSubscription && this.subscribedCreativeId === String(creativeId)) return
+
+        this.unsubscribe()
+
+        this.subscribedCreativeId = String(creativeId)
+        this.topicsSubscription = createSubscription(
+            { channel: 'TopicsChannel', creative_id: this.creativeId },
+            {
+                received: (data) => this.handleTopicMessage(data)
+            }
+        )
+    }
+
+    unsubscribe() {
+        if (this.topicsSubscription) {
+            this.topicsSubscription.unsubscribe()
+            this.topicsSubscription = null
+        }
+        this.subscribedCreativeId = null
+    }
+
+    handleTopicMessage(data) {
+        if (!data) return
+
+        const action = data.action || "created"
+        if (action === "deleted") {
+            this.removeTopic(data.topic_id)
+            return
+        }
+
+        if (!data.topic) return
+
+        const topics = this.topics || []
+        const exists = topics.some((topic) => String(topic.id) === String(data.topic.id))
+        if (exists) return
+
+        this.topics = [...topics, data.topic]
+        this.renderTopics(this.topics, this.canManageTopics)
+        this.restoreSelection()
+    }
+
+    removeTopic(topicId) {
+        if (!topicId) return
+
+        const topics = this.topics || []
+        const nextTopics = topics.filter((topic) => String(topic.id) !== String(topicId))
+        if (nextTopics.length === topics.length) return
+
+        this.topics = nextTopics
+        if (String(this.currentTopicId) === String(topicId)) {
+            this.currentTopicId = ""
+            this.dispatch("change", { detail: { topicId: "" } })
+        }
+
+        this.renderTopics(this.topics, this.canManageTopics)
+        this.restoreSelection()
     }
 }

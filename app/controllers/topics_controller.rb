@@ -18,6 +18,10 @@ class TopicsController < ApplicationController
     topic.user = Current.user
 
     if topic.save
+      TopicsChannel.broadcast_to(
+        @creative,
+        { action: "created", topic: topic.slice(:id, :name) }
+      )
       render json: topic, status: :created
     else
       render json: { errors: topic.errors.full_messages }, status: :unprocessable_entity
@@ -30,7 +34,13 @@ class TopicsController < ApplicationController
     end
 
     topic = @creative.topics.find(params[:id])
+    topic_id = topic.id
     topic.destroy
+
+    TopicsChannel.broadcast_to(
+      @creative,
+      { action: "deleted", topic_id: topic_id }
+    )
     head :no_content
   end
 
