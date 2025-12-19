@@ -349,11 +349,13 @@ function LinkPopup({ initialLabel, initialUrl, onConfirm, onCancel }) {
     }
   }, [onCancel])
 
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    onConfirm(label, url)
+  }
+
   const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault()
-      onConfirm(label, url)
-    } else if (e.key === "Escape") {
+    if (e.key === "Escape") {
       e.preventDefault()
       e.stopPropagation()
       onCancel()
@@ -394,36 +396,44 @@ function LinkPopup({ initialLabel, initialUrl, onConfirm, onCancel }) {
         title="Close">
         ×
       </button>
-      <div>
-        <label style={{ display: "block", fontSize: "0.8em", fontWeight: "bold", marginBottom: "0.25rem", color: "var(--color-text)" }}>Label</label>
-        <input
-          type="text"
-          placeholder="Link text"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          onKeyDown={handleKeyDown}
-          style={{ width: "100%", boxSizing: "border-box" }}
-        />
-      </div>
-      <div>
-        <label style={{ display: "block", fontSize: "0.8em", fontWeight: "bold", marginBottom: "0.25rem", color: "var(--color-text)" }}>URL</label>
-        <input
-          type="text"
-          placeholder="https://example.com"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          onKeyDown={handleKeyDown}
-          style={{ width: "100%", boxSizing: "border-box" }}
-        />
-      </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.5rem" }}>
-        <button
-          type="button"
-          className="primary-action-button"
-          onClick={() => onConfirm(label, url)}>
-          Confirm
-        </button>
-      </div>
+      <form onSubmit={handleSubmit}>
+        <div>
+          <input
+            type="text"
+            placeholder="Link text"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ width: "100%", boxSizing: "border-box", marginBottom: "0.5rem" }}
+          />
+        </div>
+        <div>
+          <input
+            type="text"
+            placeholder="https://example.com"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ width: "100%", boxSizing: "border-box" }}
+          />
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.5rem" }}>
+          <button
+            type="submit"
+            className="primary-action-button"
+            title="Confirm"
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "0.45em 0.6em" }}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              viewBox="0 0 16 16">
+              <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z" />
+            </svg>
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
