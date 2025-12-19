@@ -273,6 +273,8 @@ GEM
     multi_xml (0.7.2)
       bigdecimal (~> 3.1)
     multipart-post (2.4.1)
+    mysql2 (0.5.7)
+      bigdecimal
     net-http (0.8.0)
       uri (>= 0.11.1)
     net-imap (0.5.12)
@@ -592,6 +594,7 @@ DEPENDENCIES
   jsbundling-rails
   kamal
   liquid
+  mysql2 (~> 0.5.7)
   octokit
   omniauth-github
   omniauth-google-oauth2

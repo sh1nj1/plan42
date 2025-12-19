@@ -20,6 +20,14 @@ This document captures best practices for integrating Anthropic's Claude models 
 - Record evaluation results and regression checks so other agents can reuse them.
 - Cross-reference related guidance in `AGENTS.md` to maintain a cohesive developer experience.
 
+## MCP Tools
+- `Tools::GitRepositorySearchService` (tool name: `git_repository_search`) lets agents:
+  - clone GitHub repositories with `action: "clone"` by passing `repo: { url, pat }` and a destination `root_path` (relative
+    paths are resolved from `Rails.root`).
+  - search this or a cloned repo with `action: "search"`, providing `query` for ripgrep, `file_path` with `start_line`/
+    `line_count` for file reads, and `max_results` to bound match counts. You can target different repositories with
+    `root_path`.
+
 ## System Prompt Templates
 - AI user system prompts are rendered as [Liquid templates](https://github.com/Shopify/liquid) so you can inject runtime context.
 - Available variables:
