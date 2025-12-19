@@ -338,83 +338,57 @@ function LinkPopup({ initialLabel, initialUrl, onConfirm, onCancel }) {
 
   return (
     <div
-      className="lexical-link-popup"
+      className="lexical-link-popup stacked-form"
       style={{
         position: "absolute",
         top: "40px",
         right: "0",
         zIndex: 100,
-        backgroundColor: "white",
-        padding: "12px",
+        backgroundColor: "var(--color-bg)",
+        padding: "1rem",
         borderRadius: "8px",
         boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-        border: "1px solid #e5e5e5",
-        display: "flex",
-        flexDirection: "column",
-        gap: "10px",
+        border: "1px solid var(--color-border)",
         minWidth: "260px"
       }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-        <label style={{ fontSize: "12px", fontWeight: "bold", color: "#333" }}>Label</label>
+      <div>
+        <label style={{ display: "block", fontSize: "0.8em", fontWeight: "bold", marginBottom: "0.25rem", color: "var(--color-text)" }}>Label</label>
         <input
           type="text"
           placeholder="Link text"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
-          style={{
-            padding: "6px 8px",
-            borderRadius: "4px",
-            border: "1px solid #ccc",
-            fontSize: "14px",
-            width: "100%",
-            boxSizing: "border-box"
-          }}
+          style={{ width: "100%", boxSizing: "border-box" }}
         />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-        <label style={{ fontSize: "12px", fontWeight: "bold", color: "#333" }}>URL</label>
+      <div>
+        <label style={{ display: "block", fontSize: "0.8em", fontWeight: "bold", marginBottom: "0.25rem", color: "var(--color-text)" }}>URL</label>
         <input
           type="text"
           placeholder="https://example.com"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          style={{
-            padding: "6px 8px",
-            borderRadius: "4px",
-            border: "1px solid #ccc",
-            fontSize: "14px",
-            width: "100%",
-            boxSizing: "border-box"
-          }}
+          style={{ width: "100%", boxSizing: "border-box" }}
         />
       </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
         <button
           type="button"
           onClick={onCancel}
           style={{
-            padding: "6px 12px",
-            cursor: "pointer",
             background: "none",
-            border: "1px solid #ccc",
-            borderRadius: "4px",
-            fontSize: "13px"
+            border: "none",
+            cursor: "pointer",
+            color: "var(--color-text)",
+            padding: "0.45em 0.9em",
+            fontSize: "0.9rem"
           }}>
           Cancel
         </button>
         <button
           type="button"
-          onClick={() => onConfirm(label, url)}
-          style={{
-            padding: "6px 12px",
-            cursor: "pointer",
-            backgroundColor: "#007bff",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            fontSize: "13px",
-            fontWeight: "500"
-          }}>
+          className="primary-action-button"
+          onClick={() => onConfirm(label, url)}>
           Confirm
         </button>
       </div>
