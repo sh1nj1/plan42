@@ -326,6 +326,102 @@ function ToolbarColorPicker({ icon, title, color, onChange, onClear }) {
   )
 }
 
+
+function LinkPopup({ initialLabel, initialUrl, onConfirm, onCancel }) {
+  const [label, setLabel] = useState(initialLabel || "")
+  const [url, setUrl] = useState(initialUrl || "")
+
+  useEffect(() => {
+    setLabel(initialLabel || "")
+    setUrl(initialUrl || "")
+  }, [initialLabel, initialUrl])
+
+  return (
+    <div
+      className="lexical-link-popup"
+      style={{
+        position: "absolute",
+        top: "40px",
+        right: "0",
+        zIndex: 100,
+        backgroundColor: "white",
+        padding: "12px",
+        borderRadius: "8px",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+        border: "1px solid #e5e5e5",
+        display: "flex",
+        flexDirection: "column",
+        gap: "10px",
+        minWidth: "260px"
+      }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+        <label style={{ fontSize: "12px", fontWeight: "bold", color: "#333" }}>Label</label>
+        <input
+          type="text"
+          placeholder="Link text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          style={{
+            padding: "6px 8px",
+            borderRadius: "4px",
+            border: "1px solid #ccc",
+            fontSize: "14px",
+            width: "100%",
+            boxSizing: "border-box"
+          }}
+        />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+        <label style={{ fontSize: "12px", fontWeight: "bold", color: "#333" }}>URL</label>
+        <input
+          type="text"
+          placeholder="https://example.com"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          style={{
+            padding: "6px 8px",
+            borderRadius: "4px",
+            border: "1px solid #ccc",
+            fontSize: "14px",
+            width: "100%",
+            boxSizing: "border-box"
+          }}
+        />
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" }}>
+        <button
+          type="button"
+          onClick={onCancel}
+          style={{
+            padding: "6px 12px",
+            cursor: "pointer",
+            background: "none",
+            border: "1px solid #ccc",
+            borderRadius: "4px",
+            fontSize: "13px"
+          }}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onConfirm(label, url)}
+          style={{
+            padding: "6px 12px",
+            cursor: "pointer",
+            backgroundColor: "#007bff",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            fontSize: "13px",
+            fontWeight: "500"
+          }}>
+          Confirm
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function Toolbar({ onPromptForLink }) {
   const [editor] = useLexicalComposerContext()
   const [formats, setFormats] = useState({
@@ -343,6 +439,8 @@ function Toolbar({ onPromptForLink }) {
   const DEFAULT_BG_COLOR = "#ffffff"
   const [fontColor, setFontColor] = useState(DEFAULT_FONT_COLOR)
   const [bgColor, setBgColor] = useState(DEFAULT_BG_COLOR)
+  const [showLinkPopup, setShowLinkPopup] = useState(false)
+  const [linkPopupData, setLinkPopupData] = useState({ label: "", url: "" })
 
   const handleFiles = useCallback(
     (fileList, options = {}) => {
@@ -441,36 +539,37 @@ function Toolbar({ onPromptForLink }) {
   )
 
   const toggleLink = useCallback(() => {
-    const selection = $getSelection()
-    if (!$isRangeSelection(selection)) return
-    const hasLink = selection.getNodes().some((node) => {
-      if (node.getType() === "link") return true
-      const parent = node.getParent()
-      return parent?.getType() === "link"
+    let hasLink = false
+    let selectionText = ""
+    let isRange = false
+    let url = ""
+
+    editor.getEditorState().read(() => {
+      const selection = $getSelection()
+      if (!$isRangeSelection(selection)) return
+
+      isRange = true
+      selectionText = selection.getTextContent()
+
+      const nodes = selection.getNodes()
+      const nodeWithLink = nodes.find((node) => {
+        if (node.getType() === "link") return true
+        const parent = node.getParent()
+        return parent?.getType() === "link"
+      })
+
+      if (nodeWithLink) {
+        hasLink = true
+        const linkNode = nodeWithLink.getType() === "link" ? nodeWithLink : nodeWithLink.getParent()
+        url = linkNode.getURL()
+      }
     })
-    if (hasLink) {
-      editor.dispatchCommand(TOGGLE_LINK_COMMAND, null)
-      return
-    }
-    const selectionText = selection.getTextContent()
-    const linkData = onPromptForLink?.({ selectionText })
-    if (!linkData) return
-    const { label, url } = linkData
-    if (!url) return
-    const finalLabel = (label || "").trim() || url
-    if (selectionText && selectionText.trim() === finalLabel) {
-      editor.dispatchCommand(TOGGLE_LINK_COMMAND, url)
-      return
-    }
-    editor.update(() => {
-      const nextSelection = $getSelection()
-      if (!$isRangeSelection(nextSelection)) return
-      const linkNode = $createLinkNode(url)
-      linkNode.append($createTextNode(finalLabel))
-      nextSelection.insertNodes([linkNode])
-      linkNode.selectEnd()
-    })
-  }, [editor, onPromptForLink])
+
+    if (!isRange) return
+
+    setLinkPopupData({ label: selectionText, url: url })
+    setShowLinkPopup(true)
+  }, [editor])
 
   const applyTextStyle = useCallback(
     (style) => {
@@ -662,6 +761,59 @@ function Toolbar({ onPromptForLink }) {
         title="Attach file">
         📎
       </button>
+      {showLinkPopup && (
+        <LinkPopup
+          initialLabel={linkPopupData.label}
+          initialUrl={linkPopupData.url}
+          onConfirm={(label, url) => {
+            const finalUrl = url?.trim()
+            if (!finalUrl) {
+              setShowLinkPopup(false)
+              return
+            }
+            const finalLabel = (label || "").trim() || finalUrl
+
+            editor.update(() => {
+              const selection = $getSelection()
+              if (!selection) return
+
+              // Check if we are editing an existing link
+              const nodes = selection.getNodes()
+              const nodeWithLink = nodes.find((node) => {
+                if (node.getType() === "link") return true
+                const parent = node.getParent()
+                return parent?.getType() === "link"
+              })
+
+              if (nodeWithLink) {
+                // UPDATE MODE
+                const linkNode = nodeWithLink.getType() === "link" ? nodeWithLink : nodeWithLink.getParent()
+                const newLink = $createLinkNode(finalUrl)
+                newLink.append($createTextNode(finalLabel))
+                linkNode.replace(newLink)
+                newLink.select()
+              } else {
+                // CREATE MODE
+                const newLink = $createLinkNode(finalUrl)
+                newLink.append($createTextNode(finalLabel))
+
+                if ($isRangeSelection(selection) && !selection.isCollapsed()) {
+                  // Replace selection
+                  selection.insertNodes([newLink])
+                } else {
+                  // Insert at cursor
+                  selection.insertNodes([newLink])
+                }
+                // Explicitly select the new link to ensure selection validity
+                newLink.select()
+              }
+            })
+
+            setShowLinkPopup(false)
+          }}
+          onCancel={() => setShowLinkPopup(false)}
+        />
+      )}
     </div>
   )
 }
