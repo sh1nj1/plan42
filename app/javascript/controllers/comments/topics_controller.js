@@ -1,5 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
-import { createConsumer } from "../../services/cable"
+import { createSubscription } from "../../services/cable"
 
 export default class extends Controller {
     static targets = ["list"]
@@ -249,8 +249,8 @@ export default class extends Controller {
         this.unsubscribe()
 
         this.subscribedCreativeId = String(creativeId)
-        this.topicsSubscription = createConsumer().subscriptions.create(
-            { channel: "TopicsChannel", creative_id: creativeId },
+        this.topicsSubscription = createSubscription(
+            { channel: 'TopicsChannel', creative_id: this.creativeId },
             {
                 received: (data) => this.handleTopicMessage(data)
             }
