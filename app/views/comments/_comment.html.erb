@@ -1,6 +1,6 @@
 <% comment_topic = comment.topic %>
 <% current_topic_id = local_assigns[:current_topic_id] %>
-<div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>">
+<div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>">
   <div class="comment-select">
     <input type="checkbox"
            class="comment-select-checkbox"
