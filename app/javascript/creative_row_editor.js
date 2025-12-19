@@ -1456,10 +1456,16 @@ export function initializeCreativeRowEditor() {
         const rowComponent = document.createElement('creative-tree-row');
         rowComponent.level = level;
         rowComponent.setAttribute('level', level);
-        const iconSource = document.querySelector('creative-tree-row[data-edit-icon-html]');
+        const iconSource = document.querySelector('creative-tree-row[data-edit-icon-html]') || document.getElementById('creatives');
         if (iconSource) {
-          if (iconSource.dataset.editIconHtml) rowComponent.dataset.editIconHtml = iconSource.dataset.editIconHtml;
-          if (iconSource.dataset.editOffIconHtml) rowComponent.dataset.editOffIconHtml = iconSource.dataset.editOffIconHtml;
+          if (iconSource.dataset.editIconHtml) {
+            rowComponent.dataset.editIconHtml = iconSource.dataset.editIconHtml;
+            rowComponent.editIconHtml = iconSource.dataset.editIconHtml;
+          }
+          if (iconSource.dataset.editOffIconHtml) {
+            rowComponent.dataset.editOffIconHtml = iconSource.dataset.editOffIconHtml;
+            rowComponent.editOffIconHtml = iconSource.dataset.editOffIconHtml;
+          }
         }
         if (parentId) {
           rowComponent.parentId = parentId;
