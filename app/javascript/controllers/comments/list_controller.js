@@ -118,6 +118,8 @@ export default class extends Controller {
   resetToLatest() {
     this.resetState()
     this.listTarget.innerHTML = this.element.dataset.loadingText || '<div class="loading-spinner">Loading...</div>'
+    // Optimistically set if we know it
+    this.listTarget.dataset.currentTopicId = this.currentTopicId || ""
     this.loadInitialComments()
   }
 
@@ -137,6 +139,7 @@ export default class extends Controller {
       if (String(this.currentTopicId || "") !== String(requestTopicId)) return
 
       this.listTarget.innerHTML = html
+      this.listTarget.dataset.currentTopicId = this.currentTopicId || ""
       renderMarkdownInContainer(this.listTarget)
       this.popupController?.updatePosition()
 
@@ -242,7 +245,13 @@ export default class extends Controller {
           if (this.popupController && this.popupController.topicsController) {
             // Update UI and local state without dispatching change event (to avoid loop)
             this.popupController.topicsController.updateSelectionUI(serverTopicId)
+
+            // Also update data attribute for CSS scoping
+            this.listTarget.dataset.currentTopicId = serverTopicId || ""
           }
+        } else {
+          // Ensure data attribute is synced even if no change detected (e.g. initial load)
+          this.listTarget.dataset.currentTopicId = this.currentTopicId || ""
         }
       }
       return response.text()
@@ -404,6 +413,25 @@ export default class extends Controller {
     if (event.target.action === 'append') {
       const templateContent = event.target.templateContent || event.target.querySelector('template')?.content
       const firstChild = templateContent?.firstElementChild
+
+      // Check for topic context mismatch
+      if (firstChild && firstChild.dataset.topicId !== undefined) {
+        const messageTopicId = firstChild.dataset.topicId
+        const currentTopicId = this.currentTopicId || ""
+
+        // If we are in a specific topic (currentTopicId is set)
+        // AND the message is for a different topic
+        if (currentTopicId && String(currentTopicId) !== String(messageTopicId)) {
+          event.preventDefault()
+          // Dispatch event for topics controller to show badge
+          const customEvent = new CustomEvent("comments--topics:new-message", {
+            detail: { topicId: messageTopicId }
+          })
+          window.dispatchEvent(customEvent)
+          return
+        }
+      }
+
       if (firstChild && firstChild.id && document.getElementById(firstChild.id)) {
         event.preventDefault()
         return

@@ -14,6 +14,12 @@ export default class extends Controller {
             this.loadTopics()
             this.subscribe()
         }
+        this.handleNewMessage = this.handleNewMessage.bind(this)
+        window.addEventListener('comments--topics:new-message', this.handleNewMessage)
+    }
+
+    disconnect() {
+        window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
     }
 
     disconnect() {
@@ -181,6 +187,9 @@ export default class extends Controller {
 
     selectTopic(id) {
         this.updateSelectionUI(id)
+        if (id) {
+            this.clearNewMessageBadge(id)
+        }
         // Dispatch event
         this.dispatch("change", { detail: { topicId: id } })
     }
@@ -190,7 +199,30 @@ export default class extends Controller {
         // Update UI
         this.listTarget.querySelectorAll('.topic-tag').forEach(el => {
             el.classList.toggle('active', String(el.dataset.id) === String(id))
+            if (String(el.dataset.id) === String(id)) {
+                el.classList.remove('has-new-messages')
+            }
         })
+    }
+
+    handleNewMessage(event) {
+        const topicId = event.detail.topicId
+        if (!topicId) return
+
+        // Don't show badge if we are currently in this topic (shouldn't happen due to list_controller logic, but safety check)
+        if (String(this.currentTopicId) === String(topicId)) return
+
+        const topicEl = this.listTarget.querySelector(`.topic-tag[data-id="${topicId}"]`)
+        if (topicEl) {
+            topicEl.classList.add('has-new-messages')
+        }
+    }
+
+    clearNewMessageBadge(topicId) {
+        const topicEl = this.listTarget.querySelector(`.topic-tag[data-id="${topicId}"]`)
+        if (topicEl) {
+            topicEl.classList.remove('has-new-messages')
+        }
     }
 
     async createTopic(name) {

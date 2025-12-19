@@ -455,6 +455,71 @@
     border-color: var(--color-accent, #007bff);
 }
 
+.topic-tag.has-new-messages {
+    position: relative;
+    border-color: var(--color-accent, #007bff);
+}
+
+.topic-tag.has-new-messages::after {
+    content: "New";
+    position: absolute;
+    top: -8px;
+    right: -10px;
+    background-color: #ff3b30;
+    color: white;
+    font-size: 0.6em;
+    padding: 0.1em 0.4em;
+    border-radius: 8px;
+    font-weight: bold;
+}
+
+/* Hide the topic link if the message is displayed within that topic's context */
+/* Use Javascript to set data-current-topic-id on the list container */
+.comment-topic-link {
+    margin-top: 0.25em;
+    font-size: 0.9em;
+}
+
+/* 
+   We want: if #comments-list[data-current-topic-id="123"] 
+   Then: .comment-item[data-topic-id="123"] .comment-topic-link { display: none; }
+   
+   Since we can't do dynamic matching in pure CSS (attr(x) == attr(y)), we rely on 
+   Stimulus list_controller to either set a specialized class or we just accept 
+   that we need to hide it using a more generic approach if possible, 
+   OR we use the fact that we can't easily do this in pure CSS without many rules.
+   
+   Wait, the requirement is "Show without #topic" if in that topic.
+   
+   If I am in topic 123, list_controller sets dataset.currentTopicId = 123.
+   The comment has dataset.topicId = 123.
+   
+   I can't write a CSS rule `[data-current-topic-id=data-topic-id]`
+   
+   However, I can do this in Javascript when filtering/rendering? 
+   No, user asked for "If current user is in matching topic".
+   
+   Let's use a simpler approach: 
+   If I am in a topic, I only see messages from that topic (filtered by server or client).
+   So ALL messages visible in Topic 123 are BY DEFINITION belonging to Topic 123.
+   (Except pinned? No pinned mentions).
+   
+   So, IF data-current-topic-id is set (meaning we are NOT in Main), 
+   we can hide ALL topic links inside the list?
+   
+   Wait, "Main" shows ALL messages. So currentTopicId is empty. Topic links shown.
+   "Topic A" shows ONLY A messages. So currentTopicId is A. 
+   
+   YES! If we are in a specific topic, we only see that topic's messages.
+   So we can hide ALL topic links when in a specific topic context.
+   
+   #comments-list:not([data-current-topic-id=""]) .comment-topic-link { display: none; }
+*/
+
+#comments-list:not([data-current-topic-id=""]) .comment-topic-link {
+    display: none;
+}
+
 .add-topic-btn {
     display: inline-flex;
     align-items: center;
