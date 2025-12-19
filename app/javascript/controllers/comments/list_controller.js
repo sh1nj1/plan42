@@ -404,6 +404,14 @@ export default class extends Controller {
     if (event.target.action === 'append') {
       const templateContent = event.target.templateContent || event.target.querySelector('template')?.content
       const firstChild = templateContent?.firstElementChild
+      const incomingTopicId = (firstChild?.dataset?.topicId || '').toString()
+      const currentTopicId = (this.currentTopicId || '').toString()
+
+      if (incomingTopicId !== currentTopicId) {
+        event.preventDefault()
+        this.popupController?.topicsController?.markTopicNew(incomingTopicId)
+        return
+      }
       if (firstChild && firstChild.id && document.getElementById(firstChild.id)) {
         event.preventDefault()
         return

@@ -455,6 +455,15 @@
     border-color: var(--color-accent, #007bff);
 }
 
+.topic-new-badge {
+    background: var(--color-badge-bg, red);
+    color: var(--color-badge-text, white);
+    border-radius: 10px;
+    padding: 0 4px;
+    font-size: 0.7em;
+    line-height: 1.2;
+}
+
 .add-topic-btn {
     display: inline-flex;
     align-items: center;

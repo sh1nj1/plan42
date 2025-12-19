@@ -9,6 +9,7 @@ export default class extends Controller {
         this.canManageTopics = false
         this.subscribedCreativeId = null
         this.topicsSubscription = null
+        this.newTopicIds = new Set()
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId) {
             this.loadTopics()
@@ -78,13 +79,15 @@ export default class extends Controller {
     }
 
     renderTopics(topics, canManage = false) {
-        let html = `<span class="topic-tag ${this.currentTopicId ? '' : 'active'}" data-action="click->comments--topics#select" data-id="">#Main</span>`
+        const mainBadge = this.newTopicIds.has("") ? '<span class="topic-new-badge">New</span>' : ''
+        let html = `<span class="topic-tag ${this.currentTopicId ? '' : 'active'}" data-action="click->comments--topics#select" data-id="">#Main${mainBadge}</span>`
 
         topics.forEach(topic => {
             // Ensure comparison handles string/number difference
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
+            const hasNewBadge = this.newTopicIds.has(String(topic.id)) ? '<span class="topic-new-badge">New</span>' : ''
             html += `<span class="topic-tag ${isActive}" data-action="click->comments--topics#select" data-id="${topic.id}">
-                        #${topic.name}`
+                        #${topic.name}${hasNewBadge}`
 
             if (canManage) {
                 html += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
@@ -187,10 +190,41 @@ export default class extends Controller {
 
     updateSelectionUI(id) {
         this.currentTopicId = id
+        this.clearTopicBadge(id)
         // Update UI
         this.listTarget.querySelectorAll('.topic-tag').forEach(el => {
             el.classList.toggle('active', String(el.dataset.id) === String(id))
         })
+    }
+
+    normalizeTopicId(topicId) {
+        return (topicId || "").toString()
+    }
+
+    markTopicNew(topicId) {
+        const normalized = this.normalizeTopicId(topicId)
+        if (normalized === this.normalizeTopicId(this.currentTopicId)) return
+
+        this.newTopicIds.add(normalized)
+        const tag = this.findTopicTag(normalized)
+        if (tag && !tag.querySelector('.topic-new-badge')) {
+            tag.insertAdjacentHTML('beforeend', '<span class="topic-new-badge">New</span>')
+        }
+    }
+
+    clearTopicBadge(topicId) {
+        const normalized = this.normalizeTopicId(topicId)
+        if (!this.newTopicIds.has(normalized)) return
+
+        this.newTopicIds.delete(normalized)
+        const tag = this.findTopicTag(normalized)
+        tag?.querySelector('.topic-new-badge')?.remove()
+    }
+
+    findTopicTag(topicId) {
+        if (!this.listTarget) return null
+        const normalized = this.normalizeTopicId(topicId)
+        return this.listTarget.querySelector(`.topic-tag[data-id="${normalized}"]`)
     }
 
     async createTopic(name) {
