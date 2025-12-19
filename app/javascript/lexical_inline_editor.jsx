@@ -7,7 +7,7 @@ const DEFAULT_KEY = "creative-inline-editor"
 export function createInlineEditor(container, {
   onChange,
   onKeyDown,
-  onPromptForLink,
+
   onUploadStateChange
 } = {}) {
   if (!container) {
@@ -42,7 +42,7 @@ export function createInlineEditor(container, {
         initialHtml={currentHtml}
         editorKey={currentKey}
         placeholderText={placeholderText}
-        onPromptForLink={onPromptForLink ?? promptForLink}
+        // onPromptForLink removed
         onKeyDown={(event, editor) => {
           if (onKeyDown) onKeyDown(event, editor)
         }}
@@ -130,13 +130,4 @@ export function createInlineEditor(container, {
   }
 }
 
-function promptForLink() {
-  const value = window.prompt("Enter a URL")
-  if (!value) return null
-  try {
-    const url = new URL(value, window.location.origin)
-    return url.toString()
-  } catch (_error) {
-    return value.trim() || null
-  }
-}
+

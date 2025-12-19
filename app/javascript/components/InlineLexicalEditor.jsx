@@ -20,7 +20,7 @@ import {
   registerCodeHighlighting
 } from "@lexical/code"
 import { ListItemNode, ListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
-import { LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
+import { $createLinkNode, LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
 import {
   $createParagraphNode,
   $createTextNode,
@@ -326,7 +326,10 @@ function ToolbarColorPicker({ icon, title, color, onChange, onClear }) {
   )
 }
 
-function Toolbar({ onPromptForLink }) {
+
+import LinkPopup from "./LinkPopup"
+
+function Toolbar() {
   const [editor] = useLexicalComposerContext()
   const [formats, setFormats] = useState({
     bold: false,
@@ -343,6 +346,8 @@ function Toolbar({ onPromptForLink }) {
   const DEFAULT_BG_COLOR = "#ffffff"
   const [fontColor, setFontColor] = useState(DEFAULT_FONT_COLOR)
   const [bgColor, setBgColor] = useState(DEFAULT_BG_COLOR)
+  const [showLinkPopup, setShowLinkPopup] = useState(false)
+  const [linkPopupData, setLinkPopupData] = useState({ label: "", url: "" })
 
   const handleFiles = useCallback(
     (fileList, options = {}) => {
@@ -441,22 +446,37 @@ function Toolbar({ onPromptForLink }) {
   )
 
   const toggleLink = useCallback(() => {
-    const selection = $getSelection()
-    if (!$isRangeSelection(selection)) return
-    const hasLink = selection.getNodes().some((node) => {
-      if (node.getType() === "link") return true
-      const parent = node.getParent()
-      return parent?.getType() === "link"
+    let hasLink = false
+    let selectionText = ""
+    let isRange = false
+    let url = ""
+
+    editor.getEditorState().read(() => {
+      const selection = $getSelection()
+      if (!$isRangeSelection(selection)) return
+
+      isRange = true
+      selectionText = selection.getTextContent()
+
+      const nodes = selection.getNodes()
+      const nodeWithLink = nodes.find((node) => {
+        if (node.getType() === "link") return true
+        const parent = node.getParent()
+        return parent?.getType() === "link"
+      })
+
+      if (nodeWithLink) {
+        hasLink = true
+        const linkNode = nodeWithLink.getType() === "link" ? nodeWithLink : nodeWithLink.getParent()
+        url = linkNode.getURL()
+      }
     })
-    if (hasLink) {
-      editor.dispatchCommand(TOGGLE_LINK_COMMAND, null)
-      return
-    }
-    const nextUrl = onPromptForLink?.()
-    if (nextUrl) {
-      editor.dispatchCommand(TOGGLE_LINK_COMMAND, nextUrl)
-    }
-  }, [editor, onPromptForLink])
+
+    if (!isRange) return
+
+    setLinkPopupData({ label: selectionText, url: url })
+    setShowLinkPopup(true)
+  }, [editor])
 
   const applyTextStyle = useCallback(
     (style) => {
@@ -648,6 +668,59 @@ function Toolbar({ onPromptForLink }) {
         title="Attach file">
         📎
       </button>
+      {showLinkPopup && (
+        <LinkPopup
+          initialLabel={linkPopupData.label}
+          initialUrl={linkPopupData.url}
+          onConfirm={(label, url) => {
+            const finalUrl = url?.trim()
+            if (!finalUrl) {
+              setShowLinkPopup(false)
+              return
+            }
+            const finalLabel = (label || "").trim() || finalUrl
+
+            editor.update(() => {
+              const selection = $getSelection()
+              if (!selection) return
+
+              // Check if we are editing an existing link
+              const nodes = selection.getNodes()
+              const nodeWithLink = nodes.find((node) => {
+                if (node.getType() === "link") return true
+                const parent = node.getParent()
+                return parent?.getType() === "link"
+              })
+
+              if (nodeWithLink) {
+                // UPDATE MODE
+                const linkNode = nodeWithLink.getType() === "link" ? nodeWithLink : nodeWithLink.getParent()
+                const newLink = $createLinkNode(finalUrl)
+                newLink.append($createTextNode(finalLabel))
+                linkNode.replace(newLink)
+                newLink.select()
+              } else {
+                // CREATE MODE
+                const newLink = $createLinkNode(finalUrl)
+                newLink.append($createTextNode(finalLabel))
+
+                if ($isRangeSelection(selection) && !selection.isCollapsed()) {
+                  // Replace selection
+                  selection.insertNodes([newLink])
+                } else {
+                  // Insert at cursor
+                  selection.insertNodes([newLink])
+                }
+                // Explicitly select the new link to ensure selection validity
+                newLink.select()
+              }
+            })
+
+            setShowLinkPopup(false)
+          }}
+          onCancel={() => setShowLinkPopup(false)}
+        />
+      )}
     </div>
   )
 }
@@ -674,7 +747,6 @@ function EditorInner({
   initialHtml,
   onChange,
   onKeyDown,
-  onPromptForLink,
   onReady,
   onUploadStateChange,
   directUploadUrl,
@@ -686,7 +758,7 @@ function EditorInner({
 
   return (
     <div className="lexical-editor-shell">
-      <Toolbar onPromptForLink={onPromptForLink} />
+      <Toolbar />
       <div className="lexical-editor-inner">
         <RichTextPlugin
           contentEditable={
@@ -748,7 +820,6 @@ export default function InlineLexicalEditor({
   initialHtml,
   onChange,
   onKeyDown,
-  onPromptForLink,
   onReady,
   onUploadStateChange,
   directUploadUrl,
@@ -786,7 +857,6 @@ export default function InlineLexicalEditor({
         initialHtml={initialHtml}
         onChange={onChange}
         onKeyDown={onKeyDown}
-        onPromptForLink={onPromptForLink}
         onReady={onReady}
         onUploadStateChange={onUploadStateChange}
         directUploadUrl={directUploadUrl}
@@ -797,4 +867,3 @@ export default function InlineLexicalEditor({
     </LexicalComposer>
   )
 }
-
