@@ -34,7 +34,13 @@ class TopicsController < ApplicationController
     end
 
     topic = @creative.topics.find(params[:id])
+    topic_id = topic.id
     topic.destroy
+
+    TopicsChannel.broadcast_to(
+      @creative,
+      { action: "deleted", topic_id: topic_id }
+    )
     head :no_content
   end
 

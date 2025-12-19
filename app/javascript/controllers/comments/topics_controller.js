@@ -266,13 +266,38 @@ export default class extends Controller {
     }
 
     handleTopicMessage(data) {
-        if (!data?.topic) return
+        if (!data) return
+
+        const action = data.action || "created"
+        if (action === "deleted") {
+            this.removeTopic(data.topic_id)
+            return
+        }
+
+        if (!data.topic) return
 
         const topics = this.topics || []
         const exists = topics.some((topic) => String(topic.id) === String(data.topic.id))
         if (exists) return
 
         this.topics = [...topics, data.topic]
+        this.renderTopics(this.topics, this.canManageTopics)
+        this.restoreSelection()
+    }
+
+    removeTopic(topicId) {
+        if (!topicId) return
+
+        const topics = this.topics || []
+        const nextTopics = topics.filter((topic) => String(topic.id) !== String(topicId))
+        if (nextTopics.length === topics.length) return
+
+        this.topics = nextTopics
+        if (String(this.currentTopicId) === String(topicId)) {
+            this.currentTopicId = ""
+            this.dispatch("change", { detail: { topicId: "" } })
+        }
+
         this.renderTopics(this.topics, this.canManageTopics)
         this.restoreSelection()
     }
