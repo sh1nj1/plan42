@@ -336,6 +336,17 @@ function LinkPopup({ initialLabel, initialUrl, onConfirm, onCancel }) {
     setUrl(initialUrl || "")
   }, [initialLabel, initialUrl])
 
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      onConfirm(label, url)
+    } else if (e.key === "Escape") {
+      e.preventDefault()
+      e.stopPropagation()
+      onCancel()
+    }
+  }
+
   return (
     <div
       className="lexical-link-popup stacked-form"
@@ -358,6 +369,7 @@ function LinkPopup({ initialLabel, initialUrl, onConfirm, onCancel }) {
           placeholder="Link text"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
+          onKeyDown={handleKeyDown}
           style={{ width: "100%", boxSizing: "border-box" }}
         />
       </div>
@@ -368,6 +380,7 @@ function LinkPopup({ initialLabel, initialUrl, onConfirm, onCancel }) {
           placeholder="https://example.com"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={handleKeyDown}
           style={{ width: "100%", boxSizing: "border-box" }}
         />
       </div>
