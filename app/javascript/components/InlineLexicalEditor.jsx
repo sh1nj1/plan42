@@ -755,6 +755,24 @@ function EditorInner({
   deletedAttachmentsRef
 }) {
   const [editor] = useLexicalComposerContext()
+  const handleDrop = useCallback(
+    (event) => {
+      const files = event.dataTransfer?.files
+      if (!files || files.length === 0) return
+      event.preventDefault()
+      Array.from(files).forEach((file) => {
+        if (!file) return
+        editor.dispatchCommand(INSERT_FILE_COMMAND, { file })
+      })
+    },
+    [editor]
+  )
+
+  const handleDragOver = useCallback((event) => {
+    if (event.dataTransfer?.types?.includes("Files")) {
+      event.preventDefault()
+    }
+  }, [])
 
   return (
     <div className="lexical-editor-shell">
@@ -768,6 +786,8 @@ function EditorInner({
                 if (!onKeyDown) return
                 onKeyDown(event, editor)
               }}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
             />
           }
           placeholder={<Placeholder text={placeholderText} />}
