@@ -1,7 +1,7 @@
 /* #creatives {} - removed empty rule */
 
 :root {
-    --creative-row-text-offset: 0px;
+    --creative-row-text-offset: 1.8em;
 }
 
 .creative-actions-row,
