@@ -1,8 +1,18 @@
 /* #creatives {} - removed empty rule */
 
+:root {
+    --creative-row-text-offset: 40px;
+}
+
+@media (max-width: 768px) {
+    :root {
+        --creative-row-text-offset: 20px;
+    }
+}
+
 .creative-actions-row {
-    margin: 0.0em 1.0em;
-    padding: 0.5em;
+    margin: 0.0em 1.0em 0.0em var(--creative-row-text-offset);
+    padding: 0.5em 0.5em 0.5em 0;
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
@@ -413,7 +423,7 @@ creative-tree-row.show-edit .creative-row {
 }
 
 .page-title {
-    margin-left: 1.5em;
+    margin-left: var(--creative-row-text-offset);
     font-size: 1.4em;
 }
 
