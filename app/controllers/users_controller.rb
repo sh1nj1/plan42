@@ -238,6 +238,15 @@ class UsersController < ApplicationController
     @user = User.find(params[:id])
   end
 
+  # GET /users/:id/passkeys
+  def passkeys
+    @user = User.find(params[:id])
+
+    unless @user == Current.user || Current.user.system_admin?
+      redirect_to user_path(Current.user), alert: t("users.destroy.not_authorized")
+    end
+  end
+
   # PATCH /users/:id/update_password
   def update_password
     @user = User.find(params[:id])

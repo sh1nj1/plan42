@@ -4,6 +4,7 @@ class User < ApplicationRecord
   has_secure_password
   has_many :sessions, dependent: :destroy
   has_many :oauth_applications, class_name: "Doorkeeper::Application", as: :owner
+  has_many :webauthn_credentials, dependent: :destroy
   has_many :topics, dependent: :destroy
 
   has_many :calendar_events, dependent: :destroy

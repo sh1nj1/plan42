@@ -48,3 +48,6 @@ import ShareUserSearchController from "./share_user_search_controller"
 application.register("share-user-search", ShareUserSearchController)
 import LlmModelController from "./llm_model_controller"
 application.register("llm-model", LlmModelController)
+
+import WebauthnController from "./webauthn_controller"
+application.register("webauthn", WebauthnController)

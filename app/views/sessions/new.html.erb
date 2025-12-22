@@ -16,6 +16,11 @@
                 class: "primary-action-button",
                 form: { class: "auth-alt-action__form" } %>
 </div>
+<div class="auth-alt-action">
+  <button data-controller="webauthn" data-action="click->webauthn#signin" data-webauthn-not-supported-message-value="<%= t('users.webauthn.not_supported') %>" class="primary-action-button">
+    <%= t('users.sessions.new.sign_in_with_webauthn') %>
+  </button>
+</div>
 
 <%= link_to t('users.sessions.new.forgot_password'), new_password_path %>
 <br>

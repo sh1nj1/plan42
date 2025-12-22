@@ -9,6 +9,11 @@ Rails.application.routes.draw do
   get "/auth/notion", to: "notion_auth#authorize"
   get "/auth/notion/callback", to: "notion_auth#callback", as: :notion_auth_callback
   resources :passwords, param: :token
+  namespace :webauthn do
+    resource :registration, only: [ :new, :create ]
+    resource :session, only: [ :new, :create ]
+    resources :credentials, only: [ :destroy ]
+  end
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
@@ -32,6 +37,7 @@ Rails.application.routes.draw do
       patch :revoke_system_admin
       get :edit_ai
       patch :update_ai
+      get :passkeys
     end
     collection do
       get :exists
