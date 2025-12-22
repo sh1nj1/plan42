@@ -20,9 +20,6 @@ export default class extends Controller {
 
     disconnect() {
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
-    }
-
-    disconnect() {
         this.unsubscribe()
     }
 
