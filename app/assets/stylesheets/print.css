@@ -1,4 +1,9 @@
 @media print {
+  :root {
+    --creative-row-text-offset: 40px;
+    --creative-actions-leading: 1rem;
+  }
+
   nav,
   #plans-list-area,
   #inbox-panel,
