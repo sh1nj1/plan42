@@ -9,7 +9,11 @@ module Webauthn
           name: Current.user.email,
           display_name: Current.user.name
         },
-        exclude: Current.user.webauthn_credentials.pluck(:webauthn_id)
+        exclude: Current.user.webauthn_credentials.pluck(:webauthn_id),
+        authenticator_selection: {
+          resident_key: "required",
+          user_verification: "preferred"
+        }
       )
 
       session[:creation_challenge] = create_options.challenge
