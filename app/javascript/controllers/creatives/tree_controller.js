@@ -11,9 +11,9 @@ export default class extends Controller {
     this.abortController = null
     this.loadingIndicator = null
     this.handleResize = this.updateAlignmentOffset.bind(this)
-    this.handleTreeUpdated = this.updateAlignmentOffset.bind(this)
+    this.handleTreeUpdated = () => this.queueAlignmentUpdate()
     this.load()
-    this.updateAlignmentOffset()
+    this.queueAlignmentUpdate()
     window.addEventListener('resize', this.handleResize)
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
   }
@@ -67,6 +67,7 @@ export default class extends Controller {
 
     renderCreativeTree(this.element, nodes)
     dispatchCreativeTreeUpdated(this.element)
+    this.queueAlignmentUpdate()
   }
 
   showEmptyState() {
@@ -103,17 +104,28 @@ export default class extends Controller {
   updateAlignmentOffset() {
     const actionsRow = document.querySelector('.creative-actions-row')
     const title = document.querySelector('.page-title')
-    if (!actionsRow && !title) return
+    if (!actionsRow && !title) return false
 
     const content = this.element.querySelector('.creative-tree .creative-content')
-    if (!content) return
+    if (!content) return false
 
     const parent = (actionsRow || title)?.parentElement
-    if (!parent) return
+    if (!parent) return false
 
     const contentRect = content.getBoundingClientRect()
     const parentRect = parent.getBoundingClientRect()
     const offset = Math.max(0, Math.round(contentRect.left - parentRect.left))
     document.documentElement.style.setProperty('--creative-row-text-offset', `${offset}px`)
+    return true
+  }
+
+  queueAlignmentUpdate(retries = 5) {
+    if (retries <= 0) return
+    requestAnimationFrame(() => {
+      const updated = this.updateAlignmentOffset()
+      if (!updated) {
+        setTimeout(() => this.queueAlignmentUpdate(retries - 1), 100)
+      }
+    })
   }
 }
