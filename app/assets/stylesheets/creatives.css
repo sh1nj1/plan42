@@ -1,8 +1,22 @@
 /* #creatives {} - removed empty rule */
 
+:root {
+    --creative-row-text-offset: 1.8em;
+}
+
+.creative-actions-row,
+.page-title {
+    visibility: hidden;
+}
+
+html.creative-alignment-ready .creative-actions-row,
+html.creative-alignment-ready .page-title {
+    visibility: visible;
+}
+
 .creative-actions-row {
-    margin: 0.0em 1.0em;
-    padding: 0.5em;
+    margin: 0.0em 1.0em 0.0em var(--creative-row-text-offset);
+    padding: 0.5em 0.5em 0.5em 0;
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
@@ -413,9 +427,10 @@ creative-tree-row.show-edit .creative-row {
 }
 
 .page-title {
-    margin-left: 1.5em;
+    margin-left: var(--creative-row-text-offset);
     font-size: 1.4em;
 }
+
 
 /* Constrain images within creative-row to prevent overflow */
 .creative-row img {
