@@ -28,5 +28,10 @@
 
   .page-title {
     margin-left: 0 !important;
+    visibility: visible !important;
+  }
+
+  .creative-actions-row {
+    visibility: visible !important;
   }
 }

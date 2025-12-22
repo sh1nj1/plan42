@@ -116,6 +116,7 @@ export default class extends Controller {
     const parentRect = parent.getBoundingClientRect()
     const offset = Math.max(0, Math.round(contentRect.left - parentRect.left))
     document.documentElement.style.setProperty('--creative-row-text-offset', `${offset}px`)
+    document.documentElement.classList.add('creative-alignment-ready')
     return true
   }
 
