@@ -12,6 +12,7 @@ export default class extends Controller {
     this.loadingIndicator = null
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
+    document.documentElement.classList.remove('creative-alignment-ready')
     this.load()
     this.queueAlignmentUpdate()
     window.addEventListener('resize', this.handleResize)
@@ -73,6 +74,7 @@ export default class extends Controller {
   showEmptyState() {
     const html = this.hasEmptyHtmlValue ? this.emptyHtmlValue : ''
     this.element.innerHTML = html
+    document.documentElement.classList.add('creative-alignment-ready')
   }
 
   showLoadingIndicator() {
