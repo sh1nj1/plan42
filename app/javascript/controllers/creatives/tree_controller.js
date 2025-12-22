@@ -10,7 +10,12 @@ export default class extends Controller {
   connect() {
     this.abortController = null
     this.loadingIndicator = null
+    this.handleResize = this.updateAlignmentOffset.bind(this)
+    this.handleTreeUpdated = this.updateAlignmentOffset.bind(this)
     this.load()
+    this.updateAlignmentOffset()
+    window.addEventListener('resize', this.handleResize)
+    this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
   }
 
   disconnect() {
@@ -18,6 +23,8 @@ export default class extends Controller {
       this.abortController.abort()
       this.abortController = null
     }
+    window.removeEventListener('resize', this.handleResize)
+    this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
   }
 
   load() {
@@ -91,5 +98,22 @@ export default class extends Controller {
     if (this.loadingIndicator && this.loadingIndicator.parentNode === this.element) {
       this.element.removeChild(this.loadingIndicator)
     }
+  }
+
+  updateAlignmentOffset() {
+    const actionsRow = document.querySelector('.creative-actions-row')
+    const title = document.querySelector('.page-title')
+    if (!actionsRow && !title) return
+
+    const content = this.element.querySelector('.creative-tree .creative-content')
+    if (!content) return
+
+    const parent = (actionsRow || title)?.parentElement
+    if (!parent) return
+
+    const contentRect = content.getBoundingClientRect()
+    const parentRect = parent.getBoundingClientRect()
+    const offset = Math.max(0, Math.round(contentRect.left - parentRect.left))
+    document.documentElement.style.setProperty('--creative-row-text-offset', `${offset}px`)
   }
 }

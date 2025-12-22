@@ -1,6 +1,6 @@
 @media print {
   :root {
-    --creative-row-text-offset: 20px;
+    --creative-row-text-offset: 0px;
   }
 
   nav,
