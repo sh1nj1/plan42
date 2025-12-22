@@ -47,4 +47,39 @@ class Webauthn::SessionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "error", json_response["status"]
     assert_includes json_response["message"], I18n.t("users.sessions.new.email_not_verified")
   end
+
+  test "should accept invitation during sign-in" do
+    user = users(:two)
+    user.update!(email_verified_at: Time.current)
+    inviter = users(:one)
+    creative = Creative.create!(user: inviter, description: "Invite Test")
+    invitation = Invitation.create!(inviter: inviter, creative: creative, permission: :read)
+    token = invitation.generate_token_for(:invite)
+
+    credential = WebauthnCredential.create!(
+      user: user,
+      webauthn_id: "credential_id_2",
+      public_key: "public_key",
+      sign_count: 0
+    )
+    encoded_id = Base64.urlsafe_encode64("credential_id_2")
+
+    mock_credential = Object.new
+    def mock_credential.id; "credential_id_2"; end
+    def mock_credential.sign_count; 1; end
+    def mock_credential.verify(*args, **kwargs); true; end
+
+    WebAuthn::Credential.stub :from_get, mock_credential do
+      post webauthn_session_url, params: {
+        id: encoded_id,
+        rawId: encoded_id,
+        type: "public-key",
+        response: { clientDataJSON: "e30=", authenticatorData: "e30=", signature: "e30=", userHandle: "e30=" },
+        invite_token: token
+      }
+    end
+
+    assert_response :ok
+    assert invitation.reload.accepted_at, "Invitation should be accepted after sign-in with token"
+  end
 end

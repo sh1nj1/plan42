@@ -26,6 +26,7 @@ module Webauthn
           credential.update!(sign_count: webauthn_credential.sign_count)
 
           if credential.user.email_verified?
+            handle_invitation_for(credential.user) if params[:invite_token].present?
             start_new_session_for credential.user
             render json: { status: "ok", redirect_url: after_authentication_url }, status: :ok
           else

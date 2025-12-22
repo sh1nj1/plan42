@@ -86,13 +86,24 @@ export default class extends Controller {
 
             const credential = await get({ publicKey: options })
 
+            // Extract invite_token from URL query params
+            const urlParams = new URLSearchParams(window.location.search);
+            const inviteToken = urlParams.get('invite_token');
+
+            const body = {
+                ...credential
+            };
+            if (inviteToken) {
+                body.invite_token = inviteToken;
+            }
+
             const response = await fetch("/webauthn/session", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     "X-CSRF-Token": document.querySelector("meta[name='csrf-token']").content
                 },
-                body: JSON.stringify(credential)
+                body: JSON.stringify(body)
             })
 
             const data = await response.json()
