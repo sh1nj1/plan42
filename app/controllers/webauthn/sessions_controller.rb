@@ -25,9 +25,12 @@ module Webauthn
 
           credential.update!(sign_count: webauthn_credential.sign_count)
 
-          start_new_session_for credential.user
-
-          render json: { status: "ok", redirect_url: after_authentication_url }, status: :ok
+          if credential.user.email_verified?
+            start_new_session_for credential.user
+            render json: { status: "ok", redirect_url: after_authentication_url }, status: :ok
+          else
+            render json: { status: "error", message: I18n.t("users.sessions.new.email_not_verified") }, status: :unprocessable_entity
+          end
         rescue WebAuthn::Error => e
           render json: { status: "error", message: "Verification failed: #{e.message}" }, status: :unprocessable_entity
         ensure
