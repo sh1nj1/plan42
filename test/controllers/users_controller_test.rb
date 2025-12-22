@@ -417,4 +417,27 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_equal @regular_user.email, result["email"]
     assert result.key?("avatar_url")
   end
+  test "non admin user cannot access other user's passkeys page" do
+    sign_in_as(@regular_user, password: "password")
+    other_user = users(:one) # admin user
+
+    get passkeys_user_path(other_user)
+
+    assert_redirected_to user_path(@regular_user)
+    assert_equal I18n.t("users.destroy.not_authorized"), flash[:alert]
+  end
+
+  test "user can access their own passkeys page" do
+    sign_in_as(@regular_user, password: "password")
+
+    get passkeys_user_path(@regular_user)
+    assert_response :success
+  end
+
+  test "system admin can access other user's passkeys page" do
+    sign_in_as(@admin, password: "password")
+
+    get passkeys_user_path(@regular_user)
+    assert_response :success
+  end
 end
