@@ -4,7 +4,7 @@
         class: 'popup-menu-item add-creative-btn',
         data: { parent_id: @parent_creative.id },
         aria: { label: t('creatives.index.new_creative') },
-        title: t('creatives.index.new_creative')
+        title: t('creatives.index.new_creative_shortcut')
       ) do %>
     <span aria-hidden="true"><%= svg_tag 'add.svg', class: 'icon-add', width: 16, height: 16 %></span>
   <% end %>
@@ -13,7 +13,7 @@
         type: 'button',
         class: 'popup-menu-item new-root-creative-btn',
         aria: { label: t('creatives.index.new_creative') },
-        title: t('creatives.index.new_creative')
+        title: t('creatives.index.new_creative_shortcut')
       ) do %>
     <span aria-hidden="true"><%= svg_tag 'add.svg', class: 'icon-add', width: 16, height: 16 %></span>
   <% end %>

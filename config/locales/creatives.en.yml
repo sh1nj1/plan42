@@ -3,6 +3,7 @@ en:
     index:
       up: "Up"
       new_creative: "Add"
+      new_creative_shortcut: "Add (Enter)"
       new_sub_creative: "New sub-creative"
       edit: "Edit"
       append_as_parent_creative: "New upper-creative"

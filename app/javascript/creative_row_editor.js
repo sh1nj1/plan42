@@ -11,6 +11,7 @@ const BULLET_INDENT_STEP_PX = 30;
 
 let initialized = false;
 let creativeEditClickHandler = null;
+let addCreativeShortcutHandler = null;
 
 function deleteAttachment(signedId) {
   if (!signedId) return;
@@ -697,6 +698,22 @@ export function initializeCreativeRowEditor() {
           handleEditButtonClick(tree);
         };
         document.addEventListener('creative-edit-click', creativeEditClickHandler);
+      }
+
+      if (!addCreativeShortcutHandler) {
+        addCreativeShortcutHandler = function (event) {
+          if (event.defaultPrevented || event.isComposing) return;
+          if (event.key !== 'Enter' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+          const target = event.target;
+          const interactiveSelector = 'input, textarea, select, button, a, [contenteditable="true"], [data-lexical-editor-root]';
+          if (target && target.closest && target.closest(interactiveSelector)) return;
+          if (target && target.isContentEditable) return;
+          const addButton = document.querySelector('.creative-actions-row .add-creative-btn, .creative-actions-row .new-root-creative-btn');
+          if (!addButton) return;
+          event.preventDefault();
+          addButton.click();
+        };
+        document.addEventListener('keydown', addCreativeShortcutHandler);
       }
 
       document.body.addEventListener('click', function (e) {
