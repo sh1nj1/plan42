@@ -9,6 +9,8 @@
   .creative-actions-row,
   .creative-action-btn,
   .creative-row-actions,
+  .creative-toggle-btn,
+  .select-creative-checkbox,
   #creative-guide-popover,
   #creative-guide-link,
   #inbox-menu-btn,
@@ -22,5 +24,9 @@
 
   main {
     margin: 0;
+  }
+
+  .page-title {
+    margin-left: 0 !important;
   }
 }
