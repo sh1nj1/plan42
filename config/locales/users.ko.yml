@@ -60,6 +60,7 @@ ko:
       list_empty: "등록된 패스키가 없습니다."
       confirm_delete: "이 패스키를 삭제하시겠습니까?"
       delete: "삭제"
+      deleted: "패스키가 삭제되었습니다."
     details: "사용자 정보"
     name: "이름"
     email: "이메일"
