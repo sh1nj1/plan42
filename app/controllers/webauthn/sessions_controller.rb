@@ -34,6 +34,7 @@ module Webauthn
           session.delete(:authentication_challenge)
         end
       else
+        session.delete(:authentication_challenge)
         render json: { status: "error", message: I18n.t("users.webauthn.credential_not_found") }, status: :unprocessable_entity
       end
     end
