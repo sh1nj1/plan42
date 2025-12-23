@@ -16,19 +16,17 @@ export default class extends Controller {
         this.currentController = controller
 
         // Position the picker
-        const rect = target.getBoundingClientRect()
-
-        // Simple positioning: above the button, centered if possible
-        // Adjust logic as needed for viewport edges
-        this.element.style.top = `${rect.top - this.element.offsetHeight - 10}px`
-        this.element.style.left = `${rect.left}px`
+        // We need to capture the rect NOW before any layout shifts, 
+        // but we need to wait for the picker to be unhidden to get its size.
+        const targetRect = target.getBoundingClientRect()
 
         this.element.hidden = false
 
-        // Check if we need to flip styling or ensure it's visible (basic simple positioning first)
-        // We might want to use a library like floating-ui later if complex positioning is needed.
-        // For now, let's just make sure it's on screen.
-        this.ensureOnScreen(rect)
+        // Wait for next frame to ensure rendering is complete and dimensions are correct
+        requestAnimationFrame(() => {
+            if (this.element.hidden) return // Closed in the meantime
+            this.ensureOnScreen(targetRect)
+        })
     }
 
     close() {
@@ -63,28 +61,45 @@ export default class extends Controller {
     }
 
     ensureOnScreen(targetRect) {
-        // Quick fix for positioning after showing (since offsetHeight needs display)
-        // We set top/left before remove hidden, but offsetHeight might be 0 if hidden.
-        // So we need to show it first (visibility hidden?) or use a trick.
-        // Let's just adjust after unhiding.
-
         const height = this.element.offsetHeight
         const width = this.element.offsetWidth
         const windowWidth = window.innerWidth
         const windowHeight = window.innerHeight
 
-        let top = targetRect.top - height - 8
-        let left = targetRect.left
+        // Requirement: "reaction 버튼 위에 표시되어야 해" (Must be displayed above)
+        // Requirement: "화면을 나가지 않는 범위에서" (Within screen boundaries)
 
-        // If top is offscreen, show below
+        // Strategy: Always attempt to place above.
+        // Calculate ideal top position (above button with 8px gap)
+        let top = targetRect.top - height - 8
+
+        // 1. Top Boundary Check
         if (top < 10) {
-            top = targetRect.bottom + 8
+            // If it goes off the top, clamp it to 10px from top.
+            // This might overlap the button if the button is very high up, 
+            // but strictly adheres to "within screen" and "as above as possible".
+            top = 10
         }
 
-        // If right is offscreen, shift left
+        // 2. Bottom Boundary Check (rare, but if picker is huge)
+        const maxTop = windowHeight - height - 10
+        if (top > maxTop) {
+            top = maxTop
+        }
+
+        let left = targetRect.left
+
+        // 3. Horizontal Boundary Check
+        // Left edge
+        if (left < 10) {
+            left = 10
+        }
+        // Right edge
         if (left + width > windowWidth - 10) {
             left = windowWidth - width - 10
         }
+        // Final sanity check for left if width > windowWidth
+        if (left < 10) left = 10
 
         this.element.style.top = `${top}px`
         this.element.style.left = `${left}px`

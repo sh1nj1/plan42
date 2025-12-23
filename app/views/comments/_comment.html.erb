@@ -42,7 +42,7 @@
     <% can_convert_comment = comment.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
   </div>
     <div class="comment-action-container">
-      <button class="add-reaction-btn" type="button" data-comment-target="reactionButton" data-action="click->comment#triggerReactionPicker" title="<%= t('comments.add_reaction') %>">
+      <button class="add-reaction-btn" type="button" data-action="click->comment#triggerReactionPicker" title="<%= t('comments.add_reaction') %>">
         +
       </button>
 

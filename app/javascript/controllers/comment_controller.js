@@ -3,7 +3,7 @@ import { renderCommentMarkdown } from '../lib/utils/markdown'
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "reactionButton"]
+  static targets = ["ownerButton"]
 
   connect() {
     const contentElement = this.element.querySelector('.comment-content')
@@ -21,9 +21,6 @@ export default class extends Controller {
         button.classList.remove('comment-owner-only')
       })
     }
-  }
-
-  disconnect() {
   }
 
   triggerReactionPicker(event) {
