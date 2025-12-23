@@ -13,7 +13,9 @@ export default class extends Controller {
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
     document.documentElement.classList.remove('creative-alignment-ready')
-    this.load()
+    if (!this.shouldSkipLoad()) {
+      this.load()
+    }
     this.queueAlignmentUpdate()
     window.addEventListener('resize', this.handleResize)
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
@@ -55,6 +57,13 @@ export default class extends Controller {
         this.hideLoadingIndicator()
         this.showEmptyState()
       })
+  }
+
+  shouldSkipLoad() {
+    if (!this.element.hasAttribute('data-turbo-permanent')) return false
+    const hasTree = this.element.querySelector('creative-tree-row') || this.element.querySelector('.creative-tree')
+    if (hasTree) return true
+    return this.element.textContent.trim() !== ''
   }
 
   renderData(data) {
