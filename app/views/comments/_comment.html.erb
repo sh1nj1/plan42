@@ -42,6 +42,9 @@
     <% can_convert_comment = comment.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
   </div>
     <div class="comment-action-container">
+      <button class="add-reaction-btn" type="button" data-comment-target="reactionButton" data-action="click->comment#triggerReactionPicker" title="<%= t('comments.add_reaction') %>">
+        +
+      </button>
 
       <button class="<%= ['convert-comment-btn', ('comment-owner-only' unless can_convert_comment)].compact.join(' ') %>" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('comments.convert_to_creative') %>">
         <%= t('comments.convert_button') %>
@@ -70,8 +73,8 @@
   <% reaction_groups = reactions.group_by(&:emoji) %>
   <% current_user_id = Current.user&.id %>
   <% reacted_emojis = reactions.filter { |reaction| reaction.user_id == current_user_id }.map(&:emoji).to_set %>
-  <div class="comment-reactions">
-    <% if reaction_groups.any? %>
+  <% if reaction_groups.any? %>
+    <div class="comment-reactions">
       <div class="comment-reaction-list">
         <% reaction_groups.sort_by { |emoji, _| emoji }.each do |emoji, grouped| %>
           <% count = grouped.size %>
@@ -82,11 +85,8 @@
           </button>
         <% end %>
       </div>
-    <% end %>
-    <button class="comment-reaction-add" type="button" data-comment-target="reactionButton" data-action="click->comment#triggerReactionPicker" title="<%= t('comments.add_reaction') %>">
-      +
-    </button>
-  </div>
+    </div>
+  <% end %>
   <% if comment_topic.present? && current_topic_id.blank? %>
     <div class="comment-topic-link">
       <a href="#" class="comment-topic-switch" data-topic-id="<%= comment_topic.id %>">#<%= comment_topic.name %></a>

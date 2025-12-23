@@ -85,20 +85,46 @@ export default class extends Controller {
   }
 
   updateReactionsUI(reactionsData) {
-    // reactionsData: [{ emoji, count, user_ids: [] }, ...]
-    const reactionsContainer = this.element.querySelector('.comment-reactions')
-    if (!reactionsContainer) return
+    let reactionsContainer = this.element.querySelector('.comment-reactions')
 
-    // Find the "Add" button to preserve it
-    const addButton = reactionsContainer.querySelector('.comment-reaction-add')
+    // 1. If no reactions, remove container and return
+    if (!reactionsData || reactionsData.length === 0) {
+      if (reactionsContainer) {
+        reactionsContainer.remove()
+      }
+      return
+    }
 
-    // Clear existing reaction buttons only (exclude adder)
-    // It's safer to clear everything except the add button, then re-append.
+    // 2. If reactions exist but container doesn't, create it
+    let reactionsList
+    if (!reactionsContainer) {
+      reactionsContainer = document.createElement('div')
+      reactionsContainer.className = 'comment-reactions'
 
-    // 1. Remove all .comment-reaction elements
-    reactionsContainer.querySelectorAll('.comment-reaction').forEach(el => el.remove())
+      reactionsList = document.createElement('div')
+      reactionsList.className = 'comment-reaction-list'
+      reactionsContainer.appendChild(reactionsList)
 
-    // 2. Insert new buttons before the addButton
+      // Insert after comment content
+      const contentElement = this.element.querySelector('.comment-content')
+      if (contentElement) {
+        contentElement.insertAdjacentElement('afterend', reactionsContainer)
+      } else {
+        this.element.appendChild(reactionsContainer)
+      }
+    } else {
+      reactionsList = reactionsContainer.querySelector('.comment-reaction-list')
+      if (!reactionsList) {
+        reactionsList = document.createElement('div')
+        reactionsList.className = 'comment-reaction-list'
+        reactionsContainer.appendChild(reactionsList)
+      }
+    }
+
+    // 3. Clear existing list (Add button is elsewhere now, safe to clear)
+    reactionsList.innerHTML = ''
+
+    // 4. Append new reaction buttons
     reactionsData.forEach(reaction => {
       const { emoji, count, user_ids } = reaction
 
@@ -129,11 +155,7 @@ export default class extends Controller {
       countSpan.textContent = count
       button.appendChild(countSpan)
 
-      if (addButton) {
-        reactionsContainer.insertBefore(button, addButton)
-      } else {
-        reactionsContainer.appendChild(button)
-      }
+      reactionsList.appendChild(button)
     })
   }
 }
