@@ -56,7 +56,7 @@ ko:
     move_not_allowed: "이 메시지를 이동할 권한이 없습니다."
     select_label: "메시지 선택"
     add_reaction: "리액션 추가"
-    add_reaction_button: "😀"
+    add_reaction_button: "+"
     calendar_command:
       event_created: "이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})"
     read_by: "%{name} 님이 읽음"

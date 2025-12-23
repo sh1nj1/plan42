@@ -156,6 +156,8 @@
     border-radius: 999px;
     padding: 0.1em 0.5em;
     cursor: pointer;
+    color: var(--color-muted);
+    font-weight: 600;
 }
 
 .comment-reaction-picker {
@@ -171,6 +173,10 @@
     border-radius: 8px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
     z-index: 5;
+}
+
+.comment-reaction-picker[hidden] {
+    display: none;
 }
 
 .comment-reaction-picker-emoji {
