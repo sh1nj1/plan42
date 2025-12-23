@@ -2,10 +2,10 @@
 
 one:
   user: one
-  name: MyString
-  variables: 
+  name: Theme One
+  variables: { "--color-bg": "#ffffff", "--color-text": "#000000", "--color-btn-bg": "#cccccc", "--color-link": "#0000ff" }
 
 two:
   user: two
-  name: MyString
-  variables: 
+  name: Theme Two
+  variables: { "--color-bg": "#000000", "--color-text": "#ffffff", "--color-btn-bg": "#333333", "--color-link": "#ff0000" }
