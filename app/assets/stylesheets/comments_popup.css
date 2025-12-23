@@ -181,13 +181,26 @@
 .add-reaction-btn {
     border: none;
     background: none;
-    font-weight: bold;
     cursor: pointer;
     font-size: 1.2em;
-    /* Slightly larger for the plus sign or icon */
     padding: 0 0.3em;
     color: var(--color-muted);
     line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.add-reaction-btn .grayscale-emoji {
+    filter: grayscale(100%);
+    opacity: 0.6;
+    transition: all 0.2s;
+}
+
+.add-reaction-btn:hover .grayscale-emoji {
+    filter: grayscale(0%);
+    opacity: 1;
+    transform: scale(1.1);
 }
 
 .add-reaction-btn:hover {
