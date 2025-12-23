@@ -3,7 +3,7 @@ import { renderCommentMarkdown } from '../lib/utils/markdown'
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "reactionPicker", "reactionButton"]
+  static targets = ["ownerButton", "reactionButton"]
 
   connect() {
     const contentElement = this.element.querySelector('.comment-content')
@@ -21,30 +21,24 @@ export default class extends Controller {
         button.classList.remove('comment-owner-only')
       })
     }
-
-    this.handleDocumentClick = this.handleDocumentClick.bind(this)
-    document.addEventListener('click', this.handleDocumentClick)
   }
 
   disconnect() {
-    document.removeEventListener('click', this.handleDocumentClick)
   }
 
-  togglePicker(event) {
+  triggerReactionPicker(event) {
     event.preventDefault()
     event.stopPropagation()
-    if (!this.hasReactionPickerTarget) return
 
-    this.reactionPickerTarget.hidden = !this.reactionPickerTarget.hidden
-  }
-
-  selectReaction(event) {
-    event.preventDefault()
-    const emoji = event.currentTarget.dataset.emoji
-    if (!emoji) return
-
-    this.submitReaction(emoji, false)
-    this.hideReactionPicker()
+    // Dispatch event for global picker
+    const customEvent = new CustomEvent('reaction-picker:open', {
+      detail: {
+        controller: this,
+        target: event.currentTarget
+      },
+      bubbles: true
+    })
+    window.dispatchEvent(customEvent)
   }
 
   toggleReaction(event) {
@@ -55,18 +49,6 @@ export default class extends Controller {
 
     const reacted = button.dataset.reacted === 'true'
     this.submitReaction(emoji, reacted)
-  }
-
-  hideReactionPicker() {
-    if (!this.hasReactionPickerTarget) return
-    this.reactionPickerTarget.hidden = true
-  }
-
-  handleDocumentClick(event) {
-    if (!this.hasReactionPickerTarget || this.reactionPickerTarget.hidden) return
-    if (this.reactionPickerTarget.contains(event.target) || this.reactionButtonTarget?.contains(event.target)) return
-
-    this.hideReactionPicker()
   }
 
   async submitReaction(emoji, reacted) {
@@ -135,15 +117,17 @@ export default class extends Controller {
       }
 
       const emojiSpan = document.createElement('span')
+      emojiSpan.className = 'comment-reaction-emoji'
       emojiSpan.textContent = emoji
       button.appendChild(emojiSpan)
 
+      const countSpan = document.createElement('span')
+      countSpan.className = 'comment-reaction-count'
       if (count > 1) {
-        const countSpan = document.createElement('span')
-        countSpan.className = 'comment-reaction-count'
-        countSpan.textContent = count
-        button.appendChild(countSpan)
+        countSpan.classList.add('is-visible')
       }
+      countSpan.textContent = count
+      button.appendChild(countSpan)
 
       if (addButton) {
         reactionsContainer.insertBefore(button, addButton)

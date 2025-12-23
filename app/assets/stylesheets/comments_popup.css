@@ -145,6 +145,10 @@
     height: 26px;
     /* Fixed height */
     box-sizing: border-box;
+    position: relative;
+    /* For badge positioning */
+    overflow: visible;
+    /* Allow badge to overflow */
 }
 
 .comment-reaction.reacted {
@@ -153,13 +157,21 @@
 }
 
 .comment-reaction-count {
-    font-size: 0.8em;
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    background: var(--color-section-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 0 4px;
+    font-size: 0.7em;
     color: var(--color-muted);
-    min-width: 1.2em;
+    min-width: 14px;
     text-align: center;
+    line-height: 1.4;
     visibility: hidden;
-    line-height: 1;
-    /* Reset line-height to centering works */
+    z-index: 2;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .comment-reaction-count.is-visible {
@@ -171,24 +183,18 @@
     background: transparent;
     border-radius: 999px;
     padding: 0 0.6em;
-    /* Slightly wider click target, consistent padding */
     cursor: pointer;
     color: var(--color-muted);
     font-weight: 600;
     height: 26px;
-    /* Same fixed height as reaction buttons */
     display: inline-flex;
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
     font-size: 0.9em;
-    /* Match reaction font size */
 }
 
 .comment-reaction-picker {
-    position: absolute;
-    bottom: 2em;
-    left: 0;
     display: flex;
     flex-wrap: wrap;
     gap: 0.3em;
@@ -197,8 +203,20 @@
     border: 1px solid var(--color-border);
     border-radius: 8px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
-    z-index: 5;
+    z-index: 9999;
 }
+
+#global-reaction-picker {
+    position: fixed;
+    /* top/left set by JS */
+}
+
+/* Legacy style: .comment-reaction-picker previously had absolute positioning here. 
+   We keep the class for visual styling but override/reset positioning for the global ID. 
+   The original rule was:
+   .comment-reaction-picker { position: absolute; bottom: 2em; left: 0; ... }
+   We replaced it above with shared visual styles.
+*/
 
 .comment-reaction-picker[hidden] {
     display: none;

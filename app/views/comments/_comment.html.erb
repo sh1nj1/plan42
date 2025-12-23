@@ -71,23 +71,20 @@
   <% current_user_id = Current.user&.id %>
   <% reacted_emojis = reactions.filter { |reaction| reaction.user_id == current_user_id }.map(&:emoji).to_set %>
   <div class="comment-reactions">
-    <div class="comment-reaction-list">
-      <% reaction_groups.sort_by { |emoji, _| emoji }.each do |emoji, grouped| %>
-        <% count = grouped.size %>
-        <% count_class = count > 1 ? "comment-reaction-count is-visible" : "comment-reaction-count" %>
-        <button class="comment-reaction <%= 'reacted' if reacted_emojis.include?(emoji) %>" type="button" data-action="click->comment#toggleReaction" data-emoji="<%= emoji %>" data-reacted="<%= reacted_emojis.include?(emoji) %>">
-          <span class="comment-reaction-emoji"><%= emoji %></span>
-          <span class="<%= count_class %>"><%= count %></span>
-        </button>
-      <% end %>
-    </div>
-    <div class="comment-reaction-picker" data-comment-target="reactionPicker" hidden>
-      <% reaction_emojis.each do |emoji| %>
-        <button class="comment-reaction-picker-emoji" type="button" data-action="click->comment#selectReaction" data-emoji="<%= emoji %>"><%= emoji %></button>
-      <% end %>
-    </div>
-    <button class="comment-reaction-add" type="button" data-comment-target="reactionButton" data-action="click->comment#togglePicker" title="<%= t('comments.add_reaction') %>">
-      <%= t("comments.add_reaction_button") %>
+    <% if reaction_groups.any? %>
+      <div class="comment-reaction-list">
+        <% reaction_groups.sort_by { |emoji, _| emoji }.each do |emoji, grouped| %>
+          <% count = grouped.size %>
+          <% count_class = count > 1 ? "comment-reaction-count is-visible" : "comment-reaction-count" %>
+          <button class="comment-reaction <%= 'reacted' if reacted_emojis.include?(emoji) %>" type="button" data-action="click->comment#toggleReaction" data-emoji="<%= emoji %>" data-reacted="<%= reacted_emojis.include?(emoji) %>">
+            <span class="comment-reaction-emoji"><%= emoji %></span>
+            <span class="<%= count_class %>"><%= count %></span>
+          </button>
+        <% end %>
+      </div>
+    <% end %>
+    <button class="comment-reaction-add" type="button" data-comment-target="reactionButton" data-action="click->comment#triggerReactionPicker" title="<%= t('comments.add_reaction') %>">
+      +
     </button>
   </div>
   <% if comment_topic.present? && current_topic_id.blank? %>
