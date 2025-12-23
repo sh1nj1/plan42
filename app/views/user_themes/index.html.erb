@@ -1,0 +1,74 @@
+<div style="max-width: 960px; margin: 0 auto; padding: 1rem;">
+  <h1><%= t('themes.manage_themes', default: 'Manage Themes') %></h1>
+
+  <div class="card" style="margin-bottom: 2rem; padding: 1.5rem; background: var(--color-section-bg); border: 1px solid var(--color-border); border-radius: 8px;">
+    <h2><%= t('themes.create_new', default: 'Create New Theme') %></h2>
+    <%= form_with url: user_themes_path, method: :post, local: true, class: "stacked-form", style: "max-width: 100%;" do |f| %>
+      <div class="stacked-form-control">
+        <%= f.label :description, t('themes.description_prompt', default: 'Describe your theme (e.g. "Cyberpunk Neon with dark pulsing colors")') %>
+        <%= f.text_area :description, rows: 3, class: "shared-input-surface", style: "width: 100%;", required: true, value: params[:description] %>
+        <% if @error %>
+          <div style="color: red; font-size: 0.9em; margin-top: 5px;"><%= @error %></div>
+        <% end %>
+      </div>
+      <%= f.submit t('themes.generate', default: 'Generate Theme'), class: "primary-action-button" %>
+    <% end %>
+  </div>
+
+  <h2><%= t('themes.your_themes', default: 'Your Themes') %></h2>
+
+  <div class="table-scroll">
+    <table class="contacts-table">
+      <thead>
+        <tr>
+          <th><%= t('themes.name', default: 'Name') %></th>
+          <th><%= t('themes.preview', default: 'Preview') %></th>
+          <th><%= t('themes.created_at', default: 'Created At') %></th>
+          <th><%= t('themes.actions', default: 'Actions') %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @themes.each do |theme| %>
+          <tr>
+            <td>
+              <strong><%= theme.name %></strong>
+              <% if Current.user.theme == theme.id.to_s %>
+                <span class="creative-chip" style="margin-left: 0.5em; font-size: 0.8em;"><%= t('themes.active', default: 'Active') %></span>
+              <% end %>
+            </td>
+            <td>
+              <div style="display: flex; gap: 4px;">
+                <% 
+                   preview_vars = theme.variables.slice("--color-bg", "--color-text", "--color-btn-bg", "--color-link")
+                %>
+                <% preview_vars.each do |k, v| %>
+                  <div title="<%= k %>: <%= v %>" style="width: 20px; height: 20px; background-color: <%= v %>; border: 1px solid var(--color-border); border-radius: 4px;"></div>
+                <% end %>
+              </div>
+            </td>
+            <td><%= l theme.created_at, format: :short %></td>
+            <td>
+              <div style="display: flex; gap: 0.5rem;">
+                <% unless Current.user.theme == theme.id.to_s %>
+                  <%= button_to t('themes.apply', default: 'Apply'), apply_user_theme_path(theme), method: :post, class: "pagination-button" %>
+                <% end %>
+                <%= button_to t('themes.delete', default: 'Delete'), user_theme_path(theme), method: :delete, data: { confirm: t('themes.confirm_delete', default: 'Are you sure?') }, class: "pagination-button", style: "color: red; border-color: red;" %>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+        <% if @themes.empty? %>
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--color-muted); padding: 2rem;">
+              <%= t('themes.no_themes', default: 'No custom themes created yet.') %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+  
+  <div style="margin-top: 1rem;">
+     <%= link_to t('app.back_to_profile', default: 'Back to Profile'), user_path(Current.user), class: "unstyled-link", style: "text-decoration: underline;" %>
+  </div>
+</div>

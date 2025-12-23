@@ -136,7 +136,7 @@
     justify-content: center;
     gap: 0.2em;
     border: 1px solid var(--color-border);
-    background: var(--color-section-bg);
+    background: var(--color-secondary-background);
     border-radius: 999px;
     padding: 0 0.5em;
     /* Use line-height/height for vertical centering */
@@ -152,8 +152,8 @@
 }
 
 .comment-reaction.reacted {
-    border-color: var(--color-accent, #007bff);
-    background: color-mix(in srgb, var(--color-accent, #007bff) 15%, var(--color-section-bg));
+    border-color: var(--color-secondary-active);
+    background: color-mix(in srgb, var(--color-secondary-active) 15%, var(--color-secondary-background));
 }
 
 .comment-reaction-count {
@@ -567,7 +567,7 @@
     gap: 4px;
     padding: 0.2em 0.6em;
     border-radius: 12px;
-    background: var(--color-section-bg);
+    background: var(--color-secondary-background);
     border: 1px solid var(--color-border);
     color: var(--color-text);
     font-size: 0.85em;
@@ -580,9 +580,9 @@
 }
 
 .topic-tag.active {
-    background: var(--color-accent, #007bff);
+    background: var(--color-secondary-active);
     color: white;
-    border-color: var(--color-accent, #007bff);
+    border-color: var(--color-secondary-active);
 }
 
 .topic-tag.has-new-messages {

@@ -1,4 +1,5 @@
 Rails.application.routes.draw do
+  get "user_themes/index"
   use_doorkeeper do
     controllers applications: "oauth/applications"
   end
@@ -107,6 +108,12 @@ Rails.application.routes.draw do
   resource :unsubscribe, only: [ :show ]
   resource :invite, only: [ :show, :create ]
   resource :verify, controller: "email_verifications", only: [ :show ]
+
+  resources :user_themes, only: [ :index, :create, :destroy ] do
+    member do
+      post :apply
+    end
+  end
 
   namespace :github do
     resource :account, only: [ :show ] do

@@ -17,7 +17,10 @@
   --color-drag-over-edge: #bbb;
   --hover-brightness: 90%;
   --color-badge-bg: red;
+  --color-badge-bg: red;
   --color-badge-text: white;
+  --color-secondary-active: #007bff;
+  --color-secondary-background: #ffffff;
   --max-width: 960px;
   --paragraph-space-1: 0.75rem;
 }
@@ -39,6 +42,8 @@ body.dark-mode {
   --hover-brightness: 110%;
   --color-badge-bg: red;
   --color-badge-text: white;
+  --color-secondary-active: #6a9eff;
+  --color-secondary-background: #181818;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -59,6 +64,8 @@ body.dark-mode {
     --hover-brightness: 110%;
     --color-badge-bg: red;
     --color-badge-text: white;
+    --color-secondary-active: #6a9eff;
+    --color-secondary-background: #181818;
   }
 }
 
