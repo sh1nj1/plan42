@@ -49,7 +49,7 @@ ko:
     voice_button: "음성"
     voice_stop: "중지"
     speech_unavailable: "이 브라우저는 음성 인식을 지원하지 않습니다."
-    move_button: "메시지 이동"
+    move_button: "이동"
     move_no_selection: "이동할 메시지를 선택해주세요."
     move_error: "메시지를 이동할 수 없습니다."
     move_invalid_target: "이동할 크리에이티브를 선택해주세요."
