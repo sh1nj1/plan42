@@ -74,11 +74,10 @@
     <div class="comment-reaction-list">
       <% reaction_groups.sort_by { |emoji, _| emoji }.each do |emoji, grouped| %>
         <% count = grouped.size %>
+        <% count_class = count > 1 ? "comment-reaction-count is-visible" : "comment-reaction-count" %>
         <button class="comment-reaction <%= 'reacted' if reacted_emojis.include?(emoji) %>" type="button" data-action="click->comment#toggleReaction" data-emoji="<%= emoji %>" data-reacted="<%= reacted_emojis.include?(emoji) %>">
           <span class="comment-reaction-emoji"><%= emoji %></span>
-          <% if count > 1 %>
-            <span class="comment-reaction-count"><%= count %></span>
-          <% end %>
+          <span class="<%= count_class %>"><%= count %></span>
         </button>
       <% end %>
     </div>

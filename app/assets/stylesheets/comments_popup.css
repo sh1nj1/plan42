@@ -148,6 +148,13 @@
 .comment-reaction-count {
     font-size: 0.8em;
     color: var(--color-muted);
+    min-width: 1.2em;
+    text-align: center;
+    visibility: hidden;
+}
+
+.comment-reaction-count.is-visible {
+    visibility: visible;
 }
 
 .comment-reaction-add {
