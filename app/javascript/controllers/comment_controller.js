@@ -3,7 +3,7 @@ import { renderCommentMarkdown } from '../lib/utils/markdown'
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = [ "ownerButton", "reactionPicker", "reactionButton" ]
+  static targets = ["ownerButton", "reactionPicker", "reactionButton"]
 
   connect() {
     const contentElement = this.element.querySelector('.comment-content')
@@ -13,10 +13,10 @@ export default class extends Controller {
       contentElement.dataset.rendered = 'true'
     }
 
-    const currentUserId = document.body.dataset.currentUserId
+    this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
 
-    if (currentUserId && commentAuthorId && currentUserId === commentAuthorId) {
+    if (this.currentUserId && commentAuthorId && this.currentUserId === commentAuthorId) {
       this.ownerButtonTargets.forEach((button) => {
         button.classList.remove('comment-owner-only')
       })
@@ -78,7 +78,7 @@ export default class extends Controller {
     const method = reacted ? 'DELETE' : 'POST'
     const headers = {
       'X-CSRF-Token': document.querySelector('meta[name=csrf-token]')?.content || '',
-      'Accept': 'text/html'
+      'Accept': 'application/json'
     }
     const options = { method, headers }
 
@@ -95,14 +95,61 @@ export default class extends Controller {
         throw new Error('Failed to update reaction')
       }
 
-      const html = await response.text()
-      const doc = new DOMParser().parseFromString(html, 'text/html')
-      const nextElement = doc.body.firstElementChild
-      if (nextElement) {
-        this.element.replaceWith(nextElement)
-      }
+      const data = await response.json()
+      this.updateReactionsUI(data)
     } catch (error) {
       alert(error?.message || 'Failed to update reaction')
     }
+  }
+
+  updateReactionsUI(reactionsData) {
+    // reactionsData: [{ emoji, count, user_ids: [] }, ...]
+    const reactionsContainer = this.element.querySelector('.comment-reactions')
+    if (!reactionsContainer) return
+
+    // Find the "Add" button to preserve it
+    const addButton = reactionsContainer.querySelector('.comment-reaction-add')
+
+    // Clear existing reaction buttons only (exclude adder)
+    // It's safer to clear everything except the add button, then re-append.
+
+    // 1. Remove all .comment-reaction elements
+    reactionsContainer.querySelectorAll('.comment-reaction').forEach(el => el.remove())
+
+    // 2. Insert new buttons before the addButton
+    reactionsData.forEach(reaction => {
+      const { emoji, count, user_ids } = reaction
+
+      const button = document.createElement('button')
+      button.className = 'comment-reaction'
+      button.type = 'button'
+      button.dataset.action = 'click->comment#toggleReaction'
+      button.dataset.emoji = emoji
+
+      const reacted = this.currentUserId && user_ids.map(String).includes(String(this.currentUserId))
+      if (reacted) {
+        button.classList.add('reacted')
+        button.dataset.reacted = 'true'
+      } else {
+        button.dataset.reacted = 'false'
+      }
+
+      const emojiSpan = document.createElement('span')
+      emojiSpan.textContent = emoji
+      button.appendChild(emojiSpan)
+
+      if (count > 1) {
+        const countSpan = document.createElement('span')
+        countSpan.className = 'comment-reaction-count'
+        countSpan.textContent = count
+        button.appendChild(countSpan)
+      }
+
+      if (addButton) {
+        reactionsContainer.insertBefore(button, addButton)
+      } else {
+        reactionsContainer.appendChild(button)
+      }
+    })
   }
 }

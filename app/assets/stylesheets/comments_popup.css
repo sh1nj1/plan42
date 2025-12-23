@@ -120,6 +120,8 @@
     align-items: center;
     gap: 0.4em;
     position: relative;
+    min-height: 26px;
+    /* Reserve space for one row of reactions */
 }
 
 .comment-reaction-list {
@@ -131,13 +133,18 @@
 .comment-reaction {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.2em;
     border: 1px solid var(--color-border);
     background: var(--color-section-bg);
     border-radius: 999px;
-    padding: 0.15em 0.5em;
+    padding: 0 0.5em;
+    /* Use line-height/height for vertical centering */
     font-size: 0.9em;
     cursor: pointer;
+    height: 26px;
+    /* Fixed height */
+    box-sizing: border-box;
 }
 
 .comment-reaction.reacted {
@@ -151,6 +158,8 @@
     min-width: 1.2em;
     text-align: center;
     visibility: hidden;
+    line-height: 1;
+    /* Reset line-height to centering works */
 }
 
 .comment-reaction-count.is-visible {
@@ -161,10 +170,19 @@
     border: 1px dashed var(--color-border);
     background: transparent;
     border-radius: 999px;
-    padding: 0.1em 0.5em;
+    padding: 0 0.6em;
+    /* Slightly wider click target, consistent padding */
     cursor: pointer;
     color: var(--color-muted);
     font-weight: 600;
+    height: 26px;
+    /* Same fixed height as reaction buttons */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    font-size: 0.9em;
+    /* Match reaction font size */
 }
 
 .comment-reaction-picker {

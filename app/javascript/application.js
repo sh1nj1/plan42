@@ -23,4 +23,6 @@ import "./components/creative_tree_row"
 import "./github_integration"
 import "./notion_integration"
 import "./lib/apply_lexical_styles"
+import "./lib/turbo_stream_actions"
 import "./share_user_popup"
+

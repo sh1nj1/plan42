@@ -10,7 +10,8 @@ class Comments::ReactionsController < ApplicationController
     end
 
     @comment.comment_reactions.find_or_create_by!(user: Current.user, emoji: emoji)
-    render_comment
+    broadcast_reaction_update
+    render json: build_reaction_payload
   end
 
   def destroy
@@ -21,10 +22,37 @@ class Comments::ReactionsController < ApplicationController
 
     reaction = @comment.comment_reactions.find_by(user: Current.user, emoji: emoji)
     reaction&.destroy
-    render_comment
+    broadcast_reaction_update
+    render json: build_reaction_payload
   end
 
   private
+
+  def build_reaction_payload
+    # Fetch fresh reactions
+    reactions = @comment.comment_reactions.reload.to_a
+    reaction_groups = reactions.group_by(&:emoji)
+
+    reaction_groups.map do |emoji, grouped_reactions|
+      {
+        emoji: emoji,
+        count: grouped_reactions.size,
+        user_ids: grouped_reactions.map(&:user_id)
+      }
+    end
+  end
+
+  def broadcast_reaction_update
+    payload = build_reaction_payload
+    Turbo::StreamsChannel.broadcast_action_to(
+      [ @creative, :comments ],
+      action: "update_reactions",
+      target: view_context.dom_id(@comment),
+      attributes: {
+        data: payload.to_json
+      }
+    )
+  end
 
   def set_creative
     @creative = Creative.find(params[:creative_id]).effective_origin
@@ -46,10 +74,5 @@ class Comments::ReactionsController < ApplicationController
     return if @creative.has_permission?(Current.user, :feedback)
 
     render json: { error: I18n.t("comments.no_permission") }, status: :forbidden
-  end
-
-  def render_comment
-    @comment = Comment.with_attached_images.includes(:comment_reactions).find(@comment.id)
-    render partial: "comments/comment", locals: { comment: @comment, current_topic_id: params[:topic_id] }
   end
 end

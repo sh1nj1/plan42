@@ -86,7 +86,7 @@ class Comment < ApplicationRecord
 
   def broadcast_update
     return if private?
-    broadcast_update_later_to([ creative, :comments ])
+    broadcast_replace_later_to([ creative, :comments ])
   end
 
   def broadcast_destroy
