@@ -13,7 +13,9 @@ export default class extends Controller {
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
     document.documentElement.classList.remove('creative-alignment-ready')
-    this.load()
+    if (!this.hasCachedContent()) {
+      this.load()
+    }
     this.queueAlignmentUpdate()
     window.addEventListener('resize', this.handleResize)
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
@@ -67,6 +69,7 @@ export default class extends Controller {
     }
 
     renderCreativeTree(this.element, nodes)
+    this.markContentLoaded()
     dispatchCreativeTreeUpdated(this.element)
     this.queueAlignmentUpdate()
   }
@@ -74,6 +77,7 @@ export default class extends Controller {
   showEmptyState() {
     const html = this.hasEmptyHtmlValue ? this.emptyHtmlValue : ''
     this.element.innerHTML = html
+    this.markContentLoaded()
     document.documentElement.classList.add('creative-alignment-ready')
   }
 
@@ -93,6 +97,7 @@ export default class extends Controller {
       `
       this.loadingIndicator = indicator
     }
+    this.clearLoadedState()
     this.element.innerHTML = ''
     this.element.appendChild(this.loadingIndicator)
   }
@@ -101,6 +106,19 @@ export default class extends Controller {
     if (this.loadingIndicator && this.loadingIndicator.parentNode === this.element) {
       this.element.removeChild(this.loadingIndicator)
     }
+  }
+
+  hasCachedContent() {
+    if (this.element.dataset.loaded !== 'true') return false
+    return Boolean(this.element.querySelector('creative-tree-row') || this.element.innerHTML.trim() !== '')
+  }
+
+  markContentLoaded() {
+    this.element.dataset.loaded = 'true'
+  }
+
+  clearLoadedState() {
+    delete this.element.dataset.loaded
   }
 
   updateAlignmentOffset() {
