@@ -68,6 +68,24 @@
       <% end %>
     </div>
   <div class="comment-content"><%= comment.content %></div>
+
+
+  <% if comment.images.attached? %>
+    <div class="comment-attachments">
+      <% comment.images.each do |image| %>
+        <% preview_image = image.variable? ? image.variant(resize_to_limit: [ 800, 800 ]) : image %>
+        <% preview_image_path =
+             if preview_image.respond_to?(:processed)
+               rails_representation_path(preview_image, only_path: true)
+             else
+               rails_blob_path(preview_image, only_path: true)
+             end %>
+        <%= link_to rails_blob_path(image, only_path: true), target: '_blank', rel: 'noopener', class: 'comment-attachment-link' do %>
+          <%= image_tag preview_image_path, class: 'comment-attachment-image', alt: '', loading: 'lazy' %>
+        <% end %>
+      <% end %>
+    </div>
+  <% end %>
   <% reaction_emojis = [ "👍", "🎉", "❤️", "😂", "😮", "😢", "😡" ] %>
   <% reactions = comment.comment_reactions.to_a %>
   <% reaction_groups = reactions.group_by(&:emoji) %>
@@ -87,25 +105,10 @@
       </div>
     </div>
   <% end %>
+
   <% if comment_topic.present? && current_topic_id.blank? %>
     <div class="comment-topic-link">
       <a href="#" class="comment-topic-switch" data-topic-id="<%= comment_topic.id %>">#<%= comment_topic.name %></a>
-    </div>
-  <% end %>
-  <% if comment.images.attached? %>
-    <div class="comment-attachments">
-      <% comment.images.each do |image| %>
-        <% preview_image = image.variable? ? image.variant(resize_to_limit: [ 800, 800 ]) : image %>
-        <% preview_image_path =
-             if preview_image.respond_to?(:processed)
-               rails_representation_path(preview_image, only_path: true)
-             else
-               rails_blob_path(preview_image, only_path: true)
-             end %>
-        <%= link_to rails_blob_path(image, only_path: true), target: '_blank', rel: 'noopener', class: 'comment-attachment-link' do %>
-          <%= image_tag preview_image_path, class: 'comment-attachment-image', alt: '', loading: 'lazy' %>
-        <% end %>
-      <% end %>
     </div>
   <% end %>
   <% if comment.action.present? %>

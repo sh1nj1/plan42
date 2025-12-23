@@ -102,9 +102,13 @@ export default class extends Controller {
       reactionsList.className = 'comment-reaction-list'
       reactionsContainer.appendChild(reactionsList)
 
-      // Insert after comment content
+      // Insert after attachments if present, otherwise after content
+      const attachmentsElement = this.element.querySelector('.comment-attachments')
       const contentElement = this.element.querySelector('.comment-content')
-      if (contentElement) {
+
+      if (attachmentsElement) {
+        attachmentsElement.insertAdjacentElement('afterend', reactionsContainer)
+      } else if (contentElement) {
         contentElement.insertAdjacentElement('afterend', reactionsContainer)
       } else {
         this.element.appendChild(reactionsContainer)
