@@ -49,7 +49,7 @@ en:
     voice_button: "Voice"
     voice_stop: "Stop"
     speech_unavailable: "Speech recognition is not supported in this browser."
-    move_button: "Move message"
+    move_button: "Move"
     move_no_selection: "Select at least one message to move."
     move_error: "Unable to move messages."
     move_invalid_target: "Select a valid creative to move messages to."
