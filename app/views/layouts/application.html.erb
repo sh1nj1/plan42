@@ -36,6 +36,17 @@
 
     <%= javascript_include_tag "application", "data-turbo-track": "reload", defer: true, type: "module" %>
   </head>
+    <% if Current.user&.theme.present? && !%w[light dark].include?(Current.user.theme) %>
+      <% if (custom_theme = UserTheme.find_by(id: Current.user.theme)) %>
+        <style>
+          body {
+            <% custom_theme.variables.each do |key, value| %>
+              <%= key %>: <%= value %> !important;
+            <% end %>
+          }
+        </style>
+      <% end %>
+    <% end %>
   <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
     <%= render 'shared/link_creative_modal' %>
     <%= turbo_stream_from ["inbox", Current.user] if Current.user %>

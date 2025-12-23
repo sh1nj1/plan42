@@ -1,4 +1,5 @@
 class User < ApplicationRecord
+  has_many :user_themes, dependent: :destroy
   DEFAULT_DISPLAY_LEVEL = 6
 
   has_secure_password
@@ -86,7 +87,7 @@ class User < ApplicationRecord
                     format: { with: URI::MailTo::EMAIL_REGEXP }
   validates :name, presence: true
   validates :display_level, numericality: { only_integer: true, greater_than: 0 }
-  validates :theme, inclusion: { in: [ "", "light", "dark" ] }, allow_nil: true
+  validate :theme_accessibility
   validates :timezone,
             inclusion: { in: ActiveSupport::TimeZone.all.map { |z| z.tzinfo.identifier } },
             allow_nil: true
@@ -101,5 +102,13 @@ class User < ApplicationRecord
 
   def display_name
     name.presence || email
+  end
+
+  def theme_accessibility
+    return if theme.blank? || %w[light dark].include?(theme)
+
+    unless user_themes.exists?(id: theme)
+      errors.add(:theme, "is invalid")
+    end
   end
 end

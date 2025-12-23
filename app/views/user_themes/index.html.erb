@@ -1,0 +1,75 @@
+<div style="max-width: 960px; margin: 0 auto; padding: 1rem;">
+  <h1><%= t('themes.manage_themes') %></h1>
+
+  <div class="card" style="margin-bottom: 2rem; padding: 1.5rem; background: var(--color-section-bg); border: 1px solid var(--color-border); border-radius: 8px;">
+    <h3><%= t('themes.create_new') %></h3>
+    <%= form_with url: user_themes_path, method: :post, local: true do |f| %>
+      <div class="stacked-form-control">
+        <%= f.text_area :description, rows: 3, class: "shared-input-surface", style: "width: 100%; box-sizing: border-box;", required: true, value: params[:description], placeholder: t('themes.description_prompt') %>
+        <% if @error %>
+          <div style="color: red; font-size: 0.9em; margin-top: 5px;"><%= @error %></div>
+        <% end %>
+      </div>
+      <%= f.submit t('themes.generate'), class: "btn-primary", style: "width: 100%; margin-top: 10px; box-sizing: border-box;", data: { turbo_submits_with: "..." } %>
+    <% end %>
+  </div>
+
+  <h3><%= t('themes.your_themes') %></h3>
+
+  <div class="table-scroll">
+    <table class="table">
+      <thead>
+        <tr>
+          <th><%= t('themes.name') %></th>
+          <th><%= t('themes.preview') %></th>
+          <th><%= t('themes.created_at') %></th>
+          <th><%= t('themes.actions') %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @themes.each do |theme| %>
+          <tr>
+            <td>
+              <strong><%= theme.name %></strong>
+              <% if Current.user.theme == theme.id.to_s %>
+                <span class="badge badge-success"><%= t('themes.active') %></span>
+              <% end %>
+            </td>
+            <td>
+              <div style="display: flex; gap: 4px;">
+                <% 
+                   preview_vars = theme.variables.slice("--color-bg", "--color-text", "--color-btn-bg", "--color-link")
+                %>
+                <% preview_vars.each do |k, v| %>
+                  <div title="<%= k %>: <%= v %>" style="width: 20px; height: 20px; background-color: <%= v %>; border: 1px solid var(--color-border); border-radius: 4px;"></div>
+                <% end %>
+              </div>
+            </td>
+            <td><%= l theme.created_at, format: :short %></td>
+            <td>
+              <div style="display: flex; gap: 0.5rem;">
+                <% if Current.user.theme == theme.id.to_s %>
+                <span class="badge badge-success"><%= t('themes.active') %></span>
+              <% else %>
+                <%= button_to t('themes.apply'), apply_user_theme_path(theme), method: :post, class: "btn-sm" %>
+              <% end %>
+              <%= button_to t('themes.delete'), user_theme_path(theme), method: :delete, class: "btn-sm btn-danger", form_class: "inline-block", onclick: "return confirm('#{t('themes.confirm_delete')}')" %>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+        <% if @themes.empty? %>
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--color-muted); padding: 2rem;">
+              <p><%= t('themes.no_themes') %></p>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+  
+  <div style="margin-top: 1rem;">
+     <%= link_to t('app.back_to_profile', default: 'Back to Profile'), user_path(Current.user), class: "unstyled-link", style: "text-decoration: underline;" %>
+  </div>
+</div>

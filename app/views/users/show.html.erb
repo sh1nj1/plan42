@@ -82,8 +82,16 @@
           <%= f.text_field :completion_mark %>
         </div>
         <div>
+        <div>
           <%= f.label :theme, t('users.theme') %>
-          <%= f.select :theme, options_for_select([[t('app.system_mode'), nil], [t('app.light_mode'), 'light'], [t('app.dark_mode'), 'dark']], @user.theme) %>
+          <% 
+             theme_options = [[t('app.system_mode'), nil], [t('app.light_mode'), 'light'], [t('app.dark_mode'), 'dark']]
+             theme_options += @user.user_themes.map { |ut| [ut.name, ut.id.to_s] }
+          %>
+          <%= f.select :theme, options_for_select(theme_options, @user.theme), {}, style: "width: 100%; display: block;" %>
+          <div style="margin-top: 5px;">
+            <a href="<%= user_themes_path %>" style="font-size: 0.9em;"><%= t("themes.manage") %></a>
+          </div>
         </div>
         <div>
           <%= f.label :calendar_id, t('users.calendar_id') %>

@@ -33,28 +33,28 @@ body {
     height: 100%;
 }
 
- nav {
-     display: flex;
-     justify-content: flex-end;
-     align-items: center;
-     flex-wrap: wrap;
-     font-size: 0.875em;
-     gap: 0.2rem;
-     max-width: var(--max-width);
-     margin: 0 auto;
-     padding: 1rem;
-     background: var(--color-nav-bg);
-     border-bottom: 1px solid var(--color-border);
-     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
- }
+nav {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 0.875em;
+    gap: 0.2rem;
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 1rem;
+    background: var(--color-nav-bg);
+    border-bottom: 1px solid var(--color-border);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
 
 nav a,
-nav button{
+nav button {
     min-width: 2em;
     line-height: 2.1;
     font-size: 1.125em;
     background: var(--color-bg);
-    color: var(--color-btn-text);
+    color: var(--color-nav-btn-text);
     text-decoration: none;
     padding: 0.25em 0.6em;
     border-radius: 4px;
@@ -79,7 +79,7 @@ nav button{
     border-radius: 0 4px 4px 0;
 }
 
-.progress-filter-btn + .progress-filter-btn {
+.progress-filter-btn+.progress-filter-btn {
     border-left: none;
 }
 
@@ -197,6 +197,7 @@ main {
     main {
         padding: 0 0.3rem 4rem 0.3rem;
     }
+
     #search {
         width: 8em;
     }
@@ -379,7 +380,7 @@ button {
     height: 100%;
     background: var(--color-section-bg);
     border-left: 1px solid var(--color-border);
-    box-shadow: -2px 0 8px rgba(0,0,0,0.15);
+    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
     overflow-y: auto;
     transition: right 0.3s;
     z-index: 1000;
@@ -395,6 +396,7 @@ button {
         right: -100vw;
         width: 100vw;
     }
+
     #inbox-panel.slide-panel.open {
         right: 0;
     }
@@ -468,6 +470,7 @@ button {
     .desktop-only {
         display: none !important;
     }
+
     .mobile-only {
         display: inline-block !important;
     }
@@ -578,22 +581,26 @@ input[type="password"] {
 
 .contacts-table th:nth-child(1),
 .contacts-table td:nth-child(1) {
-    min-width: 48px; /* avatar */
+    min-width: 48px;
+    /* avatar */
 }
 
 .contacts-table th:nth-child(2),
 .contacts-table td:nth-child(2) {
-    min-width: 82px; /* name */
+    min-width: 82px;
+    /* name */
 }
 
 .contacts-table th:nth-child(3),
 .contacts-table td:nth-child(3) {
-    min-width: 160px; /* email */
+    min-width: 160px;
+    /* email */
 }
 
 .contacts-table th:nth-child(6),
 .contacts-table td:nth-child(6) {
-    min-width: 140px; /* actions */
+    min-width: 140px;
+    /* actions */
 }
 
 .creative-cell {

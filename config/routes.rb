@@ -108,6 +108,12 @@ Rails.application.routes.draw do
   resource :invite, only: [ :show, :create ]
   resource :verify, controller: "email_verifications", only: [ :show ]
 
+  resources :user_themes, only: [ :index, :create, :destroy ] do
+    member do
+      post :apply
+    end
+  end
+
   namespace :github do
     resource :account, only: [ :show ] do
       get :organizations
