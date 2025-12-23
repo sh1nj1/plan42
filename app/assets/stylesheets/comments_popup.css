@@ -396,6 +396,7 @@
     cursor: not-allowed;
 }
 
+.convert-comment-btn,
 .delete-comment-btn,
 .edit-comment-btn,
 .copy-comment-link-btn {
