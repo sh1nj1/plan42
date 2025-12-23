@@ -1,5 +1,4 @@
 Rails.application.routes.draw do
-  get "user_themes/index"
   use_doorkeeper do
     controllers applications: "oauth/applications"
   end

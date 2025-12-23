@@ -7,7 +7,7 @@ class UserThemesController < ApplicationController
   def create
     description = params[:description]
     if description.blank?
-      @error = "Theme description cannot be empty."
+      @error = t("themes.alerts.description_empty")
       @themes = Current.user.user_themes.order(created_at: :desc)
       @new_theme = UserTheme.new
       render :index
@@ -17,7 +17,7 @@ class UserThemesController < ApplicationController
     variables = AutoThemeGenerator.new.generate(description)
 
     if variables.empty?
-      @error = "Failed to generate theme. AI might be unavailable or returned invalid data."
+      @error = t("themes.alerts.generation_failed")
       @themes = Current.user.user_themes.order(created_at: :desc)
       @new_theme = UserTheme.new
       render :index
@@ -30,9 +30,9 @@ class UserThemesController < ApplicationController
     @theme = Current.user.user_themes.build(name: name, variables: variables)
 
     if @theme.save
-      redirect_to user_themes_path, notice: "Theme generated successfully!"
+      redirect_to user_themes_path, notice: t("themes.alerts.success")
     else
-      redirect_to user_themes_path, alert: "Failed to save theme."
+      redirect_to user_themes_path, alert: t("themes.alerts.save_failed")
     end
   end
 
@@ -42,15 +42,15 @@ class UserThemesController < ApplicationController
     if Current.user.theme == @theme.id.to_s
       Current.user.update(theme: "light")
     end
-    redirect_to user_themes_path, notice: "Theme deleted."
+    redirect_to user_themes_path, notice: t("themes.alerts.deleted")
   end
 
   def apply
     @theme = Current.user.user_themes.find(params[:id])
     if Current.user.update(theme: @theme.id.to_s)
-      redirect_to user_themes_path, notice: "Theme applied!"
+      redirect_to user_themes_path, notice: t("themes.alerts.applied")
     else
-      redirect_to user_themes_path, alert: "Failed to apply theme: #{Current.user.errors.full_messages.join(', ')}"
+      redirect_to user_themes_path, alert: t("themes.alerts.apply_failed", errors: Current.user.errors.full_messages.join(", "))
     end
   end
 end

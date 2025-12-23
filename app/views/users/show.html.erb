@@ -84,13 +84,13 @@
         <div>
         <div>
           <%= f.label :theme, t('users.theme') %>
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <% 
-               theme_options = [[t('app.system_mode'), nil], [t('app.light_mode'), 'light'], [t('app.dark_mode'), 'dark']]
-               theme_options += @user.user_themes.map { |ut| [ut.name, ut.id.to_s] }
-            %>
-            <%= f.select :theme, options_for_select(theme_options, @user.theme), {}, style: "flex-grow: 1;" %>
-            <%= link_to t('themes.manage', default: 'Manage Themes'), user_themes_path, class: "pagination-button", style: "font-size: 0.9em; padding: 0.3em 0.8em;" %>
+          <% 
+             theme_options = [[t('app.system_mode'), nil], [t('app.light_mode'), 'light'], [t('app.dark_mode'), 'dark']]
+             theme_options += @user.user_themes.map { |ut| [ut.name, ut.id.to_s] }
+          %>
+          <%= f.select :theme, options_for_select(theme_options, @user.theme), {}, style: "width: 100%; display: block;" %>
+          <div style="margin-top: 5px;">
+            <a href="<%= user_themes_path %>" style="font-size: 0.9em;"><%= t("themes.manage") %></a>
           </div>
         </div>
         <div>

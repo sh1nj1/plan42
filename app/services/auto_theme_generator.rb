@@ -18,6 +18,8 @@ class AutoThemeGenerator
     --color-badge-text
     --color-secondary-active
     --color-secondary-background
+    --color-nav-btn-text
+    --color-chat-btn-text
   ].freeze
 
   def initialize(client: default_client)
@@ -27,7 +29,16 @@ class AutoThemeGenerator
   def generate(prompt)
     system_prompt = <<~PROMPT
       You are an expert UI/UX designer specialized in creating color themes for web applications.
-      Your task is to generate a JSON object containing CSS variables for a theme described by the user.
+      Your task is to generate a JSON object containing CSS variables.
+      Generate a CSS theme as a JSON object based on the prompt: "#{prompt}".
+      The JSON must strictly contain ONLY these keys: #{REQUIRED_VARIABLES.join(', ')}.
+
+      CRITICAL DESIGN RULES:
+      1. Ensure "--color-nav-btn-text" has High Contrast (WCAG AA/AAA) against "--color-bg" (which is used as the button background in the nav).
+      2. Ensure "--color-chat-btn-text" has High Contrast against "--color-section-bg" (where chat messages reside).
+      3. Names of these text colors should be visually distinct from their background colors to ensure readability.
+      4. Do not include any other keys or newlines.
+      5. Return valid JSON only.
 
       The JSON object must strictly follow this structure:
       {

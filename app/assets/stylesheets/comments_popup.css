@@ -184,7 +184,7 @@
     cursor: pointer;
     font-size: 1.2em;
     padding: 0 0.3em;
-    color: var(--color-muted);
+    color: var(--color-chat-btn-text);
     line-height: 1;
     display: inline-flex;
     align-items: center;
@@ -404,6 +404,8 @@
     background: none;
     font-weight: bold;
     cursor: pointer;
+    color: var(--color-chat-btn-text);
+}
 }
 
 .comment-owner-only {

@@ -1,30 +1,29 @@
 <div style="max-width: 960px; margin: 0 auto; padding: 1rem;">
-  <h1><%= t('themes.manage_themes', default: 'Manage Themes') %></h1>
+  <h1><%= t('themes.manage_themes') %></h1>
 
   <div class="card" style="margin-bottom: 2rem; padding: 1.5rem; background: var(--color-section-bg); border: 1px solid var(--color-border); border-radius: 8px;">
-    <h2><%= t('themes.create_new', default: 'Create New Theme') %></h2>
-    <%= form_with url: user_themes_path, method: :post, local: true, class: "stacked-form", style: "max-width: 100%;" do |f| %>
+    <h3><%= t('themes.create_new') %></h3>
+    <%= form_with url: user_themes_path, method: :post, local: true do |f| %>
       <div class="stacked-form-control">
-        <%= f.label :description, t('themes.description_prompt', default: 'Describe your theme (e.g. "Cyberpunk Neon with dark pulsing colors")') %>
-        <%= f.text_area :description, rows: 3, class: "shared-input-surface", style: "width: 100%;", required: true, value: params[:description] %>
+        <%= f.text_area :description, rows: 3, class: "shared-input-surface", style: "width: 100%; box-sizing: border-box;", required: true, value: params[:description], placeholder: t('themes.description_prompt') %>
         <% if @error %>
           <div style="color: red; font-size: 0.9em; margin-top: 5px;"><%= @error %></div>
         <% end %>
       </div>
-      <%= f.submit t('themes.generate', default: 'Generate Theme'), class: "primary-action-button" %>
+      <%= f.submit t('themes.generate'), class: "btn-primary", style: "width: 100%; margin-top: 10px; box-sizing: border-box;", data: { turbo_submits_with: "..." } %>
     <% end %>
   </div>
 
-  <h2><%= t('themes.your_themes', default: 'Your Themes') %></h2>
+  <h3><%= t('themes.your_themes') %></h3>
 
   <div class="table-scroll">
-    <table class="contacts-table">
+    <table class="table">
       <thead>
         <tr>
-          <th><%= t('themes.name', default: 'Name') %></th>
-          <th><%= t('themes.preview', default: 'Preview') %></th>
-          <th><%= t('themes.created_at', default: 'Created At') %></th>
-          <th><%= t('themes.actions', default: 'Actions') %></th>
+          <th><%= t('themes.name') %></th>
+          <th><%= t('themes.preview') %></th>
+          <th><%= t('themes.created_at') %></th>
+          <th><%= t('themes.actions') %></th>
         </tr>
       </thead>
       <tbody>
@@ -33,7 +32,7 @@
             <td>
               <strong><%= theme.name %></strong>
               <% if Current.user.theme == theme.id.to_s %>
-                <span class="creative-chip" style="margin-left: 0.5em; font-size: 0.8em;"><%= t('themes.active', default: 'Active') %></span>
+                <span class="badge badge-success"><%= t('themes.active') %></span>
               <% end %>
             </td>
             <td>
@@ -49,10 +48,12 @@
             <td><%= l theme.created_at, format: :short %></td>
             <td>
               <div style="display: flex; gap: 0.5rem;">
-                <% unless Current.user.theme == theme.id.to_s %>
-                  <%= button_to t('themes.apply', default: 'Apply'), apply_user_theme_path(theme), method: :post, class: "pagination-button" %>
-                <% end %>
-                <%= button_to t('themes.delete', default: 'Delete'), user_theme_path(theme), method: :delete, data: { confirm: t('themes.confirm_delete', default: 'Are you sure?') }, class: "pagination-button", style: "color: red; border-color: red;" %>
+                <% if Current.user.theme == theme.id.to_s %>
+                <span class="badge badge-success"><%= t('themes.active') %></span>
+              <% else %>
+                <%= button_to t('themes.apply'), apply_user_theme_path(theme), method: :post, class: "btn-sm" %>
+              <% end %>
+              <%= button_to t('themes.delete'), user_theme_path(theme), method: :delete, class: "btn-sm btn-danger", form_class: "inline-block", onclick: "return confirm('#{t('themes.confirm_delete')}')" %>
               </div>
             </td>
           </tr>
@@ -60,7 +61,7 @@
         <% if @themes.empty? %>
           <tr>
             <td colspan="4" style="text-align: center; color: var(--color-muted); padding: 2rem;">
-              <%= t('themes.no_themes', default: 'No custom themes created yet.') %>
+              <p><%= t('themes.no_themes') %></p>
             </td>
           </tr>
         <% end %>
