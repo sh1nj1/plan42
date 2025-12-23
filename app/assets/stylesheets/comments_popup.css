@@ -113,6 +113,135 @@
     margin-top: 0.2em;
 }
 
+.comment-reactions {
+    margin-top: 0.4em;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em;
+    position: relative;
+    min-height: 26px;
+    /* Reserve space for one row of reactions */
+}
+
+.comment-reaction-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3em;
+}
+
+.comment-reaction {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2em;
+    border: 1px solid var(--color-border);
+    background: var(--color-section-bg);
+    border-radius: 999px;
+    padding: 0 0.5em;
+    /* Use line-height/height for vertical centering */
+    font-size: 0.9em;
+    cursor: pointer;
+    height: 26px;
+    /* Fixed height */
+    box-sizing: border-box;
+    position: relative;
+    /* For badge positioning */
+    overflow: visible;
+    /* Allow badge to overflow */
+}
+
+.comment-reaction.reacted {
+    border-color: var(--color-accent, #007bff);
+    background: color-mix(in srgb, var(--color-accent, #007bff) 15%, var(--color-section-bg));
+}
+
+.comment-reaction-count {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    background: var(--color-section-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 0 4px;
+    font-size: 0.7em;
+    color: var(--color-muted);
+    min-width: 14px;
+    text-align: center;
+    line-height: 1.4;
+    visibility: hidden;
+    z-index: 2;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.comment-reaction-count.is-visible {
+    visibility: visible;
+}
+
+.add-reaction-btn {
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 1.2em;
+    padding: 0 0.3em;
+    color: var(--color-muted);
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.add-reaction-btn .grayscale-emoji {
+    filter: grayscale(100%);
+    opacity: 0.6;
+    transition: all 0.2s;
+}
+
+.add-reaction-btn:hover .grayscale-emoji {
+    filter: grayscale(0%);
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.add-reaction-btn:hover {
+    color: var(--color-text);
+}
+
+.comment-reaction-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3em;
+    padding: 0.4em;
+    background: var(--color-section-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+    z-index: 9999;
+}
+
+#global-reaction-picker {
+    position: fixed;
+    /* top/left set by JS */
+}
+
+/* Legacy style: .comment-reaction-picker previously had absolute positioning here. 
+   We keep the class for visual styling but override/reset positioning for the global ID. 
+   The original rule was:
+   .comment-reaction-picker { position: absolute; bottom: 2em; left: 0; ... }
+   We replaced it above with shared visual styles.
+*/
+
+.comment-reaction-picker[hidden] {
+    display: none;
+}
+
+.comment-reaction-picker-emoji {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 1.1em;
+}
+
 .comment-topic-link {
     margin-top: 0.25em;
     font-size: 0.9em;

@@ -5,6 +5,7 @@ class Comment < ApplicationRecord
   belongs_to :action_executed_by, class_name: "User", optional: true
   belongs_to :topic, optional: true
   has_many :activity_logs, dependent: :destroy
+  has_many :comment_reactions, dependent: :destroy
 
 
   has_many_attached :images, dependent: :purge_later
@@ -85,7 +86,7 @@ class Comment < ApplicationRecord
 
   def broadcast_update
     return if private?
-    broadcast_update_later_to([ creative, :comments ])
+    broadcast_replace_later_to([ creative, :comments ])
   end
 
   def broadcast_destroy

@@ -11,7 +11,7 @@ class CommentsController < ApplicationController
       Current.user.id,
       Current.user.id
     )
-    scope = visible_scope.with_attached_images.includes(:topic)
+    scope = visible_scope.with_attached_images.includes(:topic, :comment_reactions)
 
     if params[:search].present?
       search_term = ActiveRecord::Base.sanitize_sql_like(params[:search].to_s.strip.downcase)
@@ -163,7 +163,7 @@ class CommentsController < ApplicationController
           content: @comment.content
         }
       }) unless @comment.private?
-      @comment = Comment.with_attached_images.find(@comment.id)
+      @comment = Comment.with_attached_images.includes(:comment_reactions).find(@comment.id)
       render partial: "comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }, status: :created
     else
       render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
@@ -178,7 +178,7 @@ class CommentsController < ApplicationController
       end
 
       if @comment.update(safe_params)
-        @comment = Comment.with_attached_images.find(@comment.id)
+        @comment = Comment.with_attached_images.includes(:comment_reactions).find(@comment.id)
         render partial: "comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
       else
         render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
@@ -253,7 +253,7 @@ class CommentsController < ApplicationController
 
     begin
       Comments::ActionExecutor.new(comment: @comment, executor: Current.user).call
-      @comment.reload
+      @comment = Comment.with_attached_images.includes(:comment_reactions).find(@comment.id)
       render partial: "comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
     rescue Comments::ActionExecutor::ExecutionError => e
       render json: { error: e.message }, status: :unprocessable_entity
@@ -295,6 +295,7 @@ class CommentsController < ApplicationController
     elsif executed_error
       render json: { error: I18n.t("comments.approve_already_executed") }, status: :unprocessable_entity
     elsif update_success
+      @comment = Comment.with_attached_images.includes(:comment_reactions).find(@comment.id)
       render partial: "comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
     else
       error_message = @comment.errors.full_messages.to_sentence.presence || I18n.t("comments.action_update_error")

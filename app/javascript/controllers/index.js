@@ -22,6 +22,8 @@ import CommentController from "./comment_controller"
 import ShareInviteController from "./share_invite_controller"
 
 application.register("comment", CommentController)
+import ReactionPickerController from "./reaction_picker_controller"
+application.register("reaction-picker", ReactionPickerController)
 application.register("share-invite", ShareInviteController)
 application.register("popup-menu", PopupMenuController)
 application.register("progress-filter", ProgressFilterController)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_12_22_125839) do
+ActiveRecord::Schema[8.1].define(version: 2025_12_23_022315) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -62,33 +62,6 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_22_125839) do
     t.index ["user_id"], name: "index_activity_logs_on_user_id"
   end
 
-  create_table "agent_actions", force: :cascade do |t|
-    t.integer "agent_run_id", null: false
-    t.json "arguments", default: {}
-    t.datetime "created_at", null: false
-    t.text "result"
-    t.string "status", default: "pending"
-    t.string "tool_name"
-    t.datetime "updated_at", null: false
-    t.index ["agent_run_id"], name: "index_agent_actions_on_agent_run_id"
-  end
-
-  create_table "agent_runs", force: :cascade do |t|
-    t.integer "ai_user_id", null: false
-    t.json "context", default: {}
-    t.datetime "created_at", null: false
-    t.integer "creative_id", null: false
-    t.text "goal"
-    t.integer "iteration_count", default: 0
-    t.datetime "next_run_at"
-    t.string "state", default: "planning"
-    t.string "status", default: "pending"
-    t.json "transcript", default: []
-    t.datetime "updated_at", null: false
-    t.index ["ai_user_id"], name: "index_agent_runs_on_ai_user_id"
-    t.index ["creative_id"], name: "index_agent_runs_on_creative_id"
-  end
-
   create_table "calendar_events", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "creative_id"
@@ -102,6 +75,17 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_22_125839) do
     t.index ["creative_id"], name: "index_calendar_events_on_creative_id"
     t.index ["google_event_id"], name: "index_calendar_events_on_google_event_id", unique: true
     t.index ["user_id"], name: "index_calendar_events_on_user_id"
+  end
+
+  create_table "comment_reactions", force: :cascade do |t|
+    t.integer "comment_id", null: false
+    t.datetime "created_at", null: false
+    t.string "emoji", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["comment_id", "user_id", "emoji"], name: "index_comment_reactions_on_comment_id_and_user_id_and_emoji", unique: true
+    t.index ["comment_id"], name: "index_comment_reactions_on_comment_id"
+    t.index ["user_id"], name: "index_comment_reactions_on_user_id"
   end
 
   create_table "comment_read_pointers", force: :cascade do |t|
@@ -185,7 +169,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_22_125839) do
     t.float "progress", default: 0.0
     t.integer "sequence", default: 0, null: false
     t.datetime "updated_at", null: false
-    t.integer "user_id", null: false
+    t.integer "user_id"
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
@@ -641,6 +625,8 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_22_125839) do
   add_foreign_key "activity_logs", "users"
   add_foreign_key "calendar_events", "creatives"
   add_foreign_key "calendar_events", "users"
+  add_foreign_key "comment_reactions", "comments"
+  add_foreign_key "comment_reactions", "users"
   add_foreign_key "comment_read_pointers", "creatives"
   add_foreign_key "comment_read_pointers", "users"
   add_foreign_key "comments", "creatives"
@@ -654,7 +640,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_22_125839) do
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
-  add_foreign_key "creative_shares", "users", column: "shared_by_id"
+  add_foreign_key "creative_shares", "users", column: "shared_by_id", on_delete: :nullify
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"

@@ -58,8 +58,10 @@ Rails.application.routes.draw do
           post :convert
           post :approve
           patch :update_action
+          delete :reactions, to: "comments/reactions#destroy"
         end
 
+        resources :reactions, only: [ :create ], module: :comments
         resource :activity_log, only: [ :show ], module: :comments
 
         collection do
