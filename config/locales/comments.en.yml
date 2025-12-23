@@ -55,6 +55,8 @@ en:
     move_invalid_target: "Select a valid creative to move messages to."
     move_not_allowed: "You do not have permission to move these messages."
     select_label: "Select message"
+    add_reaction: "Add reaction"
+    add_reaction_button: "😀"
     calendar_command:
       event_created: "event created: [Google Calendar event](%{url})"
     read_by: "Read by %{name}"

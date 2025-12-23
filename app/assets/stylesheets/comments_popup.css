@@ -113,6 +113,73 @@
     margin-top: 0.2em;
 }
 
+.comment-reactions {
+    margin-top: 0.4em;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em;
+    position: relative;
+}
+
+.comment-reaction-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3em;
+}
+
+.comment-reaction {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2em;
+    border: 1px solid var(--color-border);
+    background: var(--color-section-bg);
+    border-radius: 999px;
+    padding: 0.15em 0.5em;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+
+.comment-reaction.reacted {
+    border-color: var(--color-accent, #007bff);
+    background: color-mix(in srgb, var(--color-accent, #007bff) 15%, var(--color-section-bg));
+}
+
+.comment-reaction-count {
+    font-size: 0.8em;
+    color: var(--color-muted);
+}
+
+.comment-reaction-add {
+    border: 1px dashed var(--color-border);
+    background: transparent;
+    border-radius: 999px;
+    padding: 0.1em 0.5em;
+    cursor: pointer;
+}
+
+.comment-reaction-picker {
+    position: absolute;
+    bottom: 2em;
+    left: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3em;
+    padding: 0.4em;
+    background: var(--color-section-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+    z-index: 5;
+}
+
+.comment-reaction-picker-emoji {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 1.1em;
+}
+
 .comment-topic-link {
     margin-top: 0.25em;
     font-size: 0.9em;
