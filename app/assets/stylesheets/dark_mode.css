@@ -23,6 +23,8 @@
   --color-secondary-background: #ffffff;
   --color-nav-btn-text: #202123;
   --color-chat-btn-text: #666;
+  --color-input-bg: #f7f7f8;
+  --color-input-text: #202123;
   --max-width: 960px;
   --paragraph-space-1: 0.75rem;
 }
@@ -48,6 +50,8 @@ body.dark-mode {
   --color-secondary-background: #181818;
   --color-nav-btn-text: #eaeaea;
   --color-chat-btn-text: #aaaaaa;
+  --color-input-bg: #212121;
+  --color-input-text: #eaeaea;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -72,6 +76,8 @@ body.dark-mode {
     --color-secondary-background: #181818;
     --color-nav-btn-text: #eaeaea;
     --color-chat-btn-text: #aaaaaa;
+    --color-input-bg: #212121;
+    --color-input-text: #eaeaea;
   }
 }
 
@@ -97,8 +103,6 @@ section.creative {
 button,
 input[type="button"],
 input[type="submit"] {
-  background: var(--color-btn-bg);
-  color: var(--color-btn-text);
   border: none;
   border-radius: 1px;
   padding: 2px 4px;

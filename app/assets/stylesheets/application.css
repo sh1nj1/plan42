@@ -85,6 +85,7 @@ nav button {
 
 .progress-filter-btn.active {
     background: var(--color-btn-bg);
+    color: var(--color-btn-text);
 }
 
 .creative-actions-row a,
@@ -113,8 +114,8 @@ select,
 textarea {
     line-height: 2.1;
     font-size: 1.125em;
-    background: var(--color-bg);
-    color: var(--color-btn-text);
+    background: var(--color-input-bg);
+    color: var(--color-input-text);
     padding: 0.3em;
     border-radius: 4px;
     border: 1px solid var(--color-border);

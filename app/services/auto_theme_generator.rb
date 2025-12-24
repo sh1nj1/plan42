@@ -20,6 +20,8 @@ class AutoThemeGenerator
     --color-secondary-background
     --color-nav-btn-text
     --color-chat-btn-text
+    --color-input-bg
+    --color-input-text
   ].freeze
 
   def initialize(client: default_client)
