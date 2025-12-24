@@ -43,7 +43,11 @@ nav {
     max-width: var(--max-width);
     margin: 0 auto;
     padding: 1rem;
-    background: var(--color-nav-bg);
+    background-color: var(--color-nav-bg);
+    background-image: var(--nav-bg-image, none);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
     color: var(--color-nav-text);
     border-bottom: 1px solid var(--color-border);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);

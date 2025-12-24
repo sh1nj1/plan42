@@ -24,6 +24,7 @@ class AutoThemeGenerator
     --color-input-text
     --color-nav-text
     --creative-loading-emojis
+    --nav-bg-image
   ].freeze
 
   def initialize(client: default_client)
@@ -43,9 +44,10 @@ class AutoThemeGenerator
       3. Ensure "--color-chat-btn-text" has High Contrast against "--color-section-bg" (where chat messages reside).
       4. Ensure "--color-nav-text" has High Contrast against "--color-nav-bg".
       5. Names of these text colors should be visually distinct from their background colors to ensure readability.
-      6. For "--creative-loading-emojis", provide a comma-separated string of exactly 6 emojis that match the theme mood (e.g., "🌵,🏜️,☀️,🦎,🌾,🐪").
-      7. Do not include any other keys or newlines.
-      8. Return valid JSON only.
+      6. For "--nav-bg-image", provide a CSS background-image value that matches the prompt. Use either "none" or a full URL in the form url("https://example.com/image.jpg"). Avoid base64 data URIs.
+      7. For "--creative-loading-emojis", provide a comma-separated string of exactly 6 emojis that match the theme mood (e.g., "🌵,🏜️,☀️,🦎,🌾,🐪").
+      8. Do not include any other keys or newlines.
+      9. Return valid JSON only.
 
       The JSON object must strictly follow this structure:
       {

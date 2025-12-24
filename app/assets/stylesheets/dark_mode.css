@@ -27,6 +27,7 @@
   --color-input-bg: #f7f7f8;
   --color-input-text: #202123;
   --color-nav-text: #202123;
+  --nav-bg-image: none;
   --max-width: 960px;
   --paragraph-space-1: 0.75rem;
 }
@@ -56,6 +57,7 @@ body.dark-mode {
   --color-input-bg: #212121;
   --color-input-text: #eaeaea;
   --color-nav-text: #eaeaea;
+  --nav-bg-image: none;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -84,6 +86,7 @@ body.dark-mode {
     --color-input-bg: #212121;
     --color-input-text: #eaeaea;
     --color-nav-text: #eaeaea;
+    --nav-bg-image: none;
   }
 }
 
@@ -94,7 +97,8 @@ body {
 }
 
 nav {
-  background: var(--color-nav-bg);
+  background-color: var(--color-nav-bg);
+  background-image: var(--nav-bg-image, none);
 }
 
 a {
