@@ -24,6 +24,8 @@ class UserThemesController < ApplicationController
       return
     end
 
+    variables["--creative-loading-emojis"] = emoji_css_value(description)
+
     # Generate a name from description or use first few words
     name = description.truncate(30)
 
@@ -52,5 +54,16 @@ class UserThemesController < ApplicationController
     else
       redirect_to user_themes_path, alert: t("themes.alerts.apply_failed", errors: Current.user.errors.full_messages.join(", "))
     end
+  end
+
+  private
+
+  def emoji_css_value(description)
+    requested = params[:emoji_set]
+    if requested.present? && ThemeEmojiSelector::EMOJI_SETS.key?(requested.to_sym)
+      return ThemeEmojiSelector::EMOJI_SETS[requested.to_sym].join(" ")
+    end
+
+    ThemeEmojiSelector.new(description).css_value
   end
 end

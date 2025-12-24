@@ -1,6 +1,7 @@
 import { LitElement, html, nothing } from "lit";
 import DOMPurify from "dompurify";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { CreativeLoadingAnimator } from "../lib/creative_loading_indicator";
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -49,6 +50,7 @@ class CreativeTreeRow extends LitElement {
     this._toggleBtn = null;
     this._editBtn = null;
     this._commentsBtn = null;
+    this._loadingAnimator = null;
 
     this._handleToggleClick = this._handleToggleClick.bind(this);
     this._handleEditClick = this._handleEditClick.bind(this);
@@ -66,6 +68,14 @@ class CreativeTreeRow extends LitElement {
 
   updated() {
     this._attachHandlers();
+    this._syncLoadingAnimation();
+  }
+
+  disconnectedCallback() {
+    if (this._loadingAnimator) {
+      this._loadingAnimator.stop();
+    }
+    super.disconnectedCallback();
   }
 
   _setDescriptionHtml(markup) {
@@ -312,9 +322,7 @@ class CreativeTreeRow extends LitElement {
         aria-live="polite"
         aria-label="Loading children"
       >
-        <span class="creative-loading-dot" aria-hidden="true">.</span>
-        <span class="creative-loading-dot" aria-hidden="true">.</span>
-        <span class="creative-loading-dot" aria-hidden="true">.</span>
+        <span class="creative-loading-symbols" aria-hidden="true"></span>
       </span>
     `;
   }
@@ -337,6 +345,23 @@ class CreativeTreeRow extends LitElement {
 
   _toggleSymbol() {
     return this.expanded ? "▼" : "▶";
+  }
+
+  _syncLoadingAnimation() {
+    if (!this.loadingChildren) {
+      this._loadingAnimator?.stop();
+      return;
+    }
+
+    const symbols = this.querySelector(".creative-loading-symbols");
+    if (!symbols) return;
+
+    if (!this._loadingAnimator || this._loadingAnimator.symbolElement !== symbols) {
+      this._loadingAnimator?.stop();
+      this._loadingAnimator = new CreativeLoadingAnimator(symbols);
+    }
+
+    this._loadingAnimator.start();
   }
 
   _handleToggleClick(event) {

@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
+import { createCreativeLoadingIndicator } from '../../lib/creative_loading_indicator'
 
 export default class extends Controller {
   static values = {
@@ -25,6 +26,9 @@ export default class extends Controller {
     if (this.abortController) {
       this.abortController.abort()
       this.abortController = null
+    }
+    if (this.loadingAnimator) {
+      this.loadingAnimator.stop()
     }
     window.removeEventListener('resize', this.handleResize)
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
@@ -88,24 +92,23 @@ export default class extends Controller {
       indicator.setAttribute('role', 'status')
       indicator.setAttribute('aria-live', 'polite')
       indicator.setAttribute('aria-label', 'Loading creatives')
-      indicator.innerHTML = `
-        <span class="creative-loading-indicator" aria-hidden="true">
-          <span class="creative-loading-dot">.</span>
-          <span class="creative-loading-dot">.</span>
-          <span class="creative-loading-dot">.</span>
-        </span>
-      `
+
+      const { element, animator } = createCreativeLoadingIndicator({ label: 'Loading creatives' })
+      indicator.appendChild(element)
       this.loadingIndicator = indicator
+      this.loadingAnimator = animator
     }
     this.clearLoadedState()
     this.element.innerHTML = ''
     this.element.appendChild(this.loadingIndicator)
+    this.loadingAnimator?.start()
   }
 
   hideLoadingIndicator() {
     if (this.loadingIndicator && this.loadingIndicator.parentNode === this.element) {
       this.element.removeChild(this.loadingIndicator)
     }
+    this.loadingAnimator?.stop()
   }
 
   hasCachedContent() {

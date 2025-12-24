@@ -212,33 +212,27 @@ creative-tree-row.show-edit .creative-row {
     margin-left: 6px;
     font-size: 1em;
     color: var(--color-muted);
-    min-width: 20px;
+    min-width: 28px;
 }
 
-.creative-loading-dot {
-    animation: creative-loading-ellipsis 1s ease-in-out infinite;
-    opacity: 0.2;
-    font-weight: bold;
+.creative-loading-symbols {
+    display: inline-flex;
+    gap: 4px;
+    font-weight: 700;
+    animation: creative-loading-pulse 900ms ease-in-out infinite;
 }
 
-.creative-loading-dot:nth-child(2) {
-    animation-delay: 0.15s;
-}
-
-.creative-loading-dot:nth-child(3) {
-    animation-delay: 0.3s;
-}
-
-@keyframes creative-loading-ellipsis {
+@keyframes creative-loading-pulse {
 
     0%,
-    60%,
     100% {
-        opacity: 0.2;
+        opacity: 0.6;
+        transform: translateY(0);
     }
 
-    30% {
+    50% {
         opacity: 1;
+        transform: translateY(-2px);
     }
 }
 

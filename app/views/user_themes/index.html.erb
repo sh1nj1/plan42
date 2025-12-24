@@ -10,6 +10,16 @@
           <div style="color: red; font-size: 0.9em; margin-top: 5px;"><%= @error %></div>
         <% end %>
       </div>
+      <div class="stacked-form-control" style="margin-top: 0.5rem;">
+        <%= label_tag :emoji_set, t('themes.loading_emoji_label') %>
+        <%= select_tag :emoji_set,
+              options_for_select(loading_emoji_options, params[:emoji_set].presence || suggested_emoji_key(params[:description])),
+              class: "shared-input-surface",
+              style: "width: 100%; box-sizing: border-box;" %>
+        <p style="margin: 0.25rem 0 0; color: var(--color-muted); font-size: 0.95em;">
+          <%= t('themes.loading_emoji_help') %>
+        </p>
+      </div>
       <%= f.submit t('themes.generate'), class: "btn-primary", style: "width: 100%; margin-top: 10px; box-sizing: border-box;", data: { turbo_submits_with: "..." } %>
     <% end %>
   </div>
