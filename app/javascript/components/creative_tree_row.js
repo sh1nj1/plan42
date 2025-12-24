@@ -22,7 +22,8 @@ class CreativeTreeRow extends LitElement {
     editOffIconHtml: { state: true },
     originLinkHtml: { state: true },
     isTitle: { type: Boolean, attribute: "is-title", reflect: true },
-    loadingChildren: { type: Boolean, attribute: "loading-children", reflect: true }
+    loadingChildren: { type: Boolean, attribute: "loading-children", reflect: true },
+    _loadingDotsState: { state: true }
   };
 
   constructor() {
@@ -45,6 +46,8 @@ class CreativeTreeRow extends LitElement {
     this.isTitle = false;
     this._templatesExtracted = false;
     this.loadingChildren = false;
+    this._loadingDotsState = ['.', '.', '.'];
+    this._animationInterval = null;
 
     this._toggleBtn = null;
     this._editBtn = null;
@@ -64,8 +67,21 @@ class CreativeTreeRow extends LitElement {
     this._extractTemplates();
   }
 
-  updated() {
+  updated(changedProperties) {
     this._attachHandlers();
+
+    if (changedProperties.has('loadingChildren')) {
+      if (this.loadingChildren) {
+        this._startAnimation();
+      } else {
+        this._stopAnimation();
+      }
+    }
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._stopAnimation();
   }
 
   _setDescriptionHtml(markup) {
@@ -312,11 +328,67 @@ class CreativeTreeRow extends LitElement {
         aria-live="polite"
         aria-label="Loading children"
       >
-        <span class="creative-loading-dot" aria-hidden="true">.</span>
-        <span class="creative-loading-dot" aria-hidden="true">.</span>
-        <span class="creative-loading-dot" aria-hidden="true">.</span>
+        <span class="creative-loading-dot" aria-hidden="true">${this._loadingDotsState[0]}</span>
+        <span class="creative-loading-dot" aria-hidden="true">${this._loadingDotsState[1]}</span>
+        <span class="creative-loading-dot" aria-hidden="true">${this._loadingDotsState[2]}</span>
       </span>
     `;
+  }
+
+  _startAnimation() {
+    if (this._animationInterval) return;
+
+    const style = getComputedStyle(document.body);
+    let emojiString = style.getPropertyValue('--creative-loading-emojis').replace(/"/g, '').trim();
+
+    if (!emojiString) {
+      const rootStyle = getComputedStyle(document.documentElement);
+      emojiString = rootStyle.getPropertyValue('--creative-loading-emojis').replace(/"/g, '').trim();
+    }
+
+    const emojis = emojiString ? emojiString.split(',').map(e => e.trim()) : ['🎨', '💡', '🚀', '✨', '🧩', '🎲'];
+
+    let emojiIndex = 0;
+    let frame = 0;
+
+    const updateDots = () => {
+      const currentEmoji = emojis[emojiIndex];
+      let newState = ['.', '.', '.'];
+
+      switch (frame) {
+        case 0:
+          newState = ['.', '.', '.'];
+          break;
+        case 1:
+          newState = ['.', '.', currentEmoji];
+          break;
+        case 2:
+          newState = ['.', currentEmoji, '.'];
+          break;
+        case 3:
+          newState = [currentEmoji, '.', '.'];
+          break;
+      }
+
+      this._loadingDotsState = newState;
+
+      frame++;
+      if (frame > 3) {
+        frame = 0;
+        emojiIndex = (emojiIndex + 1) % emojis.length;
+      }
+    };
+
+    this._animationInterval = setInterval(updateDots, 80);
+    updateDots(); // Initial call
+  }
+
+  _stopAnimation() {
+    if (this._animationInterval) {
+      clearInterval(this._animationInterval);
+      this._animationInterval = null;
+    }
+    this._loadingDotsState = ['.', '.', '.'];
   }
 
   _renderToggle() {

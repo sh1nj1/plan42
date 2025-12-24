@@ -2,6 +2,7 @@
 
 :root {
     --creative-row-text-offset: 1.8em;
+    --creative-loading-emojis: "🚀,🧠,🧩,🤝,🗂️,⚡";
 }
 
 .creative-actions-row,
@@ -209,37 +210,17 @@ creative-tree-row.show-edit .creative-row {
 .creative-loading-indicator {
     display: inline-flex;
     align-items: baseline;
-    margin-left: 6px;
-    font-size: 1em;
+    margin-left: 0.5em;
     color: var(--color-muted);
-    min-width: 20px;
+    min-width: 1.5em;
 }
 
 .creative-loading-dot {
-    animation: creative-loading-ellipsis 1s ease-in-out infinite;
-    opacity: 0.2;
     font-weight: bold;
-}
-
-.creative-loading-dot:nth-child(2) {
-    animation-delay: 0.15s;
-}
-
-.creative-loading-dot:nth-child(3) {
-    animation-delay: 0.3s;
-}
-
-@keyframes creative-loading-ellipsis {
-
-    0%,
-    60%,
-    100% {
-        opacity: 0.2;
-    }
-
-    30% {
-        opacity: 1;
-    }
+    display: inline-block;
+    width: 1.05em;
+    text-align: center;
+    font-size: 0.55em;
 }
 
 .creative-tree-loading-placeholder {

@@ -100,11 +100,77 @@ export default class extends Controller {
     this.clearLoadedState()
     this.element.innerHTML = ''
     this.element.appendChild(this.loadingIndicator)
+    this.startAnimation()
   }
 
   hideLoadingIndicator() {
+    this.stopAnimation()
     if (this.loadingIndicator && this.loadingIndicator.parentNode === this.element) {
       this.element.removeChild(this.loadingIndicator)
+    }
+  }
+
+  startAnimation() {
+    if (this.animationInterval) return
+
+    const style = getComputedStyle(document.body)
+    let emojiString = style.getPropertyValue('--creative-loading-emojis').replace(/"/g, '').trim()
+
+    if (!emojiString) {
+      const rootStyle = getComputedStyle(document.documentElement)
+      emojiString = rootStyle.getPropertyValue('--creative-loading-emojis').replace(/"/g, '').trim()
+    }
+
+    const emojis = emojiString ? emojiString.split(',').map(e => e.trim()) : ['🎨', '💡', '🚀', '✨', '🧩', '🎲']
+
+    let emojiIndex = 0
+    let frame = 0 // 0: ..., 1: ..E, 2: .E., 3: E..
+
+    const updateDots = () => {
+      if (!this.loadingIndicator) return
+      const dots = this.loadingIndicator.querySelectorAll('.creative-loading-dot')
+      if (dots.length !== 3) return
+
+      const currentEmoji = emojis[emojiIndex]
+
+      switch (frame) {
+        case 0:
+          dots[0].textContent = '.'
+          dots[1].textContent = '.'
+          dots[2].textContent = '.'
+          break
+        case 1:
+          dots[0].textContent = '.'
+          dots[1].textContent = '.'
+          dots[2].textContent = currentEmoji
+          break
+        case 2:
+          dots[0].textContent = '.'
+          dots[1].textContent = currentEmoji
+          dots[2].textContent = '.'
+          break
+        case 3:
+          dots[0].textContent = currentEmoji
+          dots[1].textContent = '.'
+          dots[2].textContent = '.'
+          break
+      }
+
+      frame++
+      if (frame > 3) {
+        frame = 0
+        emojiIndex = (emojiIndex + 1) % emojis.length
+      }
+    }
+
+    this.animationInterval = setInterval(updateDots, 120)
+    updateDots() // Initial call
+  }
+
+  stopAnimation() {
+    if (this.animationInterval) {
+      clearInterval(this.animationInterval)
+      this.animationInterval = null
     }
   }
 
