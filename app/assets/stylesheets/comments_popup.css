@@ -396,6 +396,11 @@
     cursor: not-allowed;
 }
 
+#move-comments-btn,
+#search-comments-btn,
+#voice-comments-btn,
+#attach-image-btn,
+#cancel-edit-btn,
 .convert-comment-btn,
 .delete-comment-btn,
 .edit-comment-btn,
