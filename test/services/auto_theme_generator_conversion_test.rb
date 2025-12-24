@@ -48,4 +48,17 @@ class AutoThemeGeneratorConversionTest < ActiveSupport::TestCase
     output = @generator.send(:parse_response, response_string)
     assert_equal({}, output)
   end
+
+  test "process_variables handles non-string values gracefully" do
+    input = {
+      "--color-bg" => "oklch(100% 0 0)",
+      "--hover-brightness" => 0.95,
+      "--color-muted" => nil
+    }
+    output = @generator.send(:process_variables, input)
+
+    assert_equal "#ffffff", output["--color-bg"]
+    assert_equal 0.95, output["--hover-brightness"]
+    assert_nil output["--color-muted"]
+  end
 end

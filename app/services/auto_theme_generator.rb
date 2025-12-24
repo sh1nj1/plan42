@@ -97,7 +97,7 @@ class AutoThemeGenerator
 
   def process_variables(variables)
     variables.transform_values do |value|
-      if value.start_with?("oklch(")
+      if value.is_a?(String) && value.start_with?("oklch(")
         convert_oklch_to_hex(value)
       else
         value
