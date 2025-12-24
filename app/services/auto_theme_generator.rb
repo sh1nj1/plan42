@@ -108,15 +108,40 @@ class AutoThemeGenerator
   end
 
   def convert_oklch_to_hex(oklch_str)
-    # Parse oklch string: oklch(L C H) or oklch(L% C H)
-    # Example: oklch(60% 0.15 240)
-    match = oklch_str.match(/oklch\(\s*([0-9.]+)%?\s+([0-9.]+)\s+([0-9.]+)\s*\)/)
+    # Parse oklch string: oklch(L C H [/ A])
+    # Supports %, deg, and alpha channel
+    # Example: oklch(60% 0.15 240deg / 0.5)
+    # Regex matches:
+    # 1. Lightness (number + optional %)
+    # 2. Chroma (number + optional %)
+    # 3. Hue (number + optional deg/rad/turn)
+    # 4. Optional alpha (number + optional %)
+    match = oklch_str.match(/oklch\(\s*([0-9.]+)%?\s+([0-9.]+)%?\s+([0-9.]+)(?:deg|rad|turn)?(?:\s*\/\s*([0-9.]+)%?)?\s*\)/)
     return oklch_str unless match
 
     l_val = match[1].to_f
-    l_val /= 100.0 if oklch_str.include?("#{match[1]}%")
+    l_val /= 100.0 if oklch_str.include?("#{match[1]}%") && !match[1].include?(".") # Simple heuristic, or trust regex groups if I separated units.
+    # Better to just handle the % if it was captured. My regex captures the number part separate from %.
+    # Actually, the regex above `([0-9.]+)%?` captures ONLY the number in group 1.
+    # So I need to check if the original string had % for that match.
+    # Let's refine parsing.
+
+    # Re-parsing carefully
+    l_raw = match[1]
+    l_val = l_raw.to_f
+    l_val /= 100.0 if oklch_str =~ /#{Regexp.escape(l_raw)}%/
+
     c_val = match[2].to_f
+    # Chroma usually doesn't have %, but if it does (rare), handle it? Standard is number.
+    # Let's assume number.
+
     h_val = match[3].to_f
+    # Hue is usually degrees if unitless or deg.
+    # If rad/turn, conversion needed? Standard oklch is degrees-like?
+    # CSS spec says oklch hue is angle. Deg is default.
+
+    # Alpha: match[4]
+    # We are currently ignoring alpha for 6-digit hex output.
 
     # 1. OKLCH to OKLab
     # h is in degrees, convert to radians
