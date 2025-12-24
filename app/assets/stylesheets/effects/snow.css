@@ -1,0 +1,65 @@
+/* Snow Effect */
+.snow-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 1; /* Overlay content but don't block interaction */
+  overflow: hidden;
+}
+
+.snow-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-repeat: repeat;
+  animation: snowfall linear infinite;
+}
+
+/* Layer 1: Small, slow */
+.snow-layer:nth-child(1) {
+  background-image: radial-gradient(3px 3px at 20% 30%, rgba(255, 255, 255, 0.9) 50%, transparent 100%),
+                    radial-gradient(3px 3px at 40% 70%, rgba(255, 255, 255, 0.9) 50%, transparent 100%),
+                    radial-gradient(3px 3px at 60% 10%, rgba(255, 255, 255, 0.9) 50%, transparent 100%),
+                    radial-gradient(3px 3px at 80% 50%, rgba(255, 255, 255, 0.9) 50%, transparent 100%);
+  background-size: 400px 400px;
+  animation-duration: 20s;
+  opacity: 0.9;
+}
+
+/* Layer 2: Medium, faster */
+.snow-layer:nth-child(2) {
+  background-image: radial-gradient(4px 4px at 10% 10%, rgba(255, 255, 255, 0.8) 50%, transparent 100%),
+                    radial-gradient(4px 4px at 30% 50%, rgba(255, 255, 255, 0.8) 50%, transparent 100%),
+                    radial-gradient(4px 4px at 50% 80%, rgba(255, 255, 255, 0.8) 50%, transparent 100%),
+                    radial-gradient(4px 4px at 70% 30%, rgba(255, 255, 255, 0.8) 50%, transparent 100%),
+                    radial-gradient(4px 4px at 90% 60%, rgba(255, 255, 255, 0.8) 50%, transparent 100%);
+  background-size: 300px 300px;
+  animation-duration: 15s;
+  opacity: 0.7;
+}
+
+/* Layer 3: Large, fastest */
+.snow-layer:nth-child(3) {
+  background-image: radial-gradient(5px 5px at 15% 25%, rgba(255, 255, 255, 0.6) 50%, transparent 100%),
+                    radial-gradient(5px 5px at 35% 65%, rgba(255, 255, 255, 0.6) 50%, transparent 100%),
+                    radial-gradient(5px 5px at 55% 15%, rgba(255, 255, 255, 0.6) 50%, transparent 100%),
+                    radial-gradient(5px 5px at 75% 85%, rgba(255, 255, 255, 0.6) 50%, transparent 100%),
+                    radial-gradient(5px 5px at 95% 45%, rgba(255, 255, 255, 0.6) 50%, transparent 100%);
+  background-size: 200px 200px;
+  animation-duration: 10s;
+  opacity: 0.5;
+}
+
+@keyframes snowfall {
+  0% {
+    transform: translateY(-100vh);
+  }
+  100% {
+    transform: translateY(100vh);
+  }
+}

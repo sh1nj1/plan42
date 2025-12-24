@@ -34,6 +34,8 @@ body {
 }
 
 nav {
+    position: relative;
+    z-index: 10;
     display: flex;
     justify-content: flex-end;
     align-items: center;
@@ -660,4 +662,4 @@ input[type="password"] {
     .contacts-table {
         min-width: 600px;
     }
-}
+}@import "effects/snow.css";

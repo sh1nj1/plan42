@@ -1,0 +1,7 @@
+<% if Current.user&.theme.present? && (theme = UserTheme.find_by(id: Current.user.theme)) && theme.variables['background_effect'] == 'snow' %>
+  <div class="snow-container">
+    <div class="snow-layer"></div>
+    <div class="snow-layer"></div>
+    <div class="snow-layer"></div>
+  </div>
+<% end %>

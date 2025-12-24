@@ -28,7 +28,7 @@
     <link rel="apple-touch-icon" href="/icon-1e3cf549d2.png">
 
     <%# Includes all stylesheet files in app/assets/stylesheets %>
-    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%= stylesheet_link_tag :application, "data-turbo-track": "reload" %>
     <%= stylesheet_link_tag :dark_mode %>
     <%= stylesheet_link_tag :print, media: 'print' %>
     <%= stylesheet_link_tag 'user_menu' %>
@@ -48,6 +48,7 @@
       <% end %>
     <% end %>
   <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
+    <%= render 'shared/background_effects' %>
     <%= render 'shared/link_creative_modal' %>
     <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
     <div class="notice"><%= notice %></div>

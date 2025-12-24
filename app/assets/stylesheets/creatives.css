@@ -1,4 +1,10 @@
-/* #creatives {} - removed empty rule */
+#creatives {
+    background: var(--color-section-bg);
+    position: relative;
+    z-index: 2;
+    padding: 1em;
+    border-radius: 8px;
+}
 
 :root {
     --creative-row-text-offset: 1.8em;
@@ -23,6 +29,10 @@ html.creative-alignment-ready .page-title {
     gap: 10px;
     height: 48px;
     align-items: center;
+    position: relative;
+    z-index: 2;
+    background: var(--color-section-bg);
+    border-radius: 8px;
 }
 
 .creative-actions-row button {
