@@ -22,6 +22,7 @@ class AutoThemeGenerator
     --color-chat-btn-text
     --color-input-bg
     --color-input-text
+    --color-nav-text
   ].freeze
 
   def initialize(client: default_client)
@@ -39,9 +40,10 @@ class AutoThemeGenerator
       1. Use **only 'oklch()' color format** for all colors. Do not use hex, rgb, or hsl.
       2. Ensure "--color-nav-btn-text" has High Contrast (WCAG AA/AAA) against "--color-bg" (which is used as the button background in the nav).
       3. Ensure "--color-chat-btn-text" has High Contrast against "--color-section-bg" (where chat messages reside).
-      4. Names of these text colors should be visually distinct from their background colors to ensure readability.
-      5. Do not include any other keys or newlines.
-      6. Return valid JSON only.
+      4. Ensure "--color-nav-text" has High Contrast against "--color-nav-bg".
+      5. Names of these text colors should be visually distinct from their background colors to ensure readability.
+      6. Do not include any other keys or newlines.
+      7. Return valid JSON only.
 
       The JSON object must strictly follow this structure:
       {
