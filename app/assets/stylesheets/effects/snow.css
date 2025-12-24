@@ -6,7 +6,7 @@
   width: 100vw;
   height: 100vh;
   pointer-events: none;
-  z-index: 1; /* Overlay content but don't block interaction */
+  z-index: 0; /* Behind positioned content */
   overflow: hidden;
 }
 
