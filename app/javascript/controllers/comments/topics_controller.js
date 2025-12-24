@@ -76,7 +76,12 @@ export default class extends Controller {
             const exists = this.listTarget.querySelector(`[data-id="${lastTopicId}"]`)
             if (exists) {
                 this.selectTopic(lastTopicId)
+                return
             }
+        }
+
+        if (lastTopicId) {
+            this.selectTopic("")
         }
     }
 
