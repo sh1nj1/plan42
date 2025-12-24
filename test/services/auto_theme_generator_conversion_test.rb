@@ -34,4 +34,18 @@ class AutoThemeGeneratorConversionTest < ActiveSupport::TestCase
     assert_equal "#ffffff", output["--color-bg"]
     assert_equal "#123456", output["--color-text"] # Should remain unchanged
   end
+
+  test "parse_response handles non-hash JSON gracefully" do
+    # Array input
+    # JSON: ["some", "array"]
+    response_array = "[\"some\", \"array\"]"
+    output = @generator.send(:parse_response, response_array)
+    assert_equal({}, output)
+
+    # String input
+    # JSON: "some string"
+    response_string = "\"some string\""
+    output = @generator.send(:parse_response, response_string)
+    assert_equal({}, output)
+  end
 end

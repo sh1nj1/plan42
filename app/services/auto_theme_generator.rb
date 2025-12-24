@@ -90,6 +90,8 @@ class AutoThemeGenerator
       {}
     end
 
+    return {} unless parsed.is_a?(Hash)
+
     process_variables(parsed)
   end
 
