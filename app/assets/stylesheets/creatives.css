@@ -325,12 +325,14 @@ creative-tree-row.show-edit .creative-row {
 .edit-inline-btn {
     visibility: hidden;
     opacity: 0;
+    color: var(--color-text);
     transition: opacity 0.2s ease;
     width: 20px;
     /* Fixed width for alignment */
 }
 
 .creative-row:hover .edit-inline-btn {
+    color: var(--color-text);
     visibility: visible;
     opacity: 1;
 }
