@@ -253,6 +253,11 @@ creative-tree-row.show-edit .creative-row {
     /* Align with text */
 }
 
+/* Ensure inline editor actions use the correct text color */
+#actions-inline-editor .creative-action-btn {
+    color: var(--color-text);
+}
+
 .creative-action-btn:disabled,
 .popup-menu-toggle:disabled,
 .popup-menu .popup-menu-item:disabled {
