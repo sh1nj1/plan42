@@ -62,14 +62,14 @@ body.dark-mode {
   body:not(.light-mode):not(.dark-mode) {
     --color-bg: #212121;
     --color-text: #eaeaea;
-    --color-link: #6a9eff;
+    --color-link: #185ABC;
     --color-nav-bg: #181818;
     --color-section-bg: #181818;
     --color-btn-bg: #333543;
     --color-btn-text: #eaeaea;
     --color-border: #333333;
     --color-muted: #aaaaaa;
-    --color-complete: green;
+    --color-complete: oklch(50% 0.4 145);
     --color-chip-bg: var(--color-complete);
     --color-drag-over: #383a40;
     --color-drag-over-edge: #777;
