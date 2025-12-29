@@ -80,6 +80,7 @@
   font-size: 1.2em;
   line-height: 1;
   cursor: pointer;
+  color: var(--color-text);
 }
 
 #github-integration-modal .github-modal-status {
