@@ -74,19 +74,21 @@ module Creatives
 
       # Apply Tag Filter
       tag_ids = Array(params[:tags]).map(&:to_s)
-      matched = scope.joins(:tags).where(tags: { label_id: tag_ids })
+      matched = scope.joins(:tags).where(tags: { label_id: tag_ids }).to_a
 
-      # Apply Progress Filter if present
+      # Apply Progress Filter in Ruby (not SQL) to handle delegated progress on linked creatives
       if params[:min_progress].present?
-        matched = matched.where("progress >= ?", params[:min_progress].to_f)
+        min_progress = params[:min_progress].to_f
+        matched = matched.select { |c| c.progress.to_f >= min_progress }
       end
 
       if params[:max_progress].present?
-        matched = matched.where("progress <= ?", params[:max_progress].to_f)
+        max_progress = params[:max_progress].to_f
+        matched = matched.select { |c| c.progress.to_f <= max_progress }
       end
 
       # Ancestors UP TO the root of the view.
-      matched_ids = matched.pluck(:id)
+      matched_ids = matched.map(&:id)
 
       # Using CreativeHierarchy to find all ancestors
       ancestor_ids = CreativeHierarchy.where(descendant_id: matched_ids).pluck(:ancestor_id)
