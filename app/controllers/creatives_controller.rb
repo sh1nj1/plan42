@@ -17,6 +17,11 @@ class CreativesController < ApplicationController
     @allowed_creative_ids = index_result.allowed_creative_ids
     @progress_map = index_result.progress_map
 
+    # Set filtered_progress on parent creative if progress_map is available
+    if @parent_creative && @progress_map && @progress_map.key?(@parent_creative.id.to_s)
+      @parent_creative.filtered_progress = @progress_map[@parent_creative.id.to_s]
+    end
+
     respond_to do |format|
       format.html
       format.json do
