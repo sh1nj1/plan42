@@ -38,7 +38,7 @@
   </head>
     <% if Current.user&.theme.present? && !%w[light dark].include?(Current.user.theme) %>
       <% if (custom_theme = UserTheme.find_by(id: Current.user.theme)) %>
-        <style>
+        <style id="user-theme-styles" data-turbo-track="reload">
           body {
             <% custom_theme.variables.each do |key, value| %>
               <%= key %>: <%= value %> !important;
