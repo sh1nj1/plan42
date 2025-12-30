@@ -118,14 +118,14 @@ module Creatives
       parent = params[:id] ? Creative.find(params[:id]) : nil
 
       # Calculate Progress Map
-      # "Leaf-most" logic: efficiently find matched nodes that are ancestors of OTHER matched nodes.
+      # "Leaf-most" logic: find nodes in allowed_ids that are ancestors of OTHER nodes in allowed_ids
       superfluous_ancestors = CreativeHierarchy
-                                .where(ancestor_id: matched_ids, descendant_id: matched_ids)
+                                .where(ancestor_id: allowed_ids, descendant_id: allowed_ids)
                                 .where("generations > 0")
                                 .pluck(:ancestor_id)
                                 .uniq
 
-      relevant_ids = matched_ids - superfluous_ancestors
+      relevant_ids = allowed_ids - superfluous_ancestors
 
       progress_map, filtered_progress = calculate_progress_map(accessible_creatives, allowed_ids, relevant_ids)
 
