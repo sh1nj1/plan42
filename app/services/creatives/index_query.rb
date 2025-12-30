@@ -69,7 +69,7 @@ module Creatives
       scope = if params[:id]
         Creative.find(params[:id]).descendants
       else
-        Creative.where(user: user)
+        Creative.all
       end
 
       # Apply Tag Filter
@@ -91,17 +91,11 @@ module Creatives
       # Using CreativeHierarchy to find all ancestors
       ancestor_ids = CreativeHierarchy.where(descendant_id: matched_ids).pluck(:ancestor_id)
 
-      # allowed_ids is the set of nodes that should be visible
+      # Filter allowed_ids by user access
       allowed_ids = (matched_ids + ancestor_ids).uniq
-
-      # Filter allowed_ids by user access using proper permission logic
-      # This handles inherited permissions, no_access overrides, etc.
-      creatives_to_check = Creative.where(id: allowed_ids)
-      accessible_ids = creatives_to_check.select { |c| c.has_permission?(user, :read) }.map(&:id)
-      allowed_ids = accessible_ids
-
-      # Filter for readability efficiently
-      # Optimization: filter by what the user usually accesses.
+      creatives_to_check = Creative.where(id: allowed_ids).to_a
+      accessible_creatives = creatives_to_check.select { |c| c.has_permission?(user, :read) }
+      allowed_ids = accessible_creatives.map(&:id)
 
       # "Starting Roots" for the result.
       start_nodes = if params[:id]
@@ -110,21 +104,15 @@ module Creatives
 
         parent.children.where(id: allowed_ids)
       else
-        # Find top-most nodes from allowed_ids
-        # A node is "top" if none of its ancestors are in allowed_ids
-        creatives_in_set = Creative.where(id: allowed_ids).to_a
+        # Find top-most nodes from allowed_ids (reuse already-loaded creatives)
         allowed_ids_set = allowed_ids.to_set
 
-        top_nodes = creatives_in_set.reject do |creative|
-          # If any ancestor of this creative is also in allowed_ids, it's NOT a top node
+        top_nodes = accessible_creatives.reject do |creative|
           creative.ancestor_ids.any? { |ancestor_id| allowed_ids_set.include?(ancestor_id) }
         end
 
         top_nodes
       end
-
-      # Final permission check on start_nodes
-      visible_start_nodes = start_nodes.select { |c| readable?(c) }
 
       # Filter allowed_ids to only include readable ones?
       parent = params[:id] ? Creative.find(params[:id]) : nil
@@ -141,7 +129,7 @@ module Creatives
 
       progress_map, filtered_progress = calculate_progress_map(allowed_ids, relevant_ids)
 
-      [ visible_start_nodes, parent, allowed_ids.map(&:to_s).to_set, filtered_progress, progress_map ]
+      [ start_nodes, parent, allowed_ids.map(&:to_s).to_set, filtered_progress, progress_map ]
     end
 
     def calculate_progress_map(allowed_ids, relevant_ids)
