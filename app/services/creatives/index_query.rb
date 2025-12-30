@@ -127,23 +127,22 @@ module Creatives
 
       relevant_ids = matched_ids - superfluous_ancestors
 
-      progress_map, filtered_progress = calculate_progress_map(allowed_ids, relevant_ids)
+      progress_map, filtered_progress = calculate_progress_map(accessible_creatives, allowed_ids, relevant_ids)
 
       [ start_nodes, parent, allowed_ids.map(&:to_s).to_set, filtered_progress, progress_map ]
     end
 
-    def calculate_progress_map(allowed_ids, relevant_ids)
+    def calculate_progress_map(accessible_creatives, allowed_ids, relevant_ids)
       return [ {}, 0.0 ] if relevant_ids.empty?
 
-      # 1. Get properties of relevant creatives (leaves)
-      relevant_creatives = Creative.where(id: relevant_ids).pluck(:id, :progress)
+      # 1. Get properties of relevant creatives from already-loaded objects
+      relevant_creatives = accessible_creatives.select { |c| relevant_ids.include?(c.id) }
 
-      # Calculate overall average from loaded values to avoid extra query
-      total_progress = relevant_creatives.sum { |_, p| p.to_f }
-      overall_average = total_progress / relevant_creatives.size
+      # Calculate overall average from loaded values
+      total_progress = relevant_creatives.sum { |c| c.progress.to_f }
+      overall_average = relevant_creatives.any? ? total_progress / relevant_creatives.size : 0.0
 
-      leaf_values = relevant_creatives.to_h
-      leaf_values.transform_values!(&:to_f)
+      leaf_values = relevant_creatives.to_h { |c| [ c.id, c.progress.to_f ] }
 
       # 2. For each allowed_id, find its relevant descendants using batch query
       relationships = CreativeHierarchy
