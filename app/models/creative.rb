@@ -41,6 +41,8 @@ class Creative < ApplicationRecord
 
   has_closure_tree order: :sequence, name_column: :description
 
+  attr_accessor :filtered_progress
+
   # belongs_to :parent, class_name: "Creative", optional: true
   # has_many :children, -> { order(:sequence) }, class_name: "Creative", foreign_key: :parent_id, dependent: :destroy
 

@@ -32,8 +32,7 @@ module CreativesHelper
 
   def render_creative_progress(creative, select_mode: false)
     progress_value = if params[:tags].present?
-      tag_ids = Array(params[:tags]).map(&:to_s)
-      creative.progress_for_tags(tag_ids) || 0
+      creative.filtered_progress || 0
     else
       creative.progress
     end
@@ -215,7 +214,7 @@ module CreativesHelper
           token = "__IMG#{index}__"; index += 1
           placeholders[token] = "![#{alt_text}](data:#{blob.content_type};base64,#{data})"
           token
-        rescue => e
+        rescue
           # If blob not found, keep original
           match
         end

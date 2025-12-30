@@ -6,6 +6,8 @@ module Creatives
       :shared_creative,
       :shared_list,
       :overall_progress,
+      :allowed_creative_ids,
+      :progress_map,
       keyword_init: true
     )
 
@@ -15,17 +17,19 @@ module Creatives
     end
 
     def call
-      creatives, parent = resolve_creatives
+      creatives, parent, allowed_creative_ids, filtered_progress, progress_map = resolve_creatives
       shared_creative = parent || creatives&.first
       shared_list = shared_creative ? shared_creative.all_shared_users : []
-      overall_progress = calculate_progress(creatives)
+      overall_progress = filtered_progress || 0
 
       Result.new(
         creatives: creatives,
         parent_creative: parent,
         shared_creative: shared_creative,
         shared_list: shared_list,
-        overall_progress: overall_progress
+        overall_progress: overall_progress,
+        allowed_creative_ids: allowed_creative_ids,
+        progress_map: progress_map
       )
     end
 
@@ -41,17 +45,153 @@ module Creatives
                       .select { |c| readable?(c) }
                       .uniq(&:id)
         creatives = creatives.sort_by { |c| c.comments.maximum(:updated_at) || c.updated_at }.reverse
-        [ creatives, nil ]
+        [ creatives, nil, nil, nil, nil ]
       elsif params[:search].present?
-        search_creatives
+        # Search also might need ancestor logic if we want to show path to search result?
+        # Current implementation sends base_creative as parent if searching under ID.
+        # For now, keeping existing search behavior.
+        creatives, parent = search_creatives
+        [ creatives, parent, nil, nil, nil ]
+      elsif params[:tags].present?
+        filter_by_tags
       elsif params[:id]
         creative = Creative.where(id: params[:id])
                             .order(:sequence)
                             .detect { |c| readable?(c) }
-        [ creative&.children_with_permission(user, :read), creative ]
+        [ creative&.children_with_permission(user, :read) || [], creative, nil, nil, nil ]
       else
-        [ Creative.where(user: user).roots, nil ]
+        [ Creative.where(user: user).roots, nil, nil, nil, nil ]
       end
+    end
+
+    def filter_by_tags
+      # Determine the scope
+      scope = if params[:id]
+        Creative.find(params[:id]).descendants
+      else
+        Creative.where(user: user)
+      end
+
+      # Apply Tag Filter
+      tag_ids = Array(params[:tags]).map(&:to_s)
+      matched = scope.joins(:tags).where(tags: { label_id: tag_ids })
+
+      # Apply Progress Filter if present
+      if params[:min_progress].present?
+        matched = matched.where("progress >= ?", params[:min_progress].to_f)
+      end
+
+      if params[:max_progress].present?
+        matched = matched.where("progress <= ?", params[:max_progress].to_f)
+      end
+
+      # Get Ancestors (including ancestors for matched nodes that might be OUTSIDE the params[:id] scope?
+      # No, we only care about displaying the tree under params[:id] or root.
+      # So we need ancestors UP TO the root of the view.)
+
+      matched_ids = matched.pluck(:id)
+
+
+
+      # Using CreativeHierarchy to find all ancestors
+      ancestor_ids = CreativeHierarchy.where(descendant_id: matched_ids).pluck(:ancestor_id)
+
+      # allowed_ids is the set of nodes that should be visible
+      allowed_ids = (matched_ids + ancestor_ids).uniq
+
+      # Filter for readability
+      # We can do this efficiently using the `user` relation or permission check.
+      # Ideally we use SQL validation, but `readable?` check is complex (ownership, shares).
+      # For now, let's load and check. Optimization: filter by what the user usually accesses.
+
+      # However, if we are at ROOT view, we only start rendering from ROOTS.
+      # If we are at params[:id] view, we start rendering from children of params[:id].
+
+      # Let's find the "Starting Roots" for the result.
+      start_nodes = if params[:id]
+        parent = Creative.find(params[:id])
+        return [ [], parent, nil, 0 ] unless readable?(parent)
+
+        parent.children.where(id: allowed_ids)
+      else
+        Creative.roots.where(id: allowed_ids).where(user: user)
+      end
+
+      # Final permission check on start_nodes
+      visible_start_nodes = start_nodes.select { |c| readable?(c) }
+
+      # Filter allowed_ids to only include readable ones?
+      # This prevents exposing existence of non-readable ancestors.
+      # The detailed check happens in TreeBuilder too, but good to clean up here.
+      # For performance, maybe skip full check on all 1000s of ancestors,
+      # TreeBuilder will check node by node as it traverses.
+      # But we should at least pass the set.
+
+      parent = params[:id] ? Creative.find(params[:id]) : nil
+
+      # Calculate Progress Map
+      # Identify leaf-most relevant nodes
+      superfluous_ancestors = CreativeHierarchy
+                                .where(ancestor_id: matched_ids, descendant_id: matched_ids)
+                                .where("generations > 0")
+                                .pluck(:ancestor_id)
+                                .uniq
+
+      relevant_ids = matched_ids - superfluous_ancestors
+
+      progress_map = calculate_progress_map(allowed_ids, relevant_ids)
+
+      # Recalculate filtered_progress based on the View Roots?
+      # Or just keep the overall average of relevant_ids?
+      # The original logic used average of relevant_ids. Let's keep that for overall_progress.
+      filtered_progress = if relevant_ids.any?
+                            Creative.where(id: relevant_ids).average(:progress).to_f
+      else
+                            0.0
+      end
+
+      [ visible_start_nodes, parent, allowed_ids.map(&:to_s).to_set, filtered_progress, progress_map ]
+    end
+
+    def calculate_progress_map(allowed_ids, relevant_ids)
+      return {} if relevant_ids.empty?
+
+      # 1. Get properties of relevant creatives
+      relevant_creatives = Creative.where(id: relevant_ids).pluck(:id, :progress)
+      # Map id -> progress
+      leaf_values = relevant_creatives.to_h
+      leaf_values.transform_values!(&:to_f)
+
+      # 2. For each allowed_id, find its relevant descendants
+      # Efficient batch query using CreativeHierarchy
+      # We want to aggregate: for each ancestor (in allowed_ids), which relevant_ids are descendants?
+
+      # We can select ancestor_id, descendant_id
+      # where ancestor_id IN allowed_ids AND descendant_id IN relevant_ids
+
+      relationships = CreativeHierarchy
+                        .where(ancestor_id: allowed_ids, descendant_id: relevant_ids)
+                        .pluck(:ancestor_id, :descendant_id)
+
+      # 3. Aggregate
+      # ancestor_id => [progress_values...]
+      aggregation = Hash.new { |h, k| h[k] = [] }
+
+      relationships.each do |anc_id, desc_id|
+        val = leaf_values[desc_id]
+        aggregation[anc_id] << val if val
+      end
+
+      # 4. Compute Averages
+      result = {}
+      aggregation.each do |anc_id, values|
+        result[anc_id.to_s] = values.sum / values.size
+      end
+
+      # Ensure leaves themselves are in the map (if self-reference row exists in hierarchy, it's covered.
+      # ClosureTree usually includes generations=0. Yes.)
+
+      result
     end
 
     def search_creatives
@@ -82,14 +222,6 @@ module Creatives
                       .select { |c| readable?(c) }
         [ creatives, nil ]
       end
-    end
-
-    def calculate_progress(creatives)
-      return unless params[:tags].present?
-      tag_ids = Array(params[:tags]).map(&:to_s)
-      roots = creatives || []
-      progress_values = roots.map { |c| c.progress_for_tags(tag_ids, user) }.compact
-      progress_values.any? ? progress_values.sum.to_f / progress_values.size : 0
     end
 
     def readable?(creative)
