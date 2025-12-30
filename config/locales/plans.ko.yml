@@ -6,7 +6,7 @@ ko:
     created: "계획이 성공적으로 생성되었습니다."
     deleted: "계획이 삭제되었습니다."
     today: "오늘"
-    select_creative: "크리에이티브 선택 (선택사항)"
+    select_creative: "크리에이티브 선택"
   activerecord:
     errors:
       models:

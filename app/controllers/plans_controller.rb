@@ -70,13 +70,13 @@ class PlansController < ApplicationController
   private
 
   def plan_params
-    params.require(:plan).permit(:name, :target_date, :creative_id)
+    params.require(:plan).permit(:target_date, :creative_id)
   end
 
   def plan_json(plan)
     {
       id: plan.id,
-      name: plan.name.presence || I18n.l(plan.target_date),
+      name: (plan.creative&.effective_description(nil, false) || plan.name.presence || I18n.l(plan.target_date)),
       created_at: plan.created_at.to_date,
       target_date: plan.target_date,
       progress: plan.progress,

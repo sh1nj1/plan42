@@ -4,6 +4,7 @@ if (!plansTimelineScriptInitialized) {
   plansTimelineScriptInitialized = true;
 
   function initPlansTimeline(container) {
+    console.log('DEBUG: initPlansTimeline called');
     if (!container || container.dataset.initialized) return;
     container.dataset.initialized = 'true';
 
@@ -250,12 +251,12 @@ if (!plansTimelineScriptInitialized) {
         e.preventDefault();
         const fd = new FormData(planForm);
         fetch(planForm.action, {
-          method: 'POST',
+          method: planForm.method,
+          body: fd,
           headers: {
-            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content,
-            Accept: 'application/json'
-          },
-          body: fd
+            'Accept': 'application/json',
+            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+          }
         }).then(function (r) {
           if (r.ok) return r.json();
           return r.json().then(function (j) { throw j; });
@@ -265,8 +266,14 @@ if (!plansTimelineScriptInitialized) {
           addPlan(plan);
           planForm.reset();
           // Clear creative selection
-          document.getElementById('plan-creative-id').value = '';
-          document.getElementById('plan-selected-creative-name').textContent = '';
+          const creativeIdInput = document.getElementById('plan-creative-id');
+          if (creativeIdInput) creativeIdInput.value = '';
+          const creativeInput = document.getElementById('plan-select-creative-input');
+          if (creativeInput) creativeInput.value = '';
+
+          // Disable button again
+          const addPlanBtn = document.getElementById('add-plan-btn');
+          if (addPlanBtn) addPlanBtn.disabled = true;
         }).catch(function (err) {
           if (err && err.errors) {
             alert(err.errors.join(', '));
@@ -277,11 +284,10 @@ if (!plansTimelineScriptInitialized) {
       });
     }
 
-    // Creative selector button handler - reuse link-creative-modal
-    const planSelectCreativeBtn = document.getElementById('plan-select-creative-btn');
-    if (planSelectCreativeBtn) {
-      planSelectCreativeBtn.addEventListener('click', function (e) {
-        e.preventDefault();
+    // Creative selector input handler - reuse link-creative-modal
+    const planSelectCreativeInput = document.getElementById('plan-select-creative-input');
+    if (planSelectCreativeInput) {
+      const handleInput = function (e) {
         const modal = document.getElementById('link-creative-modal');
         if (!modal) return;
 
@@ -291,14 +297,83 @@ if (!plansTimelineScriptInitialized) {
 
         const controller = application.getControllerForElementAndIdentifier(modal, 'link-creative');
         if (controller) {
-          controller.open(planSelectCreativeBtn.getBoundingClientRect(), function (item) {
+          // Open popup if not already open or just update search
+          controller.open(planSelectCreativeInput.getBoundingClientRect(), function (item) {
             // Set the creative_id in the hidden field
-            document.getElementById('plan-creative-id').value = item.id;
+            const creativeIdField = document.getElementById('plan-creative-id');
+            creativeIdField.value = item.id;
+            // Trigger change event manually for listeners
+            creativeIdField.dispatchEvent(new Event('change'));
+
+            // Manually check validity if the function exists
+            if (typeof checkFormValidity === 'function') checkFormValidity();
+            else {
+              // Fallback if defined in different scope (it is in same scope, so okay, but safe to just dispatch change if we listen to it)
+              // We added MutationObserver but property set doesn't trigger attribute change.
+              // We should just call the function.
+              // Since checkFormValidity is defined below, we might need to hoist or ensure order.
+              // Actually, `checkFormValidity` is defined inside `initPlansTimeline` so it is visible here via closure? 
+              // No, it's defined AFTER this block in my previous edit.
+              // I should define checkFormValidity closer to top of initPlansTimeline or just rely on the dispatchEvent 'change' if I listen to it.
+            }
             // Display the selected creative name
-            document.getElementById('plan-selected-creative-name').textContent = item.label || 'Creative #' + item.id;
+            const label = item.label || 'Creative #' + item.id;
+            // Decode HTML entities for display in input
+            const txt = document.createElement("textarea");
+            txt.innerHTML = label;
+            planSelectCreativeInput.value = txt.value;
+          }, function () {
+            // Optional: handle close
           });
+
+          // Sync input value to popup search
+          const popupInput = document.getElementById('link-creative-search');
+          if (popupInput) {
+            popupInput.value = planSelectCreativeInput.value;
+            popupInput.dispatchEvent(new Event('input', { bubbles: true }));
+            // Maintain focus on our input
+            planSelectCreativeInput.focus();
+          }
         }
-      });
+      };
+
+      planSelectCreativeInput.addEventListener('input', handleInput);
+      planSelectCreativeInput.addEventListener('click', handleInput); // Also open on click
+      planSelectCreativeInput.addEventListener('focus', handleInput); // Also open on focus
+    }
+
+    // Form validation
+    const planCreativeIdInput = document.getElementById('plan-creative-id');
+    const planTargetDateInput = document.getElementById('plan-target-date');
+    const addPlanBtn = document.getElementById('add-plan-btn');
+
+    function checkFormValidity() {
+      if (!addPlanBtn) return;
+
+      const creativeId = planCreativeIdInput ? planCreativeIdInput.value : '';
+      const targetDate = planTargetDateInput ? planTargetDateInput.value : '';
+
+      if (creativeId && targetDate) {
+        addPlanBtn.disabled = false;
+      } else {
+        addPlanBtn.disabled = true;
+      }
+    }
+
+    if (planCreativeIdInput && planTargetDateInput && addPlanBtn) {
+      // Check on date change
+      planTargetDateInput.addEventListener('input', checkFormValidity);
+      planTargetDateInput.addEventListener('change', checkFormValidity);
+
+      // Check on creative selection (observer for hidden field)
+      const observer = new MutationObserver(checkFormValidity);
+      observer.observe(planCreativeIdInput, { attributes: true, attributeFilter: ['value'] });
+
+      // Also hook into the setter if possible, but MutationObserver might not catch property changes on value.
+      // So we also call checkFormValidity manually when setting creative ID.
+
+      // Initial check
+      checkFormValidity();
     }
   }
 

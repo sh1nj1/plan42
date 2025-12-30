@@ -122,6 +122,12 @@ textarea {
     border: 1px solid var(--color-border);
 }
 
+input[type="submit"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(0.5);
+}
+
 #search {
     margin-right: 0.2em;
 }
@@ -330,6 +336,8 @@ button {
 
 .plan-form-container {
     padding: 0.5em;
+    display: flex;
+    justify-content: flex-end;
 }
 
 .plan-form-container form {

@@ -19,7 +19,7 @@ class PlansTimelineComponent < ViewComponent::Base
       plan_items = @plans.map do |plan|
         {
           id: plan.id,
-          name: plan.name.presence || I18n.l(plan.target_date),
+          name: (plan.creative&.effective_description(nil, false) || plan.name.presence || I18n.l(plan.target_date)),
           created_at: plan.created_at.to_date,
           target_date: plan.target_date,
           progress: plan.progress,

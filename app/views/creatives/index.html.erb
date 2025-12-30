@@ -76,7 +76,7 @@
            <%= "checked" unless params[:tags].present? && params[:tags].include?(label.id.to_s) %>
            value="<%= label.id %>">
 
-      <%= "##{label.name}" %>
+      <%= "##{strip_tags(label.name)}" %>
       <% if label.type == "Plan" %> 🗓<%= label.target_date %><% end %>
 
   <% end %>
@@ -116,7 +116,7 @@
         "creative-tree-row",
         content_tag(:template, data: { part: "description" }) do
           if params[:tags].present?
-            render_tags(params[:tags]&.map { |tag_id| Label.find(tag_id) }, "unstyled-link")
+            render_tags(Label.where(id: params[:tags]), "unstyled-link")
           else
             t('.creatives')
           end
