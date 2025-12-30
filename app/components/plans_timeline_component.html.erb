@@ -9,6 +9,13 @@
     <%= form.text_field :name, placeholder: t('plans.plan_name') %>
   </div>
   <div>
+    <%= form.hidden_field :creative_id, id: 'plan-creative-id' %>
+    <button type="button" id="plan-select-creative-btn" class="btn btn-secondary">
+      <%= t('plans.select_creative', default: 'Select Creative (Optional)') %>
+    </button>
+    <span id="plan-selected-creative-name" style="margin-left: 0.5em;"></span>
+  </div>
+  <div>
     <%= form.date_field :target_date, placeholder: t('plans.target_date') %>
   </div>
   <div>
@@ -16,3 +23,4 @@
   </div>
 <% end %>
 </div>
+
