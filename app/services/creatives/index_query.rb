@@ -110,7 +110,18 @@ module Creatives
 
         parent.children.where(id: allowed_ids)
       else
-        Creative.roots.where(id: allowed_ids).where(user: user)
+        # Find top-most nodes from allowed_ids efficiently using CreativeHierarchy
+        # These are nodes whose parent is either nil or not in allowed_ids
+        top_node_ids = CreativeHierarchy
+                         .where(descendant_id: allowed_ids, generations: 1)
+                         .where.not(ancestor_id: allowed_ids)
+                         .pluck(:descendant_id)
+                         .uniq
+
+        # Also include true roots (parent_id is nil) that are in allowed_ids
+        root_ids = Creative.where(id: allowed_ids, parent_id: nil).pluck(:id)
+
+        Creative.where(id: (top_node_ids + root_ids).uniq)
       end
 
       # Final permission check on start_nodes
