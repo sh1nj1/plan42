@@ -122,11 +122,11 @@ module Creatives
 
     test "IndexQuery calculates filtered progress using leaf-most logic" do
       # Setup for progress test
-      # A (Tag1, 50%) -> B (Tag1, 100%)
-      # X (Tag1, 10%)
+      # A (Tag2, 50%) -> B (Tag2, 100%) -> C, D (not tagged)
+      # X (Tag2, 10%) -> Y (not tagged)
 
       @root_a.update!(progress: 0.5)
-      @node_b.update!(progress: 1.0) # Not tagged in setup, let's tag it
+      @node_b.update!(progress: 1.0)
       @root_x.update!(progress: 0.1)
 
       tag_label2 = Label.create!(owner: @user, name: "Tag2")
@@ -138,27 +138,30 @@ module Creatives
       # Matched: A, B, X.
       # Hierarchy: A -> B.
       # A is ancestor of B. So A is superfluous.
-      # Relevant: B (1.0), X (0.1).
-      # Average: (1.0 + 0.1) / 2 = 0.55
+      # Relevant (leaf-most): B, X.
+      # Tag-aware progress:
+      #   B has children (C, D) but none are tagged -> 1.0
+      #   X has children (Y) but none are tagged -> 1.0
+      # Average: (1.0 + 1.0) / 2 = 1.0
 
       params = { tags: [ tag_label2.id ] }
       query = Creatives::IndexQuery.new(user: @user, params: params)
       result = query.call
 
-      assert_in_delta 0.55, result.overall_progress
+      assert_in_delta 1.0, result.overall_progress
 
       # Verify Progress Map
       # A: Average of leaf-descendants in relevant set.
-      # A's descendants in relevant set: B (1.0). (X is not descendant of A).
-      # So A should be 1.0. (Because A is superfluous, B is relevant).
+      # A's descendants in relevant set: B (1.0 tag-aware). (X is not descendant of A)
+      # So A should be 1.0.
 
-      # B: B is relevant. Progress 1.0.
-      # X: X is relevant. Progress 0.1.
+      # B: B is relevant. Tag-aware progress 1.0 (has untagged children).
+      # X: X is relevant. Tag-aware progress 1.0 (has untagged children).
 
       map = result.progress_map
       assert_in_delta 1.0, map[@root_a.id.to_s]
       assert_in_delta 1.0, map[@node_b.id.to_s]
-      assert_in_delta 0.1, map[@root_x.id.to_s]
+      assert_in_delta 1.0, map[@root_x.id.to_s]
     end
   end
 end
