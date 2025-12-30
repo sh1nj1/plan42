@@ -139,29 +139,29 @@ module Creatives
       # Hierarchy: A -> B.
       # A is ancestor of B. So A is superfluous.
       # Relevant (leaf-most): B, X.
-      # Tag-aware progress:
-      #   B has children (C, D) but none are tagged -> 1.0
-      #   X has children (Y) but none are tagged -> 1.0
-      # Average: (1.0 + 1.0) / 2 = 1.0
+      # Progress values:
+      #   B: 1.0 (stored progress)
+      #   X: 0.1 (stored progress)
+      # Average: (1.0 + 0.1) / 2 = 0.55
 
       params = { tags: [ tag_label2.id ] }
       query = Creatives::IndexQuery.new(user: @user, params: params)
       result = query.call
 
-      assert_in_delta 1.0, result.overall_progress
+      assert_in_delta 0.55, result.overall_progress
 
       # Verify Progress Map
       # A: Average of leaf-descendants in relevant set.
-      # A's descendants in relevant set: B (1.0 tag-aware). (X is not descendant of A)
+      # A's descendants in relevant set: B (1.0). (X is not descendant of A)
       # So A should be 1.0.
 
-      # B: B is relevant. Tag-aware progress 1.0 (has untagged children).
-      # X: X is relevant. Tag-aware progress 1.0 (has untagged children).
+      # B: B is relevant. Progress 1.0.
+      # X: X is relevant. Progress 0.1.
 
       map = result.progress_map
       assert_in_delta 1.0, map[@root_a.id.to_s]
       assert_in_delta 1.0, map[@node_b.id.to_s]
-      assert_in_delta 1.0, map[@root_x.id.to_s]
+      assert_in_delta 0.1, map[@root_x.id.to_s]
     end
   end
 end

@@ -140,21 +140,10 @@ module Creatives
       # 1. Get properties of relevant creatives from already-loaded objects
       relevant_creatives = accessible_creatives.select { |c| relevant_ids.include?(c.id) }
 
-      # Apply tag-aware progress logic (matching progress_for_tags semantics):
-      # For nodes in relevant_ids (leaf-most tagged nodes):
-      # - If node has children but none are in relevant_ids (none are tagged): 1.0
-      # - Otherwise (true leaf or has tagged children): actual progress
-      relevant_ids_set = relevant_ids.to_set
-      leaf_values = relevant_creatives.to_h do |c|
-        progress_value = if c.children.any? && c.children.none? { |child| relevant_ids_set.include?(child.id) }
-                          1.0  # Tagged parent with untagged children is treated as complete
-        else
-                          c.progress.to_f  # Leaf node or has tagged children uses actual progress
-        end
-        [ c.id, progress_value ]
-      end
+      # Use actual progress for all relevant nodes
+      leaf_values = relevant_creatives.to_h { |c| [ c.id, c.progress.to_f ] }
 
-      # Calculate overall average from tag-aware values
+      # Calculate overall average from loaded values
       total_progress = leaf_values.values.sum
       overall_average = leaf_values.any? ? total_progress / leaf_values.size : 0.0
 
