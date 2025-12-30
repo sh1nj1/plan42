@@ -84,4 +84,68 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
   def json_ids
     JSON.parse(response.body).map { |item| item["id"] }
   end
+
+  test "user with read permission on creative can see linked plan" do
+    creative = creatives(:tshirt)
+    collaborator = users(:two)
+
+    CreativeShare.create!(creative: creative, user: collaborator, permission: :read)
+    plan = Plan.create!(name: "Test Plan", target_date: Date.today, creative: creative, owner: users(:one))
+
+    login_as(collaborator)
+    get plans_url(format: :json)
+
+    assert_response :success
+    assert_includes json_ids, plan.id, "User with read permission should see Creative-linked plan"
+  end
+
+  test "user without permission on creative cannot see linked plan" do
+    creative = creatives(:tshirt)
+    plan = Plan.create!(name: "Test Plan", target_date: Date.today, creative: creative, owner: users(:one))
+
+    login_as(users(:two))
+    get plans_url(format: :json)
+
+    assert_response :success
+    refute_includes json_ids, plan.id, "User without permission should not see Creative-linked plan"
+  end
+
+  test "create plan with creative_id" do
+    creative = creatives(:tshirt)
+
+    login_as(users(:one))
+    assert_difference("Plan.count", 1) do
+      post plans_url(format: :json), params: {
+        plan: { name: "New Plan", target_date: Date.today, creative_id: creative.id }
+      }
+    end
+
+    assert_response :created
+    plan = Plan.last
+    assert_equal creative.id, plan.creative_id, "Plan should be linked to Creative"
+  end
+
+  test "plan without creative maintains owner-based visibility" do
+    plan = Plan.create!(name: "Owner Plan", target_date: Date.today, owner: users(:one))
+
+    login_as(users(:one))
+    get plans_url(format: :json)
+    assert_includes json_ids, plan.id, "Owner should see their own plan"
+
+    login_as(users(:two))
+    get plans_url(format: :json)
+    refute_includes json_ids, plan.id, "Non-owner should not see owner's plan"
+  end
+
+  test "plan with nil owner is visible to all users" do
+    plan = Plan.create!(name: "Public Plan", target_date: Date.today, owner: nil)
+
+    login_as(users(:one))
+    get plans_url(format: :json)
+    assert_includes json_ids, plan.id, "Public plan should be visible to all users"
+
+    login_as(users(:two))
+    get plans_url(format: :json)
+    assert_includes json_ids, plan.id, "Public plan should be visible to all users"
+  end
 end

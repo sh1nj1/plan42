@@ -4,7 +4,8 @@ class PlansTimelineComponent < ViewComponent::Base
     @end_date = Date.current + 30
     @plans = plans
       .where("target_date >= ? AND created_at <= ?", @start_date, @end_date)
-      .order(:created_at)
+      .select { |plan| plan.readable_by?(Current.user) }
+      .sort_by(&:created_at)
     @calendar_events = calendar_events
       .includes(:creative)
       .where("DATE(start_time) <= ? AND DATE(end_time) >= ?", @end_date, @start_date)

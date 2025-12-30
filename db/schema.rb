@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_12_23_072625) do
+ActiveRecord::Schema[8.1].define(version: 2025_12_30_074456) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -261,12 +261,14 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_23_072625) do
 
   create_table "labels", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.integer "creative_id"
     t.string "name"
     t.integer "owner_id"
     t.date "target_date"
     t.string "type"
     t.datetime "updated_at", null: false
     t.string "value"
+    t.index ["creative_id"], name: "index_labels_on_creative_id"
     t.index ["owner_id"], name: "index_labels_on_owner_id"
   end
 
@@ -663,6 +665,7 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_23_072625) do
   add_foreign_key "inbox_items", "users", column: "owner_id"
   add_foreign_key "invitations", "creatives"
   add_foreign_key "invitations", "users", column: "inviter_id"
+  add_foreign_key "labels", "creatives"
   add_foreign_key "labels", "users", column: "owner_id"
   add_foreign_key "mcp_tools", "creatives"
   add_foreign_key "notion_accounts", "users"

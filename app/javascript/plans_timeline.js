@@ -8,8 +8,8 @@ if (!plansTimelineScriptInitialized) {
     container.dataset.initialized = 'true';
 
     var plans = [];
-    try { plans = JSON.parse(container.dataset.plans || '[]'); } catch(e) {}
-    plans = plans.map(function(p) {
+    try { plans = JSON.parse(container.dataset.plans || '[]'); } catch (e) { }
+    plans = plans.map(function (p) {
       p.created_at = new Date(p.created_at);
       p.target_date = new Date(p.target_date);
       return p;
@@ -32,8 +32,8 @@ if (!plansTimelineScriptInitialized) {
     function createDay(date) {
       var el = document.createElement('div');
       el.className = 'timeline-day';
-      el.dataset.date = date.toISOString().slice(0,10);
-      el.innerHTML = '<div class="day-label">' + (date.getMonth()+1) + '/' + date.getDate() + '</div>';
+      el.dataset.date = date.toISOString().slice(0, 10);
+      el.innerHTML = '<div class="day-label">' + (date.getMonth() + 1) + '/' + date.getDate() + '</div>';
       return el;
     }
 
@@ -86,7 +86,7 @@ if (!plansTimelineScriptInitialized) {
         del.textContent = '×';
         del.className = 'delete-plan-btn';
         el.appendChild(del);
-        del.addEventListener('click', function(e) {
+        del.addEventListener('click', function (e) {
           e.stopPropagation();
           if (!confirm(container.dataset.deleteConfirm)) return;
           var deleteUrl;
@@ -101,14 +101,14 @@ if (!plansTimelineScriptInitialized) {
               'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content,
               Accept: 'application/json'
             }
-          }).then(function(r) {
+          }).then(function (r) {
             if (r.ok) {
-              var idx = planEls.findIndex(function(item) { return item.plan.id === plan.id; });
+              var idx = planEls.findIndex(function (item) { return item.plan.id === plan.id; });
               if (idx > -1) {
                 planEls[idx].el.remove();
                 planEls.splice(idx, 1);
               }
-              plans = plans.filter(function(p) { return p.id !== plan.id; });
+              plans = plans.filter(function (p) { return p.id !== plan.id; });
               updatePlanPositions();
             } else {
               window.location.reload();
@@ -117,7 +117,7 @@ if (!plansTimelineScriptInitialized) {
         });
       }
 
-      el.addEventListener('click', function() {
+      el.addEventListener('click', function () {
         if (plan.path) {
           window.location.href = plan.path;
         }
@@ -135,7 +135,7 @@ if (!plansTimelineScriptInitialized) {
     }
 
     function renderPlans() {
-      plans.forEach(function(plan, idx) {
+      plans.forEach(function (plan, idx) {
         var el = createPlanBar(plan, idx);
         scroll.appendChild(el);
         planEls.push({ el: el, plan: plan });
@@ -144,7 +144,7 @@ if (!plansTimelineScriptInitialized) {
 
     function updatePlanPositions() {
       var visibleWidth = dayDiff(endDate, startDate) * dayWidth;
-      planEls.forEach(function(item, idx) {
+      planEls.forEach(function (item, idx) {
         var plan = item.plan;
         var left = dayDiff(plan.created_at, startDate) * dayWidth;
         var width = (dayDiff(plan.target_date, plan.created_at) + 1) * dayWidth;
@@ -169,7 +169,7 @@ if (!plansTimelineScriptInitialized) {
 
     function extendLeft(n) {
       startDate.setDate(startDate.getDate() - n);
-      renderDays(startDate, new Date(startDate.getTime() + (n-1)*86400000), true);
+      renderDays(startDate, new Date(startDate.getTime() + (n - 1) * 86400000), true);
       updatePlanPositions();
       container.scrollLeft += n * dayWidth;
     }
@@ -190,14 +190,14 @@ if (!plansTimelineScriptInitialized) {
       if (container.dataset.lastLoadedDate === dateStr) return;
       container.dataset.lastLoadedDate = dateStr;
       fetch('/plans.json?date=' + dateStr)
-        .then(function(r) { return r.json(); })
-        .then(function(newPlans) {
-          plans = newPlans.map(function(p) {
+        .then(function (r) { return r.json(); })
+        .then(function (newPlans) {
+          plans = newPlans.map(function (p) {
             p.created_at = new Date(p.created_at);
             p.target_date = new Date(p.target_date);
             return p;
           });
-          planEls.forEach(function(item) { item.el.remove(); });
+          planEls.forEach(function (item) { item.el.remove(); });
           planEls = [];
           renderPlans();
           updatePlanPositions();
@@ -221,13 +221,13 @@ if (!plansTimelineScriptInitialized) {
 
     var todayBtn = document.getElementById('timeline-today-btn');
     if (todayBtn) {
-      todayBtn.addEventListener('click', function() { scrollToDate(new Date()); });
+      todayBtn.addEventListener('click', function () { scrollToDate(new Date()); });
     }
 
     scrollToDate(new Date());
 
     var scrollTimer;
-    container.addEventListener('scroll', function() {
+    container.addEventListener('scroll', function () {
       if (container.scrollLeft < 50) {
         extendLeft(30);
       }
@@ -236,7 +236,7 @@ if (!plansTimelineScriptInitialized) {
       }
       updatePlanPositions();
       clearTimeout(scrollTimer);
-      scrollTimer = setTimeout(function() {
+      scrollTimer = setTimeout(function () {
         var centerOffset = container.scrollLeft + container.clientWidth / 2;
         var daysFromStart = centerOffset / dayWidth;
         var centerDate = new Date(startDate.getTime() + Math.round(daysFromStart) * 86400000);
@@ -244,11 +244,11 @@ if (!plansTimelineScriptInitialized) {
       }, 200);
     });
 
-    var planForm = document.getElementById('new-plan-form');
+    const planForm = document.getElementById('new-plan-form');
     if (planForm) {
-      planForm.addEventListener('submit', function(e) {
+      planForm.addEventListener('submit', function (e) {
         e.preventDefault();
-        var fd = new FormData(planForm);
+        const fd = new FormData(planForm);
         fetch(planForm.action, {
           method: 'POST',
           headers: {
@@ -256,21 +256,48 @@ if (!plansTimelineScriptInitialized) {
             Accept: 'application/json'
           },
           body: fd
-        }).then(function(r) {
+        }).then(function (r) {
           if (r.ok) return r.json();
-          return r.json().then(function(j) { throw j; });
-        }).then(function(plan) {
+          return r.json().then(function (j) { throw j; });
+        }).then(function (plan) {
           plan.created_at = new Date(plan.created_at);
           plan.target_date = new Date(plan.target_date);
           addPlan(plan);
           planForm.reset();
-        }).catch(function(err) {
+          // Clear creative selection
+          document.getElementById('plan-creative-id').value = '';
+          document.getElementById('plan-selected-creative-name').textContent = '';
+        }).catch(function (err) {
           if (err && err.errors) {
             alert(err.errors.join(', '));
           } else {
             window.location.reload();
           }
         });
+      });
+    }
+
+    // Creative selector button handler - reuse link-creative-modal
+    const planSelectCreativeBtn = document.getElementById('plan-select-creative-btn');
+    if (planSelectCreativeBtn) {
+      planSelectCreativeBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        const modal = document.getElementById('link-creative-modal');
+        if (!modal) return;
+
+        // Get the controller from the application
+        const application = window.Stimulus;
+        if (!application) return;
+
+        const controller = application.getControllerForElementAndIdentifier(modal, 'link-creative');
+        if (controller) {
+          controller.open(planSelectCreativeBtn.getBoundingClientRect(), function (item) {
+            // Set the creative_id in the hidden field
+            document.getElementById('plan-creative-id').value = item.id;
+            // Display the selected creative name
+            document.getElementById('plan-selected-creative-name').textContent = item.label || 'Creative #' + item.id;
+          });
+        }
       });
     }
   }

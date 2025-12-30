@@ -7,9 +7,10 @@ class PlansController < ApplicationController
     end
     start_date = center - 30
     end_date = center + 30
-    @plans = Plan.where(owner: Current.user).or(Plan.where(owner: nil))
+    @plans = Plan.includes(:creative)
                  .where("target_date >= ? AND created_at <= ?", start_date, end_date)
                  .order(:created_at)
+                 .select { |plan| plan.readable_by?(Current.user) }
     calendar_scope = CalendarEvent.includes(:creative)
                                   .where("DATE(start_time) <= ? AND DATE(end_time) >= ?", end_date, start_date)
                                   .order(:start_time)
@@ -24,7 +25,7 @@ class PlansController < ApplicationController
       end
       format.json do
         plan_jsons = @plans.map { |p| plan_json(p) }
-          event_jsons = @calendar_events.map { |e| calendar_json(e) }
+      event_jsons = @calendar_events.map { |e| calendar_json(e) }
           render json: plan_jsons + event_jsons
       end
     end
@@ -69,7 +70,7 @@ class PlansController < ApplicationController
   private
 
   def plan_params
-    params.require(:plan).permit(:name, :target_date)
+    params.require(:plan).permit(:name, :target_date, :creative_id)
   end
 
   def plan_json(plan)
