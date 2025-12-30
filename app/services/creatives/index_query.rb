@@ -100,7 +100,7 @@ module Creatives
       # "Starting Roots" for the result.
       start_nodes = if params[:id]
         parent = Creative.find(params[:id])
-        return [ [], parent, nil, 0, {} ] unless readable?(parent)
+        return [ [], nil, nil, 0, {} ] unless readable?(parent)
 
         parent.children.where(id: allowed_ids)
       else
