@@ -110,17 +110,17 @@ module Creatives
 
         parent.children.where(id: allowed_ids)
       else
-        # Find top-most nodes from allowed_ids efficiently using CreativeHierarchy
-        # These are nodes in allowed_ids that are NOT descendants of other nodes in allowed_ids
-        nodes_with_parents_in_set = CreativeHierarchy
-                                      .where(ancestor_id: allowed_ids, descendant_id: allowed_ids)
-                                      .where("generations > 0")
-                                      .pluck(:descendant_id)
-                                      .uniq
+        # Find top-most nodes from allowed_ids
+        # A node is "top" if none of its ancestors are in allowed_ids
+        creatives_in_set = Creative.where(id: allowed_ids).to_a
+        allowed_ids_set = allowed_ids.to_set
 
-        top_node_ids = allowed_ids - nodes_with_parents_in_set
+        top_nodes = creatives_in_set.reject do |creative|
+          # If any ancestor of this creative is also in allowed_ids, it's NOT a top node
+          creative.ancestor_ids.any? { |ancestor_id| allowed_ids_set.include?(ancestor_id) }
+        end
 
-        Creative.where(id: top_node_ids)
+        top_nodes
       end
 
       # Final permission check on start_nodes
