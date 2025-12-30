@@ -14,6 +14,13 @@ class CreativesController < ApplicationController
     @shared_creative = index_result.shared_creative
     @shared_list = index_result.shared_list
     @overall_progress = index_result.overall_progress if params[:tags].present?
+    @allowed_creative_ids = index_result.allowed_creative_ids
+    @progress_map = index_result.progress_map
+
+    # Set filtered_progress on parent creative if progress_map is available
+    if @parent_creative && @progress_map && @progress_map.key?(@parent_creative.id.to_s)
+      @parent_creative.filtered_progress = @progress_map[@parent_creative.id.to_s]
+    end
 
     respond_to do |format|
       format.html
@@ -21,7 +28,15 @@ class CreativesController < ApplicationController
         if params[:simple].present?
           render json: serialize_creatives(@creatives)
         else
-          render json: { creatives: build_tree(@creatives, params: params, expanded_state_map: @expanded_state_map, level: 1) }
+          @creatives_tree_json = build_tree(
+            index_result.creatives,
+            params: params,
+            expanded_state_map: @expanded_state_map,
+            level: 1,
+            allowed_creative_ids: @allowed_creative_ids,
+            progress_map: @progress_map
+          )
+          render json: { creatives: @creatives_tree_json }
         end
       end
     end
@@ -263,19 +278,30 @@ class CreativesController < ApplicationController
 
   def children
     parent = Creative.find(params[:id])
-    @expanded_state_map = CreativeExpandedState
+    expanded_state_map = CreativeExpandedState
                               .where(user_id: Current.user.id, creative_id: parent.id)
                               .first&.expanded_status || {}
     children = parent.children_with_permission(Current.user)
+
+    allowed_ids = nil
+    progress_map = nil
+    if params[:tags].present? || params[:min_progress].present? || params[:max_progress].present?
+      result = Creatives::IndexQuery.new(user: Current.user, params: params.merge(id: params[:id])).call
+      allowed_ids = result.allowed_creative_ids
+      progress_map = result.progress_map
+    end
+
     level = params[:level].to_i
     json_level = level.zero? ? 1 : level
     render json: {
       creatives: build_tree(
         children,
         params: params,
-        expanded_state_map: @expanded_state_map,
+        expanded_state_map: expanded_state_map,
         level: json_level,
-        select_mode: params[:select_mode] == "1"
+        select_mode: params[:select_mode] == "1",
+        allowed_creative_ids: allowed_ids,
+        progress_map: progress_map
       )
     }
   end
@@ -333,14 +359,16 @@ class CreativesController < ApplicationController
   end
 
   private
-    def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false)
+    def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil)
       Creatives::TreeBuilder.new(
         user: Current.user,
         params: params,
         view_context: view_context,
         expanded_state_map: expanded_state_map,
         select_mode: select_mode,
-        max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL
+        max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL,
+        allowed_creative_ids: allowed_creative_ids,
+        progress_map: progress_map
       ).build(collection, level: level)
     end
 

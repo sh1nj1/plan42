@@ -2,13 +2,15 @@ module Creatives
   class TreeBuilder
     FILTER_IGNORED_KEYS = %w[id controller action format level select_mode].freeze
 
-    def initialize(user:, params:, view_context:, expanded_state_map:, select_mode:, max_level:)
+    def initialize(user:, params:, view_context:, expanded_state_map:, select_mode:, max_level:, allowed_creative_ids: nil, progress_map: nil)
       @user = user
       @view_context = view_context
       @raw_params = params.respond_to?(:to_unsafe_h) ? params.to_unsafe_h : params.to_h
       @expanded_state_map = expanded_state_map || {}
       @select_mode = select_mode
       @max_level = max_level
+      @allowed_creative_ids = allowed_creative_ids
+      @progress_map = progress_map
     end
 
     def build(collection, level: 1)
@@ -19,7 +21,7 @@ module Creatives
 
     private
 
-    attr_reader :user, :view_context, :raw_params, :expanded_state_map, :select_mode, :max_level
+    attr_reader :user, :view_context, :raw_params, :expanded_state_map, :select_mode, :max_level, :allowed_creative_ids, :progress_map
 
     def build_nodes(creatives, level:)
       return [] if level > max_level
@@ -30,6 +32,10 @@ module Creatives
     end
 
     def build_nodes_for_creative(creative, level:)
+      if progress_map && progress_map.key?(creative.id.to_s)
+        creative.filtered_progress = progress_map[creative.id.to_s]
+      end
+
       filtered_children = filtered_children_for(creative)
       expanded = expanded?(creative.id)
       skip = skip_creative?(creative)
@@ -67,6 +73,10 @@ module Creatives
     end
 
     def skip_creative?(creative)
+      if allowed_creative_ids
+        return !allowed_creative_ids.include?(creative.id.to_s)
+      end
+
       tags = Array(raw_params["tags"]).map(&:to_s)
       if tags.present?
         creative_label_ids = creative.tags.pluck(:label_id).map(&:to_s)
@@ -89,7 +99,12 @@ module Creatives
     def filtered_children_for(creative)
       return [] if raw_params["comment"] == "true" || raw_params["search"].present?
 
-      creative.children_with_permission(user)
+      children = creative.children_with_permission(user)
+      if allowed_creative_ids
+        children.select { |c| allowed_creative_ids.include?(c.id.to_s) }
+      else
+        children
+      end
     end
 
     def expanded?(creative_id)
@@ -98,6 +113,8 @@ module Creatives
 
     def filters_applied?
       @filters_applied ||= begin
+        return true if allowed_creative_ids.present?
+
         filtered = raw_params.except(*FILTER_IGNORED_KEYS)
         filtered.present?
       end
