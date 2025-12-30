@@ -9,8 +9,8 @@ module Creatives
         "<iframe></iframe>"
       end
 
-      def render_creative_progress(_creative, select_mode: false)
-        "<progress data-select='#{select_mode}'></progress>"
+      def render_creative_progress(_creative, select_mode: false, progress_value: nil)
+        "<progress data-select='#{select_mode}' data-progress='#{progress_value}'></progress>"
       end
 
       def svg_tag(name, className: nil, width: nil, height: nil)
@@ -25,8 +25,9 @@ module Creatives
         "/creatives/#{creative.id}"
       end
 
-      def children_creative_path(creative, level:, select_mode:)
-        "/creatives/#{creative.id}/children?level=#{level}&select_mode=#{select_mode}"
+      def children_creative_path(creative, params = {})
+        query = params
+        "/creatives/#{creative.id}/children?#{query.to_query}"
       end
     end
 
@@ -41,12 +42,23 @@ module Creatives
       label = Label.create!(owner: @user, name: "Tagged")
       Tag.create!(creative_id: child.id, label: label)
 
-      builder = build_tree_builder(tags: [ label.id ])
-      nodes = builder.build([ parent ])
+      params = { tags: [ label.id ] }
+        filter_result = Creatives::FilteredTreeResolver.new(
+          user: @user,
+          params: params,
+          calculate_progress: false
+        ).call([ parent ])
+        builder = build_tree_builder(params: params, filter_result: filter_result)
+        nodes = builder.build([ parent ])
 
-      assert_equal [ child.id ], nodes.pluck(:id)
-      assert_equal [ 1 ], nodes.pluck(:level)
-    end
+        assert_equal [ parent.id, child.id ].to_set, filter_result.allowed_ids
+        assert_equal [ parent.id ], nodes.pluck(:id)
+        assert_equal [ 1 ], nodes.pluck(:level)
+
+        child_nodes = nodes.first.dig(:children_container, :nodes) || []
+        assert_equal [ child.id ], child_nodes.pluck(:id)
+        assert_equal [ 2 ], child_nodes.pluck(:level)
+      end
 
     test "includes inline editor payload data" do
       creative = Creative.create!(user: @user, progress: 0.42, description: "Inline Data")
@@ -62,14 +74,23 @@ module Creatives
 
     private
 
-    def build_tree_builder(params = {})
+    def build_tree_builder(params: {}, filter_result: nil)
+      params = params.respond_to?(:to_unsafe_h) ? params.to_unsafe_h : params
+      filter_result ||= Creatives::FilteredTreeResolver.new(
+        user: @user,
+        params: params,
+        calculate_progress: false
+      ).call([])
+
       Creatives::TreeBuilder.new(
         user: @user,
-        params: ActionController::Parameters.new(params),
+        params: params,
         view_context: @view_context,
         expanded_state_map: {},
         select_mode: false,
-        max_level: 6
+        max_level: 6,
+        filtered_ids: filter_result.allowed_ids,
+        progress_map: filter_result.progress_map
       )
     end
   end

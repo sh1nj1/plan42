@@ -21,7 +21,16 @@ class CreativesController < ApplicationController
         if params[:simple].present?
           render json: serialize_creatives(@creatives)
         else
-          render json: { creatives: build_tree(@creatives, params: params, expanded_state_map: @expanded_state_map, level: 1) }
+          filter_result = filtered_tree_resolver.call(@creatives)
+          render json: {
+            creatives: build_tree(
+              @creatives,
+              params: params,
+              expanded_state_map: @expanded_state_map,
+              level: 1,
+              filter_result: filter_result
+            )
+          }
         end
       end
     end
@@ -266,7 +275,12 @@ class CreativesController < ApplicationController
     @expanded_state_map = CreativeExpandedState
                               .where(user_id: Current.user.id, creative_id: parent.id)
                               .first&.expanded_status || {}
+    filter_result = filtered_tree_resolver.call([ parent ])
     children = parent.children_with_permission(Current.user)
+    if filter_result.allowed_ids
+      allowed_ids = filter_result.allowed_ids
+      children = children.select { |child| allowed_ids.include?(child.id) }
+    end
     level = params[:level].to_i
     json_level = level.zero? ? 1 : level
     render json: {
@@ -275,7 +289,8 @@ class CreativesController < ApplicationController
         params: params,
         expanded_state_map: @expanded_state_map,
         level: json_level,
-        select_mode: params[:select_mode] == "1"
+        select_mode: params[:select_mode] == "1",
+        filter_result: filter_result
       )
     }
   end
@@ -333,15 +348,27 @@ class CreativesController < ApplicationController
   end
 
   private
-    def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false)
+    def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, filter_result: nil)
+      filter_result ||= filtered_tree_resolver.call(collection)
+
       Creatives::TreeBuilder.new(
         user: Current.user,
         params: params,
         view_context: view_context,
         expanded_state_map: expanded_state_map,
         select_mode: select_mode,
-        max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL
+        max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL,
+        filtered_ids: filter_result.allowed_ids,
+        progress_map: filter_result.progress_map
       ).build(collection, level: level)
+    end
+
+    def filtered_tree_resolver
+      @filtered_tree_resolver ||= Creatives::FilteredTreeResolver.new(
+        user: Current.user,
+        params: params.to_unsafe_h,
+        calculate_progress: ActiveModel::Type::Boolean.new.cast(params[:calculate_progress])
+      )
     end
 
     def set_creative

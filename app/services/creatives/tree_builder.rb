@@ -1,14 +1,27 @@
+require "set"
+
 module Creatives
   class TreeBuilder
     FILTER_IGNORED_KEYS = %w[id controller action format level select_mode].freeze
 
-    def initialize(user:, params:, view_context:, expanded_state_map:, select_mode:, max_level:)
+    def initialize(
+      user:,
+      params:,
+      view_context:,
+      expanded_state_map:,
+      select_mode:,
+      max_level:,
+      filtered_ids: nil,
+      progress_map: nil
+    )
       @user = user
       @view_context = view_context
       @raw_params = params.respond_to?(:to_unsafe_h) ? params.to_unsafe_h : params.to_h
       @expanded_state_map = expanded_state_map || {}
       @select_mode = select_mode
       @max_level = max_level
+      @filtered_ids = filtered_ids.present? ? filtered_ids.to_set : filtered_ids
+      @progress_map = progress_map
     end
 
     def build(collection, level: 1)
@@ -19,7 +32,7 @@ module Creatives
 
     private
 
-    attr_reader :user, :view_context, :raw_params, :expanded_state_map, :select_mode, :max_level
+    attr_reader :user, :view_context, :raw_params, :expanded_state_map, :select_mode, :max_level, :filtered_ids, :progress_map
 
     def build_nodes(creatives, level:)
       return [] if level > max_level
@@ -30,6 +43,8 @@ module Creatives
     end
 
     def build_nodes_for_creative(creative, level:)
+      return [] if filtered_ids && !filtered_ids.include?(creative.id)
+
       filtered_children = filtered_children_for(creative)
       expanded = expanded?(creative.id)
       skip = skip_creative?(creative)
@@ -67,6 +82,8 @@ module Creatives
     end
 
     def skip_creative?(creative)
+      return false if filtered_ids
+
       tags = Array(raw_params["tags"]).map(&:to_s)
       if tags.present?
         creative_label_ids = creative.tags.pluck(:label_id).map(&:to_s)
@@ -87,9 +104,12 @@ module Creatives
     end
 
     def filtered_children_for(creative)
-      return [] if raw_params["comment"] == "true" || raw_params["search"].present?
+      return [] if filtered_ids.nil? && (raw_params["comment"] == "true" || raw_params["search"].present?)
 
-      creative.children_with_permission(user)
+      children = creative.children_with_permission(user)
+      return children unless filtered_ids
+
+      children.select { |child| filtered_ids.include?(child.id) }
     end
 
     def expanded?(creative_id)
@@ -98,14 +118,20 @@ module Creatives
 
     def filters_applied?
       @filters_applied ||= begin
-        filtered = raw_params.except(*FILTER_IGNORED_KEYS)
-        filtered.present?
+        return true if filtered_ids
+
+        filtered = raw_params.slice(*Creatives::FilteredTreeResolver::FILTER_KEYS)
+        filtered.except(:calculate_progress, "calculate_progress").present?
       end
     end
 
     def template_payload_for(creative)
       description_html = view_context.embed_youtube_iframe(creative.effective_description(raw_params["tags"]&.first))
-      progress_html = view_context.render_creative_progress(creative, select_mode: !!select_mode)
+      progress_html = view_context.render_creative_progress(
+        creative,
+        select_mode: !!select_mode,
+        progress_value: progress_value_for(creative)
+      )
 
       {
         description_html: description_html,
@@ -133,12 +159,17 @@ module Creatives
         loaded: load_children_now,
         load_url: view_context.children_creative_path(
           creative,
-          level: child_level,
-          select_mode: select_mode ? 1 : 0
+          filtered_query_params.merge(level: child_level, select_mode: select_mode ? 1 : 0)
         ),
         level: child_level,
         nodes: children_nodes
       }
+    end
+
+    def filtered_query_params
+      return {} unless raw_params
+
+      raw_params.slice(*Creatives::FilteredTreeResolver::FILTER_KEYS)
     end
 
     def edit_icon_html
@@ -160,6 +191,10 @@ module Creatives
       ) do
         view_context.svg_tag("arrow-right.svg", class: "creative-origin-link-icon", width: 16, height: 16)
       end
+    end
+
+    def progress_value_for(creative)
+      progress_map&.fetch(creative.id, nil)
     end
   end
 end

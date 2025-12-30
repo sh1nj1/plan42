@@ -30,8 +30,8 @@ module CreativesHelper
     end
   end
 
-  def render_creative_progress(creative, select_mode: false)
-    progress_value = if params[:tags].present?
+  def render_creative_progress(creative, select_mode: false, progress_value: nil)
+    progress_value ||= if params[:tags].present?
       tag_ids = Array(params[:tags]).map(&:to_s)
       creative.progress_for_tags(tag_ids) || 0
     else
