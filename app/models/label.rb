@@ -1,9 +1,13 @@
 class Label < ApplicationRecord
   has_many :tags, dependent: :destroy
   belongs_to :owner, class_name: "User", optional: true
-  belongs_to :creative, optional: true
-  # STI: Plan, Variation 등 서브클래스에서 type 컬럼 사용
-  # name, value, target_date 등 속성 포함
+  belongs_to :creative, optional: false
+
+  delegate :description, to: :creative, allow_nil: true
+  alias_method :name, :description
+
+  # STI: Plan, Version, etc subclasses use type column
+  # creative_id, value, target_date etc attributes included
 
   # Check if user has permission to read this label
   # If linked to a Creative, delegates to Creative's permission system

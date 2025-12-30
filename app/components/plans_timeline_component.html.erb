@@ -5,22 +5,10 @@
 <hr>
 <div class="plan-form-container">
 <%= form_with(model: Plan.new, url: plans_path, local: true, id: 'new-plan-form') do |form| %>
-  <div>
-    <%= form.text_field :name, placeholder: t('plans.plan_name') %>
-  </div>
-  <div>
     <%= form.hidden_field :creative_id, id: 'plan-creative-id' %>
-    <button type="button" id="plan-select-creative-btn" class="btn btn-secondary">
-      <%= t('plans.select_creative', default: 'Select Creative (Optional)') %>
-    </button>
-    <span id="plan-selected-creative-name" style="margin-left: 0.5em;"></span>
-  </div>
-  <div>
-    <%= form.date_field :target_date, placeholder: t('plans.target_date') %>
-  </div>
-  <div>
-    <%= form.submit t('plans.add_plan') %>
-  </div>
+    <input type="text" id="plan-select-creative-input" placeholder="<%= t('plans.select_creative', default: 'Select Creative') %>" autocomplete="off">
+    <%= form.date_field :target_date, placeholder: t('plans.target_date'), id: 'plan-target-date' %>
+    <%= form.submit t('plans.add_plan'), id: 'add-plan-btn', disabled: true %>
 <% end %>
 </div>
 

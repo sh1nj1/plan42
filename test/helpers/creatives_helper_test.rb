@@ -190,4 +190,10 @@ class CreativesHelperTest < ActionView::TestCase
       parent.destroy
     end
   end
+  test "render_tags strips html from label names" do
+    label = Label.new(id: 1, creative: Creative.new(description: "<b>HTML</b> Tag"))
+    html = render_tags([ label ])
+    assert_includes html, ">#HTML Tag</a>", "Link text should be stripped"
+    assert_includes html, "title=\"HTML Tag\"", "Title attribute should be stripped"
+  end
 end

@@ -392,7 +392,7 @@ class CreativesController < ApplicationController
 
     def serialize_creatives(collection)
       if params[:simple].present?
-        collection.map { |c| { id: c.id, description: helpers.strip_tags(c.effective_origin.description), progress: c.progress } }
+        collection.map { |c| { id: c.id, description: c.effective_description(nil, false), progress: c.progress } }
       else
         collection.map { |c| { id: c.id, description: c.effective_description, progress: c.progress } }
       end
