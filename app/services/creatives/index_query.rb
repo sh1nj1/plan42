@@ -85,13 +85,8 @@ module Creatives
         matched = matched.where("progress <= ?", params[:max_progress].to_f)
       end
 
-      # Get Ancestors (including ancestors for matched nodes that might be OUTSIDE the params[:id] scope?
-      # No, we only care about displaying the tree under params[:id] or root.
-      # So we need ancestors UP TO the root of the view.)
-
+      # Ancestors UP TO the root of the view.
       matched_ids = matched.pluck(:id)
-
-
 
       # Using CreativeHierarchy to find all ancestors
       ancestor_ids = CreativeHierarchy.where(descendant_id: matched_ids).pluck(:ancestor_id)
@@ -99,15 +94,10 @@ module Creatives
       # allowed_ids is the set of nodes that should be visible
       allowed_ids = (matched_ids + ancestor_ids).uniq
 
-      # Filter for readability
-      # We can do this efficiently using the `user` relation or permission check.
-      # Ideally we use SQL validation, but `readable?` check is complex (ownership, shares).
-      # For now, let's load and check. Optimization: filter by what the user usually accesses.
+      # Filter for readability efficiently
+      # Optimization: filter by what the user usually accesses.
 
-      # However, if we are at ROOT view, we only start rendering from ROOTS.
-      # If we are at params[:id] view, we start rendering from children of params[:id].
-
-      # Let's find the "Starting Roots" for the result.
+      # "Starting Roots" for the result.
       start_nodes = if params[:id]
         parent = Creative.find(params[:id])
         return [ [], parent, nil, 0 ] unless readable?(parent)
@@ -121,16 +111,10 @@ module Creatives
       visible_start_nodes = start_nodes.select { |c| readable?(c) }
 
       # Filter allowed_ids to only include readable ones?
-      # This prevents exposing existence of non-readable ancestors.
-      # The detailed check happens in TreeBuilder too, but good to clean up here.
-      # For performance, maybe skip full check on all 1000s of ancestors,
-      # TreeBuilder will check node by node as it traverses.
-      # But we should at least pass the set.
-
       parent = params[:id] ? Creative.find(params[:id]) : nil
 
       # Calculate Progress Map
-      # Identify leaf-most relevant nodes
+      # "Leaf-most" logic: efficiently find matched nodes that are ancestors of OTHER matched nodes.
       superfluous_ancestors = CreativeHierarchy
                                 .where(ancestor_id: matched_ids, descendant_id: matched_ids)
                                 .where("generations > 0")
@@ -141,9 +125,7 @@ module Creatives
 
       progress_map = calculate_progress_map(allowed_ids, relevant_ids)
 
-      # Recalculate filtered_progress based on the View Roots?
-      # Or just keep the overall average of relevant_ids?
-      # The original logic used average of relevant_ids. Let's keep that for overall_progress.
+      # Recalculate overall filtered_progress
       filtered_progress = if relevant_ids.any?
                             Creative.where(id: relevant_ids).average(:progress).to_f
       else
@@ -156,25 +138,17 @@ module Creatives
     def calculate_progress_map(allowed_ids, relevant_ids)
       return {} if relevant_ids.empty?
 
-      # 1. Get properties of relevant creatives
+      # 1. Get properties of relevant creatives (leaves)
       relevant_creatives = Creative.where(id: relevant_ids).pluck(:id, :progress)
-      # Map id -> progress
       leaf_values = relevant_creatives.to_h
       leaf_values.transform_values!(&:to_f)
 
-      # 2. For each allowed_id, find its relevant descendants
-      # Efficient batch query using CreativeHierarchy
-      # We want to aggregate: for each ancestor (in allowed_ids), which relevant_ids are descendants?
-
-      # We can select ancestor_id, descendant_id
-      # where ancestor_id IN allowed_ids AND descendant_id IN relevant_ids
-
+      # 2. For each allowed_id, find its relevant descendants using batch query
       relationships = CreativeHierarchy
                         .where(ancestor_id: allowed_ids, descendant_id: relevant_ids)
                         .pluck(:ancestor_id, :descendant_id)
 
-      # 3. Aggregate
-      # ancestor_id => [progress_values...]
+      # 3. Aggregate values per ancestor
       aggregation = Hash.new { |h, k| h[k] = [] }
 
       relationships.each do |anc_id, desc_id|
@@ -187,9 +161,6 @@ module Creatives
       aggregation.each do |anc_id, values|
         result[anc_id.to_s] = values.sum / values.size
       end
-
-      # Ensure leaves themselves are in the map (if self-reference row exists in hierarchy, it's covered.
-      # ClosureTree usually includes generations=0. Yes.)
 
       result
     end
