@@ -16,7 +16,7 @@ class CreativeTreeRow extends LitElement {
     expanded: { type: Boolean, attribute: "expanded" },
     isRoot: { type: Boolean, attribute: "is-root" },
     linkUrl: { attribute: "link-url" },
-    descriptionHtml: { state: true },
+    descriptionHtml: { state: true, noAccessor: true },
     progressHtml: { state: true },
     editIconHtml: { state: true },
     editOffIconHtml: { state: true },
@@ -38,7 +38,7 @@ class CreativeTreeRow extends LitElement {
     this.expanded = false;
     this.isRoot = false;
     this.linkUrl = "#";
-    this.descriptionHtml = "";
+    this._descriptionHtml = "";
     this.progressHtml = "";
     this.editIconHtml = "";
     this.editOffIconHtml = "";
@@ -84,10 +84,21 @@ class CreativeTreeRow extends LitElement {
     this._stopAnimation();
   }
 
-  _setDescriptionHtml(markup) {
-    const sanitized = DOMPurify.sanitize(markup ?? "");
-    this.descriptionHtml = sanitized;
+  get descriptionHtml() {
+    return this._descriptionHtml;
+  }
+
+  set descriptionHtml(value) {
+    const oldValue = this._descriptionHtml;
+    // Always sanitize when setting new HTML
+    const sanitized = DOMPurify.sanitize(value ?? "");
+    this._descriptionHtml = sanitized;
     this.dataset.descriptionHtml = sanitized;
+    this.requestUpdate("descriptionHtml", oldValue);
+  }
+
+  _setDescriptionHtml(markup) {
+    this.descriptionHtml = markup;
   }
 
   _extractTemplates() {

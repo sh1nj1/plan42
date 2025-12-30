@@ -68,6 +68,7 @@ class Creative < ApplicationRecord
 
   before_validation :assign_default_user, on: :create
   before_validation :redirect_parent_to_origin
+  before_save :sanitize_description_html
 
   after_save :update_parent_progress
   after_save :clear_permission_cache_on_parent_change
@@ -265,6 +266,16 @@ class Creative < ApplicationRecord
         Rails.logger.error("Creative##{id}: failed to purge blob #{signed_id}: #{e.message}")
       end
     end
+  end
+
+  def sanitize_description_html
+    table_tags = %w[table thead tbody tfoot tr th td]
+    table_attrs = %w[colspan rowspan]
+    self.description = ActionController::Base.helpers.sanitize(
+      description,
+      tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags,
+      attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + %w[data-lexical]
+    )
   end
 
   def extract_signed_ids_from_description
