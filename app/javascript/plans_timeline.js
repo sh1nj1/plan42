@@ -244,11 +244,11 @@ if (!plansTimelineScriptInitialized) {
       }, 200);
     });
 
-    var planForm = document.getElementById('new-plan-form');
+    const planForm = document.getElementById('new-plan-form');
     if (planForm) {
       planForm.addEventListener('submit', function (e) {
         e.preventDefault();
-        var fd = new FormData(planForm);
+        const fd = new FormData(planForm);
         fetch(planForm.action, {
           method: 'POST',
           headers: {
@@ -278,18 +278,18 @@ if (!plansTimelineScriptInitialized) {
     }
 
     // Creative selector button handler - reuse link-creative-modal
-    var planSelectCreativeBtn = document.getElementById('plan-select-creative-btn');
+    const planSelectCreativeBtn = document.getElementById('plan-select-creative-btn');
     if (planSelectCreativeBtn) {
       planSelectCreativeBtn.addEventListener('click', function (e) {
         e.preventDefault();
-        var modal = document.getElementById('link-creative-modal');
+        const modal = document.getElementById('link-creative-modal');
         if (!modal) return;
 
         // Get the controller from the application
-        var application = window.Stimulus;
+        const application = window.Stimulus;
         if (!application) return;
 
-        var controller = application.getControllerForElementAndIdentifier(modal, 'link-creative');
+        const controller = application.getControllerForElementAndIdentifier(modal, 'link-creative');
         if (controller) {
           controller.open(planSelectCreativeBtn.getBoundingClientRect(), function (item) {
             // Set the creative_id in the hidden field

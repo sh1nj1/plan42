@@ -9,11 +9,12 @@ class Label < ApplicationRecord
   # If linked to a Creative, delegates to Creative's permission system
   # Otherwise falls back to owner-based or public (nil owner) visibility
   def readable_by?(user)
+    return true if owner_id.present? && owner_id == user&.id
+
     if creative_id.present? && creative
       creative.has_permission?(user, :read)
     else
-      # Fallback to owner-based or nil owner (public)
-      owner_id.nil? || owner_id == user&.id
+      owner_id.nil?
     end
   end
 end

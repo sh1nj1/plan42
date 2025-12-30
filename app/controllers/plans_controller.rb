@@ -25,7 +25,7 @@ class PlansController < ApplicationController
       end
       format.json do
         plan_jsons = @plans.map { |p| plan_json(p) }
-          event_jsons = @calendar_events.map { |e| calendar_json(e) }
+      event_jsons = @calendar_events.map { |e| calendar_json(e) }
           render json: plan_jsons + event_jsons
       end
     end
