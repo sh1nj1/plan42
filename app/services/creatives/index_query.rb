@@ -94,13 +94,24 @@ module Creatives
       # allowed_ids is the set of nodes that should be visible
       allowed_ids = (matched_ids + ancestor_ids).uniq
 
+      # Filter allowed_ids by user access (ownership or shared with read+)
+      # Efficient SQL query to check permissions
+      owned_ids = Creative.where(id: allowed_ids, user: user).pluck(:id)
+      shared_ids = CreativeShare
+                     .where(creative_id: allowed_ids, user: user)
+                     .where("permission >= ?", CreativeShare.permissions[:read])
+                     .pluck(:creative_id)
+
+      accessible_ids = (owned_ids + shared_ids).uniq
+      allowed_ids = accessible_ids
+
       # Filter for readability efficiently
       # Optimization: filter by what the user usually accesses.
 
       # "Starting Roots" for the result.
       start_nodes = if params[:id]
         parent = Creative.find(params[:id])
-        return [ [], parent, nil, 0 ] unless readable?(parent)
+        return [ [], parent, nil, 0, {} ] unless readable?(parent)
 
         parent.children.where(id: allowed_ids)
       else
@@ -123,23 +134,21 @@ module Creatives
 
       relevant_ids = matched_ids - superfluous_ancestors
 
-      progress_map = calculate_progress_map(allowed_ids, relevant_ids)
-
-      # Recalculate overall filtered_progress
-      filtered_progress = if relevant_ids.any?
-                            Creative.where(id: relevant_ids).average(:progress).to_f
-      else
-                            0.0
-      end
+      progress_map, filtered_progress = calculate_progress_map(allowed_ids, relevant_ids)
 
       [ visible_start_nodes, parent, allowed_ids.map(&:to_s).to_set, filtered_progress, progress_map ]
     end
 
     def calculate_progress_map(allowed_ids, relevant_ids)
-      return {} if relevant_ids.empty?
+      return [ {}, 0.0 ] if relevant_ids.empty?
 
       # 1. Get properties of relevant creatives (leaves)
       relevant_creatives = Creative.where(id: relevant_ids).pluck(:id, :progress)
+
+      # Calculate overall average from loaded values to avoid extra query
+      total_progress = relevant_creatives.sum { |_, p| p.to_f }
+      overall_average = total_progress / relevant_creatives.size
+
       leaf_values = relevant_creatives.to_h
       leaf_values.transform_values!(&:to_f)
 
@@ -162,7 +171,7 @@ module Creatives
         result[anc_id.to_s] = values.sum / values.size
       end
 
-      result
+      [ result, overall_average ]
     end
 
     def search_creatives
