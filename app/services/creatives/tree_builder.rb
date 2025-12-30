@@ -32,8 +32,8 @@ module Creatives
     end
 
     def build_nodes_for_creative(creative, level:)
-      if progress_map && (p = progress_map[creative.id.to_s])
-        creative.filtered_progress = p
+      if progress_map && progress_map.key?(creative.id.to_s)
+        creative.filtered_progress = progress_map[creative.id.to_s]
       end
 
       filtered_children = filtered_children_for(creative)
