@@ -94,15 +94,10 @@ module Creatives
       # allowed_ids is the set of nodes that should be visible
       allowed_ids = (matched_ids + ancestor_ids).uniq
 
-      # Filter allowed_ids by user access (ownership or shared with read+)
-      # Efficient SQL query to check permissions
-      owned_ids = Creative.where(id: allowed_ids, user: user).pluck(:id)
-      shared_ids = CreativeShare
-                     .where(creative_id: allowed_ids, user: user)
-                     .where("permission >= ?", CreativeShare.permissions[:read])
-                     .pluck(:creative_id)
-
-      accessible_ids = (owned_ids + shared_ids).uniq
+      # Filter allowed_ids by user access using proper permission logic
+      # This handles inherited permissions, no_access overrides, etc.
+      creatives_to_check = Creative.where(id: allowed_ids)
+      accessible_ids = creatives_to_check.select { |c| c.has_permission?(user, :read) }.map(&:id)
       allowed_ids = accessible_ids
 
       # Filter for readability efficiently
