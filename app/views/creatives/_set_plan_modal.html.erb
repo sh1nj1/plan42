@@ -6,16 +6,16 @@
       <%= csrf_meta_tags %>
       <div style="margin-bottom:1em;">
         <label for="plan-id-select"><%= t('creatives.index.select_plan', default: 'Select Plan') %></label>
-        <select id="plan-id-select" name="plan_id" required style="width:100%;">
+        <select id="plan-id-select" name="plan_id" required style="width:100%;" data-creatives--set-plan-modal-target="planSelect">
           <% Label.where(type: 'Plan').each do |plan| %>
             <option value="<%= plan.id %>"><%= plan.name.presence || plan.target_date %></option>
           <% end %>
         </select>
       </div>
       <!-- Hidden field for creative IDs, filled by JS -->
-      <input type="hidden" name="creative_ids" id="selected-creative-ids-input" />
+      <input type="hidden" name="creative_ids" id="selected-creative-ids-input" data-creatives--set-plan-modal-target="idsInput" />
       <div style="display:flex; gap:1em; align-items:center;">
-        <button type="button" id="remove-plan-btn" data-remove-path="<%= creative_plan_path %>" class="btn btn-danger" style="margin-right:0.5em;">
+        <button type="button" id="remove-plan-btn" data-remove-path="<%= creative_plan_path %>" class="btn btn-danger" style="margin-right:0.5em;" data-action="click->creatives--set-plan-modal#remove">
           <%= t('creatives.index.remove_plan', default: 'Remove Plan') %>
         </button>
         <button type="submit" class="btn btn-primary"><%= t('creatives.index.add_plan', default: 'Add Plan') %></button>

@@ -27,66 +27,73 @@ export default class extends Controller {
     }
   }
 
-  submit(event) {
+  async submit(event) {
+    event.preventDefault()
     if (!this.hasFormTarget || !this.hasIdsInputTarget) return
     const ids = this.selectedIds()
-    this.idsInputTarget.value = ids.join(',')
-    if (ids.length === 0) {
-      event.preventDefault()
-      this.alert(this.selectOneValue)
-    }
-  }
 
-  remove(event) {
-    event.preventDefault()
-    const ids = this.selectedIds()
     if (ids.length === 0) {
       this.alert(this.selectOneValue)
       return
     }
-    if (!this.hasPlanSelectTarget) {
-      this.submit(event)
-      return
-    }
+
     const planId = this.planSelectTarget.value
     if (!planId) {
       this.alert(this.selectPlanValue)
       return
     }
 
-    const form = document.createElement('form')
-    form.method = 'POST'
-    form.action = event.currentTarget.dataset.removePath
+    await this.performRequest(this.formTarget.action, 'POST', {
+      plan_id: planId,
+      creative_ids: ids.join(',')
+    })
+  }
 
-    const csrf = document.querySelector('meta[name="csrf-token"]')
-    if (csrf) {
-      const csrfInput = document.createElement('input')
-      csrfInput.type = 'hidden'
-      csrfInput.name = 'authenticity_token'
-      csrfInput.value = csrf.content
-      form.appendChild(csrfInput)
+  async remove(event) {
+    event.preventDefault()
+    const ids = this.selectedIds()
+    if (ids.length === 0) {
+      this.alert(this.selectOneValue)
+      return
     }
 
-    const methodField = document.createElement('input')
-    methodField.type = 'hidden'
-    methodField.name = '_method'
-    methodField.value = 'delete'
-    form.appendChild(methodField)
+    const planId = this.planSelectTarget.value
+    if (!planId) {
+      this.alert(this.selectPlanValue)
+      return
+    }
 
-    const idsField = document.createElement('input')
-    idsField.type = 'hidden'
-    idsField.name = 'creative_ids'
-    idsField.value = ids.join(',')
-    form.appendChild(idsField)
+    await this.performRequest(event.currentTarget.dataset.removePath, 'DELETE', {
+      plan_id: planId,
+      creative_ids: ids.join(',')
+    })
+  }
 
-    const planField = document.createElement('input')
-    planField.type = 'hidden'
-    planField.name = 'plan_id'
-    planField.value = planId
-    form.appendChild(planField)
+  async performRequest(url, method, body) {
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content
+      const response = await fetch(url, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-Token': csrfToken
+        },
+        body: JSON.stringify(body)
+      })
 
-    document.body.appendChild(form)
-    form.submit()
+      if (response.ok) {
+        const data = await response.json()
+        this.alert(data.message)
+        this.close()
+      } else {
+        const data = await response.json()
+        this.alert(data.error || 'Operation failed')
+      }
+    } catch (error) {
+      console.error(error)
+      this.alert('An unexpected error occurred.')
+    }
   }
 
   selectedIds() {
