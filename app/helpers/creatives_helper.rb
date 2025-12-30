@@ -32,7 +32,10 @@ module CreativesHelper
 
   def render_creative_progress(creative, select_mode: false)
     progress_value = if params[:tags].present?
-      creative.filtered_progress || 0
+      tag_ids = Array(params[:tags]).map(&:to_s)
+      # Use filtered_progress if available (set by IndexQuery/TreeBuilder pipeline)
+      # Otherwise fall back to progress_for_tags for other endpoints
+      creative.filtered_progress || creative.progress_for_tags(tag_ids) || 0
     else
       creative.progress
     end
