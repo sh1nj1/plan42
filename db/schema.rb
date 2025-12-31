@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_12_31_010012) do
+ActiveRecord::Schema[8.1].define(version: 2025_12_31_013234) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -523,14 +523,6 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_31_010012) do
     t.index ["key"], name: "index_solid_queue_semaphores_on_key", unique: true
   end
 
-  create_table "subscribers", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.integer "creative_id", null: false
-    t.string "email"
-    t.datetime "updated_at", null: false
-    t.index ["creative_id"], name: "index_subscribers_on_creative_id"
-  end
-
   create_table "tags", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
@@ -681,7 +673,6 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_31_010012) do
   add_foreign_key "solid_queue_ready_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
-  add_foreign_key "subscribers", "creatives"
   add_foreign_key "tags", "labels"
   add_foreign_key "task_actions", "tasks"
   add_foreign_key "tasks", "users", column: "agent_id"

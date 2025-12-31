@@ -1,7 +1,0 @@
-<h1><%= t('creative_mailer.in_stock.subject') %></h1>
-
-<p>
-  <%= t('creative_mailer.in_stock.message_html', creative: link_to(@creative.description, creative_url(@creative))) %>
-</p>
-
-<%= link_to t('creative_mailer.in_stock.unsubscribe'), unsubscribe_url(token: params[:subscriber].generate_token_for(:unsubscribe)) %>

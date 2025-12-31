@@ -4,8 +4,4 @@ class CreativeMailer < ApplicationMailer
   #
   #   en.creative_mailer.in_stock.subject
   #
-  def in_stock
-    @creative = params[:creative]
-    mail to: params[:subscriber].email
-  end
 end

@@ -7,16 +7,6 @@ class CreativeTest < ActiveSupport::TestCase
   include ActionMailer::TestHelper
   include ActiveJob::TestHelper
 
-  test "sends email notifications when back in stock" do
-    creative = creatives(:tshirt)
-
-    # Set creative out of stock
-    creative.update!(progress: 0.0)
-
-    assert_emails 2 do
-      creative.update(progress: 0.99)
-    end
-  end
 
   test "progress_for_tags averages tagged descendants" do
     user = users(:one)

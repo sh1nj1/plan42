@@ -1,8 +1,6 @@
 require "ostruct"
 require "closure_tree"
 class Creative < ApplicationRecord
-  include Notifications
-
   unless const_defined?(:DEFAULT_GITHUB_GEMINI_PROMPT)
     DEFAULT_GITHUB_GEMINI_PROMPT = <<~PROMPT.freeze
       You are reviewing a GitHub pull request and mapping it to Creative tasks.
@@ -34,7 +32,6 @@ class Creative < ApplicationRecord
     PROMPT
   end
 
-  has_many :subscribers, dependent: :destroy
   # has_rich_text :description
   has_many :comments, dependent: :destroy
   has_many :comment_read_pointers, dependent: :delete_all

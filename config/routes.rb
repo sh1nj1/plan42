@@ -51,7 +51,6 @@ Rails.application.routes.draw do
   resources :creatives do
     resource :github_integration, only: [ :show, :update, :destroy ], module: :creatives
     resource :notion_integration, only: [ :show, :update, :destroy ], module: :creatives
-    resources :subscribers, only: [ :create ]
     resources :creative_shares, only: [ :create, :destroy ]
       resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
         member do
@@ -104,7 +103,6 @@ Rails.application.routes.draw do
 
   resources :emails, only: [ :index, :show ]
 
-  resource :unsubscribe, only: [ :show ]
   resource :invite, only: [ :show, :create ]
   resource :verify, controller: "email_verifications", only: [ :show ]
 
