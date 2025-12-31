@@ -29,4 +29,12 @@ class LabelTest < ActiveSupport::TestCase
 
     refute label.readable_by?(user), "User with no_access should not be able to read label"
   end
+
+  test "creating a label with creative_id automatically creates a Tag" do
+    creative = creatives(:tshirt)
+    label = Label.create!(creative: creative, owner: users(:one))
+
+    assert_instance_of Tag, label.tags.first
+    assert_equal creative.id, label.tags.first.creative_id
+  end
 end
