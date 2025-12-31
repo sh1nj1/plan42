@@ -4,7 +4,6 @@ if (!plansTimelineScriptInitialized) {
   plansTimelineScriptInitialized = true;
 
   function initPlansTimeline(container) {
-    console.log('DEBUG: initPlansTimeline called');
     if (!container || container.dataset.initialized) return;
     container.dataset.initialized = 'true';
 
@@ -16,7 +15,7 @@ if (!plansTimelineScriptInitialized) {
       return p;
     });
 
-    var dayWidth = 80; // pixels per day
+    var dayWidth = 80;
     var rowHeight = 26;
     var startDate = new Date(container.dataset.startDate || new Date());
     var endDate = new Date(container.dataset.endDate || new Date());
@@ -245,44 +244,12 @@ if (!plansTimelineScriptInitialized) {
       }, 200);
     });
 
-    const planForm = document.getElementById('new-plan-form');
-    if (planForm) {
-      planForm.addEventListener('submit', function (e) {
-        e.preventDefault();
-        const fd = new FormData(planForm);
-        fetch(planForm.action, {
-          method: planForm.method,
-          body: fd,
-          headers: {
-            'Accept': 'application/json',
-            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
-          }
-        }).then(function (r) {
-          if (r.ok) return r.json();
-          return r.json().then(function (j) { throw j; });
-        }).then(function (plan) {
-          plan.created_at = new Date(plan.created_at);
-          plan.target_date = new Date(plan.target_date);
-          addPlan(plan);
-          planForm.reset();
-          // Clear creative selection
-          const creativeIdInput = document.getElementById('plan-creative-id');
-          if (creativeIdInput) creativeIdInput.value = '';
-          const creativeInput = document.getElementById('plan-select-creative-input');
-          if (creativeInput) creativeInput.value = '';
+    // Listen for plan creation from delegated handler
+    const onPlanCreated = function (e) {
+      addPlan(e.detail);
+    };
+    document.addEventListener('plan:created', onPlanCreated);
 
-          // Disable button again
-          const addPlanBtn = document.getElementById('add-plan-btn');
-          if (addPlanBtn) addPlanBtn.disabled = true;
-        }).catch(function (err) {
-          if (err && err.errors) {
-            alert(err.errors.join(', '));
-          } else {
-            window.location.reload();
-          }
-        });
-      });
-    }
 
     // Creative selector input handler - reuse link-creative-modal
     const planSelectCreativeInput = document.getElementById('plan-select-creative-input');
@@ -307,21 +274,16 @@ if (!plansTimelineScriptInitialized) {
 
             // Manually check validity if the function exists
             if (typeof checkFormValidity === 'function') checkFormValidity();
-            else {
-              // Fallback if defined in different scope (it is in same scope, so okay, but safe to just dispatch change if we listen to it)
-              // We added MutationObserver but property set doesn't trigger attribute change.
-              // We should just call the function.
-              // Since checkFormValidity is defined below, we might need to hoist or ensure order.
-              // Actually, `checkFormValidity` is defined inside `initPlansTimeline` so it is visible here via closure? 
-              // No, it's defined AFTER this block in my previous edit.
-              // I should define checkFormValidity closer to top of initPlansTimeline or just rely on the dispatchEvent 'change' if I listen to it.
-            }
+
             // Display the selected creative name
-            const label = item.label || 'Creative #' + item.id;
+            const label = item.label || item.description || 'Creative #' + item.id;
             // Decode HTML entities for display in input
             const txt = document.createElement("textarea");
             txt.innerHTML = label;
             planSelectCreativeInput.value = txt.value;
+
+            // Trigger validation
+            checkFormValidity();
           }, function () {
             // Optional: handle close
           });
@@ -338,11 +300,11 @@ if (!plansTimelineScriptInitialized) {
       };
 
       planSelectCreativeInput.addEventListener('input', handleInput);
-      planSelectCreativeInput.addEventListener('click', handleInput); // Also open on click
-      planSelectCreativeInput.addEventListener('focus', handleInput); // Also open on focus
+      planSelectCreativeInput.addEventListener('click', handleInput);
+      planSelectCreativeInput.addEventListener('focus', handleInput);
     }
 
-    // Form validation
+    // Form validation elements
     const planCreativeIdInput = document.getElementById('plan-creative-id');
     const planTargetDateInput = document.getElementById('plan-target-date');
     const addPlanBtn = document.getElementById('add-plan-btn');
@@ -369,13 +331,67 @@ if (!plansTimelineScriptInitialized) {
       const observer = new MutationObserver(checkFormValidity);
       observer.observe(planCreativeIdInput, { attributes: true, attributeFilter: ['value'] });
 
-      // Also hook into the setter if possible, but MutationObserver might not catch property changes on value.
-      // So we also call checkFormValidity manually when setting creative ID.
-
       // Initial check
       checkFormValidity();
     }
   }
 
   window.initPlansTimeline = initPlansTimeline;
+
+
+  // Plan form submission handler using delegation at document level
+  // This runs once when module is evaluated
+  document.addEventListener('submit', function (e) {
+    if (e.target && e.target.id === 'new-plan-form') {
+      e.preventDefault();
+      const planForm = e.target;
+
+      try {
+        const fd = new FormData(planForm);
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+
+        fetch(planForm.action, {
+          method: planForm.method,
+          body: fd,
+          headers: {
+            'Accept': 'application/json',
+            'X-CSRF-Token': csrfToken
+          }
+        }).then(function (r) {
+          if (r.ok) return r.json();
+          return r.json().then(function (j) { throw j; });
+        }).then(function (plan) {
+          // Add to local plans if available via closure or re-fetch
+          plan.created_at = new Date(plan.created_at);
+          plan.target_date = new Date(plan.target_date);
+
+          // Find the timeline instance to update
+          const timeline = document.getElementById('plans-timeline');
+          if (timeline && window.initPlansTimeline) {
+            const event = new CustomEvent('plan:created', { detail: plan });
+            document.dispatchEvent(event);
+          }
+
+          planForm.reset();
+          // Clear creative selection
+          const creativeIdInput = document.getElementById('plan-creative-id');
+          if (creativeIdInput) creativeIdInput.value = '';
+          const creativeInput = document.getElementById('plan-select-creative-input');
+          if (creativeInput) creativeInput.value = '';
+
+          // Disable button again
+          const addPlanBtn = document.getElementById('add-plan-btn');
+          if (addPlanBtn) addPlanBtn.disabled = true;
+        }).catch(function (err) {
+          if (err && err.errors) {
+            alert(err.errors.join(', '));
+          } else {
+            console.error(err);
+          }
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  });
 }

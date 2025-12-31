@@ -128,6 +128,7 @@ module Creatives
                                 .uniq
 
       relevant_ids = allowed_ids - superfluous_ancestors
+      relevant_ids = relevant_ids.uniq
 
       progress_map, filtered_progress = calculate_progress_map(accessible_creatives, allowed_ids, relevant_ids)
 

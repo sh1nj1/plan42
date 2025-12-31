@@ -9,8 +9,8 @@ class User < ApplicationRecord
   has_many :topics, dependent: :destroy
 
   has_many :calendar_events, dependent: :destroy
-  has_many :creatives, dependent: :destroy
   has_many :labels, foreign_key: :owner_id, dependent: :destroy
+  has_many :creatives, dependent: :destroy
   has_many :devices, dependent: :destroy
   has_many :comment_read_pointers, dependent: :destroy
   has_many :creative_expanded_states, dependent: :destroy

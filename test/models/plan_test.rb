@@ -12,12 +12,13 @@ class PlanTest < ActiveSupport::TestCase
     root2 = Creative.create!(user: user, description: "Root2", progress: 0)
     child3 = Creative.create!(user: user, parent: root2, description: "Child3", progress: 0.7)
 
-    plan = Plan.create!(name: "P", target_date: Date.today, owner: user)
+    plan_creative = Creative.create!(user: user, description: "P", progress: 0)
+    plan = Plan.create!(creative: plan_creative, target_date: Date.today, owner: user)
     Tag.create!(creative_id: child1.id, label: plan)
     Tag.create!(creative_id: child2.id, label: plan)
     Tag.create!(creative_id: child3.id, label: plan)
 
-    assert_in_delta 0.6, plan.progress, 0.001
+    assert_in_delta 0.4, plan.progress, 0.001
 
     Current.reset
   end
