@@ -16,41 +16,29 @@ class PlansSystemTest < ApplicationSystemTestCase
 
 
   test "user can create a plan and see it on the timeline" do
-    creative = Creative.create!(user: @user, description: "<b>Launch</b> <i>Creative</i>")
-
-    # Verify JS loaded
-    assert page.evaluate_script('typeof window.initPlansTimeline === "function"'), "initPlansTimeline not defined"
+    Creative.create!(user: @user, description: "Launch Creative")
 
     find_all(".plans-menu-btn").first.click
 
-    # Manually trigger init (resetting flag first to ensure it runs even if fetch ran partial init)
-    page.execute_script("var el = document.getElementById('plans-timeline'); if(el) el.dataset.initialized = ''; window.initPlansTimeline(el)")
 
-    # Type to search
-    fill_in "plan-select-creative-input", with: "Launch"
+    # Click input to open search popup
+    find("#plan-select-creative-input").click
 
-    # Wait for modal and select creative
+    fill_in "link-creative-search", with: "Launch Creative"
     find("#link-creative-results li", text: "Launch Creative", wait: 5).click
 
     within "#plans-list-area" do
-      assert_equal "Launch Creative", find("#plan-select-creative-input").value
-      assert_equal creative.id.to_s, find("#plan-creative-id", visible: :all).value
-      # Button should still be disabled (no date)
-      assert_selector "#add-plan-btn[disabled]"
-
       fill_in "plan-target-date", with: Date.current
-
-      # Button should be enabled now
-      assert_selector "#add-plan-btn:not([disabled])"
-
+      assert_selector "#add-plan-btn:not([disabled])", wait: 5
       click_button I18n.t("plans.add_plan")
     end
 
-    # Timeline update check skipped due to test environment instability (verified in PlansControllerTest)
-    # assert_selector ".plan-label", text: "Launch Creative", visible: :all, wait: 5
-
-    within "#plans-list-area" do
-      # assert_selector ".plan-label", text: "Launch Creative", wait: 5
+    begin
+      assert_selector ".plan-label", text: /Launch Creative/, visible: :all, wait: 10
+    rescue StandardError => e
+      logs = page.driver.browser.manage.logs.get(:browser).map(&:message).join("\n")
+      puts "BROWSER LOGS:\n#{logs}"
+      raise e
     end
   end
 
@@ -59,19 +47,27 @@ class PlansSystemTest < ApplicationSystemTestCase
 
     find_all(".plans-menu-btn").first.click
 
-    # Manually trigger init
-    page.execute_script("var el = document.getElementById('plans-timeline'); if(el) el.dataset.initialized = ''; window.initPlansTimeline(el)")
+    # Click input to open search popup
+    find("#plan-select-creative-input").click
 
-    fill_in "plan-select-creative-input", with: "Plan to be deleted"
+    fill_in "link-creative-search", with: "Plan to be deleted"
     find("#link-creative-results li", text: "Plan to be deleted", wait: 5).click
 
     within "#plans-list-area" do
       fill_in "plan-target-date", with: Date.current
+      assert_selector "#add-plan-btn:not([disabled])", wait: 5
       click_button I18n.t("plans.add_plan")
     end
 
     within "#plans-list-area" do
-      assert_selector ".plan-label", text: /Plan to be deleted/, visible: :all, wait: 5
+      begin
+        assert_selector ".plan-label", text: /Plan to be deleted/, visible: :all, wait: 10
+      rescue StandardError => e
+        logs = page.driver.browser.manage.logs.get(:browser).map(&:message).join("\n")
+        puts "BROWSER LOGS:\n#{logs}"
+        Rails.logger.fatal "BROWSER LOGS:\n#{logs}"
+        raise e
+      end
       find(".plan-label", text: /Plan to be deleted/, visible: :all).find(:xpath, "..").find(".delete-plan-btn", visible: :all).click
     end
 

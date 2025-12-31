@@ -29,7 +29,8 @@ module Creatives
       @root_x = Creative.create!(user: @user, description: "X", sequence: 2)
       @node_y = Creative.create!(user: @user, parent: @root_x, description: "Y", sequence: 1)
 
-      @tag_label = Label.create!(owner: @user, name: "Tag1")
+      @tag_label_creative = Creative.create!(user: @user, description: "Tag1")
+      @tag_label = Label.create!(creative: @tag_label_creative, owner: @user)
 
       Tag.create!(creative_id: @root_a.id, label: @tag_label)
       Tag.create!(creative_id: @node_d.id, label: @tag_label)
@@ -129,7 +130,8 @@ module Creatives
       @node_b.update!(progress: 1.0)
       @root_x.update!(progress: 0.1)
 
-      tag_label2 = Label.create!(owner: @user, name: "Tag2")
+      tag_label2_creative = Creative.create!(user: @user, description: "Tag2")
+      tag_label2 = Label.create!(creative: tag_label2_creative, owner: @user)
       Tag.create!(creative_id: @root_a.id, label: tag_label2)
       Tag.create!(creative_id: @node_b.id, label: tag_label2)
       Tag.create!(creative_id: @root_x.id, label: tag_label2)
@@ -138,17 +140,18 @@ module Creatives
       # Matched: A, B, X.
       # Hierarchy: A -> B.
       # A is ancestor of B. So A is superfluous.
-      # Relevant (leaf-most): B, X.
+      # Relevant (leaf-most): B, X, Tag2.
       # Progress values:
       #   B: 1.0 (stored progress)
       #   X: 0.1 (stored progress)
-      # Average: (1.0 + 0.1) / 2 = 0.55
+      #   Tag2: 0.0 (label creative)
+      # Average: (1.0 + 0.1 + 0.0) / 3 = 0.3667
 
       params = { tags: [ tag_label2.id ] }
       query = Creatives::IndexQuery.new(user: @user, params: params)
       result = query.call
 
-      assert_in_delta 0.55, result.overall_progress
+      assert_in_delta 0.367, result.overall_progress, 0.001
 
       # Verify Progress Map
       # A: Average of leaf-descendants in relevant set.

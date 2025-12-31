@@ -27,7 +27,8 @@ class CreativeTest < ActiveSupport::TestCase
     tagged_child1 = Creative.create!(user: user, parent: parent, description: "Child 2", progress: 0.8)
     tagged_child2 = Creative.create!(user: user, parent: parent, description: "Child 3", progress: 0.6)
 
-    label = Label.create!(name: "Plan", owner: user)
+    label_creative = Creative.create!(user: user, description: "Plan")
+    label = Label.create!(creative: label_creative, owner: user)
     Tag.create!(creative_id: tagged_child1.id, label: label)
     Tag.create!(creative_id: tagged_child2.id, label: label)
 
@@ -48,7 +49,8 @@ class CreativeTest < ActiveSupport::TestCase
     parent = Creative.create!(user: user, description: "Parent", progress: 0.2)
     Creative.create!(user: user, parent: parent, description: "Child", progress: 0.5)
 
-    label = Label.create!(name: "Tag", owner: user)
+    label_creative = Creative.create!(user: user, description: "Tag")
+    label = Label.create!(creative: label_creative, owner: user)
     Tag.create!(creative_id: parent.id, label: label)
 
     assert_equal 1.0, parent.progress_for_tags([ label.id ], user)

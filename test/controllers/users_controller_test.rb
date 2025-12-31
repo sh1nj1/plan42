@@ -104,7 +104,8 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     email = Email.create!(user: user_to_delete, email: user_to_delete.email, subject: "Test", event: :invitation)
     inbox_item = InboxItem.create!(owner: user_to_delete, message_key: "test.key", message_params: {})
     invitation = Invitation.create!(inviter: user_to_delete, creative: creative, permission: :read)
-    plan = Plan.create!(owner: user_to_delete, name: "Sample Plan", target_date: Date.current)
+    plan_creative = Creative.create!(user: user_to_delete, description: "Sample Plan")
+    plan = Plan.create!(owner: user_to_delete, creative: plan_creative, target_date: Date.current)
     tag = Tag.create!(label: plan, creative_id: creative.id)
     session = user_to_delete.sessions.create!(user_agent: "TestAgent", ip_address: "127.0.0.1")
 

@@ -38,7 +38,8 @@ module Creatives
     test "includes tagged descendants when parent does not match" do
       parent = Creative.create!(user: @user, progress: 0.1, description: "Parent")
       child = Creative.create!(user: @user, parent: parent, progress: 0.3, description: "Child")
-      label = Label.create!(owner: @user, name: "Tagged")
+      label_creative = Creative.create!(user: @user, description: "Tagged")
+      label = Label.create!(creative: label_creative, owner: @user)
       Tag.create!(creative_id: child.id, label: label)
 
       builder = build_tree_builder(tags: [ label.id ])
