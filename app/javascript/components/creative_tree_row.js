@@ -223,16 +223,20 @@ class CreativeTreeRow extends LitElement {
         data-parent-id=${this.parentId ?? nothing}
       >
         <div class="creative-row" style="background-color: transparent;" data-creatives--select-mode-target="row">
-          <h1 class="page-title" style="display:flex;align-items:center;gap:1em;">
-            <div class="creative-title-content">
-              ${unsafeHTML(this.descriptionHtml || "")}
-            </div>
-            ${this.originLinkHtml ? unsafeHTML(this.originLinkHtml) : nothing}
-          </h1>
-          <div>
-            <h1 style="display:flex;align-items:center;gap:1em;">
-              ${unsafeHTML(this.progressHtml || "")}
+          <div class="creative-row-start" style="align-items: center;">
+            ${this._renderActionButton()}
+            <div class="creative-toggle-btn" style="visibility: hidden; margin-top: 0;"></div>
+            <h1 class="page-title" style="margin-left: 0; margin-bottom: 0; display:flex; align-items:center; gap:1em;">
+              <div class="creative-title-content">
+                ${unsafeHTML(this.descriptionHtml || "")}
+              </div>
+              ${this.originLinkHtml ? unsafeHTML(this.originLinkHtml) : nothing}
             </h1>
+          </div>
+          <div class="creative-row-end">
+             <h1 class="page-title" style="margin: 0; display:flex; align-items:center;">
+               ${unsafeHTML(this.progressHtml || "")}
+             </h1>
           </div>
         </div>
       </div>
