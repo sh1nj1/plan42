@@ -103,13 +103,22 @@
       <% end %>
     <% end %>
   <% end %>
+  <%
+    title_row_content = safe_join(title_templates)
+    title_row_content += content_tag(:template, data: { part: "edit-icon" }) { svg_tag("edit.svg", class: "icon-edit") }
+    title_row_content += content_tag(:template, data: { part: "edit-off-icon" }) { svg_tag("edit-off.svg", class: "icon-edit") }
+  %>
   <%= content_tag(
         "creative-tree-row",
-        safe_join(title_templates),
+        title_row_content,
         "dom-id": "creative-markdown-block",
         "creative-id": @parent_creative.id,
         "parent-id": @parent_creative.parent_id,
-        "is-title": ""
+        "can-write": @parent_creative.has_permission?(Current.user, :write) ? "true" : "false",
+        "is-title": "",
+        "data-description-raw-html": @parent_creative.description,
+        "data-progress-value": @parent_creative.progress,
+        "data-origin-id": @parent_creative.origin_id
       ) %>
 <% else %>
   <%= content_tag(
