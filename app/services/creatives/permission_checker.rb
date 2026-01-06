@@ -50,7 +50,23 @@ module Creatives
     end
 
     def share_for(node)
-      cache ? cache[node.id] : CreativeShare.find_by(user: user, creative: node)
+      user_share = if cache
+                     cache[node.id]
+      elsif user
+                     CreativeShare.find_by(user: user, creative: node)
+      end
+
+      public_share = CreativeShare.find_by(creative: node, user: nil)
+
+      return user_share unless public_share
+      return public_share unless user_share
+
+      # Return the one with higher permission
+      if permission_rank(user_share.permission) >= permission_rank(public_share.permission)
+        user_share
+      else
+        public_share
+      end
     end
 
     def permission_rank(value)
