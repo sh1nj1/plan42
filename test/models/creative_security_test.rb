@@ -1,9 +1,13 @@
 require "test_helper"
 
 class CreativeSecurityTest < ActiveSupport::TestCase
+  setup do
+    @user = users(:one)
+  end
+
   test "sanitizes description by removing script tags on save" do
     malicious_html = "Hello <script>alert('xss')</script> world"
-    creative = Creative.create!(description: malicious_html, sequence: 0)
+    creative = Creative.create!(user: @user, description: malicious_html, sequence: 0)
 
     # Should strip script tags but keep text
     assert_equal "Hello alert('xss') world", creative.description.strip
@@ -11,7 +15,7 @@ class CreativeSecurityTest < ActiveSupport::TestCase
 
   test "sanitizes description by removing event handlers" do
     malicious_html = "<div onclick='alert(1)'>Click me</div>"
-    creative = Creative.create!(description: malicious_html, sequence: 0)
+    creative = Creative.create!(user: @user, description: malicious_html, sequence: 0)
 
     # Should remove onclick attribute
     assert_no_match(/onclick/, creative.description)
@@ -20,7 +24,7 @@ class CreativeSecurityTest < ActiveSupport::TestCase
 
   test "allows safe html tags" do
     safe_html = "<b>Bold</b> and <i>Italic</i>"
-    creative = Creative.create!(description: safe_html, sequence: 0)
+    creative = Creative.create!(user: @user, description: safe_html, sequence: 0)
 
     assert_equal safe_html, creative.description
   end

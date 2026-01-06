@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_06_090544) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_06_160643) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -170,7 +170,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_06_090544) do
     t.float "progress", default: 0.0
     t.integer "sequence", default: 0, null: false
     t.datetime "updated_at", null: false
-    t.integer "user_id"
+    t.integer "user_id", null: false
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
@@ -524,6 +524,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_06_090544) do
     t.index ["key"], name: "index_solid_queue_semaphores_on_key", unique: true
   end
 
+  create_table "system_settings", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "key"
+    t.datetime "updated_at", null: false
+    t.text "value"
+    t.index ["key"], name: "index_system_settings_on_key", unique: true
+  end
+
   create_table "tags", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
@@ -643,7 +651,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_06_090544) do
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
-  add_foreign_key "creative_shares", "users", column: "shared_by_id", on_delete: :nullify
+  add_foreign_key "creative_shares", "users", column: "shared_by_id"
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"

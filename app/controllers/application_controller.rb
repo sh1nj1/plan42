@@ -42,6 +42,6 @@ class ApplicationController < ActionController::Base
   def require_system_admin!
     return if Current.user&.system_admin?
 
-    redirect_to root_path, alert: t("users.admin_required")
+    render file: "public/404.html", status: :not_found, layout: false
   end
 end

@@ -98,7 +98,7 @@
           </form>
         <% end %>
         <%= button_to t('app.sign_in'), main_app.new_session_path, method: :get unless authenticated? %>
-        <%= button_tag "?", id: "creative-guide-link", class: "creative-guide-link" %>
+        <%= button_tag "?", id: "creative-guide-link", class: "creative-guide-link", data: { help_url: SystemSetting.help_menu_link } %>
       </div>
 
       <%= render PopupMenuComponent.new(
@@ -138,7 +138,7 @@
           </div>
         <% end %>
         <div><%= button_to t('app.sign_in'), main_app.new_session_path, method: :get unless authenticated? %></div>
-        <div><%= button_tag "?", id: "creative-guide-link", class: "creative-guide-link" %></div>
+        <div><%= button_tag "?", id: "creative-guide-link", class: "creative-guide-link", data: { help_url: SystemSetting.help_menu_link } %></div>
       <% end %>
 
       <% if Current.user %>
@@ -440,6 +440,10 @@
         if (links.length && popover && close) {
           links.forEach(function(link) {
             link.addEventListener('click', function(e) {
+              if (link.dataset.helpUrl) {
+                window.location.href = link.dataset.helpUrl;
+                return;
+              }
               e.preventDefault();
               popover.style.display = 'block';
             });

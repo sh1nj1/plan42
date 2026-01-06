@@ -48,6 +48,11 @@ Rails.application.routes.draw do
     end
   end
 
+  get "/admin", to: "admin/settings#index"
+  namespace :admin do
+    resource :settings, only: [ :update ]
+  end
+
   resources :creatives do
     resource :github_integration, only: [ :show, :update, :destroy ], module: :creatives
     resource :notion_integration, only: [ :show, :update, :destroy ], module: :creatives
