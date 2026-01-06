@@ -13,10 +13,10 @@ class AdminSettingsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "should redirect if not admin" do
+  test "should return 404 if not admin" do
     sign_in_as(@user, password: "password")
     get admin_path
-    assert_redirected_to root_path
+    assert_response :not_found
   end
 
   test "should update settings" do

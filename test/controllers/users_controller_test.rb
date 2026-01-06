@@ -10,9 +10,8 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(@regular_user, password: "password")
 
     get users_path
-    assert_redirected_to root_path
-    follow_redirect!
-    assert_equal I18n.t("users.admin_required"), flash[:alert]
+    get users_path
+    assert_response :not_found
   end
 
   test "system admin can access user index" do
@@ -28,7 +27,9 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     patch grant_system_admin_user_path(@regular_user)
 
-    assert_redirected_to root_path
+    patch grant_system_admin_user_path(@regular_user)
+
+    assert_response :not_found
     assert_not @regular_user.reload.system_admin?
   end
 
@@ -37,7 +38,9 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     patch revoke_system_admin_user_path(@admin)
 
-    assert_redirected_to root_path
+    patch revoke_system_admin_user_path(@admin)
+
+    assert_response :not_found
     assert @admin.reload.system_admin?
   end
 
