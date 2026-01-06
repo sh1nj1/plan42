@@ -441,4 +441,17 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     get passkeys_user_path(@regular_user)
     assert_response :success
   end
+  test "admin link appears in profile for system admin" do
+    sign_in_as(@admin, password: "password")
+    get user_path(@admin)
+    assert_response :success
+    assert_select "a[href=?]", admin_path
+  end
+
+  test "admin link does not appear in profile for regular user" do
+    sign_in_as(@regular_user, password: "password")
+    get user_path(@regular_user)
+    assert_response :success
+    assert_select "a[href=?]", admin_path, count: 0
+  end
 end
