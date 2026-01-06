@@ -11,7 +11,7 @@ module Creatives
 
       # Check application-wide permission cache first
       if @user
-        cache_key = "creative_permission:#{base.id}:#{@user.id}:#{required_permission}"
+        cache_key = "creative_permission:#{base.cache_key_with_version}:#{@user.id}:#{required_permission}"
         cached_result = Rails.cache.read(cache_key)
         return cached_result unless cached_result.nil?
       end
@@ -20,7 +20,7 @@ module Creatives
 
       # Store result in application-wide cache
       if @user
-        cache_key = "creative_permission:#{base.id}:#{@user.id}:#{required_permission}"
+        cache_key = "creative_permission:#{base.cache_key_with_version}:#{@user.id}:#{required_permission}"
         Rails.cache.write(cache_key, result, expires_in: Rails.application.config.permission_cache_expires_in)
       end
 

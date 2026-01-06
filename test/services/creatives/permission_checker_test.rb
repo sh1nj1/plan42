@@ -68,5 +68,22 @@ module Creatives
         assert checker.allowed?(:read)
       end
     end
+    test "invalides cache when public share is added (via touch)" do
+      # 1. Initially deny access and cache it
+      checker = Creatives::PermissionChecker.new(@creative, @other_user)
+      refute checker.allowed?(:read)
+
+      # 2. Add public share. This should touch @creative.
+      share = CreativeShare.create!(creative: @creative, user: nil, permission: "read")
+      @creative.reload # Ensure we see the updated timestamp behavior if checking logic directly, though new Checker instance will re-read.
+
+      # 3. New checker should see allowed?(:read) because key changed or cache expired
+      # Note: Real Rails cache with cache_key_with_version handles this automatically.
+      # We just need to verify logic works in integration or by checking cache keys if we weren't mocking previously.
+
+      # Since we are not stubbing Current.creative_share_cache here, it uses Rails.cache directly in PermissionChecker.
+      checker_new = Creatives::PermissionChecker.new(@creative, @other_user)
+      assert checker_new.allowed?(:read), "Should allow read after adding public share even if previously denied cached"
+    end
   end
 end
