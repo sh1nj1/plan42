@@ -41,44 +41,21 @@ module CreativesHelper
     end
 
     content_tag(:div, class: "creative-row-end") do
-      origin = creative.effective_origin
-      comments_count = origin.comments.size
-
-      classes = [ "comments-btn", "creative-action-btn" ]
-      classes << "no-comments" if comments_count.zero?
-      comment_icon = svg_tag(
-        "comment.svg",
-        class: "comment-icon"
-      )
-
-      comment_part = if Current.user.nil?
-        # Guest user: redirect to login
-        link_to(
-          comment_icon + " #{comments_count}",
-          new_session_path,
-          class: classes.join(" "),
-          title: t("creatives.index.login_to_comment")
-        )
-      elsif !creative.has_permission?(Current.user, :feedback)
-        # Unauthorized user: redirect to permission request
-        button_to(
-          comment_icon + " #{comments_count}",
-          request_permission_creative_path(creative),
-          method: :post,
-          class: classes.join(" "),
-          title: t("creatives.index.request_access_to_comment"),
-          form: { style: "display:inline-block;" }
-        )
-      else
-        # Authorized user: show popup
-        # Update unread count calculation
+      comment_part = if creative.has_permission?(Current.user, :feedback)
+        origin = creative.effective_origin
+        comments_count = origin.comments.size
         pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
         last_read_id = pointer&.last_read_comment_id
         unread_count = last_read_id ? origin.comments.where("id > ? and private = ?", last_read_id, false).count : comments_count
         if Current.user && CommentPresenceStore.list(origin.id).include?(Current.user.id)
           unread_count = 0
         end
-
+        classes = [ "comments-btn", "creative-action-btn" ]
+        classes << "no-comments" if comments_count.zero?
+        comment_icon = svg_tag(
+          "comment.svg",
+          class: "comment-icon"
+        )
         badge_id = "comment-badge-#{origin.id}"
         stream = turbo_stream_from [ Current.user, origin, :comment_badge ]
         badge = render(
@@ -94,6 +71,8 @@ module CreativesHelper
           data: { creative_id: creative.id, can_comment: true, creative_snippet: creative.creative_snippet },
           class: classes.join(" ")
         )
+      else
+        "".html_safe
       end
       render_progress_value(progress_value) + comment_part + "<br />".html_safe + (creative.tags ? render_creative_tags(creative) : "".html_safe)
     end
