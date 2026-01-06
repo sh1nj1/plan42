@@ -545,14 +545,36 @@ export function handleDragOver(event) {
   event.dataTransfer.dropEffect = 'move';
 
   const rect = tree.getBoundingClientRect();
-  const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
-  const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
-  const y = relaxedCoord(event.clientY);
+  const height = rect.height;
+  const relY = event.clientY - rect.top;
 
-  if (y < topZone) {
+  // Hysteresis buffer (12% of height or at least 12px to handle small items)
+  // Increased from 5% to provide more stability against tremors
+  const hysteresis = Math.max(12, height * 0.12);
+  const topLimit = height * childZoneRatio;
+  const bottomLimit = height * (1 - childZoneRatio);
+
+  const isTop = tree.classList.contains('drag-over-top');
+  const isBottom = tree.classList.contains('drag-over-bottom');
+  const isChild = tree.classList.contains('drag-over-child');
+
+  let effectiveTop = topLimit;
+  let effectiveBottom = bottomLimit;
+
+  // Apply hysteresis based on current state to create "stickiness"
+  if (isTop) {
+    effectiveTop += hysteresis;
+  } else if (isChild) {
+    effectiveTop -= hysteresis;
+    effectiveBottom += hysteresis;
+  } else if (isBottom) {
+    effectiveBottom -= hysteresis;
+  }
+
+  if (relY < effectiveTop) {
     tree.classList.add('drag-over', 'drag-over-top');
     tree.classList.remove('drag-over-bottom', 'drag-over-child', 'child-drop-indicator-active');
-  } else if (y > bottomZone) {
+  } else if (relY > effectiveBottom) {
     tree.classList.add('drag-over', 'drag-over-bottom');
     tree.classList.remove('drag-over-top', 'drag-over-child', 'child-drop-indicator-active');
   } else {
@@ -577,6 +599,12 @@ function resetDrag() {
 export function handleDrop(event) {
   const targetTree = event.target.closest(DRAGGABLE_SELECTOR);
   const targetId = targetTree ? targetTree.id : '';
+
+  // Capture visual state before clearing highlights to ensure WYSIWYG
+  const isVisualTop = targetTree && targetTree.classList.contains('drag-over-top');
+  const isVisualBottom = targetTree && targetTree.classList.contains('drag-over-bottom');
+  const isVisualChild = targetTree && targetTree.classList.contains('drag-over-child');
+
   clearDragHighlight(targetTree);
   clearDragHighlight(getLastDragOverRow());
 
@@ -650,18 +678,28 @@ export function handleDrop(event) {
     }
   }
 
-  const rect = targetTree.getBoundingClientRect();
-  const topZone = relaxedCoord(rect.top + rect.height * childZoneRatio);
-  const bottomZone = relaxedCoord(rect.bottom - rect.height * childZoneRatio);
-  const y = relaxedCoord(event.clientY);
-
   let direction;
-  if (y >= topZone && y <= bottomZone) {
-    direction = 'child';
-  } else if (y < topZone) {
+  if (isVisualTop) {
     direction = 'up';
-  } else {
+  } else if (isVisualBottom) {
     direction = 'down';
+  } else if (isVisualChild) {
+    direction = 'child';
+  } else {
+    // Fallback calculation
+    const rect = targetTree.getBoundingClientRect();
+    const height = rect.height;
+    const relY = event.clientY - rect.top;
+    const topLimit = height * childZoneRatio;
+    const bottomLimit = height * (1 - childZoneRatio);
+
+    if (relY < topLimit) {
+      direction = 'up';
+    } else if (relY > bottomLimit) {
+      direction = 'down';
+    } else {
+      direction = 'child';
+    }
   }
 
   if (event.shiftKey) {
