@@ -1,5 +1,5 @@
 class CreativeShare < ApplicationRecord
-  belongs_to :creative, touch: true
+  belongs_to :creative
   belongs_to :user, optional: true
   belongs_to :shared_by, class_name: "User", optional: true
 
@@ -19,6 +19,8 @@ class CreativeShare < ApplicationRecord
   validates :user_id, uniqueness: { scope: :creative_id }, allow_nil: true
 
   after_create_commit :notify_recipient, unless: :no_access?
+  after_save :touch_creative_subtree
+  after_destroy :touch_creative_subtree
 
   # Given ancestor_ids and ancestor_shares, returns the closest CreativeShare
   # in the ancestors. If there is no ancestor share, returns nil.
@@ -31,6 +33,32 @@ class CreativeShare < ApplicationRecord
   end
 
   private
+
+  def touch_creative_subtree
+    creatives_to_touch = []
+
+    # Current creative
+    creatives_to_touch << creative if creative
+
+    # Old creative if changed (check before_last_save because we are in after_save)
+    if saved_change_to_creative_id?
+      old_id = creative_id_before_last_save
+      if old_id && old_id != creative_id
+        creatives_to_touch << Creative.find_by(id: old_id)
+      end
+    end
+
+    # Handle destroy case (creative_id persists but record is destroyed?)
+    # For destroy, saved_change might not be available the same way, but 'creative' is still valid.
+    # The above logic covers create/update.
+    # For destroy, 'creative' is sufficient.
+
+    creatives_to_touch.compact.uniq.each do |c|
+      timestamp = Time.current
+      c.touch
+      c.descendants.update_all(updated_at: timestamp)
+    end
+  end
 
   def notify_recipient
     return unless Current.user && user

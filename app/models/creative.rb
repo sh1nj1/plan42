@@ -1,6 +1,7 @@
 require "ostruct"
 require "closure_tree"
 class Creative < ApplicationRecord
+  after_save :touch_subtree_on_move, if: :saved_change_to_parent_id?
   unless const_defined?(:DEFAULT_GITHUB_GEMINI_PROMPT)
     DEFAULT_GITHUB_GEMINI_PROMPT = <<~PROMPT.freeze
       You are reviewing a GitHub pull request and mapping it to Creative tasks.
@@ -411,5 +412,14 @@ class Creative < ApplicationRecord
     if origin_id.present? && origin_id == id
       errors.add(:origin_id, "cannot be the same as id")
     end
+  end
+
+  private
+
+  def touch_subtree_on_move
+    # When moving a tree, all descendants might have new effective permissions
+    # so we must touch them to invalidate cache.
+    # self is already touched by save.
+    descendants.update_all(updated_at: Time.current)
   end
 end
