@@ -3,6 +3,7 @@ ko:
     title: "관리자 설정"
     tabs:
       system: "시스템"
+      users: "사용자"
     settings:
       help_link: "도움말 메뉴 링크 URL"
       help_link_hint: "설정 시 상단 내비게이션의 \"?\" 메뉴가 이 URL로 연결됩니다."
