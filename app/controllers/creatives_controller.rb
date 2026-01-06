@@ -1,7 +1,7 @@
 class CreativesController < ApplicationController
   # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
   # Removed unauthenticated access to index and show actions
-  allow_unauthenticated_access only: %i[ index show ]
+  allow_unauthenticated_access only: %i[ index show children ]
   before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions slide_view unconvert ]
 
   def index
@@ -290,9 +290,10 @@ class CreativesController < ApplicationController
 
   def children
     parent = Creative.find(params[:id])
+    user_id = Current.user&.id || parent.effective_origin.user_id
     expanded_state_map = CreativeExpandedState
-                              .where(user_id: Current.user.id, creative_id: parent.id)
-                              .first&.expanded_status || {}
+                            .where(user_id: user_id, creative_id: parent.id)
+                            .first&.expanded_status || {}
     children = parent.children_with_permission(Current.user)
 
     allowed_ids = nil

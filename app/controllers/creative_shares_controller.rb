@@ -15,6 +15,11 @@ class CreativeSharesController < ApplicationController
 
     permission = params[:permission]
 
+    # Enforce read-only for public shares (no user email provided)
+    if params[:user_email].blank? && permission != "no_access" && permission != "read"
+      permission = "read"
+    end
+
     ancestor_ids = @creative.ancestors.pluck(:id)
     ancestor_shares = CreativeShare.where(creative_id: ancestor_ids, user: user)
                                    .where("permission >= ? or permission = ?", CreativeShare.permissions[permission], CreativeShare.permissions[:no_access])
