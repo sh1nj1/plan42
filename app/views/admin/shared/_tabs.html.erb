@@ -1,0 +1,4 @@
+<div class="tab-list">
+  <%= link_to t('admin.tabs.system'), admin_path, class: "tab-button #{'active' if controller_name == 'settings'}" %>
+  <%= link_to t('admin.tabs.users'), users_path, class: "tab-button #{'active' if controller_name == 'users'}" %>
+</div>

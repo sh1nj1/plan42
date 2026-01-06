@@ -1,24 +1,17 @@
 <h1 class="no-top-margin"><%= t('admin.title') %></h1>
 
-<div data-controller="tabs" data-tabs-active-tab-value="system">
-  <div class="tab-list">
-    <button class="tab-button active" data-action="click->tabs#switch" data-tabs-tab-param="system" data-tabs-target="tabButton">
-      <%= t('admin.tabs.system') %>
-    </button>
-  </div>
-
-  <div class="tab-panels">
-    <section class="tab-panel active" data-tabs-target="panel" data-tab-name="system">
-      <%= form_with url: admin_settings_path, method: :patch, local: true, html: { class: 'profile-form' } do |f| %>
-        <div>
-          <%= f.label :help_link, t('admin.settings.help_link') %>
-          <%= f.text_field :help_link, value: @help_link, placeholder: "https://..." %>
-          <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
-            <%= t('admin.settings.help_link_hint') %>
-          </div>
+<%= render "admin/shared/tabs" %>
+<div class="tab-panels">
+  <section class="tab-panel active">
+    <%= form_with url: admin_settings_path, method: :patch, local: true, html: { class: 'profile-form' } do |f| %>
+      <div>
+        <%= f.label :help_link, t('admin.settings.help_link') %>
+        <%= f.text_field :help_link, value: @help_link, placeholder: "https://..." %>
+        <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+          <%= t('admin.settings.help_link_hint') %>
         </div>
-        <%= f.submit t('admin.settings.save') %>
-      <% end %>
-    </section>
-  </div>
+      </div>
+      <%= f.submit t('admin.settings.save') %>
+    <% end %>
+  </section>
 </div>
