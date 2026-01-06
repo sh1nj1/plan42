@@ -58,15 +58,8 @@ module Creatives
 
       public_share = CreativeShare.find_by(creative: node, user: nil)
 
-      return user_share unless public_share
-      return public_share unless user_share
-
-      # Return the one with higher permission
-      if permission_rank(user_share.permission) >= permission_rank(public_share.permission)
-        user_share
-      else
-        public_share
-      end
+      # If user specific share exists, it takes precedence even if lower permission
+      user_share || public_share
     end
 
     def permission_rank(value)
