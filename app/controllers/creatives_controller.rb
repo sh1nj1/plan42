@@ -1,13 +1,25 @@
 class CreativesController < ApplicationController
   # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
   # Removed unauthenticated access to index and show actions
-  # allow_unauthenticated_access only: %i[ index show ]
+  allow_unauthenticated_access only: %i[ index show ]
   before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions slide_view unconvert ]
 
   def index
     # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
     Current.creative_share_cache = CreativeShare.where(user: Current.user).index_by(&:creative_id)
-    @expanded_state_map = CreativeExpandedState.where(user_id: Current.user.id, creative_id: params[:id]).first&.expanded_status || {}
+
+    user_id_for_state = Current.user&.id
+    if user_id_for_state.nil? && params[:id].present?
+      # Public view: use owner's state
+      target_creative = Creative.find_by(id: params[:id])
+      user_id_for_state = target_creative&.effective_origin&.user_id
+    end
+
+    @expanded_state_map = if user_id_for_state
+      CreativeExpandedState.where(user_id: user_id_for_state, creative_id: params[:id]).first&.expanded_status || {}
+    else
+      {}
+    end
     index_result = Creatives::IndexQuery.new(user: Current.user, params: params.to_unsafe_h).call
     @creatives = index_result.creatives || []
     @parent_creative = index_result.parent_creative

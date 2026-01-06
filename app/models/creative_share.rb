@@ -1,6 +1,6 @@
 class CreativeShare < ApplicationRecord
   belongs_to :creative
-  belongs_to :user
+  belongs_to :user, optional: true
   belongs_to :shared_by, class_name: "User", optional: true
 
   enum :permission, {
@@ -12,9 +12,11 @@ class CreativeShare < ApplicationRecord
   }
 
   validates :creative_id, presence: true
-  validates :user_id, presence: true
+  validates :user_id, presence: true, unless: -> { user_id.nil? } # Public share has nil user_id
+  # validates :user_id, presence: true # Removed strictly required
+
   validates :permission, presence: true
-  validates :user_id, uniqueness: { scope: :creative_id }
+  validates :user_id, uniqueness: { scope: :creative_id }, allow_nil: true
 
   after_create_commit :notify_recipient, unless: :no_access?
   after_save :clear_permission_cache

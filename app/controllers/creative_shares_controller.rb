@@ -1,12 +1,16 @@
 class CreativeSharesController < ApplicationController
   def create
     @creative = Creative.find(params[:creative_id]).effective_origin
-    user = User.find_by(email: params[:user_email])
-    unless user
-      invitation = Invitation.create!(email: params[:user_email], inviter: Current.user, creative: @creative, permission: params[:permission])
-      InvitationMailer.with(invitation: invitation).invite.deliver_later
-      flash[:notice] = t("invites.invite_sent")
-      redirect_back(fallback_location: creatives_path) and return
+
+    user = nil
+    if params[:user_email].present?
+      user = User.find_by(email: params[:user_email])
+      unless user
+        invitation = Invitation.create!(email: params[:user_email], inviter: Current.user, creative: @creative, permission: params[:permission])
+        InvitationMailer.with(invitation: invitation).invite.deliver_later
+        flash[:notice] = t("invites.invite_sent")
+        redirect_back(fallback_location: creatives_path) and return
+      end
     end
 
     permission = params[:permission]
@@ -36,9 +40,11 @@ class CreativeSharesController < ApplicationController
     share.shared_by ||= Current.user
     share.permission = permission
     if share.save and not is_param_no_access
-      @creative.create_linked_creative_for_user(user)
-      Contact.ensure(user: Current.user, contact_user: user)
-      Contact.ensure(user: @creative.user, contact_user: user)
+      if user
+        @creative.create_linked_creative_for_user(user)
+        Contact.ensure(user: Current.user, contact_user: user)
+        Contact.ensure(user: @creative.user, contact_user: user)
+      end
       flash[:notice] = t("creatives.share.shared")
     else
       flash[:alert] = share.errors.full_messages.to_sentence
