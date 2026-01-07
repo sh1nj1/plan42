@@ -13,7 +13,7 @@ class CreativeTreeRow extends LitElement {
     canWrite: { type: Boolean, attribute: "can-write" },
     level: { type: Number, attribute: "level" },
     hasChildren: { type: Boolean, attribute: "has-children" },
-    expanded: { type: Boolean, attribute: "expanded" },
+    expanded: { type: Boolean, attribute: "expanded", reflect: true },
     isRoot: { type: Boolean, attribute: "is-root" },
     linkUrl: { attribute: "link-url" },
     descriptionHtml: { state: true, noAccessor: true },

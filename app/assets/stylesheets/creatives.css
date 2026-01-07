@@ -296,9 +296,15 @@ creative-tree-row.show-edit .creative-row {
     /* Total width is 20px (16 + 4) */
 }
 
+
 .creative-row:hover .creative-toggle-btn {
     visibility: visible;
 }
+
+creative-tree-row:not([expanded]) .creative-toggle-btn {
+    visibility: visible;
+}
+
 
 .add-creative-btn {
     font-size: 18px;
