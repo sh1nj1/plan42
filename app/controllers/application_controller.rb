@@ -7,6 +7,7 @@ class ApplicationController < ActionController::Base
   around_action :set_time_zone
 
   def switch_locale(&action)
+    resume_session
     locale = normalize_supported_locale(Current.user&.locale) ||
              normalize_supported_locale(params[:locale]) ||
              extract_locale_from_accept_language_header ||
