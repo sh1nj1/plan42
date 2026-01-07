@@ -1,4 +1,9 @@
-/* #creatives {} - removed empty rule */
+/* Creative tree container styling */
+#creatives {
+    position: relative;
+    z-index: 2;
+    background: var(--color-section-bg);
+}
 
 :root {
     --creative-row-text-offset: 1.8em;

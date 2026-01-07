@@ -6,6 +6,7 @@ import "@rails/actiontext"
 import * as ActiveStorage from "@rails/activestorage"
 import "./register_service_worker"
 import * as ActionCable from "@rails/actioncable"
+import { applyBackgroundEffect } from "./background_effects"
 
 if (typeof window !== "undefined") {
   window.ActiveStorage = window.ActiveStorage || ActiveStorage
@@ -25,4 +26,9 @@ import "./notion_integration"
 import "./lib/apply_lexical_styles"
 import "./lib/turbo_stream_actions"
 import "./share_user_popup"
+
+const initializeBackgroundEffect = () => applyBackgroundEffect("snowfall")
+
+document.addEventListener("turbo:load", initializeBackgroundEffect)
+document.addEventListener("DOMContentLoaded", initializeBackgroundEffect)
 

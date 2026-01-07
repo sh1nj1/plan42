@@ -1,0 +1,53 @@
+.background-effect-layer {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 0;
+}
+
+.background-effect--snowfall {
+    --snowflake-size-min: 2px;
+    --snowflake-size-max: 6px;
+    --snowflake-speed-min: 12s;
+    --snowflake-speed-max: 26s;
+    --snowflake-sway-range: 30px;
+    --snowflake-count: 120;
+    filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.4));
+}
+
+.background-effect--snowfall .snowflake {
+    position: absolute;
+    top: -10vh;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.85);
+    opacity: var(--snowflake-opacity, 0.8);
+    width: var(--snowflake-size, 4px);
+    height: var(--snowflake-size, 4px);
+    animation-name: snowfall-fall;
+    animation-duration: var(--fall-duration, 18s);
+    animation-delay: var(--snow-delay, 0s);
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    transform: translate3d(var(--sway-start, 0px), 0, 0);
+}
+
+@keyframes snowfall-fall {
+    0% {
+        transform: translate3d(var(--sway-start, 0px), -10vh, 0);
+    }
+    50% {
+        transform: translate3d(
+            calc(var(--sway-start, 0px) + var(--sway-offset, 0px)),
+            50vh,
+            0
+        );
+    }
+    100% {
+        transform: translate3d(
+            calc(var(--sway-start, 0px) - var(--sway-offset, 0px)),
+            110vh,
+            0
+        );
+    }
+}
