@@ -65,27 +65,27 @@
     </script>
   <% end %>
 
-  <div class="space-y-6">
+  <div class="doorkeeper-form-group" style="padding: 1rem; border: 1px solid var(--color-border); border-radius: 8px; margin-bottom: 2rem;">
     <!-- Generation Form -->
-    <div class="bg-gray-50 p-4 rounded-md">
-      <%= form_with url: create_access_token_oauth_application_path(@application), method: :post, local: true, class: "space-y-4" do |f| %>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2"><%= t('doorkeeper.applications.personal_access_token.form.expiration') %></label>
-          <div class="space-y-2">
-            <div class="flex items-center">
-              <%= f.radio_button :expiration_type, '1_month', checked: true, class: "h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" %>
-              <%= f.label :expiration_type_1_month, t('doorkeeper.applications.personal_access_token.form.thirty_days'), class: "ml-2 block text-sm text-gray-900" %>
+    <div>
+      <%= form_with url: create_access_token_oauth_application_path(@application), method: :post, local: true, class: "profile-form" do |f| %>
+        <div style="margin-bottom: 1rem;">
+          <label style="font-weight: 500; margin-bottom: 0.5rem; display: block;"><%= t('doorkeeper.applications.personal_access_token.form.expiration') %></label>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <div class="checkbox-field">
+              <%= f.radio_button :expiration_type, '1_month', checked: true %>
+              <%= f.label :expiration_type_1_month, t('doorkeeper.applications.personal_access_token.form.thirty_days') %>
             </div>
-            <div class="flex items-center">
-              <%= f.radio_button :expiration_type, 'never', class: "h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" %>
-              <%= f.label :expiration_type_never, t('doorkeeper.applications.personal_access_token.form.never'), class: "ml-2 block text-sm text-gray-900" %>
+            <div class="checkbox-field">
+              <%= f.radio_button :expiration_type, 'never' %>
+              <%= f.label :expiration_type_never, t('doorkeeper.applications.personal_access_token.form.never') %>
             </div>
-            <div class="flex items-center">
-              <%= f.radio_button :expiration_type, 'custom', class: "h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" %>
-              <%= f.label :expiration_type_custom, t('doorkeeper.applications.personal_access_token.form.custom'), class: "ml-2 block text-sm text-gray-900" %>
-              <div class="ml-4 flex items-center">
-                 <%= f.number_field :expires_in_days, min: 1, class: "w-20 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm", placeholder: t('doorkeeper.applications.personal_access_token.form.days_placeholder') %>
-                 <span class="ml-2 text-sm text-gray-500"><%= t('doorkeeper.applications.personal_access_token.form.days_label') %></span>
+            <div class="checkbox-field" style="align-items: center;">
+              <%= f.radio_button :expiration_type, 'custom' %>
+              <%= f.label :expiration_type_custom, t('doorkeeper.applications.personal_access_token.form.custom') %>
+              <div style="margin-left: 1rem; display: inline-flex; align-items: center; gap: 0.5rem;">
+                 <%= f.number_field :expires_in_days, min: 1, placeholder: t('doorkeeper.applications.personal_access_token.form.days_placeholder'), style: "width: 80px;" %>
+                 <span><%= t('doorkeeper.applications.personal_access_token.form.days_label') %></span>
               </div>
             </div>
           </div>

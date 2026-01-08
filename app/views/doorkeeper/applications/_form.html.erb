@@ -1,6 +1,6 @@
-<%= form_for application, url: application.new_record? ? oauth_applications_path : oauth_application_path(application), html: { role: 'form', class: 'doorkeeper-form-container' } do |f| %>
+<%= form_for application, url: application.new_record? ? oauth_applications_path : oauth_application_path(application), html: { role: 'form', class: 'profile-form' } do |f| %>
   <% if application.errors.any? %>
-    <div class="doorkeeper-flash-notice" data-alert>
+    <div class="alert alert-danger" data-alert>
       <div style="font-weight: bold; margin-bottom: 0.5rem;"><%= t('doorkeeper.applications.form.error') %></div>
       <ul style="margin: 0; padding-left: 1.2rem;">
         <% application.errors.full_messages.each do |msg| %>
@@ -10,44 +10,44 @@
     </div>
   <% end %>
 
-  <div class="doorkeeper-form-group">
-    <%= f.label :name, class: "doorkeeper-label" %>
-    <%= f.text_field :name, class: "doorkeeper-input", required: true %>
+  <div>
+    <%= f.label :name %>
+    <%= f.text_field :name, required: true %>
   </div>
 
-  <div class="doorkeeper-form-group">
-    <%= f.label :redirect_uri, class: "doorkeeper-label" %>
-    <%= f.text_area :redirect_uri, class: "doorkeeper-textarea", required: true %>
-    <span class="doorkeeper-hint">
+  <div>
+    <%= f.label :redirect_uri %>
+    <%= f.text_area :redirect_uri, required: true, style: "min-height: 100px;" %>
+    <span class="text-sm text-gray-500 block mt-1">
       <%= t('doorkeeper.applications.help.redirect_uri') %>
     </span>
     <% if Doorkeeper.configuration.native_redirect_uri %>
-      <span class="doorkeeper-hint">
+      <span class="text-sm text-gray-500 block">
         <%= t('doorkeeper.applications.help.native_redirect_uri', native_redirect_uri: Doorkeeper.configuration.native_redirect_uri) %>
       </span>
     <% end %>
   </div>
 
-  <div class="doorkeeper-form-group">
-    <%= f.label :confidential, class: "doorkeeper-checkbox-label" do %>
-      <%= f.check_box :confidential, class: "doorkeeper-radio" %>
-      <%= t('doorkeeper.applications.form.confidential') %>
-    <% end %>
-    <span class="doorkeeper-hint">
+  <div class="checkbox-field">
+    <%= f.check_box :confidential %>
+    <%= f.label :confidential %>
+  </div>
+  <div style="margin-left: 1.5rem; margin-top: -0.5rem; margin-bottom: 1rem;">
+     <span class="text-sm text-gray-500 block">
       <%= t('doorkeeper.applications.help.confidential') %>
     </span>
   </div>
 
-  <div class="doorkeeper-form-group">
-    <%= f.label :scopes, class: "doorkeeper-label" %>
-    <%= f.text_field :scopes, class: "doorkeeper-input" %>
-    <span class="doorkeeper-hint">
+  <div>
+    <%= f.label :scopes %>
+    <%= f.text_field :scopes %>
+    <span class="text-sm text-gray-500 block mt-1">
       <%= t('doorkeeper.applications.help.scopes') %>
     </span>
   </div>
 
-  <div class="doorkeeper-form-group" style="flex-direction: row; gap: 1rem; margin-top: 1rem;">
-    <%= f.submit t('doorkeeper.applications.buttons.submit'), class: "doorkeeper-btn-primary" %>
-    <%= link_to t('doorkeeper.applications.buttons.cancel'), oauth_applications_path, class: "doorkeeper-btn-default" %>
+  <div class="profile-actions" style="display: flex; gap: 1rem; align-items: center;">
+    <%= f.submit t('doorkeeper.applications.buttons.submit'), class: "primary-action-button" %>
+    <%= link_to t('doorkeeper.applications.buttons.cancel'), oauth_applications_path, class: "btn" %>
   </div>
 <% end %>
