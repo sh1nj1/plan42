@@ -10,11 +10,22 @@ module Oauth
 
     def show
       @application = current_resource_owner.oauth_applications.find(params[:id])
-      # Optimized active token query
-      @active_tokens = Doorkeeper::AccessToken.where(application_id: @application.id, resource_owner_id: current_resource_owner.id)
-                                              .where(revoked_at: nil)
-                                              .order(created_at: :desc)
-      @active_tokens = @active_tokens.select { |t| !t.expired? }
+
+      # Optimized active token query with DB-side expiration filter for Postgres
+      # Fallback to Ruby selection for SQLite to avoid test environment consistency issues with datetime strings
+      if ActiveRecord::Base.connection.adapter_name.downcase.include?("sqlite")
+        @active_tokens = Doorkeeper::AccessToken.where(application_id: @application.id, resource_owner_id: current_resource_owner.id)
+                                                .where(revoked_at: nil)
+                                                .order(created_at: :desc)
+                                                .select { |t| !t.expired? }
+      else
+        # Postgres compatible
+        expiry_sql = "expires_in IS NULL OR created_at + (expires_in * interval '1 second') > ?"
+        @active_tokens = Doorkeeper::AccessToken.where(application_id: @application.id, resource_owner_id: current_resource_owner.id)
+                                                .where(revoked_at: nil)
+                                                .where(expiry_sql, Time.current)
+                                                .order(created_at: :desc)
+      end
     end
 
     def create

@@ -71,24 +71,51 @@ module Oauth
       assert_not token.revoked?
     end
 
-    test "should not issue refresh token for PAT" do
-      # Even if refresh tokens are enabled in config (stubbed or assumed enabled for this test context if we could),
-      # PAT controller code explicitly sets use_refresh_token: false.
-      # Default doorkeeper config might have them disabled, but we can check if the token has one.
-
-      post create_access_token_oauth_application_url(@application), params: { expiration_type: "1_month" }
-      token = Doorkeeper::AccessToken.last
-      assert_nil token.refresh_token
+    test "should not issue refresh token for PAT even if enabled globally" do
+      # Stub configuration to enable refresh tokens globally
+      Doorkeeper.configuration.stub :refresh_token_enabled?, true do
+        post create_access_token_oauth_application_url(@application), params: { expiration_type: "1_month" }
+        token = Doorkeeper::AccessToken.last
+        assert_nil token.refresh_token
+      end
     end
 
     test "should validate custom expiration" do
       post create_access_token_oauth_application_url(@application), params: { expiration_type: "custom", expires_in_days: "0" }
       assert_redirected_to oauth_application_url(@application)
-      assert_equal "Invalid expiration days. Please enter a positive number.", flash[:alert]
+      assert_equal I18n.t("doorkeeper.applications.personal_access_token.flash.invalid_expiration"), flash[:alert]
 
       post create_access_token_oauth_application_url(@application), params: { expiration_type: "custom", expires_in_days: "-5" }
       assert_redirected_to oauth_application_url(@application)
-      assert_equal "Invalid expiration days. Please enter a positive number.", flash[:alert]
+      assert_equal I18n.t("doorkeeper.applications.personal_access_token.flash.invalid_expiration"), flash[:alert]
+    end
+
+    test "should exclude expired tokens from list" do
+      # Create an expired token
+      expired_token = Doorkeeper::AccessToken.create!(
+        application: @application,
+        resource_owner_id: @user.id,
+        scopes: "public",
+        expires_in: 10,
+        created_at: 1.day.ago
+      )
+
+      # Create an active token
+      active_token = Doorkeeper::AccessToken.create!(
+        application: @application,
+        resource_owner_id: @user.id,
+        scopes: "public",
+        expires_in: 1.month.to_i
+      )
+
+      get oauth_application_url(@application)
+      assert_response :success
+
+      # Verify active token is present (via revoke link with ID)
+      assert_match "token_id=#{active_token.id}", response.body
+
+      # Verify expired token is absent (via revoke link with ID)
+      assert_no_match "token_id=#{expired_token.id}", response.body
     end
   end
 end
