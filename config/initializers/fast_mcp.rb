@@ -34,9 +34,8 @@ FastMcp.mount_in_rails(
 ) do |server|
   puts "FastMcp: Inside mount block"
   server.filter_tools do |request, tools|
-    next tools unless defined?(Current) && Current.user.present?
-
-    McpService.filter_tools(tools, Current.user)
+    user = defined?(Current) ? Current.user : nil
+    McpService.filter_tools(tools, user)
   end
 
   Rails.application.config.after_initialize do

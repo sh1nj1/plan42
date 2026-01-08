@@ -64,7 +64,11 @@ class McpService
     # Identify dynamic tools (user-defined) vs system tools.
     # Tools can be objects (FastMcp::Tool) or Hashes (from MetaToolService)
     registered_names = tools.map do |tool|
-      tool.respond_to?(:tool_name) ? tool.tool_name : tool[:name]
+      if tool.respond_to?(:tool_name)
+        tool.tool_name
+      elsif tool.is_a?(Hash)
+        tool[:name] || tool["name"]
+      end
     end
 
     # Check strict loading? No, simple where is fine.
@@ -83,7 +87,13 @@ class McpService
     end
 
     tools.select do |tool|
-      name = tool.respond_to?(:tool_name) ? tool.tool_name : tool[:name]
+      name = if tool.respond_to?(:tool_name)
+               tool.tool_name
+      elsif tool.is_a?(Hash)
+               tool[:name] || tool["name"]
+      else
+               nil
+      end
       if dynamic_tool_names.include?(name)
         # It is a dynamic tool; user must own it.
         user_owned_tool_names.include?(name)

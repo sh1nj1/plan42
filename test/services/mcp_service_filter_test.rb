@@ -39,11 +39,6 @@ class McpServiceFilterTest < ActiveSupport::TestCase
   test "filters tools correctly for nil user (only system)" do
     all_tools = [ @system_tool, @user_tool, @other_tool ]
 
-    # Assuming nil user means no auth -> only system tools?
-    # Or maybe it returns everything? In config file I returned 'tools' if no user.
-    # But McpService logic should probably be strict: if user is nil, maybe returning all is unsafe?
-    # Let's decide: If user is nil, safe default is System Tools Only.
-
     filtered = McpService.filter_tools(all_tools, nil)
 
     assert_includes filtered, @system_tool
@@ -62,5 +57,29 @@ class McpServiceFilterTest < ActiveSupport::TestCase
     assert_includes filtered, system_hash
     assert_includes filtered, user_hash
     refute_includes filtered, other_hash
+  end
+
+  test "filters string-keyed hash tools correctly" do
+    system_hash = { "name" => "system_tool" }
+    user_hash = { "name" => "user_tool" }
+    other_hash = { "name" => "other_tool" }
+    all_tools = [ system_hash, user_hash, other_hash ]
+
+    filtered = McpService.filter_tools(all_tools, @user)
+
+    assert_includes filtered, system_hash
+    assert_includes filtered, user_hash
+    refute_includes filtered, other_hash
+  end
+
+  test "filters hash tools correctly for nil user" do
+    system_hash = { name: "system_tool" }
+    user_hash = { name: "user_tool" }
+    all_tools = [ system_hash, user_hash ]
+
+    filtered = McpService.filter_tools(all_tools, nil)
+
+    assert_includes filtered, system_hash
+    refute_includes filtered, user_hash
   end
 end
