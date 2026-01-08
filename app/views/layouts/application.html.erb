@@ -148,6 +148,7 @@
           align: :right
         ) do %>
           <div><%= button_to t('users.profile'), main_app.user_path(Current.user), class: 'popup-menu-item', method: :get %></div>
+          <div><%= button_to t('doorkeeper.my_applications'), oauth_applications_path, class: 'popup-menu-item', method: :get %></div>
           <div><%= button_to t('app.sign_out'), main_app.session_path, method: :delete %></div>
         <% end %>
       <% end %>

@@ -19,6 +19,7 @@ ko:
               not_match_configured: "서버에 구성된 것과 일치하지 않습니다."
 
   doorkeeper:
+    my_applications: 'OAuth 애플리케이션'
     applications:
       confirmations:
         destroy: '정말 삭제하시겠습니까?'
@@ -30,9 +31,11 @@ ko:
         authorize: '승인'
       form:
         error: '오류가 발생했습니다! 폼을 확인해주세요.'
+        confidential: '기밀'
       help:
         confidential: '애플리케이션은 클라이언트 비밀을 기밀로 유지할 수 있는 곳에서 사용됩니다. 네이티브 모바일 앱과 단일 페이지 앱은 비기밀로 간주됩니다.'
         redirect_uri: '한 줄에 하나의 URI를 입력하세요.'
+        native_redirect_uri: '로컬 테스트에는 %{native_redirect_uri}를 사용하세요.'
         blank_redirect_uri: "클라이언트 자격 증명, 리소스 소유자 암호 자격 증명 또는 리디렉션 URI가 필요하지 않은 다른 부여 유형을 사용하도록 공급자를 구성한 경우 비워 두십시오."
         scopes: '범위를 공백으로 구분하세요. 기본 범위를 사용하려면 비워 두세요.'
       edit:
