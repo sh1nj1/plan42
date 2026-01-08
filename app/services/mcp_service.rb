@@ -1,4 +1,5 @@
 require "digest"
+require "set"
 
 class McpService
   # --- Registration Logic (from MetaToolService) ---
@@ -56,6 +57,52 @@ class McpService
   rescue => e
     Rails.logger.error("Failed to register tool from source: #{e.message}")
     raise e
+  end
+
+  def self.filter_tools(tools, user)
+    return [] if tools.blank?
+
+    # Identify dynamic tools (user-defined) vs system tools.
+    # Tools can be objects (FastMcp::Tool) or Hashes (from MetaToolService)
+    registered_names = tools.map do |tool|
+      if tool.respond_to?(:tool_name)
+        tool.tool_name
+      elsif tool.is_a?(Hash)
+        tool[:name] || tool["name"]
+      end
+    end
+
+    # Check strict loading? No, simple where is fine.
+    dynamic_tools = McpTool.where(name: registered_names)
+    dynamic_tool_names = dynamic_tools.pluck(:name).to_set
+
+    # If user is present, find their owned tools
+    user_owned_tool_names = if user
+                              dynamic_tools
+                                .joins(:creative)
+                                .where(creatives: { user_id: user.id })
+                                .pluck(:name)
+                                .to_set
+    else
+                              Set.new
+    end
+
+    tools.select do |tool|
+      name = if tool.respond_to?(:tool_name)
+               tool.tool_name
+      elsif tool.is_a?(Hash)
+               tool[:name] || tool["name"]
+      else
+               nil
+      end
+      if dynamic_tool_names.include?(name)
+        # It is a dynamic tool; user must own it.
+        user_owned_tool_names.include?(name)
+      else
+        # It is a system tool (not in McpTool database); allow it.
+        true
+      end
+    end
   end
 
   def self.load_active_tools

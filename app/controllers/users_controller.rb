@@ -273,7 +273,11 @@ class UsersController < ApplicationController
     RailsMcpEngine::Engine.build_tools!
     tools = Tools::MetaToolService.new.call(action: "list", tool_name: nil, query: nil, arguments: nil)
 
-    Array(tools[:tools]).map do |tool|
+    # Filter tools based on user permissions
+    tool_list = Array(tools[:tools])
+    filtered_tools = McpService.filter_tools(tool_list, Current.user)
+
+    filtered_tools.map do |tool|
       {
         name: tool[:name],
         description: tool[:description],
