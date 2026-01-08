@@ -141,8 +141,9 @@ module CreativesHelper
         md += "#{indent}* #{inner}\n"
       end
       # 하위 노드가 있으면 재귀
-      if creative.respond_to?(:children) && creative.children.present?
-        md += render_creative_tree_markdown(creative.children, level + 1, with_progress)
+      children = creative.linked_children
+      if children.present?
+        md += render_creative_tree_markdown(children, level + 1, with_progress)
       end
       md += "\n" if level <= 4 && !rendered_table_block
     end

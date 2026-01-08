@@ -161,7 +161,7 @@ class Creative < ApplicationRecord
   end
 
   def linked_children
-    origin_id.nil? ? super : origin.children_with_permission(Current.user, :read)
+    origin_id.nil? ? children_with_permission(Current.user, :read) : origin&.children_with_permission(Current.user, :read) || []
   end
 
   def owning_parent
