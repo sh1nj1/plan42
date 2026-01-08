@@ -1,10 +1,8 @@
 <div class="page-content doorkeeper-page-content">
+
   <div class="header doorkeeper-header">
     <h1><%= @application.name %></h1>
-    <div class="actions">
-      <%= link_to t('doorkeeper.applications.buttons.edit'), edit_oauth_application_path(@application), class: "btn" %>
-      <%= button_to t('doorkeeper.applications.buttons.destroy'), oauth_application_path(@application), method: :delete, data: { confirm: t('doorkeeper.applications.confirmations.destroy') }, class: "btn btn-danger" %>
-    </div>
+
   </div>
 
   <% if flash[:access_token].present? %>
@@ -123,4 +121,7 @@
     </div>
   </div>
 </div>
+  <div class="doorkeeper-back-link">
+    <%= link_to t('doorkeeper.applications.buttons.back'), oauth_applications_path, class: "btn btn-default" %>
+  </div>
 </div>

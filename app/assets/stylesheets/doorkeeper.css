@@ -72,3 +72,6 @@
     padding-top: 20px;
     border-top: 1px solid var(--color-border);
 }
+.doorkeeper-back-link {
+    margin-top: 20px;
+}
