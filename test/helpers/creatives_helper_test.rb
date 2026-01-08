@@ -196,4 +196,22 @@ class CreativesHelperTest < ActionView::TestCase
     assert_includes html, ">#HTML Tag</a>", "Link text should be stripped"
     assert_includes html, "title=\"HTML Tag\"", "Title attribute should be stripped"
   end
+
+  test "render_creative_tree_markdown follows linked creative origin children" do
+    user = users(:one)
+    origin_parent = Creative.create!(user: user, description: "Origin Parent")
+    Creative.create!(user: user, description: "Origin Child", parent: origin_parent)
+
+    # Linked Creative (mimicking a share or reference)
+    linked_creative = Creative.create!(user: user, origin: origin_parent)
+
+    # Set Current.user for permission checks
+    Current.user = user
+
+    # Only render the linked creative
+    markdown = render_creative_tree_markdown([ linked_creative ])
+
+    assert_includes markdown, "# Origin Parent"
+    assert_includes markdown, "## Origin Child", "Should include origin's child"
+  end
 end
