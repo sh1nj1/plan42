@@ -45,6 +45,12 @@ FastMcp.mount_in_rails(
     puts "FastMcp: Found tool files: #{tool_files}"
     tool_files.each { |f| require f }
 
+    # Ensure RailsMcpEngine tools are built (System tools like CreativeRetrieval)
+    if defined?(RailsMcpEngine::Engine)
+      Rails.application.eager_load! # Ensure all services are loaded to populate ToolMeta.registry
+      RailsMcpEngine::Engine.build_tools!
+    end
+
     resource_files = Dir[Rails.root.join("app", "resources", "**", "*.rb")]
     puts "FastMcp: Found resource files: #{resource_files}"
     resource_files.each { |f| require f }
