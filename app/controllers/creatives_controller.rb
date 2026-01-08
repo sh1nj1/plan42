@@ -59,7 +59,7 @@ class CreativesController < ApplicationController
       if Current.user
         redirect_to creatives_path, alert: t("creatives.errors.no_permission")
       else
-        redirect_to new_session_path, alert: t("creatives.errors.login_required")
+        request_authentication
       end
       return
     end
@@ -96,7 +96,7 @@ class CreativesController < ApplicationController
       if Current.user
         redirect_to creatives_path, alert: t("creatives.errors.no_permission")
       else
-        redirect_to new_session_path, alert: t("creatives.errors.login_required")
+        request_authentication
       end
       return
     end
