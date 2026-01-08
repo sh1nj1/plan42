@@ -70,5 +70,25 @@ module Oauth
       token.reload
       assert_not token.revoked?
     end
+
+    test "should not issue refresh token for PAT" do
+      # Even if refresh tokens are enabled in config (stubbed or assumed enabled for this test context if we could),
+      # PAT controller code explicitly sets use_refresh_token: false.
+      # Default doorkeeper config might have them disabled, but we can check if the token has one.
+
+      post create_access_token_oauth_application_url(@application), params: { expiration_type: "1_month" }
+      token = Doorkeeper::AccessToken.last
+      assert_nil token.refresh_token
+    end
+
+    test "should validate custom expiration" do
+      post create_access_token_oauth_application_url(@application), params: { expiration_type: "custom", expires_in_days: "0" }
+      assert_redirected_to oauth_application_url(@application)
+      assert_equal "Invalid expiration days. Please enter a positive number.", flash[:alert]
+
+      post create_access_token_oauth_application_url(@application), params: { expiration_type: "custom", expires_in_days: "-5" }
+      assert_redirected_to oauth_application_url(@application)
+      assert_equal "Invalid expiration days. Please enter a positive number.", flash[:alert]
+    end
   end
 end

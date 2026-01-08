@@ -69,8 +69,9 @@ ko:
           title: '토큰 생성 완료!'
           description: "개인 액세스 토큰을 지금 복사해주세요. 다시 볼 수 없습니다!"
           create_notice: '개인 액세스 토큰이 성공적으로 생성되었습니다. 지금 복사해주세요.'
-          revoke_notice: '액세스 토큰이 성공적으로 취소되었습니다.'
-          revoke_error: '액세스 토큰을 취소할 수 없습니다.'
+          revoke_notice: "개인 액세스 토큰이 성공적으로 취소되었습니다."
+          revoke_error: "개인 액세스 토큰을 취소할 수 없습니다."
+          invalid_expiration: "유효하지 않은 만료일입니다. 양수를 입력해주세요."
         form:
           expiration: '만료'
           thirty_days: '30일'

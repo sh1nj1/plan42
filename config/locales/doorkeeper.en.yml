@@ -71,6 +71,7 @@ en:
           create_notice: 'Personal Access Token generated successfully. Copy it now, it might not be shown again.'
           revoke_notice: 'Access Token revoked successfully.'
           revoke_error: 'Could not revoke Access Token.'
+          invalid_expiration: "Invalid expiration days. Please enter a positive number."
         form:
           expiration: 'Expiration'
           thirty_days: '30 Days'

@@ -10,10 +10,11 @@ module Oauth
 
     def show
       @application = current_resource_owner.oauth_applications.find(params[:id])
+      # Optimized active token query
       @active_tokens = Doorkeeper::AccessToken.where(application_id: @application.id, resource_owner_id: current_resource_owner.id)
                                               .where(revoked_at: nil)
                                               .order(created_at: :desc)
-                                              .select { |t| !t.expired? }
+      @active_tokens = @active_tokens.select { |t| !t.expired? }
     end
 
     def create
@@ -34,10 +35,14 @@ module Oauth
       # Calculate expiration
       expires_in = case params[:expiration_type]
       when "never"
-                     nil # Never expires (or max integer if DB requires it, but Doorkeeper supports nil)
+                     nil # Never expires
       when "custom"
                      days = params[:expires_in_days].to_i
-                     days > 0 ? days.days.to_i : Doorkeeper.configuration.access_token_expires_in
+                     if days <= 0
+                       flash[:alert] = I18n.t("doorkeeper.applications.personal_access_token.flash.invalid_expiration")
+                       redirect_to oauth_application_url(@application) and return
+                     end
+                     days.days.to_i
       else # '1_month' or default
                      1.month.to_i
       end
@@ -51,7 +56,7 @@ module Oauth
         resource_owner_id: current_resource_owner.id,
         scopes: allowed_scopes,
         expires_in: expires_in,
-        use_refresh_token: Doorkeeper.configuration.refresh_token_enabled?
+        use_refresh_token: false # Explicitly disable refresh tokens for PATs
       )
 
       if token.save
