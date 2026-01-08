@@ -1,7 +1,13 @@
-<div class="page-content doorkeeper-page-content">
-  <div class="header doorkeeper-header">
-    <h1><%= t('doorkeeper.applications.edit.title') %></h1>
+  <h1 class="no-top-margin"><%= t('doorkeeper.applications.edit.title') %></h1>
+
+  <div class="tab-list">
+    <button class="tab-button active">
+      <%= t('doorkeeper.applications.edit.details') %>
+    </button>
   </div>
 
-  <%= render 'form', application: @application %>
-</div>
+  <div class="tab-panels">
+    <section class="tab-panel active">
+      <%= render 'form', application: @application %>
+    </section>
+  </div>
