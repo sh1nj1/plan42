@@ -116,6 +116,8 @@
         <%= link_to t('users.change_password'), edit_password_user_path %>
         <br>
         <%= link_to t('users.webauthn.manage'), passkeys_user_path(@user) %>
+        <br>
+        <%= link_to t('doorkeeper.my_applications'), oauth_applications_path %>
         <% if @user.system_admin? %>
           <br>
           <%= link_to t('admin.title'), admin_path %>
