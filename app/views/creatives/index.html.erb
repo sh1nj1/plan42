@@ -46,14 +46,18 @@
 
   <button id="set-plan-btn" class="set-plan-btn" style="display:none;" data-creatives--select-mode-target="setPlan" data-action="click->creatives--set-plan-modal#open"><%= t('app.set_plan') %></button>
   <input type="checkbox" id="select-all-creatives" style="display:none;vertical-align:middle;" data-action="change->creatives--select-mode#toggleSelectAll" data-creatives--select-mode-target="selectAll" />
-  <button id="select-creative-btn" class="select-btn" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>" data-action="click->creatives--select-mode#toggle" data-creatives--select-mode-target="toggle"><%= t('app.select') %></button>
+  <% if authenticated? %>
+    <button id="select-creative-btn" class="select-btn" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>" data-action="click->creatives--select-mode#toggle" data-creatives--select-mode-target="toggle"><%= t('app.select') %></button>
+  <% end %>
   <% if (@parent_creative || @creative)&.has_permission?(Current.user, :admin) %>
     <button id="delete-selection-btn" class="danger-link" style="display:none;" data-confirm="<%= t('creatives.index.are_you_sure_delete_selection') %>" data-action="click->creatives--select-mode#deleteSelected" data-creatives--select-mode-target="deleteButton"><%= t('creatives.index.delete_selection') %></button>
   <% end %>
   <button id="expand-all-btn" class="expand-btn" style="width: 36px;" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" data-action="click->creatives--expansion#toggleAll" data-creatives--expansion-target="expand"><span aria-hidden="true">▼</span></button>
   <button id="toggle-edit-btn" class="edit-toggle-btn mobile-only" aria-label="<%= t('.edit') %>" title="<%= t('.edit') %>">
     <span aria-hidden="true"><%= svg_tag 'edit.svg', class: 'icon-edit', width: 16, height: 16 %></span></button>
-  <button id="import-markdown-btn" class="import-btn desktop-only" data-action="click->creatives--import#toggle" data-creatives--import-target="toggle"><%= t('.import_markdown') %></button>
+  <% if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
+    <button id="import-markdown-btn" class="import-btn desktop-only" data-action="click->creatives--import#toggle" data-creatives--import-target="toggle"><%= t('.import_markdown') %></button>
+  <% end %>
   <button id="export-markdown-btn" class="export-btn desktop-only" data-parent-creative-id="<%= @parent_creative&.id %>" data-error="<%= t('creatives.index.export_failed') %>"><%= t('.export_markdown') %></button>
   <%= render 'mobile_actions_menu', current_creative: current_creative, can_manage_integrations: can_manage_integrations %>
 </div>
