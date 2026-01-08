@@ -181,13 +181,44 @@ module Creatives
         base_creative = Creative.find_by(id: params[:id])&.effective_origin
         return [ [], nil ] unless base_creative
 
-        subtree_ids = base_creative.subtree_ids
-        creatives = Creative
-                      .distinct
-                      .left_joins(:comments)
-                      .where(id: subtree_ids)
-                      .where("description LIKE :q OR comments.content LIKE :q", q: query)
-                      .select { |c| readable?(c) }
+        # 1. Direct matches in scope
+        # Use simple LIKE on description.
+        # Note: This finds matches within the base_creative's subtree.
+        # To strictly scope to subtree, we can use closure_tree's logic or a JOIN.
+        # Using JOIN on hierarchies is safer/cleaner for subtree scope.
+        direct_matches = Creative
+          .joins("JOIN creative_hierarchies h_match ON h_match.descendant_id = creatives.id")
+          .where("h_match.ancestor_id = ?", base_creative.id) # Scope to base_creative
+          .where("description LIKE :q OR exists(select 1 from comments where comments.creative_id = creatives.id and comments.content LIKE :q)", q: query)
+
+        # 2. Matches in linked subtrees
+        # Logic:
+        #   - Find a 'Link' node (L) that is a descendant of Scope (base_creative).
+        #   - This Link L points to an Origin (O).
+        #   - Find a Match (M) that is a descendant of O.
+        #
+        # Query Path:
+        #   Scope (base_creative) --(h_scope.ancestor)--> Link (L) --(link.origin_id)--> Origin (O) --(h_match.ancestor)--> Match (M)
+        #
+        linked_matches = Creative
+          .joins("JOIN creative_hierarchies h_match ON h_match.descendant_id = creatives.id") # Match's ancestors
+          .joins("JOIN creatives link ON link.origin_id = h_match.ancestor_id") # Link points to Match's ancestor
+          .joins("JOIN creative_hierarchies h_scope ON h_scope.descendant_id = link.id") # Link is in Scope
+          .where("h_scope.ancestor_id = ?", base_creative.id)
+          .where("link.origin_id IS NOT NULL")
+          .where("creatives.description LIKE :q OR exists(select 1 from comments where comments.creative_id = creatives.id and comments.content LIKE :q)", q: query)
+
+        # Combine using UNION
+        # Note: We need to use `from` to wrap the UNION if we want to chain further scopes (like eager loading),
+        # but here we just need the array.
+        sql = "#{direct_matches.to_sql} UNION #{linked_matches.to_sql}"
+        creatives = Creative.from("(#{sql}) AS creatives")
+                            .select { |c| readable?(c) }
+
+        # We also need to manually preload comments if we want to avoid N+1, but for now relies on simple loading.
+        # If we need to return 'Link' nodes as well (to show path), that logic is more complex.
+        # Current requirement: "search matching items".
+
         [ creatives, base_creative ]
       else
         creatives = Creative
