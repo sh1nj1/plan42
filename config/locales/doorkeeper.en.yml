@@ -59,6 +59,33 @@ en:
         callback_urls: 'Callback urls'
         actions: 'Actions'
         not_defined: 'Not defined'
+      personal_access_token:
+        title: 'Personal Access Token'
+        description: 'Use this token in your MCP configuration to connect your tools to this application.'
+        flash:
+          title: 'Token Generated!'
+          description: "Make sure to copy your personal access token now. You won't be able to see it again!"
+          create_notice: 'Personal Access Token generated successfully. Copy it now, it might not be shown again.'
+          revoke_notice: 'Access Token revoked successfully.'
+          revoke_error: 'Could not revoke Access Token.'
+        form:
+          expiration: 'Expiration'
+          thirty_days: '30 Days'
+          never: 'Never (Infinite)'
+          custom: 'Custom'
+          days_placeholder: 'Days'
+          days_label: 'days'
+          submit: 'Generate New Access Token'
+        list:
+          title: 'Active Tokens'
+          headers:
+            created: 'Created'
+            expires: 'Expires'
+            actions: 'Actions'
+          never: 'Never'
+          empty: 'No active tokens found.'
+          revoke: 'Revoke'
+          revoke_confirm: 'Are you sure you want to revoke this token?'
 
     authorizations:
       buttons:

@@ -10,6 +10,7 @@
  */
 
 @import "avatar_preview.css";
+@import "doorkeeper.css";
 
 body {
     font-family: var(--font-sans);

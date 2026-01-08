@@ -59,6 +59,33 @@ ko:
         callback_urls: '콜백 URL'
         actions: '작업'
         not_defined: '정의되지 않음'
+      personal_access_token:
+        title: '개인 액세스 토큰'
+        description: '이 토큰을 사용하여 MCP 구성에서 도구를 이 애플리케이션에 연결하세요.'
+        flash:
+          title: '토큰 생성 완료!'
+          description: "개인 액세스 토큰을 지금 복사해주세요. 다시 볼 수 없습니다!"
+          create_notice: '개인 액세스 토큰이 성공적으로 생성되었습니다. 지금 복사해주세요.'
+          revoke_notice: '액세스 토큰이 성공적으로 취소되었습니다.'
+          revoke_error: '액세스 토큰을 취소할 수 없습니다.'
+        form:
+          expiration: '만료'
+          thirty_days: '30일'
+          never: '만료 없음 (무제한)'
+          custom: '직접 입력'
+          days_placeholder: '일수'
+          days_label: '일'
+          submit: '새 액세스 토큰 생성'
+        list:
+          title: '활성 토큰'
+          headers:
+            created: '생성일'
+            expires: '만료일'
+            actions: '작업'
+          never: '만료 없음'
+          empty: '활성 토큰이 없습니다.'
+          revoke: '취소'
+          revoke_confirm: '이 토큰을 취소하시겠습니까?'
 
     authorizations:
       buttons:

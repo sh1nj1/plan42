@@ -1,0 +1,74 @@
+.doorkeeper-page-content {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.doorkeeper-header {
+    margin-bottom: 30px;
+}
+
+.doorkeeper-header h1 {
+    font-size: 2em;
+    margin-bottom: 10px;
+}
+
+.doorkeeper-flash-notice {
+    background: #e3f2fd;
+    color: #0d47a1;
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    border: 1px solid #bbdefb;
+}
+
+.doorkeeper-flash-notice h3 {
+    margin-top: 0;
+}
+
+.doorkeeper-flash-notice code {
+    display: block;
+    background: white;
+    padding: 10px;
+    border: 1px solid #ddd;
+    margin-top: 10px;
+    font-size: 1.2em;
+    word-break: break-all;
+}
+
+.doorkeeper-app-details {
+    background: var(--color-surface);
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+}
+
+.doorkeeper-app-details .field {
+    margin-bottom: 20px;
+}
+
+.doorkeeper-app-details .field h4 {
+    margin: 0 0 5px;
+    color: var(--color-text-muted);
+}
+
+.doorkeeper-app-details .field code {
+    display: block;
+    background: var(--color-background);
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid var(--color-border);
+    user-select: all;
+}
+
+.doorkeeper-app-details .field .callback-url {
+    padding: 5px 10px;
+    margin-bottom: 5px;
+    user-select: text;
+}
+
+.doorkeeper-mcp-token-section {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--color-border);
+}
