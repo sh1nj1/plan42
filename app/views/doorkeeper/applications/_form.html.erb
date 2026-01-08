@@ -17,14 +17,14 @@
 
   <div>
     <%= f.label :redirect_uri %>
-    <%= f.text_area :redirect_uri, required: true, style: "min-height: 100px;" %>
-    <span class="text-sm text-gray-500 block mt-1">
+    <%= f.text_area :redirect_uri, required: true, style: "min-height: 100px; max-width: 320px;" %>
+    <div style="font-size: 0.875rem; color: var(--color-muted); margin-top: 0.25rem;">
       <%= t('doorkeeper.applications.help.redirect_uri') %>
-    </span>
+    </div>
     <% if Doorkeeper.configuration.native_redirect_uri %>
-      <span class="text-sm text-gray-500 block">
+      <div style="font-size: 0.875rem; color: var(--color-muted);">
         <%= t('doorkeeper.applications.help.native_redirect_uri', native_redirect_uri: Doorkeeper.configuration.native_redirect_uri) %>
-      </span>
+      </div>
     <% end %>
   </div>
 
@@ -33,17 +33,17 @@
     <%= f.label :confidential %>
   </div>
   <div style="margin-left: 1.5rem; margin-top: -0.5rem; margin-bottom: 1rem;">
-     <span class="text-sm text-gray-500 block">
+     <div style="font-size: 0.875rem; color: var(--color-muted);">
       <%= t('doorkeeper.applications.help.confidential') %>
-    </span>
+    </div>
   </div>
 
   <div>
     <%= f.label :scopes %>
     <%= f.text_field :scopes %>
-    <span class="text-sm text-gray-500 block mt-1">
+    <div style="font-size: 0.875rem; color: var(--color-muted); margin-top: 0.25rem;">
       <%= t('doorkeeper.applications.help.scopes') %>
-    </span>
+    </div>
   </div>
 
   <div class="profile-actions" style="display: flex; gap: 1rem; align-items: center;">
