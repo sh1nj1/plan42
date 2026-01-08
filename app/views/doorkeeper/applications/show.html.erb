@@ -1,0 +1,140 @@
+<div class="page-content doorkeeper-page-content">
+
+  <div class="header doorkeeper-header">
+    <h1><%= @application.name %></h1>
+
+  </div>
+
+  <div class="app-details doorkeeper-app-details">
+    <div class="field">
+      <h4><%= t('doorkeeper.applications.show.application_id') %></h4>
+      <code><%= @application.uid %></code>
+    </div>
+
+    <div class="field">
+      <h4><%= t('doorkeeper.applications.show.secret') %></h4>
+      <code><%= @application.secret %></code>
+    </div>
+
+    <div class="field">
+      <h4><%= t('doorkeeper.applications.show.scopes') %></h4>
+      <code><%= @application.scopes.presence || Doorkeeper.configuration.default_scopes %></code>
+    </div>
+
+    <div class="field">
+      <h4><%= t('doorkeeper.applications.show.callback_urls') %></h4>
+      <% @application.redirect_uri.split.each do |uri| %>
+        <code class="callback-url"><%= uri %></code>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="mcp-token-section doorkeeper-mcp-token-section">
+  <h3 class="text-lg font-medium text-gray-900 mb-4"><%= t('doorkeeper.applications.personal_access_token.title') %></h3>
+
+  <% if flash[:access_token].present? %>
+    <div id="token-modal" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+      <div class="common-popup" style="position: relative; max-width: 500px; width: 90%;">
+        <button type="button" class="popup-close-btn" onclick="document.getElementById('token-modal').style.display='none'">&times;</button>
+        <h3 class="doorkeeper-section-title" style="margin-top: 0;"><%= t('doorkeeper.applications.personal_access_token.flash.title') %></h3>
+        <p style="margin-bottom: 1rem;"><%= t('doorkeeper.applications.personal_access_token.flash.description') %></p>
+        <div style="position: relative;">
+          <div id="generated-token" class="doorkeeper-token-code" style="margin-bottom: 0; padding-right: 80px;">
+            <%= flash[:access_token] %>
+          </div>
+          <button type="button" onclick="copyToken()" style="position: absolute; top: 5px; right: 5px; color: var(--color-btn-text); background: var(--color-btn-bg); border: 1px solid var(--color-border); padding: 4px 8px; border-radius: 4px; cursor: pointer;">
+            Copy
+          </button>
+        </div>
+      </div>
+    </div>
+    <script>
+      function copyToken() {
+        var tokenText = document.getElementById('generated-token').innerText.trim();
+        navigator.clipboard.writeText(tokenText).then(function() {
+          var btn = document.querySelector('#token-modal button[onclick="copyToken()"]');
+          var originalText = btn.innerText;
+          btn.innerText = 'Copied!';
+          setTimeout(function() {
+            btn.innerText = originalText;
+          }, 2000);
+        }, function(err) {
+          console.error('Could not copy text: ', err);
+        });
+      }
+    </script>
+  <% end %>
+
+  <div class="doorkeeper-form-group" style="padding: 1rem; border: 1px solid var(--color-border); border-radius: 8px; margin-bottom: 2rem;">
+    <!-- Generation Form -->
+    <div>
+      <%= form_with url: create_access_token_oauth_application_path(@application), method: :post, local: true, class: "profile-form" do |f| %>
+        <div style="margin-bottom: 1rem;">
+          <label style="font-weight: 500; margin-bottom: 0.5rem; display: block;"><%= t('doorkeeper.applications.personal_access_token.form.expiration') %></label>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <div class="checkbox-field">
+              <%= f.radio_button :expiration_type, '1_month', checked: true %>
+              <%= f.label :expiration_type_1_month, t('doorkeeper.applications.personal_access_token.form.thirty_days') %>
+            </div>
+            <div class="checkbox-field">
+              <%= f.radio_button :expiration_type, 'never' %>
+              <%= f.label :expiration_type_never, t('doorkeeper.applications.personal_access_token.form.never') %>
+            </div>
+            <div class="checkbox-field" style="align-items: center;">
+              <%= f.radio_button :expiration_type, 'custom' %>
+              <%= f.label :expiration_type_custom, t('doorkeeper.applications.personal_access_token.form.custom') %>
+              <div style="margin-left: 1rem; display: inline-flex; align-items: center; gap: 0.5rem;">
+                 <%= f.number_field :expires_in_days, min: 1, placeholder: t('doorkeeper.applications.personal_access_token.form.days_placeholder'), style: "width: 80px;" %>
+                 <span><%= t('doorkeeper.applications.personal_access_token.form.days_label') %></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <%= f.submit t('doorkeeper.applications.personal_access_token.form.submit'), class: "primary-action-button" %>
+      <% end %>
+    </div>
+
+    <!-- Active Tokens List -->
+    <div>
+      <h4 class="text-md font-medium text-gray-900 mb-3"><%= t('doorkeeper.applications.personal_access_token.list.title') %></h4>
+      
+      <% if @active_tokens.any? %>
+        <div class="table-scroll">
+          <table class="contacts-table">
+            <thead>
+              <tr>
+                <th><%= t('doorkeeper.applications.personal_access_token.list.headers.created') %></th>
+                <th><%= t('doorkeeper.applications.personal_access_token.list.headers.expires') %></th>
+                <th class="text-right"><%= t('doorkeeper.applications.personal_access_token.list.headers.actions') %></th>
+              </tr>
+            </thead>
+            <tbody>
+              <% @active_tokens.each do |token| %>
+                <tr>
+                  <td><%= token.created_at.strftime("%Y-%m-%d %H:%M") %></td>
+                  <td>
+                    <% if token.expires_in.nil? %>
+                      <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800"><%= t('doorkeeper.applications.personal_access_token.list.never') %></span>
+                    <% else %>
+                      <% expiration_time = token.created_at + token.expires_in %>
+                      <%= "#{expiration_time.strftime('%Y-%m-%d %H:%M')} (#{distance_of_time_in_words(Time.current, expiration_time)})" %>
+                    <% end %>
+                  </td>
+                  <td class="text-right">
+                    <%= button_to t('doorkeeper.applications.personal_access_token.list.revoke'), destroy_access_token_oauth_application_path(@application, token_id: token.id), method: :delete, class: "danger-link", form: { data: { turbo_confirm: t('doorkeeper.applications.personal_access_token.list.revoke_confirm') } } %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% else %>
+        <p class="text-muted"><%= t('doorkeeper.applications.personal_access_token.list.empty') %></p>
+      <% end %>
+    </div>
+  </div>
+</div>
+  <div class="doorkeeper-back-link">
+    <%= link_to t('doorkeeper.applications.buttons.back'), oauth_applications_path, class: "btn btn-default" %>
+  </div>
+</div>

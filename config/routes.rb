@@ -3,6 +3,14 @@ Rails.application.routes.draw do
     controllers applications: "oauth/applications"
   end
 
+  # Extending Doorkeeper applications routes
+  resources :oauth_applications, controller: "oauth/applications", as: :oauth_applications, only: [] do
+    member do
+      post :create_access_token
+      delete :destroy_access_token
+    end
+  end
+
   resource :session
   match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
   match "/auth/github/callback", to: "github_auth#callback", via: [ :get, :post ]

@@ -1,0 +1,53 @@
+<%= form_for application, url: application.new_record? ? oauth_applications_path : oauth_application_path(application), html: { role: 'form', class: 'profile-form' } do |f| %>
+  <% if application.errors.any? %>
+    <div class="alert alert-danger" data-alert>
+      <div style="font-weight: bold; margin-bottom: 0.5rem;"><%= t('doorkeeper.applications.form.error') %></div>
+      <ul style="margin: 0; padding-left: 1.2rem;">
+        <% application.errors.full_messages.each do |msg| %>
+          <li><%= msg %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <div>
+    <%= f.label :name %>
+    <%= f.text_field :name, required: true %>
+  </div>
+
+  <div>
+    <%= f.label :redirect_uri %>
+    <%= f.text_area :redirect_uri, required: true, style: "min-height: 100px;" %>
+    <div style="font-size: 0.875rem; color: var(--color-muted); margin-top: 0.25rem;">
+      <%= t('doorkeeper.applications.help.redirect_uri') %>
+    </div>
+    <% if Doorkeeper.configuration.native_redirect_uri %>
+      <div style="font-size: 0.875rem; color: var(--color-muted);">
+        <%= t('doorkeeper.applications.help.native_redirect_uri', native_redirect_uri: Doorkeeper.configuration.native_redirect_uri) %>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="checkbox-field">
+    <%= f.check_box :confidential %>
+    <%= f.label :confidential, t('doorkeeper.applications.form.confidential') %>
+  </div>
+  <div style="margin-left: 1.5rem; margin-top: -0.5rem; margin-bottom: 1rem;">
+     <div style="font-size: 0.875rem; color: var(--color-muted);">
+      <%= t('doorkeeper.applications.help.confidential') %>
+    </div>
+  </div>
+
+  <div>
+    <%= f.label :scopes %>
+    <%= f.text_field :scopes %>
+    <div style="font-size: 0.875rem; color: var(--color-muted); margin-top: 0.25rem;">
+      <%= t('doorkeeper.applications.help.scopes') %>
+    </div>
+  </div>
+
+  <div class="profile-actions" style="display: flex; gap: 1rem; align-items: center;">
+    <%= f.submit t('doorkeeper.applications.buttons.submit'), class: "primary-action-button" %>
+    <%= link_to t('doorkeeper.applications.buttons.cancel'), oauth_applications_path, class: "btn" %>
+  </div>
+<% end %>

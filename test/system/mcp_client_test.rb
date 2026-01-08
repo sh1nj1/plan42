@@ -13,6 +13,7 @@ class McpClientTest < ApplicationSystemTestCase
     )
     @token = Doorkeeper::AccessToken.create!(
       application: @application,
+      resource_owner_id: users(:one).id,
       scopes: "public"
     ).token
   end

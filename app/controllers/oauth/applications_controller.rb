@@ -8,6 +8,16 @@ module Oauth
       @applications = current_resource_owner.oauth_applications
     end
 
+    def show
+      @application = current_resource_owner.oauth_applications.find(params[:id])
+
+      # Filter active tokens in Ruby (simpler, adapter-agnostic)
+      @active_tokens = Doorkeeper::AccessToken.where(application_id: @application.id, resource_owner_id: current_resource_owner.id)
+                                              .where(revoked_at: nil)
+                                              .order(created_at: :desc)
+                                              .select { |t| !t.expired? }
+    end
+
     def create
       @application = Doorkeeper::Application.new(application_params)
       @application.owner = current_resource_owner if Doorkeeper.configuration.confirm_application_owner?
@@ -18,6 +28,59 @@ module Oauth
       else
         render :new
       end
+    end
+
+    def create_access_token
+      @application = current_resource_owner.oauth_applications.find(params[:id])
+
+      # Calculate expiration
+      expires_in = case params[:expiration_type]
+      when "never"
+                     nil # Never expires
+      when "custom"
+                     days = params[:expires_in_days].to_i
+                     if days <= 0
+                       flash[:alert] = I18n.t("doorkeeper.applications.personal_access_token.flash.invalid_expiration")
+                       redirect_to oauth_application_url(@application) and return
+                     end
+                     days.days.to_i
+      else # '1_month' or default
+                     1.month.to_i
+      end
+
+      # Create a new access token (allowing multiple tokens)
+      # Fix: Use application scopes instead of default scopes
+      allowed_scopes = @application.scopes.presence || Doorkeeper.configuration.default_scopes
+
+      token = Doorkeeper::AccessToken.new(
+        application: @application,
+        resource_owner_id: current_resource_owner.id,
+        scopes: allowed_scopes,
+        expires_in: expires_in,
+        use_refresh_token: false # Explicitly disable refresh tokens for PATs
+      )
+
+      if token.save
+        flash[:access_token] = token.token
+        flash[:notice] = I18n.t("doorkeeper.applications.personal_access_token.flash.create_notice")
+        redirect_to oauth_application_url(@application)
+      else
+        flash[:alert] = token.errors.full_messages.join(", ")
+        redirect_to oauth_application_url(@application)
+      end
+    end
+
+    def destroy_access_token
+      @application = current_resource_owner.oauth_applications.find(params[:id])
+      token = Doorkeeper::AccessToken.find_by(id: params[:token_id], application_id: @application.id, resource_owner_id: current_resource_owner.id)
+
+      if token&.revoke
+        flash[:notice] = I18n.t("doorkeeper.applications.personal_access_token.flash.revoke_notice")
+      else
+        flash[:alert] = I18n.t("doorkeeper.applications.personal_access_token.flash.revoke_error")
+      end
+
+      redirect_to oauth_application_url(@application)
     end
 
     private

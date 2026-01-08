@@ -40,6 +40,25 @@ class McpOauthMiddleware
     return false if token_string.blank?
 
     token = Doorkeeper::AccessToken.by_token(token_string)
-    token&.accessible?
+    if token&.accessible?
+      if defined?(Current) && defined?(User)
+        user = User.find_by(id: token.resource_owner_id)
+        if user
+          Rails.logger.info "McpOauthMiddleware: Found user #{user.id} for token"
+          Current.user = user
+          true
+        else
+          Rails.logger.warn "McpOauthMiddleware: User missing for token #{token.resource_owner_id}"
+          false
+        end
+      else
+        Rails.logger.info "McpOauthMiddleware: Current or User not defined"
+        # Fallback to true if we can't check user
+        true
+      end
+    else
+      Rails.logger.info "McpOauthMiddleware: Token invalid or inaccessible"
+      false
+    end
   end
 end

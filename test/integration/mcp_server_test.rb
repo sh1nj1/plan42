@@ -10,6 +10,7 @@ class McpServerTest < ActionDispatch::IntegrationTest
     )
     @token = Doorkeeper::AccessToken.create!(
       application: @application,
+      resource_owner_id: users(:one).id,
       scopes: "public"
     )
   end
