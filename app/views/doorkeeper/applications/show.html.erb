@@ -97,9 +97,8 @@
     <!-- Active Tokens List -->
     <div>
       <h4 class="text-md font-medium text-gray-900 mb-3"><%= t('doorkeeper.applications.personal_access_token.list.title') %></h4>
-      <% active_tokens = Doorkeeper::AccessToken.where(application_id: @application.id, resource_owner_id: Current.user.id).order(created_at: :desc).select(&:accessible?) %>
       
-      <% if active_tokens.any? %>
+      <% if @active_tokens.any? %>
         <div class="table-scroll">
           <table class="contacts-table">
             <thead>
@@ -110,7 +109,7 @@
               </tr>
             </thead>
             <tbody>
-              <% active_tokens.each do |token| %>
+              <% @active_tokens.each do |token| %>
                 <tr>
                   <td><%= token.created_at.strftime("%Y-%m-%d %H:%M") %></td>
                   <td>
@@ -118,7 +117,7 @@
                       <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800"><%= t('doorkeeper.applications.personal_access_token.list.never') %></span>
                     <% else %>
                       <% expiration_time = token.created_at + token.expires_in %>
-                      <%= "#{expiration_time.strftime('%Y-%m-%d %H:%M')} (#{distance_of_time_in_words(Time.now, expiration_time)})" %>
+                      <%= "#{expiration_time.strftime('%Y-%m-%d %H:%M')} (#{distance_of_time_in_words(Time.current, expiration_time)})" %>
                     <% end %>
                   </td>
                   <td class="text-right">

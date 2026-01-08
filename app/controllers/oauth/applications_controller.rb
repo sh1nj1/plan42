@@ -8,6 +8,14 @@ module Oauth
       @applications = current_resource_owner.oauth_applications
     end
 
+    def show
+      @application = current_resource_owner.oauth_applications.find(params[:id])
+      @active_tokens = Doorkeeper::AccessToken.where(application_id: @application.id, resource_owner_id: current_resource_owner.id)
+                                              .where(revoked_at: nil)
+                                              .order(created_at: :desc)
+                                              .select { |t| !t.expired? }
+    end
+
     def create
       @application = Doorkeeper::Application.new(application_params)
       @application.owner = current_resource_owner if Doorkeeper.configuration.confirm_application_owner?
@@ -35,17 +43,25 @@ module Oauth
       end
 
       # Create a new access token (allowing multiple tokens)
-      token = Doorkeeper::AccessToken.create!(
+      # Fix: Use application scopes instead of default scopes
+      allowed_scopes = @application.scopes.presence || Doorkeeper.configuration.default_scopes
+
+      token = Doorkeeper::AccessToken.new(
         application: @application,
         resource_owner_id: current_resource_owner.id,
-        scopes: Doorkeeper.configuration.default_scopes,
+        scopes: allowed_scopes,
         expires_in: expires_in,
         use_refresh_token: Doorkeeper.configuration.refresh_token_enabled?
       )
 
-      flash[:access_token] = token.token
-      flash[:notice] = I18n.t("doorkeeper.applications.personal_access_token.flash.create_notice")
-      redirect_to oauth_application_url(@application)
+      if token.save
+        flash[:access_token] = token.token
+        flash[:notice] = I18n.t("doorkeeper.applications.personal_access_token.flash.create_notice")
+        redirect_to oauth_application_url(@application)
+      else
+        flash[:alert] = token.errors.full_messages.join(", ")
+        redirect_to oauth_application_url(@application)
+      end
     end
 
     def destroy_access_token
