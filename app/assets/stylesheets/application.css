@@ -518,7 +518,8 @@ input[type="password"] {
 .profile-form input[type="number"],
 .profile-form input[type="url"],
 .profile-form input[type="file"],
-.profile-form select {
+.profile-form select,
+.profile-form textarea {
     width: 100%;
     max-width: 320px;
 }
