@@ -33,6 +33,12 @@ FastMcp.mount_in_rails(
   # auth_token: 'your-token', # Required if authenticate: true
 ) do |server|
   puts "FastMcp: Inside mount block"
+  server.filter_tools do |request, tools|
+    next tools unless defined?(Current) && Current.user.present?
+
+    McpService.filter_tools(tools, Current.user)
+  end
+
   Rails.application.config.after_initialize do
     puts "FastMcp: Inside after_initialize"
     # Force load tools and resources to ensure descendants are populated

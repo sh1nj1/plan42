@@ -58,6 +58,42 @@ class McpService
     raise e
   end
 
+  def self.filter_tools(tools, user)
+    return [] if tools.blank?
+
+    # Identify dynamic tools (user-defined) vs system tools.
+    # Tools can be objects (FastMcp::Tool) or Hashes (from MetaToolService)
+    registered_names = tools.map do |tool|
+      tool.respond_to?(:tool_name) ? tool.tool_name : tool[:name]
+    end
+
+    # Check strict loading? No, simple where is fine.
+    dynamic_tools = McpTool.where(name: registered_names)
+    dynamic_tool_names = dynamic_tools.pluck(:name).to_set
+
+    # If user is present, find their owned tools
+    user_owned_tool_names = if user
+                              dynamic_tools
+                                .joins(:creative)
+                                .where(creatives: { user_id: user.id })
+                                .pluck(:name)
+                                .to_set
+    else
+                              Set.new
+    end
+
+    tools.select do |tool|
+      name = tool.respond_to?(:tool_name) ? tool.tool_name : tool[:name]
+      if dynamic_tool_names.include?(name)
+        # It is a dynamic tool; user must own it.
+        user_owned_tool_names.include?(name)
+      else
+        # It is a system tool (not in McpTool database); allow it.
+        true
+      end
+    end
+  end
+
   def self.load_active_tools
     McpTool.active.find_each do |tool|
       register_tool_from_source(tool.source_code)
