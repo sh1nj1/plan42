@@ -1,7 +1,7 @@
 class CreativesController < ApplicationController
   # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
   # Removed unauthenticated access to index and show actions
-  allow_unauthenticated_access only: %i[ index children ]
+  allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
   before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions slide_view unconvert ]
 
   def index
@@ -55,6 +55,15 @@ class CreativesController < ApplicationController
   end
 
   def show
+    unless @creative.has_permission?(Current.user, :read)
+      if Current.user
+        redirect_to creatives_path, alert: t("creatives.errors.no_permission")
+      else
+        redirect_to new_session_path, alert: t("creatives.errors.login_required")
+      end
+      return
+    end
+
     respond_to do |format|
       redirect_options = { id: @creative.id }
       redirect_options[:comment_id] = params[:comment_id] if params[:comment_id].present?
@@ -83,6 +92,15 @@ class CreativesController < ApplicationController
   end
 
   def slide_view
+    unless @creative.has_permission?(Current.user, :read)
+      if Current.user
+        redirect_to creatives_path, alert: t("creatives.errors.no_permission")
+      else
+        redirect_to new_session_path, alert: t("creatives.errors.login_required")
+      end
+      return
+    end
+
     @slide_ids = []
     @root_depth = @creative.ancestors.count
     build_slide_ids(@creative)
@@ -394,6 +412,8 @@ class CreativesController < ApplicationController
     end
 
     def build_slide_ids(node)
+      return unless node.has_permission?(Current.user, :read)
+
       @slide_ids << node.id
       children = node.children.order(:sequence)
       if node.origin_id.present?
