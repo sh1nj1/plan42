@@ -9,7 +9,10 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     creative = creatives(:unconvert_target)
     parent = creative.parent
     grandchild = creatives(:unconvert_grandchild)
-    expected_markdown = ApplicationController.helpers.render_creative_tree_markdown([ creative ])
+    expected_markdown = nil
+    Current.set(user: users(:one)) do
+      expected_markdown = ApplicationController.helpers.render_creative_tree_markdown([ creative ])
+    end
 
     assert_difference -> { parent.comments.count }, 1 do
       assert_difference -> { parent.children.count }, -1 do
@@ -67,7 +70,10 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal "text/markdown", response.media_type
-    expected_markdown = ApplicationController.helpers.render_creative_tree_markdown([ creative.effective_origin ])
+    expected_markdown = nil
+    Current.set(user: users(:one)) do
+      expected_markdown = ApplicationController.helpers.render_creative_tree_markdown([ creative.effective_origin ])
+    end
     assert_equal expected_markdown, response.body
   end
 
@@ -93,7 +99,10 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     get export_markdown_creatives_path, headers: { "ACCEPT" => "text/markdown" }
 
     assert_response :success
-    expected_markdown = ApplicationController.helpers.render_creative_tree_markdown([ creative.effective_origin ])
+    expected_markdown = nil
+    Current.set(user: users(:two)) do
+      expected_markdown = ApplicationController.helpers.render_creative_tree_markdown([ creative.effective_origin ])
+    end
     assert_equal expected_markdown, response.body
   end
 end
