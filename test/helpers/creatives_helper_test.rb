@@ -208,16 +208,16 @@ class CreativesHelperTest < ActionView::TestCase
     # Linked Creative pointing to Origin Root
     linked_root = Creative.create!(user: user, description: "Linked Root", origin: origin_root)
 
-    Current.user = user
+    Current.set(user: user) do
+      # Provide the linked creative to the helper
+      markdown = render_creative_tree_markdown([ linked_root ], 1)
 
-    # Provide the linked creative to the helper
-    markdown = render_creative_tree_markdown([ linked_root ], 1)
+      # The output should contain the Linked Root description (which comes from Origin)
+      assert_match(/Origin Root/, markdown)
 
-    # The output should contain the Linked Root description (which comes from Origin)
-    assert_match(/Origin Root/, markdown)
-
-    # CRITICAL: The output should ALSO contain the Origin Child description
-    # because we should traverse the children of the origin.
-    assert_match(/Origin Child/, markdown)
+      # CRITICAL: The output should ALSO contain the Origin Child description
+      # because we should traverse the children of the origin.
+      assert_match(/Origin Child/, markdown)
+    end
   end
 end
