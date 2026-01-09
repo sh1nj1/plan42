@@ -29,7 +29,6 @@ en:
     approve_execution_failed: "Comment action failed: %{message}"
     approve_success: "Action approved."
     approve_error: "Unable to approve the action."
-    approve_invalid_format: "Comment action must be a valid JSON object."
     approve_unsupported_action: "Unsupported comment action: %{action}."
     approve_invalid_attributes: "Comment action attributes must be an object."
     approve_no_attributes: "Comment action must include at least one allowed attribute."

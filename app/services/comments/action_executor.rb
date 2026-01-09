@@ -28,15 +28,19 @@ module Comments
 
     def prepare_for_execution!
       comment.reload
-      raise ExecutionError, I18n.t("comments.approve_missing_action") if comment.action.blank?
 
-      unless comment.can_be_approved_by?(executor)
-        if comment.approver_id.blank?
-          raise ExecutionError, I18n.t("comments.approve_missing_approver")
-        else
-          raise ExecutionError, I18n.t("comments.approve_not_allowed")
+      status = comment.approval_status(executor)
+      if status != :ok
+        error_key = case status
+        when :invalid_action_format then "comments.approve_invalid_format"
+        when :missing_action then "comments.approve_missing_action"
+        when :missing_approver then "comments.approve_missing_approver"
+        when :admin_required then "comments.approve_admin_required"
+        else "comments.approve_not_allowed"
         end
+        raise ExecutionError, I18n.t(error_key)
       end
+
       if comment.action_executed_at.present?
         raise ExecutionError, I18n.t("comments.approve_already_executed")
       end

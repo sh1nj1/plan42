@@ -178,4 +178,36 @@ class Comments::ActionExecutorSystemSettingTest < ActiveSupport::TestCase
     )
     assert_equal :invalid_action_format, comment.approval_status(@user)
   end
+
+  test "executor raises specific error for invalid format" do
+    comment = @creative.comments.create!(
+      content: "Bad JSON",
+      user: @user,
+      action: "invalid json }",
+      approver: @user
+    )
+
+    error = assert_raises(Comments::ActionExecutor::ExecutionError) do
+      Comments::ActionExecutor.new(comment: comment, executor: @user).call
+    end
+
+    assert_equal I18n.t("comments.approve_invalid_format"), error.message
+  end
+
+  test "executor raises specific error for admin requirement" do
+    action_payload = { "action" => "approve_tool", "tool_name" => "test_tool" }
+    comment = @creative.comments.create!(
+      content: "Approve tool",
+      user: @user,
+      action: JSON.generate(action_payload),
+      approver: @user
+    )
+
+    # @user is not admin, setting is ON
+    error = assert_raises(Comments::ActionExecutor::ExecutionError) do
+      Comments::ActionExecutor.new(comment: comment, executor: @user).call
+    end
+
+    assert_equal I18n.t("comments.approve_admin_required"), error.message
+  end
 end
