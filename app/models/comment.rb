@@ -27,6 +27,19 @@ class Comment < ApplicationRecord
     creative.creative_snippet
   end
 
+  def can_be_approved_by?(user)
+    return false unless user && action.present?
+
+    payload = JSON.parse(action) rescue {}
+
+    if payload["action"] == "approve_tool" && SystemSetting.mcp_tool_approval_required?
+      return user.system_admin?
+    end
+
+    return false if approver_id.blank?
+    approver == user
+  end
+
   private
 
   def create_inbox_item(owner, key, params = {})

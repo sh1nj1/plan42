@@ -247,7 +247,7 @@ class CommentsController < ApplicationController
   end
 
   def approve
-    unless @comment.approver == Current.user
+    unless @comment.can_be_approved_by?(Current.user)
       render json: { error: I18n.t("comments.approve_not_allowed") }, status: :forbidden and return
     end
 
@@ -261,7 +261,7 @@ class CommentsController < ApplicationController
   end
 
   def update_action
-    unless @comment.approver == Current.user
+    unless @comment.can_be_approved_by?(Current.user)
       render json: { error: I18n.t("comments.approve_not_allowed") }, status: :forbidden and return
     end
 
@@ -281,7 +281,7 @@ class CommentsController < ApplicationController
     @comment.with_lock do
       @comment.reload
 
-      if @comment.approver != Current.user
+      if !@comment.can_be_approved_by?(Current.user)
         approver_mismatch_error = true
       elsif @comment.action_executed_at.present?
         executed_error = true

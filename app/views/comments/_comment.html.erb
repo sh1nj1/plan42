@@ -49,7 +49,8 @@
       <button class="<%= ['convert-comment-btn', ('comment-owner-only' unless can_convert_comment)].compact.join(' ') %>" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('comments.convert_to_creative') %>">
         <%= t('comments.convert_button') %>
       </button>
-      <% if comment.action.present? && comment.approver == Current.user %>
+      <% can_approve = comment.can_be_approved_by?(Current.user) %>
+      <% if can_approve %>
         <button class="approve-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.approve_button') %>">
           <%= t('comments.approve_button') %>
         </button>
@@ -117,7 +118,7 @@
         <summary class="comment-action-summary"><%= t("comments.action_summary") %></summary>
         <div class="comment-action-body">
           <pre class="comment-action-json" data-comment-action-json><%= formatted_comment_action(comment) %></pre>
-          <% if comment.approver == Current.user && comment.action_executed_at.blank? %>
+          <% if can_approve && comment.action_executed_at.blank? %>
             <button class="edit-comment-action-btn" type="button" data-comment-id="<%= comment.id %>"><%= t("comments.edit_action_button") %></button>
             <form class="comment-action-edit-form" data-comment-id="<%= comment.id %>" style="display:none;">
               <textarea class="comment-action-edit-textarea" name="comment[action]" rows="8"><%= formatted_comment_action(comment) %></textarea>

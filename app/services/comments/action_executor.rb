@@ -29,9 +29,13 @@ module Comments
     def prepare_for_execution!
       comment.reload
       raise ExecutionError, I18n.t("comments.approve_missing_action") if comment.action.blank?
-      raise ExecutionError, I18n.t("comments.approve_missing_approver") if comment.approver_id.blank?
-      unless comment.approver == executor
-        raise ExecutionError, I18n.t("comments.approve_not_allowed")
+
+      unless comment.can_be_approved_by?(executor)
+        if comment.approver_id.blank?
+          raise ExecutionError, I18n.t("comments.approve_missing_approver")
+        else
+          raise ExecutionError, I18n.t("comments.approve_not_allowed")
+        end
       end
       if comment.action_executed_at.present?
         raise ExecutionError, I18n.t("comments.approve_already_executed")
