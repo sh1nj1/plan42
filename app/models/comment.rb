@@ -32,7 +32,8 @@ class Comment < ApplicationRecord
   end
 
   def approval_status(user)
-    return :not_allowed unless user && action.present?
+    return :missing_action unless action.present?
+    return :not_allowed unless user
 
     payload = JSON.parse(action)
     return :invalid_action_format unless payload.is_a?(Hash)

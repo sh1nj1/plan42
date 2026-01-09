@@ -251,10 +251,17 @@ class CommentsController < ApplicationController
     if status != :ok
       error_key = case status
       when :invalid_action_format then "comments.approve_invalid_format"
+      when :missing_action then "comments.approve_missing_action"
       when :missing_approver then "comments.approve_missing_approver"
+      when :admin_required then "comments.approve_admin_required"
       else "comments.approve_not_allowed"
       end
-      http_status = status == :invalid_action_format ? :unprocessable_entity : :forbidden
+      http_status = case status
+      when :invalid_action_format, :missing_action, :missing_approver
+                      :unprocessable_entity
+      else
+                      :forbidden
+      end
       render json: { error: I18n.t(error_key) }, status: http_status and return
     end
 
@@ -272,10 +279,17 @@ class CommentsController < ApplicationController
     if status != :ok
       error_key = case status
       when :invalid_action_format then "comments.approve_invalid_format"
+      when :missing_action then "comments.approve_missing_action"
       when :missing_approver then "comments.approve_missing_approver"
+      when :admin_required then "comments.approve_admin_required"
       else "comments.approve_not_allowed"
       end
-      http_status = status == :invalid_action_format ? :unprocessable_entity : :forbidden
+      http_status = case status
+      when :invalid_action_format, :missing_action, :missing_approver
+                      :unprocessable_entity
+      else
+                      :forbidden
+      end
       render json: { error: I18n.t(error_key) }, status: http_status and return
     end
 

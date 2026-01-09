@@ -515,4 +515,58 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes @response.body, other_comment.content
     assert_not_includes @response.body, "comment-topic-switch"
   end
+
+
+  test "approve returns 422 for missing action" do
+    comment = @creative.comments.create!(content: "No action", user: @user, approver: @user)
+    post approve_creative_comment_path(@creative, comment)
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("comments.approve_missing_action"), JSON.parse(@response.body)["error"]
+  end
+
+  test "approve returns 422 for missing approver" do
+    action_payload = { "action" => "update_creative", "attributes" => { "progress" => 0.5 } }
+    comment = @creative.comments.create!(
+      content: "No approver",
+      user: @user,
+      action: JSON.generate(action_payload),
+      approver: nil
+    )
+    post approve_creative_comment_path(@creative, comment)
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("comments.approve_missing_approver"), JSON.parse(@response.body)["error"]
+  end
+
+  test "approve returns 403 with specific message when admin approval required" do
+    SystemSetting.create!(key: "mcp_tool_approval_required", value: "true")
+    # Reset Current to ensure setting is picked up if it was already cached (though setup clears it)
+    Current.reset
+
+    non_admin = users(:two)
+    non_admin.update!(email_verified_at: Time.current)
+
+    # Sign in as non-admin
+    delete session_path
+    post session_path, params: { email: non_admin.email, password: "password" }
+
+    action_payload = { "action" => "approve_tool", "tool_name" => "test_tool" }
+    comment = @creative.comments.create!(
+      content: "Approve tool",
+      user: @user,
+      action: JSON.generate(action_payload),
+      approver: non_admin
+    )
+
+    # non_admin is not system admin
+    post approve_creative_comment_path(@creative, comment)
+    assert_response :forbidden
+    assert_equal I18n.t("comments.approve_admin_required"), JSON.parse(@response.body)["error"]
+
+    # Cleanup
+    SystemSetting.where(key: "mcp_tool_approval_required").destroy_all
+
+    # Restore session for other tests if needed (though teardown handles generic cleanup)
+    delete session_path
+    post session_path, params: { email: @user.email, password: "password" }
+  end
 end
