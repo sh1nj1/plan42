@@ -52,6 +52,7 @@ module Comments
     def mark_execution_completed!
       comment.action_executed_at = Time.current
       comment.action_executed_by = executor
+      comment.approver = executor if comment.approver != executor
       comment.save!
     end
 

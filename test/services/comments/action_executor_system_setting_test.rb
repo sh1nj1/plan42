@@ -62,6 +62,7 @@ class Comments::ActionExecutorSystemSettingTest < ActiveSupport::TestCase
      comment.reload
      assert_not_nil comment.action_executed_at
      assert_equal @admin, comment.action_executed_by
+     assert_equal @admin, comment.approver # Should be updated to executor because admin overrode it
   end
 
   test "normal approval still works when setting is enabled but action is not mcp approval" do
