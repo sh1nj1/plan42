@@ -881,6 +881,14 @@ export function initializeCreativeRowEditor() {
 
         if (isHtmlEmpty(descriptionInput.value)) {
           pendingSave = false;
+          const emptyDeleteConfirmMessage = template?.dataset?.emptyDeleteConfirm;
+          if (form.dataset.creativeId && emptyDeleteConfirmMessage) {
+            const targetTree = tree || currentTree;
+            const shouldDelete = window.confirm(emptyDeleteConfirmMessage);
+            if (shouldDelete) {
+              return deleteCurrent(false, targetTree);
+            }
+          }
           return Promise.resolve();
         }
 
@@ -1399,13 +1407,10 @@ export function initializeCreativeRowEditor() {
       updateActionButtonStates();
     }
 
-    function deleteCurrent(withChildren) {
-      if (!currentTree || !form.dataset.creativeId) return;
+    function deleteCurrent(withChildren, targetTree = currentTree) {
+      const tree = targetTree;
+      if (!tree || !form.dataset.creativeId) return Promise.resolve();
       const id = form.dataset.creativeId;
-      const tree = currentTree;
-      const trees = Array.from(document.querySelectorAll('.creative-tree'));
-      const index = trees.indexOf(tree);
-      const nextId = trees[index + 1] ? trees[index + 1].dataset.id : null;
       const parentId = tree.dataset.parentId;
 
       // CRITICAL: Remove any pending saves for this creative from the queue
@@ -1415,7 +1420,8 @@ export function initializeCreativeRowEditor() {
         apiQueue.removeByDedupeKey(`creative_${id}`);
       }
 
-      creativesApi.destroy(id, withChildren).then(() => {
+      const shouldAdvance = Boolean(currentTree && tree === currentTree);
+      return creativesApi.destroy(id, withChildren).then(() => {
         const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
         const childrenTree = document.getElementById("creative-children-" + id)
         if (!withChildren && childrenTree && parentTree) {
@@ -1425,7 +1431,7 @@ export function initializeCreativeRowEditor() {
         } else {
           document.getElementById("creative-children-" + id)?.remove();
         }
-        move(1);
+        if (shouldAdvance) move(1);
         removeTreeElement(tree);
       });
     }
