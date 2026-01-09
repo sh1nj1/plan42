@@ -50,7 +50,7 @@ class Comments::ActionExecutorSystemSettingTest < ActiveSupport::TestCase
        content: "Approve tool",
        user: @user,
        action: JSON.generate(action_payload),
-       approver: nil
+       approver: @user
      )
 
      executor = Comments::ActionExecutor.new(comment: comment, executor: @admin)

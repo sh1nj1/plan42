@@ -203,14 +203,11 @@ class McpService
       tool_name: tool.name
     }
 
-    # TODO: user approver should be admin permission of the creative and user should be creative user.
-    approver = SystemSetting.mcp_tool_approval_required? ? nil : creative.user
-
     Comment.create(
       creative: creative,
       content: message,
       user: nil, # System message
-      approver: approver, # The creative owner should approve, or system admin if configured
+      approver: creative.user, # The creative owner should approve
       action: JSON.pretty_generate(action_payload),
       private: false
     )
