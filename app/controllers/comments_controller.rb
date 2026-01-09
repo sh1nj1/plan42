@@ -275,24 +275,7 @@ class CommentsController < ApplicationController
   end
 
   def update_action
-    status = @comment.approval_status(Current.user)
-    if status != :ok
-      error_key = case status
-      when :invalid_action_format then "comments.approve_invalid_format"
-      when :missing_action then "comments.approve_missing_action"
-      when :missing_approver then "comments.approve_missing_approver"
-      when :admin_required then "comments.approve_admin_required"
-      else "comments.approve_not_allowed"
-      end
-      http_status = case status
-      when :invalid_action_format, :missing_action, :missing_approver
-                      :unprocessable_entity
-      else
-                      :forbidden
-      end
-      render json: { error: I18n.t(error_key) }, status: http_status and return
-    end
-
+    # Initial checks outside the lock
     action_payload = params.dig(:comment, :action)
     if action_payload.blank?
       render json: { error: I18n.t("comments.approve_missing_action") }, status: :unprocessable_entity and return
@@ -305,12 +288,33 @@ class CommentsController < ApplicationController
     executed_error = false
     update_success = false
     approver_mismatch_error = false
+    status_error_key = nil
+    status_http_status = nil
 
     @comment.with_lock do
       @comment.reload
 
-      if !@comment.can_be_approved_by?(Current.user)
+      status_in_lock = @comment.approval_status(Current.user)
+      # Allow repairing invalid format if user is approver
+      if status_in_lock == :invalid_action_format && @comment.approver_id == Current.user&.id
+        status_in_lock = :ok
+      end
+
+      if status_in_lock != :ok
         approver_mismatch_error = true
+        status_error_key = case status_in_lock
+        when :invalid_action_format then "comments.approve_invalid_format"
+        when :missing_action then "comments.approve_missing_action"
+        when :missing_approver then "comments.approve_missing_approver"
+        when :admin_required then "comments.approve_admin_required"
+        else "comments.approve_not_allowed"
+        end
+        status_http_status = case status_in_lock
+        when :invalid_action_format, :missing_action, :missing_approver
+                        :unprocessable_entity
+        else
+                        :forbidden
+        end
       elsif @comment.action_executed_at.present?
         executed_error = true
       else
@@ -319,7 +323,7 @@ class CommentsController < ApplicationController
     end
 
     if approver_mismatch_error
-      render json: { error: I18n.t("comments.approve_not_allowed") }, status: :forbidden
+      render json: { error: I18n.t(status_error_key) }, status: status_http_status
     elsif executed_error
       render json: { error: I18n.t("comments.approve_already_executed") }, status: :unprocessable_entity
     elsif update_success

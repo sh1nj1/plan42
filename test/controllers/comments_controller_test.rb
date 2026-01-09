@@ -569,4 +569,23 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     delete session_path
     post session_path, params: { email: @user.email, password: "password" }
   end
+
+  test "approver can update action even if current action is invalid" do
+    comment = @creative.comments.create!(
+      content: "Broken action",
+      user: @user,
+      action: "invalid json }",
+      approver: @user
+    )
+
+    new_payload = { "action" => "update_creative", "attributes" => { "progress" => 0.5 } }
+
+    patch update_action_creative_comment_path(@creative, comment), params: {
+      comment: { action: JSON.generate(new_payload) }
+    }
+
+    assert_response :success
+    comment.reload
+    assert_equal new_payload, JSON.parse(comment.action)
+  end
 end

@@ -35,7 +35,11 @@ class Comment < ApplicationRecord
     return :missing_action unless action.present?
     return :not_allowed unless user
 
-    payload = JSON.parse(action)
+    begin
+      payload = JSON.parse(action)
+    rescue JSON::ParserError
+      return :invalid_action_format
+    end
     return :invalid_action_format unless payload.is_a?(Hash)
 
     actions = Array(payload["actions"])
