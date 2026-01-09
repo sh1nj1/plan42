@@ -28,9 +28,15 @@ class Comment < ApplicationRecord
   end
 
   def can_be_approved_by?(user)
-    return false unless user && action.present?
+    approval_status(user) == :ok
+  end
+
+  def approval_status(user)
+    return :not_allowed unless user && action.present?
 
     payload = JSON.parse(action)
+    return :invalid_action_format unless payload.is_a?(Hash)
+
     actions = Array(payload["actions"])
     actions = [ payload ] if actions.empty?
 
@@ -41,13 +47,15 @@ class Comment < ApplicationRecord
     end
 
     if requires_admin && SystemSetting.mcp_tool_approval_required?
-      return user.system_admin?
+      return user.system_admin? ? :ok : :admin_required
     end
 
-    return false if approver_id.blank?
-    approver == user
+    return :missing_approver if approver_id.blank?
+    return :not_allowed unless approver == user
+
+    :ok
   rescue JSON::ParserError
-    false
+    :invalid_action_format
   end
 
   private

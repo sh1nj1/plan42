@@ -21,6 +21,7 @@ en:
     copy_link_error: "Unable to copy link"
     approve_button: "Approve"
     approve_not_allowed: "Only the assigned approver can approve this comment."
+    approve_invalid_format: "Invalid action format."
     approve_missing_action: "No approval action is associated with this comment."
     approve_missing_approver: "This comment has no approver to run the action."
     approve_already_executed: "This comment action has already been executed."

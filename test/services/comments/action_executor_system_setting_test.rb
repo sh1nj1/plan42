@@ -157,4 +157,25 @@ class Comments::ActionExecutorSystemSettingTest < ActiveSupport::TestCase
        end
      end
   end
+
+
+  test "approval_status detects invalid json format" do
+    comment = @creative.comments.create!(
+      content: "Bad JSON",
+      user: @user,
+      action: "invalid json }",
+      approver: @user
+    )
+    assert_equal :invalid_action_format, comment.approval_status(@user)
+  end
+
+  test "approval_status detects non-hash payload" do
+    comment = @creative.comments.create!(
+      content: "Array Payload",
+      user: @user,
+      action: "[]",
+      approver: @user
+    )
+    assert_equal :invalid_action_format, comment.approval_status(@user)
+  end
 end

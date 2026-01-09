@@ -247,8 +247,15 @@ class CommentsController < ApplicationController
   end
 
   def approve
-    unless @comment.can_be_approved_by?(Current.user)
-      render json: { error: I18n.t("comments.approve_not_allowed") }, status: :forbidden and return
+    status = @comment.approval_status(Current.user)
+    if status != :ok
+      error_key = case status
+      when :invalid_action_format then "comments.approve_invalid_format"
+      when :missing_approver then "comments.approve_missing_approver"
+      else "comments.approve_not_allowed"
+      end
+      http_status = status == :invalid_action_format ? :unprocessable_entity : :forbidden
+      render json: { error: I18n.t(error_key) }, status: http_status and return
     end
 
     begin
@@ -261,8 +268,15 @@ class CommentsController < ApplicationController
   end
 
   def update_action
-    unless @comment.can_be_approved_by?(Current.user)
-      render json: { error: I18n.t("comments.approve_not_allowed") }, status: :forbidden and return
+    status = @comment.approval_status(Current.user)
+    if status != :ok
+      error_key = case status
+      when :invalid_action_format then "comments.approve_invalid_format"
+      when :missing_approver then "comments.approve_missing_approver"
+      else "comments.approve_not_allowed"
+      end
+      http_status = status == :invalid_action_format ? :unprocessable_entity : :forbidden
+      render json: { error: I18n.t(error_key) }, status: http_status and return
     end
 
     action_payload = params.dig(:comment, :action)

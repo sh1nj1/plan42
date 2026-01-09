@@ -49,7 +49,7 @@
       <button class="<%= ['convert-comment-btn', ('comment-owner-only' unless can_convert_comment)].compact.join(' ') %>" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('comments.convert_to_creative') %>">
         <%= t('comments.convert_button') %>
       </button>
-      <% can_approve = comment.can_be_approved_by?(Current.user) %>
+      <% can_approve = comment.approval_status(Current.user) == :ok %>
       <% if can_approve %>
         <button class="approve-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.approve_button') %>">
           <%= t('comments.approve_button') %>
