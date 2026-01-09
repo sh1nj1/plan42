@@ -6,6 +6,9 @@ class SystemSetting < ApplicationRecord
   end
 
   def self.mcp_tool_approval_required?
-    find_by(key: "mcp_tool_approval_required")&.value == "true"
+    if Current.mcp_tool_approval_required.nil?
+      Current.mcp_tool_approval_required = find_by(key: "mcp_tool_approval_required")&.value == "true"
+    end
+    Current.mcp_tool_approval_required
   end
 end

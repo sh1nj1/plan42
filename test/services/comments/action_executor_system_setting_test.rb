@@ -107,4 +107,54 @@ class Comments::ActionExecutorSystemSettingTest < ActiveSupport::TestCase
      comment.reload
      assert_nil comment.action_executed_at
   end
+
+
+  test "nested approve_tool in actions array requires system admin even if approver matches" do
+     # Create the tool so the action is valid
+     McpTool.create!(creative: @creative, name: "test_tool", source_code: "tool_name 'test_tool'")
+
+     # Payload with approve_tool hidden in actions array
+     action_payload = {
+       "actions" => [
+         { "action" => "approve_tool", "tool_name" => "test_tool" }
+       ]
+     }
+
+     comment = @creative.comments.create!(
+       content: "Sneaky approve tool",
+       user: @user,
+       action: JSON.generate(action_payload),
+       approver: @user # User is the assigned approver, but non-admin
+     )
+
+     # Should fail because system setting is ON, so strict admin check should apply
+     # logic should detect approve_tool inside actions
+     McpService.stub :register_tool_from_source, true do
+       assert_raises(Comments::ActionExecutor::ExecutionError) do
+         Comments::ActionExecutor.new(comment: comment, executor: @user).call
+       end
+     end
+  end
+
+  test "alias type: approve_tool in nested payload also requires system admin" do
+     # Payload using "type" instead of "action"
+     action_payload = {
+       "actions" => [
+         { "type" => "approve_tool", "tool_name" => "test_tool" }
+       ]
+     }
+
+     comment = @creative.comments.create!(
+       content: "Sneaky alias tool",
+       user: @user,
+       action: JSON.generate(action_payload),
+       approver: @user
+     )
+
+     McpService.stub :register_tool_from_source, true do
+       assert_raises(Comments::ActionExecutor::ExecutionError) do
+         Comments::ActionExecutor.new(comment: comment, executor: @user).call
+       end
+     end
+  end
 end
