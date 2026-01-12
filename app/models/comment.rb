@@ -32,8 +32,12 @@ class Comment < ApplicationRecord
   end
 
   def approval_status(user)
-    return :missing_action unless action.present?
     return :not_allowed unless user
+
+    if action.blank?
+      return :not_allowed unless approver == user
+      return :missing_action
+    end
 
     begin
       payload = JSON.parse(action)
@@ -59,8 +63,6 @@ class Comment < ApplicationRecord
     return :not_allowed unless approver == user
 
     :ok
-  rescue JSON::ParserError
-    :invalid_action_format
   end
 
   private

@@ -618,6 +618,33 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     post session_path, params: { email: @user.email, password: "password" }
   end
 
+  test "approve action performs authz check before content validation" do
+    non_approver = users(:two)
+    non_approver.update!(email_verified_at: Time.current)
+
+    # Comment with NO action (invalid state usually, but possible via direct DB creation or bugs)
+    comment = @creative.comments.create!(
+      content: "No action",
+      user: @user,
+      action: nil,
+      approver: @user
+    )
+
+    # Sign in as non-approver
+    delete session_path
+    post session_path, params: { email: non_approver.email, password: "password" }
+
+    # Try to approve - should get 403 (Not Allowed), NOT 422 (Missing Action)
+    post approve_creative_comment_path(@creative, comment)
+
+    assert_response :forbidden
+    assert_equal I18n.t("comments.approve_not_allowed"), JSON.parse(@response.body)["error"]
+
+    # Restore session
+    delete session_path
+    post session_path, params: { email: @user.email, password: "password" }
+  end
+
   test "non-approver receives 403 (not 422) for invalid action payload" do
     non_approver = users(:two)
     non_approver.update!(email_verified_at: Time.current)
