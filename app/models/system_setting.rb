@@ -4,4 +4,11 @@ class SystemSetting < ApplicationRecord
   def self.help_menu_link
     find_by(key: "help_menu_link")&.value
   end
+
+  def self.mcp_tool_approval_required?
+    if Current.mcp_tool_approval_required.nil?
+      Current.mcp_tool_approval_required = find_by(key: "mcp_tool_approval_required")&.value == "true"
+    end
+    Current.mcp_tool_approval_required
+  end
 end

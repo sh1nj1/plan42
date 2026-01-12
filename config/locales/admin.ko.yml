@@ -7,5 +7,7 @@ ko:
     settings:
       help_link: "도움말 메뉴 링크 URL"
       help_link_hint: "설정 시 상단 내비게이션의 \"?\" 메뉴가 이 URL로 연결됩니다."
+      mcp_tool_approval: "MCP 도구 승인"
+      mcp_tool_approval_hint: "새 MCP 도구 등록 시 시스템 관리자의 승인이 필요합니다."
       updated: "설정이 성공적으로 업데이트되었습니다."
       save: "설정 저장"

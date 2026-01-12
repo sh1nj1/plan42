@@ -11,6 +11,16 @@
           <%= t('admin.settings.help_link_hint') %>
         </div>
       </div>
+
+      <div style="margin-top: 1.5em;">
+        <label class="checkbox-label" style="display: flex; align-items: center; gap: 0.5em;">
+          <%= f.check_box :mcp_tool_approval, checked: @mcp_tool_approval %>
+          <span><%= t('admin.settings.mcp_tool_approval') %></span>
+        </label>
+        <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em; margin-left: 1.8em;">
+          <%= t('admin.settings.mcp_tool_approval_hint') %>
+        </div>
+      </div>
       <%= f.submit t('admin.settings.save') %>
     <% end %>
   </section>

@@ -203,7 +203,6 @@ class McpService
       tool_name: tool.name
     }
 
-    # TODO: user approver should be admin permission of the creative and user should be creative user.
     Comment.create(
       creative: creative,
       content: message,
