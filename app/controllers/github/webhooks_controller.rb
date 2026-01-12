@@ -11,6 +11,13 @@ module Github
       return head :unauthorized unless valid_signature?(raw_body, payload)
       payload = payload.presence || {}
 
+      SystemEvents::Dispatcher.dispatch("github_webhook", {
+        event: event,
+        action: payload["action"],
+        repository: payload.dig("repository", "full_name"),
+        payload: payload
+      })
+
       case event
       when "pull_request"
         Github::PullRequestProcessor.new(payload: payload).call
