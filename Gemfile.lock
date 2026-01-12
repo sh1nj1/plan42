@@ -275,6 +275,7 @@ GEM
     mini_mime (1.1.5)
     minitest (6.0.1)
       prism (~> 1.5)
+    minitest-mock (5.27.0)
     msgpack (1.8.0)
     multi_json (1.18.0)
     multi_xml (0.8.0)
@@ -616,6 +617,7 @@ DEPENDENCIES
   jsbundling-rails
   kamal
   liquid
+  minitest-mock
   octokit
   omniauth-github
   omniauth-google-oauth2
