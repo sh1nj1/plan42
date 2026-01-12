@@ -276,28 +276,24 @@ class CommentsController < ApplicationController
 
   def update_action
     # Initial checks outside the lock
-    action_payload = params.dig(:comment, :action)
-    if action_payload.blank?
-      render json: { error: I18n.t("comments.approve_missing_action") }, status: :unprocessable_entity and return
-    end
-
-    validator = Comments::ActionValidator.new(comment: @comment)
-    parsed_payload = validator.validate!(action_payload)
-    normalized_action = JSON.pretty_generate(parsed_payload)
-
     executed_error = false
     update_success = false
     approver_mismatch_error = false
     status_error_key = nil
     status_http_status = nil
+    validation_error_message = nil
 
     @comment.with_lock do
       @comment.reload
 
       status_in_lock = @comment.approval_status(Current.user)
       # Allow repairing invalid format if user is approver
-      if status_in_lock == :invalid_action_format && @comment.approver_id == Current.user&.id
-        status_in_lock = :ok
+      if status_in_lock == :invalid_action_format
+        if @comment.approver_id == Current.user&.id
+          status_in_lock = :ok
+        else
+          status_in_lock = :not_allowed
+        end
       end
 
       if status_in_lock != :ok
@@ -318,12 +314,26 @@ class CommentsController < ApplicationController
       elsif @comment.action_executed_at.present?
         executed_error = true
       else
-        update_success = @comment.update(action: normalized_action)
+        action_payload = params.dig(:comment, :action)
+        if action_payload.blank?
+          validation_error_message = I18n.t("comments.approve_missing_action")
+        else
+          begin
+            validator = Comments::ActionValidator.new(comment: @comment)
+            parsed_payload = validator.validate!(action_payload)
+            normalized_action = JSON.pretty_generate(parsed_payload)
+            update_success = @comment.update(action: normalized_action)
+          rescue Comments::ActionValidator::ValidationError => e
+            validation_error_message = e.message
+          end
+        end
       end
     end
 
     if approver_mismatch_error
       render json: { error: I18n.t(status_error_key) }, status: status_http_status
+    elsif validation_error_message
+      render json: { error: validation_error_message }, status: :unprocessable_entity
     elsif executed_error
       render json: { error: I18n.t("comments.approve_already_executed") }, status: :unprocessable_entity
     elsif update_success

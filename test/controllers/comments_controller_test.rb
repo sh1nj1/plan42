@@ -588,4 +588,89 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     comment.reload
     assert_equal new_payload, JSON.parse(comment.action)
   end
+
+
+  test "non-approver receives 403 (not 422) for blank action payload" do
+    non_approver = users(:two)
+    non_approver.update!(email_verified_at: Time.current)
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate({ "action" => "update_creative", "attributes" => { "progress" => 0.5 } }),
+      approver: @user
+    )
+
+    # Sign in as non-approver
+    delete session_path
+    post session_path, params: { email: non_approver.email, password: "password" }
+
+    # Send blank action - should fail usage check FIRST (return 403), instead of 422
+    patch update_action_creative_comment_path(@creative, comment), params: {
+      comment: { action: "" }
+    }
+
+    assert_response :forbidden
+    assert_equal I18n.t("comments.approve_not_allowed"), JSON.parse(@response.body)["error"]
+
+    # Restore session
+    delete session_path
+    post session_path, params: { email: @user.email, password: "password" }
+  end
+
+  test "non-approver receives 403 (not 422) for invalid action payload" do
+    non_approver = users(:two)
+    non_approver.update!(email_verified_at: Time.current)
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate({ "action" => "update_creative", "attributes" => { "progress" => 0.5 } }),
+      approver: @user
+    )
+
+    # Sign in as non-approver
+    delete session_path
+    post session_path, params: { email: non_approver.email, password: "password" }
+
+    # Send invalid JSON - should fail usage check FIRST (return 403), instead of 422
+    patch update_action_creative_comment_path(@creative, comment), params: {
+      comment: { action: "invalid json }" }
+    }
+
+    assert_response :forbidden
+    assert_equal I18n.t("comments.approve_not_allowed"), JSON.parse(@response.body)["error"]
+
+    # Restore session
+    delete session_path
+    post session_path, params: { email: @user.email, password: "password" }
+  end
+
+  test "non-approver cannot repair invalid action" do
+    non_approver = users(:two)
+    non_approver.update!(email_verified_at: Time.current)
+
+    comment = @creative.comments.create!(
+      content: "Broken action",
+      user: @user,
+      action: "invalid json }",
+      approver: @user
+    )
+
+    # Sign in as non-approver
+    delete session_path
+    post session_path, params: { email: non_approver.email, password: "password" }
+
+    # Attempt to repair with valid JSON
+    new_payload = { "action" => "update_creative", "attributes" => { "progress" => 0.5 } }
+    patch update_action_creative_comment_path(@creative, comment), params: {
+      comment: { action: JSON.generate(new_payload) }
+    }
+
+    assert_response :forbidden
+
+    # Restore session
+    delete session_path
+    post session_path, params: { email: @user.email, password: "password" }
+  end
 end
