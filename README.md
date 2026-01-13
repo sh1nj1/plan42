@@ -54,6 +54,15 @@ before precompiling assets. To deploy:
 Render will automatically create both the web service and the PostgreSQL database as specified in the `render.yaml` configuration.
 
 
+## Security
+
+### Cloudfront Origin Protection
+
+To prevent direct access to the origin server when using Cloudfront (or another reverse proxy), we verify a shared secret header.
+
+1. Set `ORIGIN_SHARED_SECRET` in your environment variables.
+2. Configure Cloudfront to send the custom header `X-Origin-Secret` with this value.
+
 ## License
 
 Collavre is distributed under the terms of the [GNU Affero General Public License v3.0](LICENSE).
