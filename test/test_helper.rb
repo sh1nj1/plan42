@@ -4,7 +4,6 @@ require "rails/test_help"
 require "minitest/mock"
 
 # Add engines test directories to the test runner
-# Add engines test directories to the test runner
 # Note: We do not auto-load engine tests here to avoid running them during targeted app tests.
 # Use `rails test engines/` or `rake test:engines` to run engine tests.
 

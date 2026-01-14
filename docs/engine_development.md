@@ -69,7 +69,6 @@ If you have a separate stylesheet:
 ## 5. Testing
 
 ### Ruby Tests
-### Ruby Tests
 *   **Run Host Only**: `rails test`
 *   **Run Engine Only**: `rails test engines/my_custom_feature`
 *   **Run Everything**: `rake test`
