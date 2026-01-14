@@ -1,4 +1,5 @@
 class ApplicationController < ActionController::Base
+  before_action :verify_cloudfront_origin!
   include Authentication
   # Only allow modern browsers supporting webp images, web push, badges, import maps, CSS nesting, and CSS :has.
   allow_browser versions: :modern
@@ -22,6 +23,22 @@ class ApplicationController < ActionController::Base
   end
 
   private
+
+  def verify_cloudfront_origin!
+    return if skip_cloudfront_verification?
+
+    unless request.headers["X-Origin-Secret"] == ENV["ORIGIN_SHARED_SECRET"]
+      head :forbidden
+    end
+  end
+
+  def skip_cloudfront_verification?
+    return false if request.headers["X-Origin-Secret"].present?
+    return true if ENV["ORIGIN_SHARED_SECRET"].blank?
+
+    # health checks, internal callbacks, etc.
+    request.path.start_with?("/up") || request.path.start_with?("/health")
+  end
 
   def extract_locale_from_accept_language_header
     header = request.env["HTTP_ACCEPT_LANGUAGE"]&.split(",")&.first
