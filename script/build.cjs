@@ -37,4 +37,13 @@ const config = {
     publicPath: '/assets',
 };
 
-esbuild.build(config).catch(() => process.exit(1));
+const watch = process.argv.includes('--watch');
+
+if (watch) {
+    esbuild.context(config).then(ctx => {
+        ctx.watch();
+        console.log('Watching for changes...');
+    }).catch(() => process.exit(1));
+} else {
+    esbuild.build(config).catch(() => process.exit(1));
+}
