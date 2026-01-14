@@ -3,10 +3,17 @@ require "fileutils"
 require_relative "../../lib/local_engine_setup"
 
 class EngineOverrideTest < ActionDispatch::IntegrationTest
-  TEMP_ENGINE_PATH = Rails.root.join("engines/test_override_engine")
+  # Use a path OUTSIDE the main 'engines' bucket to avoid polluting parallel tests
+  TEMP_ROOT = Rails.root.join("tmp/test_engines")
+  TEMP_ENGINE_PATH = TEMP_ROOT.join("test_override_engine")
 
   setup do
-    # 1. Create a temporary engine structure
+    # Capture global state to restore later
+    @original_i18n_load_path = I18n.load_path.dup
+    @original_config_i18n_load_path = Rails.application.config.i18n.load_path.dup
+    @original_view_paths = ActionController::Base.view_paths.dup
+
+    # 1. Create a temporary engine structure in ISOLATION
     FileUtils.mkdir_p(TEMP_ENGINE_PATH.join("config/locales"))
     FileUtils.mkdir_p(TEMP_ENGINE_PATH.join("app/views/shared"))
 
@@ -36,11 +43,10 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
       end
     end
 
-    # 5. Trigger the Engine Setup logic
-    LocalEngineSetup.run(Rails.application)
+    # 5. Trigger the Engine Setup logic with our CUSTOM ROOT
+    LocalEngineSetup.run(Rails.application, root: TEMP_ROOT)
 
     # 6. Manually sync I18n.load_path to config (simulating Rails boot behavior for test)
-    # Since LocalEngineSetup updates app.config, but at runtime I18n.load_path is separate
     I18n.load_path = Rails.application.config.i18n.load_path
 
     # Reload I18n backend
@@ -48,10 +54,15 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
   end
 
   teardown do
+    # Restore global state
+    I18n.load_path = @original_i18n_load_path
+    Rails.application.config.i18n.load_path = @original_config_i18n_load_path
+    ActionController::Base.view_paths = @original_view_paths
+
     # Cleanup files
     FileUtils.rm_rf(TEMP_ENGINE_PATH)
 
-    # Reset I18n
+    # Reload I18n backend to flush the bad paths
     I18n.backend.reload!
   end
 

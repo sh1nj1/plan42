@@ -1,7 +1,7 @@
 # lib/local_engine_setup.rb
 class LocalEngineSetup
-  def self.run(app)
-    engines_root = Rails.root.join("engines")
+  def self.run(app, root: nil)
+    engines_root = root || Rails.root.join("engines")
     return unless File.directory?(engines_root)
 
     # 1. View Overrides: Prepend view paths for all Engines found
