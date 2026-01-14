@@ -8,5 +8,5 @@ LocalEngineSetup.run(Rails.application)
 
 # 2. Run on to_prepare for reloaded things (View Paths)
 Rails.application.config.to_prepare do
-  LocalEngineSetup.run(Rails.application)
+  LocalEngineSetup.run(Rails.application, view_paths_only: true)
 end

@@ -3,6 +3,13 @@ require_relative "../config/environment"
 require "rails/test_help"
 require "minitest/mock"
 
+# Add engines test directories to the test runner
+if defined?(Rails::TestUnit::Runner)
+  Dir.glob("engines/*/test").each do |engine_test_dir|
+    Rails::TestUnit::Runner.test_paths << engine_test_dir
+  end
+end
+
 module ActiveSupport
   class TestCase
     # Run tests in parallel with specified workers

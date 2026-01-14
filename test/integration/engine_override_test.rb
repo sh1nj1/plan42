@@ -1,6 +1,7 @@
 require "test_helper"
 require "fileutils"
 require_relative "../../lib/local_engine_setup"
+require "minitest/mock"
 
 class EngineOverrideTest < ActionDispatch::IntegrationTest
   # Use a path OUTSIDE the main 'engines' bucket to avoid polluting parallel tests
@@ -13,9 +14,13 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
     @original_config_i18n_load_path = Rails.application.config.i18n.load_path.dup
     @original_view_paths = ActionController::Base.view_paths.dup
 
+    # Reset LocalEngineSetup state
+    LocalEngineSetup.reset!
+
     # 1. Create a temporary engine structure in ISOLATION
     FileUtils.mkdir_p(TEMP_ENGINE_PATH.join("config/locales"))
     FileUtils.mkdir_p(TEMP_ENGINE_PATH.join("app/views/shared"))
+    FileUtils.mkdir_p(TEMP_ENGINE_PATH.join("public")) # For static asset test
 
     # 2. Define an I18n override for 'app.name'
     File.write(TEMP_ENGINE_PATH.join("config/locales/en.yml"), <<~YAML)
@@ -59,6 +64,9 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
     Rails.application.config.i18n.load_path = @original_config_i18n_load_path
     ActionController::Base.view_paths = @original_view_paths
 
+    # Reset LocalEngineSetup state
+    LocalEngineSetup.reset!
+
     # Cleanup files
     FileUtils.rm_rf(TEMP_ENGINE_PATH)
 
@@ -76,5 +84,54 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "#custom-footer", text: "Custom Enterprise Footer"
     assert_no_match "GitHub", response.body
+  end
+
+  test "idempotency: running setup twice does not duplicate view paths" do
+    initial_count = ActionController::Base.view_paths.count
+
+    # Run again against Rails.application
+    LocalEngineSetup.run(Rails.application, root: TEMP_ROOT)
+
+    assert_equal initial_count, ActionController::Base.view_paths.count
+  end
+
+  test "static assets: validates middleware insertion only when enabled" do
+     # We use a Mock App because Rails.application.config.middleware is frozen at runtime
+     # and we want to verify the logic of LocalEngineSetup
+
+     # Creating a minimal class for middleware recorder to mock config.middleware
+     mock_middleware_class = Class.new do
+       attr_reader :calls
+       def initialize; @calls = []; end
+       def operations; []; end
+       def insert_before(*args); @calls << args; end
+       def frozen?; false; end # Important for our new check
+     end
+
+     middleware_recorder = mock_middleware_class.new
+
+     # Mock App Structure
+     app_struct = OpenStruct.new(
+       config: OpenStruct.new(
+         public_file_server: OpenStruct.new(enabled: true), # SIMULATE ENABLED
+         middleware: middleware_recorder,
+         paths: Hash.new { |h, k| h[k] = [] },
+         i18n: OpenStruct.new(load_path: [])
+       ),
+       middleware: [] # Live string middleware list (empty for mock)
+     )
+
+     # Reset LocalEngineSetup so it processes this "new" app run
+     LocalEngineSetup.reset!
+
+     # Run Setup against Mock
+     LocalEngineSetup.run(app_struct, root: TEMP_ROOT)
+
+     # Verify middleware was inserted
+     engine_public = TEMP_ENGINE_PATH.join("public").to_s
+
+     assert_equal 1, middleware_recorder.calls.length, "Should have inserted static middleware once"
+     # args are [ActionDispatch::Static, ActionDispatch::Static, public_path]
+     assert_equal engine_public, middleware_recorder.calls.first.last, "Should insert the correct public path"
   end
 end
