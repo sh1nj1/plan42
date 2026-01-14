@@ -55,10 +55,15 @@ class LocalEngineSetup
 
             unless already_added
               begin
+                index = app.config.public_file_server.index_name
+                headers = app.config.public_file_server.headers || {}
+
                 app.config.middleware.insert_before(
                   ActionDispatch::Static,
                   ActionDispatch::Static,
-                  public_path
+                  public_path,
+                  index: index,
+                  headers: headers
                 )
               rescue FrozenError
                 # Cannot modify middleware stack after initialization (e.g. in tests)

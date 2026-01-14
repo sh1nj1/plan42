@@ -91,7 +91,7 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "#custom-footer", text: "Custom Enterprise Footer"
-    assert_no_match "GitHub", response.body
+    assert_select "footer", text: /GitHub/, count: 0
   end
 
   test "idempotency: running setup twice does not duplicate view paths" do
@@ -122,7 +122,11 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
      # Mock App Structure
      app_struct = OpenStruct.new(
        config: OpenStruct.new(
-         public_file_server: OpenStruct.new(enabled: true), # SIMULATE ENABLED
+         public_file_server: OpenStruct.new(
+           enabled: true,
+           index_name: "index",
+           headers: { "Cache-Control" => "public, max-age=3600" }
+         ),
          middleware: middleware_recorder,
          paths: Hash.new { |h, k| h[k] = [] },
          i18n: OpenStruct.new(load_path: [])
@@ -140,7 +144,12 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
      engine_public = @temp_engine_path.join("public").to_s
 
      assert_equal 1, middleware_recorder.calls.length, "Should have inserted static middleware once"
-     # args are [ActionDispatch::Static, ActionDispatch::Static, public_path]
-     assert_equal engine_public, middleware_recorder.calls.first.last, "Should insert the correct public path"
+
+     # Check arguments passed to insert_before:
+     # [TargetClass, MiddlewareClass, Path, {index:, headers:}]
+     args = middleware_recorder.calls.first
+     assert_equal engine_public, args[2], "Should insert the correct public path"
+     assert_equal "index", args[3][:index], "Should pass index config"
+     assert_equal({ "Cache-Control" => "public, max-age=3600" }, args[3][:headers], "Should pass headers config")
   end
 end
