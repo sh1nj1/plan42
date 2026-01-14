@@ -29,13 +29,18 @@ DEMO: [https://collavre.com](https://collavre.com)
 
 ### Test
 
-* There's minitest test `./bin/rails test && ./bin/rails test:system`
+* There's minitest test `./bin/rake test && ./bin/rails test:system`
 * system test with `chrome` driver, `SYSTEM_TEST_DRIVER=chrome ./bin/rails test:system`
 
 ## JavaScript bundling
 
 This project uses `jsbundling-rails`, so Node.js and npm packages must be installed when building for production. Ensure `npm ci`
 runs before `rails assets:precompile`. The provided Dockerfile and Render build script handle this automatically.
+
+## Customization
+
+Collavre supports extension via Local Engines.
+- [Engine Development Guide](docs/engine_development.md)
 
 ## Deploy to AWS EC2
 
@@ -57,7 +62,6 @@ before precompiling assets. To deploy:
 3. Click "Apply" to start the deployment
 
 Render will automatically create both the web service and the PostgreSQL database as specified in the `render.yaml` configuration.
-
 
 ## License
 

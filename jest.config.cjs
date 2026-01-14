@@ -3,5 +3,13 @@ module.exports = {
   extensionsToTreatAsEsm: [".jsx"],
   moduleFileExtensions: ["js", "jsx", "json"],
   transform: {},
-  testMatch: ["**/__tests__/**/*.test.[jt]s?(x)"]
+  testMatch: ["**/__tests__/**/*.test.[jt]s?(x)"],
+  roots: [
+    "<rootDir>/app/javascript",
+    "<rootDir>/engines"
+  ],
+  moduleDirectories: [
+    "node_modules",
+    "app/javascript"
+  ]
 }
