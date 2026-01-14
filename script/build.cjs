@@ -13,7 +13,11 @@ const entryPoints = {};
 [...appEntries, ...engineEntries].forEach(entry => {
     const name = path.parse(entry).name;
     if (entryPoints[name]) {
-        console.warn(`[WARN] Duplicate entry point name detected: '${name}'. '${entry}' will overwrite '${entryPoints[name]}'.`);
+        console.error(`[ERROR] Duplicate entry point name detected: '${name}'.`);
+        console.error(`  Existing: ${entryPoints[name]}`);
+        console.error(`  New:      ${entry}`);
+        console.error(`Build failed to prevent asset overwrites. Please rename one of the files.`);
+        process.exit(1);
     }
     entryPoints[name] = entry;
 });
