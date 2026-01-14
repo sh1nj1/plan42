@@ -10,7 +10,7 @@
     "jsdom": "^27.1.0"
   },
   "scripts": {
-    "build": "esbuild app/javascript/*.* engines/*/app/javascript/*.* --bundle --sourcemap --format=esm --jsx=automatic --outdir=app/assets/builds --public-path=/assets",
+    "build": "node script/build.cjs",
     "test": "node --experimental-vm-modules ./node_modules/.bin/jest"
   },
   "workspaces": [

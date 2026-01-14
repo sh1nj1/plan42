@@ -2,12 +2,10 @@ require "test_helper"
 require "fileutils"
 require_relative "../../lib/local_engine_setup"
 require "minitest/mock"
+require "ostruct"
+require "securerandom"
 
 class EngineOverrideTest < ActionDispatch::IntegrationTest
-  # Use a path OUTSIDE the main 'engines' bucket to avoid polluting parallel tests
-  TEMP_ROOT = Rails.root.join("tmp/test_engines")
-  TEMP_ENGINE_PATH = TEMP_ROOT.join("test_override_engine")
-
   setup do
     # Capture global state to restore later
     @original_i18n_load_path = I18n.load_path.dup
@@ -17,20 +15,24 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
     # Reset LocalEngineSetup state
     LocalEngineSetup.reset!
 
+    # Setup unique paths for this test run to avoid collision in parallel tests
+    @temp_root = Rails.root.join("tmp/test_engines/#{SecureRandom.hex(8)}")
+    @temp_engine_path = @temp_root.join("test_override_engine")
+
     # 1. Create a temporary engine structure in ISOLATION
-    FileUtils.mkdir_p(TEMP_ENGINE_PATH.join("config/locales"))
-    FileUtils.mkdir_p(TEMP_ENGINE_PATH.join("app/views/shared"))
-    FileUtils.mkdir_p(TEMP_ENGINE_PATH.join("public")) # For static asset test
+    FileUtils.mkdir_p(@temp_engine_path.join("config/locales"))
+    FileUtils.mkdir_p(@temp_engine_path.join("app/views/shared"))
+    FileUtils.mkdir_p(@temp_engine_path.join("public")) # For static asset test
 
     # 2. Define an I18n override for 'app.name'
-    File.write(TEMP_ENGINE_PATH.join("config/locales/en.yml"), <<~YAML)
+    File.write(@temp_engine_path.join("config/locales/en.yml"), <<~YAML)
       en:
         app:
           name: "Overridden App Name"
     YAML
 
     # 3. Define a View Partial override for the footer
-    File.write(TEMP_ENGINE_PATH.join("app/views/shared/_footer.html.erb"), <<~ERB)
+    File.write(@temp_engine_path.join("app/views/shared/_footer.html.erb"), <<~ERB)
       <div id="custom-footer">
         Custom Enterprise Footer
       </div>
@@ -40,16 +42,22 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
     unless defined?(TestOverrideEngine::Engine)
       module TestOverrideEngine
         class Engine < ::Rails::Engine
-          # Force root to be our temp path
+          # Value holder for dynamic root
+          cattr_accessor :dynamic_root
+
           def self.root
-            Pathname.new(TEMP_ENGINE_PATH)
+            # If dynamic_root is set, use it. Otherwise fallback (though shouldn't happen in test)
+            dynamic_root || super
           end
         end
       end
     end
 
+    # Update the engine root for this test run
+    TestOverrideEngine::Engine.dynamic_root = Pathname.new(@temp_engine_path)
+
     # 5. Trigger the Engine Setup logic with our CUSTOM ROOT
-    LocalEngineSetup.run(Rails.application, root: TEMP_ROOT)
+    LocalEngineSetup.run(Rails.application, root: @temp_root)
 
     # 6. Manually sync I18n.load_path to config (simulating Rails boot behavior for test)
     I18n.load_path = Rails.application.config.i18n.load_path
@@ -68,7 +76,7 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
     LocalEngineSetup.reset!
 
     # Cleanup files
-    FileUtils.rm_rf(TEMP_ENGINE_PATH)
+    FileUtils.rm_rf(@temp_root)
 
     # Reload I18n backend to flush the bad paths
     I18n.backend.reload!
@@ -90,7 +98,7 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
     initial_count = ActionController::Base.view_paths.count
 
     # Run again against Rails.application
-    LocalEngineSetup.run(Rails.application, root: TEMP_ROOT)
+    LocalEngineSetup.run(Rails.application, root: @temp_root)
 
     assert_equal initial_count, ActionController::Base.view_paths.count
   end
@@ -106,6 +114,7 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
        def operations; []; end
        def insert_before(*args); @calls << args; end
        def frozen?; false; end # Important for our new check
+       def include?(*args); false; end # Fallback
      end
 
      middleware_recorder = mock_middleware_class.new
@@ -125,10 +134,10 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
      LocalEngineSetup.reset!
 
      # Run Setup against Mock
-     LocalEngineSetup.run(app_struct, root: TEMP_ROOT)
+     LocalEngineSetup.run(app_struct, root: @temp_root)
 
      # Verify middleware was inserted
-     engine_public = TEMP_ENGINE_PATH.join("public").to_s
+     engine_public = @temp_engine_path.join("public").to_s
 
      assert_equal 1, middleware_recorder.calls.length, "Should have inserted static middleware once"
      # args are [ActionDispatch::Static, ActionDispatch::Static, public_path]

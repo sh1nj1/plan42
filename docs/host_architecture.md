@@ -1,40 +1,35 @@
-# Host Architecture: Local Engines
+# Host Application Architecture
 
-This document explains the architecture supporting On-Premise/Local Engines in `collavre`.
+This document describes the architectural patterns used in the host application (`collavre`) to support on-premise separation.
 
-## Core Components
+## 1. Engine Integration
+The host application is designed to be a "shell" that loads core features and optionally loads custom "on-premise" modules as Rails Engines.
 
-### 1. Auto-Loading (`Gemfile`)
-The `Gemfile` is configured to dynamically find and load any gem found in `engines/`.
-```ruby
-Dir.glob(File.expand_path("engines/*", __dir__)).each do |engine_path|
-  gem File.basename(engine_path), path: engine_path
-end
-```
-This means we technically use a "Monorepo" strategy where engines are local path gems.
+### Dynamic Loading
+- **Gemfile**: Automatically iterates over the `engines/` directory and loads any local engines found there.
+- **Initializer**: `config/initializers/local_engines.rb` configures these engines to:
+  - Override host views (Prepend view paths).
+  - Add migrations to the main schema.
+  - Load I18n locales.
+  - overriding static assets (favicons, logos).
 
-### 2. The Initializer (`config/initializers/local_engines.rb`)
-This file is the specific glue that enables seamless overrides. It iterates over loaded engines and:
+## 2. Shared Considerations
 
-1.  **View Precedence**: Calls `prepend_view_path` on `ActionController::Base`. Use `to_prepare` to ensure it works with code reloading.
-2.  **Migrations**: Appends `db/migrate` to `config.paths["db/migrate"]`.
-3.  **I18n**: Appends locales to `i18n.load_path` (at the end, for precedence).
-4.  **Static Files**: Inserts `ActionDispatch::Static` middleware pointing to engine `public/` directories **before** the main app's static middleware.
+### Database
+- All engines share the **same database** as the host.
+- Engine migrations are run via standard `rails db:migrate`.
+- Namespacing tables (e.g., `example_custom_projects`) is strictly recommended for engine-specific data to avoid collisions.
 
-### 3. JavaScript & Workspaces
-*   **Workspaces**: `package.json` defines `workspaces: ["engines/*"]`.
-*   **Build**: `esbuild` command includes `engines/*/app/javascript/*.*` as entry points.
-*   **Jest**: `jest.config.js` includes `<rootDir>/engines` as a root.
+### Assets & Javascript
+- **Esbuild**: The build script (`script/build.cjs`) automatically discovers and compiles entry points from `engines/*/app/javascript/*.*`.
+- **CSS**: Engines should expose their own CSS files if needed, or override partials that include CSS classes.
 
-### 4. Docker Deployment
-Because `Gemfile` references local paths (`path: "engines/..."`), Bundler requires these files to exist before `bundle install` runs.
-The `Dockerfile` has been modified to:
-```dockerfile
-COPY engines ./engines
-RUN bundle install
-```
-This ensures production builds work correctly.
+### Testing
+- **Unified Testing**:
+  - `rails test`: Automatically discovers and runs tests from `engines/*/test` (configured in `test/test_helper.rb`).
+  - `npm test`: Runs Jest tests for both host and engines (configured in `jest.config.cjs`).
 
-### 5. CI/CD
-*   `rails test` is enhanced in `lib/tasks/engine_tests.rake` to recursively run engine tests.
-*   `npm ci` installs workspace dependencies automatically.
+## 3. Best Practices for Host Development
+- **Partials**: Extracted common UI elements (like `shared/footer`, `shared/navbar`) into partials to make them easily overridable by engines.
+- **I18n**: Use `t('app.key')` helper everywhere. Do not hardcode strings. This allows engines to change terminology (e.g., "Plan" vs "Project").
+- **Helpers**: Use `method_defined?` checks if calling engine-specific helpers or use a hook pattern.

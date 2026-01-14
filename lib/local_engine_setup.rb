@@ -45,7 +45,6 @@ class LocalEngineSetup
       # C. Static Assets (public/)
       public_path = "#{engine_path}/public"
       if File.directory?(public_path)
-        # Only add middleware if static files are enabled
         if app.config.public_file_server.enabled
             # Check if we already inserted this path
             already_added = app.middleware.any? do |m|
@@ -63,7 +62,8 @@ class LocalEngineSetup
                 )
               rescue FrozenError
                 # Cannot modify middleware stack after initialization (e.g. in tests)
-                # We ignore this error as it only affects test scenarios re-running setup
+              rescue RuntimeError
+                # ActionDispatch::Static not found in stack, cannot insert before it.
               end
             end
         end
