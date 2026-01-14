@@ -94,7 +94,8 @@ module Tools
       env = Rack::MockRequest.env_for(
         "/creatives",
         method: "GET",
-        params: params.compact
+        params: params.compact,
+        "HTTP_X_ORIGIN_SECRET" => ENV["ORIGIN_SHARED_SECRET"] # Internal call
       )
       controller.request = ActionDispatch::Request.new(env)
       controller.response = ActionDispatch::Response.new

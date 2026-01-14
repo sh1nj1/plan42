@@ -46,5 +46,30 @@ module Tools
         assert_equal @parent.id, results.first[:id]
       end
     end
+
+    test "retrieves data when origin secret is enforced" do
+      with_env("ORIGIN_SHARED_SECRET" => "test_secret") do
+        Current.set(user: @other_user) do
+          service = Tools::CreativeRetrievalService.new
+
+          # This should not raise an error and return results
+          # If the secret header wasn't sent, this would fail authentication in ApplicationController (mocked)
+          results = service.call(id: @parent.id)
+
+          assert_not_empty results
+          assert_equal @parent.id, results.first[:id]
+        end
+      end
+    end
+
+    private
+
+    def with_env(env)
+      original_env = ENV.to_hash
+      env.each { |k, v| ENV[k] = v }
+      yield
+    ensure
+      ENV.replace(original_env)
+    end
   end
 end
