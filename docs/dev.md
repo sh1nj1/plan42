@@ -136,3 +136,12 @@ Rails.application.credentials.dig(:aws, :smtp_username)
 Rails.application.credentials.dig(:aws, :smtp_password)
 Rails.application.credentials.dig(:aws, :region)
 ```
+
+## Security
+
+### Cloudfront Origin Protection
+
+To prevent direct access to the origin server when using Cloudfront (or another reverse proxy), we verify a shared secret header.
+
+1. Set `ORIGIN_SHARED_SECRET` in your environment variables.
+2. Configure Cloudfront to send the custom header `X-Origin-Secret` with this value.
