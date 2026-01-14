@@ -4,6 +4,11 @@ A tracker of your creatives.
 
 Your creativeness is coming!
 
+Collavre is an experimental project for small development teams to provide a unified platform for knowledge, task management, and chat communication with AI Agents.
+The Creative in Collavre represents a tree-like todo list that can serve as a documentation block, task, or chat.
+
+DEMO: [https://collavre.com](https://collavre.com)
+
 * [Features](docs/features_summary.md)
 
 ## Getting Started
