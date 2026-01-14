@@ -40,10 +40,18 @@ const config = {
 const watch = process.argv.includes('--watch');
 
 if (watch) {
-    esbuild.context(config).then(ctx => {
-        ctx.watch();
-        console.log('Watching for changes...');
-    }).catch(() => process.exit(1));
+    esbuild.context(config)
+        .then(ctx => {
+            ctx.watch().catch(err => {
+                console.error(err);
+                process.exit(1);
+            });
+            console.log('Watching for changes...');
+        })
+        .catch(err => {
+            console.error(err);
+            process.exit(1);
+        });
 } else {
     esbuild.build(config).catch(() => process.exit(1));
 }
