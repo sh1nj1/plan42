@@ -10,9 +10,12 @@
     "jsdom": "^27.1.0"
   },
   "scripts": {
-    "build": "esbuild app/javascript/*.* --bundle --sourcemap --format=esm --jsx=automatic --outdir=app/assets/builds --public-path=/assets",
+    "build": "esbuild app/javascript/*.* engines/*/app/javascript/*.* --bundle --sourcemap --format=esm --jsx=automatic --outdir=app/assets/builds --public-path=/assets",
     "test": "node --experimental-vm-modules ./node_modules/.bin/jest"
   },
+  "workspaces": [
+    "engines/*"
+  ],
   "dependencies": {
     "@github/webauthn-json": "^2.1.1",
     "@hotwired/stimulus": "^3.2.2",

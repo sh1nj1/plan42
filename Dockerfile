@@ -37,6 +37,9 @@ RUN apt-get update -qq && \
 
 # Install application gems and JavaScript dependencies
 COPY Gemfile Gemfile.lock package.json package-lock.json ./
+# Copy engines so Bundler can find local gems
+COPY engines ./engines
+
 RUN bundle install && \
     rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git && \
     bundle exec bootsnap precompile --gemfile && \

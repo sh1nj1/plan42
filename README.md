@@ -37,6 +37,11 @@ DEMO: [https://collavre.com](https://collavre.com)
 This project uses `jsbundling-rails`, so Node.js and npm packages must be installed when building for production. Ensure `npm ci`
 runs before `rails assets:precompile`. The provided Dockerfile and Render build script handle this automatically.
 
+## Customization
+
+Collavre supports extension via Local Engines.
+- [Engine Development Guide](docs/engine_development.md)
+
 ## Deploy to AWS EC2
 
 - [Deploy to AWS EC2](docs/deploy_to_ec2.md)
@@ -57,7 +62,6 @@ before precompiling assets. To deploy:
 3. Click "Apply" to start the deployment
 
 Render will automatically create both the web service and the PostgreSQL database as specified in the `render.yaml` configuration.
-
 
 ## License
 

@@ -92,3 +92,12 @@ if File.exist?(File.expand_path("../rails_mcp_engine", __FILE__))
 else
   gem "rails_mcp_engine", "~> 0.4.0"
 end
+
+# Load all local engines found in ./engines
+Dir.glob(File.expand_path("engines/*", __dir__)).each do |engine_path|
+  # Only load if it looks like a ruby gem (has a .gemspec)
+  if Dir.glob("#{engine_path}/*.gemspec").any?
+    gem_name = File.basename(engine_path)
+    gem gem_name, path: engine_path
+  end
+end
