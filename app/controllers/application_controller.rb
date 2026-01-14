@@ -33,17 +33,11 @@ class ApplicationController < ActionController::Base
   end
 
   def skip_cloudfront_verification?
+    return false if request.headers["X-Origin-Secret"].present?
     return true if ENV["ORIGIN_SHARED_SECRET"].blank?
 
     # health checks, internal callbacks, etc.
-    request.path.start_with?("/up") ||
-      request.path.start_with?("/health") ||
-      internal_request?
-  end
-
-  def internal_request?
-    Rails.env.development? ||
-      request.local? # localhost, 127.0.0.1
+    request.path.start_with?("/up") || request.path.start_with?("/health")
   end
 
   def extract_locale_from_accept_language_header
