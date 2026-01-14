@@ -16,10 +16,13 @@ class LocalEngineSetup
     Rails::Engine.subclasses.each do |engine|
       if engine.root.to_s.start_with?(engines_root.to_s)
         view_path = engine.root.join("app/views").to_s
-        # Avoid prepending if already present
-        unless ActionController::Base.view_paths.any? { |p| p.to_s == view_path }
-          ActionController::Base.prepend_view_path(view_path)
+        # Ensure uniqueness and precedence:
+        # Remove the path if it already exists (e.g. from Rails auto-load or previous run)
+        # so that prepend_view_path moves it to the TOP.
+        if ActionController::Base.view_paths.any? { |p| p.to_s == view_path }
+          ActionController::Base.view_paths = ActionController::Base.view_paths.reject { |p| p.to_s == view_path }
         end
+        ActionController::Base.prepend_view_path(view_path)
       end
     end
 

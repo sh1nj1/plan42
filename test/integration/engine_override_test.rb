@@ -6,6 +6,10 @@ require "ostruct"
 require "securerandom"
 
 class EngineOverrideTest < ActionDispatch::IntegrationTest
+  # Disable parallelization for this test class because it mutates global state
+  # (ActionController::Base.view_paths, I18n.load_path) which can affect other tests.
+  parallelize(workers: 1)
+
   setup do
     # Capture global state to restore later
     @original_i18n_load_path = I18n.load_path.dup
@@ -55,6 +59,12 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
 
     # Update the engine root for this test run
     TestOverrideEngine::Engine.dynamic_root = Pathname.new(@temp_engine_path)
+
+    # SIMULATE RAILS BEHAVIOR:
+    # Rails automatically appends engine view paths during initialization.
+    # We strip this in teardown, but we must add it here to test that LocalEngineSetup
+    # correctly MOVES it to the front (prepends) even if it exists.
+    ActionController::Base.append_view_path(@temp_engine_path.join("app/views").to_s)
 
     # 5. Trigger the Engine Setup logic with our CUSTOM ROOT
     LocalEngineSetup.run(Rails.application, root: @temp_root)
