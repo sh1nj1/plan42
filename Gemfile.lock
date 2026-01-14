@@ -1,9 +1,3 @@
-PATH
-  remote: engines/example_custom
-  specs:
-    example_custom (0.1.0)
-      rails (>= 8.1.2)
-
 GEM
   remote: https://rubygems.org/
   specs:
@@ -613,7 +607,6 @@ DEPENDENCIES
   debug
   doorkeeper (~> 5.8)
   dotenv
-  example_custom!
   fcm
   google-apis-calendar_v3
   google-apis-fcm_v1
