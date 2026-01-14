@@ -4,7 +4,7 @@ A tracker of your creatives.
 
 Your creativeness is coming!
 
-* [Features](docs/features.md)
+* [Features](docs/features_summary.md)
 
 ## Getting Started
 
