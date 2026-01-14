@@ -4,13 +4,9 @@ require "rails/test_help"
 require "minitest/mock"
 
 # Add engines test directories to the test runner
-# Manually require engine tests ONLY if we are running a full suite (no specific files passed)
-# This prevents `rails test test/models/foo_test.rb` from running all engine tests unnecessarily.
-if ARGV.none? { |arg| !arg.start_with?("-") }
-  Dir.glob(Rails.root.join("engines/*/test/**/*_test.rb")).each do |f|
-    require f
-  end
-end
+# Add engines test directories to the test runner
+# Note: We do not auto-load engine tests here to avoid running them during targeted app tests.
+# Use `rails test engines/` or `rake test:engines` to run engine tests.
 
 module ActiveSupport
   class TestCase

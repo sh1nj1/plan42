@@ -26,7 +26,9 @@ The host application is designed to be a "shell" that loads core features and op
 
 ### Testing
 - **Unified Testing**:
-  - `rails test`: Automatically discovers and runs tests from `engines/*/test` (configured in `test/test_helper.rb`).
+  - `rake test`: Runs tests for both the host application and all engines.
+  - `rails test`: Runs host application tests only.
+  - `rails test engines/`: Runs tests for all engines.
   - `npm test`: Runs Jest tests for both host and engines (configured in `jest.config.cjs`).
 
 ## 3. Best Practices for Host Development

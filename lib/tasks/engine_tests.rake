@@ -1,9 +1,8 @@
 namespace :test do
   desc "Run tests for all local engines"
   task :engines do
-    # Run tests found in engines/*/test. Skip if none exist to avoid error.
     if Dir.glob("engines/*/test").any?
-      sh "rails test engines/*/test"
+      sh "rails test engines/*/test #{ENV['TESTOPTS']}"
     else
       puts "No engine tests found. Skipping test:engines."
     end
