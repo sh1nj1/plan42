@@ -19,6 +19,9 @@ body {
     background: var(--color-bg);
     color: var(--color-text);
     margin: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
 }
 
 .no-top-margin {
@@ -48,6 +51,8 @@ nav {
     color: var(--color-nav-text);
     border-bottom: 1px solid var(--color-border);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    box-sizing: border-box;
 }
 
 nav a,
@@ -200,6 +205,8 @@ main {
     margin: 0rem auto;
     padding: 0 1rem 4rem 1rem;
     background: var(--color-section-bg);
+    width: 100%;
+    box-sizing: border-box;
 }
 
 @media (max-width: 768px) {
