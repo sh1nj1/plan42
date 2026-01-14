@@ -29,7 +29,7 @@ DEMO: [https://collavre.com](https://collavre.com)
 
 ### Test
 
-* There's minitest test `./bin/rails test && ./bin/rails test:system`
+* There's minitest test `./bin/rake test && ./bin/rails test:system`
 * system test with `chrome` driver, `SYSTEM_TEST_DRIVER=chrome ./bin/rails test:system`
 
 ## JavaScript bundling

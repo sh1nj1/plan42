@@ -1,12 +1,24 @@
 const esbuild = require('esbuild');
 const glob = require('glob');
+const path = require('path');
 
 // Find all entry points
 const appEntries = glob.sync('app/javascript/*.*');
 const engineEntries = glob.sync('engines/*/app/javascript/*.*');
-const entryPoints = [...appEntries, ...engineEntries];
 
-if (entryPoints.length === 0) {
+// Construct entry points object to flatten output structure
+// Format: { "filename_without_ext": "path/to/file" }
+const entryPoints = {};
+
+[...appEntries, ...engineEntries].forEach(entry => {
+    const name = path.parse(entry).name;
+    if (entryPoints[name]) {
+        console.warn(`[WARN] Duplicate entry point name detected: '${name}'. '${entry}' will overwrite '${entryPoints[name]}'.`);
+    }
+    entryPoints[name] = entry;
+});
+
+if (Object.keys(entryPoints).length === 0) {
     console.log('No entry points found for esbuild.');
     process.exit(0);
 }
