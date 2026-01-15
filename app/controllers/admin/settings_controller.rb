@@ -5,6 +5,11 @@ module Admin
     def index
       @help_link = SystemSetting.find_by(key: "help_menu_link")&.value
       @mcp_tool_approval = SystemSetting.find_by(key: "mcp_tool_approval_required")&.value == "true"
+
+      # Storage is "disabled" list. View expects "enabled" list.
+      all_provider_keys = Rails.application.config.auth_providers.map { |p| p[:key].to_s }
+      disabled_providers = SystemSetting.find_by(key: "auth_providers_disabled")&.value&.split(",") || []
+      @enabled_auth_providers = all_provider_keys - disabled_providers
     end
 
     def update
@@ -19,12 +24,28 @@ module Admin
           mcp_setting = SystemSetting.find_or_initialize_by(key: "mcp_tool_approval_required")
           mcp_setting.value = params[:mcp_tool_approval] == "1" ? "true" : "false"
           mcp_setting.save!
+
+          # Auth Providers
+          auth_providers = Array(params[:auth_providers]).reject(&:blank?)
+          if auth_providers.empty?
+            auth_setting = SystemSetting.new(key: "auth_providers_enabled") # Dummy for error
+            auth_setting.errors.add(:base, t("admin.settings.auth_provider_required"))
+            raise ActiveRecord::RecordInvalid, auth_setting
+          end
+
+          all_provider_keys = Rails.application.config.auth_providers.map { |p| p[:key].to_s }
+          disabled_providers = all_provider_keys - auth_providers
+
+          auth_setting = SystemSetting.find_or_initialize_by(key: "auth_providers_disabled")
+          auth_setting.value = disabled_providers.join(",")
+          auth_setting.save!
         end
 
         redirect_to admin_path, notice: t("admin.settings.updated")
       rescue ActiveRecord::RecordInvalid
         @help_link = params[:help_link]
         @mcp_tool_approval = params[:mcp_tool_approval] == "1"
+        @enabled_auth_providers = params[:auth_providers] || []
         render :index, status: :unprocessable_entity
       end
     end

@@ -7,6 +7,10 @@ class ApplicationController < ActionController::Base
   around_action :switch_locale
   around_action :set_time_zone
 
+
+
+  require "set"
+
   def switch_locale(&action)
     resume_session
     locale = normalize_supported_locale(Current.user&.locale) ||
@@ -23,6 +27,27 @@ class ApplicationController < ActionController::Base
   end
 
   private
+
+  helper_method :auth_provider_enabled? # Make available to views
+
+  def auth_provider_enabled?(key)
+    @disabled_auth_providers_set ||= begin
+      setting = SystemSetting.find_by(key: "auth_providers_disabled")
+      if setting
+        setting.value.split(",").to_set
+      else
+        Set.new # Default: none disabled
+      end
+    end
+
+    !@disabled_auth_providers_set.include?(key.to_s)
+  end
+
+  def enforce_auth_provider!(key)
+    return if auth_provider_enabled?(key)
+
+    redirect_to new_session_path, alert: I18n.t("users.sessions.new.provider_disabled")
+  end
 
   def verify_cloudfront_origin!
     return if skip_cloudfront_verification?

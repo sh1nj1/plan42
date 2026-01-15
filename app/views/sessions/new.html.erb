@@ -1,30 +1,30 @@
 <%= render 'users/app_header' %>
 
-<%= form_with url: session_path, class: "stacked-form" do |form| %>
-  <%= render 'users/id_pwd_fields', form: form, skip_name_field: true %>
-  <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
-  <%= form.hidden_field :timezone, id: 'login-timezone' %>
-  <%= form.hidden_field :invite_token, value: params[:invite_token] if params[:invite_token] %>
-  <%= form.submit t('app.sign_in'), id: 'sign-in-submit', class: "primary-action-button" %>
-<% end %>
-<div class="auth-alt-action">
-  <%= button_to t('users.sessions.new.sign_in_with_google'),
-                '/auth/google_oauth2',
-                method: :post,
-                params: { timezone: '' },
-                data: { turbo: false },
-                class: "primary-action-button",
-                form: { class: "auth-alt-action__form" } %>
-</div>
-<div class="auth-alt-action">
-  <button data-controller="webauthn" data-action="click->webauthn#signin" data-webauthn-not-supported-message-value="<%= t('users.webauthn.not_supported') %>" class="primary-action-button">
-    <%= t('users.sessions.new.sign_in_with_webauthn') %>
-  </button>
-</div>
+<%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
-<%= link_to t('users.sessions.new.forgot_password'), new_password_path %>
-<br>
-<%= link_to t("users.new.sign_up"), params[:invite_token] ? new_user_path(invite_token: params[:invite_token]) : new_user_path, class: "sign-up-link" %>
+<%= form_with url: session_path, class: "stacked-form" do |form| %>
+  <% if auth_provider_enabled?(:email) %>
+    <%= render 'users/id_pwd_fields', form: form, skip_name_field: true %>
+    <%= form.hidden_field :timezone, id: 'login-timezone' %>
+    <%= form.hidden_field :invite_token, value: params[:invite_token] if params[:invite_token] %>
+    <%= form.submit t('app.sign_in'), id: 'sign-in-submit', class: "primary-action-button" %>
+  <% end %>
+<% end %>
+
+<% Rails.application.config.auth_providers.sort_by { |p| p[:priority] }.each do |provider| %>
+  <% next if provider[:key] == :email %>
+  <% if auth_provider_enabled?(provider[:key]) && provider[:partial_path].present? %>
+    <div class="auth-alt-action">
+      <%= render provider[:partial_path] %>
+    </div>
+  <% end %>
+<% end %>
+
+<% if auth_provider_enabled?(:email) %>
+  <%= link_to t('users.sessions.new.forgot_password'), new_password_path %>
+  <br>
+  <%= link_to t("users.new.sign_up"), params[:invite_token] ? new_user_path(invite_token: params[:invite_token]) : new_user_path, class: "sign-up-link" %>
+<% end %>
 
 <script>
   document.addEventListener('turbo:load', () => {

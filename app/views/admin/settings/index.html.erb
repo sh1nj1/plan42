@@ -21,6 +21,22 @@
           <%= t('admin.settings.mcp_tool_approval_hint') %>
         </div>
       </div>
+
+      <div style="margin-top: 2em; border-top: 1px solid var(--color-border); padding-top: 1.5em;">
+        <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.auth_providers') %></h3>
+        <div style="display: flex; flex-direction: column; gap: 0.8em;">
+          <% Rails.application.config.auth_providers.sort_by { |p| p[:priority] }.each do |provider| %>
+            <label class="checkbox-label" style="display: flex; align-items: center; gap: 0.5em;">
+              <%= check_box_tag "auth_providers[]", provider[:key], @enabled_auth_providers.include?(provider[:key].to_s), id: "auth_provider_#{provider[:key]}" %>
+              <span><%= t(provider[:name], default: provider[:name].to_s.humanize) %></span>
+            </label>
+          <% end %>
+        </div>
+        <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.5em;">
+          <%= t('admin.settings.auth_providers_hint', default: "Select allowed authentication methods. Warning: Disabling all may lock you out.") %>
+        </div>
+      </div>
+
       <%= f.submit t('admin.settings.save') %>
     <% end %>
   </section>

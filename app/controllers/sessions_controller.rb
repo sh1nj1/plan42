@@ -1,5 +1,6 @@
 class SessionsController < ApplicationController
   allow_unauthenticated_access only: %i[ new create ]
+  before_action -> { enforce_auth_provider!(:email) }, only: :create
 
   # Read rate limiting from environment-driven configuration
   limit_cfg = Rails.configuration.x.sessions_create_rate_limit || {}
