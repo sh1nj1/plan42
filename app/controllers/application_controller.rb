@@ -24,6 +24,19 @@ class ApplicationController < ActionController::Base
 
   private
 
+  def auth_provider_enabled?(key)
+    setting = SystemSetting.find_by(key: "auth_providers_enabled")
+    return true unless setting
+
+    setting.value.split(",").include?(key.to_s)
+  end
+
+  def enforce_auth_provider!(key)
+    return if auth_provider_enabled?(key)
+
+    redirect_to new_session_path, alert: I18n.t("users.sessions.new.provider_disabled")
+  end
+
   def verify_cloudfront_origin!
     return if skip_cloudfront_verification?
 

@@ -1,6 +1,7 @@
 module Webauthn
   class SessionsController < ApplicationController
     allow_unauthenticated_access only: [ :new, :create ]
+    before_action -> { enforce_auth_provider!(:passkey) }, only: %i[new create]
 
     def new
       get_options = WebAuthn::Credential.options_for_get

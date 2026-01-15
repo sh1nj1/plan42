@@ -64,6 +64,7 @@ en:
     settings:
       auth_providers: "Authentication Providers"
       auth_providers_hint: "Select allowed authentication methods. Warning: Disabling all may lock you out."
+      auth_provider_required: "At least one authentication provider must be enabled."
 
   auth:
     providers:

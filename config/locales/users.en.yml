@@ -45,6 +45,7 @@ en:
         try_again_later: "Try again later."
         try_another_email_or_password: "Try another email address or password."
         email_not_verified: "You must verify your email before signing in."
+        provider_disabled: "This authentication method is currently disabled."
         sign_in_with_google: "Sign in with Google"
         sign_in_with_webauthn: "Sign in with Passkey"
     webauthn:

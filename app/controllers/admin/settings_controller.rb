@@ -25,9 +25,14 @@ module Admin
           mcp_setting.save!
 
           # Auth Providers
-          auth_providers = params[:auth_providers] || []
+          auth_providers = Array(params[:auth_providers]).reject(&:blank?)
+          if auth_providers.empty?
+            auth_setting = SystemSetting.new(key: "auth_providers_enabled") # Dummy for error
+            auth_setting.errors.add(:base, t("admin.settings.auth_provider_required"))
+            raise ActiveRecord::RecordInvalid, auth_setting
+          end
+
           auth_setting = SystemSetting.find_or_initialize_by(key: "auth_providers_enabled")
-          # Always ensure at least one provider is enabled to prevent lockout, unless explicitly desired to lock out (risky, maybe force email if nothing selected? For now, let's just save what is sent but warn in UI)
           auth_setting.value = auth_providers.join(",")
           auth_setting.save!
         end

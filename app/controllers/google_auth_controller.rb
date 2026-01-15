@@ -1,5 +1,6 @@
 class GoogleAuthController < ApplicationController
   allow_unauthenticated_access only: :callback
+  before_action -> { enforce_auth_provider!(:google) }, only: :callback
 
   def callback
     auth = request.env["omniauth.auth"]
