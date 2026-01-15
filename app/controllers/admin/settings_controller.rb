@@ -33,8 +33,11 @@ module Admin
             raise ActiveRecord::RecordInvalid, auth_setting
           end
 
-          auth_setting = SystemSetting.find_or_initialize_by(key: "auth_providers_enabled")
-          auth_setting.value = auth_providers.join(",")
+          all_provider_keys = Rails.application.config.auth_providers.map { |p| p[:key].to_s }
+          disabled_providers = all_provider_keys - auth_providers
+
+          auth_setting = SystemSetting.find_or_initialize_by(key: "auth_providers_disabled")
+          auth_setting.value = disabled_providers.join(",")
           auth_setting.save!
         end
 
