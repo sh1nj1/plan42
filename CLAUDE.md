@@ -1,35 +1,165 @@
 # CLAUDE Agent Guide
 
 ## Purpose
-This document captures best practices for integrating Anthropic's Claude models into the project.
+This document provides constitutional context for AI agents working in the Collavre codebase.
 
-## Setup Checklist
-- Verify API access and keys are stored using the team's standard secrets management approach.
-- Note any environment variables required to initialize Claude clients.
-- Link to reusable prompts or templates that Claude-based workflows should follow.
-- Gemini-based parent recommendations and streaming responses (PR analysis, `@gemini` replies) now use the
-  [`ruby_llm`](https://github.com/crmne/ruby_llm) client. Ensure `GEMINI_API_KEY` is present so `RubyLLM` can configure the
-  shared Gemini chat session via `config/initializers/ruby_llm.rb`.
-- RubyLLM debugging captures every prompt and streaming response to `log/ruby_llm.log`. Logs are written at `Logger::DEBUG`
-  level with `config.log_stream_debug = true` so you can trace the exact payloads sent and returned by the LLM. Each exchange is
-  also persisted in the `ruby_llm_logs` table (vendor, model, system prompt, normalized messages, tools, response, error) for
-  auditability.
+## Project Overview
 
-## Collaboration Tips
-- Keep dialogue transcripts or prompt iterations in version control when they inform product behavior.
-- Record evaluation results and regression checks so other agents can reuse them.
-- Cross-reference related guidance in `AGENTS.md` to maintain a cohesive developer experience.
+**Collavre** is an experimental platform for small development teams providing:
+- Knowledge management (tree-like todo lists and documentation)
+- Task management with hierarchical structures
+- Real-time chat and AI-powered collaboration
+- Third-party integrations (GitHub, Notion, Google Calendar, MCP servers)
 
-## Realtime Conventions
-- ActionCable connections should use the singleton consumer defined in `app/javascript/services/cable.js`.
-- Prefer `createSubscription` for new realtime subscriptions to keep a single WebSocket per browser session.
-- Turbo Streams rely on the global ActionCable consumer configured in `app/javascript/application.js`.
+The core metaphor is the **"Creative"** — a hierarchical tree-structured item that serves as documentation, task, or chat thread.
 
-## System Prompt Templates
-- AI user system prompts are rendered as [Liquid templates](https://github.com/Shopify/liquid) so you can inject runtime context.
+## Core Domain Models
+
+| Model | Purpose |
+|-------|---------|
+| **Creative** | Tree container for work items, docs, discussion. Hierarchical via closure_tree, progress tracking (0.0-1.0), rich HTML descriptions |
+| **User** | System user with optional AI agent capabilities (llm_vendor, llm_model, system_prompt) |
+| **Comment** | Real-time chat messages within creatives. Threaded by topic, mentions, reactions, images |
+| **Topic** | Conversation namespace within a creative |
+| **CreativeShare** | Permission grants (no_access, read, feedback, write, admin) |
+| **Task** | AI agent execution trigger, tracks task_actions |
+
+## Key Architecture Patterns
+
+### Linked Creative System (origin_id)
+- Creative with `origin_id` is a "linked" copy owned by a shared user
+- Linked creatives delegate `description`, `progress`, `user` to origin
+- Use `effective_origin()` for permission/content lookups
+- Critical for multi-owner tree sharing without duplication
+
+### Permission Model
+- Hierarchical: permissions cascade from parent to children
+- Four levels: `read`, `feedback`, `write`, `admin`
+- Cache invalidated on parent moves or user changes
+- `PermissionChecker` service enforces access control
+- Always call `creative.has_permission?(current_user, :read)` before returning data
+
+### Progress Calculation
+- Parent progress = average of children's progress
+- Linked creatives inherit origin's progress
+- `Creatives::ProgressService` handles cascading updates
+
+### Real-time (ActionCable/Turbo Streams)
+- `Comment` broadcasts to `[creative, :comments]` channel
+- Singleton consumer in `app/javascript/services/cable.js`
+- `CommentPresenceStore` tracks active readers
+- Prefer `createSubscription` for new subscriptions
+
+## AI and LLM Integration
+
+### RubyLLM Configuration
+- Configured via `config/initializers/ruby_llm.rb`
+- Supports Google Gemini models (primary)
+- Logs to `log/ruby_llm.log` and `ruby_llm_logs` table
+- API key from `GEMINI_API_KEY` env var
+
+### System Prompt Templates
+- Uses [Liquid templates](https://github.com/Shopify/liquid) for dynamic prompts
 - Available variables:
-  - `ai_user`: `id`, `name`, `llm_vendor`, `llm_model`.
-  - `creative`: `id`, `description` (plain text), `progress`, `owner_name`.
-  - `comment`: `id`, `content`, `user_name`.
-  - `payload`: user message text after stripping the mention prefix.
-- Templates fall back to the raw prompt if rendering fails; check Rails logs for `AI system prompt rendering failed` warnings when debugging.
+  - `ai_user`: `id`, `name`, `llm_vendor`, `llm_model`
+  - `creative`: `id`, `description` (plain text), `progress`, `owner_name`
+  - `comment`: `id`, `content`, `user_name`
+  - `payload`: user message text after stripping mention prefix
+- Fallback to raw prompt if rendering fails
+
+### Agent Execution Flow
+1. Event occurs → `SystemEvents::Dispatcher` routes to matching agents
+2. `AiAgentJob` created with context
+3. Job calls `AiAgentService#call` which builds message history, renders prompt, streams response
+4. Response streamed into new comment via Turbo
+
+## Core Services
+
+| Service | Purpose |
+|---------|---------|
+| `Creatives::ProgressService` | Calculate/update progress cascades |
+| `Creatives::PermissionChecker` | Enforce hierarchical access control |
+| `Creatives::TreeFormatter` | Markdown export with hierarchy |
+| `Comments::CommandProcessor` | Parse `/command` syntax |
+| `Comments::McpCommand` | Execute MCP tool calls |
+| `AiAgentService` | Agent execution orchestration |
+| `AiClient` | Generic LLM adapter |
+| `AiSystemPromptRenderer` | Liquid template rendering |
+| `Github::PullRequestAnalyzer` | Gemini-powered PR analysis |
+
+## Integrations
+
+- **GitHub**: Webhook-based PR analysis, auto-posts summary to creative
+- **Notion**: OAuth export of creatives as Notion pages
+- **Google Calendar**: Event creation from comments
+- **MCP Servers**: Remote tool execution via SSE, tools require admin approval
+
+## Tech Stack
+
+| Aspect | Technology |
+|--------|------------|
+| Framework | Rails 8.x |
+| Frontend | Hotwire (Turbo + Stimulus), ViewComponent, React 19 |
+| Asset Pipeline | jsbundling-rails with esbuild |
+| Package Manager | npm with workspaces |
+| Rich Text Editor | Lexical 0.38.x |
+| Realtime | ActionCable + SolidCable |
+| Background Jobs | SolidQueue |
+| Cache | SolidCache |
+| Auth | Bcrypt + WebAuthn + OAuth (Google, GitHub, Notion) |
+| LLM | RubyLLM → Google Gemini |
+| MCP | FastMcp (local) + SSE (remote) |
+
+## JavaScript Build System
+
+- **Build command**: `npm run build` (production) or `npm run build -- --watch` (development)
+- **Entry points**: Auto-discovered from `app/javascript/*.{js,jsx}` and `engines/*/app/javascript/*`
+- **Output**: `app/assets/builds/` (bundled JS with source maps)
+- **Config**: `script/build.cjs` using esbuild with ESM format and automatic JSX transformation
+- **Tests**: `npm run test` (Jest with jsdom)
+
+## Lexical Editor (Creative Descriptions)
+
+Creatives use Lexical, a React-based rich text editor, for inline description editing.
+
+### Architecture
+- **Factory**: `createInlineEditor()` in `app/javascript/lexical_inline_editor.jsx`
+- **React component**: `app/javascript/components/InlineLexicalEditor.jsx`
+- **Stimulus integration**: `app/javascript/creative_row_editor.js`
+- **Form template**: `app/views/creatives/_inline_edit_form.html.erb`
+
+### Data Flow
+Creative HTML → Lexical editor → `$generateHtmlFromNodes()` → auto-save to `creative[description]`
+
+### Features
+- Rich text: headings, lists, quotes, code blocks, text formatting
+- File uploads: images and attachments via Rails Direct Upload
+- Link management: auto-link detection, link popup UI
+- Custom nodes: `ImageNode`, `AttachmentNode`
+
+### Keyboard Shortcuts
+- `Enter + Shift` - Add sibling creative
+- `Enter + Alt` - Add child creative
+- `Cmd/Ctrl + Shift + .` - Level down (make child)
+- `Cmd/Ctrl + Shift + ,` - Level up (make sibling)
+- Arrow keys at edges - Navigate between creatives
+- `Escape` - Close editor
+
+## Guidelines for AI Agents
+
+1. **Linked Creatives**: Always check `origin_id`. Use `effective_origin()` for lookups
+2. **Permission-First**: Call `has_permission?` before returning data
+3. **Async Operations**: Long-running AI operations go through `AiAgentJob`
+4. **Tool Registration**: Dynamic tools require ownership + admin approval
+5. **Broadcast Awareness**: Comment creation triggers broadcasts; respect `private` flag
+6. **Streaming**: Use `AiClient#chat` with block yield for real-time updates
+7. **Logging**: Tool executions go to `ActivityLog`, LLM interactions to `ruby_llm_logs`
+
+## Key Configuration Files
+
+| File | Purpose |
+|------|---------|
+| `config/initializers/ruby_llm.rb` | RubyLLM + Gemini config |
+| `config/initializers/auth_provider_registry.rb` | Auth provider registration |
+| `config/initializers/mcp_tools.rb` | Auto-load MCP tools on boot |
+| `AGENTS.md` | Related agent guidance |
