@@ -1,0 +1,7 @@
+<%= button_to t('users.sessions.new.sign_in_with_google'),
+              '/auth/google_oauth2',
+              method: :post,
+              params: { timezone: '' },
+              data: { turbo: false },
+              class: "primary-action-button",
+              form: { class: "auth-alt-action__form" } %>

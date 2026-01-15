@@ -95,4 +95,15 @@ module ApplicationHelper
 
     I18n.l(timestamp, format: :short)
   end
+
+  def auth_provider_enabled?(key)
+    # Check SystemSetting first
+    setting = SystemSetting.find_by(key: "auth_providers_enabled")
+    if setting
+      setting.value.split(",").include?(key.to_s)
+    else
+      # Default: all enabled if setting not present
+      true
+    end
+  end
 end

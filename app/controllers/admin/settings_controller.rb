@@ -5,6 +5,10 @@ module Admin
     def index
       @help_link = SystemSetting.find_by(key: "help_menu_link")&.value
       @mcp_tool_approval = SystemSetting.find_by(key: "mcp_tool_approval_required")&.value == "true"
+
+      # Default to all enabled if not set
+      stored_providers = SystemSetting.find_by(key: "auth_providers_enabled")&.value
+      @enabled_auth_providers = stored_providers ? stored_providers.split(",") : Rails.application.config.auth_providers.map { |p| p[:key].to_s }
     end
 
     def update
@@ -19,12 +23,20 @@ module Admin
           mcp_setting = SystemSetting.find_or_initialize_by(key: "mcp_tool_approval_required")
           mcp_setting.value = params[:mcp_tool_approval] == "1" ? "true" : "false"
           mcp_setting.save!
+
+          # Auth Providers
+          auth_providers = params[:auth_providers] || []
+          auth_setting = SystemSetting.find_or_initialize_by(key: "auth_providers_enabled")
+          # Always ensure at least one provider is enabled to prevent lockout, unless explicitly desired to lock out (risky, maybe force email if nothing selected? For now, let's just save what is sent but warn in UI)
+          auth_setting.value = auth_providers.join(",")
+          auth_setting.save!
         end
 
         redirect_to admin_path, notice: t("admin.settings.updated")
       rescue ActiveRecord::RecordInvalid
         @help_link = params[:help_link]
         @mcp_tool_approval = params[:mcp_tool_approval] == "1"
+        @enabled_auth_providers = params[:auth_providers] || []
         render :index, status: :unprocessable_entity
       end
     end

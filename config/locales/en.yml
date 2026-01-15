@@ -57,7 +57,19 @@ en:
     dark_mode: "Dark Mode"
     system_mode: "System Default"
     apply_tags: "Filter"
+    apply_tags: "Filter"
     here: "here"
+
+  admin:
+    settings:
+      auth_providers: "Authentication Providers"
+      auth_providers_hint: "Select allowed authentication methods. Warning: Disabling all may lock you out."
+
+  auth:
+    providers:
+      email: "Email"
+      google: "Google"
+      passkey: "Passkey"
 
   topics:
     delete_confirm: "This will delete all messages in this topic. Are you sure?"
