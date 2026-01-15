@@ -6,9 +6,10 @@ module Admin
       @help_link = SystemSetting.find_by(key: "help_menu_link")&.value
       @mcp_tool_approval = SystemSetting.find_by(key: "mcp_tool_approval_required")&.value == "true"
 
-      # Default to all enabled if not set
-      stored_providers = SystemSetting.find_by(key: "auth_providers_enabled")&.value
-      @enabled_auth_providers = stored_providers ? stored_providers.split(",") : Rails.application.config.auth_providers.map { |p| p[:key].to_s }
+      # Storage is "disabled" list. View expects "enabled" list.
+      all_provider_keys = Rails.application.config.auth_providers.map { |p| p[:key].to_s }
+      disabled_providers = SystemSetting.find_by(key: "auth_providers_disabled")&.value&.split(",") || []
+      @enabled_auth_providers = all_provider_keys - disabled_providers
     end
 
     def update

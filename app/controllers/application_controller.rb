@@ -31,22 +31,16 @@ class ApplicationController < ActionController::Base
   helper_method :auth_provider_enabled? # Make available to views
 
   def auth_provider_enabled?(key)
-    @enabled_auth_providers_set ||= begin
-      setting = SystemSetting.find_by(key: "auth_providers_enabled")
+    @disabled_auth_providers_set ||= begin
+      setting = SystemSetting.find_by(key: "auth_providers_disabled")
       if setting
         setting.value.split(",").to_set
       else
-        # Default: all enabled if setting not present
-        # In this case we return true for any key? Previously it was true.
-        # Let's keep behavior consistent: return true (or represent as nil/all).
-        # To memoize "everything is enabled", we can use a special flag or just return true early if we want strict equivalence to previous code.
-        # Previous code: return true unless setting.
-        nil
+        Set.new # Default: none disabled
       end
     end
 
-    return true if @enabled_auth_providers_set.nil?
-    @enabled_auth_providers_set.include?(key.to_s)
+    !@disabled_auth_providers_set.include?(key.to_s)
   end
 
   def enforce_auth_provider!(key)
