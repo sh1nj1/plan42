@@ -7,7 +7,7 @@ module Creatives
 
       # Structure:
       # Folder (id: 100)
-      #   -> LinkToFruits (id: 101, origin: Fruits)
+      #   -> CreativeLink(parent: Folder, origin: Fruits)
       #
       # Fruits (id: 200)
       #   -> Apple (id: 201, "Apple Pie")
@@ -16,7 +16,7 @@ module Creatives
       @fruits = Creative.create!(user: @user, description: "Fruits", sequence: 2)
       @apple = Creative.create!(user: @user, parent: @fruits, description: "Apple Pie", sequence: 1)
 
-      @link = Creative.create!(user: @user, parent: @folder, origin: @fruits, sequence: 1)
+      @link = CreativeLink.create!(parent: @folder, origin: @fruits, created_by: @user)
     end
 
     test "search finds direct descendants" do
@@ -58,7 +58,7 @@ module Creatives
       # Link to private fruits in our folder
       # Normally we can't create a link to something we can't see, but let's assume the link exists
       # or checking logic handles existing links to now-private content.
-      Creative.create!(user: @user, parent: @folder, origin: private_fruits, sequence: 2)
+      CreativeLink.create!(parent: @folder, origin: private_fruits, created_by: @user)
 
       # Search for "Private Apple"
       params = { search: "Private Apple", id: @folder.id }
@@ -70,8 +70,9 @@ module Creatives
     end
 
     test "search handles duplicate paths gracefully" do
-      # Create a second link to the same Fruits origin
-      Creative.create!(user: @user, parent: @folder, origin: @fruits, sequence: 2)
+      # Create a second folder with a link to the same Fruits origin
+      folder2 = Creative.create!(user: @user, parent: @folder, description: "Folder2", sequence: 2)
+      CreativeLink.create!(parent: folder2, origin: @fruits, created_by: @user)
 
       # Search "Apple" -> Should find Apple, but only once
       params = { search: "Apple", id: @folder.id }
@@ -93,30 +94,30 @@ module Creatives
       assert_includes result.creatives, @fruits
     end
 
-    test "search does not traverse recursive links (one-hop guard)" do
+    test "search traverses recursive links via virtual hierarchy" do
       # Create a structure:
-      # @folder -> LinkToFruits (@link) -> @fruits
+      # @folder -> CreativeLink(origin: @fruits) -> @fruits
       #
-      # Now add a "recursive" situation or nested link.
+      # Now add a nested link.
       # Create another origin "BananaTree" containing "Banana"
       banana_tree = Creative.create!(user: @user, description: "BananaTree", sequence: 3)
       banana = Creative.create!(user: @user, parent: banana_tree, description: "Banana", sequence: 1)
 
       # Link "Fruits" to "BananaTree"
-      # Fruits -> LinkToBanana -> BananaTree
-      Creative.create!(user: @user, parent: @fruits, origin: banana_tree, sequence: 2)
+      # Fruits -> CreativeLink(origin: BananaTree) -> BananaTree
+      CreativeLink.create!(parent: @fruits, origin: banana_tree, created_by: @user)
 
       # Search "Banana" in Folder
-      # Path: Folder -> LinkToFruits -> Fruits -> LinkToBanana -> BananaTree -> Banana
-      # Current logic only supports one level of link traversal (Folder -> Link -> Origin -> Descendants)
-      # It does NOT perform recursive link traversal (Origin -> Link -> Origin2 -> ...).
+      # Path: Folder -> Link -> Fruits -> Link -> BananaTree -> Banana
+      # With VirtualCreativeHierarchy, the nested links create virtual entries
+      # so the search should find "Banana"
 
       params = { search: "Banana", id: @folder.id }
       query = IndexQuery.new(user: @user, params: params)
       result = query.call
 
-      # Should NOT find Banana because it requires two hops of links
-      assert_not_includes result.creatives, banana
+      # With virtual hierarchy, nested links are traversable
+      assert_includes result.creatives, banana
     end
   end
 end

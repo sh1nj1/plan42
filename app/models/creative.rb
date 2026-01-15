@@ -48,6 +48,12 @@ class Creative < ApplicationRecord
   has_many :linked_creatives, class_name: "Creative", foreign_key: :origin_id, dependent: :delete_all
   belongs_to :user, optional: true
 
+  # CreativeLink associations for virtual hierarchy
+  has_many :child_links, class_name: "CreativeLink", foreign_key: :parent_id, dependent: :destroy
+  has_many :parent_links, class_name: "CreativeLink", foreign_key: :origin_id, dependent: :destroy
+  has_many :virtual_ancestors, through: :parent_links, source: :parent
+  has_many :virtual_descendants, through: :child_links, source: :origin
+
   has_many :creative_shares, dependent: :destroy
   has_many :tags, dependent: :destroy
   has_many :creative_expanded_states, dependent: :delete_all
@@ -77,8 +83,14 @@ class Creative < ApplicationRecord
   after_destroy_commit :purge_description_attachments
   after_save :update_mcp_tools
 
+  # Virtual hierarchy callbacks for CreativeLink support
+  after_create :propagate_to_virtual_hierarchies
+  after_destroy :remove_from_virtual_hierarchies
 
-
+  # Inherited share callbacks for O(1) permission check
+  after_create :propagate_parent_shares_to_self
+  after_save :update_inherited_shares_on_parent_change, if: :saved_change_to_parent_id?
+  after_destroy :remove_inherited_shares_for_self
 
 
   def has_permission?(user, required_permission = :read)
@@ -411,6 +423,52 @@ class Creative < ApplicationRecord
   def origin_cannot_be_self
     if origin_id.present? && origin_id == id
       errors.add(:origin_id, "cannot be the same as id")
+    end
+  end
+
+  # Propagate virtual hierarchy when a creative is added to a linked subtree
+  def propagate_to_virtual_hierarchies
+    return unless parent_id
+
+    # Find ancestor origins that have creative_links pointing to them
+    ancestor_ids = CreativeHierarchy
+      .where(descendant_id: parent_id)
+      .pluck(:ancestor_id)
+    ancestor_ids << parent_id
+
+    # For each ancestor that is an origin of a CreativeLink, add virtual entries
+    CreativeLink.where(origin_id: ancestor_ids).find_each do |link|
+      Creatives::VirtualHierarchyBuilder.propagate_new_descendant(link.origin, self)
+    end
+  end
+
+  # Remove virtual hierarchy entries when a creative is destroyed
+  def remove_from_virtual_hierarchies
+    Creatives::VirtualHierarchyBuilder.remove_virtual_entries_for_descendant(self)
+  end
+
+  # Propagate parent's shares to this new creative
+  def propagate_parent_shares_to_self
+    Creatives::InheritedShareBuilder.propagate_to_new_creative(self)
+  end
+
+  # Remove inherited shares when this creative is destroyed
+  def remove_inherited_shares_for_self
+    Creatives::InheritedShareBuilder.remove_shares_for_creative(self)
+  end
+
+  # Update inherited shares when this creative moves to a new parent
+  def update_inherited_shares_on_parent_change
+    # Remove old inherited shares for this creative and all descendants
+    affected_ids = [id] + self_and_descendants.pluck(:id)
+    CreativeShare.where(creative_id: affected_ids, inherited: true).delete_all
+
+    # Propagate new inherited shares from new parent
+    propagate_parent_shares_to_self
+
+    # Also propagate to descendants
+    descendants.find_each do |descendant|
+      Creatives::InheritedShareBuilder.propagate_to_new_creative(descendant)
     end
   end
 

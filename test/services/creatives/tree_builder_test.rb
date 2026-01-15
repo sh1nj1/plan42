@@ -42,11 +42,25 @@ module Creatives
       label = Label.create!(creative: label_creative, owner: @user)
       Tag.create!(creative_id: child.id, label: label)
 
-      builder = build_tree_builder(tags: [ label.id ])
+      # With the new FilterPipeline architecture, filtering is done before TreeBuilder
+      # TreeBuilder receives allowed_creative_ids which includes both matched items and their ancestors
+      # Both parent (ancestor) and child (matched) are in allowed_ids, so both are rendered
+      allowed_ids = Set.new([ child.id.to_s, parent.id.to_s ])
+
+      builder = build_tree_builder(tags: [ label.id ], allowed_creative_ids: allowed_ids)
       nodes = builder.build([ parent ])
 
-      assert_equal [ child.id ], nodes.pluck(:id)
+      # Both parent and child are rendered in the tree
+      # Parent is at level 1, child is nested at level 2
+      assert_equal [ parent.id ], nodes.pluck(:id)
       assert_equal [ 1 ], nodes.pluck(:level)
+
+      # Child is in the children_container nodes
+      parent_node = nodes.first
+      assert parent_node[:children_container].present?
+      child_nodes = parent_node[:children_container][:nodes]
+      assert_equal [ child.id ], child_nodes.pluck(:id)
+      assert_equal [ 2 ], child_nodes.pluck(:level)
     end
 
     test "includes inline editor payload data" do

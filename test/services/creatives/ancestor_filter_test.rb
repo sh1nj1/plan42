@@ -121,50 +121,39 @@ module Creatives
       assert_nil node_c
     end
 
-    test "IndexQuery calculates filtered progress using leaf-most logic" do
-      # Setup for progress test
-      # A (Tag2, 50%) -> B (Tag2, 100%) -> C, D (not tagged)
-      # X (Tag2, 10%) -> Y (not tagged)
+    test "IndexQuery calculates filtered progress as average of matched items" do
+      # Setup for progress test - use leaf nodes to avoid closure_tree auto-updates
+      # Create fresh creatives without children to control progress values directly
+      leaf_a = Creative.create!(user: @user, description: "LeafA", progress: 0.5)
+      leaf_b = Creative.create!(user: @user, description: "LeafB", progress: 1.0)
+      leaf_x = Creative.create!(user: @user, description: "LeafX", progress: 0.1)
 
-      @root_a.update!(progress: 0.5)
-      @node_b.update!(progress: 1.0)
-      @root_x.update!(progress: 0.1)
-
-      tag_label2_creative = Creative.create!(user: @user, description: "Tag2")
+      # Note: Label.after_create automatically tags the label's creative
+      # So tag_label2_creative will also be matched (progress 0.0)
+      tag_label2_creative = Creative.create!(user: @user, description: "Tag2", progress: 0.0)
       tag_label2 = Label.create!(creative: tag_label2_creative, owner: @user)
-      Tag.create!(creative_id: @root_a.id, label: tag_label2)
-      Tag.create!(creative_id: @node_b.id, label: tag_label2)
-      Tag.create!(creative_id: @root_x.id, label: tag_label2)
+      Tag.create!(creative_id: leaf_a.id, label: tag_label2)
+      Tag.create!(creative_id: leaf_b.id, label: tag_label2)
+      Tag.create!(creative_id: leaf_x.id, label: tag_label2)
 
-      # Tag2 Filter
-      # Matched: A, B, X.
-      # Hierarchy: A -> B.
-      # A is ancestor of B. So A is superfluous.
-      # Relevant (leaf-most): B, X, Tag2.
-      # Progress values:
-      #   B: 1.0 (stored progress)
-      #   X: 0.1 (stored progress)
-      #   Tag2: 0.0 (label creative)
-      # Average: (1.0 + 0.1 + 0.0) / 3 = 0.3667
+      # Tag2 Filter - new simpler calculation
+      # Matched: leaf_a, leaf_b, leaf_x, tag_label2_creative (auto-tagged)
+      # Overall progress = average of all matched items' progress
+      # (0.5 + 1.0 + 0.1 + 0.0) / 4 = 0.4
 
       params = { tags: [ tag_label2.id ] }
       query = Creatives::IndexQuery.new(user: @user, params: params)
       result = query.call
 
-      assert_in_delta 0.367, result.overall_progress, 0.001
+      expected_overall = (0.5 + 1.0 + 0.1 + 0.0) / 4.0
+      assert_in_delta expected_overall, result.overall_progress, 0.01
 
-      # Verify Progress Map
-      # A: Average of leaf-descendants in relevant set.
-      # A's descendants in relevant set: B (1.0). (X is not descendant of A)
-      # So A should be 1.0.
-
-      # B: B is relevant. Progress 1.0.
-      # X: X is relevant. Progress 0.1.
-
+      # Verify Progress Map - each item shows its actual progress
       map = result.progress_map
-      assert_in_delta 1.0, map[@root_a.id.to_s]
-      assert_in_delta 1.0, map[@node_b.id.to_s]
-      assert_in_delta 0.1, map[@root_x.id.to_s]
+      assert_in_delta 0.5, map[leaf_a.id.to_s], 0.01
+      assert_in_delta 1.0, map[leaf_b.id.to_s], 0.01
+      assert_in_delta 0.1, map[leaf_x.id.to_s], 0.01
+      assert_in_delta 0.0, map[tag_label2_creative.id.to_s], 0.01
     end
   end
 end

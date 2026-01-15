@@ -73,25 +73,9 @@ module Creatives
     end
 
     def skip_creative?(creative)
-      if allowed_creative_ids
-        return !allowed_creative_ids.include?(creative.id.to_s)
-      end
-
-      tags = Array(raw_params["tags"]).map(&:to_s)
-      if tags.present?
-        creative_label_ids = creative.tags.pluck(:label_id).map(&:to_s)
-        return true if (creative_label_ids & tags).empty?
-      end
-
-      if raw_params["min_progress"].present?
-        min_progress = raw_params["min_progress"].to_f
-        return true if creative.progress.to_f < min_progress
-      end
-
-      if raw_params["max_progress"].present?
-        max_progress = raw_params["max_progress"].to_f
-        return true if creative.progress.to_f > max_progress
-      end
+      # With FilterPipeline, allowed_creative_ids contains all creatives that should be shown
+      # (matched items + their ancestors). No need for duplicate filter logic here.
+      return !allowed_creative_ids.include?(creative.id.to_s) if allowed_creative_ids
 
       false
     end
@@ -99,7 +83,16 @@ module Creatives
     def filtered_children_for(creative)
       return [] if raw_params["comment"] == "true" || raw_params["search"].present?
 
-      children = creative.children_with_permission(user)
+      # Include actual children
+      actual_children = creative.children_with_permission(user)
+
+      # Include virtually linked children (origins from CreativeLinks)
+      linked_origins = Creative.joins(:parent_links)
+        .where(creative_links: { parent_id: creative.id })
+        .select { |c| c.has_permission?(user, :read) }
+
+      children = (actual_children + linked_origins).uniq
+
       if allowed_creative_ids
         children.select { |c| allowed_creative_ids.include?(c.id.to_s) }
       else

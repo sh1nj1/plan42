@@ -22,6 +22,12 @@ class CreativeShare < ApplicationRecord
   after_save :touch_creative_subtree
   after_destroy :touch_creative_subtree
 
+  # Inherited share propagation callbacks
+  before_validation :remove_existing_inherited_share, on: :create, unless: :inherited?
+  after_create :propagate_inherited_shares, unless: :inherited?
+  after_update :update_inherited_shares, if: :saved_change_to_permission?, unless: :inherited?
+  after_destroy :remove_inherited_shares, unless: :inherited?
+
   # Given ancestor_ids and ancestor_shares, returns the closest CreativeShare
   # in the ancestors. If there is no ancestor share, returns nil.
   def self.closest_parent_share(ancestor_ids, ancestor_shares)
@@ -78,5 +84,26 @@ class CreativeShare < ApplicationRecord
 
   def linked_creative_exists?
     Creative.exists?(origin_id: creative.id, user_id: user.id)
+  end
+
+  def remove_existing_inherited_share
+    # When creating a direct share, remove any existing inherited share for the same user/creative
+    CreativeShare.where(
+      creative_id: creative_id,
+      user_id: user_id,
+      inherited: true
+    ).delete_all
+  end
+
+  def propagate_inherited_shares
+    Creatives::InheritedShareBuilder.propagate_share(self)
+  end
+
+  def update_inherited_shares
+    Creatives::InheritedShareBuilder.update_inherited_shares(self)
+  end
+
+  def remove_inherited_shares
+    Creatives::InheritedShareBuilder.remove_inherited_shares(self)
   end
 end

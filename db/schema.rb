@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_06_160643) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_15_075342) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -147,17 +147,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_06_160643) do
     t.index ["descendant_id"], name: "creative_desc_idx"
   end
 
+  create_table "creative_links", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "created_by_id", null: false
+    t.integer "origin_id", null: false
+    t.integer "parent_id", null: false
+    t.integer "sequence", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_id"], name: "index_creative_links_on_created_by_id"
+    t.index ["origin_id"], name: "index_creative_links_on_origin_id"
+    t.index ["parent_id", "origin_id"], name: "index_creative_links_on_parent_id_and_origin_id", unique: true
+    t.index ["parent_id", "sequence"], name: "index_creative_links_on_parent_id_and_sequence"
+    t.index ["parent_id"], name: "index_creative_links_on_parent_id"
+  end
+
   create_table "creative_shares", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
+    t.boolean "inherited", default: false, null: false
     t.integer "permission", default: 0, null: false
     t.integer "shared_by_id"
     t.datetime "updated_at", null: false
     t.integer "user_id"
+    t.index ["creative_id", "user_id"], name: "idx_creative_shares_creative_user", unique: true
     t.index ["creative_id", "user_id"], name: "index_creative_shares_on_creative_id_and_user_id", unique: true
     t.index ["creative_id"], name: "index_creative_shares_on_creative_id"
     t.index ["creative_id"], name: "index_creative_shares_on_creative_id_public", unique: true, where: "user_id IS NULL"
     t.index ["shared_by_id"], name: "index_creative_shares_on_shared_by_id"
+    t.index ["user_id", "inherited"], name: "index_creative_shares_on_user_id_and_inherited"
     t.index ["user_id"], name: "index_creative_shares_on_user_id"
   end
 
@@ -617,6 +634,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_06_160643) do
     t.index ["system_admin"], name: "index_users_on_system_admin"
   end
 
+  create_table "virtual_creative_hierarchies", force: :cascade do |t|
+    t.integer "ancestor_id", null: false
+    t.datetime "created_at", null: false
+    t.integer "creative_link_id", null: false
+    t.integer "descendant_id", null: false
+    t.integer "generations", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["ancestor_id", "descendant_id"], name: "idx_vch_ancestor_descendant", unique: true
+    t.index ["ancestor_id"], name: "index_virtual_creative_hierarchies_on_ancestor_id"
+    t.index ["creative_link_id"], name: "index_virtual_creative_hierarchies_on_creative_link_id"
+    t.index ["descendant_id"], name: "index_virtual_creative_hierarchies_on_descendant_id"
+  end
+
   create_table "webauthn_credentials", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "nickname"
@@ -649,9 +679,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_06_160643) do
   add_foreign_key "contacts", "users", column: "contact_user_id"
   add_foreign_key "creative_expanded_states", "creatives"
   add_foreign_key "creative_expanded_states", "users"
+  add_foreign_key "creative_links", "creatives", column: "origin_id"
+  add_foreign_key "creative_links", "creatives", column: "parent_id"
+  add_foreign_key "creative_links", "users", column: "created_by_id"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
-  add_foreign_key "creative_shares", "users", column: "shared_by_id"
+  add_foreign_key "creative_shares", "users", column: "shared_by_id", on_delete: :nullify
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
@@ -688,5 +721,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_06_160643) do
   add_foreign_key "topics", "creatives"
   add_foreign_key "topics", "users"
   add_foreign_key "user_themes", "users"
+  add_foreign_key "virtual_creative_hierarchies", "creative_links"
+  add_foreign_key "virtual_creative_hierarchies", "creatives", column: "ancestor_id"
+  add_foreign_key "virtual_creative_hierarchies", "creatives", column: "descendant_id"
   add_foreign_key "webauthn_credentials", "users"
 end
