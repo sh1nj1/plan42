@@ -28,7 +28,7 @@ ko:
     dark_mode: "다크모드"
     system_mode: "시스템 기본값"
     apply_tags: "필터"
-    apply_tags: "필터"
+
     here: "여기"
 
   admin:

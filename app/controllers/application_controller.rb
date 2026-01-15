@@ -7,6 +7,10 @@ class ApplicationController < ActionController::Base
   around_action :switch_locale
   around_action :set_time_zone
 
+
+
+  require "set"
+
   def switch_locale(&action)
     resume_session
     locale = normalize_supported_locale(Current.user&.locale) ||
@@ -24,11 +28,25 @@ class ApplicationController < ActionController::Base
 
   private
 
-  def auth_provider_enabled?(key)
-    setting = SystemSetting.find_by(key: "auth_providers_enabled")
-    return true unless setting
+  helper_method :auth_provider_enabled? # Make available to views
 
-    setting.value.split(",").include?(key.to_s)
+  def auth_provider_enabled?(key)
+    @enabled_auth_providers_set ||= begin
+      setting = SystemSetting.find_by(key: "auth_providers_enabled")
+      if setting
+        setting.value.split(",").to_set
+      else
+        # Default: all enabled if setting not present
+        # In this case we return true for any key? Previously it was true.
+        # Let's keep behavior consistent: return true (or represent as nil/all).
+        # To memoize "everything is enabled", we can use a special flag or just return true early if we want strict equivalence to previous code.
+        # Previous code: return true unless setting.
+        nil
+      end
+    end
+
+    return true if @enabled_auth_providers_set.nil?
+    @enabled_auth_providers_set.include?(key.to_s)
   end
 
   def enforce_auth_provider!(key)
