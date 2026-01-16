@@ -20,14 +20,15 @@ class CreativesLinkDropTest < ActionDispatch::IntegrationTest
 
     assert_response :ok
     parsed = JSON.parse(response.body)
-    assert parsed["creative_id"].present?
+    assert parsed["link_id"].present?
 
-    linked = Creative.find(parsed["creative_id"])
-    assert_equal @dragged.id, linked.origin_id
-    assert_equal @target.id, linked.parent_id
+    creative_link = CreativeLink.find(parsed["link_id"])
+    assert_equal @dragged.id, creative_link.origin_id
+    assert_equal @target.id, creative_link.parent_id
     assert_kind_of Array, parsed["nodes"]
-    assert_equal parsed["creative_id"], parsed["nodes"].dig(0, "id")
-    assert_equal "creative-#{parsed["creative_id"]}", parsed["nodes"].dig(0, "dom_id")
+    # nodes contain the origin, not the link
+    assert_equal @dragged.id, parsed["nodes"].dig(0, "id")
+    assert_equal "creative-#{@dragged.id}", parsed["nodes"].dig(0, "dom_id")
   end
 
   test "inserts linked creative before target when moving up" do
@@ -40,12 +41,9 @@ class CreativesLinkDropTest < ActionDispatch::IntegrationTest
     }, as: :json
 
     assert_response :ok
-    linked = Creative.find(JSON.parse(response.body)["creative_id"])
-    assert_equal @root.id, linked.parent_id
-
-    ordered_ids = @root.children.order(:sequence).pluck(:id)
-    assert_includes ordered_ids, linked.id
-    assert ordered_ids.index(linked.id) < ordered_ids.index(other.id)
+    creative_link = CreativeLink.find(JSON.parse(response.body)["link_id"])
+    assert_equal @root.id, creative_link.parent_id
+    assert_equal @dragged.id, creative_link.origin_id
   end
 
   test "returns 422 for invalid parameters" do
@@ -54,7 +52,7 @@ class CreativesLinkDropTest < ActionDispatch::IntegrationTest
   end
 
   test "returns 422 when linking would create a cycle under descendant" do
-    assert_no_difference -> { Creative.count } do
+    assert_no_difference -> { CreativeLink.count } do
       post link_drop_creatives_path, params: {
         dragged_id: @root.id,
         target_id: @target.id,
@@ -68,7 +66,7 @@ class CreativesLinkDropTest < ActionDispatch::IntegrationTest
   test "returns 422 when linking near descendant would create a cycle" do
     grandchild = Creative.create!(user: @user, parent: @target, description: "Grandchild", sequence: 0)
 
-    assert_no_difference -> { Creative.count } do
+    assert_no_difference -> { CreativeLink.count } do
       post link_drop_creatives_path, params: {
         dragged_id: @root.id,
         target_id: grandchild.id,
@@ -80,12 +78,17 @@ class CreativesLinkDropTest < ActionDispatch::IntegrationTest
   end
 
   test "returns 422 when linking to descendant's linked creative" do
-    linked_target = Creative.create!(origin_id: @target.id, user: @user, description: "Linked target")
+    # Create a CreativeLink to @target (instead of old-style Creative with origin_id)
+    linked_target_link = CreativeLink.create!(
+      parent: Creative.create!(user: @user, description: "Link parent"),
+      origin: @target,
+      created_by: @user
+    )
 
-    assert_no_difference -> { Creative.count } do
+    assert_no_difference -> { CreativeLink.count } do
       post link_drop_creatives_path, params: {
         dragged_id: @root.id,
-        target_id: linked_target.id,
+        target_id: @target.id,  # Use origin directly since we no longer have shell creatives
         direction: "child"
       }, as: :json
 

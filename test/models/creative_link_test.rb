@@ -62,19 +62,19 @@ class CreativeLinkTest < ActiveSupport::TestCase
     assert_includes link.errors[:origin], "would create a circular reference"
   end
 
-  test "prevents linking to existing descendant" do
+  test "allows linking to existing descendant" do
     # Create hierarchy: parent -> child
     child = Creative.create!(user: @user, parent: @parent, description: "Child")
 
-    # Try to create link from parent to child (already descendant)
+    # Link from parent to child (already descendant) should be allowed
+    # This enables showing the same content in multiple places under the same subtree
     link = CreativeLink.new(
       parent: @parent,
       origin: child,
       created_by: @user
     )
 
-    assert_not link.valid?, "Should not allow linking to existing descendant"
-    assert_includes link.errors[:origin], "is already a descendant of parent"
+    assert link.valid?, "Should allow linking to existing descendant"
   end
 
   test "validates uniqueness of parent and origin combination" do

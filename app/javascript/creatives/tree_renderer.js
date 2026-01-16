@@ -73,6 +73,14 @@ function applyRowProperties(row, node) {
     row.setAttribute('link-url', node.link_url)
   }
 
+  // Track if this is a linked creative (via CreativeLink)
+  updateBooleanAttr('isLinked', 'is-linked', node.is_linked)
+  if (node.link_id) {
+    row.setAttribute('link-id', node.link_id)
+  } else {
+    row.removeAttribute('link-id')
+  }
+
   const templates = node.templates || {}
   if (templates.description_html != null && row.descriptionHtml !== templates.description_html) {
     row.descriptionHtml = templates.description_html

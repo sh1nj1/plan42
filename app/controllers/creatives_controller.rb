@@ -1,15 +1,54 @@
 class CreativesController < ApplicationController
   # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
   # Removed unauthenticated access to index and show actions
-  allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
+  allow_unauthenticated_access only: %i[ index children export_markdown show slide_view show_link ]
   before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions slide_view unconvert ]
+
+  def show_link
+    @creative_link = CreativeLink.find_by(id: params[:id])
+    unless @creative_link
+      redirect_to creatives_path, alert: t("creatives.errors.link_not_found", default: "Link not found")
+      return
+    end
+
+    # Check permission on the origin
+    unless @creative_link.origin.has_permission?(Current.user, :read)
+      redirect_to creatives_path, alert: t("creatives.errors.no_permission")
+      return
+    end
+
+    # Prevent Turbo from caching this page to avoid flash of stale content
+    response.headers["Cache-Control"] = "no-store"
+
+    # Set up params for index logic
+    params[:id] = @creative_link.origin_id.to_s
+    params[:link_parent_id] = @creative_link.parent_id.to_s
+
+    # Use the same logic as index and render its template
+    index
+    render :index unless performed?
+  end
+
+  def unlink
+    @creative_link = CreativeLink.find_by(id: params[:id])
+    unless @creative_link
+      head :not_found
+      return
+    end
+
+    # Check permission - user must have admin permission on the parent
+    unless @creative_link.parent.has_permission?(Current.user, :admin)
+      head :forbidden
+      return
+    end
+
+    @creative_link.destroy
+    head :ok
+  end
 
   def index
     # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
     # Current.creative_share_cache = CreativeShare.where(user: Current.user).index_by(&:creative_id)
-
-    # Auto-detect link_parent_id for linked creatives
-    detect_link_parent_id if params[:id].present? && params[:link_parent_id].blank? && Current.user
 
     user_id_for_state = Current.user&.id
     if user_id_for_state.nil? && params[:id].present?
@@ -50,7 +89,8 @@ class CreativesController < ApplicationController
             level: 1,
             allowed_creative_ids: @allowed_creative_ids,
             progress_map: @progress_map,
-            link_parent_id: params[:link_parent_id]
+            link_parent_id: params[:link_parent_id],
+            parent_id: @parent_creative&.id
           )
           render json: { creatives: @creatives_tree_json }
         end
@@ -79,6 +119,7 @@ class CreativesController < ApplicationController
         else
                   @creative.ancestors.count + 1
         end
+        has_children = @creative.children.exists? || CreativeLink.exists?(parent_id: @creative.id)
         render json: {
           id: @creative.id,
           description: @creative.effective_description,
@@ -89,7 +130,7 @@ class CreativesController < ApplicationController
           progress_html: view_context.render_creative_progress(@creative),
           depth: depth,
           prompt: @creative.prompt_for(Current.user),
-          has_children: @creative.children.exists?
+          has_children: has_children
         }
       end
     end
@@ -281,18 +322,25 @@ class CreativesController < ApplicationController
       direction: params[:direction]
     )
 
-    new_creative = result.new_creative
-    level = new_creative.ancestors.count + 1
+    # Build tree node for the linked origin
+    origin = result.origin
+    level = result.parent.ancestors.count + 2  # Parent's level + 1
     nodes = build_tree(
-      [ new_creative ],
+      [ origin ],
       params: params,
       expanded_state_map: {},
       level: level
     )
 
+    # Update the link_url to use /l/:link_id
+    if nodes.first
+      nodes.first[:link_url] = creative_link_view_path(result.creative_link.id)
+    end
+
     render json: {
       nodes: nodes,
-      creative_id: new_creative.id,
+      link_id: result.creative_link.id,
+      origin_id: origin.id,
       parent_id: result.parent&.id,
       direction: result.direction
     }
@@ -316,7 +364,16 @@ class CreativesController < ApplicationController
     expanded_state_map = CreativeExpandedState
                             .where(user_id: user_id, creative_id: parent.id)
                             .first&.expanded_status || {}
-    children = parent.children_with_permission(Current.user)
+
+    # Get actual children
+    actual_children = parent.children_with_permission(Current.user)
+
+    # Get linked origins via CreativeLink
+    linked_origins = Creative.joins(:parent_links)
+      .where(creative_links: { parent_id: parent.id })
+      .select { |c| c.has_permission?(Current.user, :read) }
+
+    children = (actual_children + linked_origins).uniq
 
     allowed_ids = nil
     progress_map = nil
@@ -337,7 +394,8 @@ class CreativesController < ApplicationController
         select_mode: params[:select_mode] == "1",
         allowed_creative_ids: allowed_ids,
         progress_map: progress_map,
-        link_parent_id: params[:link_parent_id]
+        link_parent_id: params[:link_parent_id],
+        parent_id: parent.id
       )
     }
   end
@@ -395,7 +453,7 @@ class CreativesController < ApplicationController
   end
 
   private
-    def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil, link_parent_id: nil)
+    def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil, link_parent_id: nil, parent_id: nil)
       Creatives::TreeBuilder.new(
         user: Current.user,
         params: params,
@@ -405,7 +463,8 @@ class CreativesController < ApplicationController
         max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL,
         allowed_creative_ids: allowed_creative_ids,
         progress_map: progress_map,
-        link_parent_id: link_parent_id
+        link_parent_id: link_parent_id,
+        parent_id: parent_id
       ).build(collection, level: level)
     end
 
@@ -451,36 +510,4 @@ class CreativesController < ApplicationController
       end
     end
 
-    # Auto-detect link_parent_id when viewing a creative through a creative_link
-    # This enables correct parent navigation for linked creatives
-    def detect_link_parent_id
-      creative = Creative.find_by(id: params[:id])
-      return unless creative
-      return if creative.user_id == Current.user.id  # User owns this creative directly
-
-      # Find creative_link where:
-      # 1. The parent is owned by current user (or user has write permission)
-      # 2. The origin is this creative or an ancestor of this creative
-      link = find_link_for_creative(creative)
-      params[:link_parent_id] = link.parent_id.to_s if link
-    end
-
-    def find_link_for_creative(creative)
-      # Check if this creative is directly an origin of a link
-      direct_link = CreativeLink.joins(:parent)
-        .where(origin_id: creative.id)
-        .where(creatives: { user_id: Current.user.id })
-        .first
-      return direct_link if direct_link
-
-      # Check if any ancestor of this creative is an origin of a link
-      ancestor_ids = creative.ancestor_ids
-      return nil if ancestor_ids.empty?
-
-      CreativeLink.joins(:parent)
-        .where(origin_id: ancestor_ids)
-        .where(creatives: { user_id: Current.user.id })
-        .order("creative_links.created_at DESC")
-        .first
-    end
 end

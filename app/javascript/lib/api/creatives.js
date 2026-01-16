@@ -65,6 +65,12 @@ export function unconvert(id) {
   })
 }
 
+export function unlink(linkId) {
+  return csrfFetch(`/l/${linkId}`, {
+    method: 'DELETE',
+  })
+}
+
 const creativesApi = {
   get,
   parentSuggestions,
@@ -74,6 +80,7 @@ const creativesApi = {
   linkExisting,
   destroy,
   unconvert,
+  unlink,
 }
 
 export default creativesApi

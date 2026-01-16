@@ -1,3 +1,8 @@
+<% if params[:link_parent_id].present? %>
+  <% content_for :head do %>
+    <meta name="turbo-cache-control" content="no-cache">
+  <% end %>
+<% end %>
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
 <div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--set-plan-modal"
@@ -120,10 +125,9 @@
       <% end %>
     <% end %>
   <% elsif params[:link_parent_id].present? %>
-    <%# Viewing Origin through creative_link: show link to Origin's actual context %>
-    <% origin_path = @parent_creative.parent_id.present? ? creative_path(@parent_creative.parent) : creatives_path %>
+    <%# Viewing Origin through creative_link: show link to Origin's own context (without link) %>
     <% title_templates << content_tag(:template, data: { part: "origin-link" }) do %>
-      <%= link_to origin_path,
+      <%= link_to creative_path(@parent_creative),
                   class: "creative-origin-link creative-action-btn unstyled-link",
                   title: t("creatives.index.view_origin"),
                   aria: { label: t("creatives.index.view_origin") } do %>
@@ -184,7 +188,7 @@
       empty_html = content_tag(:p, text, style: 'text-align: center;')
     end
   end
-  tree_params = request.query_parameters.merge(format: :json)
+  tree_params = params.to_unsafe_h.slice("id", "tags", "min_progress", "max_progress", "search", "comment", "link_parent_id").merge(format: :json)
   tree_url = creatives_path(tree_params)
 %>
 

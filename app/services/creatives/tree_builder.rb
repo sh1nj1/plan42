@@ -2,7 +2,7 @@ module Creatives
   class TreeBuilder
     FILTER_IGNORED_KEYS = %w[id controller action format level select_mode link_parent_id].freeze
 
-    def initialize(user:, params:, view_context:, expanded_state_map:, select_mode:, max_level:, allowed_creative_ids: nil, progress_map: nil, link_parent_id: nil)
+    def initialize(user:, params:, view_context:, expanded_state_map:, select_mode:, max_level:, allowed_creative_ids: nil, progress_map: nil, link_parent_id: nil, parent_id: nil)
       @user = user
       @view_context = view_context
       @raw_params = params.respond_to?(:to_unsafe_h) ? params.to_unsafe_h : params.to_h
@@ -12,10 +12,19 @@ module Creatives
       @allowed_creative_ids = allowed_creative_ids
       @progress_map = progress_map
       @link_parent_id = link_parent_id
+      @parent_id = parent_id
     end
 
     def build(collection, level: 1)
       return [] if collection.blank?
+
+      # Pre-populate link map for creatives that are linked origins of the parent
+      if @parent_id
+        CreativeLink.where(parent_id: @parent_id).each do |link|
+          @linked_origin_link_map ||= {}
+          @linked_origin_link_map[link.origin_id] = link.id
+        end
+      end
 
       build_nodes(Array(collection), level: level)
     end
@@ -47,6 +56,7 @@ module Creatives
 
       return children_nodes if skip
 
+      link_id = creative_link_id_for(creative)
       [
         {
           id: creative.id,
@@ -59,6 +69,8 @@ module Creatives
           expanded: expanded,
           is_root: creative.parent.nil?,
           link_url: link_url_for(creative),
+          is_linked: link_id.present?,
+          link_id: link_id,
           templates: template_payload_for(creative),
           inline_editor_payload: inline_editor_payload_for(creative),
           children_container: children_container_payload(
@@ -88,14 +100,16 @@ module Creatives
       actual_children = creative.children_with_permission(user)
 
       # Include virtually linked children (origins from CreativeLinks)
-      linked_origins = Creative.joins(:parent_links)
-        .where(creative_links: { parent_id: creative.id })
+      creative_links = CreativeLink.where(parent_id: creative.id).includes(:origin)
+      linked_origins = creative_links
+        .map(&:origin)
+        .compact
         .select { |c| c.has_permission?(user, :read) }
 
-      # Track which creatives are linked origins (not actual children)
-      @linked_origin_parent_map ||= {}
-      linked_origins.each do |origin|
-        @linked_origin_parent_map[origin.id] = creative.id
+      # Track which creatives are linked origins with their link IDs
+      @linked_origin_link_map ||= {}
+      creative_links.each do |link|
+        @linked_origin_link_map[link.origin_id] = link.id
       end
 
       children = (actual_children + linked_origins).uniq
@@ -107,9 +121,9 @@ module Creatives
       end
     end
 
-    def linked_origin_parent_id_for(creative)
-      @linked_origin_parent_map ||= {}
-      @linked_origin_parent_map[creative.id]
+    def creative_link_id_for(creative)
+      @linked_origin_link_map ||= {}
+      @linked_origin_link_map[creative.id]
     end
 
     def expanded?(creative_id)
@@ -149,8 +163,9 @@ module Creatives
     def children_container_payload(creative, filtered_children, child_level:, children_nodes:, expanded:, load_children_now:)
       return nil unless filtered_children.any?
 
-      # Determine link_parent_id for children loading
-      effective_link_parent = linked_origin_parent_id_for(creative) || link_parent_id
+      # Check if this creative is a linked origin - if so, use the link context
+      link_id = creative_link_id_for(creative)
+      effective_link_parent = link_id ? CreativeLink.find(link_id).parent_id : link_parent_id
 
       load_url_params = {
         level: child_level,
@@ -190,11 +205,15 @@ module Creatives
     end
 
     def link_url_for(creative)
-      # Determine the effective link_parent_id for this creative
-      effective_link_parent = linked_origin_parent_id_for(creative) || link_parent_id
+      # Check if this creative is displayed via a creative_link
+      link_id = creative_link_id_for(creative)
 
-      if effective_link_parent
-        view_context.creative_path(creative, link_parent_id: effective_link_parent)
+      if link_id
+        # Use /l/:link_id URL for linked origins
+        view_context.creative_link_view_path(link_id)
+      elsif link_parent_id
+        # We're inside a linked subtree, preserve context
+        view_context.creative_path(creative, link_parent_id: link_parent_id)
       else
         view_context.creative_path(creative)
       end

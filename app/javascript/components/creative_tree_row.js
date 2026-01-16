@@ -16,6 +16,8 @@ class CreativeTreeRow extends LitElement {
     expanded: { type: Boolean, attribute: "expanded", reflect: true },
     isRoot: { type: Boolean, attribute: "is-root" },
     linkUrl: { attribute: "link-url" },
+    isLinked: { type: Boolean, attribute: "is-linked" },
+    linkId: { attribute: "link-id" },
     descriptionHtml: { state: true, noAccessor: true },
     progressHtml: { state: true },
     editIconHtml: { state: true },
@@ -38,6 +40,8 @@ class CreativeTreeRow extends LitElement {
     this.expanded = false;
     this.isRoot = false;
     this.linkUrl = "#";
+    this.isLinked = false;
+    this.linkId = null;
     this._descriptionHtml = "";
     this.progressHtml = "";
     this.editIconHtml = "";
@@ -490,6 +494,11 @@ class CreativeTreeRow extends LitElement {
     // If not interactive, navigate to the linkUrl
     if (this.linkUrl && this.linkUrl !== "#") {
       if (window.Turbo) {
+        // For /l/ links (creative_link), clear cache to avoid flash of stale content
+        const isLinkUrl = this.linkUrl.startsWith('/l/')
+        if (isLinkUrl) {
+          window.Turbo.cache.clear()
+        }
         window.Turbo.visit(this.linkUrl);
       } else {
         window.location.href = this.linkUrl;

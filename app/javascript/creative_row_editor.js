@@ -256,8 +256,24 @@ export function initializeCreativeRowEditor() {
         originIdInput.value = originId;
       }
       originalOriginId = originId;
-      if (linkBtn) linkBtn.style.display = originId ? 'none' : '';
-      if (unlinkBtn) unlinkBtn.style.display = originId ? '' : 'none';
+
+      // Check if this is a linked creative (via CreativeLink)
+      const rowEl = treeRowElement(tree);
+      const isLinked = rowEl?.hasAttribute?.('is-linked') || Boolean(originId);
+      const linkId = rowEl?.getAttribute?.('link-id') || null;
+
+      // Show delete for regular creatives, unlink for linked creatives
+      if (deletePopupToggle) deletePopupToggle.style.display = isLinked ? 'none' : '';
+      if (linkBtn) linkBtn.style.display = isLinked ? 'none' : '';
+      if (unlinkBtn) {
+        unlinkBtn.style.display = isLinked ? '' : 'none';
+        // Store link_id on the button for use in unlink handler
+        if (linkId) {
+          unlinkBtn.dataset.linkId = linkId;
+        } else {
+          delete unlinkBtn.dataset.linkId;
+        }
+      }
       const effectiveParent = parentInput.value;
       if (unconvertBtn) unconvertBtn.style.display = effectiveParent ? '' : 'none';
       originalProgress = normalizedProgress;
@@ -1430,6 +1446,41 @@ export function initializeCreativeRowEditor() {
       });
     }
 
+    function unlinkCurrent() {
+      if (!currentTree || !form.dataset.creativeId) return;
+
+      // Get link_id from the unlink button or row attribute
+      const rowEl = treeRowElement(currentTree);
+      const linkId = unlinkBtn?.dataset?.linkId || rowEl?.getAttribute?.('link-id');
+
+      if (!linkId) {
+        // Fall back to old behavior for creatives with origin_id
+        deleteCurrent(false);
+        return;
+      }
+
+      const tree = currentTree;
+      const parentId = tree.dataset.parentId;
+      const creativeId = form.dataset.creativeId;
+
+      // Remove any pending saves for this creative from the queue
+      if (apiQueue) {
+        apiQueue.removeByDedupeKey(`creative_${creativeId}`);
+      }
+
+      creativesApi.unlink(linkId).then(() => {
+        const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
+        // Remove the children container since linked creatives don't have real children here
+        document.getElementById("creative-children-" + creativeId)?.remove();
+        move(1);
+        removeTreeElement(tree);
+        // Refresh parent to update has_children state
+        if (parentTree) {
+          refreshChildren(parentTree).then(() => refreshRow(parentTree));
+        }
+      });
+    }
+
     function linkExistingCreative() {
       if (!currentTree || !form.dataset.creativeId) return;
 
@@ -1447,8 +1498,12 @@ export function initializeCreativeRowEditor() {
     function resetOriginTracking() {
       if (originIdInput) originIdInput.value = '';
       originalOriginId = '';
+      if (deletePopupToggle) deletePopupToggle.style.display = '';
       if (linkBtn) linkBtn.style.display = '';
-      if (unlinkBtn) unlinkBtn.style.display = 'none';
+      if (unlinkBtn) {
+        unlinkBtn.style.display = 'none';
+        delete unlinkBtn.dataset.linkId;
+      }
     }
 
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
@@ -1788,7 +1843,7 @@ export function initializeCreativeRowEditor() {
 
     if (unlinkBtn) {
       unlinkBtn.addEventListener('click', function () {
-        if (confirm(unlinkBtn.dataset.confirm)) deleteCurrent(false);
+        if (confirm(unlinkBtn.dataset.confirm)) unlinkCurrent();
       });
     }
 

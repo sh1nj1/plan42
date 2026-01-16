@@ -38,6 +38,10 @@ module Creatives
         query_parts << "link_parent_id=#{link_parent_id}" if link_parent_id
         "/creatives/#{creative.id}/children?#{query_parts.join('&')}"
       end
+
+      def creative_link_view_path(link_id)
+        "/l/#{link_id}"
+      end
     end
 
     setup do

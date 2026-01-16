@@ -2,7 +2,7 @@ module Creatives
   class Reorderer
     class Error < StandardError; end
 
-    LinkDropResult = Struct.new(:new_creative, :parent, :direction, keyword_init: true)
+    LinkDropResult = Struct.new(:creative_link, :origin, :parent, :direction, keyword_init: true)
 
     def initialize(user:)
       @user = user
@@ -62,42 +62,35 @@ module Creatives
       origin = dragged.effective_origin
       new_parent = direction == "child" ? target : target.parent
 
-      if new_parent.present?
-        origin_descendant_ids = origin.self_and_descendants.pluck(:id)
+      raise Error, "Parent required for link" unless new_parent.present?
 
-        new_parent.self_and_ancestors.each do |ancestor|
-          ancestor_origin_id = ancestor.origin_id.presence || ancestor.id
-
-          if origin_descendant_ids.include?(ancestor_origin_id)
-            raise Error, "Invalid creatives"
-          end
+      # Check for circular reference
+      origin_descendant_ids = origin.self_and_descendants.pluck(:id)
+      new_parent.self_and_ancestors.each do |ancestor|
+        ancestor_origin_id = ancestor.origin_id.presence || ancestor.id
+        if origin_descendant_ids.include?(ancestor_origin_id)
+          raise Error, "Invalid creatives"
         end
       end
 
-      new_creative = nil
-      Creative.transaction do
-        new_creative = Creative.create!(
+      # Check if link already exists
+      existing_link = CreativeLink.find_by(parent_id: new_parent.id, origin_id: origin.id)
+      raise Error, "Link already exists" if existing_link
+
+      creative_link = nil
+      CreativeLink.transaction do
+        # Calculate sequence for the new link
+        sequence = calculate_link_sequence(new_parent, target, direction)
+
+        creative_link = CreativeLink.create!(
+          parent_id: new_parent.id,
           origin_id: origin.id,
-          parent: new_parent,
-          user: new_parent&.user || user
+          created_by: user,
+          sequence: sequence
         )
-
-        siblings = sibling_scope(new_parent)
-        siblings.delete(new_creative)
-
-        if direction == "child"
-          siblings << new_creative
-        else
-          target_index = siblings.index(target) || 0
-          insert_index = direction == "up" ? target_index : target_index + 1
-          insert_index = [ [ insert_index, 0 ].max, siblings.size ].min
-          siblings.insert(insert_index, new_creative)
-        end
-
-        resequence!(siblings)
       end
 
-      LinkDropResult.new(new_creative: new_creative, parent: new_parent, direction: direction)
+      LinkDropResult.new(creative_link: creative_link, origin: origin, parent: new_parent, direction: direction)
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotSaved => e
       raise Error, e.message
     end
@@ -181,6 +174,31 @@ module Creatives
     def resequence!(creatives)
       creatives.each_with_index do |creative, idx|
         creative.update_column(:sequence, idx)
+      end
+    end
+
+    def calculate_link_sequence(parent, target, direction)
+      # Get all children (actual + linked) and find position
+      actual_children = parent.children.order(:sequence).to_a
+      linked_origins = CreativeLink.where(parent_id: parent.id)
+        .order(:sequence)
+        .includes(:origin)
+        .map(&:origin)
+
+      all_children = (actual_children + linked_origins).sort_by(&:sequence)
+
+      if direction == "child"
+        # Add at end
+        (all_children.last&.sequence || -1) + 1
+      else
+        target_index = all_children.index { |c| c.id == target.id }
+        return 0 unless target_index
+
+        if direction == "up"
+          target_index > 0 ? all_children[target_index - 1].sequence + 1 : 0
+        else
+          target.sequence + 1
+        end
       end
     end
   end

@@ -61,6 +61,10 @@ Rails.application.routes.draw do
     resource :settings, only: [ :update ]
   end
 
+  # Link context access for creative_links
+  get "/l/:id", to: "creatives#show_link", as: :creative_link_view
+  delete "/l/:id", to: "creatives#unlink", as: :creative_link_unlink
+
   resources :creatives do
     resource :github_integration, only: [ :show, :update, :destroy ], module: :creatives
     resource :notion_integration, only: [ :show, :update, :destroy ], module: :creatives
