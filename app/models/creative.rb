@@ -77,6 +77,8 @@ class Creative < ApplicationRecord
   after_destroy_commit :purge_description_attachments
   after_save :update_mcp_tools
 
+  after_commit :rebuild_permission_cache, if: :saved_change_to_parent_id?
+
 
 
 
@@ -412,6 +414,10 @@ class Creative < ApplicationRecord
     if origin_id.present? && origin_id == id
       errors.add(:origin_id, "cannot be the same as id")
     end
+  end
+
+  def rebuild_permission_cache
+    Creatives::PermissionCacheBuilder.rebuild_for_creative(self)
   end
 
   private
