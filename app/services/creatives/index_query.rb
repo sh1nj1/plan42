@@ -44,10 +44,25 @@ module Creatives
         creative = Creative.where(id: params[:id])
                             .order(:sequence)
                             .detect { |c| readable?(c) }
-        [ creative&.children_with_permission(user, :read) || [], creative, nil, nil, nil ]
+        children = children_with_linked_origins(creative)
+        [ children, creative, nil, nil, nil ]
       else
         [ Creative.where(user: user).roots, nil, nil, nil, nil ]
       end
+    end
+
+    def children_with_linked_origins(creative)
+      return [] unless creative
+
+      # Actual children
+      actual_children = creative.children_with_permission(user, :read)
+
+      # Linked origins via creative_links
+      linked_origins = Creative.joins(:parent_links)
+        .where(creative_links: { parent_id: creative.id })
+        .select { |c| c.has_permission?(user, :read) }
+
+      (actual_children + linked_origins).uniq
     end
 
     def any_filter_active?

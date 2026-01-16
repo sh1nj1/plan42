@@ -8,6 +8,9 @@ class CreativesController < ApplicationController
     # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
     # Current.creative_share_cache = CreativeShare.where(user: Current.user).index_by(&:creative_id)
 
+    # Auto-detect link_parent_id for linked creatives
+    detect_link_parent_id if params[:id].present? && params[:link_parent_id].blank? && Current.user
+
     user_id_for_state = Current.user&.id
     if user_id_for_state.nil? && params[:id].present?
       # Public view: use owner's state
@@ -446,5 +449,38 @@ class CreativesController < ApplicationController
         CreativeShare.where(creative: child).destroy_all
         child.destroy
       end
+    end
+
+    # Auto-detect link_parent_id when viewing a creative through a creative_link
+    # This enables correct parent navigation for linked creatives
+    def detect_link_parent_id
+      creative = Creative.find_by(id: params[:id])
+      return unless creative
+      return if creative.user_id == Current.user.id  # User owns this creative directly
+
+      # Find creative_link where:
+      # 1. The parent is owned by current user (or user has write permission)
+      # 2. The origin is this creative or an ancestor of this creative
+      link = find_link_for_creative(creative)
+      params[:link_parent_id] = link.parent_id.to_s if link
+    end
+
+    def find_link_for_creative(creative)
+      # Check if this creative is directly an origin of a link
+      direct_link = CreativeLink.joins(:parent)
+        .where(origin_id: creative.id)
+        .where(creatives: { user_id: Current.user.id })
+        .first
+      return direct_link if direct_link
+
+      # Check if any ancestor of this creative is an origin of a link
+      ancestor_ids = creative.ancestor_ids
+      return nil if ancestor_ids.empty?
+
+      CreativeLink.joins(:parent)
+        .where(origin_id: ancestor_ids)
+        .where(creatives: { user_id: Current.user.id })
+        .order("creative_links.created_at DESC")
+        .first
     end
 end
