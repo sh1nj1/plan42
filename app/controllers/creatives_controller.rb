@@ -269,6 +269,14 @@ class CreativesController < ApplicationController
       @creative.children.each { |child| child.update(parent: parent) }
     end
     CreativeShare.where(creative: @creative).destroy_all
+    # Delete virtual_hierarchies and creative_links to avoid FK constraints
+    # VCH must be deleted first since it has FK to creative_links
+    link_ids = CreativeLink.where(parent_id: @creative.id).or(CreativeLink.where(origin_id: @creative.id)).pluck(:id)
+    VirtualCreativeHierarchy.where(creative_link_id: link_ids).delete_all if link_ids.any?
+    VirtualCreativeHierarchy.where(ancestor_id: @creative.id).delete_all
+    VirtualCreativeHierarchy.where(descendant_id: @creative.id).delete_all
+    CreativeLink.where(parent_id: @creative.id).delete_all
+    CreativeLink.where(origin_id: @creative.id).delete_all
     @creative.destroy
   end
 
@@ -517,6 +525,13 @@ class CreativesController < ApplicationController
       deletable_children.each do |child|
         destroy_descendants_recursively(child, user)
         CreativeShare.where(creative: child).destroy_all
+        # Delete VCH first (has FK to creative_links), then creative_links
+        link_ids = CreativeLink.where(parent_id: child.id).or(CreativeLink.where(origin_id: child.id)).pluck(:id)
+        VirtualCreativeHierarchy.where(creative_link_id: link_ids).delete_all if link_ids.any?
+        VirtualCreativeHierarchy.where(ancestor_id: child.id).delete_all
+        VirtualCreativeHierarchy.where(descendant_id: child.id).delete_all
+        CreativeLink.where(parent_id: child.id).delete_all
+        CreativeLink.where(origin_id: child.id).delete_all
         child.destroy
       end
     end

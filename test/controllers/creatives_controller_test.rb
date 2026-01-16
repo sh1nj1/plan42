@@ -105,4 +105,42 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     end
     assert_equal expected_markdown, response.body
   end
+
+  test "destroy creative with creative_links cleans up properly" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent to delete")
+    origin = Creative.create!(user: user, description: "Origin")
+    link = CreativeLink.create!(parent: parent, origin: origin, created_by: user)
+
+    assert VirtualCreativeHierarchy.where(creative_link_id: link.id).exists?
+
+    assert_difference -> { Creative.count }, -1 do
+      assert_difference -> { CreativeLink.count }, -1 do
+        delete creative_path(parent), headers: { "ACCEPT" => "application/json" }
+      end
+    end
+
+    assert_response :success
+    assert_not CreativeLink.exists?(link.id)
+    assert_not VirtualCreativeHierarchy.where(creative_link_id: link.id).exists?
+  end
+
+  test "destroy creative that is origin of creative_link cleans up properly" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent")
+    origin = Creative.create!(user: user, description: "Origin to delete")
+    link = CreativeLink.create!(parent: parent, origin: origin, created_by: user)
+
+    assert VirtualCreativeHierarchy.where(creative_link_id: link.id).exists?
+
+    assert_difference -> { Creative.count }, -1 do
+      assert_difference -> { CreativeLink.count }, -1 do
+        delete creative_path(origin), headers: { "ACCEPT" => "application/json" }
+      end
+    end
+
+    assert_response :success
+    assert_not CreativeLink.exists?(link.id)
+    assert_not VirtualCreativeHierarchy.where(creative_link_id: link.id).exists?
+  end
 end

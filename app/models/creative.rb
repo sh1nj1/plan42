@@ -53,6 +53,8 @@ class Creative < ApplicationRecord
   has_many :parent_links, class_name: "CreativeLink", foreign_key: :origin_id, dependent: :destroy
   has_many :virtual_ancestors, through: :parent_links, source: :parent
   has_many :virtual_descendants, through: :child_links, source: :origin
+  has_many :virtual_ancestor_hierarchies, class_name: "VirtualCreativeHierarchy", foreign_key: :descendant_id, dependent: :delete_all
+  has_many :virtual_descendant_hierarchies, class_name: "VirtualCreativeHierarchy", foreign_key: :ancestor_id, dependent: :delete_all
 
   has_many :creative_shares, dependent: :destroy
   has_many :tags, dependent: :destroy
