@@ -8,7 +8,7 @@ class CreateVirtualCreativeHierarchies < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
-    add_index :virtual_creative_hierarchies, [:ancestor_id, :descendant_id], unique: true, name: "idx_vch_ancestor_descendant"
+    add_index :virtual_creative_hierarchies, [ :ancestor_id, :descendant_id ], unique: true, name: "idx_vch_ancestor_descendant"
     # Note: descendant_id index is already created by t.references
   end
 end

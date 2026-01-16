@@ -26,7 +26,7 @@ module Creatives
       end
 
       # 이미 존재하는 share는 건너뛰기
-      CreativeShare.upsert_all(entries, unique_by: [:creative_id, :user_id]) if entries.any?
+      CreativeShare.upsert_all(entries, unique_by: [ :creative_id, :user_id ]) if entries.any?
     end
 
     # CreativeShare가 삭제될 때 호출
@@ -85,7 +85,7 @@ module Creatives
         }
       end
 
-      CreativeShare.upsert_all(entries, unique_by: [:creative_id, :user_id]) if entries.any?
+      CreativeShare.upsert_all(entries, unique_by: [ :creative_id, :user_id ]) if entries.any?
     end
 
     # Creative가 삭제될 때 호출

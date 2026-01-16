@@ -462,7 +462,7 @@ class Creative < ApplicationRecord
   # Update inherited shares when this creative moves to a new parent
   def update_inherited_shares_on_parent_change
     # Remove old inherited shares for this creative and all descendants
-    affected_ids = [id] + self_and_descendants.pluck(:id)
+    affected_ids = [ id ] + self_and_descendants.pluck(:id)
     CreativeShare.where(creative_id: affected_ids, inherited: true).delete_all
 
     # Propagate new inherited shares from new parent

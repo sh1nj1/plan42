@@ -15,7 +15,7 @@ module Creatives
       result = FilterPipeline.new(
         user: @user,
         params: { min_progress: "1", max_progress: "1" },
-        scope: Creative.where(id: [parent.id, origin.id])
+        scope: Creative.where(id: [ parent.id, origin.id ])
       ).call
 
       # origin이 매칭됨
@@ -35,7 +35,7 @@ module Creatives
       result = FilterPipeline.new(
         user: @user,
         params: { search: "keyword" },
-        scope: Creative.where(id: [parent.id, origin.id, child.id])
+        scope: Creative.where(id: [ parent.id, origin.id, child.id ])
       ).call
 
       # child가 매칭됨
@@ -56,8 +56,8 @@ module Creatives
 
       result = FilterPipeline.new(
         user: @user,
-        params: { tags: [label.id] },
-        scope: Creative.where(id: [parent.id, child.id])
+        params: { tags: [ label.id ] },
+        scope: Creative.where(id: [ parent.id, child.id ])
       ).call
 
       # child가 매칭됨
@@ -81,8 +81,8 @@ module Creatives
       # Filter: tagged AND progress = 100%
       result = FilterPipeline.new(
         user: @user,
-        params: { tags: [label.id], min_progress: "1", max_progress: "1" },
-        scope: Creative.where(id: [parent.id, child1.id, child2.id])
+        params: { tags: [ label.id ], min_progress: "1", max_progress: "1" },
+        scope: Creative.where(id: [ parent.id, child1.id, child2.id ])
       ).call
 
       # Only child1 matches both conditions
@@ -116,7 +116,7 @@ module Creatives
       result = FilterPipeline.new(
         user: @user,
         params: { min_progress: "1", max_progress: "1" },
-        scope: Creative.where(id: [parent.id, child.id])
+        scope: Creative.where(id: [ parent.id, child.id ])
       ).call
 
       # parent is in allowed_ids (as ancestor) but not matched

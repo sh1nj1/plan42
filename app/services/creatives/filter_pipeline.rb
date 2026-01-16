@@ -90,13 +90,13 @@ module Creatives
       # 이제 effective_progress 없이 그냥 progress 사용
       creatives = Creative.where(id: allowed_ids).pluck(:id, :progress)
 
-      progress_map = creatives.to_h { |id, prog| [id.to_s, prog || 0.0] }
+      progress_map = creatives.to_h { |id, prog| [ id.to_s, prog || 0.0 ] }
 
       matched_progress = creatives.select { |id, _| matched_ids.include?(id) }
       overall = matched_progress.any? ?
         matched_progress.sum { |_, p| p || 0.0 } / matched_progress.size : 0.0
 
-      [progress_map, overall]
+      [ progress_map, overall ]
     end
 
     def empty_result

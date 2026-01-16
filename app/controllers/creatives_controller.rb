@@ -529,5 +529,4 @@ class CreativesController < ApplicationController
         child.destroy
       end
     end
-
 end
