@@ -180,24 +180,28 @@ module Creatives
     def calculate_link_sequence(parent, target, direction)
       # Get all children (actual + linked) and find position
       actual_children = parent.children.order(:sequence).to_a
-      linked_origins = CreativeLink.where(parent_id: parent.id)
-        .order(:sequence)
-        .includes(:origin)
-        .map(&:origin)
 
-      all_children = (actual_children + linked_origins).sort_by(&:sequence)
+      # Track link.sequence for linked origins (not origin.sequence)
+      links = CreativeLink.where(parent_id: parent.id).includes(:origin)
+      link_sequence_map = links.each_with_object({}) { |l, h| h[l.origin_id] = l.sequence }
+      linked_origins = links.map(&:origin).compact
+
+      # Sort by effective sequence (link.sequence for linked origins, creative.sequence for actual children)
+      effective_sequence = ->(c) { link_sequence_map[c.id] || c.sequence }
+      all_children = (actual_children + linked_origins).uniq.sort_by(&effective_sequence)
 
       if direction == "child"
         # Add at end
-        (all_children.last&.sequence || -1) + 1
+        last_seq = all_children.last ? effective_sequence.call(all_children.last) : -1
+        last_seq + 1
       else
         target_index = all_children.index { |c| c.id == target.id }
         return 0 unless target_index
 
         if direction == "up"
-          target_index > 0 ? all_children[target_index - 1].sequence + 1 : 0
+          target_index > 0 ? effective_sequence.call(all_children[target_index - 1]) + 1 : 0
         else
-          target.sequence + 1
+          effective_sequence.call(target) + 1
         end
       end
     end
