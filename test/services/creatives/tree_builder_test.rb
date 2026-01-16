@@ -21,12 +21,22 @@ module Creatives
         block_given? ? yield : ""
       end
 
-      def creative_path(creative)
-        "/creatives/#{creative.id}"
+      def creative_path(creative, params = {})
+        path = "/creatives/#{creative.id}"
+        if params.any?
+          query = params.map { |k, v| "#{k}=#{v}" }.join("&")
+          path += "?#{query}"
+        end
+        path
       end
 
-      def children_creative_path(creative, level:, select_mode:)
-        "/creatives/#{creative.id}/children?level=#{level}&select_mode=#{select_mode}"
+      def children_creative_path(creative, params = {})
+        level = params[:level]
+        select_mode = params[:select_mode]
+        link_parent_id = params[:link_parent_id]
+        query_parts = [ "level=#{level}", "select_mode=#{select_mode}" ]
+        query_parts << "link_parent_id=#{link_parent_id}" if link_parent_id
+        "/creatives/#{creative.id}/children?#{query_parts.join('&')}"
       end
     end
 

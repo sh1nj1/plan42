@@ -6,7 +6,7 @@ class CreativesController < ApplicationController
 
   def index
     # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
-    Current.creative_share_cache = CreativeShare.where(user: Current.user).index_by(&:creative_id)
+    # Current.creative_share_cache = CreativeShare.where(user: Current.user).index_by(&:creative_id)
 
     user_id_for_state = Current.user&.id
     if user_id_for_state.nil? && params[:id].present?
@@ -46,7 +46,8 @@ class CreativesController < ApplicationController
             expanded_state_map: @expanded_state_map,
             level: 1,
             allowed_creative_ids: @allowed_creative_ids,
-            progress_map: @progress_map
+            progress_map: @progress_map,
+            link_parent_id: params[:link_parent_id]
           )
           render json: { creatives: @creatives_tree_json }
         end
@@ -332,7 +333,8 @@ class CreativesController < ApplicationController
         level: json_level,
         select_mode: params[:select_mode] == "1",
         allowed_creative_ids: allowed_ids,
-        progress_map: progress_map
+        progress_map: progress_map,
+        link_parent_id: params[:link_parent_id]
       )
     }
   end
@@ -390,7 +392,7 @@ class CreativesController < ApplicationController
   end
 
   private
-    def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil)
+    def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil, link_parent_id: nil)
       Creatives::TreeBuilder.new(
         user: Current.user,
         params: params,
@@ -399,7 +401,8 @@ class CreativesController < ApplicationController
         select_mode: select_mode,
         max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL,
         allowed_creative_ids: allowed_creative_ids,
-        progress_map: progress_map
+        progress_map: progress_map,
+        link_parent_id: link_parent_id
       ).build(collection, level: level)
     end
 

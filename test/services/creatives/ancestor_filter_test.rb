@@ -8,8 +8,8 @@ module Creatives
       def render_creative_progress(_creative, select_mode: false); ""; end
       def svg_tag(name, **args); ""; end
       def link_to(_path, *args); block_given? ? yield : ""; end
-      def creative_path(creative); "/creatives/#{creative.id}"; end
-      def children_creative_path(creative, **args); "/children"; end
+      def creative_path(creative, params = {}); "/creatives/#{creative.id}"; end
+      def children_creative_path(creative, params = {}); "/children"; end
     end
 
     setup do

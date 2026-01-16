@@ -1,8 +1,8 @@
 module Creatives
   class TreeBuilder
-    FILTER_IGNORED_KEYS = %w[id controller action format level select_mode].freeze
+    FILTER_IGNORED_KEYS = %w[id controller action format level select_mode link_parent_id].freeze
 
-    def initialize(user:, params:, view_context:, expanded_state_map:, select_mode:, max_level:, allowed_creative_ids: nil, progress_map: nil)
+    def initialize(user:, params:, view_context:, expanded_state_map:, select_mode:, max_level:, allowed_creative_ids: nil, progress_map: nil, link_parent_id: nil)
       @user = user
       @view_context = view_context
       @raw_params = params.respond_to?(:to_unsafe_h) ? params.to_unsafe_h : params.to_h
@@ -11,6 +11,7 @@ module Creatives
       @max_level = max_level
       @allowed_creative_ids = allowed_creative_ids
       @progress_map = progress_map
+      @link_parent_id = link_parent_id
     end
 
     def build(collection, level: 1)
@@ -21,7 +22,7 @@ module Creatives
 
     private
 
-    attr_reader :user, :view_context, :raw_params, :expanded_state_map, :select_mode, :max_level, :allowed_creative_ids, :progress_map
+    attr_reader :user, :view_context, :raw_params, :expanded_state_map, :select_mode, :max_level, :allowed_creative_ids, :progress_map, :link_parent_id
 
     def build_nodes(creatives, level:)
       return [] if level > max_level
@@ -57,7 +58,7 @@ module Creatives
           has_children: filtered_children.any?,
           expanded: expanded,
           is_root: creative.parent.nil?,
-          link_url: view_context.creative_path(creative),
+          link_url: link_url_for(creative),
           templates: template_payload_for(creative),
           inline_editor_payload: inline_editor_payload_for(creative),
           children_container: children_container_payload(
@@ -91,6 +92,12 @@ module Creatives
         .where(creative_links: { parent_id: creative.id })
         .select { |c| c.has_permission?(user, :read) }
 
+      # Track which creatives are linked origins (not actual children)
+      @linked_origin_parent_map ||= {}
+      linked_origins.each do |origin|
+        @linked_origin_parent_map[origin.id] = creative.id
+      end
+
       children = (actual_children + linked_origins).uniq
 
       if allowed_creative_ids
@@ -98,6 +105,11 @@ module Creatives
       else
         children
       end
+    end
+
+    def linked_origin_parent_id_for(creative)
+      @linked_origin_parent_map ||= {}
+      @linked_origin_parent_map[creative.id]
     end
 
     def expanded?(creative_id)
@@ -137,15 +149,20 @@ module Creatives
     def children_container_payload(creative, filtered_children, child_level:, children_nodes:, expanded:, load_children_now:)
       return nil unless filtered_children.any?
 
+      # Determine link_parent_id for children loading
+      effective_link_parent = linked_origin_parent_id_for(creative) || link_parent_id
+
+      load_url_params = {
+        level: child_level,
+        select_mode: select_mode ? 1 : 0
+      }
+      load_url_params[:link_parent_id] = effective_link_parent if effective_link_parent
+
       {
         id: "creative-children-#{creative.id}",
         expanded: expanded,
         loaded: load_children_now,
-        load_url: view_context.children_creative_path(
-          creative,
-          level: child_level,
-          select_mode: select_mode ? 1 : 0
-        ),
+        load_url: view_context.children_creative_path(creative, load_url_params),
         level: child_level,
         nodes: children_nodes
       }
@@ -169,6 +186,17 @@ module Creatives
         aria: { label: I18n.t("creatives.index.view_origin") }
       ) do
         view_context.svg_tag("arrow-right.svg", class: "creative-origin-link-icon", width: 16, height: 16)
+      end
+    end
+
+    def link_url_for(creative)
+      # Determine the effective link_parent_id for this creative
+      effective_link_parent = linked_origin_parent_id_for(creative) || link_parent_id
+
+      if effective_link_parent
+        view_context.creative_path(creative, link_parent_id: effective_link_parent)
+      else
+        view_context.creative_path(creative)
       end
     end
   end

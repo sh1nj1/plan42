@@ -10,7 +10,19 @@
      data-creatives--set-plan-modal-select-plan-value="<%= t('creatives.index.select_plan_to_remove') %>">
   <div class="creative-actions-row">
   <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
-  <% if @parent_creative&.parent_id.present? %>
+  <% if params[:link_parent_id].present? %>
+    <%# When viewing through creative_link, go back to link parent %>
+    <% link_parent = Creative.find_by(id: params[:link_parent_id]) %>
+    <% if link_parent&.parent_id.present? %>
+      <%= button_to creative_path(link_parent.owning_parent), method: :get, aria: { label: t('.up') } do %>
+        <span aria-hidden="true"><%= svg_tag 'arrow-up.svg', class: 'icon-up', width: 16, height: 16 %></span>
+      <% end %>
+    <% elsif link_parent.present? %>
+      <%= button_to creatives_path, class: "up-link", method: :get, aria: { label: t('.up') } do %>
+        <span aria-hidden="true"><%= svg_tag 'arrow-up.svg', class: 'icon-up', width: 16, height: 16 %></span>
+      <% end %>
+    <% end %>
+  <% elsif @parent_creative&.parent_id.present? %>
     <%= button_to creative_path(@parent_creative.owning_parent), method: :get, aria: { label: t('.up') } do %>
       <span aria-hidden="true"><%= svg_tag 'arrow-up.svg', class: 'icon-up', width: 16, height: 16 %></span>
     <% end %>
@@ -98,8 +110,20 @@
         content_tag(:template, data: { part: "progress" }) { render_creative_progress(@parent_creative) }
       ] %>
   <% if @parent_creative.origin_id.present? %>
+    <%# Old-style linked creative: show link to origin %>
     <% title_templates << content_tag(:template, data: { part: "origin-link" }) do %>
       <%= link_to creative_path(@parent_creative.origin),
+                  class: "creative-origin-link creative-action-btn unstyled-link",
+                  title: t("creatives.index.view_origin"),
+                  aria: { label: t("creatives.index.view_origin") } do %>
+        <%= svg_tag "arrow-right.svg", class: "creative-origin-link-icon", width: 16, height: 16 %>
+      <% end %>
+    <% end %>
+  <% elsif params[:link_parent_id].present? %>
+    <%# Viewing Origin through creative_link: show link to Origin's actual context %>
+    <% origin_path = @parent_creative.parent_id.present? ? creative_path(@parent_creative.parent) : creatives_path %>
+    <% title_templates << content_tag(:template, data: { part: "origin-link" }) do %>
+      <%= link_to origin_path,
                   class: "creative-origin-link creative-action-btn unstyled-link",
                   title: t("creatives.index.view_origin"),
                   aria: { label: t("creatives.index.view_origin") } do %>
