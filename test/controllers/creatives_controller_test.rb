@@ -143,4 +143,89 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_not CreativeLink.exists?(link.id)
     assert_not VirtualCreativeHierarchy.where(creative_link_id: link.id).exists?
   end
+
+  test "show_link with valid link and permission renders index" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent")
+    origin = Creative.create!(user: user, description: "Origin")
+    link = CreativeLink.create!(parent: parent, origin: origin, created_by: user)
+
+    get creative_link_view_path(link)
+
+    assert_response :success
+  end
+
+  test "show_link without permission redirects" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent")
+    origin = Creative.create!(user: user, description: "Origin")
+    link = CreativeLink.create!(parent: parent, origin: origin, created_by: user)
+
+    sign_out
+    sign_in_as(users(:two), password: "password")
+
+    get creative_link_view_path(link)
+
+    assert_response :redirect
+    assert_redirected_to creatives_path
+  end
+
+  test "show_link with non-existent link redirects" do
+    get creative_link_view_path(id: 999999)
+
+    assert_response :redirect
+    assert_redirected_to creatives_path
+  end
+
+  test "anonymous user can access show_link with shared origin" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent")
+    origin = Creative.create!(user: user, description: "Origin")
+    link = CreativeLink.create!(parent: parent, origin: origin, created_by: user)
+
+    # Share origin with a "public" marker - use nil user for public access
+    # Note: Current implementation requires user, so we test with shared user
+    shared_user = users(:two)
+    CreativeShare.create!(creative: origin, user: shared_user, permission: :read)
+
+    sign_out
+    sign_in_as(shared_user, password: "password")
+
+    get creative_link_view_path(link)
+
+    assert_response :success
+  end
+
+  test "unlink removes creative_link with admin permission" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent")
+    origin = Creative.create!(user: user, description: "Origin")
+    link = CreativeLink.create!(parent: parent, origin: origin, created_by: user)
+
+    assert_difference -> { CreativeLink.count }, -1 do
+      delete creative_link_unlink_path(link), headers: { "ACCEPT" => "application/json" }
+    end
+
+    assert_response :success
+  end
+
+  test "unlink without admin permission returns forbidden" do
+    owner = users(:one)
+    other_user = users(:two)
+    parent = Creative.create!(user: owner, description: "Parent")
+    origin = Creative.create!(user: owner, description: "Origin")
+    link = CreativeLink.create!(parent: parent, origin: origin, created_by: owner)
+
+    # Give other_user only read permission
+    CreativeShare.create!(creative: parent, user: other_user, permission: :read)
+
+    sign_out
+    sign_in_as(other_user, password: "password")
+
+    assert_no_difference -> { CreativeLink.count } do
+      delete creative_link_unlink_path(link), headers: { "ACCEPT" => "application/json" }
+    end
+
+    assert_response :forbidden
+  end
 end

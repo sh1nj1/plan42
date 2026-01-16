@@ -20,12 +20,13 @@ module Creatives
 
       # Pre-populate link map for creatives that are linked origins of the parent
       # Only mark as linked if NOT a direct child of this parent
+      # Stores { origin_id => { id: link_id, parent_id: parent_id } } to avoid N+1 queries
       if @parent_id
         direct_child_ids = Creative.where(parent_id: @parent_id).pluck(:id).to_set
         CreativeLink.where(parent_id: @parent_id).each do |link|
           next if direct_child_ids.include?(link.origin_id)
           @linked_origin_link_map ||= {}
-          @linked_origin_link_map[link.origin_id] = link.id
+          @linked_origin_link_map[link.origin_id] = { id: link.id, parent_id: link.parent_id }
         end
       end
 
@@ -110,12 +111,12 @@ module Creatives
         .compact
         .select { |c| c.has_permission?(user, :read) }
 
-      # Track which creatives are linked origins with their link IDs
+      # Track which creatives are linked origins with their link IDs and parent IDs
       # Only mark as linked if NOT a direct child of this parent
       @linked_origin_link_map ||= {}
       creative_links.each do |link|
         next if actual_children_ids.include?(link.origin_id)
-        @linked_origin_link_map[link.origin_id] = link.id
+        @linked_origin_link_map[link.origin_id] = { id: link.id, parent_id: link.parent_id }
       end
 
       children = (actual_children + linked_origins).uniq.sort_by(&:sequence)
@@ -127,9 +128,13 @@ module Creatives
       end
     end
 
-    def creative_link_id_for(creative)
+    def creative_link_info_for(creative)
       @linked_origin_link_map ||= {}
       @linked_origin_link_map[creative.id]
+    end
+
+    def creative_link_id_for(creative)
+      creative_link_info_for(creative)&.dig(:id)
     end
 
     def expanded?(creative_id)
@@ -170,8 +175,8 @@ module Creatives
       return nil unless filtered_children.any?
 
       # Check if this creative is a linked origin - if so, use the link context
-      link_id = creative_link_id_for(creative)
-      effective_link_parent = link_id ? CreativeLink.find(link_id).parent_id : link_parent_id
+      link_info = creative_link_info_for(creative)
+      effective_link_parent = link_info ? link_info[:parent_id] : link_parent_id
 
       load_url_params = {
         level: child_level,
