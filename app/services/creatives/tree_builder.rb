@@ -118,7 +118,7 @@ module Creatives
         @linked_origin_link_map[link.origin_id] = link.id
       end
 
-      children = (actual_children + linked_origins).uniq
+      children = (actual_children + linked_origins).uniq.sort_by(&:sequence)
 
       if allowed_creative_ids
         children.select { |c| allowed_creative_ids.include?(c.id.to_s) }

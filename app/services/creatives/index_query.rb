@@ -88,6 +88,7 @@ module Creatives
       # For other filters (tags, progress), return tree start nodes
       if params[:search].present? || params[:comment] == "true"
         matched_creatives = Creative.where(id: result.matched_ids.to_a)
+          .order(:sequence)
           .select { |c| readable?(c) }
         parent = params[:id] ? Creative.find_by(id: params[:id]) : nil
         [ matched_creatives, parent, result.allowed_ids, result.overall_progress, result.progress_map ]
@@ -124,15 +125,16 @@ module Creatives
         return [] unless readable?(parent)
 
         # Include actual children
-        actual_children = parent.children.where(id: allowed_ids_array).to_a
+        actual_children = parent.children.where(id: allowed_ids_array).order(:sequence).to_a
 
         # Include virtually linked children (origins from CreativeLinks)
         virtual_children = Creative.joins(:parent_links)
           .where(creative_links: { parent_id: parent.id })
           .where(id: allowed_ids_array)
+          .order(:sequence)
           .to_a
 
-        (actual_children + virtual_children).uniq
+        (actual_children + virtual_children).uniq.sort_by(&:sequence)
       else
         # Find top-most nodes from allowed_ids
         creatives = Creative.where(id: allowed_ids_array).to_a
@@ -148,7 +150,7 @@ module Creatives
             .exists?
 
           has_real_ancestor || has_virtual_ancestor
-        end
+        end.sort_by(&:sequence)
       end
     end
 

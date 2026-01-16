@@ -47,38 +47,41 @@ class CreativesController < ApplicationController
   end
 
   def index
-    # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
-    # Current.creative_share_cache = CreativeShare.where(user: Current.user).index_by(&:creative_id)
-
-    user_id_for_state = Current.user&.id
-    if user_id_for_state.nil? && params[:id].present?
-      # Public view: use owner's state
-      target_creative = Creative.find_by(id: params[:id])
-      user_id_for_state = target_creative&.effective_origin&.user_id
-    end
-
-    @expanded_state_map = if user_id_for_state
-      CreativeExpandedState.where(user_id: user_id_for_state, creative_id: params[:id]).first&.expanded_status || {}
-    else
-      {}
-    end
-    index_result = Creatives::IndexQuery.new(user: Current.user, params: params.to_unsafe_h).call
-    @creatives = index_result.creatives || []
-    @parent_creative = index_result.parent_creative
-    @shared_creative = index_result.shared_creative
-    @shared_list = index_result.shared_list
-    @overall_progress = index_result.overall_progress if params[:tags].present?
-    @allowed_creative_ids = index_result.allowed_creative_ids
-    @progress_map = index_result.progress_map
-
-    # Set filtered_progress on parent creative if progress_map is available
-    if @parent_creative && @progress_map && @progress_map.key?(@parent_creative.id.to_s)
-      @parent_creative.filtered_progress = @progress_map[@parent_creative.id.to_s]
-    end
-
     respond_to do |format|
-      format.html
+      format.html do
+        # HTML only needs parent_creative for nav/title - skip expensive filtered queries
+        @parent_creative = params[:id].present? ? Creative.find_by(id: params[:id]) : nil
+        @creatives = [] # CSR will fetch via JSON
+        @shared_list = @parent_creative ? @parent_creative.all_shared_users : []
+      end
       format.json do
+        # Full query only for JSON requests
+        user_id_for_state = Current.user&.id
+        if user_id_for_state.nil? && params[:id].present?
+          # Public view: use owner's state
+          target_creative = Creative.find_by(id: params[:id])
+          user_id_for_state = target_creative&.effective_origin&.user_id
+        end
+
+        @expanded_state_map = if user_id_for_state
+          CreativeExpandedState.where(user_id: user_id_for_state, creative_id: params[:id]).first&.expanded_status || {}
+        else
+          {}
+        end
+        index_result = Creatives::IndexQuery.new(user: Current.user, params: params.to_unsafe_h).call
+        @creatives = index_result.creatives || []
+        @parent_creative = index_result.parent_creative
+        @shared_creative = index_result.shared_creative
+        @shared_list = index_result.shared_list
+        @overall_progress = index_result.overall_progress if params[:tags].present?
+        @allowed_creative_ids = index_result.allowed_creative_ids
+        @progress_map = index_result.progress_map
+
+        # Set filtered_progress on parent creative if progress_map is available
+        if @parent_creative && @progress_map && @progress_map.key?(@parent_creative.id.to_s)
+          @parent_creative.filtered_progress = @progress_map[@parent_creative.id.to_s]
+        end
+
         # Disable caching for filtered results to ensure fresh data
         expires_now if any_filter_active?
 
