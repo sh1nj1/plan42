@@ -79,6 +79,9 @@ class CreativesController < ApplicationController
     respond_to do |format|
       format.html
       format.json do
+        # Disable caching for filtered results to ensure fresh data
+        expires_now if any_filter_active?
+
         if params[:simple].present?
           render json: serialize_creatives(@creatives)
         else
@@ -474,6 +477,14 @@ class CreativesController < ApplicationController
 
     def creative_params
       params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id)
+    end
+
+    def any_filter_active?
+      params[:tags].present? ||
+        params[:min_progress].present? ||
+        params[:max_progress].present? ||
+        params[:search].present? ||
+        params[:comment] == "true"
     end
 
     def build_slide_ids(node)
