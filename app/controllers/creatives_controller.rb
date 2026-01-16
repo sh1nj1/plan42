@@ -50,7 +50,11 @@ class CreativesController < ApplicationController
     respond_to do |format|
       format.html do
         # HTML only needs parent_creative for nav/title - skip expensive filtered queries
-        @parent_creative = params[:id].present? ? Creative.find_by(id: params[:id]) : nil
+        # Must check permission to avoid leaking metadata (og:title, etc.) to unauthorized users
+        if params[:id].present?
+          creative = Creative.find_by(id: params[:id])
+          @parent_creative = creative if creative&.has_permission?(Current.user, :read)
+        end
         @creatives = [] # CSR will fetch via JSON
         @shared_list = @parent_creative ? @parent_creative.all_shared_users : []
       end
