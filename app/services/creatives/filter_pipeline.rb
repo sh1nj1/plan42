@@ -71,17 +71,17 @@ module Creatives
     end
 
     def filter_by_permission(ids)
-      return ids if user.nil?  # public 접근 (TODO: public share 처리)
-
       # O(1) 권한 체크: CreativeShare 테이블 직접 조회
+      # user_id = nil 인 경우 public share (모든 사용자 접근 가능)
       # inherited: true/false 모두 포함 (inherited share가 있으면 접근 가능)
+      user_conditions = user ? [ user.id, nil ] : [ nil ]
       accessible_ids = CreativeShare
-        .where(creative_id: ids, user_id: user.id)
+        .where(creative_id: ids, user_id: user_conditions)
         .where.not(permission: :no_access)
         .pluck(:creative_id)
 
-      # 소유한 Creative도 포함
-      owned_ids = Creative.where(id: ids, user_id: user.id).pluck(:id)
+      # 소유한 Creative도 포함 (로그인 사용자만)
+      owned_ids = user ? Creative.where(id: ids, user_id: user.id).pluck(:id) : []
 
       (accessible_ids + owned_ids).uniq
     end

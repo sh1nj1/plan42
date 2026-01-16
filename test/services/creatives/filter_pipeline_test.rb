@@ -125,5 +125,73 @@ module Creatives
       assert_in_delta 1.0, result.progress_map[child.id.to_s], 0.01, "Child progress should be 1.0"
       assert_in_delta 1.0, result.overall_progress, 0.01, "Overall should be average of matched (only child)"
     end
+
+    test "public share (user_id: nil) accessible by anonymous user" do
+      other_user = users(:two)
+      creative = Creative.create!(user: other_user, description: "Public creative", progress: 1.0)
+
+      # Public share (user_id: nil)
+      CreativeShare.create!(creative: creative, user: nil, permission: :read)
+
+      result = FilterPipeline.new(
+        user: nil,  # Anonymous user
+        params: { min_progress: "1", max_progress: "1" },
+        scope: Creative.where(id: creative.id)
+      ).call
+
+      assert_includes result.matched_ids, creative.id, "Public creative should be matched"
+      assert_includes result.allowed_ids, creative.id.to_s, "Public creative should be in allowed_ids"
+    end
+
+    test "public share (user_id: nil) accessible by logged in user" do
+      other_user = users(:two)
+      creative = Creative.create!(user: other_user, description: "Public creative", progress: 1.0)
+
+      # Public share (user_id: nil)
+      CreativeShare.create!(creative: creative, user: nil, permission: :read)
+
+      result = FilterPipeline.new(
+        user: @user,  # Logged in user (not owner)
+        params: { min_progress: "1", max_progress: "1" },
+        scope: Creative.where(id: creative.id)
+      ).call
+
+      assert_includes result.matched_ids, creative.id, "Public creative should be matched"
+      assert_includes result.allowed_ids, creative.id.to_s, "Public creative should be accessible to logged in user"
+    end
+
+    test "filters out creatives without permission" do
+      other_user = users(:two)
+      owned_creative = Creative.create!(user: @user, description: "Owned", progress: 1.0)
+      shared_creative = Creative.create!(user: other_user, description: "Shared", progress: 1.0)
+      unshared_creative = Creative.create!(user: other_user, description: "Unshared", progress: 1.0)
+
+      # Share one creative with @user
+      CreativeShare.create!(creative: shared_creative, user: @user, permission: :read)
+
+      result = FilterPipeline.new(
+        user: @user,
+        params: { min_progress: "1", max_progress: "1" },
+        scope: Creative.where(id: [ owned_creative.id, shared_creative.id, unshared_creative.id ])
+      ).call
+
+      assert_includes result.allowed_ids, owned_creative.id.to_s, "Owned creative should be allowed"
+      assert_includes result.allowed_ids, shared_creative.id.to_s, "Shared creative should be allowed"
+      refute_includes result.allowed_ids, unshared_creative.id.to_s, "Unshared creative should not be allowed"
+    end
+
+    test "anonymous user cannot access non-public creatives" do
+      creative = Creative.create!(user: @user, description: "Private", progress: 1.0)
+      # No public share
+
+      result = FilterPipeline.new(
+        user: nil,  # Anonymous user
+        params: { min_progress: "1", max_progress: "1" },
+        scope: Creative.where(id: creative.id)
+      ).call
+
+      assert_includes result.matched_ids, creative.id, "Creative matches the filter"
+      refute_includes result.allowed_ids, creative.id.to_s, "Private creative should not be accessible to anonymous user"
+    end
   end
 end
