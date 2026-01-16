@@ -20,13 +20,13 @@ module Creatives
 
       # Pre-populate link map for creatives that are linked origins of the parent
       # Only mark as linked if NOT a direct child of this parent
-      # Stores { origin_id => { id: link_id, parent_id: parent_id } } to avoid N+1 queries
+      # Stores { origin_id => { id:, parent_id:, sequence: } } to avoid N+1 queries
       if @parent_id
         direct_child_ids = Creative.where(parent_id: @parent_id).pluck(:id).to_set
         CreativeLink.where(parent_id: @parent_id).each do |link|
           next if direct_child_ids.include?(link.origin_id)
           @linked_origin_link_map ||= {}
-          @linked_origin_link_map[link.origin_id] = { id: link.id, parent_id: link.parent_id }
+          @linked_origin_link_map[link.origin_id] = { id: link.id, parent_id: link.parent_id, sequence: link.sequence }
         end
       end
 
@@ -111,15 +111,19 @@ module Creatives
         .compact
         .select { |c| c.has_permission?(user, :read) }
 
-      # Track which creatives are linked origins with their link IDs and parent IDs
+      # Track which creatives are linked origins with their link info
       # Only mark as linked if NOT a direct child of this parent
       @linked_origin_link_map ||= {}
       creative_links.each do |link|
         next if actual_children_ids.include?(link.origin_id)
-        @linked_origin_link_map[link.origin_id] = { id: link.id, parent_id: link.parent_id }
+        @linked_origin_link_map[link.origin_id] = { id: link.id, parent_id: link.parent_id, sequence: link.sequence }
       end
 
-      children = (actual_children + linked_origins).uniq.sort_by(&:sequence)
+      # Sort by sequence: use link.sequence for linked origins, creative.sequence for actual children
+      children = (actual_children + linked_origins).uniq.sort_by do |c|
+        link_info = @linked_origin_link_map[c.id]
+        link_info ? link_info[:sequence] : c.sequence
+      end
 
       if allowed_creative_ids
         children.select { |c| allowed_creative_ids.include?(c.id.to_s) }

@@ -57,12 +57,16 @@ module Creatives
       # Actual children
       actual_children = creative.children_with_permission(user, :read)
 
-      # Linked origins via creative_links
-      linked_origins = Creative.joins(:parent_links)
-        .where(creative_links: { parent_id: creative.id })
+      # Linked origins via creative_links with their sequences for proper ordering
+      links = CreativeLink.where(parent_id: creative.id)
+      link_sequence_map = links.each_with_object({}) { |l, h| h[l.origin_id] = l.sequence }
+      linked_origins = Creative.where(id: links.pluck(:origin_id))
         .select { |c| c.has_permission?(user, :read) }
 
-      (actual_children + linked_origins).uniq
+      # Sort by sequence: link.sequence for linked origins, creative.sequence for actual children
+      (actual_children + linked_origins).uniq.sort_by do |c|
+        link_sequence_map[c.id] || c.sequence
+      end
     end
 
     def any_filter_active?
@@ -126,15 +130,19 @@ module Creatives
 
         # Include actual children
         actual_children = parent.children.where(id: allowed_ids_array).order(:sequence).to_a
+        actual_children_ids = actual_children.map(&:id).to_set
 
         # Include virtually linked children (origins from CreativeLinks)
-        virtual_children = Creative.joins(:parent_links)
-          .where(creative_links: { parent_id: parent.id })
-          .where(id: allowed_ids_array)
-          .order(:sequence)
-          .to_a
+        # Need to track link.sequence for proper ordering
+        links = CreativeLink.where(parent_id: parent.id).where(origin_id: allowed_ids_array)
+        link_sequence_map = links.each_with_object({}) { |l, h| h[l.origin_id] = l.sequence }
+        virtual_children = Creative.where(id: links.pluck(:origin_id)).to_a
 
-        (actual_children + virtual_children).uniq.sort_by(&:sequence)
+        # Merge and sort: actual children by creative.sequence, linked origins by link.sequence
+        all_children = (actual_children + virtual_children).uniq
+        all_children.sort_by do |c|
+          link_sequence_map[c.id] || c.sequence
+        end
       else
         # Find top-most nodes from allowed_ids
         creatives = Creative.where(id: allowed_ids_array).to_a
