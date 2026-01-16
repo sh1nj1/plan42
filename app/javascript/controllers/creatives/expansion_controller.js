@@ -56,12 +56,22 @@ export default class extends Controller {
   }
 
   computeCurrentCreativeId() {
+    // Try URL path first: /creatives/:id
     const match = window.location.pathname.match(/\/creatives\/(\d+)/)
     let id = match ? match[1] : null
+
+    // Try URL params: ?id=...
     if (!id) {
       const params = new URLSearchParams(window.location.search)
       id = params.get('id')
     }
+
+    // For /l/:id (linked creative view), get origin ID from title row
+    if (!id) {
+      const titleRow = this.element.querySelector('creative-tree-row[is-title]')
+      id = titleRow?.getAttribute('creative-id')
+    }
+
     return id
   }
 
