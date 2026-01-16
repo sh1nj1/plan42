@@ -19,8 +19,11 @@ module Creatives
       return [] if collection.blank?
 
       # Pre-populate link map for creatives that are linked origins of the parent
+      # Only mark as linked if NOT a direct child of this parent
       if @parent_id
+        direct_child_ids = Creative.where(parent_id: @parent_id).pluck(:id).to_set
         CreativeLink.where(parent_id: @parent_id).each do |link|
+          next if direct_child_ids.include?(link.origin_id)
           @linked_origin_link_map ||= {}
           @linked_origin_link_map[link.origin_id] = link.id
         end
@@ -98,6 +101,7 @@ module Creatives
 
       # Include actual children
       actual_children = creative.children_with_permission(user)
+      actual_children_ids = actual_children.map(&:id).to_set
 
       # Include virtually linked children (origins from CreativeLinks)
       creative_links = CreativeLink.where(parent_id: creative.id).includes(:origin)
@@ -107,8 +111,10 @@ module Creatives
         .select { |c| c.has_permission?(user, :read) }
 
       # Track which creatives are linked origins with their link IDs
+      # Only mark as linked if NOT a direct child of this parent
       @linked_origin_link_map ||= {}
       creative_links.each do |link|
+        next if actual_children_ids.include?(link.origin_id)
         @linked_origin_link_map[link.origin_id] = link.id
       end
 
