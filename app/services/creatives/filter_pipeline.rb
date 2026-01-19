@@ -12,7 +12,10 @@ module Creatives
     FILTERS = [
       Filters::ProgressFilter,
       Filters::TagFilter,
-      Filters::SearchFilter
+      Filters::SearchFilter,
+      Filters::CommentFilter,
+      Filters::DateFilter,
+      Filters::AssigneeFilter
     ].freeze
 
     def initialize(user:, params:, scope:)
@@ -39,6 +42,10 @@ module Creatives
         progress_map: progress_map,
         overall_progress: overall
       )
+    end
+
+    def any_filter_active?
+      FILTERS.any? { |klass| klass.new(params: params, scope: scope).active? }
     end
 
     private
@@ -82,11 +89,50 @@ module Creatives
     end
 
     def calculate_progress(allowed_ids, matched_ids)
-      creatives = Creative.where(id: allowed_ids).pluck(:id, :progress)
-      progress_map = creatives.to_h { |id, p| [ id.to_s, p || 0.0 ] }
+      return [ {}, 0.0 ] if allowed_ids.empty?
 
-      matched = creatives.select { |id, _| matched_ids.include?(id) }
-      overall = matched.any? ? matched.sum { |_, p| p || 0.0 } / matched.size : 0.0
+      # Find "leaf-most" nodes: nodes that are NOT ancestors of other nodes in matched_ids
+      # These are the relevant nodes for overall progress calculation
+      superfluous_ancestors = CreativeHierarchy
+        .where(ancestor_id: matched_ids.to_a, descendant_id: matched_ids.to_a)
+        .where("generations > 0")
+        .pluck(:ancestor_id)
+        .uniq
+
+      relevant_ids = matched_ids.to_a - superfluous_ancestors
+
+      # Get progress values for all allowed creatives
+      creatives = Creative.where(id: allowed_ids).includes(:origin)
+      progress_values = creatives.to_h do |c|
+        # Shell Creative uses origin's progress
+        progress = c.origin_id.present? ? c.origin&.progress : c.progress
+        [ c.id, progress || 0.0 ]
+      end
+
+      # Calculate overall progress from relevant (leaf-most) nodes only
+      relevant_progress = relevant_ids.map { |id| progress_values[id] || 0.0 }
+      overall = relevant_progress.any? ? relevant_progress.sum / relevant_progress.size : 0.0
+
+      # Build progress_map: for each allowed_id, calculate average of its relevant descendants
+      relationships = CreativeHierarchy
+        .where(ancestor_id: allowed_ids, descendant_id: relevant_ids)
+        .pluck(:ancestor_id, :descendant_id)
+
+      aggregation = Hash.new { |h, k| h[k] = [] }
+      relationships.each do |anc_id, desc_id|
+        val = progress_values[desc_id]
+        aggregation[anc_id] << val if val
+      end
+
+      progress_map = {}
+      aggregation.each do |anc_id, values|
+        progress_map[anc_id.to_s] = values.sum / values.size
+      end
+
+      # Also include nodes that are in relevant_ids themselves
+      relevant_ids.each do |id|
+        progress_map[id.to_s] ||= progress_values[id] || 0.0
+      end
 
       [ progress_map, overall ]
     end

@@ -2,18 +2,17 @@ module Creatives
   module Filters
     class ProgressFilter < BaseFilter
       def active?
-        params[:progress_filter].present?
+        params[:min_progress].present? || params[:max_progress].present?
       end
 
       def match
-        case params[:progress_filter]
-        when "completed"
-          scope.where("progress >= ?", 1.0).pluck(:id)
-        when "incomplete"
-          scope.where("progress < ?", 1.0).pluck(:id)
-        else
-          scope.pluck(:id) # "all" or unknown
-        end
+        min_val = params[:min_progress].presence&.to_f
+        max_val = params[:max_progress].presence&.to_f
+
+        query = scope
+        query = query.where("progress >= ?", min_val) if min_val
+        query = query.where("progress <= ?", max_val) if max_val
+        query.pluck(:id)
       end
     end
   end

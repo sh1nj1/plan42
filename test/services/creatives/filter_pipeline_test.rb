@@ -49,28 +49,28 @@ module Creatives
       CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
 
       scope = Creative.where(id: [ @child1.id ])
-      result = FilterPipeline.new(user: @shared_user, params: { progress_filter: "completed" }, scope: scope).call
+      result = FilterPipeline.new(user: @shared_user, params: { min_progress: "1", max_progress: "1" }, scope: scope).call
 
       # Child1 matches filter, root is its ancestor
       assert_includes result.allowed_ids, @child1.id.to_s
       assert_includes result.allowed_ids, @root.id.to_s  # ancestor included
     end
 
-    test "progress filtering works with completed" do
+    test "progress filtering works with completed (min=1, max=1)" do
       CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
 
       scope = Creative.where(id: [ @root.id, @child1.id, @child2.id ])
-      result = FilterPipeline.new(user: @shared_user, params: { progress_filter: "completed" }, scope: scope).call
+      result = FilterPipeline.new(user: @shared_user, params: { min_progress: "1", max_progress: "1" }, scope: scope).call
 
       assert_includes result.matched_ids, @child1.id  # progress = 1.0
       refute_includes result.matched_ids, @child2.id  # progress = 0.0
     end
 
-    test "progress filtering works with incomplete" do
+    test "progress filtering works with incomplete (min=0, max=0.99)" do
       CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
 
       scope = Creative.where(id: [ @root.id, @child1.id, @child2.id ])
-      result = FilterPipeline.new(user: @shared_user, params: { progress_filter: "incomplete" }, scope: scope).call
+      result = FilterPipeline.new(user: @shared_user, params: { min_progress: "0", max_progress: "0.99" }, scope: scope).call
 
       refute_includes result.matched_ids, @child1.id  # progress = 1.0
       assert_includes result.matched_ids, @child2.id  # progress = 0.0

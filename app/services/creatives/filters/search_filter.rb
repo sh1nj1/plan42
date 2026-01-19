@@ -6,8 +6,20 @@ module Creatives
       end
 
       def match
-        query = "%#{params[:search]}%"
-        scope.where("description LIKE ?", query).pluck(:id)
+        query = "%#{sanitize_like(params[:search])}%"
+
+        # Search in description OR comments.content
+        scope
+          .left_joins(:comments)
+          .where("creatives.description LIKE :q OR comments.content LIKE :q", q: query)
+          .distinct
+          .pluck(:id)
+      end
+
+      private
+
+      def sanitize_like(str)
+        str.to_s.gsub(/[%_]/) { |m| "\\#{m}" }
       end
     end
   end

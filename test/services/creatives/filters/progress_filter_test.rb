@@ -11,23 +11,28 @@ module Creatives
         @scope = Creative.where(id: [ @completed.id, @incomplete.id, @zero_progress.id ])
       end
 
-      test "active? returns true when progress_filter param is present" do
-        filter = ProgressFilter.new(params: { progress_filter: "completed" }, scope: @scope)
+      test "active? returns true when min_progress param is present" do
+        filter = ProgressFilter.new(params: { min_progress: "1" }, scope: @scope)
         assert filter.active?
       end
 
-      test "active? returns false when progress_filter param is absent" do
+      test "active? returns true when max_progress param is present" do
+        filter = ProgressFilter.new(params: { max_progress: "0.99" }, scope: @scope)
+        assert filter.active?
+      end
+
+      test "active? returns false when no progress params" do
         filter = ProgressFilter.new(params: {}, scope: @scope)
         refute filter.active?
       end
 
-      test "active? returns false when progress_filter param is blank" do
-        filter = ProgressFilter.new(params: { progress_filter: "" }, scope: @scope)
+      test "active? returns false when progress params are blank" do
+        filter = ProgressFilter.new(params: { min_progress: "", max_progress: "" }, scope: @scope)
         refute filter.active?
       end
 
-      test "match returns only completed creatives when completed filter" do
-        filter = ProgressFilter.new(params: { progress_filter: "completed" }, scope: @scope)
+      test "match returns only completed creatives (min=1, max=1)" do
+        filter = ProgressFilter.new(params: { min_progress: "1", max_progress: "1" }, scope: @scope)
         result = filter.match
 
         assert_includes result, @completed.id
@@ -35,8 +40,8 @@ module Creatives
         refute_includes result, @zero_progress.id
       end
 
-      test "match returns only incomplete creatives when incomplete filter" do
-        filter = ProgressFilter.new(params: { progress_filter: "incomplete" }, scope: @scope)
+      test "match returns only incomplete creatives (min=0, max=0.99)" do
+        filter = ProgressFilter.new(params: { min_progress: "0", max_progress: "0.99" }, scope: @scope)
         result = filter.match
 
         refute_includes result, @completed.id
@@ -44,11 +49,20 @@ module Creatives
         assert_includes result, @zero_progress.id
       end
 
-      test "match returns all creatives for unknown filter value" do
-        filter = ProgressFilter.new(params: { progress_filter: "all" }, scope: @scope)
+      test "match with only min_progress filters >= min" do
+        filter = ProgressFilter.new(params: { min_progress: "0.5" }, scope: @scope)
         result = filter.match
 
         assert_includes result, @completed.id
+        assert_includes result, @incomplete.id
+        refute_includes result, @zero_progress.id
+      end
+
+      test "match with only max_progress filters <= max" do
+        filter = ProgressFilter.new(params: { max_progress: "0.5" }, scope: @scope)
+        result = filter.match
+
+        refute_includes result, @completed.id
         assert_includes result, @incomplete.id
         assert_includes result, @zero_progress.id
       end
