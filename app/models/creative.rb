@@ -99,29 +99,30 @@ class Creative < ApplicationRecord
     accessible_ids = Set.new
 
     if user
-      # 사용자별 엔트리 확인 (no_access가 public share보다 우선)
+      # 사용자별 엔트리 확인 (user-specific entry가 있으면 public share보다 우선)
       user_entries = CreativeSharesCache
         .where(creative_id: children_ids, user_id: user.id)
         .pluck(:creative_id, :permission)
 
-      user_denied = Set.new
+      user_has_entry = Set.new  # user-specific entry가 있는 children
       user_entries.each do |cid, perm|
+        user_has_entry << cid
         # perm is string from enum, convert to integer for comparison
         perm_rank = CreativeSharesCache.permissions[perm]
-        if perm_rank == CreativeSharesCache.permissions[:no_access]
-          user_denied << cid
-        elsif perm_rank >= min_rank
+        # User-specific entry with sufficient permission grants access
+        if perm_rank && perm_rank >= min_rank && perm_rank != CreativeSharesCache.permissions[:no_access]
           accessible_ids << cid
         end
+        # If insufficient or no_access, don't add to accessible - will be excluded from public fallback
       end
 
-      # Public share 확인 (no_access로 거부된 것 제외)
+      # Public share 확인 (user-specific entry가 있는 건 제외 - user entry가 우선)
       public_accessible = CreativeSharesCache
         .where(creative_id: children_ids, user_id: nil)
         .where("permission >= ?", min_rank)
         .where.not(permission: :no_access)
         .pluck(:creative_id)
-      accessible_ids.merge(public_accessible - user_denied.to_a)
+      accessible_ids.merge(public_accessible - user_has_entry.to_a)
 
       # Fallback: include owned children (for fixtures and missing cache entries)
       owned_ids = children_scope.where(user_id: user.id).pluck(:id)

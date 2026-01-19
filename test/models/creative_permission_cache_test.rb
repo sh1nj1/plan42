@@ -243,4 +243,18 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     # user1 should NOT see children anymore
     refute_includes @root.reload.children_with_permission(@user1, :read), @child
   end
+
+  test "children_with_permission user-specific weaker permission overrides public stronger permission" do
+    # Public share has admin
+    CreativeShare.create!(creative: @root, user: nil, permission: "admin")
+    # User1 has explicit read (weaker than required write)
+    CreativeShare.create!(creative: @root, user: @user1, permission: "read")
+
+    # user1 should NOT see child with :write requirement
+    # Even though public has admin, user-specific entry takes precedence
+    refute_includes @root.children_with_permission(@user1, :write), @child
+
+    # But user1 should see child with :read requirement (matches their permission)
+    assert_includes @root.children_with_permission(@user1, :read), @child
+  end
 end
