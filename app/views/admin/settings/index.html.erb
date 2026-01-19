@@ -43,6 +43,55 @@
       </div>
 
       <div style="margin-top: 2em; border-top: 1px solid var(--color-border); padding-top: 1.5em;">
+        <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.session_timeout') %></h3>
+        <div style="max-width: 300px;">
+          <%= f.label :session_timeout_minutes, t('admin.settings.session_timeout_minutes') %>
+          <%= f.number_field :session_timeout_minutes, value: @session_timeout_minutes, min: 0, max: 10080, style: "width: 100%;" %>
+          <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+            <%= t('admin.settings.session_timeout_minutes_hint') %>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 2em; border-top: 1px solid var(--color-border); padding-top: 1.5em;">
+        <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.rate_limiting') %></h3>
+
+        <div style="margin-bottom: 1.5em;">
+          <h4 style="font-size: 1em; margin-bottom: 0.75em; color: var(--color-text-muted);"><%= t('admin.settings.password_reset_rate') %></h4>
+          <div style="display: flex; gap: 2em; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 200px;">
+              <%= f.label :password_reset_rate_limit, t('admin.settings.rate_limit_requests') %>
+              <%= f.number_field :password_reset_rate_limit, value: @password_reset_rate_limit, min: 1, max: 1000, style: "width: 100%;" %>
+            </div>
+            <div style="flex: 1; min-width: 200px;">
+              <%= f.label :password_reset_rate_period_minutes, t('admin.settings.rate_limit_period_minutes') %>
+              <%= f.number_field :password_reset_rate_period_minutes, value: @password_reset_rate_period_minutes, min: 1, max: 1440, style: "width: 100%;" %>
+            </div>
+          </div>
+          <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+            <%= t('admin.settings.password_reset_rate_hint') %>
+          </div>
+        </div>
+
+        <div>
+          <h4 style="font-size: 1em; margin-bottom: 0.75em; color: var(--color-text-muted);"><%= t('admin.settings.api_rate') %></h4>
+          <div style="display: flex; gap: 2em; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 200px;">
+              <%= f.label :api_rate_limit, t('admin.settings.rate_limit_requests') %>
+              <%= f.number_field :api_rate_limit, value: @api_rate_limit, min: 1, max: 10000, style: "width: 100%;" %>
+            </div>
+            <div style="flex: 1; min-width: 200px;">
+              <%= f.label :api_rate_period_minutes, t('admin.settings.rate_limit_period_minutes') %>
+              <%= f.number_field :api_rate_period_minutes, value: @api_rate_period_minutes, min: 1, max: 60, style: "width: 100%;" %>
+            </div>
+          </div>
+          <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+            <%= t('admin.settings.api_rate_hint') %>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 2em; border-top: 1px solid var(--color-border); padding-top: 1.5em;">
         <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.auth_providers') %></h3>
         <div style="display: flex; flex-direction: column; gap: 0.8em;">
           <% Rails.application.config.auth_providers.sort_by { |p| p[:priority] }.each do |provider| %>

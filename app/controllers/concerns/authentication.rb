@@ -29,6 +29,17 @@ module Authentication
         Current.session = nil
       end
 
+      # Check session timeout
+      if Current.session&.expired?
+        Current.session.destroy
+        Current.session = nil
+        cookies.delete(:session_id)
+        return nil
+      end
+
+      # Update last activity timestamp
+      Current.session&.touch_activity!
+
       cookies.delete(:session_id) if cookies.signed[:session_id] && Current.session.nil?
 
       Current.session

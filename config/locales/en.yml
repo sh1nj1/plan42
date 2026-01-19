@@ -28,6 +28,9 @@
 #       enabled: "ON"
 
 en:
+  errors:
+    rate_limit_exceeded: "Too many requests. Please try again later."
+
   comments:
     activity_logs_summary: "Activity Logs"
 
