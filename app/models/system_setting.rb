@@ -41,6 +41,11 @@ class SystemSetting < ApplicationRecord
 
   def clear_cache
     Rails.cache.delete("system_setting:#{key}")
+    # If key was changed, also clear the old key's cache entry
+    if saved_change_to_key?
+      old_key = saved_change_to_key.first
+      Rails.cache.delete("system_setting:#{old_key}") if old_key.present?
+    end
   end
 
   def self.help_menu_link

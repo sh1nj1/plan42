@@ -1,10 +1,10 @@
 class AvatarComponent < ViewComponent::Base
   # Enable fragment caching for avatar components
-  # Cache key includes user id, avatar updated_at, and size
+  # Cache key includes user version (for display_name changes), avatar blob key, and size
   def self.cache_key_for(user, size)
     if user
       avatar_key = user.avatar.attached? ? user.avatar.blob&.key : user.avatar_url.to_s
-      "avatar/#{user.id}/#{avatar_key}/#{size}"
+      "avatar/#{user.cache_key_with_version}/#{avatar_key}/#{size}"
     else
       "avatar/anonymous/#{size}"
     end

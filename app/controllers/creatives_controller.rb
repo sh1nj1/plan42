@@ -79,11 +79,19 @@ class CreativesController < ApplicationController
       redirect_options[:comment_id] = params[:comment_id] if params[:comment_id].present?
       format.html { redirect_to creatives_path(redirect_options) }
       format.json do
-        # Use HTTP caching with ETag based on creative's updated_at
+        # Use HTTP caching with ETag - must vary by user since response includes user-specific data
         effective = @creative.effective_origin
-        cache_key = "#{effective.id}-#{effective.updated_at.to_i}"
+        cache_user = Current.user&.id || "anon"
+        last_modified = [@creative.updated_at, effective.updated_at].max
+        etag = [
+          "creative",
+          @creative.cache_key_with_version,
+          effective.cache_key_with_version,
+          "user",
+          cache_user
+        ].join(":")
 
-        if stale?(etag: cache_key, last_modified: effective.updated_at, public: false)
+        if stale?(etag: etag, last_modified: last_modified, public: false)
           root = params[:root_id] ? Creative.find_by(id: params[:root_id]) : nil
           depth = if root
                     (@creative.ancestors.count - root.ancestors.count) + 1
@@ -324,21 +332,24 @@ class CreativesController < ApplicationController
 
   def children
     parent = Creative.find(params[:id])
-    user_id = Current.user&.id || parent.effective_origin.user_id
+    effective = parent.effective_origin
+    # user_id for expanded_state lookup - use owner's state for anonymous users
+    state_user_id = Current.user&.id || effective.user_id
 
-    # Use HTTP caching when no filters are active
+    # HTTP caching disabled for children endpoint:
+    # Response depends on child updates, permission changes (CreativeSharesCache),
+    # and CreativeExpandedState. Tracking all dependencies reliably is expensive
+    # (requires descendant_ids query). Stale 304 responses could leak data after
+    # permission revocation. Re-enable when a cheap version key mechanism exists.
+    expires_now
+
     has_filters = params[:tags].present? || params[:min_progress].present? || params[:max_progress].present?
-    unless has_filters
-      cache_key = "children/#{parent.id}-#{parent.updated_at.to_i}-#{user_id}"
-      if stale?(etag: cache_key, last_modified: parent.updated_at, public: false)
-        render_children_json(parent, user_id, nil, nil)
-      end
-      return
+    if has_filters
+      result = Creatives::IndexQuery.new(user: Current.user, params: params.merge(id: params[:id])).call
+      render_children_json(parent, state_user_id, result.allowed_creative_ids, result.progress_map)
+    else
+      render_children_json(parent, state_user_id, nil, nil)
     end
-
-    # With filters, compute allowed_ids and progress_map
-    result = Creatives::IndexQuery.new(user: Current.user, params: params.merge(id: params[:id])).call
-    render_children_json(parent, user_id, result.allowed_creative_ids, result.progress_map)
   end
 
   def unconvert
