@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_19_023446) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_19_110000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -390,9 +390,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_19_023446) do
   create_table "sessions", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "ip_address"
+    t.datetime "last_active_at"
     t.datetime "updated_at", null: false
     t.string "user_agent"
     t.integer "user_id", null: false
+    t.index ["last_active_at"], name: "index_sessions_on_last_active_at"
     t.index ["user_id"], name: "index_sessions_on_user_id"
   end
 
@@ -606,6 +608,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_19_023446) do
     t.integer "display_level", default: 6, null: false
     t.string "email", null: false
     t.datetime "email_verified_at"
+    t.integer "failed_login_attempts", default: 0, null: false
     t.string "google_access_token"
     t.string "google_refresh_token"
     t.datetime "google_token_expires_at"
@@ -614,6 +617,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_19_023446) do
     t.string "llm_model"
     t.string "llm_vendor"
     t.string "locale"
+    t.datetime "locked_at"
     t.string "name", null: false
     t.boolean "notifications_enabled"
     t.string "password_digest", null: false
