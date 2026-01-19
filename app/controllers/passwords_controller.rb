@@ -1,6 +1,7 @@
 class PasswordsController < ApplicationController
   allow_unauthenticated_access
   before_action :set_user_by_token, only: %i[ edit update ]
+  before_action :check_password_reset_rate_limit!, only: :create
 
   def new
   end
