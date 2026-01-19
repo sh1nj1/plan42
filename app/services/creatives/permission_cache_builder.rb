@@ -87,8 +87,9 @@ module Creatives
 
     # CreativeShare의 creative_id 또는 user_id 변경 시 이전 위치/사용자에 대해 호출
     # 특정 사용자의 캐시를 서브트리에서 재구축 (조상 + 서브트리 내 직접 share 모두 고려)
+    # user_id는 nil (public share)일 수 있음
     def self.rebuild_user_cache_for_subtree(creative, user_id)
-      return unless creative && user_id
+      return unless creative
 
       descendant_ids = [ creative.id ] + creative.descendant_ids
 
@@ -101,8 +102,8 @@ module Creatives
       rebuild_from_ancestors(creative, user_id)
 
       # 서브트리 내의 해당 사용자 직접 share들도 재적용
+      # no_access도 포함 - 캐시에 저장하여 public share를 override
       CreativeShare.where(creative_id: descendant_ids, user_id: user_id)
-                   .where.not(permission: :no_access)
                    .find_each { |share| propagate_share(share) }
     end
 
@@ -120,8 +121,8 @@ module Creatives
 
       # 이동된 서브트리 내의 직접 share들 재적용
       # (closest-share-wins 의미론으로 올바르게 전파됨)
+      # no_access도 포함 - 캐시에 저장하여 public share를 override
       CreativeShare.where(creative_id: descendant_ids)
-                   .where.not(permission: :no_access)
                    .find_each { |share| propagate_share(share) }
 
       # 소유자 캐시 재확인 (혹시 누락된 경우)
@@ -134,13 +135,13 @@ module Creatives
       private
 
       def rebuild_from_ancestors(creative, user_id)
-        # 조상들 중 해당 user에 대한 share 찾기
+        # 조상들 중 해당 user에 대한 share 찾기 (가장 가까운 조상 우선)
+        # no_access도 포함 - 캐시에 저장하여 public share를 override
         ancestor_ids = creative.ancestor_ids
         return if ancestor_ids.empty?
 
         ancestor_share = CreativeShare
           .where(creative_id: ancestor_ids, user_id: user_id)
-          .where.not(permission: :no_access)
           .joins("INNER JOIN creative_hierarchies ch ON creative_shares.creative_id = ch.ancestor_id")
           .where("ch.descendant_id = ?", creative.id)
           .order("ch.generations ASC")
@@ -153,10 +154,9 @@ module Creatives
         ancestor_ids = creative.ancestor_ids
         return if ancestor_ids.empty?
 
-        # 조상들의 모든 share 가져오기 (no_access 제외)
-        ancestor_shares = CreativeShare
-          .where(creative_id: ancestor_ids)
-          .where.not(permission: :no_access)
+        # 조상들의 모든 share 가져오기
+        # no_access도 포함 - 캐시에 저장하여 public share를 override
+        ancestor_shares = CreativeShare.where(creative_id: ancestor_ids)
 
         ancestor_shares.each do |share|
           propagate_share(share)

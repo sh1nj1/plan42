@@ -8,8 +8,8 @@ class PopulateCreativeSharesCache < ActiveRecord::Migration[8.1]
       end
 
       count = 0
-      # no_access is excluded - cache only stores accessible permissions
-      CreativeShare.where.not(permission: :no_access).find_each do |share|
+      # Include all shares including no_access (needed to override public shares)
+      CreativeShare.find_each do |share|
         Creatives::PermissionCacheBuilder.propagate_share(share)
         count += 1
       end

@@ -95,22 +95,48 @@ class Creative < ApplicationRecord
     children_ids = children_scope.pluck(:id)
     return [] if children_ids.empty?
 
-    # Single query to find all accessible children via cache table
     min_rank = CreativeShare.permissions[min_permission.to_s]
-    user_conditions = user ? [ user.id, nil ] : [ nil ]
+    accessible_ids = Set.new
 
-    accessible_ids = CreativeSharesCache
-      .where(creative_id: children_ids, user_id: user_conditions)
-      .where("permission >= ?", min_rank)
-      .pluck(:creative_id)
-
-    # Fallback: include owned children (for fixtures and missing cache entries)
     if user
+      # 사용자별 엔트리 확인 (no_access가 public share보다 우선)
+      user_entries = CreativeSharesCache
+        .where(creative_id: children_ids, user_id: user.id)
+        .pluck(:creative_id, :permission)
+
+      user_denied = Set.new
+      user_entries.each do |cid, perm|
+        # perm is string from enum, convert to integer for comparison
+        perm_rank = CreativeSharesCache.permissions[perm]
+        if perm_rank == CreativeSharesCache.permissions[:no_access]
+          user_denied << cid
+        elsif perm_rank >= min_rank
+          accessible_ids << cid
+        end
+      end
+
+      # Public share 확인 (no_access로 거부된 것 제외)
+      public_accessible = CreativeSharesCache
+        .where(creative_id: children_ids, user_id: nil)
+        .where("permission >= ?", min_rank)
+        .where.not(permission: :no_access)
+        .pluck(:creative_id)
+      accessible_ids.merge(public_accessible - user_denied.to_a)
+
+      # Fallback: include owned children (for fixtures and missing cache entries)
       owned_ids = children_scope.where(user_id: user.id).pluck(:id)
-      accessible_ids = (accessible_ids + owned_ids).uniq
+      accessible_ids.merge(owned_ids)
+    else
+      # 비로그인: public share만
+      accessible_ids = CreativeSharesCache
+        .where(creative_id: children_ids, user_id: nil)
+        .where("permission >= ?", min_rank)
+        .where.not(permission: :no_access)
+        .pluck(:creative_id)
+        .to_set
     end
 
-    children_scope.where(id: accessible_ids).order(:sequence).to_a
+    children_scope.where(id: accessible_ids.to_a).order(:sequence).to_a
   end
 
   # Returns the effective attribute for linked creatives

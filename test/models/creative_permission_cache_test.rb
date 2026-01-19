@@ -213,4 +213,34 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     assert @root.reload.has_permission?(@user1, :admin)
     assert @root.has_permission?(@user1, :read)
   end
+
+  test "rebuild paths propagate no_access correctly" do
+    CreativeShare.create!(creative: @root, user: nil, permission: "read")  # public
+    CreativeShare.create!(creative: @root, user: @user1, permission: :no_access)
+
+    # user1 should be denied due to no_access
+    refute @root.reload.has_permission?(@user1, :read)
+
+    # Move child to force rebuild
+    new_parent = Creative.create!(user: @owner, description: "New")
+    @child.update!(parent: new_parent)
+    @child.update!(parent: @root)
+
+    # user1 should still be denied after rebuild
+    refute @root.reload.has_permission?(@user1, :read)
+    refute @child.reload.has_permission?(@user1, :read)
+  end
+
+  test "children_with_permission respects no_access over public share" do
+    CreativeShare.create!(creative: @root, user: nil, permission: "read")  # public
+
+    # user1 can see children via public share
+    assert_includes @root.children_with_permission(@user1, :read), @child
+
+    # Add no_access for user1 on root
+    CreativeShare.create!(creative: @root, user: @user1, permission: :no_access)
+
+    # user1 should NOT see children anymore
+    refute_includes @root.reload.children_with_permission(@user1, :read), @child
+  end
 end
