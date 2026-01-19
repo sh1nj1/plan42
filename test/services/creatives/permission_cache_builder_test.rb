@@ -24,15 +24,17 @@ module Creatives
       assert cache_entries.all? { |e| e.read? }
     end
 
-    test "propagate_share with no_access removes cache entries" do
+    test "propagate_share with no_access stores no_access in cache" do
       # First create a read share
       share = CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
       assert_equal 3, CreativeSharesCache.where(user: @shared_user).count
 
-      # Update to no_access should remove cache entries
+      # Update to no_access should store no_access entries (not delete)
       share.update!(permission: "no_access")
 
-      assert_equal 0, CreativeSharesCache.where(user: @shared_user).count
+      # Entries still exist but with no_access permission
+      assert_equal 3, CreativeSharesCache.where(user: @shared_user).count
+      assert CreativeSharesCache.where(user: @shared_user).all?(&:no_access?)
     end
 
     test "remove_share deletes cache entries and rebuilds from ancestors" do

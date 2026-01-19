@@ -12,17 +12,21 @@ module Creatives
       return true if base.user_id == user&.id
 
       # O(1) 캐시 테이블 조회
-      # 소유자도 캐시에 있음 (admin 권한으로)
-      # no_access는 캐시에 없으므로 조회 결과가 없으면 = 접근 불가
-      user_conditions = user ? [ user.id, nil ] : [ nil ]
-      cache_entry = CreativeSharesCache
-        .where(creative_id: base.id, user_id: user_conditions)
-        .order(permission: :desc)
-        .first
+      # 사용자별 엔트리를 먼저 확인 (no_access가 public share보다 우선)
+      if user
+        user_entry = CreativeSharesCache.find_by(creative_id: base.id, user_id: user.id)
+        if user_entry
+          # no_access는 명시적 거부 - public share가 있어도 차단
+          return false if user_entry.no_access?
+          return permission_rank(user_entry.permission) >= permission_rank(required_permission)
+        end
+      end
 
-      return false unless cache_entry
+      # 사용자별 엔트리 없으면 public share 확인
+      public_entry = CreativeSharesCache.find_by(creative_id: base.id, user_id: nil)
+      return false unless public_entry
 
-      permission_rank(cache_entry.permission) >= permission_rank(required_permission)
+      permission_rank(public_entry.permission) >= permission_rank(required_permission)
     end
 
     private

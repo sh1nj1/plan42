@@ -54,13 +54,13 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     assert @child.has_permission?(@user1, :read)
     assert @grandchild.has_permission?(@user1, :read)
 
-    # Change to no_access removes cache entries
+    # Change to no_access stores no_access entries
     share.update!(permission: :no_access)
 
-    # Cache entries should be deleted
-    refute CreativeSharesCache.exists?(creative: @root, user: @user1)
-    refute CreativeSharesCache.exists?(creative: @child, user: @user1)
-    refute CreativeSharesCache.exists?(creative: @grandchild, user: @user1)
+    # Cache entries should exist with no_access permission
+    assert CreativeSharesCache.exists?(creative: @root, user: @user1, permission: :no_access)
+    assert CreativeSharesCache.exists?(creative: @child, user: @user1, permission: :no_access)
+    assert CreativeSharesCache.exists?(creative: @grandchild, user: @user1, permission: :no_access)
 
     # Permissions should be denied
     refute @root.reload.has_permission?(@user1, :read)
@@ -86,9 +86,9 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     # Override with no_access
     no_access_share = CreativeShare.create!(creative: @child, user: @user1, permission: :no_access)
 
-    # no_access removes cache entries for child and descendants
-    refute CreativeSharesCache.exists?(creative: @child, user: @user1)
-    refute CreativeSharesCache.exists?(creative: @grandchild, user: @user1)
+    # no_access stores no_access entries for child and descendants
+    assert CreativeSharesCache.exists?(creative: @child, user: @user1, permission: :no_access)
+    assert CreativeSharesCache.exists?(creative: @grandchild, user: @user1, permission: :no_access)
 
     refute @child.reload.has_permission?(@user1, :read)
     refute @grandchild.reload.has_permission?(@user1, :read)
@@ -125,6 +125,21 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
 
     # Access should be granted via public share
     assert @root.reload.has_permission?(@user1, :read)
+  end
+
+  test "no_access overrides public share" do
+    # Add public share
+    CreativeShare.create!(creative: @root, user: nil, permission: "read")
+    assert @root.reload.has_permission?(@user1, :read)
+
+    # Add no_access for specific user - should override public share
+    CreativeShare.create!(creative: @root, user: @user1, permission: :no_access)
+
+    # User1 should be denied even though public share exists
+    refute @root.reload.has_permission?(@user1, :read)
+
+    # User2 should still have access via public share
+    assert @root.has_permission?(@user2, :read)
   end
 
   test "cache is updated when CreativeShare creative_id changes" do

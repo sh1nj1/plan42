@@ -36,23 +36,16 @@ module Creatives
       user_id = creative_share.user_id
       permission = creative_share.permission
 
-      # no_access는 캐시에 저장하지 않음 - 대신 기존 캐시 삭제
-      if creative_share.no_access?
-        descendant_ids = [ creative.id ] + creative.descendant_ids
-        CreativeSharesCache.where(creative_id: descendant_ids, user_id: user_id).delete_all
-        return
-      end
-
       # 해당 creative + 모든 자손 ID (closure_tree 사용)
       all_descendant_ids = [ creative.id ] + creative.descendant_ids
 
       # "closest share wins" 의미론 적용:
       # 이 share의 자손 중 더 가까운 share가 있는 creative는 제외
       # (더 가까운 share가 해당 서브트리를 담당)
+      # no_access도 closer share로 인정 (public share보다 우선)
       closer_share_creative_ids = CreativeShare
         .where(user_id: user_id)
         .where(creative_id: creative.descendant_ids)  # 이 creative의 strict descendants에 있는 share들
-        .where.not(permission: :no_access)
         .where.not(id: creative_share.id)  # 자기 자신 제외
         .pluck(:creative_id)
 
