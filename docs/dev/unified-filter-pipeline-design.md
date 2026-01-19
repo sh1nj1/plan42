@@ -1,6 +1,11 @@
 # 통합 Filter Pipeline 설계
 
-## 현재 문제점
+> **상태**: 구현 완료 (2026-01-19)
+> **핵심 변경**: `no_access`는 캐시에 저장하여 public share를 override
+
+## 설계 배경
+
+### 이전 문제점
 
 ### IndexQuery의 분산된 필터 로직
 
@@ -168,17 +173,48 @@ module Creatives
     end
 
     def filter_by_permission(ids)
-      user_conditions = user ? [user.id, nil] : [nil]
-
       # O(1) 캐시 테이블 조회
-      accessible_ids = CreativeSharesCache
-        .where(creative_id: ids, user_id: user_conditions)
-        .pluck(:creative_id)
+      # no_access가 public share보다 우선하므로 별도 처리
+      accessible_ids = Set.new
 
-      # 소유한 Creative 포함
-      owned_ids = user ? Creative.where(id: ids, user_id: user.id).pluck(:id) : []
+      if user
+        # 사용자별 캐시 엔트리 확인
+        user_entries = CreativeSharesCache
+          .where(creative_id: ids, user_id: user.id)
+          .pluck(:creative_id, :permission)
 
-      (accessible_ids + owned_ids).uniq
+        user_accessible = []
+        user_denied = Set.new
+        user_entries.each do |cid, perm|
+          # perm is a string from enum (e.g., "no_access", "read")
+          if perm == "no_access"
+            user_denied << cid
+          else
+            user_accessible << cid
+          end
+        end
+        accessible_ids.merge(user_accessible)
+
+        # public share 확인 (no_access로 거부된 것 제외)
+        public_ids = CreativeSharesCache
+          .where(creative_id: ids, user_id: nil)
+          .where.not(permission: :no_access)
+          .pluck(:creative_id)
+        accessible_ids.merge(public_ids - user_denied.to_a)
+
+        # 소유한 Creative 포함 (fallback)
+        owned_ids = Creative.where(id: ids, user_id: user.id).pluck(:id)
+        accessible_ids.merge(owned_ids)
+      else
+        # 비로그인: public share만
+        accessible_ids = CreativeSharesCache
+          .where(creative_id: ids, user_id: nil)
+          .where.not(permission: :no_access)
+          .pluck(:creative_id)
+          .to_set
+      end
+
+      accessible_ids.to_a
     end
 
     def calculate_progress(allowed_ids, matched_ids)
@@ -512,34 +548,36 @@ params = {
 
 ## 마이그레이션 계획
 
-### Phase 1: 현재 구현 유지하며 병행 (완료 ✅)
+### Phase 1: 캐시 테이블 및 기본 구조 (완료 ✅)
 - [x] FilterPipeline 생성
 - [x] 기본 필터 구현 (Progress, Tag, Search)
 - [x] creative_shares_caches 테이블
+- [x] PermissionCacheBuilder 서비스
+- [x] PermissionChecker O(1) 조회
 
-### Phase 2: 추가 필터 구현
-- [ ] CommentFilter
-- [ ] DateFilter
-- [ ] AssigneeFilter
+### Phase 2: 추가 필터 구현 (완료 ✅)
+- [x] CommentFilter
+- [x] DateFilter
+- [x] AssigneeFilter
 
-### Phase 3: IndexQuery 리팩토링
+### Phase 3: 권한 시스템 통합 (완료 ✅)
+- [x] `no_access`가 public share를 override하도록 변경
+- [x] `children_with_permission`에서 user-specific entry 우선
+- [x] rebuild 경로에서 `no_access` 전파
+
+### Phase 4: IndexQuery 리팩토링 (예정)
 - [ ] resolve_creatives 통합
 - [ ] 개별 필터 분기 제거
 - [ ] FilterPipeline 전면 사용
 
-### Phase 4: 컨트롤러/뷰 업데이트
+### Phase 5: 컨트롤러/뷰 업데이트 (예정)
 - [ ] CSR 최적화 (HTML/JSON 분리)
 - [ ] `any_filter_active?` 헬퍼 추가
 - [ ] 필터 결과에 `expires_now` 호출
-- [ ] 뷰에서 필터 파라미터만 전달
 
-### Phase 5: TreeBuilder 단순화
+### Phase 6: TreeBuilder/JS 개선 (예정)
 - [ ] `skip_creative?` 로직을 FilterPipeline에 위임
-- [ ] 중복 필터 로직 제거
-
-### Phase 6: JavaScript 개선
 - [ ] expansion_controller.js ID 추출 로직 강화
-- [ ] tree_renderer.js 정리
 
 ---
 
@@ -746,10 +784,8 @@ def self.rebuild_from_ancestors_for_subtree(creative)
   ancestor_ids = creative.ancestor_ids
   return if ancestor_ids.empty?
 
-  # 조상들의 모든 share 가져오기 (no_access 제외)
-  ancestor_shares = CreativeShare
-    .where(creative_id: ancestor_ids)
-    .where.not(permission: :no_access)
+  # 조상들의 모든 share 가져오기 (no_access 포함 - public share override 위해)
+  ancestor_shares = CreativeShare.where(creative_id: ancestor_ids)
 
   ancestor_shares.each do |share|
     propagate_share(share)
