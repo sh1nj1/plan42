@@ -11,20 +11,83 @@ module Creatives
       @max_level = max_level
       @allowed_creative_ids = allowed_creative_ids
       @progress_map = progress_map
+      @permission_cache = {}
     end
 
     def build(collection, level: 1)
       return [] if collection.blank?
 
-      build_nodes(Array(collection), level: level)
+      creatives = Array(collection)
+      # Preload permissions for all creatives in this batch to avoid N+1
+      preload_permissions(creatives)
+
+      build_nodes(creatives, level: level)
     end
 
     private
 
-    attr_reader :user, :view_context, :raw_params, :expanded_state_map, :select_mode, :max_level, :allowed_creative_ids, :progress_map
+    attr_reader :user, :view_context, :raw_params, :expanded_state_map, :select_mode, :max_level, :allowed_creative_ids, :progress_map, :permission_cache
+
+    def preload_permissions(creatives)
+      return unless user
+
+      creative_ids = creatives.map(&:id)
+      return if creative_ids.empty?
+
+      # Skip if already cached
+      uncached_ids = creative_ids - @permission_cache.keys
+      return if uncached_ids.empty?
+
+      write_rank = CreativeShare.permissions[:write]
+
+      # Batch query for user-specific permissions
+      user_permissions = CreativeSharesCache
+        .where(creative_id: uncached_ids, user_id: user.id)
+        .pluck(:creative_id, :permission)
+
+      user_permissions.each do |cid, perm|
+        perm_rank = CreativeSharesCache.permissions[perm]
+        @permission_cache[cid] = perm_rank && perm_rank >= write_rank && perm_rank != CreativeSharesCache.permissions[:no_access]
+      end
+
+      # For remaining uncached, check public shares
+      still_uncached = uncached_ids - @permission_cache.keys
+      if still_uncached.any?
+        public_permissions = CreativeSharesCache
+          .where(creative_id: still_uncached, user_id: nil)
+          .pluck(:creative_id, :permission)
+
+        public_permissions.each do |cid, perm|
+          next if @permission_cache.key?(cid)
+          perm_rank = CreativeSharesCache.permissions[perm]
+          @permission_cache[cid] = perm_rank && perm_rank >= write_rank && perm_rank != CreativeSharesCache.permissions[:no_access]
+        end
+      end
+
+      # Mark owned creatives as having write permission
+      owned_ids = creatives.select { |c| c.user_id == user.id }.map(&:id)
+      owned_ids.each { |cid| @permission_cache[cid] = true }
+
+      # Default to false for any remaining uncached
+      uncached_ids.each { |cid| @permission_cache[cid] ||= false }
+    end
+
+    def cached_can_write?(creative)
+      return false unless user
+
+      if @permission_cache.key?(creative.id)
+        @permission_cache[creative.id]
+      else
+        # Fallback to individual check if not cached
+        creative.has_permission?(user, :write)
+      end
+    end
 
     def build_nodes(creatives, level:)
       return [] if level > max_level
+
+      # Preload permissions for this batch of creatives
+      preload_permissions(creatives) if creatives.any?
 
       creatives.flat_map do |creative|
         build_nodes_for_creative(creative, level: level)
@@ -53,7 +116,7 @@ module Creatives
           parent_id: creative.parent_id,
           level: level,
           select_mode: !!select_mode,
-          can_write: creative.has_permission?(user, :write),
+          can_write: cached_can_write?(creative),
           has_children: filtered_children.any?,
           expanded: expanded,
           is_root: creative.parent.nil?,

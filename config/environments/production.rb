@@ -3,6 +3,10 @@ require "active_support/core_ext/integer/time"
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
+  # Enable HTTP compression for responses (gzip/deflate)
+  # Reduces bandwidth by 60-70% for text-based responses
+  config.middleware.use Rack::Deflater
+
   # Code is not reloaded between requests.
   config.enable_reloading = false
 

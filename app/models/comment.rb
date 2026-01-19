@@ -208,8 +208,69 @@ class Comment < ApplicationRecord
     users = [ origin.user ].compact + origin.all_shared_users(:feedback).map(&:user)
     users.compact!
     users.uniq!
+    return if users.empty?
+
+    user_ids = users.map(&:id)
+
+    # Batch load all comment read pointers for these users
+    pointers = CommentReadPointer.where(user_id: user_ids, creative: origin).index_by(&:user_id)
+
+    # Get present users once
+    present_user_ids = CommentPresenceStore.list(origin.id)
+
+    # Batch count queries - get counts grouped by user visibility
+    # For public comments (visible to all)
+    public_count = origin.comments.where(private: false).count
+
+    # For private comments, get counts per user
+    private_counts = origin.comments
+      .where(private: true, user_id: user_ids)
+      .group(:user_id)
+      .count
+
+    # Batch unread counts - first get the min last_read_id per user
+    last_read_ids = pointers.transform_values { |p| p.last_read_comment_id || 0 }
+
+    # Get unread public comments for each threshold
+    unread_public_by_threshold = {}
+    last_read_ids.values.uniq.each do |threshold|
+      unread_public_by_threshold[threshold] = origin.comments
+        .where(private: false)
+        .where("comments.id > ?", threshold)
+        .count
+    end
+
+    # Get unread private comments per user
+    unread_private_counts = {}
+    user_ids.each do |uid|
+      threshold = last_read_ids[uid] || 0
+      unread_private_counts[uid] = origin.comments
+        .where(private: true, user_id: uid)
+        .where("comments.id > ?", threshold)
+        .count
+    end
+
     users.each do |u|
-      broadcast_badge(origin, u)
+      user_private_count = private_counts[u.id] || 0
+      total_count = public_count + user_private_count
+
+      threshold = last_read_ids[u.id] || 0
+      unread_public = unread_public_by_threshold[threshold] || 0
+      unread_private = unread_private_counts[u.id] || 0
+      unread_count = unread_public + unread_private
+
+      unread_count = 0 if present_user_ids.include?(u.id)
+
+      Turbo::StreamsChannel.broadcast_replace_to(
+        [ u, origin, :comment_badge ],
+        target: "comment-badge-#{origin.id}",
+        partial: "inbox/badge_component/count",
+        locals: {
+          count: unread_count,
+          badge_id: "comment-badge-#{origin.id}",
+          show_zero: total_count.positive?
+        }
+      )
     end
   end
 
