@@ -159,6 +159,35 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     assert @root.has_permission?(@user2, :read)
   end
 
+  test "changing share user_id preserves unrelated shares for old user" do
+    # Share root with user1
+    root_share = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+    # Share child with user1 (separate share)
+    child_share = CreativeShare.create!(creative: @child, user: @user1, permission: :write)
+
+    # Verify both shares are cached
+    assert CreativeSharesCache.exists?(creative: @root, user: @user1)
+    assert CreativeSharesCache.exists?(creative: @child, user: @user1)
+    child_cache = CreativeSharesCache.find_by(creative: @child, user: @user1)
+    assert child_cache.write?
+    assert_equal child_share.id, child_cache.source_share_id
+
+    # Change root_share to user2
+    root_share.update!(user: @user2)
+
+    # User1 should still have access to child (from child_share)
+    assert CreativeSharesCache.exists?(creative: @child, user: @user1)
+    child_cache = CreativeSharesCache.find_by(creative: @child, user: @user1)
+    assert child_cache.write?, "Child share should be preserved"
+    assert_equal child_share.id, child_cache.source_share_id
+
+    # User1 should no longer have access to root
+    refute CreativeSharesCache.exists?(creative: @root, user: @user1)
+
+    # User2 should have access to root (and descendants via inheritance)
+    assert CreativeSharesCache.exists?(creative: @root, user: @user2)
+  end
+
   test "ownership creates cache entries with admin permission" do
     refute @root.has_permission?(@user1, :read)
 

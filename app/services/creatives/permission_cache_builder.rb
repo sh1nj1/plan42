@@ -92,6 +92,27 @@ module Creatives
       rebuild_from_ancestors(creative_share.creative, creative_share.user_id)
     end
 
+    # CreativeShare의 creative_id 또는 user_id 변경 시 이전 위치/사용자에 대해 호출
+    # 특정 사용자의 캐시를 서브트리에서 재구축 (조상 + 서브트리 내 직접 share 모두 고려)
+    def self.rebuild_user_cache_for_subtree(creative, user_id)
+      return unless creative && user_id
+
+      descendant_ids = [ creative.id ] + creative.descendant_ids
+
+      # 해당 사용자의 캐시만 삭제 (owner entries 유지를 위해 source_share_id가 있는 것만)
+      CreativeSharesCache.where(creative_id: descendant_ids, user_id: user_id)
+                         .where.not(source_share_id: nil)
+                         .delete_all
+
+      # 조상에서 해당 사용자의 share 찾아서 전파
+      rebuild_from_ancestors(creative, user_id)
+
+      # 서브트리 내의 해당 사용자 직접 share들도 재적용
+      CreativeShare.where(creative_id: descendant_ids, user_id: user_id)
+                   .where.not(permission: :no_access)
+                   .find_each { |share| propagate_share(share) }
+    end
+
     # Creative parent_id 변경 시 호출
     def self.rebuild_for_creative(creative)
       descendant_ids = creative.self_and_descendant_ids
