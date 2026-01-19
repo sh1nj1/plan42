@@ -6,6 +6,10 @@ module Admin
       @help_link = SystemSetting.find_by(key: "help_menu_link")&.value
       @mcp_tool_approval = SystemSetting.find_by(key: "mcp_tool_approval_required")&.value == "true"
 
+      # Account lockout settings
+      @max_login_attempts = SystemSetting.max_login_attempts
+      @lockout_duration_minutes = SystemSetting.lockout_duration_minutes
+
       # Storage is "disabled" list. View expects "enabled" list.
       all_provider_keys = Rails.application.config.auth_providers.map { |p| p[:key].to_s }
       disabled_providers = SystemSetting.find_by(key: "auth_providers_disabled")&.value&.split(",") || []
@@ -24,6 +28,19 @@ module Admin
           mcp_setting = SystemSetting.find_or_initialize_by(key: "mcp_tool_approval_required")
           mcp_setting.value = params[:mcp_tool_approval] == "1" ? "true" : "false"
           mcp_setting.save!
+
+          # Account Lockout Settings
+          max_attempts = params[:max_login_attempts].to_i
+          max_attempts = SystemSetting::DEFAULT_MAX_LOGIN_ATTEMPTS if max_attempts < 1
+          max_attempts_setting = SystemSetting.find_or_initialize_by(key: "max_login_attempts")
+          max_attempts_setting.value = max_attempts.to_s
+          max_attempts_setting.save!
+
+          lockout_duration = params[:lockout_duration_minutes].to_i
+          lockout_duration = SystemSetting::DEFAULT_LOCKOUT_DURATION_MINUTES if lockout_duration < 1
+          lockout_setting = SystemSetting.find_or_initialize_by(key: "lockout_duration_minutes")
+          lockout_setting.value = lockout_duration.to_s
+          lockout_setting.save!
 
           # Auth Providers
           auth_providers = Array(params[:auth_providers]).reject(&:blank?)
@@ -45,6 +62,8 @@ module Admin
       rescue ActiveRecord::RecordInvalid
         @help_link = params[:help_link]
         @mcp_tool_approval = params[:mcp_tool_approval] == "1"
+        @max_login_attempts = params[:max_login_attempts].to_i.positive? ? params[:max_login_attempts].to_i : SystemSetting::DEFAULT_MAX_LOGIN_ATTEMPTS
+        @lockout_duration_minutes = params[:lockout_duration_minutes].to_i.positive? ? params[:lockout_duration_minutes].to_i : SystemSetting::DEFAULT_LOCKOUT_DURATION_MINUTES
         @enabled_auth_providers = params[:auth_providers] || []
         render :index, status: :unprocessable_entity
       end

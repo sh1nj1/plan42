@@ -38,7 +38,8 @@ class SessionsController < ApplicationController
       # Record failed login attempt if user exists
       user&.record_failed_login!
       if user&.locked?
-        redirect_to new_session_path, alert: I18n.t("users.sessions.new.account_locked_now")
+        minutes = SystemSetting.lockout_duration_minutes
+        redirect_to new_session_path, alert: I18n.t("users.sessions.new.account_locked_now", minutes: minutes)
       else
         redirect_to new_session_path, alert: I18n.t("users.sessions.new.try_another_email_or_password")
       end
