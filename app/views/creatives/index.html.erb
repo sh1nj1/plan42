@@ -160,7 +160,12 @@
       empty_html = content_tag(:p, text, style: 'text-align: center;')
     end
   end
-  tree_params = request.query_parameters.merge(format: :json)
+  # Only pass filter parameters to avoid unnecessary params in URL
+  tree_params = params.to_unsafe_h.slice(
+    "id", "tags", "min_progress", "max_progress", "search", "comment",
+    "has_comments", "due_before", "due_after", "has_due_date",
+    "assignee_id", "unassigned"
+  ).merge(format: :json)
   tree_url = creatives_path(tree_params)
 %>
 

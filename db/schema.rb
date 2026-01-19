@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_06_160643) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_19_023446) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -159,6 +159,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_06_160643) do
     t.index ["creative_id"], name: "index_creative_shares_on_creative_id_public", unique: true, where: "user_id IS NULL"
     t.index ["shared_by_id"], name: "index_creative_shares_on_shared_by_id"
     t.index ["user_id"], name: "index_creative_shares_on_user_id"
+  end
+
+  create_table "creative_shares_caches", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "creative_id", null: false
+    t.integer "permission", null: false
+    t.integer "source_share_id"
+    t.datetime "updated_at", null: false
+    t.integer "user_id"
+    t.index ["creative_id", "user_id"], name: "index_creative_shares_caches_on_creative_id_and_user_id", unique: true
+    t.index ["creative_id"], name: "index_creative_shares_caches_on_creative_id"
+    t.index ["source_share_id"], name: "index_creative_shares_caches_on_source_share_id"
+    t.index ["user_id", "permission"], name: "index_creative_shares_caches_on_user_id_and_permission"
+    t.index ["user_id"], name: "index_creative_shares_caches_on_user_id"
   end
 
   create_table "creatives", force: :cascade do |t|
@@ -651,7 +665,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_06_160643) do
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
-  add_foreign_key "creative_shares", "users", column: "shared_by_id"
+  add_foreign_key "creative_shares", "users", column: "shared_by_id", on_delete: :nullify
+  add_foreign_key "creative_shares_caches", "creative_shares", column: "source_share_id", on_delete: :cascade
+  add_foreign_key "creative_shares_caches", "creatives"
+  add_foreign_key "creative_shares_caches", "users"
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"

@@ -22,6 +22,9 @@ class CreativeShare < ApplicationRecord
   after_save :touch_creative_subtree
   after_destroy :touch_creative_subtree
 
+  after_commit :propagate_cache, on: [ :create, :update ]
+  after_destroy :remove_cache
+
   # Given ancestor_ids and ancestor_shares, returns the closest CreativeShare
   # in the ancestors. If there is no ancestor share, returns nil.
   def self.closest_parent_share(ancestor_ids, ancestor_shares)
@@ -78,5 +81,32 @@ class CreativeShare < ApplicationRecord
 
   def linked_creative_exists?
     Creative.exists?(origin_id: creative.id, user_id: user.id)
+  end
+
+  def propagate_cache
+    # If creative_id or user_id changed, handle old cache entries properly
+    if saved_change_to_creative_id? || saved_change_to_user_id?
+      # Delete only caches created by THIS share (not other shares for the same user)
+      CreativeSharesCache.where(source_share_id: id).delete_all
+
+      # Rebuild caches for old user in old subtree (may have other shares there)
+      if saved_change_to_creative_id?
+        old_creative_id = creative_id_before_last_save
+        old_user_id = user_id_before_last_save || user_id
+        if old_creative_id
+          old_creative = Creative.find_by(id: old_creative_id)
+          Creatives::PermissionCacheBuilder.rebuild_user_cache_for_subtree(old_creative, old_user_id) if old_creative
+        end
+      elsif saved_change_to_user_id?
+        old_user_id = user_id_before_last_save
+        Creatives::PermissionCacheBuilder.rebuild_user_cache_for_subtree(creative, old_user_id) if old_user_id
+      end
+    end
+
+    Creatives::PermissionCacheBuilder.propagate_share(self)
+  end
+
+  def remove_cache
+    Creatives::PermissionCacheBuilder.remove_share(self)
   end
 end

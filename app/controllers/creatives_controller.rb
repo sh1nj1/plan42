@@ -5,38 +5,48 @@ class CreativesController < ApplicationController
   before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions slide_view unconvert ]
 
   def index
-    # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
-    Current.creative_share_cache = CreativeShare.where(user: Current.user).index_by(&:creative_id)
-
-    user_id_for_state = Current.user&.id
-    if user_id_for_state.nil? && params[:id].present?
-      # Public view: use owner's state
-      target_creative = Creative.find_by(id: params[:id])
-      user_id_for_state = target_creative&.effective_origin&.user_id
-    end
-
-    @expanded_state_map = if user_id_for_state
-      CreativeExpandedState.where(user_id: user_id_for_state, creative_id: params[:id]).first&.expanded_status || {}
-    else
-      {}
-    end
-    index_result = Creatives::IndexQuery.new(user: Current.user, params: params.to_unsafe_h).call
-    @creatives = index_result.creatives || []
-    @parent_creative = index_result.parent_creative
-    @shared_creative = index_result.shared_creative
-    @shared_list = index_result.shared_list
-    @overall_progress = index_result.overall_progress if params[:tags].present?
-    @allowed_creative_ids = index_result.allowed_creative_ids
-    @progress_map = index_result.progress_map
-
-    # Set filtered_progress on parent creative if progress_map is available
-    if @parent_creative && @progress_map && @progress_map.key?(@parent_creative.id.to_s)
-      @parent_creative.filtered_progress = @progress_map[@parent_creative.id.to_s]
-    end
-
     respond_to do |format|
-      format.html
+      format.html do
+        # HTML only needs parent_creative for nav/title - skip expensive filtered queries
+        # Must check permission to avoid leaking metadata (og:title, etc.) to unauthorized users
+        if params[:id].present?
+          creative = Creative.find_by(id: params[:id])
+          @parent_creative = creative if creative&.has_permission?(Current.user, :read)
+        end
+        @creatives = []  # CSR will fetch via JSON
+        @shared_list = @parent_creative ? @parent_creative.all_shared_users : []
+      end
       format.json do
+        # Full query only for JSON requests
+        user_id_for_state = Current.user&.id
+        if user_id_for_state.nil? && params[:id].present?
+          # Public view: use owner's state
+          target_creative = Creative.find_by(id: params[:id])
+          user_id_for_state = target_creative&.effective_origin&.user_id
+        end
+
+        @expanded_state_map = if user_id_for_state
+          CreativeExpandedState.where(user_id: user_id_for_state, creative_id: params[:id]).first&.expanded_status || {}
+        else
+          {}
+        end
+        index_result = Creatives::IndexQuery.new(user: Current.user, params: params.to_unsafe_h).call
+        @creatives = index_result.creatives || []
+        @parent_creative = index_result.parent_creative
+        @shared_creative = index_result.shared_creative
+        @shared_list = index_result.shared_list
+        @overall_progress = index_result.overall_progress if any_filter_active?
+        @allowed_creative_ids = index_result.allowed_creative_ids
+        @progress_map = index_result.progress_map
+
+        # Set filtered_progress on parent creative if progress_map is available
+        if @parent_creative && @progress_map && @progress_map.key?(@parent_creative.id.to_s)
+          @parent_creative.filtered_progress = @progress_map[@parent_creative.id.to_s]
+        end
+
+        # Disable caching for filtered results to ensure fresh data
+        expires_now if any_filter_active?
+
         if params[:simple].present?
           render json: serialize_creatives(@creatives)
         else
@@ -409,6 +419,20 @@ class CreativesController < ApplicationController
 
     def creative_params
       params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id)
+    end
+
+    def any_filter_active?
+      params[:tags].present? ||
+        params[:min_progress].present? ||
+        params[:max_progress].present? ||
+        params[:search].present? ||
+        params[:comment] == "true" ||
+        params[:has_comments].present? ||
+        params[:due_before].present? ||
+        params[:due_after].present? ||
+        params[:has_due_date].present? ||
+        params[:assignee_id].present? ||
+        params[:unassigned].present?
     end
 
     def build_slide_ids(node)

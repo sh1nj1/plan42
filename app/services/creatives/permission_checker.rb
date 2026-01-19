@@ -3,64 +3,35 @@ module Creatives
     def initialize(creative, user)
       @creative = creative
       @user = user
-      @cache = Current.respond_to?(:creative_share_cache) ? Current.creative_share_cache : nil
     end
 
     def allowed?(required_permission = :read)
       base = creative.origin_id.nil? ? creative : creative.origin
 
-      # Check application-wide permission cache first
-      if @user
-        cache_key = "creative_permission:#{base.cache_key_with_version}:#{@user.id}:#{required_permission}"
-        cached_result = Rails.cache.read(cache_key)
-        return cached_result unless cached_result.nil?
+      # Owner always has admin permission (fallback for fixtures and missing cache entries)
+      return true if base.user_id == user&.id
+
+      # O(1) 캐시 테이블 조회
+      # 사용자별 엔트리를 먼저 확인 (no_access가 public share보다 우선)
+      if user
+        user_entry = CreativeSharesCache.find_by(creative_id: base.id, user_id: user.id)
+        if user_entry
+          # no_access는 명시적 거부 - public share가 있어도 차단
+          return false if user_entry.no_access?
+          return permission_rank(user_entry.permission) >= permission_rank(required_permission)
+        end
       end
 
-      result = allowed_on_tree?(base, required_permission)
+      # 사용자별 엔트리 없으면 public share 확인
+      public_entry = CreativeSharesCache.find_by(creative_id: base.id, user_id: nil)
+      return false unless public_entry
 
-      # Store result in application-wide cache
-      if @user
-        cache_key = "creative_permission:#{base.cache_key_with_version}:#{@user.id}:#{required_permission}"
-        Rails.cache.write(cache_key, result, expires_in: Rails.application.config.permission_cache_expires_in)
-      end
-
-      result
+      permission_rank(public_entry.permission) >= permission_rank(required_permission)
     end
 
     private
 
-    attr_reader :creative, :user, :cache
-
-    def allowed_on_tree?(node, required_permission)
-      return true if node.user_id == user&.id
-
-      current = node
-      while current
-        share = share_for(current)
-        if share
-          return false if share.permission.to_s == "no_access"
-
-          if permission_rank(share.permission) >= permission_rank(required_permission)
-            return true
-          end
-        end
-        current = current.parent
-      end
-      false
-    end
-
-    def share_for(node)
-      user_share = if cache
-                     cache[node.id]
-      elsif user
-                     CreativeShare.find_by(user: user, creative: node)
-      end
-
-      public_share = CreativeShare.find_by(creative: node, user: nil)
-
-      # If user specific share exists, it takes precedence even if lower permission
-      user_share || public_share
-    end
+    attr_reader :creative, :user
 
     def permission_rank(value)
       CreativeShare.permissions[value.to_s]

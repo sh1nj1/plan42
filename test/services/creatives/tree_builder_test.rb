@@ -35,17 +35,31 @@ module Creatives
       @view_context = FakeViewContext.new
     end
 
-    test "includes tagged descendants when parent does not match" do
+    test "skips creatives not in allowed_creative_ids" do
       parent = Creative.create!(user: @user, progress: 0.1, description: "Parent")
       child = Creative.create!(user: @user, parent: parent, progress: 0.3, description: "Child")
-      label_creative = Creative.create!(user: @user, description: "Tagged")
-      label = Label.create!(creative: label_creative, owner: @user)
-      Tag.create!(creative_id: child.id, label: label)
 
-      builder = build_tree_builder(tags: [ label.id ])
+      # Only child is in allowed_creative_ids (simulating FilterPipeline result without ancestor)
+      allowed_ids = Set.new([ child.id.to_s ])
+      builder = build_tree_builder(allowed_creative_ids: allowed_ids)
       nodes = builder.build([ parent ])
 
+      # Parent is skipped, child is rendered at level 1
       assert_equal [ child.id ], nodes.pluck(:id)
+      assert_equal [ 1 ], nodes.pluck(:level)
+    end
+
+    test "shows ancestors when included in allowed_creative_ids" do
+      parent = Creative.create!(user: @user, progress: 0.1, description: "Parent")
+      child = Creative.create!(user: @user, parent: parent, progress: 0.3, description: "Child")
+
+      # Both parent and child are in allowed_creative_ids (normal FilterPipeline result with ancestors)
+      allowed_ids = Set.new([ parent.id.to_s, child.id.to_s ])
+      builder = build_tree_builder(allowed_creative_ids: allowed_ids)
+      nodes = builder.build([ parent ])
+
+      # Parent is shown at level 1, child is shown as its children
+      assert_equal [ parent.id ], nodes.pluck(:id)
       assert_equal [ 1 ], nodes.pluck(:level)
     end
 
@@ -63,14 +77,15 @@ module Creatives
 
     private
 
-    def build_tree_builder(params = {})
+    def build_tree_builder(allowed_creative_ids: nil, params: {})
       Creatives::TreeBuilder.new(
         user: @user,
         params: ActionController::Parameters.new(params),
         view_context: @view_context,
         expanded_state_map: {},
         select_mode: false,
-        max_level: 6
+        max_level: 6,
+        allowed_creative_ids: allowed_creative_ids
       )
     end
   end

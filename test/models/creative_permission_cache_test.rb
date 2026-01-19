@@ -7,8 +7,6 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     @user2 = User.create!(email: "user2@example.com", password: "secret", name: "User2")
     Current.session = OpenStruct.new(user: @owner)
 
-    Rails.cache.clear
-
     # Create tree structure: root -> child -> grandchild
     @root = Creative.create!(user: @owner, description: "Root")
     @child = Creative.create!(user: @owner, parent: @root, description: "Child")
@@ -17,191 +15,246 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
 
   teardown do
     Current.reset
-    Rails.cache.clear
   end
 
-  # Helper to generate the expected cache key using versioning
-  def cache_key(creative, user, permission)
-    # Reload creative to get latest updated_at for cache_key_with_version
-    creative.reload
-    "creative_permission:#{creative.cache_key_with_version}:#{user.id}:#{permission}"
-  end
-
-  test "permission results are cached" do
-    CreativeShare.create!(creative: @root, user: @user1, permission: :read)
-    checker = Creatives::PermissionChecker.new(@root, @user1)
-
-    # First call
-    assert checker.allowed?(:read)
-
-    key = cache_key(@root, @user1, :read)
-    assert Rails.cache.exist?(key)
-    assert_equal true, Rails.cache.read(key)
-
-    # Second call uses cache (implicitly tested by logic, explicitly by key presence)
-    assert checker.allowed?(:read)
-  end
-
-  test "permission inheritance works with caching" do
+  test "permission cache entries are created when share is created" do
     CreativeShare.create!(creative: @root, user: @user1, permission: :read)
 
-    assert @child.reload.has_permission?(@user1, :read)
-    assert Rails.cache.exist?(cache_key(@child, @user1, :read))
-
-    assert @grandchild.reload.has_permission?(@user1, :read)
-    assert Rails.cache.exist?(cache_key(@grandchild, @user1, :read))
+    # Cache entries should exist for root, child, and grandchild
+    assert CreativeSharesCache.exists?(creative: @root, user: @user1)
+    assert CreativeSharesCache.exists?(creative: @child, user: @user1)
+    assert CreativeSharesCache.exists?(creative: @grandchild, user: @user1)
   end
 
-  test "cache is invalidated (rotated) when permission changes" do
+  test "permission checks use cache table" do
+    CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+
+    assert @root.has_permission?(@user1, :read)
+    assert @child.has_permission?(@user1, :read)
+    assert @grandchild.has_permission?(@user1, :read)
+  end
+
+  test "cache is updated when permission changes" do
     share = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
 
-    # Cache read
-    assert @root.has_permission?(@user1, :read)
-    old_key = cache_key(@root, @user1, :read)
-    assert Rails.cache.exist?(old_key)
+    cache_entry = CreativeSharesCache.find_by(creative: @root, user: @user1)
+    assert cache_entry.read?
 
-    # Change to write (touches creative)
     share.update!(permission: :write)
 
-    # New check
+    cache_entry.reload
+    assert cache_entry.write?
     assert @root.reload.has_permission?(@user1, :write)
-    new_key = cache_key(@root, @user1, :write)
-
-    # Key should have changed due to touch
-    refute_equal old_key, new_key
-    assert Rails.cache.exist?(new_key)
   end
 
   test "cache invalidation affects descendant permissions" do
     share = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
 
-    # Cache all
     assert @root.has_permission?(@user1, :read)
     assert @child.has_permission?(@user1, :read)
     assert @grandchild.has_permission?(@user1, :read)
 
-    old_child_key = cache_key(@child, @user1, :read)
-
-    # Change root permission
+    # Change to no_access stores no_access entries
     share.update!(permission: :no_access)
 
-    # Descendants should be touched by logic in CreativeShare/Creative
-    # Verify permissions are denied
+    # Cache entries should exist with no_access permission
+    assert CreativeSharesCache.exists?(creative: @root, user: @user1, permission: :no_access)
+    assert CreativeSharesCache.exists?(creative: @child, user: @user1, permission: :no_access)
+    assert CreativeSharesCache.exists?(creative: @grandchild, user: @user1, permission: :no_access)
+
+    # Permissions should be denied
     refute @root.reload.has_permission?(@user1, :read)
     refute @child.reload.has_permission?(@user1, :read)
     refute @grandchild.reload.has_permission?(@user1, :read)
-
-    # New keys should be generated
-    new_child_key = cache_key(@child, @user1, :read)
-    refute_equal old_child_key, new_child_key
-    assert Rails.cache.exist?(new_child_key)
-    assert_equal false, Rails.cache.read(new_child_key)
   end
 
-  test "cache invalidation works when share is destroyed" do
+  test "cache is cleared when share is destroyed" do
     share = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
     assert @root.has_permission?(@user1, :read)
-    old_key = cache_key(@root, @user1, :read)
+    assert CreativeSharesCache.exists?(creative: @root, user: @user1)
 
     share.destroy!
 
+    refute CreativeSharesCache.exists?(creative: @root, user: @user1)
     refute @root.reload.has_permission?(@user1, :read)
-    new_key = cache_key(@root, @user1, :read)
-
-    refute_equal old_key, new_key
-    assert Rails.cache.exist?(new_key)
-    assert_equal false, Rails.cache.read(new_key)
   end
 
   test "cache handles no_access override correctly" do
     CreativeShare.create!(creative: @root, user: @user1, permission: :read)
     assert @child.has_permission?(@user1, :read)
 
-    # Override
-    no_val_share = CreativeShare.create!(creative: @child, user: @user1, permission: :no_access)
+    # Override with no_access
+    no_access_share = CreativeShare.create!(creative: @child, user: @user1, permission: :no_access)
+
+    # no_access stores no_access entries for child and descendants
+    assert CreativeSharesCache.exists?(creative: @child, user: @user1, permission: :no_access)
+    assert CreativeSharesCache.exists?(creative: @grandchild, user: @user1, permission: :no_access)
 
     refute @child.reload.has_permission?(@user1, :read)
-    refute @grandchild.reload.has_permission?(@user1, :read) # Inherits no_access from child? Or calculation?
-    # Logic: share on child is no_access. PermissionChecker finds it and denies.
+    refute @grandchild.reload.has_permission?(@user1, :read)
 
     # Remove override
-    no_val_share.destroy!
+    no_access_share.destroy!
 
-    # Should revert to inherited read
+    # Should revert to inherited read from root's share
     assert @child.reload.has_permission?(@user1, :read)
     assert @grandchild.reload.has_permission?(@user1, :read)
   end
 
-  test "cache is cleared/rotated when creative parent changes" do
+  test "cache is rebuilt when creative parent changes" do
     CreativeShare.create!(creative: @root, user: @user1, permission: :read)
     assert @child.has_permission?(@user1, :read)
-    old_key = cache_key(@child, @user1, :read)
 
     new_parent = Creative.create!(user: @owner, description: "New Parent")
     @child.update!(parent: new_parent)
 
-    # Child moved, should be touched. Permissions recalculated (denied).
+    # Child moved, permission should be denied (new_parent has no share)
     refute @child.reload.has_permission?(@user1, :read)
-    new_key = cache_key(@child, @user1, :read)
-
-    refute_equal old_key, new_key
+    refute CreativeSharesCache.exists?(creative: @child, user: @user1)
   end
 
-  test "public share invalidation" do
-    # Deny first
+  test "public share creates cache entries" do
     refute @root.has_permission?(@user1, :read)
-    old_key = cache_key(@root, @user1, :read)
 
-    # Add public share
+    # Add public share (user: nil)
     CreativeShare.create!(creative: @root, user: nil, permission: "read")
 
-    # Access granted?
-    assert @root.reload.has_permission?(@user1, :read)
-    new_key = cache_key(@root, @user1, :read)
+    # Public share should create cache entries with user_id = nil
+    assert CreativeSharesCache.exists?(creative: @root, user_id: nil)
+    assert CreativeSharesCache.exists?(creative: @child, user_id: nil)
 
-    refute_equal old_key, new_key
+    # Access should be granted via public share
+    assert @root.reload.has_permission?(@user1, :read)
   end
 
-  test "cache is cleared when CreativeShare creative_id changes" do
+  test "no_access overrides public share" do
+    # Add public share
+    CreativeShare.create!(creative: @root, user: nil, permission: "read")
+    assert @root.reload.has_permission?(@user1, :read)
+
+    # Add no_access for specific user - should override public share
+    CreativeShare.create!(creative: @root, user: @user1, permission: :no_access)
+
+    # User1 should be denied even though public share exists
+    refute @root.reload.has_permission?(@user1, :read)
+
+    # User2 should still have access via public share
+    assert @root.has_permission?(@user2, :read)
+  end
+
+  test "cache is updated when CreativeShare creative_id changes" do
     other_root = Creative.create!(user: @owner, description: "Other")
     share = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
 
     assert @root.has_permission?(@user1, :read)
-    old_root_key = cache_key(@root, @user1, :read)
+    assert CreativeSharesCache.exists?(creative: @root, user: @user1)
 
     share.update!(creative: other_root)
+
+    # Old cache should be removed, new cache created
+    refute CreativeSharesCache.exists?(creative: @root, user: @user1)
+    assert CreativeSharesCache.exists?(creative: other_root, user: @user1)
 
     refute @root.reload.has_permission?(@user1, :read)
     assert other_root.reload.has_permission?(@user1, :read)
   end
 
-  test "cache is cleared when CreativeShare user_id changes" do
+  test "cache is updated when CreativeShare user_id changes" do
     share = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
     assert @root.has_permission?(@user1, :read)
-    old_key = cache_key(@root, @user1, :read)
 
     share.update!(user: @user2)
 
-    # Creative touched. Key rotated.
-    # User1 check -> new key -> Not found -> Calc -> Deny. Correct.
-    refute @root.reload.has_permission?(@user1, :read)
-    new_key = cache_key(@root, @user1, :read)
-    refute_equal old_key, new_key
+    # User1 should no longer have cache entries
+    refute CreativeSharesCache.exists?(creative: @root, user: @user1)
+    # User2 should have cache entries
+    assert CreativeSharesCache.exists?(creative: @root, user: @user2)
 
+    refute @root.reload.has_permission?(@user1, :read)
     assert @root.has_permission?(@user2, :read)
   end
 
-  test "ownership transfer updates permissions and cache" do
+  test "changing share user_id preserves unrelated shares for old user" do
+    # Share root with user1
+    root_share = CreativeShare.create!(creative: @root, user: @user1, permission: :read)
+    # Share child with user1 (separate share)
+    child_share = CreativeShare.create!(creative: @child, user: @user1, permission: :write)
+
+    # Verify both shares are cached
+    assert CreativeSharesCache.exists?(creative: @root, user: @user1)
+    assert CreativeSharesCache.exists?(creative: @child, user: @user1)
+    child_cache = CreativeSharesCache.find_by(creative: @child, user: @user1)
+    assert child_cache.write?
+    assert_equal child_share.id, child_cache.source_share_id
+
+    # Change root_share to user2
+    root_share.update!(user: @user2)
+
+    # User1 should still have access to child (from child_share)
+    assert CreativeSharesCache.exists?(creative: @child, user: @user1)
+    child_cache = CreativeSharesCache.find_by(creative: @child, user: @user1)
+    assert child_cache.write?, "Child share should be preserved"
+    assert_equal child_share.id, child_cache.source_share_id
+
+    # User1 should no longer have access to root
+    refute CreativeSharesCache.exists?(creative: @root, user: @user1)
+
+    # User2 should have access to root (and descendants via inheritance)
+    assert CreativeSharesCache.exists?(creative: @root, user: @user2)
+  end
+
+  test "ownership creates cache entries with admin permission" do
     refute @root.has_permission?(@user1, :read)
-    old_key = cache_key(@root, @user1, :read)
 
     @root.update!(user: @user1)
 
-    # Creative touched by update.
-    assert @root.reload.has_permission?(@user1, :admin) # Owner
-    new_key = cache_key(@root, @user1, :admin) # Different permission checked usually
-
-    # Check read again
+    # Owner has cache entry with admin permission
+    assert CreativeSharesCache.exists?(creative: @root, user: @user1, permission: :admin)
+    assert @root.reload.has_permission?(@user1, :admin)
     assert @root.has_permission?(@user1, :read)
+  end
+
+  test "rebuild paths propagate no_access correctly" do
+    CreativeShare.create!(creative: @root, user: nil, permission: "read")  # public
+    CreativeShare.create!(creative: @root, user: @user1, permission: :no_access)
+
+    # user1 should be denied due to no_access
+    refute @root.reload.has_permission?(@user1, :read)
+
+    # Move child to force rebuild
+    new_parent = Creative.create!(user: @owner, description: "New")
+    @child.update!(parent: new_parent)
+    @child.update!(parent: @root)
+
+    # user1 should still be denied after rebuild
+    refute @root.reload.has_permission?(@user1, :read)
+    refute @child.reload.has_permission?(@user1, :read)
+  end
+
+  test "children_with_permission respects no_access over public share" do
+    CreativeShare.create!(creative: @root, user: nil, permission: "read")  # public
+
+    # user1 can see children via public share
+    assert_includes @root.children_with_permission(@user1, :read), @child
+
+    # Add no_access for user1 on root
+    CreativeShare.create!(creative: @root, user: @user1, permission: :no_access)
+
+    # user1 should NOT see children anymore
+    refute_includes @root.reload.children_with_permission(@user1, :read), @child
+  end
+
+  test "children_with_permission user-specific weaker permission overrides public stronger permission" do
+    # Public share has admin
+    CreativeShare.create!(creative: @root, user: nil, permission: "admin")
+    # User1 has explicit read (weaker than required write)
+    CreativeShare.create!(creative: @root, user: @user1, permission: "read")
+
+    # user1 should NOT see child with :write requirement
+    # Even though public has admin, user-specific entry takes precedence
+    refute_includes @root.children_with_permission(@user1, :write), @child
+
+    # But user1 should see child with :read requirement (matches their permission)
+    assert_includes @root.children_with_permission(@user1, :read), @child
   end
 end
