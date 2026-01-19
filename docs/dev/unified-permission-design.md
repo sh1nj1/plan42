@@ -246,6 +246,230 @@ Feature 브랜치: `CreativeShare.inherited = true/false`
 
 ---
 
+## 구현 시 주의사항 (Feature 브랜치에서 발견된 엣지 케이스)
+
+### 1. Public Share (user_id = nil) 처리
+
+**문제:**
+user가 nil일 때 권한 체크 우회 가능.
+
+**해결:**
+```ruby
+def allowed?(required_permission = :read)
+  base = creative.effective_origin
+
+  # 소유자 체크
+  return true if base.user_id == user&.id
+
+  # user_conditions: 로그인 사용자는 [user.id, nil], 익명은 [nil]
+  user_conditions = user ? [user.id, nil] : [nil]
+
+  cache_entry = CreativeSharesCache
+    .where(creative_id: base.id, user_id: user_conditions)
+    .order(permission: :desc)
+    .first
+
+  return false unless cache_entry
+  permission_rank(cache_entry.permission) >= permission_rank(required_permission)
+end
+```
+
+### 2. Shell Creative 삭제 시 캐시 처리
+
+**문제:**
+Shell Creative 삭제 시 관련 캐시도 삭제해야 함.
+
+**해결:**
+```ruby
+class Creative < ApplicationRecord
+  has_many :shares_caches,
+           class_name: "CreativeSharesCache",
+           dependent: :delete_all
+
+  # 또는 before_destroy 콜백
+  before_destroy :cleanup_permission_caches
+
+  private
+
+  def cleanup_permission_caches
+    CreativeSharesCache.where(creative_id: id).delete_all
+  end
+end
+```
+
+### 3. CreativeShare 삭제 시 FK Constraint
+
+**문제:**
+`after_commit :remove_cache`가 share 삭제 후 실행되어 FK violation.
+
+**해결:**
+```ruby
+class CreativeShare < ApplicationRecord
+  # after_commit 대신 before_destroy 사용
+  before_destroy :remove_cache
+
+  private
+
+  def remove_cache
+    Creatives::PermissionCacheBuilder.remove_share(self)
+  end
+end
+```
+
+### 4. Share creative_id/user_id 변경 시 기존 캐시
+
+**문제:**
+Share의 creative_id나 user_id가 변경되면 기존 캐시가 orphan 상태.
+
+**해결:**
+```ruby
+def propagate_cache
+  # 변경 전 값으로 기존 캐시 삭제
+  if saved_change_to_creative_id?
+    old_creative = Creative.find_by(id: creative_id_before_last_save)
+    if old_creative
+      descendant_ids = [old_creative.id] + old_creative.descendant_ids
+      CreativeSharesCache.where(
+        creative_id: descendant_ids,
+        user_id: user_id_before_last_save || user_id
+      ).delete_all
+    end
+  end
+
+  if saved_change_to_user_id?
+    descendant_ids = [creative.id] + creative.descendant_ids
+    CreativeSharesCache.where(
+      creative_id: descendant_ids,
+      user_id: user_id_before_last_save
+    ).delete_all
+  end
+
+  # 새 캐시 전파
+  Creatives::PermissionCacheBuilder.propagate_share(self)
+end
+```
+
+### 5. Creative 이동 (parent_id 변경) 시 캐시 재구축
+
+**문제:**
+Creative가 다른 부모로 이동하면 조상의 권한이 달라짐.
+
+**해결:**
+```ruby
+class Creative < ApplicationRecord
+  after_commit :rebuild_permission_cache, if: :saved_change_to_parent_id?
+
+  private
+
+  def rebuild_permission_cache
+    Creatives::PermissionCacheBuilder.rebuild_for_creative(self)
+  end
+end
+
+# PermissionCacheBuilder
+def self.rebuild_for_creative(creative)
+  descendant_ids = [creative.id] + creative.descendant_ids
+
+  # 1. 기존 캐시 삭제
+  CreativeSharesCache.where(creative_id: descendant_ids).delete_all
+
+  # 2. 새 조상들의 share 전파
+  rebuild_from_ancestors_for_subtree(creative)
+
+  # 3. 해당 creative 자체의 share도 다시 전파
+  CreativeShare.where(creative_id: creative.id).each do |share|
+    propagate_share(share) unless share.no_access?
+  end
+end
+```
+
+### 6. Shell Creative 생성 시 캐시 상속
+
+**문제:**
+Shell Creative가 생성될 때 부모의 캐시를 상속받아야 함.
+
+**해결:**
+```ruby
+class Creative < ApplicationRecord
+  after_commit :inherit_parent_cache, on: :create, if: -> { parent_id.present? }
+
+  private
+
+  def inherit_parent_cache
+    Creatives::PermissionCacheBuilder.rebuild_for_creative(self)
+  end
+end
+```
+
+### 7. no_access Share 처리
+
+**원칙:**
+`no_access`는 캐시에 저장하지 않음 → 캐시에 없으면 = 접근 불가
+
+**구현:**
+```ruby
+def self.propagate_share(creative_share)
+  return if creative_share.destroyed?
+
+  # no_access는 캐시에 저장하지 않음 - 기존 캐시 삭제
+  if creative_share.no_access?
+    descendant_ids = [creative_share.creative.id] + creative_share.creative.descendant_ids
+    CreativeSharesCache.where(
+      creative_id: descendant_ids,
+      user_id: creative_share.user_id
+    ).delete_all
+    return
+  end
+
+  # ... 정상 캐시 생성 로직
+end
+```
+
+### 8. 캐시 일관성 검증
+
+**문제:**
+캐시가 실제 share와 불일치할 수 있음.
+
+**해결 (주기적 검증):**
+```ruby
+# lib/tasks/permission_cache.rake
+namespace :permission_cache do
+  desc "Rebuild all permission caches"
+  task rebuild: :environment do
+    CreativeSharesCache.delete_all
+
+    CreativeShare.where.not(permission: :no_access).find_each do |share|
+      Creatives::PermissionCacheBuilder.propagate_share(share)
+    end
+  end
+
+  desc "Verify cache consistency"
+  task verify: :environment do
+    inconsistencies = []
+
+    CreativeShare.where.not(permission: :no_access).find_each do |share|
+      descendant_ids = [share.creative.id] + share.creative.descendant_ids
+
+      descendant_ids.each do |cid|
+        cache = CreativeSharesCache.find_by(
+          creative_id: cid,
+          user_id: share.user_id
+        )
+
+        unless cache && cache.source_share_id == share.id
+          inconsistencies << { creative_id: cid, share_id: share.id }
+        end
+      end
+    end
+
+    puts "Found #{inconsistencies.count} inconsistencies"
+    inconsistencies.each { |i| puts i.inspect }
+  end
+end
+```
+
+---
+
 ## 결론
 
 **Shell Creative 유지 + creative_shares_caches**가 최적의 조합:

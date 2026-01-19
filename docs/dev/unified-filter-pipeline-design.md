@@ -543,6 +543,251 @@ params = {
 
 ---
 
+## 구현 시 주의사항 (Feature 브랜치에서 발견된 엣지 케이스)
+
+Feature 브랜치 개발 중 발견된 버그와 엣지 케이스들. 우리 구현에서도 동일하게 고려 필요.
+
+### 1. Public Share 권한 체크 (보안 취약점)
+
+**문제:**
+`filter_by_permission`에서 user가 nil일 때 모든 ID를 반환하여 권한 체크를 우회.
+
+**해결:**
+```ruby
+def filter_by_permission(ids)
+  # Anonymous 사용자: public share만 체크
+  # 로그인 사용자: user-specific + public share 모두 체크
+  user_conditions = user ? [user.id, nil] : [nil]
+
+  accessible_ids = CreativeSharesCache
+    .where(creative_id: ids, user_id: user_conditions)
+    .pluck(:creative_id)
+
+  # 소유자 체크도 필수
+  owned_ids = user ? Creative.where(id: ids, user_id: user.id).pluck(:id) : []
+
+  (accessible_ids + owned_ids).uniq
+end
+```
+
+**테스트 필요:**
+- 익명 사용자가 public share된 creative 접근 가능
+- 익명 사용자가 private creative 접근 불가
+- 로그인 사용자가 public + private share 모두 접근 가능
+
+### 2. HTML 경로에서 권한 체크 누락 (보안 취약점)
+
+**문제:**
+HTML 요청에서 `@parent_creative`를 권한 체크 없이 설정하면 og:title 등 메타데이터 노출.
+
+**해결:**
+```ruby
+format.html do
+  if params[:id].present?
+    creative = Creative.find_by(id: params[:id])
+    # 반드시 권한 체크 후 할당
+    @parent_creative = creative if creative&.has_permission?(Current.user, :read)
+  end
+  @creatives = []
+  @shared_list = @parent_creative ? @parent_creative.all_shared_users : []
+end
+```
+
+### 3. 브라우저 캐싱으로 인한 필터 결과 오류
+
+**문제:**
+필터 적용 시 304 Not Modified 응답으로 인해 stale 데이터 표시.
+
+**해결:**
+```ruby
+format.json do
+  # ... 쿼리 로직 ...
+
+  # 필터 결과에 대해 캐시 비활성화
+  expires_now if any_filter_active?
+
+  render json: { creatives: @creatives_tree_json }
+end
+```
+
+### 4. Sequence 정렬 불일치
+
+**문제:**
+Linked Creative (Shell Creative with origin_id)는 자체 sequence를 가짐.
+origin.sequence가 아닌 shell.sequence로 정렬해야 함.
+
+**우리 케이스에서:**
+Shell Creative는 `creative.sequence`를 그대로 사용하므로 문제없음.
+다만 TreeBuilder에서 children 정렬 시 일관되게 sequence 사용 필요.
+
+```ruby
+def filtered_children_for(creative)
+  children = creative.children_with_permission(user)
+  children.sort_by(&:sequence)  # sequence로 정렬 보장
+end
+```
+
+### 5. N+1 쿼리 방지
+
+**문제:**
+TreeBuilder에서 각 노드마다 추가 쿼리 발생.
+
+**해결:**
+```ruby
+def build(collection, level: 1)
+  return [] if collection.blank?
+
+  # 미리 필요한 데이터 로드 (N+1 방지)
+  creative_ids = collection.map(&:id)
+  @preloaded_shares = CreativeSharesCache
+    .where(creative_id: creative_ids)
+    .group_by(&:creative_id)
+
+  build_nodes(Array(collection), level: level)
+end
+```
+
+### 6. FK Constraint 순서 (삭제 시)
+
+**문제:**
+Creative 삭제 시 관련 캐시/권한 레코드가 FK constraint로 실패.
+
+**해결:**
+```ruby
+# creative_shares_caches는 creative FK가 있으므로 먼저 삭제
+def destroy
+  # 1. 캐시 먼저 삭제
+  CreativeSharesCache.where(creative_id: id).delete_all
+
+  # 2. Shares 삭제
+  CreativeShare.where(creative: self).destroy_all
+
+  # 3. Creative 삭제
+  super
+end
+```
+
+**또는 dependent 설정:**
+```ruby
+class Creative < ApplicationRecord
+  has_many :shares_caches, class_name: "CreativeSharesCache", dependent: :delete_all
+end
+```
+
+### 7. Direct Child vs Linked Origin 구분
+
+**문제:**
+같은 Creative가 direct child (parent_id로 연결)이면서 origin_id로도 참조될 때 혼란.
+
+**우리 케이스에서:**
+Shell Creative는 origin_id가 있으므로 `creative.origin_id.present?`로 구분 가능.
+TreeBuilder에서 Shell Creative 표시 시 origin 링크 아이콘 표시.
+
+```ruby
+def build_node(creative, level:)
+  # Shell Creative인 경우 origin 링크 표시
+  is_shell = creative.origin_id.present?
+
+  {
+    id: creative.id,
+    is_shell: is_shell,
+    origin_link: is_shell ? view_context.creative_path(creative.origin) : nil,
+    # ...
+  }
+end
+```
+
+### 8. Expansion State 저장 (fallback 필요)
+
+**문제:**
+URL 패턴이 다양할 때 (/creatives/:id, /creatives?id=..., 등) creative ID 추출 실패.
+
+**해결:**
+```javascript
+computeCurrentCreativeId() {
+  // 1. URL path: /creatives/:id
+  const match = window.location.pathname.match(/\/creatives\/(\d+)/)
+  let id = match ? match[1] : null
+
+  // 2. URL params: ?id=...
+  if (!id) {
+    const params = new URLSearchParams(window.location.search)
+    id = params.get('id')
+  }
+
+  // 3. Title row에서 가져오기 (fallback)
+  if (!id) {
+    const titleRow = this.element.querySelector('creative-tree-row[is-title]')
+    id = titleRow?.getAttribute('creative-id')
+  }
+
+  return id
+}
+```
+
+### 9. 캐시 재구축 시 조상 Share 상속
+
+**문제:**
+Creative가 이동할 때 (parent_id 변경) 새 위치의 조상 share를 상속받아야 함.
+
+**해결:**
+```ruby
+def self.rebuild_for_creative(creative)
+  descendant_ids = [creative.id] + creative.descendant_ids
+
+  # 기존 캐시 삭제
+  CreativeSharesCache.where(creative_id: descendant_ids).delete_all
+
+  # 새 조상들의 share 전파
+  rebuild_from_ancestors_for_subtree(creative)
+end
+
+def self.rebuild_from_ancestors_for_subtree(creative)
+  ancestor_ids = creative.ancestor_ids
+  return if ancestor_ids.empty?
+
+  # 조상들의 모든 share 가져오기 (no_access 제외)
+  ancestor_shares = CreativeShare
+    .where(creative_id: ancestor_ids)
+    .where.not(permission: :no_access)
+
+  ancestor_shares.each do |share|
+    propagate_share(share)
+  end
+end
+```
+
+### 10. Progress 계산 시 Shell Creative 처리
+
+**문제:**
+Shell Creative는 progress가 nil이고 origin에서 위임받음.
+progress_map 계산 시 이를 고려해야 함.
+
+**해결:**
+```ruby
+def calculate_progress(allowed_ids, matched_ids)
+  creatives = Creative.where(id: allowed_ids).includes(:origin)
+
+  progress_map = creatives.to_h do |c|
+    # Shell Creative는 origin의 progress 사용
+    progress = c.origin_id.present? ? c.origin&.progress : c.progress
+    [c.id.to_s, progress || 0.0]
+  end
+
+  # matched에서도 동일하게 처리
+  matched = creatives.select { |c| matched_ids.include?(c.id) }
+  values = matched.map do |c|
+    c.origin_id.present? ? c.origin&.progress : c.progress
+  end.compact
+
+  overall = values.any? ? values.sum / values.size : 0.0
+
+  [progress_map, overall]
+end
+```
+
+---
+
 ## Feature 브랜치에서 가져올 좋은 변경사항
 
 `feature/creative-links-and-inherited-shares` 브랜치에는 CreativeLink (URL 안정성 문제)를 제외하고
