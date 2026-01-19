@@ -2,10 +2,6 @@ class User < ApplicationRecord
   has_many :user_themes, dependent: :destroy
   DEFAULT_DISPLAY_LEVEL = 6
 
-  # Account lockout settings
-  MAX_LOGIN_ATTEMPTS = 5
-  LOCKOUT_DURATION = 30.minutes
-
   has_secure_password
   has_many :sessions, dependent: :destroy
   has_many :oauth_applications, class_name: "Doorkeeper::Application", as: :owner
@@ -110,7 +106,7 @@ class User < ApplicationRecord
 
   # Account lockout methods
   def locked?
-    locked_at.present? && locked_at > LOCKOUT_DURATION.ago
+    locked_at.present? && locked_at > SystemSetting.lockout_duration.ago
   end
 
   def lock_account!
@@ -123,7 +119,7 @@ class User < ApplicationRecord
 
   def record_failed_login!
     new_count = (failed_login_attempts || 0) + 1
-    if new_count >= MAX_LOGIN_ATTEMPTS
+    if new_count >= SystemSetting.max_login_attempts
       update_columns(failed_login_attempts: new_count, locked_at: Time.current)
     else
       update_column(:failed_login_attempts, new_count)
@@ -136,7 +132,7 @@ class User < ApplicationRecord
 
   def remaining_lockout_time
     return 0 unless locked?
-    ((locked_at + LOCKOUT_DURATION) - Time.current).to_i
+    ((locked_at + SystemSetting.lockout_duration) - Time.current).to_i
   end
 
   def theme_accessibility

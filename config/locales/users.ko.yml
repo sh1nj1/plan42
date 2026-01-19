@@ -47,7 +47,7 @@ ko:
         email_not_verified: "이메일 인증 후에 로그인할 수 있습니다."
         provider_disabled: "이 인증 방법은 현재 비활성화되어 있습니다."
         account_locked: "로그인 시도 횟수 초과로 계정이 잠겼습니다. %{minutes}분 후에 다시 시도해 주세요."
-        account_locked_now: "로그인 시도 횟수 초과로 계정이 잠겼습니다. 30분 후에 다시 시도해 주세요."
+        account_locked_now: "로그인 시도 횟수 초과로 계정이 잠겼습니다. %{minutes}분 후에 다시 시도해 주세요."
         sign_in_with_google: "구글 계정으로 로그인"
         sign_in_with_webauthn: "패스키로 로그인"
     webauthn:

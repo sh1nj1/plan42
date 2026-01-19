@@ -23,6 +23,26 @@
       </div>
 
       <div style="margin-top: 2em; border-top: 1px solid var(--color-border); padding-top: 1.5em;">
+        <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.account_lockout') %></h3>
+        <div style="display: flex; gap: 2em; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 200px;">
+            <%= f.label :max_login_attempts, t('admin.settings.max_login_attempts') %>
+            <%= f.number_field :max_login_attempts, value: @max_login_attempts, min: 1, max: 100, style: "width: 100%;" %>
+            <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+              <%= t('admin.settings.max_login_attempts_hint') %>
+            </div>
+          </div>
+          <div style="flex: 1; min-width: 200px;">
+            <%= f.label :lockout_duration_minutes, t('admin.settings.lockout_duration_minutes') %>
+            <%= f.number_field :lockout_duration_minutes, value: @lockout_duration_minutes, min: 1, max: 1440, style: "width: 100%;" %>
+            <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+              <%= t('admin.settings.lockout_duration_minutes_hint') %>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 2em; border-top: 1px solid var(--color-border); padding-top: 1.5em;">
         <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.auth_providers') %></h3>
         <div style="display: flex; flex-direction: column; gap: 0.8em;">
           <% Rails.application.config.auth_providers.sort_by { |p| p[:priority] }.each do |provider| %>
