@@ -18,6 +18,6 @@ class PopulateCreativeSharesCache < ActiveRecord::Migration[8.1]
   end
 
   def down
-    execute "DELETE FROM creative_shares_cache"
+    execute "DELETE FROM creative_shares_caches"
   end
 end
