@@ -44,12 +44,33 @@ module Creatives
       end
 
       # 해당 creative + 모든 자손 ID (closure_tree 사용)
-      descendant_ids = [ creative.id ] + creative.descendant_ids
+      all_descendant_ids = [ creative.id ] + creative.descendant_ids
+
+      # "closest share wins" 의미론 적용:
+      # 이 share의 자손 중 더 가까운 share가 있는 creative는 제외
+      # (더 가까운 share가 해당 서브트리를 담당)
+      closer_share_creative_ids = CreativeShare
+        .where(user_id: user_id)
+        .where(creative_id: creative.descendant_ids)  # 이 creative의 strict descendants에 있는 share들
+        .where.not(permission: :no_access)
+        .where.not(id: creative_share.id)  # 자기 자신 제외
+        .pluck(:creative_id)
+
+      # 더 가까운 share가 있는 creative와 그 자손들은 제외
+      excluded_ids = Set.new
+      if closer_share_creative_ids.any?
+        excluded_ids = CreativeHierarchy
+          .where(ancestor_id: closer_share_creative_ids)
+          .pluck(:descendant_id)
+          .to_set
+      end
+
+      ids_to_update = all_descendant_ids.reject { |id| excluded_ids.include?(id) }
 
       now = Time.current
 
       # Use individual upserts since SQLite has issues with NULL in unique indexes
-      descendant_ids.each do |cid|
+      ids_to_update.each do |cid|
         cache_entry = CreativeSharesCache.find_or_initialize_by(
           creative_id: cid,
           user_id: user_id

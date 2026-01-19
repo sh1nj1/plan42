@@ -101,5 +101,51 @@ module Creatives
       root_cache.reload
       assert root_cache.write?
     end
+
+    test "closest share wins - order independent when parent share created first" do
+      # Create parent share first with write
+      parent_share = CreativeShare.create!(creative: @root, user: @shared_user, permission: "write")
+
+      # Create child share with read
+      child_share = CreativeShare.create!(creative: @child, user: @shared_user, permission: "read")
+
+      # Root should have write (from parent_share)
+      root_cache = CreativeSharesCache.find_by(creative: @root, user: @shared_user)
+      assert root_cache.write?
+      assert_equal parent_share.id, root_cache.source_share_id
+
+      # Child should have read (from child_share - closest wins)
+      child_cache = CreativeSharesCache.find_by(creative: @child, user: @shared_user)
+      assert child_cache.read?
+      assert_equal child_share.id, child_cache.source_share_id
+
+      # Grandchild should have read (inherited from child_share)
+      grandchild_cache = CreativeSharesCache.find_by(creative: @grandchild, user: @shared_user)
+      assert grandchild_cache.read?
+      assert_equal child_share.id, grandchild_cache.source_share_id
+    end
+
+    test "closest share wins - order independent when child share created first" do
+      # Create child share first with read
+      child_share = CreativeShare.create!(creative: @child, user: @shared_user, permission: "read")
+
+      # Create parent share with write
+      parent_share = CreativeShare.create!(creative: @root, user: @shared_user, permission: "write")
+
+      # Root should have write (from parent_share)
+      root_cache = CreativeSharesCache.find_by(creative: @root, user: @shared_user)
+      assert root_cache.write?
+      assert_equal parent_share.id, root_cache.source_share_id
+
+      # Child should still have read (from child_share - closest wins, not overwritten)
+      child_cache = CreativeSharesCache.find_by(creative: @child, user: @shared_user)
+      assert child_cache.read?
+      assert_equal child_share.id, child_cache.source_share_id
+
+      # Grandchild should have read (inherited from child_share, not overwritten)
+      grandchild_cache = CreativeSharesCache.find_by(creative: @grandchild, user: @shared_user)
+      assert grandchild_cache.read?
+      assert_equal child_share.id, grandchild_cache.source_share_id
+    end
   end
 end
