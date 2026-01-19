@@ -79,24 +79,30 @@ class CreativesController < ApplicationController
       redirect_options[:comment_id] = params[:comment_id] if params[:comment_id].present?
       format.html { redirect_to creatives_path(redirect_options) }
       format.json do
-        root = params[:root_id] ? Creative.find_by(id: params[:root_id]) : nil
-        depth = if root
-                  (@creative.ancestors.count - root.ancestors.count) + 1
-        else
-                  @creative.ancestors.count + 1
+        # Use HTTP caching with ETag based on creative's updated_at
+        effective = @creative.effective_origin
+        cache_key = "#{effective.id}-#{effective.updated_at.to_i}"
+
+        if stale?(etag: cache_key, last_modified: effective.updated_at, public: false)
+          root = params[:root_id] ? Creative.find_by(id: params[:root_id]) : nil
+          depth = if root
+                    (@creative.ancestors.count - root.ancestors.count) + 1
+          else
+                    @creative.ancestors.count + 1
+          end
+          render json: {
+            id: @creative.id,
+            description: @creative.effective_description,
+            description_raw_html: @creative.description,
+            origin_id: @creative.origin_id,
+            parent_id: @creative.parent_id,
+            progress: @creative.progress,
+            progress_html: view_context.render_creative_progress(@creative),
+            depth: depth,
+            prompt: @creative.prompt_for(Current.user),
+            has_children: @creative.children.exists?
+          }
         end
-        render json: {
-          id: @creative.id,
-          description: @creative.effective_description,
-          description_raw_html: @creative.description,
-          origin_id: @creative.origin_id,
-          parent_id: @creative.parent_id,
-          progress: @creative.progress,
-          progress_html: view_context.render_creative_progress(@creative),
-          depth: depth,
-          prompt: @creative.prompt_for(Current.user),
-          has_children: @creative.children.exists?
-        }
       end
     end
   end
@@ -319,32 +325,20 @@ class CreativesController < ApplicationController
   def children
     parent = Creative.find(params[:id])
     user_id = Current.user&.id || parent.effective_origin.user_id
-    expanded_state_map = CreativeExpandedState
-                            .where(user_id: user_id, creative_id: parent.id)
-                            .first&.expanded_status || {}
-    children = parent.children_with_permission(Current.user)
 
-    allowed_ids = nil
-    progress_map = nil
-    if params[:tags].present? || params[:min_progress].present? || params[:max_progress].present?
-      result = Creatives::IndexQuery.new(user: Current.user, params: params.merge(id: params[:id])).call
-      allowed_ids = result.allowed_creative_ids
-      progress_map = result.progress_map
+    # Use HTTP caching when no filters are active
+    has_filters = params[:tags].present? || params[:min_progress].present? || params[:max_progress].present?
+    unless has_filters
+      cache_key = "children/#{parent.id}-#{parent.updated_at.to_i}-#{user_id}"
+      if stale?(etag: cache_key, last_modified: parent.updated_at, public: false)
+        render_children_json(parent, user_id, nil, nil)
+      end
+      return
     end
 
-    level = params[:level].to_i
-    json_level = level.zero? ? 1 : level
-    render json: {
-      creatives: build_tree(
-        children,
-        params: params,
-        expanded_state_map: expanded_state_map,
-        level: json_level,
-        select_mode: params[:select_mode] == "1",
-        allowed_creative_ids: allowed_ids,
-        progress_map: progress_map
-      )
-    }
+    # With filters, compute allowed_ids and progress_map
+    result = Creatives::IndexQuery.new(user: Current.user, params: params.merge(id: params[:id])).call
+    render_children_json(parent, user_id, result.allowed_creative_ids, result.progress_map)
   end
 
   def unconvert
@@ -457,6 +451,27 @@ class CreativesController < ApplicationController
 
     def reorderer
       @reorderer ||= Creatives::Reorderer.new(user: Current.user)
+    end
+
+    def render_children_json(parent, user_id, allowed_ids, progress_map)
+      expanded_state_map = CreativeExpandedState
+                              .where(user_id: user_id, creative_id: parent.id)
+                              .first&.expanded_status || {}
+      children = parent.children_with_permission(Current.user)
+
+      level = params[:level].to_i
+      json_level = level.zero? ? 1 : level
+      render json: {
+        creatives: build_tree(
+          children,
+          params: params,
+          expanded_state_map: expanded_state_map,
+          level: json_level,
+          select_mode: params[:select_mode] == "1",
+          allowed_creative_ids: allowed_ids,
+          progress_map: progress_map
+        )
+      }
     end
 
     # Recursively destroy all descendants the user can delete

@@ -1,4 +1,7 @@
 class SystemSetting < ApplicationRecord
+  # Cache expiry time for settings
+  CACHE_EXPIRY = 5.minutes
+
   # Default values for account lockout
   DEFAULT_MAX_LOGIN_ATTEMPTS = 5
   DEFAULT_LOCKOUT_DURATION_MINUTES = 30
@@ -14,24 +17,50 @@ class SystemSetting < ApplicationRecord
 
   validates :key, presence: true, uniqueness: true
 
+  # Clear cache after save
+  after_commit :clear_cache
+
+  # Cached setting retrieval
+  def self.cached_value(key, default = nil)
+    Rails.cache.fetch("system_setting:#{key}", expires_in: CACHE_EXPIRY) do
+      find_by(key: key)&.value
+    end || default
+  end
+
+  def self.clear_all_cache
+    # Clear known setting keys
+    %w[
+      help_menu_link mcp_tool_approval_required max_login_attempts
+      lockout_duration_minutes session_timeout_minutes
+      password_reset_rate_limit password_reset_rate_period_minutes
+      api_rate_limit api_rate_period_minutes auth_providers_disabled
+    ].each { |k| Rails.cache.delete("system_setting:#{k}") }
+  end
+
+  private
+
+  def clear_cache
+    Rails.cache.delete("system_setting:#{key}")
+  end
+
   def self.help_menu_link
-    find_by(key: "help_menu_link")&.value
+    cached_value("help_menu_link")
   end
 
   def self.mcp_tool_approval_required?
     if Current.mcp_tool_approval_required.nil?
-      Current.mcp_tool_approval_required = find_by(key: "mcp_tool_approval_required")&.value == "true"
+      Current.mcp_tool_approval_required = cached_value("mcp_tool_approval_required") == "true"
     end
     Current.mcp_tool_approval_required
   end
 
   # Account lockout settings
   def self.max_login_attempts
-    find_by(key: "max_login_attempts")&.value&.to_i || DEFAULT_MAX_LOGIN_ATTEMPTS
+    cached_value("max_login_attempts")&.to_i || DEFAULT_MAX_LOGIN_ATTEMPTS
   end
 
   def self.lockout_duration_minutes
-    find_by(key: "lockout_duration_minutes")&.value&.to_i || DEFAULT_LOCKOUT_DURATION_MINUTES
+    cached_value("lockout_duration_minutes")&.to_i || DEFAULT_LOCKOUT_DURATION_MINUTES
   end
 
   def self.lockout_duration
@@ -40,7 +69,7 @@ class SystemSetting < ApplicationRecord
 
   # Session timeout settings
   def self.session_timeout_minutes
-    find_by(key: "session_timeout_minutes")&.value&.to_i || DEFAULT_SESSION_TIMEOUT_MINUTES
+    cached_value("session_timeout_minutes")&.to_i || DEFAULT_SESSION_TIMEOUT_MINUTES
   end
 
   def self.session_timeout_enabled?
@@ -53,11 +82,11 @@ class SystemSetting < ApplicationRecord
 
   # Rate limiting settings - Password Reset
   def self.password_reset_rate_limit
-    find_by(key: "password_reset_rate_limit")&.value&.to_i || DEFAULT_PASSWORD_RESET_RATE_LIMIT
+    cached_value("password_reset_rate_limit")&.to_i || DEFAULT_PASSWORD_RESET_RATE_LIMIT
   end
 
   def self.password_reset_rate_period_minutes
-    find_by(key: "password_reset_rate_period_minutes")&.value&.to_i || DEFAULT_PASSWORD_RESET_RATE_PERIOD_MINUTES
+    cached_value("password_reset_rate_period_minutes")&.to_i || DEFAULT_PASSWORD_RESET_RATE_PERIOD_MINUTES
   end
 
   def self.password_reset_rate_period
@@ -66,11 +95,11 @@ class SystemSetting < ApplicationRecord
 
   # Rate limiting settings - API
   def self.api_rate_limit
-    find_by(key: "api_rate_limit")&.value&.to_i || DEFAULT_API_RATE_LIMIT
+    cached_value("api_rate_limit")&.to_i || DEFAULT_API_RATE_LIMIT
   end
 
   def self.api_rate_period_minutes
-    find_by(key: "api_rate_period_minutes")&.value&.to_i || DEFAULT_API_RATE_PERIOD_MINUTES
+    cached_value("api_rate_period_minutes")&.to_i || DEFAULT_API_RATE_PERIOD_MINUTES
   end
 
   def self.api_rate_period
