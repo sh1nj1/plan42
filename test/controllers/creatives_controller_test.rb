@@ -105,4 +105,166 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     end
     assert_equal expected_markdown, response.body
   end
+
+  # === HTTP Caching Tests ===
+
+  test "show JSON ETag varies per user" do
+    creative = creatives(:root_parent)
+
+    # First user request
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    user_one_etag = response.headers["ETag"]
+
+    # Second user request
+    sign_out
+    sign_in_as(users(:two), password: "password")
+    CreativeShare.create!(creative: creative, user: users(:two), permission: :read)
+
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    user_two_etag = response.headers["ETag"]
+
+    assert_not_equal user_one_etag, user_two_etag, "ETag should vary per user"
+  end
+
+  test "show JSON ETag differs for anonymous vs authenticated" do
+    creative = creatives(:root_parent)
+    CreativeShare.create!(creative: creative, user: nil, permission: :read)
+
+    # Authenticated request
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    auth_etag = response.headers["ETag"]
+
+    # Anonymous request
+    sign_out
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    anon_etag = response.headers["ETag"]
+
+    assert_not_equal auth_etag, anon_etag, "ETag should differ between authenticated and anonymous users"
+  end
+
+  test "show JSON ETag changes when linked creative origin updates" do
+    parent = creatives(:root_parent)
+    child = creatives(:unconvert_target)
+    # Create a linked creative pointing to child
+    linked = Creative.create!(user: users(:one), parent: parent, origin: child)
+
+    get creative_path(linked), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    original_etag = response.headers["ETag"]
+
+    # Update the origin creative
+    child.touch
+
+    get creative_path(linked), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    updated_etag = response.headers["ETag"]
+
+    assert_not_equal original_etag, updated_etag, "ETag should change when linked creative's origin updates"
+  end
+
+  test "show JSON user-private prompt_for does not leak to other users" do
+    creative = creatives(:root_parent)
+    # Create a private prompt for user one (prompt_for looks for "> " prefix)
+    creative.comments.create!(user: users(:one), content: "> secret instructions for user one", private: true)
+
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    user_one_data = JSON.parse(response.body)
+    user_one_prompt = user_one_data["prompt"]
+
+    # User one should see their own prompt
+    assert_equal "secret instructions for user one", user_one_prompt,
+      "User should see their own private prompt"
+
+    # Grant read access to user two
+    CreativeShare.create!(creative: creative, user: users(:two), permission: :read)
+    sign_out
+    sign_in_as(users(:two), password: "password")
+
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    user_two_data = JSON.parse(response.body)
+    user_two_prompt = user_two_data["prompt"]
+
+    # User two should NOT see user one's private prompt
+    assert_nil user_two_prompt, "Private prompt should not leak to other users"
+  end
+
+  test "show JSON ETag changes when prompt comment is added" do
+    creative = creatives(:root_parent)
+
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    original_etag = response.headers["ETag"]
+
+    # Add a prompt comment
+    creative.comments.create!(user: users(:one), content: "> new prompt", private: true)
+
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    updated_etag = response.headers["ETag"]
+
+    assert_not_equal original_etag, updated_etag,
+      "ETag should change when prompt comment is added"
+  end
+
+  test "show JSON ETag changes when child is added" do
+    creative = creatives(:root_parent)
+
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    original_etag = response.headers["ETag"]
+
+    # Add a child
+    Creative.create!(user: users(:one), parent: creative, description: "New Child")
+
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    updated_etag = response.headers["ETag"]
+    updated_data = JSON.parse(response.body)
+
+    assert_not_equal original_etag, updated_etag,
+      "ETag should change when child is added"
+    assert updated_data["has_children"], "has_children should be true after adding child"
+  end
+
+  test "children endpoint sets private no-store headers" do
+    creative = creatives(:root_parent)
+
+    get children_creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+
+    cache_control = response.headers["Cache-Control"]
+    # no-store is stronger than no-cache - it prevents all caching
+    assert_includes cache_control, "private", "Children endpoint should set private to prevent proxy caching"
+    assert_includes cache_control, "no-store", "Children endpoint should set no-store to prevent browser caching"
+  end
+
+  test "children endpoint returns new children in response" do
+    creative = creatives(:root_parent)
+
+    # First request
+    get children_creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    first_data = JSON.parse(response.body)
+    first_child_ids = first_data["creatives"].map { |c| c["id"] }
+
+    # Add a new child
+    new_child = Creative.create!(user: users(:one), parent: creative, description: "Brand New Child")
+
+    # Second request - should see the new child
+    get children_creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    second_data = JSON.parse(response.body)
+    second_child_ids = second_data["creatives"].map { |c| c["id"] }
+
+    assert_includes second_child_ids, new_child.id,
+      "New child should appear in response"
+    assert_not_includes first_child_ids, new_child.id,
+      "New child should not have been in first response"
+  end
 end

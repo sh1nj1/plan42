@@ -104,6 +104,37 @@ class User < ApplicationRecord
     name.presence || email
   end
 
+  # Account lockout methods
+  def locked?
+    locked_at.present? && locked_at > SystemSetting.lockout_duration.ago
+  end
+
+  def lock_account!
+    update_columns(locked_at: Time.current)
+  end
+
+  def unlock_account!
+    update_columns(locked_at: nil, failed_login_attempts: 0)
+  end
+
+  def record_failed_login!
+    new_count = (failed_login_attempts || 0) + 1
+    if new_count >= SystemSetting.max_login_attempts
+      update_columns(failed_login_attempts: new_count, locked_at: Time.current)
+    else
+      update_column(:failed_login_attempts, new_count)
+    end
+  end
+
+  def reset_failed_login_attempts!
+    update_column(:failed_login_attempts, 0) if failed_login_attempts.to_i > 0
+  end
+
+  def remaining_lockout_time
+    return 0 unless locked?
+    ((locked_at + SystemSetting.lockout_duration) - Time.current).to_i
+  end
+
   def theme_accessibility
     return if theme.blank? || %w[light dark].include?(theme)
 

@@ -46,6 +46,8 @@ en:
         try_another_email_or_password: "Try another email address or password."
         email_not_verified: "You must verify your email before signing in."
         provider_disabled: "This authentication method is currently disabled."
+        account_locked: "Account is locked due to too many failed login attempts. Please try again in %{minutes} minute(s)."
+        account_locked_now: "Account has been locked due to too many failed login attempts. Please try again in %{minutes} minute(s)."
         sign_in_with_google: "Sign in with Google"
         sign_in_with_webauthn: "Sign in with Passkey"
     webauthn:
