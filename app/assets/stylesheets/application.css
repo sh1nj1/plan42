@@ -264,8 +264,10 @@ button {
 }
 
 #plans-list-area {
-    max-width: 960px;
+    max-width: var(--max-width);
+    width: min(100%, var(--max-width));
     margin: 0.5em auto;
+    box-sizing: border-box;
 }
 
 #plans-list-area hr {
@@ -314,10 +316,12 @@ button {
     overflow-x: auto;
     position: relative;
     padding-bottom: 1em;
+    width: 100%;
 }
 
 .plans-timeline-wrapper {
     position: relative;
+    width: 100%;
 }
 
 .plans-timeline-wrapper #timeline-today-btn {
