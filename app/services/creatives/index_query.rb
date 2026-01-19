@@ -171,12 +171,10 @@ module Creatives
 
         parent.children.where(id: allowed_ids_array).order(:sequence).to_a
       else
-        # Find top-most nodes from allowed_ids
-        creatives = Creative.where(id: allowed_ids_array).to_a
-
-        creatives.reject do |creative|
-          creative.ancestor_ids.any? { |ancestor_id| allowed_ids_set.include?(ancestor_id.to_s) }
-        end.sort_by(&:sequence)
+        # Root view: only show creatives with parent_id = nil
+        # This prevents Linked Creatives (which have parent_id) from appearing at root
+        # even if their ancestors are not in allowed_ids
+        Creative.where(id: allowed_ids_array, parent_id: nil).order(:sequence).to_a
       end
     end
 
