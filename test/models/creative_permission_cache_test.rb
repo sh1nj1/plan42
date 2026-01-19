@@ -159,12 +159,13 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     assert @root.has_permission?(@user2, :read)
   end
 
-  test "ownership grants permission without cache entry" do
+  test "ownership creates cache entries with admin permission" do
     refute @root.has_permission?(@user1, :read)
 
     @root.update!(user: @user1)
 
-    # Owner has permission without needing cache entry
+    # Owner has cache entry with admin permission
+    assert CreativeSharesCache.exists?(creative: @root, user: @user1, permission: :admin)
     assert @root.reload.has_permission?(@user1, :admin)
     assert @root.has_permission?(@user1, :read)
   end

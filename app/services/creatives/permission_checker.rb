@@ -3,16 +3,16 @@ module Creatives
     def initialize(creative, user)
       @creative = creative
       @user = user
-      @cache = Current.respond_to?(:creative_share_cache) ? Current.creative_share_cache : nil
     end
 
     def allowed?(required_permission = :read)
       base = creative.origin_id.nil? ? creative : creative.origin
 
-      # 소유자 체크
+      # Owner always has admin permission (fallback for fixtures and missing cache entries)
       return true if base.user_id == user&.id
 
-      # 캐시 테이블에서 O(1) 조회
+      # O(1) 캐시 테이블 조회
+      # 소유자도 캐시에 있음 (admin 권한으로)
       # no_access는 캐시에 없으므로 조회 결과가 없으면 = 접근 불가
       user_conditions = user ? [ user.id, nil ] : [ nil ]
       cache_entry = CreativeSharesCache
@@ -27,7 +27,7 @@ module Creatives
 
     private
 
-    attr_reader :creative, :user, :cache
+    attr_reader :creative, :user
 
     def permission_rank(value)
       CreativeShare.permissions[value.to_s]

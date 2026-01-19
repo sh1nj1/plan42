@@ -18,9 +18,6 @@ class CreativesController < ApplicationController
       end
       format.json do
         # Full query only for JSON requests
-        # 권한 캐시: 요청 내 CreativeShare 모두 메모리에 올림
-        Current.creative_share_cache = CreativeShare.where(user: Current.user).index_by(&:creative_id)
-
         user_id_for_state = Current.user&.id
         if user_id_for_state.nil? && params[:id].present?
           # Public view: use owner's state

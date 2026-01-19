@@ -93,10 +93,17 @@ module Creatives
       # 소유자도 캐시에 있으므로 단일 쿼리로 처리
       user_conditions = user ? [ user.id, nil ] : [ nil ]
 
-      CreativeSharesCache
+      accessible_ids = CreativeSharesCache
         .where(creative_id: ids, user_id: user_conditions)
         .pluck(:creative_id)
-        .uniq
+
+      # Fallback: include owned creatives (for fixtures and missing cache entries)
+      if user
+        owned_ids = Creative.where(id: ids, user_id: user.id).pluck(:id)
+        accessible_ids = (accessible_ids + owned_ids).uniq
+      end
+
+      accessible_ids
     end
 
     def calculate_progress(allowed_ids, matched_ids)
