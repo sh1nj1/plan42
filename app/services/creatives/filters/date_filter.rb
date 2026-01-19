@@ -30,14 +30,26 @@ module Creatives
         end
 
         if params[:due_before].present?
-          result = result.where("labels.target_date <= ?", Date.parse(params[:due_before]))
+          if (due_before = safe_parse_date(params[:due_before]))
+            result = result.where("labels.target_date <= ?", due_before)
+          end
         end
 
         if params[:due_after].present?
-          result = result.where("labels.target_date >= ?", Date.parse(params[:due_after]))
+          if (due_after = safe_parse_date(params[:due_after]))
+            result = result.where("labels.target_date >= ?", due_after)
+          end
         end
 
         result.distinct.pluck(:id)
+      end
+
+      private
+
+      def safe_parse_date(value)
+        Date.iso8601(value)
+      rescue ArgumentError, TypeError
+        nil
       end
     end
   end
