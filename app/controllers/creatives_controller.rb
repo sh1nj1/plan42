@@ -80,15 +80,43 @@ class CreativesController < ApplicationController
       format.html { redirect_to creatives_path(redirect_options) }
       format.json do
         # Use HTTP caching with ETag - must vary by user since response includes user-specific data
+        # ETag must also include prompt comment and children timestamps since those are in response
         effective = @creative.effective_origin
         cache_user = Current.user&.id || "anon"
-        last_modified = [@creative.updated_at, effective.updated_at].max
+
+        # Include prompt comment timestamp (user-specific private comments starting with "> ")
+        # Note: LIKE '> %' uses index prefix scan if available; consider dedicated prompt flag if bottleneck
+        prompt_updated = if Current.user
+          @creative.comments
+            .where(private: true, user: Current.user)
+            .where("content LIKE ?", "> %")
+            .maximum(:updated_at)
+        end
+
+        # Get children stats in a single query, reuse for has_children
+        # Use separate Arel.sql args so pick returns an array; unscope order to avoid Postgres aggregate error
+        children_count, children_max_updated = @creative.children
+          .unscope(:order)
+          .pick(Arel.sql("COUNT(*)"), Arel.sql("MAX(updated_at)"))
+        children_count = children_count.to_i  # Handle nil and string type-casting from adapters
+        children_key = "#{children_count}-#{children_max_updated&.to_i}"
+
+        last_modified = [
+          @creative.updated_at,
+          effective.updated_at,
+          prompt_updated
+        ].compact.max
+
         etag = [
           "creative",
           @creative.cache_key_with_version,
           effective.cache_key_with_version,
           "user",
-          cache_user
+          cache_user,
+          "prompt",
+          prompt_updated&.to_i,
+          "children",
+          children_key
         ].join(":")
 
         if stale?(etag: etag, last_modified: last_modified, public: false)
@@ -108,7 +136,7 @@ class CreativesController < ApplicationController
             progress_html: view_context.render_creative_progress(@creative),
             depth: depth,
             prompt: @creative.prompt_for(Current.user),
-            has_children: @creative.children.exists?
+            has_children: children_count > 0
           }
         end
       end
@@ -341,7 +369,8 @@ class CreativesController < ApplicationController
     # and CreativeExpandedState. Tracking all dependencies reliably is expensive
     # (requires descendant_ids query). Stale 304 responses could leak data after
     # permission revocation. Re-enable when a cheap version key mechanism exists.
-    expires_now
+    # Use private + no-store to prevent any caching (proxy or browser).
+    response.headers["Cache-Control"] = "private, no-store"
 
     has_filters = params[:tags].present? || params[:min_progress].present? || params[:max_progress].present?
     if has_filters

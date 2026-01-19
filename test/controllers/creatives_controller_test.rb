@@ -168,13 +168,17 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
 
   test "show JSON user-private prompt_for does not leak to other users" do
     creative = creatives(:root_parent)
-    # Create a private prompt for user one
-    creative.comments.create!(user: users(:one), content: "/prompt secret instructions for user one", private: true)
+    # Create a private prompt for user one (prompt_for looks for "> " prefix)
+    creative.comments.create!(user: users(:one), content: "> secret instructions for user one", private: true)
 
     get creative_path(creative), headers: { "ACCEPT" => "application/json" }
     assert_response :success
     user_one_data = JSON.parse(response.body)
     user_one_prompt = user_one_data["prompt"]
+
+    # User one should see their own prompt
+    assert_equal "secret instructions for user one", user_one_prompt,
+      "User should see their own private prompt"
 
     # Grant read access to user two
     CreativeShare.create!(creative: creative, user: users(:two), permission: :read)
@@ -186,40 +190,81 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     user_two_data = JSON.parse(response.body)
     user_two_prompt = user_two_data["prompt"]
 
-    # User two should not see user one's private prompt
-    if user_one_prompt.present? && user_one_prompt.include?("secret instructions")
-      assert_not_includes user_two_prompt.to_s, "secret instructions", "Private prompt should not leak to other users"
-    end
+    # User two should NOT see user one's private prompt
+    assert_nil user_two_prompt, "Private prompt should not leak to other users"
   end
 
-  test "children endpoint sets no-cache headers" do
+  test "show JSON ETag changes when prompt comment is added" do
+    creative = creatives(:root_parent)
+
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    original_etag = response.headers["ETag"]
+
+    # Add a prompt comment
+    creative.comments.create!(user: users(:one), content: "> new prompt", private: true)
+
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    updated_etag = response.headers["ETag"]
+
+    assert_not_equal original_etag, updated_etag,
+      "ETag should change when prompt comment is added"
+  end
+
+  test "show JSON ETag changes when child is added" do
+    creative = creatives(:root_parent)
+
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    original_etag = response.headers["ETag"]
+
+    # Add a child
+    Creative.create!(user: users(:one), parent: creative, description: "New Child")
+
+    get creative_path(creative), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    updated_etag = response.headers["ETag"]
+    updated_data = JSON.parse(response.body)
+
+    assert_not_equal original_etag, updated_etag,
+      "ETag should change when child is added"
+    assert updated_data["has_children"], "has_children should be true after adding child"
+  end
+
+  test "children endpoint sets private no-store headers" do
     creative = creatives(:root_parent)
 
     get children_creative_path(creative), headers: { "ACCEPT" => "application/json" }
     assert_response :success
 
-    # expires_now sets Cache-Control: no-cache, which instructs browsers to
-    # revalidate with server before using cached response
     cache_control = response.headers["Cache-Control"]
-    assert_includes cache_control, "no-cache", "Children endpoint should set no-cache header"
+    # no-store is stronger than no-cache - it prevents all caching
+    assert_includes cache_control, "private", "Children endpoint should set private to prevent proxy caching"
+    assert_includes cache_control, "no-store", "Children endpoint should set no-store to prevent browser caching"
   end
 
-  test "children endpoint returns fresh data on each request" do
+  test "children endpoint returns new children in response" do
     creative = creatives(:root_parent)
 
     # First request
     get children_creative_path(creative), headers: { "ACCEPT" => "application/json" }
     assert_response :success
-    first_response = response.body
+    first_data = JSON.parse(response.body)
+    first_child_ids = first_data["creatives"].map { |c| c["id"] }
 
     # Add a new child
-    Creative.create!(user: users(:one), parent: creative, description: "New Child #{Time.current.to_i}")
+    new_child = Creative.create!(user: users(:one), parent: creative, description: "Brand New Child")
 
     # Second request - should see the new child
     get children_creative_path(creative), headers: { "ACCEPT" => "application/json" }
-    # Response might be 200 or 304 depending on Rails ETag behavior,
-    # but the key is that Cache-Control: no-cache forces revalidation
-    cache_control = response.headers["Cache-Control"]
-    assert_includes cache_control, "no-cache"
+    assert_response :success
+    second_data = JSON.parse(response.body)
+    second_child_ids = second_data["creatives"].map { |c| c["id"] }
+
+    assert_includes second_child_ids, new_child.id,
+      "New child should appear in response"
+    assert_not_includes first_child_ids, new_child.id,
+      "New child should not have been in first response"
   end
 end
