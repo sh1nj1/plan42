@@ -105,5 +105,33 @@ module Creatives
       assert_includes result.allowed_ids, @root.id.to_s
       assert_includes result.allowed_ids, @child1.id.to_s
     end
+
+    test "resolve_ancestors includes linked creatives that reference matched origins" do
+      # Create an origin with completed child
+      origin = Creative.create!(user: @owner, description: "Origin", progress: 0.5)
+      origin_child = Creative.create!(user: @owner, description: "Origin Child", progress: 1.0, parent: origin)
+
+      # Create a linked creative under root that links to origin
+      linked = Creative.create!(user: @owner, description: "Linked", origin: origin, parent: @root)
+
+      # Scope includes origin, origin_child, and linked
+      scope = Creative.where(id: [ origin.id, origin_child.id, linked.id, @root.id ])
+
+      # Filter for completed (min=1, max=1) - only origin_child matches
+      result = FilterPipeline.new(user: @owner, params: { min_progress: "1", max_progress: "1" }, scope: scope).call
+
+      # origin_child matches the filter
+      assert_includes result.matched_ids, origin_child.id
+
+      # allowed_ids should include:
+      # - origin_child (matched)
+      # - origin (ancestor of origin_child)
+      # - linked (links to origin)
+      # - root (ancestor of linked)
+      assert_includes result.allowed_ids, origin_child.id.to_s
+      assert_includes result.allowed_ids, origin.id.to_s
+      assert_includes result.allowed_ids, linked.id.to_s
+      assert_includes result.allowed_ids, @root.id.to_s
+    end
   end
 end

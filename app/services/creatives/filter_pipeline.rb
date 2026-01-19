@@ -70,22 +70,33 @@ module Creatives
         .where(descendant_id: matched_ids)
         .pluck(:ancestor_id)
 
-      (matched_ids + ancestors).uniq
+      all_related = (matched_ids + ancestors).uniq
+
+      # Include Linked Creatives that reference any of these as origin
+      # (so they appear as virtual parents in the tree)
+      linked_to_related = Creative
+        .where(origin_id: all_related)
+        .pluck(:id)
+
+      return all_related if linked_to_related.empty?
+
+      # Also include ancestors of those Linked Creatives
+      linked_ancestors = CreativeHierarchy
+        .where(descendant_id: linked_to_related)
+        .pluck(:ancestor_id)
+
+      (all_related + linked_to_related + linked_ancestors).uniq
     end
 
     def filter_by_permission(ids)
       # O(1) 캐시 테이블 조회
-      # no_access는 캐시에 없으므로 별도 체크 불필요
+      # 소유자도 캐시에 있으므로 단일 쿼리로 처리
       user_conditions = user ? [ user.id, nil ] : [ nil ]
 
-      accessible_ids = CreativeSharesCache
+      CreativeSharesCache
         .where(creative_id: ids, user_id: user_conditions)
         .pluck(:creative_id)
-
-      # 소유한 Creative도 포함
-      owned_ids = user ? Creative.where(id: ids, user_id: user.id).pluck(:id) : []
-
-      (accessible_ids + owned_ids).uniq
+        .uniq
     end
 
     def calculate_progress(allowed_ids, matched_ids)

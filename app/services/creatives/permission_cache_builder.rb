@@ -1,5 +1,33 @@
 module Creatives
   class PermissionCacheBuilder
+    # Creative 생성 시 소유자 캐시 추가
+    def self.cache_owner(creative)
+      return unless creative.user_id
+
+      CreativeSharesCache.find_or_create_by!(
+        creative_id: creative.id,
+        user_id: creative.user_id
+      ) do |cache|
+        cache.permission = :admin
+        cache.source_share_id = nil
+      end
+    end
+
+    # Creative user_id 변경 시 호출
+    def self.update_owner(creative, old_user_id, new_user_id)
+      # 기존 소유자의 owner 캐시 삭제 (source_share_id가 nil인 것만)
+      if old_user_id
+        CreativeSharesCache.where(
+          creative_id: creative.id,
+          user_id: old_user_id,
+          source_share_id: nil
+        ).delete_all
+      end
+
+      # 새 소유자 캐시 추가
+      cache_owner(creative) if new_user_id
+    end
+
     # CreativeShare 생성/업데이트 시 호출
     def self.propagate_share(creative_share)
       return if creative_share.destroyed?
@@ -45,13 +73,20 @@ module Creatives
 
     # Creative parent_id 변경 시 호출
     def self.rebuild_for_creative(creative)
-      descendant_ids = [ creative.id ] + creative.descendant_ids
+      descendants = creative.self_and_descendants
 
-      # 해당 creative와 자손들의 캐시 삭제
-      CreativeSharesCache.where(creative_id: descendant_ids).delete_all
+      # 해당 creative와 자손들의 캐시 삭제 (share 기반만 - owner entries 유지)
+      CreativeSharesCache.where(creative_id: descendants.pluck(:id))
+                         .where.not(source_share_id: nil)
+                         .delete_all
 
       # 새 부모 기준으로 조상 share 전파
       rebuild_from_ancestors_for_subtree(creative)
+
+      # 소유자 캐시 재확인 (혹시 누락된 경우)
+      descendants.each do |c|
+        cache_owner(c) if c.user_id
+      end
     end
 
     class << self

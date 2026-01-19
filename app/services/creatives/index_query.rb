@@ -132,18 +132,30 @@ module Creatives
         base = Creative.find_by(id: params[:id])&.effective_origin
         return Creative.none unless base
 
-        # Include actual descendants
-        actual_descendant_ids = base.self_and_descendant_ids
+        # Use subqueries instead of loading IDs into memory
+        # 1. Actual descendants (via creative_hierarchies)
+        descendants_subquery = CreativeHierarchy
+          .where(ancestor_id: base.id)
+          .select(:descendant_id)
 
-        # Include virtually linked descendants (origins of shell creatives in the subtree)
-        shell_creatives = Creative.where(id: actual_descendant_ids).where.not(origin_id: nil)
-        origin_ids = shell_creatives.pluck(:origin_id).uniq
-        linked_descendant_ids = origin_ids.flat_map do |oid|
-          origin = Creative.find_by(id: oid)
-          origin ? origin.self_and_descendant_ids : []
-        end
+        # 2. Linked descendants: origins of shell creatives -> their descendants
+        # First, find shell creatives in the subtree
+        shells_in_subtree = Creative
+          .where("creatives.id IN (?)", descendants_subquery)
+          .where.not(origin_id: nil)
+          .select(:origin_id)
 
-        Creative.where(id: (actual_descendant_ids + linked_descendant_ids).uniq)
+        # Then, get descendants of those origins
+        linked_descendants_subquery = CreativeHierarchy
+          .where("ancestor_id IN (?)", shells_in_subtree)
+          .select(:descendant_id)
+
+        # Combine both subqueries (use creatives.id to avoid ambiguity with joins)
+        Creative.where(
+          "creatives.id IN (?) OR creatives.id IN (?)",
+          descendants_subquery,
+          linked_descendants_subquery
+        )
       else
         Creative.where(origin_id: nil)  # Only real creatives (not shells)
       end

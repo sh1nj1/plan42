@@ -66,6 +66,31 @@ module Creatives
         assert_includes result, @incomplete.id
         assert_includes result, @zero_progress.id
       end
+
+      test "match filters linked creatives by origin's progress" do
+        # Origin with completed progress
+        origin = Creative.create!(user: @owner, description: "Origin", progress: 1.0)
+        # Linked creative (shell) - its own progress is 0, but should use origin's
+        linked = Creative.create!(user: @owner, description: "Linked", origin: origin, parent: @completed)
+
+        scope_with_linked = Creative.where(id: [ @completed.id, @incomplete.id, linked.id ])
+
+        # Filter for completed (min=1, max=1)
+        filter = ProgressFilter.new(params: { min_progress: "1", max_progress: "1" }, scope: scope_with_linked)
+        result = filter.match
+
+        assert_includes result, @completed.id
+        assert_includes result, linked.id  # Should match because origin.progress = 1.0
+        refute_includes result, @incomplete.id
+
+        # Filter for incomplete (min=0, max=0.99)
+        filter = ProgressFilter.new(params: { min_progress: "0", max_progress: "0.99" }, scope: scope_with_linked)
+        result = filter.match
+
+        refute_includes result, @completed.id
+        refute_includes result, linked.id  # Should NOT match because origin.progress = 1.0
+        assert_includes result, @incomplete.id
+      end
     end
   end
 end

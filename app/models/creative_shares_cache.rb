@@ -1,7 +1,7 @@
 class CreativeSharesCache < ApplicationRecord
   belongs_to :creative
   belongs_to :user, optional: true
-  belongs_to :source_share, class_name: "CreativeShare"
+  belongs_to :source_share, class_name: "CreativeShare", optional: true
 
   enum :permission, {
     no_access: 0,

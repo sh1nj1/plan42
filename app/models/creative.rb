@@ -49,6 +49,7 @@ class Creative < ApplicationRecord
   belongs_to :user, optional: true
 
   has_many :creative_shares, dependent: :destroy
+  has_many :creative_shares_caches, class_name: "CreativeSharesCache", dependent: :delete_all
   has_many :tags, dependent: :destroy
   has_many :creative_expanded_states, dependent: :delete_all
   has_many :invitations, dependent: :delete_all
@@ -77,7 +78,9 @@ class Creative < ApplicationRecord
   after_destroy_commit :purge_description_attachments
   after_save :update_mcp_tools
 
-  after_commit :rebuild_permission_cache, if: :saved_change_to_parent_id?
+  after_commit :rebuild_permission_cache, if: :saved_change_to_parent_id?, unless: :destroyed?
+  after_commit :cache_owner_permission, on: :create
+  after_commit :update_owner_cache, if: :saved_change_to_user_id?, unless: :destroyed?
 
 
 
@@ -418,6 +421,15 @@ class Creative < ApplicationRecord
 
   def rebuild_permission_cache
     Creatives::PermissionCacheBuilder.rebuild_for_creative(self)
+  end
+
+  def cache_owner_permission
+    Creatives::PermissionCacheBuilder.cache_owner(self)
+  end
+
+  def update_owner_cache
+    old_user_id, new_user_id = saved_change_to_user_id
+    Creatives::PermissionCacheBuilder.update_owner(self, old_user_id, new_user_id)
   end
 
   private
