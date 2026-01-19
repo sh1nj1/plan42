@@ -106,6 +106,20 @@ module Creatives
       assert_includes result.allowed_ids, @child1.id.to_s
     end
 
+    test "no_access user entry blocks access even with public share" do
+      # Public share grants read
+      CreativeShare.create!(creative: @root, user: nil, permission: "read")
+      # But user has explicit no_access
+      CreativeShare.create!(creative: @root, user: @shared_user, permission: "no_access")
+
+      scope = Creative.where(id: [ @root.id, @child1.id ])
+      result = FilterPipeline.new(user: @shared_user, params: {}, scope: scope).call
+
+      # Should NOT see root or children (no_access blocks)
+      refute_includes result.allowed_ids, @root.id.to_s
+      refute_includes result.allowed_ids, @child1.id.to_s
+    end
+
     test "resolve_ancestors includes linked creatives that reference matched origins" do
       # Create an origin with completed child
       origin = Creative.create!(user: @owner, description: "Origin", progress: 0.5)

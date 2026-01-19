@@ -102,7 +102,8 @@ module Creatives
         user_accessible = []
         user_denied = Set.new
         user_entries.each do |cid, perm|
-          if perm == CreativeSharesCache.permissions[:no_access]
+          # perm is a string from enum (e.g., "no_access", "read")
+          if perm == "no_access"
             user_denied << cid
           else
             user_accessible << cid
