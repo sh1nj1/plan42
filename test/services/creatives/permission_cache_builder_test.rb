@@ -80,6 +80,36 @@ module Creatives
       assert grandchild_cache.admin?
     end
 
+    test "rebuild_for_creative preserves direct shares on moved subtree" do
+      other_owner = users(:three)
+      @other_tree = Creative.create!(user: other_owner, description: "Other Root", progress: 0.0)
+
+      # Share other_tree with admin
+      CreativeShare.create!(creative: @other_tree, user: @shared_user, permission: "admin")
+
+      # Share child directly with write (this should be preserved after move)
+      child_share = CreativeShare.create!(creative: @child, user: @shared_user, permission: "write")
+
+      # Verify child has write from its direct share
+      child_cache = CreativeSharesCache.find_by(creative: @child, user: @shared_user)
+      assert child_cache.write?
+      assert_equal child_share.id, child_cache.source_share_id
+
+      # Move child to other_tree
+      @child.update!(parent: @other_tree)
+
+      # Child should still have write from its direct share (not overwritten by other_tree's admin)
+      @child.reload
+      child_cache = CreativeSharesCache.find_by(creative: @child, user: @shared_user)
+      assert child_cache.write?, "Direct share on moved node should be preserved"
+      assert_equal child_share.id, child_cache.source_share_id
+
+      # Grandchild should have write inherited from child's direct share
+      grandchild_cache = CreativeSharesCache.find_by(creative: @grandchild, user: @shared_user)
+      assert grandchild_cache.write?, "Grandchild should inherit from child's direct share"
+      assert_equal child_share.id, grandchild_cache.source_share_id
+    end
+
     test "propagate_share handles public shares (user_id = nil)" do
       share = CreativeShare.create!(creative: @root, user: nil, permission: "read")
 

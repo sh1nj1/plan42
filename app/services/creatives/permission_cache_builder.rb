@@ -94,18 +94,24 @@ module Creatives
 
     # Creative parent_id 변경 시 호출
     def self.rebuild_for_creative(creative)
-      descendants = creative.self_and_descendants
+      descendant_ids = creative.self_and_descendant_ids
 
       # 해당 creative와 자손들의 캐시 삭제 (share 기반만 - owner entries 유지)
-      CreativeSharesCache.where(creative_id: descendants.pluck(:id))
+      CreativeSharesCache.where(creative_id: descendant_ids)
                          .where.not(source_share_id: nil)
                          .delete_all
 
       # 새 부모 기준으로 조상 share 전파
       rebuild_from_ancestors_for_subtree(creative)
 
+      # 이동된 서브트리 내의 직접 share들 재적용
+      # (closest-share-wins 의미론으로 올바르게 전파됨)
+      CreativeShare.where(creative_id: descendant_ids)
+                   .where.not(permission: :no_access)
+                   .find_each { |share| propagate_share(share) }
+
       # 소유자 캐시 재확인 (혹시 누락된 경우)
-      descendants.each do |c|
+      creative.self_and_descendants.each do |c|
         cache_owner(c) if c.user_id
       end
     end
