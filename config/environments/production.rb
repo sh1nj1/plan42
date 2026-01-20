@@ -3,6 +3,10 @@ require "active_support/core_ext/integer/time"
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
+  # Use SECRET_KEY_BASE from environment variable (only if set, to allow
+  # SECRET_KEY_BASE_DUMMY=1 during asset precompilation in Docker builds)
+  config.secret_key_base = ENV["SECRET_KEY_BASE"] if ENV["SECRET_KEY_BASE"].present?
+
   # Enable HTTP compression for responses (gzip/deflate)
   # Reduces bandwidth by 60-70% for text-based responses
   config.middleware.use Rack::Deflater
