@@ -667,7 +667,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_20_163856) do
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
-  add_foreign_key "creative_shares", "users", column: "shared_by_id"
+  add_foreign_key "creative_shares", "users", column: "shared_by_id", on_delete: :nullify
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
