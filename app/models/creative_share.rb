@@ -23,7 +23,7 @@ class CreativeShare < ApplicationRecord
   after_destroy :touch_creative_subtree
 
   after_commit :propagate_cache, on: [ :create, :update ]
-  after_destroy :remove_cache
+  after_destroy_commit :remove_cache
 
   # Given ancestor_ids and ancestor_shares, returns the closest CreativeShare
   # in the ancestors. If there is no ancestor share, returns nil.
