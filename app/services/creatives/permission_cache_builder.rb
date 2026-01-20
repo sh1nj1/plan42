@@ -12,7 +12,7 @@ module Creatives
           source_share_id: nil
         },
         unique_by: [ :creative_id, :user_id ],
-        update_only: [ :permission ]
+        update_only: [ :permission, :source_share_id ]
       )
     end
 
