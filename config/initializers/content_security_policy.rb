@@ -27,8 +27,9 @@ Rails.application.configure do
 
   # Generate session nonces for permitted scripts and styles
   # This allows inline scripts/styles with matching nonce attributes
-  config.content_security_policy_nonce_generator = ->(request) { request.session.id.to_s }
-  config.content_security_policy_nonce_directives = %w[script-src style-src]
+  # TODO: Re-enable after moving inline scripts to external files (Option 3)
+  # config.content_security_policy_nonce_generator = ->(request) { request.session.id.to_s }
+  # config.content_security_policy_nonce_directives = %w[script-src style-src]
 
   # Report violations without enforcing the policy (set to true for initial deployment)
   # Once verified, set to false to enforce the policy
