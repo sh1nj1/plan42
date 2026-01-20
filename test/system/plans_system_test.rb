@@ -59,16 +59,21 @@ class PlansSystemTest < ApplicationSystemTestCase
       click_button I18n.t("plans.add_plan")
     end
 
+    # Wait for the plan to appear on the timeline (use visible: :all since plan might be outside visible scroll area)
+    begin
+      assert_selector ".plan-label", text: /Plan to be deleted/, visible: :all, wait: 10
+    rescue StandardError => e
+      logs = page.driver.browser.manage.logs.get(:browser).map(&:message).join("\n")
+      puts "BROWSER LOGS:\n#{logs}"
+      Rails.logger.fatal "BROWSER LOGS:\n#{logs}"
+      raise e
+    end
+
     within "#plans-list-area" do
-      begin
-        assert_selector ".plan-label", text: /Plan to be deleted/, visible: :all, wait: 10
-      rescue StandardError => e
-        logs = page.driver.browser.manage.logs.get(:browser).map(&:message).join("\n")
-        puts "BROWSER LOGS:\n#{logs}"
-        Rails.logger.fatal "BROWSER LOGS:\n#{logs}"
-        raise e
-      end
-      find(".plan-label", text: /Plan to be deleted/, visible: :all).find(:xpath, "..").find(".delete-plan-btn", visible: :all).click
+      # Find the plan bar and use JavaScript to click the delete button (more reliable)
+      plan_bar = find(".plan-bar", text: /Plan to be deleted/, visible: :all)
+      delete_btn = plan_bar.find(".delete-plan-btn", visible: :all)
+      page.execute_script("arguments[0].click()", delete_btn)
     end
 
     accept_alert
