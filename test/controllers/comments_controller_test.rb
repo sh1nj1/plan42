@@ -37,14 +37,19 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     other_user = users(:two)
     other_user.update!(email_verified_at: Time.current)
 
-    shared_creative = Creative.create!(user: other_user, description: "Shared Creative", progress: 0.0)
-    CreativeShare.create!(creative: shared_creative, user: @user, permission: :admin, shared_by: other_user)
+    shared_creative = nil
+    perform_enqueued_jobs do
+      shared_creative = Creative.create!(user: other_user, description: "Shared Creative", progress: 0.0)
+      CreativeShare.create!(creative: shared_creative, user: @user, permission: :admin, shared_by: other_user)
+    end
 
     comment = shared_creative.comments.create!(content: "- Shared task", user: other_user)
 
     assert_difference("Creative.count", 1) do
       assert_no_difference("Comment.count") do
-        post convert_creative_comment_path(shared_creative, comment)
+        perform_enqueued_jobs do
+          post convert_creative_comment_path(shared_creative, comment)
+        end
       end
     end
 
@@ -415,11 +420,14 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     other_user = users(:two)
     other_user.update!(email_verified_at: Time.current)
 
-    # Create a creative owned by other_user
-    other_creative = Creative.create!(user: other_user, description: "Other creative", progress: 0.0)
+    other_creative = nil
+    perform_enqueued_jobs do
+      # Create a creative owned by other_user
+      other_creative = Creative.create!(user: other_user, description: "Other creative", progress: 0.0)
 
-    # Share with admin permission to @user
-    CreativeShare.create!(creative: other_creative, user: @user, permission: :admin, shared_by: other_user)
+      # Share with admin permission to @user
+      CreativeShare.create!(creative: other_creative, user: @user, permission: :admin, shared_by: other_user)
+    end
 
     # Create comment by other_user
     comment = other_creative.comments.create!(content: "Comment to delete", user: other_user)

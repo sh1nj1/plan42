@@ -4,12 +4,15 @@ module Tools
   class CreativeRetrievalServiceTest < ActiveSupport::TestCase
     setup do
       @user = users(:one)
-      @parent = Creative.create!(user: @user, description: "Parent Creative")
-      @child = Creative.create!(user: @user, parent: @parent, description: "Child Creative")
-
-      # Setup another user who has permission on the parent
       @other_user = users(:two)
-      CreativeShare.create!(user: @other_user, creative: @parent, permission: :read)
+
+      perform_enqueued_jobs do
+        @parent = Creative.create!(user: @user, description: "Parent Creative")
+        @child = Creative.create!(user: @user, parent: @parent, description: "Child Creative")
+
+        # Setup another user who has permission on the parent
+        CreativeShare.create!(user: @other_user, creative: @parent, permission: :read)
+      end
     end
 
     test "retrieves children when user has permission on parent" do

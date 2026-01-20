@@ -378,16 +378,20 @@ class Creative < ApplicationRecord
   end
 
   def rebuild_permission_cache
-    Creatives::PermissionCacheBuilder.rebuild_for_creative(self)
+    PermissionCacheJob.perform_later(:rebuild_for_creative, creative_id: id)
   end
 
   def cache_owner_permission
-    Creatives::PermissionCacheBuilder.cache_owner(self)
+    PermissionCacheJob.perform_later(:cache_owner, creative_id: id)
   end
 
   def update_owner_cache
     old_user_id, new_user_id = saved_change_to_user_id
-    Creatives::PermissionCacheBuilder.update_owner(self, old_user_id, new_user_id)
+    PermissionCacheJob.perform_later(:update_owner,
+      creative_id: id,
+      old_user_id: old_user_id,
+      new_user_id: new_user_id
+    )
   end
 
   private

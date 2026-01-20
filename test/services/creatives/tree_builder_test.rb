@@ -36,8 +36,12 @@ module Creatives
     end
 
     test "skips creatives not in allowed_creative_ids" do
-      parent = Creative.create!(user: @user, progress: 0.1, description: "Parent")
-      child = Creative.create!(user: @user, parent: parent, progress: 0.3, description: "Child")
+      parent = nil
+      child = nil
+      perform_enqueued_jobs do
+        parent = Creative.create!(user: @user, progress: 0.1, description: "Parent")
+        child = Creative.create!(user: @user, parent: parent, progress: 0.3, description: "Child")
+      end
 
       # Only child is in allowed_creative_ids (simulating FilterPipeline result without ancestor)
       allowed_ids = Set.new([ child.id.to_s ])
@@ -50,8 +54,12 @@ module Creatives
     end
 
     test "shows ancestors when included in allowed_creative_ids" do
-      parent = Creative.create!(user: @user, progress: 0.1, description: "Parent")
-      child = Creative.create!(user: @user, parent: parent, progress: 0.3, description: "Child")
+      parent = nil
+      child = nil
+      perform_enqueued_jobs do
+        parent = Creative.create!(user: @user, progress: 0.1, description: "Parent")
+        child = Creative.create!(user: @user, parent: parent, progress: 0.3, description: "Child")
+      end
 
       # Both parent and child are in allowed_creative_ids (normal FilterPipeline result with ancestors)
       allowed_ids = Set.new([ parent.id.to_s, child.id.to_s ])
@@ -64,7 +72,10 @@ module Creatives
     end
 
     test "includes inline editor payload data" do
-      creative = Creative.create!(user: @user, progress: 0.42, description: "Inline Data")
+      creative = nil
+      perform_enqueued_jobs do
+        creative = Creative.create!(user: @user, progress: 0.42, description: "Inline Data")
+      end
 
       builder = build_tree_builder
       nodes = builder.build([ creative ])

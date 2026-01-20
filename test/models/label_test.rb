@@ -7,7 +7,9 @@ class LabelTest < ActiveSupport::TestCase
     # Label is now required to have a creative. Name is delegated.
     label = Label.create!(creative: creative, owner: users(:one))
 
-    CreativeShare.create!(creative: creative, user: user, permission: :read)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: creative, user: user, permission: :read)
+    end
 
     assert label.readable_by?(user), "User with read permission should be able to read label"
   end
@@ -25,7 +27,9 @@ class LabelTest < ActiveSupport::TestCase
     user = users(:two)
     label = Label.create!(creative: creative, owner: users(:one))
 
-    CreativeShare.create!(creative: creative, user: user, permission: :no_access)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: creative, user: user, permission: :no_access)
+    end
 
     refute label.readable_by?(user), "User with no_access should not be able to read label"
   end

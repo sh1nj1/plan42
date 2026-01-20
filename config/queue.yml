@@ -3,6 +3,12 @@ default: &default
     - polling_interval: 1
       batch_size: 500
   workers:
+    # High-priority worker for authorization cache (runs permission updates fast)
+    - queues: [authz]
+      threads: 2
+      processes: 1
+      polling_interval: 0.05
+    # Default worker for all other queues
     - queues: "*"
       threads: 3
       processes: <%= ENV.fetch("JOB_CONCURRENCY", 1) %>

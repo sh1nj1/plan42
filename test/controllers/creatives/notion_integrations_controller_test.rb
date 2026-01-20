@@ -1,6 +1,8 @@
 require "test_helper"
 
 class Creatives::NotionIntegrationsControllerTest < ActionDispatch::IntegrationTest
+  include ActiveJob::TestHelper
+
   def setup
     @user = User.create!(
       email: "test@example.com",
@@ -70,11 +72,19 @@ class Creatives::NotionIntegrationsControllerTest < ActionDispatch::IntegrationT
       token: "test-token"
     )
 
-    # Mock the job enqueue since we don't want to actually call Notion API in tests
-    assert_enqueued_with(job: NotionExportJob) do
-      patch creative_notion_integration_path(@creative),
-            params: { action: "export", parent_page_id: "parent-id" },
-            as: :json
+    # Use test adapter for this test to verify job enqueueing
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+
+    begin
+      # Mock the job enqueue since we don't want to actually call Notion API in tests
+      assert_enqueued_with(job: NotionExportJob) do
+        patch creative_notion_integration_path(@creative),
+              params: { action: "export", parent_page_id: "parent-id" },
+              as: :json
+      end
+    ensure
+      ActiveJob::Base.queue_adapter = original_adapter
     end
 
     assert_response :success

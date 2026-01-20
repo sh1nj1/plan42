@@ -86,27 +86,39 @@ class CreativeShare < ApplicationRecord
   def propagate_cache
     # If creative_id or user_id changed, handle old cache entries properly
     if saved_change_to_creative_id? || saved_change_to_user_id?
-      # Delete only caches created by THIS share (not other shares for the same user)
+      # Delete only caches created by THIS share (fast operation, keep synchronous)
       CreativeSharesCache.where(source_share_id: id).delete_all
 
-      # Rebuild caches for old user in old subtree (may have other shares there)
+      # Rebuild caches for old user in old subtree (background job)
       if saved_change_to_creative_id?
         old_creative_id = creative_id_before_last_save
         old_user_id = user_id_before_last_save || user_id
         if old_creative_id
-          old_creative = Creative.find_by(id: old_creative_id)
-          Creatives::PermissionCacheBuilder.rebuild_user_cache_for_subtree(old_creative, old_user_id) if old_creative
+          PermissionCacheJob.perform_later(:rebuild_user_cache_for_subtree,
+            creative_id: old_creative_id,
+            user_id: old_user_id
+          )
         end
       elsif saved_change_to_user_id?
         old_user_id = user_id_before_last_save
-        Creatives::PermissionCacheBuilder.rebuild_user_cache_for_subtree(creative, old_user_id) if old_user_id
+        if old_user_id
+          PermissionCacheJob.perform_later(:rebuild_user_cache_for_subtree,
+            creative_id: creative_id,
+            user_id: old_user_id
+          )
+        end
       end
     end
 
-    Creatives::PermissionCacheBuilder.propagate_share(self)
+    PermissionCacheJob.perform_later(:propagate_share, creative_share_id: id)
   end
 
   def remove_cache
-    Creatives::PermissionCacheBuilder.remove_share(self)
+    # Capture IDs before destroy (after_destroy still has access to attributes)
+    PermissionCacheJob.perform_later(:remove_share,
+      creative_share_id: id,
+      creative_id: creative_id,
+      user_id: user_id
+    )
   end
 end

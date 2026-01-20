@@ -5,6 +5,10 @@ module SystemEvents
     include ActiveJob::TestHelper
 
     setup do
+      # Use test adapter for this file to test job enqueueing behavior
+      @original_adapter = ActiveJob::Base.queue_adapter
+      ActiveJob::Base.queue_adapter = :test
+
       @agent = User.create!(
         email: "dispatcher_test_agent@example.com",
         name: "Dispatcher Agent",
@@ -16,6 +20,10 @@ module SystemEvents
       )
 
       @context = { "some" => "context" }
+    end
+
+    teardown do
+      ActiveJob::Base.queue_adapter = @original_adapter
     end
 
     test "dispatches event and enqueues job for matched agent" do

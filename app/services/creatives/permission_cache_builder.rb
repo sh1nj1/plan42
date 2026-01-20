@@ -85,6 +85,11 @@ module Creatives
       rebuild_from_ancestors(creative_share.creative, creative_share.user_id)
     end
 
+    # Public wrapper for rebuild_from_ancestors (used by PermissionCacheJob)
+    def self.rebuild_from_ancestors_for_user(creative, user_id)
+      rebuild_from_ancestors(creative, user_id)
+    end
+
     # CreativeShare의 creative_id 또는 user_id 변경 시 이전 위치/사용자에 대해 호출
     # 특정 사용자의 캐시를 서브트리에서 재구축 (조상 + 서브트리 내 직접 share 모두 고려)
     # user_id는 nil (public share)일 수 있음

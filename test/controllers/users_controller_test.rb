@@ -105,7 +105,13 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       fcm_token: "fcm-#{SecureRandom.uuid}"
     )
     email = Email.create!(user: user_to_delete, email: user_to_delete.email, subject: "Test", event: :invitation)
-    inbox_item = InboxItem.create!(owner: user_to_delete, message_key: "test.key", message_params: {})
+
+    # Stub push notification to avoid calling Firebase API
+    inbox_item = nil
+    PushNotificationJob.stub :perform_later, nil do
+      inbox_item = InboxItem.create!(owner: user_to_delete, message_key: "test.key", message_params: {})
+    end
+
     invitation = Invitation.create!(inviter: user_to_delete, creative: creative, permission: :read)
     plan_creative = Creative.create!(user: user_to_delete, description: "Sample Plan")
     plan = Plan.create!(owner: user_to_delete, creative: plan_creative, target_date: Date.current)

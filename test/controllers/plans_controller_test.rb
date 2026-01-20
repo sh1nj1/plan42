@@ -10,7 +10,9 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "creative owner sees calendar events from collaborators" do
-    CreativeShare.create!(creative: @creative, user: @collaborator, permission: :write)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: @creative, user: @collaborator, permission: :write)
+    end
     event = create_event(user: @collaborator, creative: @creative, google_event_id: "collaborator-event")
 
     login_as(@owner)
@@ -21,8 +23,11 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "collaborator sees events linked to shared creative hierarchy" do
-    CreativeShare.create!(creative: @creative, user: @collaborator, permission: :write)
-    child_creative = Creative.create!(parent: @creative, description: "Child creative")
+    child_creative = nil
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: @creative, user: @collaborator, permission: :write)
+      child_creative = Creative.create!(parent: @creative, description: "Child creative")
+    end
     assert child_creative.has_permission?(@collaborator, :write)
     event = create_event(user: @owner, creative: child_creative, google_event_id: "owner-child-event")
 
@@ -34,7 +39,9 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "does not show calendar events to users without write permission" do
-    CreativeShare.create!(creative: @creative, user: @collaborator, permission: :feedback)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: @creative, user: @collaborator, permission: :feedback)
+    end
     event = create_event(user: @owner, creative: @creative, google_event_id: "limited-permission-event")
 
     login_as(@collaborator)
@@ -45,12 +52,15 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "does not show events from child creative if user has no access" do
-    # User has write access to parent
-    CreativeShare.create!(creative: @creative, user: @collaborator, permission: :write)
+    child_creative = nil
+    perform_enqueued_jobs do
+      # User has write access to parent
+      CreativeShare.create!(creative: @creative, user: @collaborator, permission: :write)
 
-    # But has no_access to the child
-    child_creative = Creative.create!(parent: @creative, description: "Child creative")
-    CreativeShare.create!(creative: child_creative, user: @collaborator, permission: :no_access)
+      # But has no_access to the child
+      child_creative = Creative.create!(parent: @creative, description: "Child creative")
+      CreativeShare.create!(creative: child_creative, user: @collaborator, permission: :no_access)
+    end
 
     # Event is in the inaccessible child
     event = create_event(user: @owner, creative: child_creative, google_event_id: "inaccessible-child-event")
@@ -89,7 +99,9 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     creative = creatives(:tshirt)
     collaborator = users(:two)
 
-    CreativeShare.create!(creative: creative, user: collaborator, permission: :read)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: creative, user: collaborator, permission: :read)
+    end
     plan = Plan.create!(target_date: Date.today, creative: creative, owner: users(:one))
 
     login_as(collaborator)
