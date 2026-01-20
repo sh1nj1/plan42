@@ -103,6 +103,7 @@ ko:
     current_password: "현재 비밀번호"
     new_password: "새 비밀번호"
     confirm_new_password: "새 비밀번호 확인"
+    password_min_length_hint: "최소 %{count}자 이상"
     back: "뒤로가기"
     forgot_password: "비밀번호를 잊으셨나요?"
     send_password_reset_instructions: "비밀번호 재설정 이메일 보내기"

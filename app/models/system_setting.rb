@@ -9,6 +9,9 @@ class SystemSetting < ApplicationRecord
   # Default values for session timeout (in minutes, 0 = no timeout)
   DEFAULT_SESSION_TIMEOUT_MINUTES = 0
 
+  # Default values for password policy
+  DEFAULT_PASSWORD_MIN_LENGTH = 8
+
   # Default values for rate limiting
   DEFAULT_PASSWORD_RESET_RATE_LIMIT = 5
   DEFAULT_PASSWORD_RESET_RATE_PERIOD_MINUTES = 60
@@ -31,7 +34,7 @@ class SystemSetting < ApplicationRecord
     # Clear known setting keys
     %w[
       help_menu_link mcp_tool_approval_required max_login_attempts
-      lockout_duration_minutes session_timeout_minutes
+      lockout_duration_minutes session_timeout_minutes password_min_length
       password_reset_rate_limit password_reset_rate_period_minutes
       api_rate_limit api_rate_period_minutes auth_providers_disabled
     ].each { |k| Rails.cache.delete("system_setting:#{k}") }
@@ -70,6 +73,13 @@ class SystemSetting < ApplicationRecord
 
   def self.lockout_duration
     lockout_duration_minutes.minutes
+  end
+
+  # Password policy settings (capped at 72 due to bcrypt limit)
+  def self.password_min_length
+    value = cached_value("password_min_length")&.to_i
+    value = DEFAULT_PASSWORD_MIN_LENGTH if value.nil? || value < 1
+    [ value, 72 ].min
   end
 
   # Session timeout settings

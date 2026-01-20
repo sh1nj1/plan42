@@ -88,6 +88,7 @@ class User < ApplicationRecord
   validates :name, presence: true
   validates :display_level, numericality: { only_integer: true, greater_than: 0 }
   validate :theme_accessibility
+  validate :password_meets_minimum_length
   validates :timezone,
             inclusion: { in: ActiveSupport::TimeZone.all.map { |z| z.tzinfo.identifier } },
             allow_nil: true
@@ -133,6 +134,15 @@ class User < ApplicationRecord
   def remaining_lockout_time
     return 0 unless locked?
     ((locked_at + SystemSetting.lockout_duration) - Time.current).to_i
+  end
+
+  def password_meets_minimum_length
+    return if password.blank?  # Skip if not setting password
+
+    min_length = SystemSetting.password_min_length
+    if password.length < min_length
+      errors.add(:password, :too_short, count: min_length)
+    end
   end
 
   def theme_accessibility
