@@ -61,4 +61,7 @@ Rails.application.configure do
 
   # Allow all hosts in test
   config.hosts.clear
+
+  # Execute jobs inline in tests to ensure permission cache is populated immediately
+  config.active_job.queue_adapter = :inline
 end

@@ -9,7 +9,9 @@ class CreativeShareTest < ActiveSupport::TestCase
     Current.session = OpenStruct.new(user: sharer)
 
     assert_difference("InboxItem.count", 1) do
-      CreativeShare.create!(creative: creative, user: recipient, permission: :read)
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: creative, user: recipient, permission: :read)
+      end
     end
 
     item = InboxItem.last
@@ -32,14 +34,23 @@ class CreativeShareTest < ActiveSupport::TestCase
     shared_user = User.create!(email: "share-shared@example.com", password: TEST_PASSWORD, name: "Shared")
     Current.session = Struct.new(:user).new(owner)
 
-    root = Creative.create!(user: owner, description: "Root")
-    child = Creative.create!(user: owner, parent: root, description: "Child")
-    grandchild = Creative.create!(user: owner, parent: child, description: "Grandchild")
+    root = nil
+    child = nil
+    grandchild = nil
 
-    CreativeShare.create!(creative: root, user: shared_user, permission: :read)
+    perform_enqueued_jobs do
+      root = Creative.create!(user: owner, description: "Root")
+      child = Creative.create!(user: owner, parent: root, description: "Child")
+      grandchild = Creative.create!(user: owner, parent: child, description: "Grandchild")
+
+      CreativeShare.create!(creative: root, user: shared_user, permission: :read)
+    end
+
     assert child.has_permission?(shared_user, :read)
 
-    CreativeShare.create!(creative: child, user: shared_user, permission: :no_access)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: child, user: shared_user, permission: :no_access)
+    end
 
     refute child.has_permission?(shared_user, :read)
     refute grandchild.has_permission?(shared_user, :read)

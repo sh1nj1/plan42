@@ -4,7 +4,9 @@ module SystemEvents
   class RouterTest < ActiveSupport::TestCase
     setup do
       @owner = users(:one)
-      @creative = Creative.create!(user: @owner, description: "Test Description")
+      perform_enqueued_jobs do
+        @creative = Creative.create!(user: @owner, description: "Test Description")
+      end
 
       @agent = User.create!(
         email: "router_test_agent@example.com",
@@ -52,7 +54,9 @@ module SystemEvents
 
     test "routes non-searchable agent with permission" do
       @agent.update!(searchable: false, routing_expression: "true")
-      CreativeShare.create!(creative: @creative, user: @agent, permission: :feedback, shared_by: @owner)
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @creative, user: @agent, permission: :feedback, shared_by: @owner)
+      end
 
       router = SystemEvents::Router.new
       agents = router.route("comment_created", @context)

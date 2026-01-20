@@ -94,7 +94,9 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     creative = creatives(:root_parent)
     sign_out
     sign_in_as(users(:two), password: "password")
-    CreativeShare.create!(creative: creative, user: users(:two), permission: :read)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: creative, user: users(:two), permission: :read)
+    end
 
     get export_markdown_creatives_path, headers: { "ACCEPT" => "text/markdown" }
 
@@ -119,7 +121,9 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     # Second user request
     sign_out
     sign_in_as(users(:two), password: "password")
-    CreativeShare.create!(creative: creative, user: users(:two), permission: :read)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: creative, user: users(:two), permission: :read)
+    end
 
     get creative_path(creative), headers: { "ACCEPT" => "application/json" }
     assert_response :success
@@ -130,7 +134,9 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
 
   test "show JSON ETag differs for anonymous vs authenticated" do
     creative = creatives(:root_parent)
-    CreativeShare.create!(creative: creative, user: nil, permission: :read)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: creative, user: nil, permission: :read)
+    end
 
     # Authenticated request
     get creative_path(creative), headers: { "ACCEPT" => "application/json" }
@@ -181,7 +187,9 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
       "User should see their own private prompt"
 
     # Grant read access to user two
-    CreativeShare.create!(creative: creative, user: users(:two), permission: :read)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: creative, user: users(:two), permission: :read)
+    end
     sign_out
     sign_in_as(users(:two), password: "password")
 

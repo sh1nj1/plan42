@@ -5,14 +5,18 @@ module Creatives
     setup do
       @owner = users(:one)
       @shared_user = users(:two)
-      @root = Creative.create!(user: @owner, description: "Root", progress: 0.5)
-      @child1 = Creative.create!(user: @owner, description: "Child 1", progress: 1.0, parent: @root)
-      @child2 = Creative.create!(user: @owner, description: "Child 2", progress: 0.0, parent: @root)
+      perform_enqueued_jobs do
+        @root = Creative.create!(user: @owner, description: "Root", progress: 0.5)
+        @child1 = Creative.create!(user: @owner, description: "Child 1", progress: 1.0, parent: @root)
+        @child2 = Creative.create!(user: @owner, description: "Child 2", progress: 0.0, parent: @root)
+      end
     end
 
     test "filter_by_permission returns only accessible creatives" do
-      # Share root with user
-      CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+      perform_enqueued_jobs do
+        # Share root with user
+        CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+      end
 
       scope = Creative.where(id: [ @root.id, @child1.id, @child2.id ])
       result = FilterPipeline.new(user: @shared_user, params: {}, scope: scope).call
@@ -23,10 +27,13 @@ module Creatives
     end
 
     test "filter_by_permission excludes unshared creatives" do
-      other_creative = Creative.create!(user: @owner, description: "Other", progress: 0.0)
+      other_creative = nil
+      perform_enqueued_jobs do
+        other_creative = Creative.create!(user: @owner, description: "Other", progress: 0.0)
 
-      # Only share root
-      CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+        # Only share root
+        CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+      end
 
       scope = Creative.where(id: [ @root.id, other_creative.id ])
       result = FilterPipeline.new(user: @shared_user, params: {}, scope: scope).call
@@ -45,8 +52,10 @@ module Creatives
     end
 
     test "resolve_ancestors includes parent creatives" do
-      # Share only child, but parent should be included
-      CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+      perform_enqueued_jobs do
+        # Share only child, but parent should be included
+        CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+      end
 
       scope = Creative.where(id: [ @child1.id ])
       result = FilterPipeline.new(user: @shared_user, params: { min_progress: "1", max_progress: "1" }, scope: scope).call
@@ -57,7 +66,9 @@ module Creatives
     end
 
     test "progress filtering works with completed (min=1, max=1)" do
-      CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+      end
 
       scope = Creative.where(id: [ @root.id, @child1.id, @child2.id ])
       result = FilterPipeline.new(user: @shared_user, params: { min_progress: "1", max_progress: "1" }, scope: scope).call
@@ -67,7 +78,9 @@ module Creatives
     end
 
     test "progress filtering works with incomplete (min=0, max=0.99)" do
-      CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+      end
 
       scope = Creative.where(id: [ @root.id, @child1.id, @child2.id ])
       result = FilterPipeline.new(user: @shared_user, params: { min_progress: "0", max_progress: "0.99" }, scope: scope).call
@@ -87,7 +100,9 @@ module Creatives
     end
 
     test "calculates overall progress correctly" do
-      CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+      end
 
       scope = Creative.where(id: [ @child1.id, @child2.id ])
       result = FilterPipeline.new(user: @shared_user, params: {}, scope: scope).call
@@ -97,7 +112,9 @@ module Creatives
     end
 
     test "public share allows access without user" do
-      CreativeShare.create!(creative: @root, user: nil, permission: "read")
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @root, user: nil, permission: "read")
+      end
 
       scope = Creative.where(id: [ @root.id, @child1.id ])
       result = FilterPipeline.new(user: nil, params: {}, scope: scope).call
@@ -107,10 +124,12 @@ module Creatives
     end
 
     test "no_access user entry blocks access even with public share" do
-      # Public share grants read
-      CreativeShare.create!(creative: @root, user: nil, permission: "read")
-      # But user has explicit no_access
-      CreativeShare.create!(creative: @root, user: @shared_user, permission: "no_access")
+      perform_enqueued_jobs do
+        # Public share grants read
+        CreativeShare.create!(creative: @root, user: nil, permission: "read")
+        # But user has explicit no_access
+        CreativeShare.create!(creative: @root, user: @shared_user, permission: "no_access")
+      end
 
       scope = Creative.where(id: [ @root.id, @child1.id ])
       result = FilterPipeline.new(user: @shared_user, params: {}, scope: scope).call
@@ -121,12 +140,18 @@ module Creatives
     end
 
     test "resolve_ancestors includes linked creatives that reference matched origins" do
-      # Create an origin with completed child
-      origin = Creative.create!(user: @owner, description: "Origin", progress: 0.5)
-      origin_child = Creative.create!(user: @owner, description: "Origin Child", progress: 1.0, parent: origin)
+      origin = nil
+      origin_child = nil
+      linked = nil
 
-      # Create a linked creative under root that links to origin
-      linked = Creative.create!(user: @owner, description: "Linked", origin: origin, parent: @root)
+      perform_enqueued_jobs do
+        # Create an origin with completed child
+        origin = Creative.create!(user: @owner, description: "Origin", progress: 0.5)
+        origin_child = Creative.create!(user: @owner, description: "Origin Child", progress: 1.0, parent: origin)
+
+        # Create a linked creative under root that links to origin
+        linked = Creative.create!(user: @owner, description: "Linked", origin: origin, parent: @root)
+      end
 
       # Scope includes origin, origin_child, and linked
       scope = Creative.where(id: [ origin.id, origin_child.id, linked.id, @root.id ])

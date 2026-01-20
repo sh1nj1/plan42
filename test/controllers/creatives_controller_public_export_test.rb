@@ -4,7 +4,9 @@ class CreativesControllerPublicExportTest < ActionDispatch::IntegrationTest
   test "publicly shared creative can be exported as markdown without login" do
     creative = creatives(:root_parent)
     # Create public share (user: nil)
-    CreativeShare.create!(creative: creative, user: nil, permission: :read)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: creative, user: nil, permission: :read)
+    end
 
     get export_markdown_creatives_path(parent_id: creative.id), headers: { "ACCEPT" => "text/markdown" }
 

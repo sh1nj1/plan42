@@ -2,10 +2,14 @@ require "test_helper"
 
 module Creatives
   class PermissionCheckerTest < ActiveSupport::TestCase
+    include ActiveJob::TestHelper
+
     setup do
       @owner = users(:one)
       @other_user = users(:two)
-      @creative = Creative.create!(user: @owner, description: "Test Creative", progress: 0.0)
+      perform_enqueued_jobs do
+        @creative = Creative.create!(user: @owner, description: "Test Creative", progress: 0.0)
+      end
     end
 
     test "allows access for owner" do
@@ -22,7 +26,9 @@ module Creatives
 
     test "allows read access for logged-in user via public share" do
       # Create public share
-      CreativeShare.create!(creative: @creative, user: nil, permission: "read")
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @creative, user: nil, permission: "read")
+      end
 
       checker = Creatives::PermissionChecker.new(@creative, @other_user)
       assert checker.allowed?(:read)
@@ -30,7 +36,9 @@ module Creatives
     end
 
     test "allows access via user-specific share" do
-      CreativeShare.create!(creative: @creative, user: @other_user, permission: "write")
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @creative, user: @other_user, permission: "write")
+      end
 
       checker = Creatives::PermissionChecker.new(@creative, @other_user)
       assert checker.allowed?(:read)
@@ -39,10 +47,12 @@ module Creatives
     end
 
     test "uses cache for user share but fetches public share from DB" do
-      # Setup public share (read)
-      CreativeShare.create!(creative: @creative, user: nil, permission: "read")
-      # Setup private share (write)
-      CreativeShare.create!(creative: @creative, user: @other_user, permission: "write")
+      perform_enqueued_jobs do
+        # Setup public share (read)
+        CreativeShare.create!(creative: @creative, user: nil, permission: "read")
+        # Setup private share (write)
+        CreativeShare.create!(creative: @creative, user: @other_user, permission: "write")
+      end
 
       # Simulate controller cache (only contains USER share)
       user_share = CreativeShare.find_by(user: @other_user, creative: @creative)
@@ -57,8 +67,10 @@ module Creatives
     end
 
     test "falls back to public share when user share not in cache" do
-      # Setup public share (read)
-      CreativeShare.create!(creative: @creative, user: nil, permission: "read")
+      perform_enqueued_jobs do
+        # Setup public share (read)
+        CreativeShare.create!(creative: @creative, user: nil, permission: "read")
+      end
 
       # Cache is empty (user has no private share)
       cache = {}
@@ -68,13 +80,16 @@ module Creatives
         assert checker.allowed?(:read)
       end
     end
+
     test "invalides cache when public share is added (via touch)" do
       # 1. Initially deny access and cache it
       checker = Creatives::PermissionChecker.new(@creative, @other_user)
       refute checker.allowed?(:read)
 
       # 2. Add public share. This should touch @creative.
-      share = CreativeShare.create!(creative: @creative, user: nil, permission: "read")
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @creative, user: nil, permission: "read")
+      end
       @creative.reload # Ensure we see the updated timestamp behavior if checking logic directly, though new Checker instance will re-read.
 
       # 3. New checker should see allowed?(:read) because key changed or cache expired
