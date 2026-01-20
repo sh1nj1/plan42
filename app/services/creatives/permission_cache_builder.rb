@@ -4,13 +4,16 @@ module Creatives
     def self.cache_owner(creative)
       return unless creative.user_id
 
-      CreativeSharesCache.find_or_create_by!(
-        creative_id: creative.id,
-        user_id: creative.user_id
-      ) do |cache|
-        cache.permission = :admin
-        cache.source_share_id = nil
-      end
+      CreativeSharesCache.upsert(
+        {
+          creative_id: creative.id,
+          user_id: creative.user_id,
+          permission: CreativeShare.permissions[:admin],
+          source_share_id: nil
+        },
+        unique_by: [ :creative_id, :user_id ],
+        update_only: [ :permission ]
+      )
     end
 
     # Creative user_id 변경 시 호출
@@ -60,20 +63,37 @@ module Creatives
 
       ids_to_update = all_descendant_ids.reject { |id| excluded_ids.include?(id) }
 
-      now = Time.current
+      return if ids_to_update.empty?
 
-      # Use individual upserts since SQLite has issues with NULL in unique indexes
-      ids_to_update.each do |cid|
-        cache_entry = CreativeSharesCache.find_or_initialize_by(
-          creative_id: cid,
-          user_id: user_id
+      permission_value = CreativeShare.permissions[permission]
+
+      # Handle NULL user_id (public shares) separately since SQLite treats NULL as distinct in unique indexes
+      if user_id.nil?
+        ids_to_update.each do |cid|
+          CreativeSharesCache.find_or_initialize_by(creative_id: cid, user_id: nil).tap do |cache|
+            cache.assign_attributes(
+              permission: permission_value,
+              source_share_id: creative_share.id
+            )
+            cache.save!
+          end
+        end
+      else
+        records = ids_to_update.map do |cid|
+          {
+            creative_id: cid,
+            user_id: user_id,
+            permission: permission_value,
+            source_share_id: creative_share.id
+          }
+        end
+
+        # Single bulk operation instead of N individual saves
+        CreativeSharesCache.upsert_all(
+          records,
+          unique_by: [ :creative_id, :user_id ],
+          update_only: [ :permission, :source_share_id ]
         )
-        cache_entry.assign_attributes(
-          permission: CreativeShare.permissions[permission],
-          source_share_id: creative_share.id,
-          updated_at: now
-        )
-        cache_entry.save!
       end
     end
 
