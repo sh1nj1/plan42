@@ -41,6 +41,7 @@ registry:
 env:
   secret:
     - RAILS_MASTER_KEY
+    - SECRET_KEY_BASE
     - DATABASE_URL
     - PORT
     - GEMINI_API_KEY
