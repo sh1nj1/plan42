@@ -7,7 +7,7 @@ default: &default
     - queues: [authz]
       threads: 2
       processes: 1
-      polling_interval: 0.05
+      polling_interval: <%= ENV.fetch("AUTHZ_POLLING_INTERVAL", 0.1) %>
     # Default worker for all other queues
     - queues: "*"
       threads: 3
