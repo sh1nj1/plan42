@@ -46,7 +46,7 @@
         <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.password_policy') %></h3>
         <div style="max-width: 300px;">
           <%= f.label :password_min_length, t('admin.settings.password_min_length') %>
-          <%= f.number_field :password_min_length, value: @password_min_length, min: 1, max: 72, style: "width: 100%;" %>
+          <%= f.number_field :password_min_length, value: @password_min_length, min: SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH, max: 72, style: "width: 100%;" %>
           <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
             <%= t('admin.settings.password_min_length_hint') %>
           </div>

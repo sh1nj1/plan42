@@ -457,4 +457,28 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "a[href=?]", admin_path, count: 0
   end
+
+  test "ai user creation succeeds when password_min_length is set to max (72)" do
+    sign_in_as(@regular_user, password: "password")
+
+    # Set password_min_length to maximum (72)
+    SystemSetting.find_or_create_by!(key: "password_min_length").update!(value: "72")
+    Rails.cache.clear
+
+    assert_difference("User.count", 1) do
+      post create_ai_users_path, params: {
+        ai_id: "maxbot",
+        name: "Max Bot",
+        system_prompt: "You are a helpful bot.",
+        llm_model: User::SUPPORTED_LLM_MODELS.first
+      }
+    end
+
+    ai_user = User.find_by(email: "maxbot@ai.local")
+    assert_not_nil ai_user
+    assert_redirected_to user_path(@regular_user, tab: "contacts")
+  ensure
+    SystemSetting.find_by(key: "password_min_length")&.destroy
+    Rails.cache.clear
+  end
 end

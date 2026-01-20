@@ -82,7 +82,7 @@ class CreativeTest < ActiveSupport::TestCase
   end
 
   test "destroying creative purges attachments referenced in description" do
-    user = User.create!(email: "creative-blob@example.com", password: "secret", name: "Blob Owner")
+    user = User.create!(email: "creative-blob@example.com", password: TEST_PASSWORD, name: "Blob Owner")
     Current.session = Struct.new(:user).new(user)
 
     blob = ActiveStorage::Blob.create_and_upload!(
@@ -104,7 +104,7 @@ class CreativeTest < ActiveSupport::TestCase
   end
 
   test "updates ancestors when reparenting" do
-    user = User.create!(email: "ancestor@example.com", password: "secret", name: "Ancestor")
+    user = User.create!(email: "ancestor@example.com", password: TEST_PASSWORD, name: "Ancestor")
     Current.session = Struct.new(:user).new(user)
 
     root = Creative.create!(user: user, description: "Root")
@@ -120,7 +120,7 @@ class CreativeTest < ActiveSupport::TestCase
   end
 
   test "prompt_for returns prompt without prefix" do
-    user = User.create!(email: "prompt@example.com", password: "secret", name: "Prompt")
+    user = User.create!(email: "prompt@example.com", password: TEST_PASSWORD, name: "Prompt")
     creative = Creative.create!(user: user, description: "Slide")
 
     creative.comments.create!(user: user, content: "> Hello world", private: true)
@@ -129,7 +129,7 @@ class CreativeTest < ActiveSupport::TestCase
   end
 
   test "prompt_for returns nil when no prompt" do
-    user = User.create!(email: "prompt-empty@example.com", password: "secret", name: "Prompt Empty")
+    user = User.create!(email: "prompt-empty@example.com", password: TEST_PASSWORD, name: "Prompt Empty")
     creative = Creative.create!(user: user, description: "Slide")
 
     assert_nil creative.prompt_for(user)
@@ -145,10 +145,10 @@ class CreativeTest < ActiveSupport::TestCase
   end
 
   test "assigns parent user when parent present" do
-    owner = User.create!(email: "creative-owner@example.com", password: "secret", name: "Owner")
+    owner = User.create!(email: "creative-owner@example.com", password: TEST_PASSWORD, name: "Owner")
     Current.session = Struct.new(:user).new(owner)
     parent = Creative.create!(user: owner, description: "Parent")
-    other = User.create!(email: "creative-other@example.com", password: "secret", name: "Other")
+    other = User.create!(email: "creative-other@example.com", password: TEST_PASSWORD, name: "Other")
     Current.session = Struct.new(:user).new(other)
 
     child = Creative.create!(parent: parent, description: "Child")
@@ -159,7 +159,7 @@ class CreativeTest < ActiveSupport::TestCase
   end
 
   test "assigns Current user when parent missing" do
-    current_user = User.create!(email: "creative-current@example.com", password: "secret", name: "Current")
+    current_user = User.create!(email: "creative-current@example.com", password: TEST_PASSWORD, name: "Current")
     Current.session = Struct.new(:user).new(current_user)
 
     creative = Creative.create!(description: "Root")
@@ -170,8 +170,8 @@ class CreativeTest < ActiveSupport::TestCase
   end
 
   test "all_shared_users excludes users with no_access override" do
-    owner = User.create!(email: "share-owner@example.com", password: "secret", name: "Owner")
-    shared_user = User.create!(email: "share-shared@example.com", password: "secret", name: "Shared")
+    owner = User.create!(email: "share-owner@example.com", password: TEST_PASSWORD, name: "Owner")
+    shared_user = User.create!(email: "share-shared@example.com", password: TEST_PASSWORD, name: "Shared")
     Current.session = Struct.new(:user).new(owner)
 
     root = Creative.create!(user: owner, description: "Root")

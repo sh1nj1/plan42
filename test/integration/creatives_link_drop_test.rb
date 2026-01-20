@@ -2,7 +2,7 @@ require "test_helper"
 
 class CreativesLinkDropTest < ActionDispatch::IntegrationTest
   setup do
-    @user = User.create!(email: "linkdrop@example.com", password: "pw", name: "User")
+    @user = User.create!(email: "linkdrop@example.com", password: TEST_PASSWORD, name: "User")
     @root = Creative.create!(user: @user, description: "Root", progress: 0.5, sequence: 0)
     @target = Creative.create!(user: @user, parent: @root, description: "Target", sequence: 0, progress: 0.2)
     @dragged = Creative.create!(user: @user, parent: @root, description: "Dragged", sequence: 1, progress: 0.3)

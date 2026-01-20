@@ -54,9 +54,9 @@ module Admin
           lockout_setting.value = lockout_duration.to_s
           lockout_setting.save!
 
-          # Password Policy Settings (capped at 72 due to bcrypt limit)
+          # Password Policy Settings (floor at 8, capped at 72 due to bcrypt limit)
           password_min_length = params[:password_min_length].to_i
-          password_min_length = SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH if password_min_length < 1
+          password_min_length = [ password_min_length, SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH ].max
           password_min_length = [ password_min_length, 72 ].min
           password_min_length_setting = SystemSetting.find_or_initialize_by(key: "password_min_length")
           password_min_length_setting.value = password_min_length.to_s
@@ -117,7 +117,7 @@ module Admin
         @mcp_tool_approval = params[:mcp_tool_approval] == "1"
         @max_login_attempts = params[:max_login_attempts].to_i.positive? ? params[:max_login_attempts].to_i : SystemSetting::DEFAULT_MAX_LOGIN_ATTEMPTS
         @lockout_duration_minutes = params[:lockout_duration_minutes].to_i.positive? ? params[:lockout_duration_minutes].to_i : SystemSetting::DEFAULT_LOCKOUT_DURATION_MINUTES
-        @password_min_length = params[:password_min_length].to_i.positive? ? params[:password_min_length].to_i : SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH
+        @password_min_length = [ [ params[:password_min_length].to_i, SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH ].max, 72 ].min
         @session_timeout_minutes = [ params[:session_timeout_minutes].to_i, 0 ].max
         @password_reset_rate_limit = params[:password_reset_rate_limit].to_i.positive? ? params[:password_reset_rate_limit].to_i : SystemSetting::DEFAULT_PASSWORD_RESET_RATE_LIMIT
         @password_reset_rate_period_minutes = params[:password_reset_rate_period_minutes].to_i.positive? ? params[:password_reset_rate_period_minutes].to_i : SystemSetting::DEFAULT_PASSWORD_RESET_RATE_PERIOD_MINUTES

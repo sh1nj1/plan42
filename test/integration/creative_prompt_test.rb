@@ -2,7 +2,7 @@ require "test_helper"
 
 class CreativePromptTest < ActionDispatch::IntegrationTest
   setup do
-    @user = User.create!(email: "prompt@example.com", password: "pw", name: "User")
+    @user = User.create!(email: "prompt@example.com", password: TEST_PASSWORD, name: "User")
     @creative = Creative.create!(user: @user, description: "Slide")
     sign_in_as(@user)
   end

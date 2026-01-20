@@ -2,7 +2,7 @@ require "test_helper"
 
 class CreativeImportsControllerTest < ActionDispatch::IntegrationTest
   setup do
-    @user = User.create!(email: "import@example.com", password: "pw", name: "Importer", email_verified_at: Time.current)
+    @user = User.create!(email: "import@example.com", password: TEST_PASSWORD, name: "Importer", email_verified_at: Time.current)
     sign_in_as(@user)
   end
 

@@ -2,9 +2,9 @@ require "test_helper"
 
 class CreativePermissionCacheTest < ActiveSupport::TestCase
   setup do
-    @owner = User.create!(email: "owner@example.com", password: "secret", name: "Owner")
-    @user1 = User.create!(email: "user1@example.com", password: "secret", name: "User1")
-    @user2 = User.create!(email: "user2@example.com", password: "secret", name: "User2")
+    @owner = User.create!(email: "owner@example.com", password: TEST_PASSWORD, name: "Owner")
+    @user1 = User.create!(email: "user1@example.com", password: TEST_PASSWORD, name: "User1")
+    @user2 = User.create!(email: "user2@example.com", password: TEST_PASSWORD, name: "User2")
     Current.session = OpenStruct.new(user: @owner)
 
     # Create tree structure: root -> child -> grandchild
