@@ -26,3 +26,13 @@ import "./lib/apply_lexical_styles"
 import "./lib/turbo_stream_actions"
 import "./share_user_popup"
 
+// Layout modules (moved from inline scripts)
+import "./firebase_config"
+import "./plans_menu"
+import "./inbox_panel"
+import "./creative_guide"
+import "./share_modal"
+import "./timezone_detection"
+import "./oauth_callback"
+import "./doorkeeper_token"
+

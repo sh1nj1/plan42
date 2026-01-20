@@ -3,17 +3,8 @@
   <head>
     <meta charset="utf-8">
     <title>Github 연결</title>
+    <%= javascript_include_tag "application", defer: true, type: "module" %>
   </head>
-  <body>
-    <script>
-      try {
-        if (window.opener) {
-          window.opener.postMessage({ type: 'githubConnected' }, window.location.origin);
-        }
-      } catch (e) {
-        console.error('Failed to notify opener', e);
-      }
-      window.close();
-    </script>
+  <body data-oauth-callback="githubConnected">
   </body>
 </html>

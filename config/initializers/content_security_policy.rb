@@ -10,7 +10,9 @@ Rails.application.configure do
     policy.font_src    :self, :data, "https://fonts.gstatic.com"
     policy.img_src     :self, :data, :blob, "https:"
     policy.object_src  :none
-    policy.script_src  :self, :unsafe_inline, :unsafe_eval, :blob
+    policy.script_src  :self, :unsafe_eval, :blob
+    # Note: unsafe_inline required for inline style="..." attributes in views
+    # TODO: Migrate inline styles to CSS classes, then remove unsafe_inline
     policy.style_src   :self, :unsafe_inline, "https://fonts.googleapis.com"
     policy.frame_src   :self, "https://www.youtube.com", "https://www.youtube-nocookie.com"
     policy.connect_src :self, :blob, "wss:", "https:"
@@ -25,11 +27,10 @@ Rails.application.configure do
     # policy.report_uri "/csp-violation-report-endpoint"
   end
 
-  # Generate session nonces for permitted scripts and styles
-  # This allows inline scripts/styles with matching nonce attributes
-  # TODO: Re-enable after moving inline scripts to external files (Option 3)
-  # config.content_security_policy_nonce_generator = ->(request) { request.session.id.to_s }
-  # config.content_security_policy_nonce_directives = %w[script-src style-src]
+  # Nonces disabled: unsafe_inline is used for style-src due to inline style attributes
+  # TODO: When inline styles are migrated to CSS classes, enable nonces:
+  # config.content_security_policy_nonce_generator = ->(request) { SecureRandom.base64(16) }
+  # config.content_security_policy_nonce_directives = %w[style-src]
 
   # Report violations without enforcing the policy (set to true for initial deployment)
   # Once verified, set to false to enforce the policy
