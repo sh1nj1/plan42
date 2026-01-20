@@ -3,8 +3,8 @@ require "cgi"
 
 class PermissionRequestTest < ActionDispatch::IntegrationTest
   setup do
-    @owner = User.create!(email: "owner@example.com", password: "pw", name: "Owner")
-    @requester = User.create!(email: "req@example.com", password: "pw", name: "Requester")
+    @owner = User.create!(email: "owner@example.com", password: TEST_PASSWORD, name: "Owner")
+    @requester = User.create!(email: "req@example.com", password: TEST_PASSWORD, name: "Requester")
     @creative = Creative.create!(user: @owner, description: "Secret Creative Plan")
     sign_in_as(@requester)
   end

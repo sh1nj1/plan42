@@ -10,6 +10,9 @@ module Admin
       @max_login_attempts = SystemSetting.max_login_attempts
       @lockout_duration_minutes = SystemSetting.lockout_duration_minutes
 
+      # Password policy settings
+      @password_min_length = SystemSetting.password_min_length
+
       # Session timeout settings
       @session_timeout_minutes = SystemSetting.session_timeout_minutes
 
@@ -50,6 +53,14 @@ module Admin
           lockout_setting = SystemSetting.find_or_initialize_by(key: "lockout_duration_minutes")
           lockout_setting.value = lockout_duration.to_s
           lockout_setting.save!
+
+          # Password Policy Settings (floor at 8, capped at 72 due to bcrypt limit)
+          password_min_length = params[:password_min_length].to_i
+          password_min_length = [ password_min_length, SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH ].max
+          password_min_length = [ password_min_length, 72 ].min
+          password_min_length_setting = SystemSetting.find_or_initialize_by(key: "password_min_length")
+          password_min_length_setting.value = password_min_length.to_s
+          password_min_length_setting.save!
 
           # Session Timeout Settings
           session_timeout = params[:session_timeout_minutes].to_i
@@ -106,6 +117,7 @@ module Admin
         @mcp_tool_approval = params[:mcp_tool_approval] == "1"
         @max_login_attempts = params[:max_login_attempts].to_i.positive? ? params[:max_login_attempts].to_i : SystemSetting::DEFAULT_MAX_LOGIN_ATTEMPTS
         @lockout_duration_minutes = params[:lockout_duration_minutes].to_i.positive? ? params[:lockout_duration_minutes].to_i : SystemSetting::DEFAULT_LOCKOUT_DURATION_MINUTES
+        @password_min_length = [ [ params[:password_min_length].to_i, SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH ].max, 72 ].min
         @session_timeout_minutes = [ params[:session_timeout_minutes].to_i, 0 ].max
         @password_reset_rate_limit = params[:password_reset_rate_limit].to_i.positive? ? params[:password_reset_rate_limit].to_i : SystemSetting::DEFAULT_PASSWORD_RESET_RATE_LIMIT
         @password_reset_rate_period_minutes = params[:password_reset_rate_period_minutes].to_i.positive? ? params[:password_reset_rate_period_minutes].to_i : SystemSetting::DEFAULT_PASSWORD_RESET_RATE_PERIOD_MINUTES

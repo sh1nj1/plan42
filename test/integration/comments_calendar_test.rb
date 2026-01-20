@@ -3,7 +3,7 @@ require "ostruct"
 
 class CommentsCalendarTest < ActionDispatch::IntegrationTest
   setup do
-    @user = User.create!(email: "user_cal@example.com", password: "pw", name: "User Cal")
+    @user = User.create!(email: "user_cal@example.com", password: TEST_PASSWORD, name: "User Cal")
     @creative = Creative.create!(user: @user, description: "Calendar test creative")
     CreativeShare.create!(creative: @creative, user: @user, permission: :feedback)
     sign_in_as(@user)

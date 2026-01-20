@@ -2,7 +2,7 @@ require "test_helper"
 
 class CalendarEventTest < ActiveSupport::TestCase
   test "deletes Google Calendar event when destroyed" do
-    user = User.create!(email: "calendar-user@example.com", password: "secret", name: "Calendar User")
+    user = User.create!(email: "calendar-user@example.com", password: TEST_PASSWORD, name: "Calendar User")
     event = CalendarEvent.create!(
       user: user,
       google_event_id: "abc123",

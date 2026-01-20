@@ -5,7 +5,7 @@ class CommentTest < ActiveSupport::TestCase
     creative = creatives(:tshirt)
     Rails.cache.delete(CommentPresenceStore.key(creative.id))
     commenter = users(:two)
-    writer = User.create!(email: "writer@example.com", password: "secret", name: "Writer")
+    writer = User.create!(email: "writer@example.com", password: TEST_PASSWORD, name: "Writer")
     CreativeShare.create!(creative: creative, user: writer, permission: :write)
 
     comment = nil
@@ -31,7 +31,7 @@ class CommentTest < ActiveSupport::TestCase
     creative = creatives(:tshirt)
     Rails.cache.delete(CommentPresenceStore.key(creative.id))
     commenter = users(:two)
-    writer = User.create!(email: "writer@example.com", password: "secret", name: "Writer")
+    writer = User.create!(email: "writer@example.com", password: TEST_PASSWORD, name: "Writer")
     CreativeShare.create!(creative: creative, user: writer, permission: :write)
 
     CommentPresenceStore.add(creative.id, creative.user.id)
@@ -44,7 +44,7 @@ class CommentTest < ActiveSupport::TestCase
   end
 
   test "formats content before saving" do
-    user = User.create!(email: "formatter@example.com", password: "secret", name: "Formatter")
+    user = User.create!(email: "formatter@example.com", password: TEST_PASSWORD, name: "Formatter")
     creative = Creative.create!(user: user, description: "Root")
 
     formatter = Minitest::Mock.new
@@ -59,9 +59,9 @@ class CommentTest < ActiveSupport::TestCase
   end
 
   test "creates a single inbox item for mentioned users" do
-    owner = User.create!(email: "mentions-owner@example.com", password: "secret", name: "Owner")
-    commenter = User.create!(email: "mentions-commenter@example.com", password: "secret", name: "Commenter")
-    mentioned = User.create!(email: "mentions-mentioned@example.com", password: "secret", name: "Mentioned", searchable: true)
+    owner = User.create!(email: "mentions-owner@example.com", password: TEST_PASSWORD, name: "Owner")
+    commenter = User.create!(email: "mentions-commenter@example.com", password: TEST_PASSWORD, name: "Commenter")
+    mentioned = User.create!(email: "mentions-mentioned@example.com", password: TEST_PASSWORD, name: "Mentioned", searchable: true)
     creative = Creative.create!(user: owner, description: "Root")
 
     comment = nil
@@ -79,8 +79,8 @@ class CommentTest < ActiveSupport::TestCase
   end
 
   test "does not create duplicate mentions for existing recipient" do
-    owner = User.create!(email: "mentions-owner-dup@example.com", password: "secret", name: "OwnerDup")
-    commenter = User.create!(email: "mentions-commenter-dup@example.com", password: "secret", name: "CommenterDup")
+    owner = User.create!(email: "mentions-owner-dup@example.com", password: TEST_PASSWORD, name: "OwnerDup")
+    commenter = User.create!(email: "mentions-commenter-dup@example.com", password: TEST_PASSWORD, name: "CommenterDup")
     creative = Creative.create!(user: owner, description: "Root")
 
     assert_difference("InboxItem.where(owner: owner).count", 1) do
@@ -92,8 +92,8 @@ class CommentTest < ActiveSupport::TestCase
   end
 
   test "defaults user to Current.user when user missing" do
-    owner = User.create!(email: "comment-owner@example.com", password: "secret", name: "Owner")
-    current_user = User.create!(email: "comment-current@example.com", password: "secret", name: "Current")
+    owner = User.create!(email: "comment-owner@example.com", password: TEST_PASSWORD, name: "Owner")
+    current_user = User.create!(email: "comment-current@example.com", password: TEST_PASSWORD, name: "Current")
     Current.session = Struct.new(:user).new(current_user)
     creative = Creative.create!(user: owner, description: "Root")
 

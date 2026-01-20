@@ -2,8 +2,8 @@ require "test_helper"
 
 class CreativeShareLinkedCreativeTest < ActionDispatch::IntegrationTest
   setup do
-    @owner = User.create!(email: "owner@example.com", password: "pw", name: "Owner")
-    @shared_user = User.create!(email: "shared@example.com", password: "pw", name: "Shared")
+    @owner = User.create!(email: "owner@example.com", password: TEST_PASSWORD, name: "Owner")
+    @shared_user = User.create!(email: "shared@example.com", password: TEST_PASSWORD, name: "Shared")
     @parent = Creative.create!(user: @owner, description: "Parent")
     @child = Creative.create!(user: @owner, parent: @parent, description: "Child")
 

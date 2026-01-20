@@ -3,7 +3,7 @@ require "cgi"
 
 class InvitationFlowTest < ActionDispatch::IntegrationTest
   test "invitation link resolves to invitation" do
-    inviter = User.create!(email: "inviter@example1.com", password: "secret", name: "Inviter")
+    inviter = User.create!(email: "inviter@example1.com", password: TEST_PASSWORD, name: "Inviter")
     creative = Creative.create!(user: inviter, description: "Test creative")
 
     invitation = Invitation.create!(email: "invitee@example1.com",
@@ -37,15 +37,15 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
   end
 
   test "existing user accepts invitation by logging in" do
-    inviter = User.create!(email: "inviter@example.com", password: "secret", name: "Inviter")
+    inviter = User.create!(email: "inviter@example.com", password: TEST_PASSWORD, name: "Inviter")
     creative = Creative.create!(user: inviter, description: "Test creative")
-    invitee = User.create!(email: "invitee@example.com", password: "secret", name: "Invitee")
+    invitee = User.create!(email: "invitee@example.com", password: TEST_PASSWORD, name: "Invitee")
     invitee.update!(email_verified_at: Time.current)
 
     invitation = Invitation.create!(inviter: inviter, creative: creative, permission: :read)
     token = invitation.generate_token_for(:invite)
 
-    post session_path, params: { email: invitee.email, password: "secret", invite_token: token }
+    post session_path, params: { email: invitee.email, password: TEST_PASSWORD, invite_token: token }
     assert_redirected_to root_path
 
     invitation.reload

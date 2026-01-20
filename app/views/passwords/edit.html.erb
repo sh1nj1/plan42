@@ -3,7 +3,10 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
 <%= form_with url: password_path(params[:token]), method: :put do |form| %>
-  <%= form.password_field :password, required: true, autocomplete: "new-password", placeholder: t('users.new_password'), maxlength: 72 %><br>
-  <%= form.password_field :password_confirmation, required: true, autocomplete: "new-password", placeholder: t('users.confirm_new_password'), maxlength: 72 %><br>
+  <%= form.password_field :password, required: true, autocomplete: "new-password", placeholder: t('users.new_password'), minlength: SystemSetting.password_min_length, maxlength: 72 %>
+  <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em; margin-bottom: 0.5em;">
+    <%= t('users.password_min_length_hint', count: SystemSetting.password_min_length) %>
+  </div>
+  <%= form.password_field :password_confirmation, required: true, autocomplete: "new-password", placeholder: t('users.confirm_new_password'), minlength: SystemSetting.password_min_length, maxlength: 72 %><br>
   <%= form.submit t('app.save') %>
 <% end %>

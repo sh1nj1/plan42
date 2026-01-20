@@ -28,8 +28,8 @@ class CreativeShareTest < ActiveSupport::TestCase
   end
 
   test "descendant no_access share removes read permission" do
-    owner = User.create!(email: "share-owner@example.com", password: "secret", name: "Owner")
-    shared_user = User.create!(email: "share-shared@example.com", password: "secret", name: "Shared")
+    owner = User.create!(email: "share-owner@example.com", password: TEST_PASSWORD, name: "Owner")
+    shared_user = User.create!(email: "share-shared@example.com", password: TEST_PASSWORD, name: "Shared")
     Current.session = Struct.new(:user).new(owner)
 
     root = Creative.create!(user: owner, description: "Root")

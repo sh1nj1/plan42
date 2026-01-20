@@ -2,7 +2,7 @@ require "test_helper"
 
 class CommentsReadMarkerTest < ActionDispatch::IntegrationTest
   setup do
-    @user = User.create!(email: "marker@example.com", password: "pw", name: "Marker")
+    @user = User.create!(email: "marker@example.com", password: TEST_PASSWORD, name: "Marker")
     @creative = Creative.create!(user: @user, description: "Some creative")
     sign_in_as(@user)
   end

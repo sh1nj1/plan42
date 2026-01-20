@@ -2,7 +2,7 @@ require "test_helper"
 
 class CreativePlansControllerTest < ActionDispatch::IntegrationTest
   setup do
-    @user = User.create!(email: "plan@example.com", password: "pw", name: "Planner", email_verified_at: Time.current)
+    @user = User.create!(email: "plan@example.com", password: TEST_PASSWORD, name: "Planner", email_verified_at: Time.current)
     @plan_creative = Creative.create!(user: @user, description: "Launch")
     @plan = Plan.create!(creative: @plan_creative, owner: @user, target_date: Date.today)
     @creative = Creative.create!(user: @user, description: "Root")

@@ -25,8 +25,10 @@ module ActiveSupport
   end
 end
 
+TEST_PASSWORD = "password123"
+
 module IntegrationAuthHelper
-  def sign_in_as(user, password: "pw", follow_redirect: false)
+  def sign_in_as(user, password: TEST_PASSWORD, follow_redirect: false)
     user.update!(email_verified_at: Time.current) unless user.email_verified?
     post session_path, params: { email: user.email, password: password }
     assert_response :redirect

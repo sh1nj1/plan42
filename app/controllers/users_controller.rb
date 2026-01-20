@@ -58,7 +58,7 @@ class UsersController < ApplicationController
     @user = User.new(
       name: params[:name],
       email: email,
-      password: SecureRandom.hex(32), # Random password, impossible to login
+      password: SecureRandom.hex(36), # 72 chars - max bcrypt length, impossible to login
       system_prompt: params[:system_prompt],
       llm_vendor: "google", # Default to google for now
       llm_model: params[:llm_model],
