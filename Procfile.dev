@@ -1,2 +1,2 @@
-web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0
+web: env RUBY_DEBUG_OPEN=true bin/rails server -p $PORT -b 0.0.0.0
 js: npm run build -- --watch

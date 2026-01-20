@@ -13,7 +13,7 @@ options = {
   repo: nil,
   number: 1,
   action: "opened",
-  url: "http://localhost:3000/github/webhook",
+  url: "http://localhost:#{ENV.fetch("PORT", "3000")}/github/webhook",
   html_url: nil
 }
 
@@ -32,7 +32,7 @@ parser = OptionParser.new do |opts|
     options[:action] = value
   end
 
-  opts.on("--url=URL", "Webhook URL (default: http://localhost:3000/github/webhook).") do |value|
+  opts.on("--url=URL", "Webhook URL (default: http://localhost:#{ENV.fetch("PORT", "3000")}/github/webhook).") do |value|
     options[:url] = value
   end
 
