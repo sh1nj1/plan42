@@ -5,6 +5,11 @@ class PermissionCacheJob < ApplicationJob
   discard_on ActiveRecord::RecordNotFound
 
   def perform(operation, **args)
+    if operation.nil?
+      Rails.logger.error("[PermissionCacheJob] Received nil operation, args: #{args.inspect}")
+      return
+    end
+
     case operation.to_sym
     when :cache_owner
       cache_owner(args[:creative_id])
