@@ -18,6 +18,8 @@ class PermissionCacheJob < ApplicationJob
       remove_share(args[:creative_share_id], args[:creative_id], args[:user_id])
     when :rebuild_user_cache_for_subtree
       rebuild_user_cache_for_subtree(args[:creative_id], args[:user_id])
+    else
+      Rails.logger.error("[PermissionCacheJob] Unknown operation: #{operation.inspect}, args: #{args.inspect}")
     end
   end
 

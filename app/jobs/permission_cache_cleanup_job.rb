@@ -26,10 +26,8 @@ class PermissionCacheCleanupJob < ApplicationJob
 
   def delete_in_batches(scope)
     total_deleted = 0
-    loop do
-      deleted = scope.limit(BATCH_SIZE).delete_all
-      total_deleted += deleted
-      break if deleted < BATCH_SIZE
+    scope.in_batches(of: BATCH_SIZE) do |batch|
+      total_deleted += batch.delete_all
     end
     total_deleted
   end
