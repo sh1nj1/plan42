@@ -10,9 +10,9 @@ namespace :encryption do
 
     # Define models and their encrypted attributes
     encrypted_models = {
-      "User" => [:llm_api_key, :google_access_token, :google_refresh_token],
-      "GithubAccount" => [:token],
-      "NotionAccount" => [:token]
+      "User" => [ :llm_api_key, :google_access_token, :google_refresh_token ],
+      "GithubAccount" => [ :token ],
+      "NotionAccount" => [ :token ]
     }
 
     total_updated = 0
@@ -76,9 +76,9 @@ namespace :encryption do
     puts
 
     encrypted_models = {
-      "User" => [:llm_api_key, :google_access_token, :google_refresh_token],
-      "GithubAccount" => [:token],
-      "NotionAccount" => [:token]
+      "User" => [ :llm_api_key, :google_access_token, :google_refresh_token ],
+      "GithubAccount" => [ :token ],
+      "NotionAccount" => [ :token ]
     }
 
     total_ok = 0
