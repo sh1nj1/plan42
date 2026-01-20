@@ -2,6 +2,8 @@ class NotionAccount < ApplicationRecord
   belongs_to :user
   has_many :notion_page_links, dependent: :destroy
 
+  encrypts :token, deterministic: false
+
   validates :notion_uid, :token, presence: true
   validates :notion_uid, uniqueness: true
 

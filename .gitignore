@@ -45,3 +45,7 @@ vendor/bundle
 /node_modules
 
 /lexical-playground
+
+# Ignore key files for decrypting credentials and more.
+/config/*.key
+

@@ -55,6 +55,8 @@ class User < ApplicationRecord
   attribute :tools, :json, default: -> { [] }
 
   encrypts :llm_api_key, deterministic: false
+  encrypts :google_access_token, deterministic: false
+  encrypts :google_refresh_token, deterministic: false
 
   SUPPORTED_LLM_MODELS = [
     "gemini-2.5-flash",
