@@ -111,14 +111,20 @@ module Navigation
       item
     end
 
-    def validate_item!(item)
+    def validate_item!(item, parent_key: nil)
+      context = parent_key ? " (child of #{parent_key})" : ""
+      raise ArgumentError, "Navigation item must have a :key#{context}" unless item[:key]
+      raise ArgumentError, "Navigation item must have a :label#{context}" unless item[:label]
       raise ArgumentError, "Navigation item must have a :key" unless item[:key]
       raise ArgumentError, "Navigation item must have a :label" unless item[:label]
 
       valid_types = %i[button link component partial divider raw]
       unless valid_types.include?(item[:type])
-        raise ArgumentError, "Invalid navigation item type: #{item[:type]}. Valid types: #{valid_types.join(', ')}"
+        raise ArgumentError, "Invalid navigation item type: #{item[:type]}#{context}. Valid types: #{valid_types.join(', ')}"
       end
+
+      # Validate children recursively
+      item[:children]&.each { |child| validate_item!(child, parent_key: item[:key]) }
     end
   end
 end

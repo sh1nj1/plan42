@@ -169,4 +169,31 @@ class Navigation::RegistryTest < ActiveSupport::TestCase
     parent = @registry.find(:parent)
     assert_equal [:child2, :child3, :child1], parent[:children].map { |c| c[:key] }
   end
+
+  test "validates children passed via register" do
+    error = assert_raises(ArgumentError) do
+      @registry.register(
+        key: :parent,
+        label: "Parent",
+        children: [
+          { key: :valid_child, label: "Valid" },
+          { key: :invalid_child }  # Missing label
+        ]
+      )
+    end
+    assert_match(/must have a :label.*child of parent/i, error.message)
+  end
+
+  test "validates children with invalid type" do
+    error = assert_raises(ArgumentError) do
+      @registry.register(
+        key: :parent,
+        label: "Parent",
+        children: [
+          { key: :child, label: "Child", type: :invalid_type }
+        ]
+      )
+    end
+    assert_match(/Invalid navigation item type.*child of parent/i, error.message)
+  end
 end
