@@ -110,9 +110,13 @@ module NavigationHelper
     content_tag(:hr, nil, **html_options)
   end
 
+  # Renders raw HTML content. Only use with trusted content (e.g., from render()).
+  # Content from user input will be escaped unless already marked html_safe.
   def render_nav_raw(item)
     content = resolve_nav_value(item[:content])
-    content.respond_to?(:html_safe) ? content.html_safe : content
+    # Only trust content that is already marked as html_safe (e.g., from render)
+    # Plain strings will be escaped by Rails automatically
+    content.html_safe? ? content : ERB::Util.html_escape(content)
   end
 
   def render_nav_dropdown(item, mobile: false)

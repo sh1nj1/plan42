@@ -221,4 +221,33 @@ class NavigationHelperTest < ActionView::TestCase
 
     assert_equal "Deep Value", result[:outer][:inner]
   end
+
+  test "render_nav_raw escapes untrusted content" do
+    Navigation::Registry.instance.register(
+      key: :test_raw,
+      label: "raw",
+      type: :raw,
+      content: -> { "<script>alert('xss')</script>" }
+    )
+
+    item = Navigation::Registry.instance.find(:test_raw)
+    html = send(:render_nav_raw, item)
+
+    assert_not_includes html, "<script>"
+    assert_includes html, "&lt;script&gt;"
+  end
+
+  test "render_nav_raw preserves html_safe content" do
+    Navigation::Registry.instance.register(
+      key: :test_raw_safe,
+      label: "raw",
+      type: :raw,
+      content: -> { "<strong>Safe</strong>".html_safe }
+    )
+
+    item = Navigation::Registry.instance.find(:test_raw_safe)
+    html = send(:render_nav_raw, item)
+
+    assert_includes html, "<strong>Safe</strong>"
+  end
 end

@@ -116,6 +116,14 @@ end
 | `:link` | Anchor link (`link_to`) | `path` |
 | `:partial` | Renders a partial | `partial` |
 | `:component` | Renders a ViewComponent | `component`, `component_args` |
+| `:raw` | Raw HTML content | `content` |
+| `:divider` | Horizontal divider (`<hr>`) | - |
+
+> **Security Note:** The `:raw` type only trusts content already marked as `html_safe` (e.g., output from `render()`). Plain strings are automatically escaped to prevent XSS. Always use Procs that return trusted content:
+> ```ruby
+> content: -> { render(MyComponent.new) }  # Safe: render output is html_safe
+> content: -> { user_input }               # Safe: will be escaped
+> ```
 
 #### Available Sections
 
