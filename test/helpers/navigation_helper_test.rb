@@ -250,4 +250,18 @@ class NavigationHelperTest < ActionView::TestCase
 
     assert_includes html, "<strong>Safe</strong>"
   end
+
+  test "render_nav_raw handles nil content" do
+    Navigation::Registry.instance.register(
+      key: :test_raw_nil,
+      label: "raw",
+      type: :raw,
+      content: -> { nil }
+    )
+
+    item = Navigation::Registry.instance.find(:test_raw_nil)
+    html = send(:render_nav_raw, item)
+
+    assert_equal "", html
+  end
 end
