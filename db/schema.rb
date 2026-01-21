@@ -175,7 +175,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_20_163856) do
 
   create_table "creatives", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.text "description", limit: 4294967295
+    t.text "description"
     t.text "github_gemini_prompt"
     t.integer "origin_id"
     t.integer "parent_id"
