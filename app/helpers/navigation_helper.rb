@@ -127,8 +127,15 @@ module NavigationHelper
              menu_id: menu_id,
              align: align
            )) do
-      safe_join(children.map { |child| render_mobile_navigation_item(child) })
+      safe_join(children.map { |child| render_dropdown_child(child, mobile: mobile) })
     end
+  end
+
+  def render_dropdown_child(item, mobile: false)
+    content = render_navigation_item(item, mobile: mobile)
+    return if content.blank?
+
+    content_tag(:div, content)
   end
 
   def resolve_nav_label(label)
