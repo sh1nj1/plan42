@@ -104,7 +104,10 @@ module Navigation
       item[:mobile] = true unless item.key?(:mobile)
       item[:requires_auth] ||= false
       item[:requires_user] ||= false
-      item[:children]&.map! { |c| normalize_item(c) }
+      if item[:children]
+        item[:children].map! { |c| normalize_item(c) }
+        item[:children].sort_by! { |c| c[:priority] }
+      end
       item
     end
 

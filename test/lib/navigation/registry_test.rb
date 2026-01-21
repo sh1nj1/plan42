@@ -145,11 +145,26 @@ class Navigation::RegistryTest < ActiveSupport::TestCase
     assert_nil @registry.find(:non_existent)
   end
 
-  test "children are sorted by priority" do
+  test "children added via add_child are sorted by priority" do
     @registry.register(key: :parent, label: "Parent")
     @registry.add_child(:parent, key: :child1, label: "Child 1", priority: 200)
     @registry.add_child(:parent, key: :child2, label: "Child 2", priority: 100)
     @registry.add_child(:parent, key: :child3, label: "Child 3", priority: 150)
+
+    parent = @registry.find(:parent)
+    assert_equal [:child2, :child3, :child1], parent[:children].map { |c| c[:key] }
+  end
+
+  test "children passed via register are sorted by priority" do
+    @registry.register(
+      key: :parent,
+      label: "Parent",
+      children: [
+        { key: :child1, label: "Child 1", priority: 200 },
+        { key: :child2, label: "Child 2", priority: 100 },
+        { key: :child3, label: "Child 3", priority: 150 }
+      ]
+    )
 
     parent = @registry.find(:parent)
     assert_equal [:child2, :child3, :child1], parent[:children].map { |c| c[:key] }
