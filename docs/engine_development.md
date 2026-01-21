@@ -49,6 +49,115 @@ Any file in `engines/my_custom_feature/public/` is served at the root URL, overr
 *   **Engine**: `engines/my_custom_feature/public/favicon.ico`
 *   **URL**: `https://app.com/favicon.ico`
 
+### Navigation Menu
+
+Engines can add, modify, or remove navigation menu items using the `Navigation::Registry`.
+Create an initializer in your engine: `engines/my_custom_feature/config/initializers/navigation.rb`
+
+#### Adding a Menu Item
+
+```ruby
+Rails.application.config.to_prepare do
+  Navigation::Registry.instance.register(
+    key: :my_feature,                        # Unique identifier (required)
+    label: "my_engine.feature",              # I18n key or string (required)
+    type: :button,                           # :button, :link, :component, :partial
+    path: -> { my_custom_feature.dashboard_path },  # Use Proc for dynamic paths
+    priority: 200,                           # Lower = earlier (default: 500)
+    section: :main,                          # :main, :search, :user (default: :main)
+    requires_auth: true,                     # Show only when authenticated
+    requires_user: false,                    # Show only when Current.user exists
+    desktop: true,                           # Show in desktop nav
+    mobile: true                             # Show in mobile popup
+  )
+end
+```
+
+#### Modifying an Existing Item
+
+```ruby
+Rails.application.config.to_prepare do
+  # Change the priority of the help button
+  Navigation::Registry.instance.modify(:help, priority: 999)
+
+  # Hide an item with custom visibility
+  Navigation::Registry.instance.modify(:plans, visible: -> { false })
+end
+```
+
+#### Removing an Item
+
+```ruby
+Rails.application.config.to_prepare do
+  Navigation::Registry.instance.unregister(:sign_in)
+end
+```
+
+#### Adding Child Items (Dropdowns)
+
+```ruby
+Rails.application.config.to_prepare do
+  # Add a child to the user menu
+  Navigation::Registry.instance.add_child(:user_menu, {
+    key: :my_settings,
+    label: "my_engine.settings",
+    type: :button,
+    path: -> { my_custom_feature.settings_path },
+    priority: 50  # Lower priority = appears earlier in the menu
+  })
+end
+```
+
+#### Navigation Item Types
+
+| Type | Description | Required Options |
+|------|-------------|------------------|
+| `:button` | Form button (`button_to`) | `path` |
+| `:link` | Anchor link (`link_to`) | `path` |
+| `:partial` | Renders a partial | `partial` |
+| `:component` | Renders a ViewComponent | `component`, `component_args` |
+
+#### Available Sections
+
+| Section | Location |
+|---------|----------|
+| `:search` | Search area (left side) |
+| `:main` | Main navigation bar |
+| `:user` | User menu area (right side) |
+
+#### Registration Order
+
+The navigation registry follows this execution order on each reload:
+
+```text
+1. reset!              ← Registry is cleared (prepended callback)
+2. Host App registers  ← Core menu items (home, plans, inbox, etc.)
+3. Engines register    ← Engine menu items (runs after host app)
+```
+
+This means engines can safely:
+- **Add** new items alongside core items
+- **Modify** core items (e.g., change priority, hide items)
+- **Remove** core items using `unregister`
+
+**Example: Replace the default help button with a custom one**
+```ruby
+# engines/my_custom_feature/config/initializers/navigation.rb
+Rails.application.config.to_prepare do
+  # Remove default help button
+  Navigation::Registry.instance.unregister(:help)
+
+  # Add custom help button
+  Navigation::Registry.instance.register(
+    key: :custom_help,
+    label: "my_engine.help",
+    type: :partial,
+    partial: "my_custom_feature/custom_help_button",
+    priority: 170
+  )
+end
+```
+
 ## 4. JavaScript & CSS
 
 ### JavaScript
