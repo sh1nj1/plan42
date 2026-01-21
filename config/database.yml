@@ -29,33 +29,33 @@ test:
 production:
   primary:
     <<: *default
+    <% if adapter == "sqlite3" %>
     database: storage/production-primary.sqlite3
-  cache:
-    <<: *default
-    database: storage/production-cache.sqlite3
-  queue:
-    <<: *default
-    database: storage/production-queue.sqlite3
-  cable:
-    <<: *default
-    database: storage/production-cable.sqlite3
-
-default_production_pg: &default_production
-  <<: *default
-  adapter: postgresql
-  encoding: unicode
-  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
-
-production_pg:
-  primary:
-    <<: *default_production
+    <% else %>
     url: <%= ENV['DATABASE_URL'] %>
+    encoding: unicode
+    <% end %>
   cache:
-    <<: *default_production
+    <<: *default
+    <% if adapter == "sqlite3" %>
+    database: storage/production-cache.sqlite3
+    <% else %>
     url: <%= ENV['CACHE_DATABASE_URL'] || ENV['DATABASE_URL'] %>
+    encoding: unicode
+    <% end %>
   queue:
-    <<: *default_production
+    <<: *default
+    <% if adapter == "sqlite3" %>
+    database: storage/production-queue.sqlite3
+    <% else %>
     url: <%= ENV['QUEUE_DATABASE_URL'] || ENV['DATABASE_URL'] %>
+    encoding: unicode
+    <% end %>
   cable:
-    <<: *default_production
+    <<: *default
+    <% if adapter == "sqlite3" %>
+    database: storage/production-cable.sqlite3
+    <% else %>
     url: <%= ENV['CABLE_DATABASE_URL'] || ENV['DATABASE_URL'] %>
+    encoding: unicode
+    <% end %>
