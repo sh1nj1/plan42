@@ -146,7 +146,8 @@ class UsersController < ApplicationController
     limit = 20 if limit <= 0
     limit = 50 if limit > 50 # Application-side cap
 
-    users = users.distinct.limit(limit)
+    user_ids = users.select(:id).distinct.limit(limit).pluck(:id)
+    users = User.where(id: user_ids)
     render json: users.map { |u| { id: u.id, name: u.display_name, email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
   end
 
