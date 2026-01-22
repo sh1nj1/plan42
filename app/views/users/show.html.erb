@@ -90,7 +90,7 @@
           %>
           <%= f.select :theme, options_for_select(theme_options, @user.theme), {}, style: "width: 100%; display: block;" %>
           <div style="margin-top: 5px;">
-            <a href="<%= user_themes_path %>" style="font-size: 0.9em;"><%= t("themes.manage") %></a>
+            <a href="<%= collavre.user_themes_path %>" style="font-size: 0.9em;"><%= t("themes.manage") %></a>
           </div>
         </div>
         <div>

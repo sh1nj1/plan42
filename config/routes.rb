@@ -118,11 +118,7 @@ Rails.application.routes.draw do
   resource :invite, only: [ :show, :create ]
   resource :verify, controller: "email_verifications", only: [ :show ]
 
-  resources :user_themes, only: [ :index, :create, :destroy ] do
-    member do
-      post :apply
-    end
-  end
+  # user_themes routes moved to Collavre engine
 
   namespace :github do
     resource :account, only: [ :show ] do

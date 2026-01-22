@@ -7,7 +7,7 @@ class UserThemesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "should get index" do
-    get user_themes_url
+    get collavre.user_themes_url
     assert_response :success
   end
 end

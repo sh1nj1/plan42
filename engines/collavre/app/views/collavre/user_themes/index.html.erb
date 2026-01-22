@@ -3,7 +3,7 @@
 
   <div class="card" style="margin-bottom: 2rem; padding: 1.5rem; background: var(--color-section-bg); border: 1px solid var(--color-border); border-radius: 8px;">
     <h3><%= t('themes.create_new') %></h3>
-    <%= form_with url: user_themes_path, method: :post, local: true do |f| %>
+    <%= form_with url: collavre.user_themes_path, method: :post, local: true do |f| %>
       <div class="stacked-form-control">
         <%= f.text_area :description, rows: 3, class: "shared-input-surface", style: "width: 100%; box-sizing: border-box;", required: true, value: params[:description], placeholder: t('themes.description_prompt') %>
         <% if @error %>
@@ -51,9 +51,9 @@
                 <% if Current.user.theme == theme.id.to_s %>
                 <span class="badge badge-success"><%= t('themes.active') %></span>
               <% else %>
-                <%= button_to t('themes.apply'), apply_user_theme_path(theme), method: :post, class: "btn-sm" %>
+                <%= button_to t('themes.apply'), collavre.apply_user_theme_path(theme), method: :post, class: "btn-sm" %>
               <% end %>
-              <%= button_to t('themes.delete'), user_theme_path(theme), method: :delete, class: "btn-sm btn-danger", form_class: "inline-block", onclick: "return confirm('#{t('themes.confirm_delete')}')" %>
+              <%= button_to t('themes.delete'), collavre.user_theme_path(theme), method: :delete, class: "btn-sm btn-danger", form_class: "inline-block", onclick: "return confirm('#{t('themes.confirm_delete')}')" %>
               </div>
             </td>
           </tr>
@@ -70,6 +70,6 @@
   </div>
   
   <div style="margin-top: 1rem;">
-     <%= link_to t('app.back_to_profile', default: 'Back to Profile'), user_path(Current.user), class: "unstyled-link", style: "text-decoration: underline;" %>
+     <%= link_to t('app.back_to_profile', default: 'Back to Profile'), main_app.user_path(Current.user), class: "unstyled-link", style: "text-decoration: underline;" %>
   </div>
 </div>
