@@ -1,6 +1,6 @@
 <div id="inbox-items" data-next-page="<%= next_page || '' %>">
   <% if items.any? %>
-    <%= render partial: 'inbox_items/items', locals: { items: items } %>
+    <%= render partial: 'collavre/inbox_items/items', locals: { items: items } %>
   <% else %>
     <div class="inbox-empty"><%= t('inbox.no_messages') %></div>
   <% end %>
