@@ -1,5 +1,4 @@
-class Tag < ApplicationRecord
-  belongs_to :label
-  validates :creative_id, presence: true
-  # value 컬럼이 추가되었습니다.
+# Backward compatibility alias - delegates to Collavre::Tag
+# TODO: Update all references to use Collavre::Tag directly
+class Tag < Collavre::Tag
 end

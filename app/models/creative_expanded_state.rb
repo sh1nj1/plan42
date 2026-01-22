@@ -1,7 +1,4 @@
-class CreativeExpandedState < ApplicationRecord
-  belongs_to :creative, optional: true
-  belongs_to :user
-
-  validates :expanded_status, presence: true
-  validates :creative_id, uniqueness: { scope: :user_id }, allow_nil: true
+# Backward compatibility alias - delegates to Collavre::CreativeExpandedState
+# TODO: Update all references to use Collavre::CreativeExpandedState directly
+class CreativeExpandedState < Collavre::CreativeExpandedState
 end

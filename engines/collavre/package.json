@@ -1,0 +1,14 @@
+{
+  "name": "collavre",
+  "version": "0.1.0",
+  "description": "Core JavaScript for Collavre engine",
+  "type": "module",
+  "main": "app/javascript/collavre.js",
+  "exports": {
+    ".": "./app/javascript/collavre.js",
+    "./controllers": "./app/javascript/controllers/index.js"
+  },
+  "files": [
+    "app/javascript"
+  ]
+}

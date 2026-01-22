@@ -1,9 +1,4 @@
-# frozen_string_literal: true
-
-class ActivityLog < ApplicationRecord
-  belongs_to :creative, optional: true
-  belongs_to :user, optional: true
-  belongs_to :comment, optional: true
-
-  validates :activity, presence: true
+# Backward compatibility alias - delegates to Collavre::ActivityLog
+# TODO: Update all references to use Collavre::ActivityLog directly
+class ActivityLog < Collavre::ActivityLog
 end

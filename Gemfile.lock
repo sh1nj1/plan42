@@ -1,3 +1,11 @@
+PATH
+  remote: engines/collavre
+  specs:
+    collavre (0.1.0)
+      closure_tree
+      rails (>= 8.0)
+      view_component
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -604,6 +612,7 @@ DEPENDENCIES
   brakeman
   capybara
   closure_tree
+  collavre!
   debug
   doorkeeper (~> 5.8)
   dotenv

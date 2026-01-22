@@ -1,8 +1,4 @@
-class Topic < ApplicationRecord
-  belongs_to :creative
-  belongs_to :user
-
-  has_many :comments, dependent: :destroy
-
-  validates :name, presence: true, uniqueness: { scope: :creative_id }
+# Backward compatibility alias - delegates to Collavre::Topic
+# TODO: Update all references to use Collavre::Topic directly
+class Topic < Collavre::Topic
 end
