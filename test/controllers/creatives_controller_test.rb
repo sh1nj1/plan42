@@ -272,6 +272,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
 
     assert_includes second_child_ids, new_child.id,
       "New child should appear in response"
+    assert_not_includes first_child_ids, new_child.id,
       "New child should not have been in first response"
   end
 

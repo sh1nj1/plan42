@@ -50,7 +50,7 @@ module Authentication
     end
 
     def request_authentication
-      if request.get? && !request.path.start_with?("/inbox")
+      if request.get? && !request.path.start_with?("/inbox") && request.format.html?
         session[:return_to_after_authenticating] = request.url
       end
       redirect_to new_session_path

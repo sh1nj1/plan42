@@ -61,7 +61,7 @@ class SystemSetting < ApplicationRecord
   end
 
   def self.creatives_login_required?
-    cached_value("creatives_login_required") == "true"
+    cached_value("creatives_login_required", DEFAULT_CREATIVES_LOGIN_REQUIRED.to_s) == "true"
   end
 
   def self.mcp_tool_approval_required?
