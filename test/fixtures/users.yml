@@ -1,0 +1,21 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  name: Admin User
+  email: admin@example.com
+  password_digest: <%= BCrypt::Password.create('password') %>
+  email_verified_at: <%= Time.current %>
+  system_admin: true
+  display_level: 6
+  completion_mark: ""
+  searchable: false
+
+two:
+  name: Regular User
+  email: user@example.com
+  password_digest: <%= BCrypt::Password.create('password') %>
+  email_verified_at: <%= Time.current %>
+  system_admin: false
+  display_level: 6
+  completion_mark: ""
+  searchable: false

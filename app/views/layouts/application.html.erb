@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title><%= content_for(:title) || t('app.name') %></title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="app-version" content="<%= Rails.application.config.app_version %>">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+    <% if Current.user %>
+      <meta name="notifications-enabled" content="<%= Current.user.notifications_enabled %>">
+    <% end %>
+
+    <% if Rails.application.config.x.firebase_config.present? %>
+      <meta name="firebase-config" content="<%= Rails.application.config.x.firebase_config.to_json %>">
+    <% end %>
+
+    <%= yield :head %>
+
+    <%# Enable PWA manifest for installable apps (make sure to enable in config/routes.rb too!) %>
+    <%= tag.link rel: "manifest", href: main_app.pwa_manifest_path(format: :json) %>
+
+    <link rel="icon" href="/icon-1e3cf549d2.png" type="image/png">
+    <link rel="icon" href="/icon-1e3cf549d2.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icon-1e3cf549d2.png">
+
+    <%# Includes all stylesheet files in app/assets/stylesheets %>
+    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%= stylesheet_link_tag "avatar_preview" %>
+    <%= stylesheet_link_tag "doorkeeper" %>
+    <%= stylesheet_link_tag "collavre/creatives" %>
+    <%= stylesheet_link_tag "collavre/actiontext" %>
+    <%= stylesheet_link_tag "collavre/activity_logs" %>
+    <%= stylesheet_link_tag "collavre/dark_mode" %>
+    <%= stylesheet_link_tag "collavre/print", media: 'print' %>
+    <%= stylesheet_link_tag "collavre/user_menu" %>
+    <%= stylesheet_link_tag "collavre/popup" %>
+
+    <%= javascript_include_tag "application", "data-turbo-track": "reload", defer: true, type: "module" %>
+
+    <% if Current.user&.theme.present? && !%w[light dark].include?(Current.user.theme) %>
+      <% if (custom_theme = UserTheme.find_by(id: Current.user.theme)) %>
+        <style id="user-theme-styles" data-turbo-track="reload">
+          body {
+            <% custom_theme.variables.each do |key, value| %>
+              <%= key %>: <%= value %> !important;
+            <% end %>
+          }
+        </style>
+      <% end %>
+    <% end %>
+  </head>
+  <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
+    <%= render 'collavre/shared/link_creative_modal' %>
+    <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
+    <div class="notice"><%= notice %></div>
+
+    <%= render 'collavre/shared/navigation' %>
+
+    <% unless Rails.env.test? %>
+    <div id="notification-permission-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
+      <div class="popup-box" style="max-width:400px;">
+        <p><%= t('notifications.permission_prompt') %></p>
+        <div style="margin-top:1em;text-align:right;">
+          <button id="deny-notifications" data-confirm-message="<%= t('notifications.confirm_deny') %>"><%= t('notifications.deny') %></button>
+          <button id="allow-notifications"><%= t('notifications.allow') %></button>
+        </div>
+      </div>
+    </div>
+<% end %>
+
+    <main>
+      <%= yield %>
+    </main>
+
+    <%= render 'shared/footer' %>
+
+    <%= render "collavre/comments/reaction_picker" %>
+  </body>
+</html>

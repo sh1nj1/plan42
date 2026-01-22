@@ -1,0 +1,138 @@
+# Files in the config/locales directory are used for internationalization and
+# are automatically loaded by Rails. If you want to use locales other than
+# English, add the necessary files in this directory.
+#
+# To use the locales, use `I18n.t`:
+#
+#     I18n.t "hello"
+#
+# In views, this is aliased to just `t`:
+#
+#     <%= t("hello") %>
+#
+# To use a different locale, set it with `I18n.locale`:
+#
+#     I18n.locale = :es
+#
+# This would use the information in config/locales/es.yml.
+#
+# To learn more about the API, please read the Rails Internationalization guide
+# at https://guides.rubyonrails.org/i18n.html.
+#
+# Be aware that YAML interprets the following case-insensitive strings as
+# booleans: `true`, `false`, `on`, `off`, `yes`, `no`. Therefore, these strings
+# must be quoted to be interpreted as strings. For example:
+#
+#     en:
+#       "yes": yup
+#       enabled: "ON"
+
+en:
+  errors:
+    rate_limit_exceeded: "Too many requests. Please try again later."
+
+  comments:
+    activity_logs_summary: "Activity Logs"
+
+  app:
+    name: "Collavre"
+    home: "Home"
+    sign_in: "Sign in"
+    sign_out: "Sign out"
+    cancel: "Cancel"
+    previous: "Previous"
+    next: "Next"
+    finish: "Finish"
+    creative_guide: "A Creative is a content block that works like a task. It's similar to a to-do list, organized as a tree—letting you zoom out for high-level summaries or zoom in to detailed subtasks. Progress automatically summarizes progress from the steps below, and list of Creatives are presented as a document, complete with headings, bullet-point lists and progress indicators."
+    search_placeholder: "Search..."
+    plans: "Plans"
+    set_plan: "Set Plan"
+    select: "Select"
+    cancel_select: "Cancel Select"
+    filter_complete: "Completed"
+    filter_incomplete: "Incomplete"
+    filter_all: "All"
+    loading: "Loading..."
+    collapse_all: "Collapse All"
+    expand_all: "Expand All"
+    save: "Save"
+    filter_comments: "Chats"
+    inbox: "Inbox"
+    more: "More"
+    light_mode: "Light Mode"
+    dark_mode: "Dark Mode"
+    system_mode: "System Default"
+    apply_tags: "Filter"
+    back_to_profile: "Back to Profile"
+
+    here: "here"
+
+  common:
+    save: "Save"
+    cancel: "Cancel"
+
+  admin:
+    settings:
+      auth_providers: "Authentication Providers"
+      auth_providers_hint: "Select allowed authentication methods. Warning: Disabling all may lock you out."
+      auth_provider_required: "At least one authentication provider must be enabled."
+
+  auth:
+    providers:
+      email: "Email"
+      google: "Google"
+      passkey: "Passkey"
+
+  topics:
+    delete_confirm: "This will delete all messages in this topic. Are you sure?"
+    new_placeholder: "New Topic"
+    no_permission: "You don't have permission to perform this action."
+
+  inbox:
+    mark_read: "Read"
+    mark_unread: "Unread"
+    delete: "Delete"
+    show_read: "Show read"
+    no_messages: "No messages"
+    comment_added: "%{user} added \"%{comment}\" to \"%{creative}\"."
+    creative_shared: "%{user} shared \"%{short_title}\"."
+    user_mentioned: "%{user} mentioned you in \"%{creative}\": \"%{comment}\""
+    permission_requested: "%{user} requested access to \"%{short_title}\"."
+    comment_deleted_by_admin: "%{admin_name} deleted your comment in \"%{creative_snippet}\": %{comment_content}"
+    comment_content_unavailable: "(comment unavailable)"
+    tool_approval_needed: "Tool '%{tool_name}' has been detected/updated. Please approve it to activate."
+
+  inbox_mailer:
+    daily_summary:
+      subject: "Your inbox summary"
+      greeting: "Here are your unread messages:"
+      view: "View"
+
+  users:
+    sessions:
+      new:
+        provider_disabled: "This authentication method is currently disabled."
+        email_not_verified: "You must verify your email before signing in."
+    webauthn:
+      deleted: "Passkey deleted."
+      credential_not_found: "Passkey not found. Please register a passkey in your profile settings after logging in with password."
+    table:
+      last_login_unknown: "Never"
+
+  notifications:
+    permission_prompt: "Would you like to enable browser notifications?"
+    confirm_deny: "Permanently deny notifications? You can change this later in settings."
+    deny: "Deny"
+    allow: "Allow"
+
+  emails:
+    index_title: "Emails"
+    list:
+      title:
+        to: "To"
+        event: "Event"
+        subject: "Subject"
+        sent_at: "Sent at"
+    event:
+      invitation: "Invitation"
+      inbox_summary: "Inbox summary"

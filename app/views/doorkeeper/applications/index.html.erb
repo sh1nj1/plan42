@@ -1,0 +1,38 @@
+<div class="page-content doorkeeper-page-content">
+  <div class="header doorkeeper-header" style="display: flex; justify-content: space-between; align-items: center;">
+    <h1><%= t('doorkeeper.applications.index.title') %></h1>
+    <%= link_to t('doorkeeper.applications.index.new'), new_oauth_application_path, class: "primary-action-button" %>
+  </div>
+
+  <div class="table-scroll">
+    <table class="contacts-table">
+      <thead>
+        <tr>
+          <th><%= t('doorkeeper.applications.index.name') %></th>
+          <th><%= t('doorkeeper.applications.index.callback_url') %></th>
+          <th><%= t('doorkeeper.applications.index.confidential') %></th>
+          <th class="text-right"><%= t('doorkeeper.applications.index.actions') %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @applications.each do |application| %>
+          <tr id="application_<%= application.id %>">
+            <td><%= link_to application.name, oauth_application_path(application) %></td>
+            <td>
+              <% application.redirect_uri.split.each do |uri| %>
+                <div class="callback-url"><%= uri %></div>
+              <% end %>
+            </td>
+            <td><%= application.confidential? ? t('doorkeeper.applications.index.confidentiality.yes') : t('doorkeeper.applications.index.confidentiality.no') %></td>
+            <td class="text-right">
+              <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; align-items: center;">
+                <%= link_to t('doorkeeper.applications.buttons.edit'), edit_oauth_application_path(application), class: "btn" %>
+                <%= button_to t('doorkeeper.applications.buttons.destroy'), oauth_application_path(application), method: :delete, data: { confirm: t('doorkeeper.applications.confirmations.destroy') }, class: "danger-link" %>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</div>

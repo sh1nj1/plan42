@@ -1,0 +1,109 @@
+ko:
+  errors:
+    rate_limit_exceeded: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."
+
+  comments:
+    activity_logs_summary: "활동 기록"
+
+  users:
+    sessions:
+      new:
+        provider_disabled: "이 인증 방식은 현재 비활성화되어 있습니다."
+        email_not_verified: "로그인하려면 먼저 이메일을 인증해야 합니다."
+    webauthn:
+      deleted: "패스키가 삭제되었습니다."
+      credential_not_found: "패스키를 찾을 수 없습니다. 비밀번호로 로그인 후 프로필 설정에서 패스키를 등록해주세요."
+    table:
+      last_login_unknown: "기록 없음"
+
+  notifications:
+    permission_prompt: "브라우저 알림을 활성화하시겠습니까?"
+    confirm_deny: "알림을 영구적으로 거부하시겠습니까? 나중에 설정에서 변경할 수 있습니다."
+    deny: "거부"
+    allow: "허용"
+
+  app:
+    name: "콜라브"
+    home: "홈"
+    sign_in: "로그인"
+    sign_out: "로그아웃"
+    cancel: "취소"
+    previous: "이전"
+    next: "다음"
+    finish: "완료"
+    back_to_profile: "프로필로 돌아가기"
+
+    creative_guide: "크리에이티브는 작업처럼 작동하는 콘텐츠 블록입니다. 할일목록 같지만, 트리 형태로 구성되어 있어 상위 수준의 요약을 보거나 세부 하위 작업들을 볼 수 있습니다. 진행률은 하위 단계의 진행률을 자동으로 요약하며, 크리에이티브의 리스트는 제목, 글머리 기호 목록 및 진행률 표시가 포함된 문서로 보여집니다."
+    search_placeholder: "검색..."
+    plans: "계획"
+    set_plan: "계획 설정"
+    select: "선택"
+    cancel_select: "선택 취소"
+    filter_complete: "완료"
+    filter_incomplete: "미완료"
+    filter_all: "전체"
+    loading: "로딩 중..."
+    collapse_all: "모두 접기"
+    expand_all: "모두 펼치기"
+    save: "저장"
+    filter_comments: "채팅"
+    inbox: "인박스"
+    more: "더보기"
+    light_mode: "라이트모드"
+    dark_mode: "다크모드"
+    system_mode: "시스템 기본값"
+    apply_tags: "필터"
+    here: "여기"
+
+  common:
+    save: "저장"
+    cancel: "취소"
+
+  admin:
+    settings:
+      auth_providers: "인증 제공자"
+      auth_providers_hint: "허용할 인증 방식을 선택하세요. 경고: 모두 비활성화하면 로그인할 수 없게 될 수 있습니다."
+      auth_provider_required: "최소 하나의 인증 제공자가 활성화되어야 합니다."
+
+  auth:
+    providers:
+      email: "이메일"
+      google: "Google"
+      passkey: "패스키"
+
+  topics:
+    delete_confirm: "이 토픽의 모든 메시지가 삭제됩니다. 확실합니까?"
+    new_placeholder: "새 토픽"
+    no_permission: "권한이 없습니다."
+
+  inbox:
+    mark_read: "읽음"
+    mark_unread: "안읽음"
+    delete: "삭제"
+    show_read: "읽은 메세지 포함"
+    no_messages: "메세지가 없습니다"
+    comment_added: "%{user} 가 \"%{comment}\" 를 \"%{creative}\" 에 추가했습니다."
+    creative_shared: "%{user} 가 \"%{short_title}\" 을 공유했습니다."
+    user_mentioned: "%{user} 님이 \"%{creative}\" 에서 당신을 언급했습니다: \"%{comment}\""
+    permission_requested: "%{user} 이 크리에이티브 \"%{short_title}\" 에 대한 권한 요청을 했습니다."
+    comment_deleted_by_admin: "%{admin_name} 님이 \"%{creative_snippet}\" 에서 당신의 댓글을 삭제했습니다: %{comment_content}"
+    comment_content_unavailable: "(삭제된 댓글 내용을 표시할 수 없습니다)"
+    tool_approval_needed: "도구 '%{tool_name}'가 감지/업데이트되었습니다. 활성화하려면 승인해주세요."
+
+  inbox_mailer:
+    daily_summary:
+      subject: "인박스 요약"
+      greeting: "읽지 않은 메세지 목록입니다:"
+      view: "보기"
+
+  emails:
+    index_title: "이메일"
+    list:
+      title:
+        to: "받는 사람"
+        event: "이벤트"
+        subject: "제목"
+        sent_at: "보내신 시간"
+    event:
+      invitation: "초대"
+      inbox_summary: "인박스 요약"
