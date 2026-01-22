@@ -1,4 +1,79 @@
-// Collavre Stimulus Controllers
-// Controllers will be registered as they are migrated
+// Collavre Engine Controllers
+// Import all controllers
+import PopupMenuController from "./popup_menu_controller"
+import ProgressFilterController from "./progress_filter_controller"
+import CreativesImportController from "./creatives/import_controller"
+import CreativesSelectModeController from "./creatives/select_mode_controller"
+import CreativesDragDropController from "./creatives/drag_drop_controller"
+import CreativesExpansionController from "./creatives/expansion_controller"
+import CreativesRowEditorController from "./creatives/row_editor_controller"
+import CreativesTreeController from "./creatives/tree_controller"
+import CreativesSetPlanModalController from "./creatives/set_plan_modal_controller"
+import CommentsListController from "./comments/list_controller"
+import CommentsFormController from "./comments/form_controller"
+import CommentsPresenceController from "./comments/presence_controller"
+import CommentsMentionMenuController from "./comments/mention_menu_controller"
+import CommentsTopicsController from "./comments/topics_controller"
+import CommentsPopupController from "./comments/popup_controller"
+import ClickTargetController from "./click_target_controller"
+import TabsController from "./tabs_controller"
+import LinkCreativeController from "./link_creative_controller"
+import CommonPopupController from "./common_popup_controller"
+import CommentController from "./comment_controller"
+import ReactionPickerController from "./reaction_picker_controller"
+import ShareInviteController from "./share_invite_controller"
+import ShareUserSearchController from "./share_user_search_controller"
 
-export default {}
+// Export all controllers
+export {
+  PopupMenuController,
+  ProgressFilterController,
+  CreativesImportController,
+  CreativesSelectModeController,
+  CreativesDragDropController,
+  CreativesExpansionController,
+  CreativesRowEditorController,
+  CreativesTreeController,
+  CreativesSetPlanModalController,
+  CommentsListController,
+  CommentsFormController,
+  CommentsPresenceController,
+  CommentsMentionMenuController,
+  CommentsTopicsController,
+  CommentsPopupController,
+  ClickTargetController,
+  TabsController,
+  LinkCreativeController,
+  CommonPopupController,
+  CommentController,
+  ReactionPickerController,
+  ShareInviteController,
+  ShareUserSearchController
+}
+
+// Registration function for use with a Stimulus application
+export function registerControllers(application) {
+  application.register("popup-menu", PopupMenuController)
+  application.register("progress-filter", ProgressFilterController)
+  application.register("creatives--import", CreativesImportController)
+  application.register("creatives--select-mode", CreativesSelectModeController)
+  application.register("creatives--drag-drop", CreativesDragDropController)
+  application.register("creatives--expansion", CreativesExpansionController)
+  application.register("creatives--row-editor", CreativesRowEditorController)
+  application.register("creatives--tree", CreativesTreeController)
+  application.register("creatives--set-plan-modal", CreativesSetPlanModalController)
+  application.register("comments--list", CommentsListController)
+  application.register("comments--form", CommentsFormController)
+  application.register("comments--presence", CommentsPresenceController)
+  application.register("comments--mention-menu", CommentsMentionMenuController)
+  application.register("comments--topics", CommentsTopicsController)
+  application.register("comments--popup", CommentsPopupController)
+  application.register("click-target", ClickTargetController)
+  application.register("tabs", TabsController)
+  application.register("link-creative", LinkCreativeController)
+  application.register("common-popup", CommonPopupController)
+  application.register("comment", CommentController)
+  application.register("reaction-picker", ReactionPickerController)
+  application.register("share-invite", ShareInviteController)
+  application.register("share-user-search", ShareUserSearchController)
+}

@@ -1,9 +1,10 @@
-import creativesApi from './lib/api/creatives'
-import apiQueue from './lib/api/queue_manager'
+import creativesApi from '../lib/api/creatives'
+import apiQueue from '../lib/api/queue_manager'
 import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
 import { createInlineEditor } from './lexical_inline_editor'
-import { renderCreativeTree, dispatchCreativeTreeUpdated } from './creatives/tree_renderer'
-import { application } from './controllers/application'
+import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
+// Import Stimulus application from the global window (set by host app)
+const application = window.Stimulus
 
 const BULLET_STARTING_LEVEL = 3;
 const HEADING_INDENT_STEP_EM = 0.4;

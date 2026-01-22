@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client"
 import { $getRoot } from "lexical"
-import InlineLexicalEditor from "./components/InlineLexicalEditor"
+import InlineLexicalEditor from "../components/InlineLexicalEditor"
 
 const DEFAULT_KEY = "creative-inline-editor"
 

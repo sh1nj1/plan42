@@ -1,5 +1,5 @@
-import CommonPopup from './lib/common_popup'
-import { getCaretClientRect } from './utils/caret_position'
+import CommonPopup from '../lib/common_popup'
+import { getCaretClientRect } from '../utils/caret_position'
 
 let mentionMenuInitialized = false
 

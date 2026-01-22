@@ -1,4 +1,4 @@
-import { createSubscription } from './services/cable'
+import { createSubscription } from '../services/cable'
 
 document.addEventListener('DOMContentLoaded', function() {
   var container = document.getElementById('slide-view');

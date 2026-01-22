@@ -1,4 +1,4 @@
-import CommonPopup from './lib/common_popup'
+import CommonPopup from '../lib/common_popup'
 
 let sharePopupInitialized = false
 

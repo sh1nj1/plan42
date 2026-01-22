@@ -6,7 +6,15 @@
   "main": "app/javascript/collavre.js",
   "exports": {
     ".": "./app/javascript/collavre.js",
-    "./controllers": "./app/javascript/controllers/index.js"
+    "./controllers": "./app/javascript/controllers/index.js",
+    "./controllers/*": "./app/javascript/controllers/*",
+    "./modules/*": "./app/javascript/modules/*",
+    "./lib/*": "./app/javascript/lib/*",
+    "./services/*": "./app/javascript/services/*",
+    "./utils/*": "./app/javascript/utils/*",
+    "./components/*": "./app/javascript/components/*",
+    "./creatives/*": "./app/javascript/creatives/*",
+    "./lexical_inline_editor": "./app/javascript/lexical_inline_editor.jsx"
   },
   "files": [
     "app/javascript"
