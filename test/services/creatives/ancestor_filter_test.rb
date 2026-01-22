@@ -10,6 +10,7 @@ module Creatives
       def link_to(_path, *args); block_given? ? yield : ""; end
       def creative_path(creative); "/creatives/#{creative.id}"; end
       def children_creative_path(creative, **args); "/children"; end
+      def collavre; self; end
     end
 
     setup do

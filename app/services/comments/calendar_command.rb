@@ -1,6 +1,6 @@
 module Comments
   class CalendarCommand
-    def initialize(comment:, user:, url_helpers: Rails.application.routes.url_helpers)
+    def initialize(comment:, user:, url_helpers: Collavre::Engine.routes.url_helpers)
       @comment = comment
       @user = user
       @creative = comment.creative.effective_origin

@@ -13,7 +13,7 @@ module Collavre
             failure_key: "creatives.index.plan_tag_failed",
             failure_default: "Please select a plan and at least one creative."
           )
-          redirect_back fallback_location: main_app.creatives_path(select_mode: 1)
+          redirect_back fallback_location: creatives_path(select_mode: 1)
         end
         format.json do
           if result.success?
@@ -36,7 +36,7 @@ module Collavre
             failure_key: "creatives.index.plan_tag_remove_failed",
             failure_default: "Please select a plan and at least one creative."
           )
-          redirect_back fallback_location: main_app.creatives_path(select_mode: 1)
+          redirect_back fallback_location: creatives_path(select_mode: 1)
         end
         format.json do
           if result.success?

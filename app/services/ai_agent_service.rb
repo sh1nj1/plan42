@@ -75,7 +75,7 @@ class AiAgentService
 
           # Manually trigger broadcast for the content update
           # We use broadcast_update_to to immediately stream the update
-          reply_comment.broadcast_update_to([ reply_comment.creative, :comments ])
+          reply_comment.broadcast_update_to([ reply_comment.creative, :comments ], partial: "collavre/comments/comment")
         end
       end
 

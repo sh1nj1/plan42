@@ -34,7 +34,7 @@ class PlansTimelineComponent < ViewComponent::Base
           created_at: event.start_time.to_date,
           target_date: event.end_time.to_date,
           progress: event.creative&.progress || 0,
-          path: event.creative ? helpers.creative_path(event.creative) : event.html_link,
+          path: event.creative ? helpers.collavre.creative_path(event.creative) : event.html_link,
           deletable: event.user_id == Current.user&.id
         }
       end
@@ -46,9 +46,9 @@ class PlansTimelineComponent < ViewComponent::Base
 
   def plan_creatives_path(plan)
     if helpers.params[:id].present?
-      helpers.creative_path(helpers.params[:id], tags: [ plan.id ])
+      helpers.collavre.creative_path(helpers.params[:id], tags: [ plan.id ])
     else
-      helpers.creatives_path(tags: [ plan.id ])
+      helpers.collavre.creatives_path(tags: [ plan.id ])
     end
   end
 end

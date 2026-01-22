@@ -39,7 +39,7 @@ class ApplicationControllerSecurityTest < ActionDispatch::IntegrationTest
   test "should forbid whitelisted path request with invalid secret" do
     begin
       Rails.application.routes.draw do
-        get "health_test" => "creatives#index"
+        get "health_test" => "collavre/creatives#index"
       end
 
       with_env("ORIGIN_SHARED_SECRET" => "secret123") do

@@ -87,7 +87,7 @@ module Collavre
         message_params: metadata,
         comment: self,
         creative: origin,
-        link: Rails.application.routes.url_helpers.creative_comment_url(
+        link: Collavre::Engine.routes.url_helpers.creative_comment_url(
           creative,
           self,
           Rails.application.config.action_mailer.default_url_options
@@ -127,12 +127,12 @@ module Collavre
 
     def broadcast_create
       return if private?
-      broadcast_append_later_to([ creative, :comments ], target: "comments-list")
+      broadcast_append_later_to([ creative, :comments ], target: "comments-list", partial: "collavre/comments/comment")
     end
 
     def broadcast_update
       return if private?
-      broadcast_replace_later_to([ creative, :comments ])
+      broadcast_replace_later_to([ creative, :comments ], partial: "collavre/comments/comment")
     end
 
     def broadcast_destroy

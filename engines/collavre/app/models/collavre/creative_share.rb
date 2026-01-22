@@ -69,7 +69,7 @@ module Collavre
         owner: user,
         message_key: "inbox.creative_shared",
         message_params: { user: Current.user.display_name, short_title: short_title },
-        link: Rails.application.routes.url_helpers.creative_url(
+        link: Collavre::Engine.routes.url_helpers.creative_url(
           creative,
           Rails.application.config.action_mailer.default_url_options
         )

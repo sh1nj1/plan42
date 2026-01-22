@@ -31,7 +31,7 @@
     <span id="read_receipts_comment_<%= comment.id %>" class="read-receipt-wrapper">
       <% users_read = defined?(read_by_users) ? read_by_users : (defined?(read_receipts) ? read_receipts[comment.id] : nil) %>
       <% present_user_ids = defined?(present_user_ids) ? present_user_ids : nil %>
-      <%= render "comments/read_receipts", read_by_users: users_read, present_user_ids: present_user_ids unless comment.private? %>
+      <%= render "collavre/comments/read_receipts", read_by_users: users_read, present_user_ids: present_user_ids unless comment.private? %>
     </span>
     <% if comment.private? %>
       <span class="private-label">[<%= t('comments.private') %>]</span>
@@ -58,7 +58,7 @@
       <button class="edit-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('comments.update_comment') %>">
         <%= t('comments.edit_button') %>
       </button>
-      <button class="copy-comment-link-btn" data-comment-id="<%= comment.id %>" data-comment-url="<%= creative_comment_url(comment.creative, comment) %>" title="<%= t('comments.copy_link_button') %>">
+      <button class="copy-comment-link-btn" data-comment-id="<%= comment.id %>" data-comment-url="<%= collavre.creative_comment_url(comment.creative, comment, Rails.application.config.action_mailer.default_url_options) %>" title="<%= t('comments.copy_link_button') %>">
         <%= t('comments.copy_link_button') %>
       </button>
       <% can_delete = comment.user == Current.user || comment.creative.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
@@ -77,11 +77,11 @@
         <% preview_image = image.variable? ? image.variant(resize_to_limit: [ 800, 800 ]) : image %>
         <% preview_image_path =
              if preview_image.respond_to?(:processed)
-               rails_representation_path(preview_image, only_path: true)
+               main_app.rails_representation_path(preview_image, only_path: true)
              else
-               rails_blob_path(preview_image, only_path: true)
+               main_app.rails_blob_path(preview_image, only_path: true)
              end %>
-        <%= link_to rails_blob_path(image, only_path: true), target: '_blank', rel: 'noopener', class: 'comment-attachment-link' do %>
+        <%= link_to main_app.rails_blob_path(image, only_path: true), target: '_blank', rel: 'noopener', class: 'comment-attachment-link' do %>
           <%= image_tag preview_image_path, class: 'comment-attachment-image', alt: '', loading: 'lazy' %>
         <% end %>
       <% end %>
@@ -136,7 +136,7 @@
     <div class="comment-activity-log-block">
       <details>
         <summary><%= t("comments.activity_logs_summary") %></summary>
-        <%= turbo_frame_tag "activity_log_details_#{comment.id}", src: creative_comment_activity_log_path(comment.creative, comment), loading: "lazy" do %>
+        <%= turbo_frame_tag "activity_log_details_#{comment.id}", src: collavre.creative_comment_activity_log_path(comment.creative, comment), loading: "lazy" do %>
           Loading...
         <% end %>
       </details>

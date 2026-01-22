@@ -38,7 +38,7 @@ module Collavre
       Turbo::StreamsChannel.broadcast_update_to(
         [ creative, :comments ],
         target: "read_receipts_comment_#{effective_id}",
-        partial: "comments/read_receipts",
+        partial: "collavre/comments/read_receipts",
         locals: { read_by_users: users, present_user_ids: present_user_ids }
       )
     end

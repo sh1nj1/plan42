@@ -20,7 +20,7 @@ class CreativeShareTest < ActiveSupport::TestCase
     msg = item.localized_message
     assert_includes msg, sharer.name
     assert_includes msg, "T-Shirt"
-    expected_link = Rails.application.routes.url_helpers.creative_url(
+    expected_link = Collavre::Engine.routes.url_helpers.creative_url(
       creative,
       host: "example.com"
     )

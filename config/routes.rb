@@ -38,7 +38,7 @@ Rails.application.routes.draw do
   # Defines the root path route ("/")
   # Home page path is rewritten by HomePathRewriter middleware
   # Default: /creatives, configurable via SystemSetting.home_page_path
-  root "creatives#index"
+  root "collavre/creatives#index"
 
   resources :users, only: [ :new, :create, :index, :show, :update, :destroy ] do
     member do
@@ -64,42 +64,14 @@ Rails.application.routes.draw do
     resource :settings, only: [ :update ]
   end
 
-  resources :creatives do
+  # creatives routes moved to Collavre engine
+  # Keep integration routes nested under creatives for now
+  resources :creatives, only: [] do
     resource :github_integration, only: [ :show, :update, :destroy ], module: :creatives
     resource :notion_integration, only: [ :show, :update, :destroy ], module: :creatives
-    # creative_shares and topics routes moved to Collavre engine
-    resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
-      member do
-        post :convert
-        post :approve
-        patch :update_action
-        delete :reactions, to: "comments/reactions#destroy"
-      end
-
-      resources :reactions, only: [ :create ], module: :comments
-      resource :activity_log, only: [ :show ], module: :comments
-
-      collection do
-        get :participants
-        post :move
-      end
-    end
-    collection do
-      post :reorder
-      post :link_drop
-      get :append_as_parent, to: "creatives#append_as_parent", as: :append_as_parent_creative
-      get :append_below, to: "creatives#append_below", as: :append_below_creative
-      get :export_markdown
-    end
-    member do
-      get :children
-      post :share, to: "creatives#share", as: :share_creative
-      post :request_permission, to: "creatives#request_permission"
-      post :unconvert
-      get :parent_suggestions
-      get :slide_view
-    end
   end
+
+  # comments routes moved to Collavre engine
 
   # creative_imports and creative_plan routes moved to Collavre engine
 

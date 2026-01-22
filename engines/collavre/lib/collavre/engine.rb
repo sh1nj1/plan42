@@ -23,5 +23,17 @@ module Collavre
         append_view_path Rails.root.join("app/views")
       end
     end
+
+    # Make engine URL helpers available to views via the `collavre` helper method
+    # This avoids conflicts with main app routes while still providing access to engine routes
+    initializer "collavre.url_helpers" do
+      ActiveSupport.on_load(:action_controller_base) do
+        helper do
+          def collavre
+            Collavre::Engine.routes.url_helpers
+          end
+        end
+      end
+    end
   end
 end

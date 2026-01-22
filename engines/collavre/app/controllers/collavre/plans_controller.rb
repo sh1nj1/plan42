@@ -94,16 +94,16 @@ module Collavre
         created_at: event.start_time.to_date,
         target_date: event.end_time.to_date,
         progress: event.creative&.progress || 0,
-        path: event.creative ? main_app.creative_path(event.creative) : event.html_link,
+        path: event.creative ? creative_path(event.creative) : event.html_link,
         deletable: event.user_id == Current.user&.id
       }
     end
 
     def plan_creatives_path(plan)
       if params[:id].present?
-        main_app.creative_path(params[:id], tags: [ plan.id ])
+        creative_path(params[:id], tags: [ plan.id ])
       else
-        main_app.creatives_path(tags: [ plan.id ])
+        creatives_path(tags: [ plan.id ])
       end
     end
   end

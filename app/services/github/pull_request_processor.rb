@@ -173,7 +173,7 @@ module Github
     end
 
     def url_helpers
-      @url_helpers ||= Rails.application.routes.url_helpers
+      @url_helpers ||= Collavre::Engine.routes.url_helpers
     end
   end
 end

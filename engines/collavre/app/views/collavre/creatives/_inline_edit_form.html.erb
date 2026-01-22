@@ -11,8 +11,8 @@
     <div id="lexical-inline-editor"
          data-lexical-editor-root
          class="lexical-inline-editor"
-         data-direct-upload-url="<%= rails_direct_uploads_url %>"
-         data-blob-url-template="<%= rails_service_blob_url(':signed_id', ':filename') %>"
+         data-direct-upload-url="<%= main_app.rails_direct_uploads_url %>"
+         data-blob-url-template="<%= main_app.rails_service_blob_url(':signed_id', ':filename') %>"
          data-placeholder="<%= t('creatives.inline_editor.placeholder') %>"></div>
     <div id="actions-inline-editor" style="padding: 0px 8px;">
       <div style="margin-top:0.5em;display:flex;align-items:center;gap:0.5em;">

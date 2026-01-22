@@ -67,7 +67,7 @@ module Github
       comment = creative.comments.last
       assert comment.present?
       assert_includes comment.content, "#12"
-      url_helpers = Rails.application.routes.url_helpers
+      url_helpers = Collavre::Engine.routes.url_helpers
       child_path = url_helpers.creative_path(completed_task.creative_id)
       parent_path = url_helpers.creative_path(suggestion.parent_id)
       assert_includes comment.content, "[##{completed_task.creative_id}](#{child_path})"

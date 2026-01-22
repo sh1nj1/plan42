@@ -120,7 +120,7 @@ module Creatives
           has_children: filtered_children.any?,
           expanded: expanded,
           is_root: creative.parent.nil?,
-          link_url: view_context.creative_path(creative),
+          link_url: view_context.collavre.creative_path(creative),
           templates: template_payload_for(creative),
           inline_editor_payload: inline_editor_payload_for(creative),
           children_container: children_container_payload(
@@ -195,7 +195,7 @@ module Creatives
         id: "creative-children-#{creative.id}",
         expanded: expanded,
         loaded: load_children_now,
-        load_url: view_context.children_creative_path(
+        load_url: view_context.collavre.children_creative_path(
           creative,
           level: child_level,
           select_mode: select_mode ? 1 : 0
@@ -217,7 +217,7 @@ module Creatives
       return unless creative.origin_id.present?
 
       view_context.link_to(
-        view_context.creative_path(creative.origin),
+        view_context.collavre.creative_path(creative.origin),
         class: "creative-origin-link creative-action-btn unstyled-link",
         title: I18n.t("creatives.index.view_origin"),
         aria: { label: I18n.t("creatives.index.view_origin") }

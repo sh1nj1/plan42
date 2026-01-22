@@ -28,6 +28,11 @@ module Creatives
       def children_creative_path(creative, level:, select_mode:)
         "/creatives/#{creative.id}/children?level=#{level}&select_mode=#{select_mode}"
       end
+
+      # Engine route proxy
+      def collavre
+        self
+      end
     end
 
     setup do

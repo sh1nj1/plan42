@@ -17,7 +17,7 @@ module CreativesHelper
       index += 1
       content_tag(:span, class: "tag") do
         (index == 1 ? "" : " ").html_safe +
-        link_to("##{strip_tags(label.name)}", creatives_path(tags: [ label.id ]), class: class_name ? class_name: "", title: strip_tags(label.name)) + suffix
+        link_to("##{strip_tags(label.name)}", collavre.creatives_path(tags: [ label.id ]), class: class_name ? class_name: "", title: strip_tags(label.name)) + suffix
       end
     end)
   end

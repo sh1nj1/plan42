@@ -24,7 +24,7 @@ module Tools
       # Mock session and request setup
       setup_mock_environment
 
-      controller = CreativesController.new
+      controller = Collavre::CreativesController.new
       setup_controller(controller)
 
       if id.present?
