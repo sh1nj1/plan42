@@ -3,6 +3,12 @@ Collavre::Engine.routes.draw do
   resources :contacts, only: [:destroy]
   resources :devices, only: [:create]
 
+  resources :inbox_items, path: "inbox", only: [ :index, :update, :destroy ] do
+    get :count, on: :collection
+  end
+
+  resources :plans, only: [ :create, :destroy, :index ]
+
   post "/creative_expanded_states/toggle", to: "creative_expanded_states#toggle"
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
 end

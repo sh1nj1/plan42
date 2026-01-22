@@ -1,0 +1,110 @@
+module Collavre
+  class PlansController < ApplicationController
+    def index
+      center = if params[:date].present?
+                  Date.parse(params[:date]) rescue Date.current
+      else
+                  Date.current
+      end
+      start_date = center - 30
+      end_date = center + 30
+      @plans = Plan.includes(:creative)
+                   .where("target_date >= ? AND created_at <= ?", start_date, end_date)
+                   .order(:created_at)
+                   .select { |plan| plan.readable_by?(Current.user) }
+      calendar_scope = CalendarEvent.includes(:creative)
+                                    .where("DATE(start_time) <= ? AND DATE(end_time) >= ?", end_date, start_date)
+                                    .order(:start_time)
+      events_in_scope = calendar_scope.to_a
+      own_events = events_in_scope.select { |event| event.user_id == Current.user.id }
+      shared_events = events_in_scope.reject { |event| event.user_id == Current.user.id }
+                                     .select { |event| event.creative&.has_permission?(Current.user, :write) }
+      @calendar_events = (own_events + shared_events).uniq.sort_by(&:start_time)
+      respond_to do |format|
+        format.html do
+          render html: render_to_string(PlansTimelineComponent.new(plans: @plans, calendar_events: @calendar_events), layout: false)
+        end
+        format.json do
+          plan_jsons = @plans.map { |p| plan_json(p) }
+          event_jsons = @calendar_events.map { |e| calendar_json(e) }
+          render json: plan_jsons + event_jsons
+        end
+      end
+    end
+    def create
+      @plan = Plan.new(plan_params)
+      @plan.owner = Current.user
+      if @plan.save
+        respond_to do |format|
+          format.html do
+            redirect_back fallback_location: main_app.root_path, notice: t("plans.created")
+          end
+          format.json do
+            render json: plan_json(@plan), status: :created
+          end
+        end
+      else
+        respond_to do |format|
+          format.html do
+            flash[:alert] = @plan.errors.full_messages.join(", ")
+            redirect_back fallback_location: main_app.root_path
+          end
+          format.json do
+            render json: { errors: @plan.errors.full_messages }, status: :unprocessable_entity
+          end
+        end
+      end
+    end
+
+    def destroy
+      @plan = Plan.find(params[:id])
+      @plan.destroy
+      respond_to do |format|
+        format.html do
+          redirect_back fallback_location: main_app.root_path,
+                        notice: t("plans.deleted", default: "Plan deleted.")
+        end
+        format.json { head :no_content }
+      end
+    end
+
+    private
+
+    def plan_params
+      params.require(:plan).permit(:target_date, :creative_id)
+    end
+
+    def plan_json(plan)
+      {
+        id: plan.id,
+        name: (plan.creative&.effective_description(nil, false) || plan.name.presence || I18n.l(plan.target_date)),
+        created_at: plan.created_at.to_date,
+        target_date: plan.target_date,
+        progress: plan.progress,
+        path: plan_creatives_path(plan),
+        deletable: plan.owner_id == Current.user&.id
+      }
+    end
+
+
+    def calendar_json(event)
+      {
+        id: "calendar_event_#{event.id}",
+        name: event.summary.presence || I18n.l(event.start_time.to_date),
+        created_at: event.start_time.to_date,
+        target_date: event.end_time.to_date,
+        progress: event.creative&.progress || 0,
+        path: event.creative ? main_app.creative_path(event.creative) : event.html_link,
+        deletable: event.user_id == Current.user&.id
+      }
+    end
+
+    def plan_creatives_path(plan)
+      if params[:id].present?
+        main_app.creative_path(params[:id], tags: [ plan.id ])
+      else
+        main_app.creatives_path(tags: [ plan.id ])
+      end
+    end
+  end
+end

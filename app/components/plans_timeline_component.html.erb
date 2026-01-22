@@ -4,7 +4,7 @@
 </div>
 <hr>
 <div class="plan-form-container">
-<%= form_with(model: Plan.new, url: plans_path, local: true, id: 'new-plan-form') do |form| %>
+<%= form_with(model: Plan.new, url: helpers.collavre.plans_path, local: true, id: 'new-plan-form') do |form| %>
     <%= form.hidden_field :creative_id, id: 'plan-creative-id' %>
     <input type="text" id="plan-select-creative-input" placeholder="<%= t('plans.select_creative', default: 'Select Creative') %>" autocomplete="off">
     <%= form.date_field :target_date, placeholder: t('plans.target_date'), id: 'plan-target-date' %>

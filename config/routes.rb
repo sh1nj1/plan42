@@ -105,13 +105,11 @@ Rails.application.routes.draw do
   resources :creative_imports, only: [ :create ]
   resource :creative_plan, only: [ :create, :destroy ], controller: "creative_plans"
 
-  resources :plans, only: [ :create, :destroy, :index ]
+  # plans routes moved to Collavre engine
 
   # calendar_events routes moved to Collavre engine
 
-  resources :inbox_items, path: "inbox", only: [ :index, :update, :destroy ] do
-    get :count, on: :collection
-  end
+  # inbox_items routes moved to Collavre engine
 
   # contacts and devices routes moved to Collavre engine
 
