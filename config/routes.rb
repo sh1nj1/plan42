@@ -33,8 +33,8 @@ Rails.application.routes.draw do
   get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
   # Defines the root path route ("/")
-  # root "posts#index"
-
+  # Home page path is rewritten by HomePathRewriter middleware
+  # Default: /creatives, configurable via SystemSetting.home_page_path
   root "creatives#index"
 
   resources :users, only: [ :new, :create, :index, :show, :update, :destroy ] do

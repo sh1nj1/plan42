@@ -22,6 +22,9 @@ class SystemSetting < ApplicationRecord
   # By default, public access is allowed (false)
   DEFAULT_CREATIVES_LOGIN_REQUIRED = false
 
+  # Default home page path (nil means use root_path "/")
+  DEFAULT_HOME_PAGE_PATH = nil
+
   validates :key, presence: true, uniqueness: true
 
   # Clear cache after save
@@ -41,7 +44,7 @@ class SystemSetting < ApplicationRecord
       lockout_duration_minutes session_timeout_minutes password_min_length
       password_reset_rate_limit password_reset_rate_period_minutes
       api_rate_limit api_rate_period_minutes auth_providers_disabled
-      creatives_login_required
+      creatives_login_required home_page_path
     ].each { |k| Rails.cache.delete("system_setting:#{k}") }
   end
 
@@ -62,6 +65,11 @@ class SystemSetting < ApplicationRecord
 
   def self.creatives_login_required?
     cached_value("creatives_login_required", DEFAULT_CREATIVES_LOGIN_REQUIRED.to_s) == "true"
+  end
+
+  def self.home_page_path
+    value = cached_value("home_page_path")
+    value.presence
   end
 
   def self.mcp_tool_approval_required?
