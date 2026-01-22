@@ -61,4 +61,11 @@ class SystemSettingTest < ActiveSupport::TestCase
     SystemSetting.create!(key: "session_timeout_minutes", value: "30")
     assert SystemSetting.session_timeout_enabled?
   end
+
+  test "creatives_login_required returns correct value" do
+    assert_not SystemSetting.creatives_login_required?
+
+    SystemSetting.create!(key: "creatives_login_required", value: "true")
+    assert SystemSetting.creatives_login_required?
+  end
 end

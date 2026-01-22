@@ -2,6 +2,7 @@ class CreativesController < ApplicationController
   # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
   # Removed unauthenticated access to index and show actions
   allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
+  before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
   before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions slide_view unconvert ]
 
   def index
@@ -521,6 +522,12 @@ class CreativesController < ApplicationController
         destroy_descendants_recursively(child, user)
         CreativeShare.where(creative: child).destroy_all
         child.destroy
+      end
+    end
+
+    def enforce_creatives_login_policy
+      if SystemSetting.creatives_login_required?
+        require_authentication
       end
     end
 end
