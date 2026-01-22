@@ -10,7 +10,7 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
 
   test "should create topic and broadcast" do
     assert_difference("Topic.count") do
-      post creative_topics_url(@creative), params: { topic: { name: "New Strategy" } }, as: :json
+      post collavre.creative_topics_url(@creative), params: { topic: { name: "New Strategy" } }, as: :json
     end
 
     assert_response :created
@@ -18,7 +18,7 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
 
   test "should destroy topic and broadcast" do
     assert_difference("Topic.count", -1) do
-      delete creative_topic_url(@creative, @topic)
+      delete collavre.creative_topic_url(@creative, @topic)
     end
 
     assert_response :no_content

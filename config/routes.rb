@@ -67,24 +67,23 @@ Rails.application.routes.draw do
   resources :creatives do
     resource :github_integration, only: [ :show, :update, :destroy ], module: :creatives
     resource :notion_integration, only: [ :show, :update, :destroy ], module: :creatives
-    resources :creative_shares, only: [ :create, :destroy ]
-      resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
-        member do
-          post :convert
-          post :approve
-          patch :update_action
-          delete :reactions, to: "comments/reactions#destroy"
-        end
-
-        resources :reactions, only: [ :create ], module: :comments
-        resource :activity_log, only: [ :show ], module: :comments
-
-        collection do
-          get :participants
-          post :move
-        end
+    # creative_shares and topics routes moved to Collavre engine
+    resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
+      member do
+        post :convert
+        post :approve
+        patch :update_action
+        delete :reactions, to: "comments/reactions#destroy"
       end
-      resources :topics, only: [ :index, :create, :destroy ]
+
+      resources :reactions, only: [ :create ], module: :comments
+      resource :activity_log, only: [ :show ], module: :comments
+
+      collection do
+        get :participants
+        post :move
+      end
+    end
     collection do
       post :reorder
       post :link_drop
@@ -102,8 +101,7 @@ Rails.application.routes.draw do
     end
   end
 
-  resources :creative_imports, only: [ :create ]
-  resource :creative_plan, only: [ :create, :destroy ], controller: "creative_plans"
+  # creative_imports and creative_plan routes moved to Collavre engine
 
   # plans routes moved to Collavre engine
 

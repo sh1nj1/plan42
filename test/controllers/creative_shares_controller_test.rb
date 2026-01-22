@@ -11,7 +11,7 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(@owner, password: "password")
 
     assert_difference([ "CreativeShare.count", "Contact.count" ], 1) do
-      post creative_creative_shares_path(@creative), params: { user_email: @target_user.email, permission: :read }
+      post collavre.creative_creative_shares_path(@creative), params: { user_email: @target_user.email, permission: :read }
     end
 
     assert Contact.exists?(user: @owner, contact_user: @target_user)

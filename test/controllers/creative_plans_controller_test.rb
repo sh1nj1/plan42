@@ -10,7 +10,7 @@ class CreativePlansControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "applies plan tags to creatives via HTML" do
-    post creative_plan_path, params: { plan_id: @plan.id, creative_ids: @creative.id }
+    post collavre.creative_plan_path, params: { plan_id: @plan.id, creative_ids: @creative.id }
 
     assert_redirected_to creatives_path(select_mode: 1)
     assert_equal 1, @creative.tags.where(label: @plan).count
@@ -18,7 +18,7 @@ class CreativePlansControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "applies plan tags to creatives via JSON" do
-    post creative_plan_path, params: { plan_id: @plan.id, creative_ids: @creative.id }, as: :json
+    post collavre.creative_plan_path, params: { plan_id: @plan.id, creative_ids: @creative.id }, as: :json
 
     assert_response :ok
     json_response = JSON.parse(response.body)
@@ -29,7 +29,7 @@ class CreativePlansControllerTest < ActionDispatch::IntegrationTest
   test "removes plan tags from creatives via HTML" do
     @creative.tags.create!(label: @plan)
 
-    delete creative_plan_path, params: { plan_id: @plan.id, creative_ids: @creative.id }
+    delete collavre.creative_plan_path, params: { plan_id: @plan.id, creative_ids: @creative.id }
 
     assert_redirected_to creatives_path(select_mode: 1)
     assert_not @creative.tags.exists?(label: @plan)
@@ -39,7 +39,7 @@ class CreativePlansControllerTest < ActionDispatch::IntegrationTest
   test "removes plan tags from creatives via JSON" do
     @creative.tags.create!(label: @plan)
 
-    delete creative_plan_path, params: { plan_id: @plan.id, creative_ids: @creative.id }, as: :json
+    delete collavre.creative_plan_path, params: { plan_id: @plan.id, creative_ids: @creative.id }, as: :json
 
     assert_response :ok
     json_response = JSON.parse(response.body)
@@ -48,14 +48,14 @@ class CreativePlansControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "returns alert when parameters are missing via HTML" do
-    post creative_plan_path, params: { plan_id: nil, creative_ids: "" }
+    post collavre.creative_plan_path, params: { plan_id: nil, creative_ids: "" }
 
     assert_redirected_to creatives_path(select_mode: 1)
     assert_equal I18n.t("creatives.index.plan_tag_failed", default: "Please select a plan and at least one creative."), flash[:alert]
   end
 
   test "returns error when parameters are missing via JSON" do
-    post creative_plan_path, params: { plan_id: nil, creative_ids: "" }, as: :json
+    post collavre.creative_plan_path, params: { plan_id: nil, creative_ids: "" }, as: :json
 
     assert_response :unprocessable_entity
     json_response = JSON.parse(response.body)

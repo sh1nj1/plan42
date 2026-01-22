@@ -15,6 +15,15 @@ Collavre::Engine.routes.draw do
     end
   end
 
+  resources :creative_imports, only: [ :create ]
+  resource :creative_plan, only: [ :create, :destroy ], controller: "creative_plans"
+
+  # Nested under creatives (creatives controller remains in host app)
+  resources :creatives, only: [] do
+    resources :creative_shares, only: [ :create, :destroy ]
+    resources :topics, only: [ :index, :create, :destroy ]
+  end
+
   post "/creative_expanded_states/toggle", to: "creative_expanded_states#toggle"
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
 end

@@ -6,7 +6,7 @@
   <div class="popup-box" style="min-width:320px;max-width:90vw;">
     <button id="close-share-modal" class="popup-close-btn">&times;</button>
     <h2><%= t('creatives.index.share_creative') %></h2>
-    <form id="share-creative-form" action="<%= creative_creative_shares_path(@parent_creative || @creative) %>" method="post" data-controller="share-invite">
+    <form id="share-creative-form" action="<%= collavre.creative_creative_shares_path(@parent_creative || @creative) %>" method="post" data-controller="share-invite">
       <%= csrf_meta_tags %>
       <div style="margin-bottom:1em; position:relative;" 
            data-controller="share-user-search"
@@ -44,7 +44,7 @@
               <span><%= share.user&.display_name || (share.user_id.nil? ? t('creatives.index.public_share') : t('creatives.index.unknown_user')) %></span>
               <span><%= t("creatives.index.permission_#{share.permission}") %></span>
               <span>
-                <%= button_to '×', creative_creative_share_path(@parent_creative || @creative, share), method: :delete, form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_share') } }, class: 'delete-share-btn', style: 'padding:0 0.5em;' %>
+                <%= button_to '×', collavre.creative_creative_share_path(@parent_creative || @creative, share), method: :delete, form: { data: { turbo_confirm: t('creatives.index.are_you_sure_delete_share') } }, class: 'delete-share-btn', style: 'padding:0 0.5em;' %>
               </span>
             </li>
           <% end %>

@@ -14,7 +14,7 @@ class CreativeShareLinkedCreativeTest < ActionDispatch::IntegrationTest
   end
 
   test "does not create linked creative when parent already shared" do
-    post creative_creative_shares_path(@child), params: { creative_id: @child.id, user_email: @shared_user.email, permission: :write }
+    post collavre.creative_creative_shares_path(@child), params: { creative_id: @child.id, user_email: @shared_user.email, permission: :write }
 
     assert_redirected_to creatives_path
     assert_nil Creative.find_by(origin_id: @child.id, user_id: @shared_user.id)

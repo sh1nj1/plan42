@@ -2,7 +2,7 @@
   <div class="popup-box" style="min-width:320px;max-width:90vw;">
     <button id="close-set-plan-modal" class="popup-close-btn" data-action="creatives--set-plan-modal#close">&times;</button>
     <h2><%= t('creatives.index.set_plan_title', default: 'Set Plan for Selected Creatives') %></h2>
-    <form id="set-plan-form" method="post" action="<%= creative_plan_path %>" data-creatives--set-plan-modal-target="form" data-action="submit->creatives--set-plan-modal#submit">
+    <form id="set-plan-form" method="post" action="<%= collavre.creative_plan_path %>" data-creatives--set-plan-modal-target="form" data-action="submit->creatives--set-plan-modal#submit">
       <%= csrf_meta_tags %>
       <div style="margin-bottom:1em;">
         <label for="plan-id-select"><%= t('creatives.index.select_plan', default: 'Select Plan') %></label>
@@ -15,7 +15,7 @@
       <!-- Hidden field for creative IDs, filled by JS -->
       <input type="hidden" name="creative_ids" id="selected-creative-ids-input" data-creatives--set-plan-modal-target="idsInput" />
       <div style="display:flex; gap:1em; align-items:center;">
-        <button type="button" id="remove-plan-btn" data-remove-path="<%= creative_plan_path %>" class="btn btn-danger" style="margin-right:0.5em;" data-action="click->creatives--set-plan-modal#remove">
+        <button type="button" id="remove-plan-btn" data-remove-path="<%= collavre.creative_plan_path %>" class="btn btn-danger" style="margin-right:0.5em;" data-action="click->creatives--set-plan-modal#remove">
           <%= t('creatives.index.remove_plan', default: 'Remove Plan') %>
         </button>
         <button type="submit" class="btn btn-primary"><%= t('creatives.index.add_plan', default: 'Add Plan') %></button>

@@ -10,7 +10,7 @@ class CreativeImportsControllerTest < ActionDispatch::IntegrationTest
     file = fixture_file_upload("sample.md", "text/markdown")
 
     before_count = Creative.count
-    post creative_imports_path, params: { markdown: file }
+    post collavre.creative_imports_path, params: { markdown: file }
 
     assert_response :success
     json = JSON.parse(response.body)
@@ -23,7 +23,7 @@ class CreativeImportsControllerTest < ActionDispatch::IntegrationTest
     file = fixture_file_upload("invalid.txt", "text/plain")
 
     assert_no_difference("Creative.count") do
-      post creative_imports_path, params: { markdown: file }
+      post collavre.creative_imports_path, params: { markdown: file }
     end
 
     assert_response :unprocessable_entity
@@ -34,7 +34,7 @@ class CreativeImportsControllerTest < ActionDispatch::IntegrationTest
   test "returns unauthorized when user not signed in" do
     delete session_path
 
-    post creative_imports_path, params: { markdown: fixture_file_upload("sample.md", "text/markdown") }
+    post collavre.creative_imports_path, params: { markdown: fixture_file_upload("sample.md", "text/markdown") }
 
     assert_response :unauthorized
   end
