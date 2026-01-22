@@ -6,6 +6,7 @@ module Admin
       @help_link = SystemSetting.find_by(key: "help_menu_link")&.value
       @mcp_tool_approval = SystemSetting.find_by(key: "mcp_tool_approval_required")&.value == "true"
       @creatives_login_required = SystemSetting.creatives_login_required?
+      @home_page_path = SystemSetting.home_page_path
 
       # Account lockout settings
       @max_login_attempts = SystemSetting.max_login_attempts
@@ -46,6 +47,24 @@ module Admin
           creatives_login_setting = SystemSetting.find_or_initialize_by(key: "creatives_login_required")
           creatives_login_setting.value = params[:creatives_login_required] == "1" ? "true" : "false"
           creatives_login_setting.save!
+
+          # Home Page Path (validate and normalize to clean absolute path)
+          home_page_path_input = params[:home_page_path].to_s.strip
+          if home_page_path_input.present?
+            normalized_path, error = validate_and_normalize_home_page_path(home_page_path_input)
+            if error
+              home_page_setting = SystemSetting.new(key: "home_page_path")
+              home_page_setting.errors.add(:base, error)
+              raise ActiveRecord::RecordInvalid, home_page_setting
+            end
+            home_page_setting = SystemSetting.find_or_initialize_by(key: "home_page_path")
+            home_page_setting.value = normalized_path
+            home_page_setting.save!
+          else
+            home_page_setting = SystemSetting.find_or_initialize_by(key: "home_page_path")
+            home_page_setting.value = nil
+            home_page_setting.save!
+          end
 
           # Account Lockout Settings
           max_attempts = params[:max_login_attempts].to_i
@@ -118,10 +137,12 @@ module Admin
         end
 
         redirect_to admin_path, notice: t("admin.settings.updated")
-      rescue ActiveRecord::RecordInvalid
+      rescue ActiveRecord::RecordInvalid => e
+        flash.now[:alert] = e.record.errors.full_messages.join(", ")
         @help_link = params[:help_link]
         @mcp_tool_approval = params[:mcp_tool_approval] == "1"
         @creatives_login_required = params[:creatives_login_required] == "1"
+        @home_page_path = params[:home_page_path]
         @max_login_attempts = params[:max_login_attempts].to_i.positive? ? params[:max_login_attempts].to_i : SystemSetting::DEFAULT_MAX_LOGIN_ATTEMPTS
         @lockout_duration_minutes = params[:lockout_duration_minutes].to_i.positive? ? params[:lockout_duration_minutes].to_i : SystemSetting::DEFAULT_LOCKOUT_DURATION_MINUTES
         @password_min_length = [ [ params[:password_min_length].to_i, SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH ].max, 72 ].min
@@ -133,6 +154,53 @@ module Admin
         @enabled_auth_providers = params[:auth_providers] || []
         render :index, status: :unprocessable_entity
       end
+    end
+
+    private
+
+    # Validate and normalize home page path to a clean absolute path
+    # Returns [normalized_path, error_message]
+    # - normalized_path is nil if path should use default behavior
+    # - error_message is set if validation fails
+    def validate_and_normalize_home_page_path(value)
+      path = value.to_s.strip
+
+      # Reject URLs with scheme (http://, https://, etc.)
+      if path.match?(%r{\A[a-z][a-z0-9+.-]*://}i)
+        return [ nil, t("admin.settings.home_page_path_invalid_url") ]
+      end
+
+      # Extract path only (remove query string and fragment)
+      path = path.split(/[?#]/).first
+
+      # Ensure leading slash
+      path = "/#{path}" unless path.start_with?("/")
+
+      # Normalize multiple slashes
+      path = path.gsub(%r{/+}, "/")
+
+      # Return nil if path is just "/" (use default behavior)
+      return [ nil, nil ] if path == "/"
+
+      # Verify the path is routable via GET and serves HTML
+      begin
+        route_info = Rails.application.routes.recognize_path(path, method: :get)
+
+        # Reject routes that don't serve HTML (e.g., API-only, service-worker)
+        if route_info[:format].present? && route_info[:format] != "html"
+          return [ nil, t("admin.settings.home_page_path_not_html", path: path) ]
+        end
+
+        # Reject known non-HTML paths
+        non_html_paths = %w[/service-worker /manifest /up]
+        if non_html_paths.any? { |p| path.start_with?(p) }
+          return [ nil, t("admin.settings.home_page_path_not_html", path: path) ]
+        end
+      rescue ActionController::RoutingError
+        return [ nil, t("admin.settings.home_page_path_not_routable", path: path) ]
+      end
+
+      [ path, nil ]
     end
   end
 end

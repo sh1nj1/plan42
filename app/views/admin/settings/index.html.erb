@@ -3,6 +3,7 @@
 <%= render "admin/shared/tabs" %>
 <div class="tab-panels">
   <section class="tab-panel active">
+    <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
     <%= form_with url: admin_settings_path, method: :patch, local: true, html: { class: 'profile-form' } do |f| %>
       <div>
         <%= f.label :help_link, t('admin.settings.help_link') %>
@@ -29,6 +30,14 @@
         </label>
         <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em; margin-left: 1.8em;">
           <%= t('admin.settings.creatives_login_required_hint') %>
+        </div>
+      </div>
+
+      <div style="margin-top: 1.5em;">
+        <%= f.label :home_page_path, t('admin.settings.home_page_path') %>
+        <%= f.text_field :home_page_path, value: @home_page_path, placeholder: "/" %>
+        <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+          <%= t('admin.settings.home_page_path_hint') %>
         </div>
       </div>
 
