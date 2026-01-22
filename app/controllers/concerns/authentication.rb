@@ -53,7 +53,8 @@ module Authentication
       if request.get? && !request.path.start_with?("/inbox") && request.format.html?
         session[:return_to_after_authenticating] = request.url
       end
-      redirect_to new_session_path
+      # Use main_app to ensure host app routes are used even in engine controllers
+      redirect_to main_app.new_session_path
     end
 
     def after_authentication_url

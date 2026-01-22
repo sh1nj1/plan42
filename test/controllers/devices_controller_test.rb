@@ -20,7 +20,7 @@ class DevicesControllerTest < ActionDispatch::IntegrationTest
 
     login_as(current_user)
 
-    post devices_path, params: {
+    post collavre.devices_path, params: {
       device: {
         client_id: "updated-client",
         device_type: "web",

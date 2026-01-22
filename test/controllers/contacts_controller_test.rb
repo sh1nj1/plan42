@@ -16,7 +16,7 @@ class ContactsControllerTest < ActionDispatch::IntegrationTest
     contact = contacts(:one_two)
 
     assert_difference("Contact.count", -1) do
-      delete contact_path(contact), params: { contact_page: 2 }
+      delete collavre.contact_path(contact), params: { contact_page: 2 }
     end
 
     assert_redirected_to user_path(@user, tab: "contacts", contact_page: 2)

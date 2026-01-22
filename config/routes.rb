@@ -1,4 +1,7 @@
 Rails.application.routes.draw do
+  # Mount Collavre engine - routes will be gradually migrated here
+  mount Collavre::Engine => "/"
+
   use_doorkeeper do
     controllers applications: "oauth/applications"
   end
@@ -104,15 +107,13 @@ Rails.application.routes.draw do
 
   resources :plans, only: [ :create, :destroy, :index ]
 
-  resources :calendar_events, only: [ :destroy ]
+  # calendar_events routes moved to Collavre engine
 
   resources :inbox_items, path: "inbox", only: [ :index, :update, :destroy ] do
     get :count, on: :collection
   end
 
-  resources :contacts, only: [ :destroy ]
-
-  resources :devices, only: [ :create ]
+  # contacts and devices routes moved to Collavre engine
 
   resources :emails, only: [ :index, :show ]
 
@@ -133,8 +134,7 @@ Rails.application.routes.draw do
     post :webhook, to: "webhooks#create"
   end
 
-  post "/creative_expanded_states/toggle", to: "creative_expanded_states#toggle"
-  post "/comment_read_pointers/update", to: "comment_read_pointers#update"
+  # creative_expanded_states and comment_read_pointers routes moved to Collavre engine
 
   # Attachment deletion
   delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment
