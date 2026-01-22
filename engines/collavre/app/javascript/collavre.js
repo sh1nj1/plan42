@@ -15,6 +15,9 @@ import "./modules/share_user_popup"
 import "./modules/creative_row_editor"
 import "./modules/slide_view"
 
+// Import components
+import "./components/creative_tree_row"
+
 // Import and re-export lib utilities
 import "./lib/apply_lexical_styles"
 import "./lib/turbo_stream_actions"
