@@ -5,6 +5,7 @@ module Admin
     def index
       @help_link = SystemSetting.find_by(key: "help_menu_link")&.value
       @mcp_tool_approval = SystemSetting.find_by(key: "mcp_tool_approval_required")&.value == "true"
+      @creatives_login_required = SystemSetting.creatives_login_required?
 
       # Account lockout settings
       @max_login_attempts = SystemSetting.max_login_attempts
@@ -40,6 +41,11 @@ module Admin
           mcp_setting = SystemSetting.find_or_initialize_by(key: "mcp_tool_approval_required")
           mcp_setting.value = params[:mcp_tool_approval] == "1" ? "true" : "false"
           mcp_setting.save!
+
+          # Creatives Login Required
+          creatives_login_setting = SystemSetting.find_or_initialize_by(key: "creatives_login_required")
+          creatives_login_setting.value = params[:creatives_login_required] == "1" ? "true" : "false"
+          creatives_login_setting.save!
 
           # Account Lockout Settings
           max_attempts = params[:max_login_attempts].to_i
@@ -115,6 +121,7 @@ module Admin
       rescue ActiveRecord::RecordInvalid
         @help_link = params[:help_link]
         @mcp_tool_approval = params[:mcp_tool_approval] == "1"
+        @creatives_login_required = params[:creatives_login_required] == "1"
         @max_login_attempts = params[:max_login_attempts].to_i.positive? ? params[:max_login_attempts].to_i : SystemSetting::DEFAULT_MAX_LOGIN_ATTEMPTS
         @lockout_duration_minutes = params[:lockout_duration_minutes].to_i.positive? ? params[:lockout_duration_minutes].to_i : SystemSetting::DEFAULT_LOCKOUT_DURATION_MINUTES
         @password_min_length = [ [ params[:password_min_length].to_i, SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH ].max, 72 ].min

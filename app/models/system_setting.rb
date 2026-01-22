@@ -18,6 +18,10 @@ class SystemSetting < ApplicationRecord
   DEFAULT_API_RATE_LIMIT = 100
   DEFAULT_API_RATE_PERIOD_MINUTES = 1
 
+  # Default values for creatives access
+  # By default, public access is allowed (false)
+  DEFAULT_CREATIVES_LOGIN_REQUIRED = false
+
   validates :key, presence: true, uniqueness: true
 
   # Clear cache after save
@@ -37,6 +41,7 @@ class SystemSetting < ApplicationRecord
       lockout_duration_minutes session_timeout_minutes password_min_length
       password_reset_rate_limit password_reset_rate_period_minutes
       api_rate_limit api_rate_period_minutes auth_providers_disabled
+      creatives_login_required
     ].each { |k| Rails.cache.delete("system_setting:#{k}") }
   end
 
@@ -44,7 +49,7 @@ class SystemSetting < ApplicationRecord
 
   def clear_cache
     Rails.cache.delete("system_setting:#{key}")
-    # If key was changed, also clear the old key's cache entry
+    # If key was changed, well also clear the old key's cache entry
     if saved_change_to_key?
       old_key = saved_change_to_key.first
       Rails.cache.delete("system_setting:#{old_key}") if old_key.present?
@@ -53,6 +58,10 @@ class SystemSetting < ApplicationRecord
 
   def self.help_menu_link
     cached_value("help_menu_link")
+  end
+
+  def self.creatives_login_required?
+    cached_value("creatives_login_required") == "true"
   end
 
   def self.mcp_tool_approval_required?

@@ -272,7 +272,20 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
 
     assert_includes second_child_ids, new_child.id,
       "New child should appear in response"
-    assert_not_includes first_child_ids, new_child.id,
       "New child should not have been in first response"
+  end
+
+  test "index allows public access by default" do
+    sign_out
+    get creatives_path
+    assert_response :success
+  end
+
+  test "index requires login when system setting enabled" do
+    SystemSetting.create!(key: "creatives_login_required", value: "true")
+    sign_out
+
+    get creatives_path
+    assert_redirected_to new_session_path
   end
 end

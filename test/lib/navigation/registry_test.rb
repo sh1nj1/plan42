@@ -127,7 +127,7 @@ class Navigation::RegistryTest < ActiveSupport::TestCase
     @registry.register(key: :item3, label: "Item 3", priority: 200)
 
     items = @registry.all
-    assert_equal [:item2, :item3, :item1], items.map { |i| i[:key] }
+    assert_equal [ :item2, :item3, :item1 ], items.map { |i| i[:key] }
   end
 
   test "reset clears all items" do
@@ -152,7 +152,7 @@ class Navigation::RegistryTest < ActiveSupport::TestCase
     @registry.add_child(:parent, key: :child3, label: "Child 3", priority: 150)
 
     parent = @registry.find(:parent)
-    assert_equal [:child2, :child3, :child1], parent[:children].map { |c| c[:key] }
+    assert_equal [ :child2, :child3, :child1 ], parent[:children].map { |c| c[:key] }
   end
 
   test "children passed via register are sorted by priority" do
@@ -167,7 +167,7 @@ class Navigation::RegistryTest < ActiveSupport::TestCase
     )
 
     parent = @registry.find(:parent)
-    assert_equal [:child2, :child3, :child1], parent[:children].map { |c| c[:key] }
+    assert_equal [ :child2, :child3, :child1 ], parent[:children].map { |c| c[:key] }
   end
 
   test "validates children passed via register" do
