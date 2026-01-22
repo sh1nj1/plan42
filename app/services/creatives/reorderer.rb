@@ -83,12 +83,12 @@ module Creatives
         )
 
         siblings = sibling_scope(new_parent)
-        siblings.delete(new_creative)
+        siblings.reject! { |s| s.id == new_creative.id }
 
         if direction == "child"
           siblings << new_creative
         else
-          target_index = siblings.index(target) || 0
+          target_index = siblings.index { |s| s.id == target.id } || 0
           insert_index = direction == "up" ? target_index : target_index + 1
           insert_index = [ [ insert_index, 0 ].max, siblings.size ].min
           siblings.insert(insert_index, new_creative)
@@ -117,19 +117,19 @@ module Creatives
     def reorder_as_child(dragged, target)
       dragged.update!(parent: target)
       siblings = target.children.order(:sequence).to_a
-      siblings.delete(dragged)
+      siblings.reject! { |s| s.id == dragged.id }
       siblings << dragged
       resequence!(siblings)
     end
 
     def reorder_as_sibling(dragged, target, direction)
-      if dragged.parent != target.parent
+      if dragged.parent_id != target.parent_id
         dragged.update!(parent: target.parent)
       end
 
       siblings = sibling_scope(dragged.parent)
-      siblings.delete(dragged)
-      target_index = siblings.index(target)
+      siblings.reject! { |s| s.id == dragged.id }
+      target_index = siblings.index { |s| s.id == target.id }
       new_index = direction == "up" ? target_index : target_index.to_i + 1
       siblings.insert(new_index, dragged)
       resequence!(siblings)
@@ -138,9 +138,8 @@ module Creatives
     def reorder_multiple_as_child(dragged_creatives, target)
       Creative.transaction do
         siblings = target.children.order(:sequence).to_a
-        dragged_creatives.each do |dragged|
-          siblings.delete(dragged)
-        end
+        dragged_ids = dragged_creatives.map(&:id)
+        siblings.reject! { |s| dragged_ids.include?(s.id) }
 
         dragged_creatives.each do |dragged|
           dragged.update!(parent: target)
