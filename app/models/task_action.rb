@@ -1,6 +1,3 @@
-class TaskAction < ApplicationRecord
-  belongs_to :task
-
-  validates :action_type, presence: true
-  validates :status, presence: true
+# Backward compatibility alias - delegates to Collavre::TaskAction
+class TaskAction < Collavre::TaskAction
 end

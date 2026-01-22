@@ -43,7 +43,7 @@ module Collavre
       return :not_allowed unless user
 
       if action.blank?
-        return :not_allowed unless approver == user
+        return :not_allowed unless approver_id == user&.id
         return :missing_action
       end
 
@@ -68,7 +68,7 @@ module Collavre
       end
 
       return :missing_approver if approver_id.blank?
-      return :not_allowed unless approver == user
+      return :not_allowed unless approver_id == user&.id
 
       :ok
     end

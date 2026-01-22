@@ -1,10 +1,3 @@
-class Email < ApplicationRecord
-  belongs_to :user, optional: true
-
-  enum :event, {
-    invitation: "invitation",
-    inbox_summary: "inbox_summary"
-  }
-
-  validates :email, :subject, :event, presence: true
+# Backward compatibility alias - delegates to Collavre::Email
+class Email < Collavre::Email
 end
