@@ -1,0 +1,2 @@
+<%= t('user_mailer.email_verification.message_text',
+       link: collavre.email_verification_url(token: @user.generate_token_for(:email_verification))) %>

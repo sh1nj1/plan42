@@ -1,4 +1,32 @@
 Collavre::Engine.routes.draw do
+  # Authentication routes
+  resource :session, only: [ :new, :create, :destroy ]
+  resources :passwords, param: :token, only: [ :new, :create, :edit, :update ]
+  resources :users, only: [ :index, :new, :create, :show, :edit, :update, :destroy ] do
+    collection do
+      get :new_ai
+      post :create_ai
+      get :search
+      get :exists
+    end
+    member do
+      get :edit_ai
+      patch :update_ai
+      patch :grant_system_admin
+      patch :revoke_system_admin
+      get :edit_password
+      patch :update_password
+      get :passkeys
+      patch :notification_settings
+    end
+  end
+  get "/email_verification/:token", to: "email_verifications#show", as: :email_verification
+
+  # OAuth callback routes
+  get "/auth/google/callback", to: "google_auth#callback"
+  get "/auth/github/callback", to: "github_auth#callback"
+  get "/auth/notion/callback", to: "notion_auth#callback"
+
   resources :calendar_events, only: [:destroy]
   resources :contacts, only: [:destroy]
   resources :devices, only: [:create]

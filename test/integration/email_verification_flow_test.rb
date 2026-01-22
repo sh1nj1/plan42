@@ -11,10 +11,17 @@ class EmailVerificationFlowTest < ActionDispatch::IntegrationTest
 
     mail = ActionMailer::Base.deliveries.last
     body = mail.text_part ? mail.text_part.body.decoded : mail.body.decoded
-    token = CGI.unescape(body[/token=([^"\s]+)/, 1])
-    assert token.present?, "token should be present in email"
 
-    get verify_path(token: token)
+    # Handle both URL formats: /verify?token=TOKEN and /email_verification/TOKEN
+    if body.include?("/email_verification/")
+      token = CGI.unescape(body[/email_verification\/([^\s"]+)/, 1])
+      assert token.present?, "token should be present in email"
+      get collavre.email_verification_path(token: token)
+    else
+      token = CGI.unescape(body[/token=([^"\s]+)/, 1])
+      assert token.present?, "token should be present in email"
+      get verify_path(token: token)
+    end
     assert_redirected_to new_session_path
     follow_redirect!
     assert_match I18n.t("users.email_verified"), response.body
