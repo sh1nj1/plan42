@@ -111,9 +111,7 @@ Rails.application.routes.draw do
 
   # contacts and devices routes moved to Collavre engine
 
-  resources :emails, only: [ :index, :show ]
-
-  resource :invite, only: [ :show, :create ]
+  # emails and invite routes moved to Collavre engine
   resource :verify, controller: "email_verifications", only: [ :show ]
 
   # user_themes routes moved to Collavre engine

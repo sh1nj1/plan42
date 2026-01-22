@@ -24,6 +24,9 @@ Collavre::Engine.routes.draw do
     resources :topics, only: [ :index, :create, :destroy ]
   end
 
+  resources :emails, only: [ :index, :show ]
+  resource :invite, only: [ :show, :create ]
+
   post "/creative_expanded_states/toggle", to: "creative_expanded_states#toggle"
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
 end

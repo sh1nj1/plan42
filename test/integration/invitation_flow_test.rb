@@ -22,7 +22,7 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
     assert token.present?, "token should be present in email"
 
     assert_nil invitation.clicked_at
-    get invite_path(token: token)
+    get collavre.invite_path(token: token)
     assert_response :success
 
     invitation.reload

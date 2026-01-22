@@ -1,4 +1,6 @@
 class InvitationMailer < ApplicationMailer
+  helper Collavre::Engine.routes.url_helpers
+
   def invite
     @invitation = params[:invitation]
     email = mail to: @invitation.email, subject: t("invitation_mailer.invite.subject")
