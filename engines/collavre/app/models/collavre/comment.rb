@@ -136,11 +136,12 @@ module Collavre
     end
 
     def broadcast_destroy
-      return if private?
+      return if private? || !creative
       broadcast_remove_to([ creative, :comments ])
     end
 
     def broadcast_badges
+      return unless creative
       Comment.broadcast_badges(creative)
     end
 

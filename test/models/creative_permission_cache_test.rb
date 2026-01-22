@@ -300,7 +300,7 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     end
 
     # user1 can see children via public share
-    assert_includes @root.children_with_permission(@user1, :read), @child
+    assert_includes @root.children_with_permission(@user1, :read).map(&:id), @child.id
 
     perform_enqueued_jobs do
       # Add no_access for user1 on root
@@ -308,7 +308,7 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
     end
 
     # user1 should NOT see children anymore
-    refute_includes @root.reload.children_with_permission(@user1, :read), @child
+    refute_includes @root.reload.children_with_permission(@user1, :read).map(&:id), @child.id
   end
 
   test "children_with_permission user-specific weaker permission overrides public stronger permission" do
@@ -321,9 +321,9 @@ class CreativePermissionCacheTest < ActiveSupport::TestCase
 
     # user1 should NOT see child with :write requirement
     # Even though public has admin, user-specific entry takes precedence
-    refute_includes @root.children_with_permission(@user1, :write), @child
+    refute_includes @root.children_with_permission(@user1, :write).map(&:id), @child.id
 
     # But user1 should see child with :read requirement (matches their permission)
-    assert_includes @root.children_with_permission(@user1, :read), @child
+    assert_includes @root.children_with_permission(@user1, :read).map(&:id), @child.id
   end
 end

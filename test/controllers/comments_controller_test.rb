@@ -206,7 +206,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "user can attach images to a comment" do
-    assert_difference -> { ActiveStorage::Attachment.where(record_type: "Comment").count }, 1 do
+    assert_difference -> { ActiveStorage::Attachment.where(record_type: ["Comment", "Collavre::Comment"]).count }, 1 do
       post creative_comments_path(@creative), params: {
         comment: {
           content: "",
@@ -258,7 +258,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     target = creatives(:childless_creative)
     comment = @creative.comments.create!(content: "Move me", user: @user)
 
-    assert_changes -> { comment.reload.creative }, from: @creative, to: target.effective_origin do
+    assert_changes -> { comment.reload.creative_id }, from: @creative.id, to: target.effective_origin.id do
       post move_creative_comments_path(@creative), params: {
         comment_ids: [ comment.id ],
         target_creative_id: target.id
@@ -276,7 +276,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     target = Creative.create!(user: other_user, description: "Restricted", progress: 0.0)
     comment = @creative.comments.create!(content: "Move me", user: @user)
 
-    assert_no_changes -> { comment.reload.creative } do
+    assert_no_changes -> { comment.reload.creative_id } do
       post move_creative_comments_path(@creative), params: {
         comment_ids: [ comment.id ],
         target_creative_id: target.id

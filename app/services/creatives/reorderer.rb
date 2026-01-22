@@ -155,15 +155,14 @@ module Creatives
       Creative.transaction do
         parent = target.parent
         siblings = sibling_scope(parent)
-        dragged_creatives.each do |dragged|
-          siblings.delete(dragged)
-        end
+        dragged_ids = dragged_creatives.map(&:id)
+        siblings.reject! { |s| dragged_ids.include?(s.id) }
 
         dragged_creatives.each do |dragged|
           dragged.update!(parent: parent)
         end
 
-        target_index = siblings.index(target)
+        target_index = siblings.index { |s| s.id == target.id }
         raise Error, "Invalid creatives" if target_index.nil?
 
         insert_index = direction == "up" ? target_index : target_index + 1

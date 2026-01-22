@@ -4,31 +4,44 @@ class User < ApplicationRecord
 
   has_secure_password
   has_many :sessions, dependent: :destroy
-  has_many :oauth_applications, class_name: "Doorkeeper::Application", as: :owner
+  has_many :oauth_applications, class_name: "Doorkeeper::Application", as: :owner, dependent: :destroy
+  has_many :access_grants, class_name: "Doorkeeper::AccessGrant", foreign_key: :resource_owner_id, dependent: :delete_all
+  has_many :access_tokens, class_name: "Doorkeeper::AccessToken", foreign_key: :resource_owner_id, dependent: :delete_all
   has_many :webauthn_credentials, dependent: :destroy
-  has_many :topics, dependent: :destroy
-
-  has_many :calendar_events, dependent: :destroy
-  has_many :labels, foreign_key: :owner_id, dependent: :destroy
-  has_many :creatives, dependent: :destroy
   has_many :devices, dependent: :destroy
-  has_many :comment_read_pointers, dependent: :destroy
-  has_many :creative_expanded_states, dependent: :destroy
-  has_many :creative_shares, dependent: :destroy
-  has_many :shared_creative_shares, class_name: "CreativeShare", foreign_key: :shared_by_id,
-                                    dependent: :nullify, inverse_of: :shared_by
-  belongs_to :creator, class_name: "User", foreign_key: "created_by_id", optional: true
-  has_many :created_ai_users, class_name: "User", foreign_key: "created_by_id", dependent: :destroy
-  has_many :comments, dependent: :destroy
   has_many :emails, dependent: :destroy
-  has_many :inbox_items, foreign_key: :owner_id, dependent: :destroy, inverse_of: :owner
-  has_many :invitations, foreign_key: :inviter_id, dependent: :destroy, inverse_of: :inviter
   has_many :contacts, dependent: :destroy
   has_many :contact_users, through: :contacts
   has_many :contact_memberships, class_name: "Contact", foreign_key: :contact_user_id, dependent: :destroy, inverse_of: :contact_user
   has_one :github_account, dependent: :destroy
   has_one :notion_account, dependent: :destroy
+  has_many :tasks, foreign_key: :agent_id, dependent: :destroy
+
+  # Associations that reference creatives - must be destroyed BEFORE creatives
+  has_many :topics, dependent: :destroy
+  has_many :calendar_events, dependent: :destroy
+  has_many :comment_read_pointers, dependent: :destroy
+  has_many :creative_expanded_states, dependent: :destroy
+  has_many :creative_shares, dependent: :destroy
+  has_many :creative_shares_caches, class_name: "CreativeSharesCache", dependent: :delete_all
+  has_many :shared_creative_shares, class_name: "CreativeShare", foreign_key: :shared_by_id,
+                                    dependent: :nullify, inverse_of: :shared_by
+  has_many :inbox_items, foreign_key: :owner_id, dependent: :destroy, inverse_of: :owner
+  has_many :invitations, foreign_key: :inviter_id, dependent: :destroy, inverse_of: :inviter
   has_many :activity_logs, dependent: :destroy
+  has_many :labels, foreign_key: :owner_id, dependent: :destroy
+  has_many :comments, dependent: :destroy
+  has_many :action_executed_comments, class_name: "Comment", foreign_key: :action_executed_by_id,
+                                      dependent: :nullify, inverse_of: :action_executed_by
+  has_many :approved_comments, class_name: "Comment", foreign_key: :approver_id,
+                               dependent: :nullify, inverse_of: :approver
+  has_many :comment_reactions, dependent: :destroy
+
+  # Creatives must be destroyed AFTER all associations that reference them
+  has_many :creatives, dependent: :destroy
+
+  belongs_to :creator, class_name: "User", foreign_key: "created_by_id", optional: true
+  has_many :created_ai_users, class_name: "User", foreign_key: "created_by_id", dependent: :destroy
 
   has_one_attached :avatar
 

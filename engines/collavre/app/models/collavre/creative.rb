@@ -65,6 +65,8 @@ module Collavre
     has_many :topics, class_name: "Collavre::Topic", dependent: :destroy
     has_many :mcp_tools, dependent: :destroy
     has_many :activity_logs, class_name: "Collavre::ActivityLog", dependent: :destroy
+    has_many :calendar_events, class_name: "Collavre::CalendarEvent", dependent: :destroy
+    has_many :labels, class_name: "Collavre::Label", dependent: :destroy
 
     validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }, unless: -> { origin_id.present? }
     validates :description, presence: true, unless: -> { origin_id.present? }

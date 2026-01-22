@@ -38,7 +38,7 @@ class LabelTest < ActiveSupport::TestCase
     creative = creatives(:tshirt)
     label = Label.create!(creative: creative, owner: users(:one))
 
-    assert_instance_of Tag, label.tags.first
+    assert_kind_of Collavre::Tag, label.tags.first
     assert_equal creative.id, label.tags.first.creative_id
   end
 end

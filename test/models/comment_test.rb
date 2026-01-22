@@ -20,8 +20,8 @@ class CommentTest < ActiveSupport::TestCase
       assert_equal "inbox.comment_added", item.message_key
       assert_includes item.localized_message, commenter.name
       assert_includes item.localized_message, ActionController::Base.helpers.strip_tags(creative.description)
-      assert_equal comment, item.comment
-      assert_equal origin, item.creative
+      assert_equal comment.id, item.comment.id
+      assert_equal origin.id, item.creative.id
       assert_equal comment.id, item.message_params["comment_id"]
       assert_equal origin.id, item.message_params["creative_id"]
     end
@@ -72,8 +72,8 @@ class CommentTest < ActiveSupport::TestCase
     item = InboxItem.where(owner: mentioned).last
     assert_equal "inbox.user_mentioned", item.message_key
     assert_includes item.localized_message, commenter.name
-    assert_equal comment, item.comment
-    assert_equal creative.effective_origin, item.creative
+    assert_equal comment.id, item.comment.id
+    assert_equal creative.effective_origin.id, item.creative.id
     assert_equal comment.id, item.message_params["comment_id"]
     assert_equal creative.effective_origin.id, item.message_params["creative_id"]
   end

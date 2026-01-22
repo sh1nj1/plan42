@@ -23,7 +23,7 @@ class LinkedCreativeParentTest < ActionDispatch::IntegrationTest
     @linked.reload
     @creative.reload
 
-    assert_equal @new_parent, @linked.parent
-    assert_equal @parent, @creative.parent
+    assert_equal @new_parent.id, @linked.parent_id
+    assert_equal @parent.id, @creative.parent_id
   end
 end
