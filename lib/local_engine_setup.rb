@@ -2,9 +2,11 @@ require "set"
 
 class LocalEngineSetup
   @configured_roots = Set.new
+  @added_public_paths = Set.new
 
   def self.reset!
     @configured_roots.clear
+    @added_public_paths.clear
   end
 
   def self.run(app, root: nil, view_paths_only: false)
@@ -49,14 +51,10 @@ class LocalEngineSetup
       public_path = "#{engine_path}/public"
       if File.directory?(public_path)
         if app.config.public_file_server.enabled
-            # Check if we already inserted this path
-            already_added = app.middleware.any? do |m|
-              m.klass == ActionDispatch::Static &&
-              (m.args.first.to_s == public_path.to_s ||
-               m.inspect.include?(public_path.to_s))
-            end
-
-            unless already_added
+            # Check if we already inserted this path (track ourselves since
+            # middleware stack is not enumerable during configuration)
+            unless @added_public_paths.include?(public_path)
+              @added_public_paths << public_path
               begin
                 index = app.config.public_file_server.index_name
                 headers = app.config.public_file_server.headers || {}
