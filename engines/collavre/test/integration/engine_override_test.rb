@@ -1,6 +1,6 @@
 require "test_helper"
 require "fileutils"
-require_relative "../../lib/local_engine_setup"
+require "local_engine_setup"
 require "minitest/mock"
 require "ostruct"
 require "securerandom"
