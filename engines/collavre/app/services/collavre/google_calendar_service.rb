@@ -1,7 +1,7 @@
 module Collavre
   require "google/apis/calendar_v3"
   require "googleauth"
-  
+
   class GoogleCalendarService
     def initialize(user:)
       @user = user
@@ -9,7 +9,7 @@ module Collavre
       @service.client_options.application_name = "Collavre"
       @service.authorization = user_credentials
     end
-  
+
     # Creates a Google Calendar event.
     # Optional params supported: location, recurrence (array), attendees (array of emails or attendee hashes),
     # reminders (hash: { use_default: true/false, overrides: [{ method: 'email'|'popup', minutes: Integer }, ...] })
@@ -29,7 +29,7 @@ module Collavre
     )
       timezone ||= @user.timezone || Time.zone.tzinfo.name
       event_args = { summary: summary, description: description }
-  
+
       if all_day
         # All-day events must use date (no time or timezone). End date is exclusive per Google Calendar API.
         start_date = start_time.to_date
@@ -40,10 +40,10 @@ module Collavre
         event_args[:start] = { date_time: start_time.iso8601, time_zone: timezone }
         event_args[:end]   = { date_time: end_time.iso8601,   time_zone: timezone }
       end
-  
+
       event_args[:location] = location if location.present?
       event_args[:recurrence] = recurrence if recurrence.present?
-  
+
       if attendees.present?
         event_args[:attendees] = Array(attendees).map do |a|
           if a.is_a?(String)
@@ -56,7 +56,7 @@ module Collavre
           end
         end.compact
       end
-  
+
       if reminders.present?
         use_default = reminders[:use_default]
         overrides = Array(reminders[:overrides]).map do |r|
@@ -67,9 +67,9 @@ module Collavre
         end
         event_args[:reminders] = Google::Apis::CalendarV3::Event::Reminders.new(use_default: !!use_default, overrides: overrides)
       end
-  
+
       event = Google::Apis::CalendarV3::Event.new(**event_args)
-  
+
       if @service.authorization.scope.include?(Google::Apis::CalendarV3::AUTH_CALENDAR_APP_CREATED)
         @user.calendar_id ||= create_app_calendar
         calendar_id = @user.calendar_id
@@ -90,7 +90,7 @@ module Collavre
       Rails.logger.error("Google Calendar insert_event 4xx: #{e.class} #{e.status_code} - #{e.message} body=#{e.body}")
       raise
     end
-  
+
     # Deletes a Google Calendar event.
     def delete_event(event_id, calendar_id: "primary")
       if @service.authorization.scope.include?(Google::Apis::CalendarV3::AUTH_CALENDAR_APP_CREATED)
@@ -101,13 +101,13 @@ module Collavre
     rescue Google::Apis::ClientError => e
       raise unless e.status_code == 404
     end
-  
+
     def list_calendars
       @service.list_calendar_lists.items.map { |c| [ c.summary, c.id ] }.to_h
     end
-  
+
     private
-  
+
     def user_credentials
       Google::Auth::UserRefreshCredentials.new(
         client_id:     ENV["GOOGLE_CLIENT_ID"] || Rails.application.credentials.dig(:google, :client_id),
@@ -116,7 +116,7 @@ module Collavre
         refresh_token: @user.google_refresh_token
       ).tap(&:fetch_access_token!)
     end
-  
+
     def create_app_calendar
       calendar = @service.insert_calendar(Google::Apis::CalendarV3::Calendar.new(summary: @service.client_options.application_name))
       # save calendar id to user profile
@@ -127,9 +127,9 @@ module Collavre
       Rails.logger.error("Google Calendar create_calendar 4xx: #{e.class} #{e.status_code} - #{e.message} body=#{e.body}")
       raise
     end
-  
+
     public
-  
+
     # Ensure user's app calendar exists if the token has calendar.app.created scope.
     # Returns the calendar_id if created/found, otherwise nil.
     def ensure_app_calendar!

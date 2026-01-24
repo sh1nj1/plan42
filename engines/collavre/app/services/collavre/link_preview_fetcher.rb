@@ -4,7 +4,7 @@ module Collavre
   require "uri"
   require "ipaddr"
   require "resolv"
-  
+
   class LinkPreviewFetcher
     USER_AGENT = "Plan42LinkPreview/1.0".freeze
     OPEN_TIMEOUT = 5
@@ -28,33 +28,33 @@ module Collavre
       IPAddr.new("::/128"),
       IPAddr.new("ff00::/8")
     ].freeze
-  
+
     def self.fetch(url)
       new(url).fetch
     end
-  
+
     def initialize(url, io_opener: URI, logger: Rails.logger)
       @url = url
       @io_opener = io_opener
       @logger = logger
     end
-  
+
     def fetch
       uri = safe_http_uri
       return {} unless uri
-  
+
       html, base_uri = read_html(uri)
       return {} if html.blank?
-  
+
       document = Nokogiri::HTML(html)
       build_metadata(document, base_uri)
     rescue StandardError => e
       @logger&.warn("Link preview fetch failed for #{@url}: #{e.class} #{e.message}")
       {}
     end
-  
+
     private
-  
+
     def read_html(uri, redirect_limit = MAX_REDIRECTS)
       html = nil
       base_uri = nil
@@ -70,87 +70,87 @@ module Collavre
       [ html, base_uri ]
     rescue OpenURI::HTTPRedirect => e
       return [ nil, nil ] if redirect_limit <= 0
-  
+
       redirected_uri = safe_redirect_uri(uri, e.uri)
       return [ nil, nil ] unless redirected_uri
-  
+
       read_html(redirected_uri, redirect_limit - 1)
     rescue OpenURI::HTTPError, SocketError, IOError, SystemCallError, URI::InvalidURIError => e
       @logger&.info("Link preview fetch skipped for #{@url}: #{e.class} #{e.message}")
       [ nil, nil ]
     end
-  
+
     def safe_http_uri
       uri = parse_http_uri(@url)
       return unless uri
       return unless allowed_destination?(uri)
-  
+
       uri
     end
-  
+
     def safe_redirect_uri(current_uri, redirected)
       new_uri = normalize_redirect_uri(current_uri, redirected)
       return unless new_uri
       return unless allowed_destination?(new_uri)
-  
+
       new_uri
     end
-  
+
     def normalize_redirect_uri(current_uri, redirected)
       target_uri = redirected.is_a?(URI) ? redirected : URI.parse(redirected.to_s)
       target_uri = current_uri.merge(target_uri) if target_uri.relative?
       return unless %w[http https].include?(target_uri.scheme)
-  
+
       target_uri
     rescue URI::InvalidURIError
       nil
     end
-  
+
     def parse_http_uri(url)
       uri = URI.parse(url)
       return unless %w[http https].include?(uri.scheme)
       return unless uri.hostname && !uri.hostname.empty?
-  
+
       uri
     rescue URI::InvalidURIError
       nil
     end
-  
+
     def allowed_destination?(uri)
       host = uri.hostname
       return false if host.nil? || host.empty?
-  
+
       addresses = resolve_addresses(host)
       return false if addresses.empty?
       return false if addresses.any? { |address| unsafe_ip?(address) }
-  
+
       true
     end
-  
+
     def resolve_addresses(host)
       Resolv.getaddresses(host).uniq
     rescue Resolv::ResolvError, SocketError, ArgumentError
       []
     end
-  
+
     def unsafe_ip?(address)
       ip = IPAddr.new(address)
       ip = ip.native if ip.ipv4_mapped?
-  
+
       return true if ip.loopback? || ip.link_local? || ip.private?
-  
+
       ranges = ip.ipv4? ? DISALLOWED_IPV4_RANGES : DISALLOWED_IPV6_RANGES
       ranges.any? { |range| range.include?(ip) }
     rescue IPAddr::InvalidAddressError
       true
     end
-  
+
     def build_metadata(document, base_uri)
       title = extract_title(document)
       description = extract_description(document)
       image_url = extract_image(document, base_uri)
       site_name = extract_site_name(document)
-  
+
       metadata = {}
       metadata[:title] = title if title.present?
       metadata[:description] = description if description.present?
@@ -158,7 +158,7 @@ module Collavre
       metadata[:site_name] = site_name if site_name.present?
       metadata
     end
-  
+
     def extract_title(document)
       [
         [ "property", "og:title" ],
@@ -173,7 +173,7 @@ module Collavre
       title_tag = document.at_css("title")&.text
       normalize_text(title_tag)
     end
-  
+
     def extract_description(document)
       [
         [ "property", "og:description" ],
@@ -187,12 +187,12 @@ module Collavre
       end
       nil
     end
-  
+
     def extract_site_name(document)
       node = document.at_css('meta[property="og:site_name"]')
       normalize_text(node&.[]("content"))
     end
-  
+
     def extract_image(document, base_uri)
       [
         [ "property", "og:image" ],
@@ -203,13 +203,13 @@ module Collavre
         node = document.at_css(%(meta[#{attr}="#{value}"]))
         url = node&.[]("content")
         next if url.blank?
-  
+
         resolved = resolve_url(url, base_uri)
         return resolved if resolved.present?
       end
       nil
     end
-  
+
     def resolve_url(url, base_uri)
       uri = URI.parse(url)
       if uri.scheme.blank? && base_uri
@@ -220,10 +220,10 @@ module Collavre
     rescue URI::InvalidURIError
       nil
     end
-  
+
     def normalize_text(text)
       return if text.blank?
-  
+
       text.to_s.gsub(/\s+/, " ").strip
     end
   end

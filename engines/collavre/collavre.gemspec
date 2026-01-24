@@ -3,8 +3,8 @@ require_relative "lib/collavre/version"
 Gem::Specification.new do |spec|
   spec.name        = "collavre"
   spec.version     = Collavre::VERSION
-  spec.authors     = ["Collavre Team"]
-  spec.email       = ["team@collavre.com"]
+  spec.authors     = [ "Collavre Team" ]
+  spec.email       = [ "team@collavre.com" ]
   spec.homepage    = "https://collavre.com"
   spec.summary     = "Core engine for Collavre platform"
   spec.description = "Provides knowledge management, task management, and collaboration features"

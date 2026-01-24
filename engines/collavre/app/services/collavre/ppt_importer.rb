@@ -7,7 +7,7 @@ module Collavre
       require "base64"
       require "pathname"
       require "erb"
-  
+
       created = []
       root = parent
       if create_root
@@ -15,25 +15,25 @@ module Collavre
         root = Creative.create(user: user, parent: parent, description: ERB::Util.html_escape(title))
         created << root
       end
-  
+
       Zip::File.open(file) do |zip|
         slide_entries = zip.glob("ppt/slides/slide*.xml").sort_by do |entry|
           entry.name[/slide(\d+)/, 1].to_i
         end
-  
+
         slide_entries.each do |entry|
           slide_number = entry.name[/slide(\d+)/, 1]
           xml = Nokogiri::XML(entry.get_input_stream.read)
           ns = xml.collect_namespaces
           html_fragments = []
-  
+
           # Extract paragraphs as HTML
           xml.xpath("//p:sp//a:p", ns).each do |p_node|
             text = p_node.xpath(".//a:t", ns).map(&:text).join
             next if text.strip.empty?
             html_fragments << "<p>#{ERB::Util.html_escape(text)}</p>"
           end
-  
+
           # Map relationship IDs to targets for image lookup
           rels_name = "ppt/slides/_rels/slide#{slide_number}.xml.rels"
           relationships = {}
@@ -43,7 +43,7 @@ module Collavre
               relationships[rel["Id"]] = rel["Target"]
             end
           end
-  
+
           # Extract images and embed as base64 data URLs
           xml.xpath("//p:pic", ns).each do |pic|
             blip = pic.at_xpath(".//a:blip", ns)
@@ -64,12 +64,12 @@ module Collavre
             base64 = Base64.strict_encode64(data)
             html_fragments << "<img src=\"data:#{mime};base64,#{base64}\" />"
           end
-  
+
           c = Creative.create(user: user, parent: root, description: html_fragments.join)
           created << c
         end
       end
-  
+
       created
     end
   end

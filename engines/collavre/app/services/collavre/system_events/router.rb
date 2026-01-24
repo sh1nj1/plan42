@@ -5,15 +5,15 @@ module Collavre
         # Build the context for Liquid
         liquid_context = ContextBuilder.new(context).build
         liquid_context["event_name"] = event_name
-  
+
         # Find all AI agents
         agents = User.where.not(llm_vendor: nil)
-  
+
         matched_agents = []
-  
+
         agents.each do |agent|
           next if agent.routing_expression.blank?
-  
+
           # Permission Check
           # If agent is not searchable, it must have feedback permission on the creative
           unless agent.searchable?
@@ -41,21 +41,21 @@ module Collavre
               next
             end
           end
-  
+
           begin
             # Add 'agent' to context so they can refer to themselves
             agent_context = liquid_context.merge("agent" => agent.as_json(only: [ :id, :name, :email ]))
-  
+
             # Parse and evaluate the routing expression
             # We wrap the expression in an if block to evaluate truthiness
             expression = agent.routing_expression.strip
             unless expression.start_with?("{%")
               expression = "{% if #{expression} %}true{% endif %}"
             end
-  
+
             template = Liquid::Template.parse(expression)
             result = template.render(agent_context)
-  
+
             # Check if the result evaluates to "true" string or boolean true
             if result.strip == "true"
               matched_agents << agent
@@ -64,7 +64,7 @@ module Collavre
             Rails.logger.error("Routing error for agent #{agent.id}: #{e.message}")
           end
         end
-  
+
         matched_agents
       end
     end

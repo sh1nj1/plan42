@@ -1,8 +1,8 @@
 module Collavre
   class UsersController < ApplicationController
     allow_unauthenticated_access only: %i[new create exists]
-    before_action -> { enforce_auth_provider!(:email) }, only: [:new, :create]
-    before_action :require_system_admin!, only: [:index, :grant_system_admin, :revoke_system_admin]
+    before_action -> { enforce_auth_provider!(:email) }, only: [ :new, :create ]
+    before_action :require_system_admin!, only: [ :index, :grant_system_admin, :revoke_system_admin ]
 
     def new
       @user = Collavre::User.new
@@ -289,7 +289,7 @@ module Collavre
 
     def prepare_contacts
       per_page = 10
-      @contact_page = [params[:contact_page].to_i, 1].max
+      @contact_page = [ params[:contact_page].to_i, 1 ].max
 
       creative_shares = Collavre::CreativeShare.arel_table
       creatives = Collavre::Creative.arel_table
@@ -328,14 +328,14 @@ module Collavre
       )
 
       @total_contacts = contact_users_relation.count
-      @total_contact_pages = [(@total_contacts.to_f / per_page).ceil, 1].max
+      @total_contact_pages = [ (@total_contacts.to_f / per_page).ceil, 1 ].max
       paged_users = contact_users_relation
         .includes(avatar_attachment: :blob)
         .order(:name, :id)
         .offset((@contact_page - 1) * per_page)
         .limit(per_page)
 
-      existing_contacts = Current.user.contacts.includes(contact_user: [avatar_attachment: :blob]).index_by(&:contact_user_id)
+      existing_contacts = Current.user.contacts.includes(contact_user: [ avatar_attachment: :blob ]).index_by(&:contact_user_id)
       @contacts = paged_users.map do |user|
         existing_contacts[user.id] || Collavre::Contact.new(user: Current.user, contact_user: user)
       end

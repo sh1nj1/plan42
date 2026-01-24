@@ -29,9 +29,9 @@ Collavre::Engine.routes.draw do
 
   delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment
 
-  resources :calendar_events, only: [:destroy]
-  resources :contacts, only: [:destroy]
-  resources :devices, only: [:create]
+  resources :calendar_events, only: [ :destroy ]
+  resources :contacts, only: [ :destroy ]
+  resources :devices, only: [ :create ]
 
   resources :inbox_items, path: "inbox", only: [ :index, :update, :destroy ] do
     get :count, on: :collection

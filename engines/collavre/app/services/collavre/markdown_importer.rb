@@ -39,7 +39,7 @@ module Collavre
             current_fence = nil
           end
         end
-  
+
         if current_fence.nil? && (table_data = parse_markdown_table(lines, i))
           table_html = build_table_html(table_data, image_refs)
           new_parent = stack.any? ? stack.last[1] : root
@@ -77,27 +77,27 @@ module Collavre
       end
       created
     end
-  
+
     def self.parse_markdown_table(lines, index)
       return nil if index >= lines.length
       header_line = lines[index]
       return nil unless table_row?(header_line)
-  
+
       align_index = index + 1
       return nil if align_index >= lines.length
       alignment_line = lines[align_index]
       return nil unless alignment_row?(alignment_line)
-  
+
       header_cells = split_markdown_table_row(header_line)
       alignments = parse_alignment_row(alignment_line, header_cells.length)
-  
+
       rows = []
       data_index = align_index + 1
       while data_index < lines.length && table_row?(lines[data_index])
         rows << split_markdown_table_row(lines[data_index])
         data_index += 1
       end
-  
+
       {
         header: header_cells,
         alignments: alignments,
@@ -105,28 +105,28 @@ module Collavre
         next_index: data_index
       }
     end
-  
+
     def self.table_row?(line)
       return false if line.nil?
       stripped = line.strip
       return false if stripped.empty?
       stripped.include?("|") && split_markdown_table_row(line).any?
     end
-  
+
     def self.alignment_row?(line)
       return false unless table_row?(line)
       split_markdown_table_row(line).all? do |cell|
         cell.strip =~ /^:?-{3,}:?$/
       end
     end
-  
+
     def self.split_markdown_table_row(line)
       body = line.strip
       body = body.sub(/^\|/, "").sub(/\|\s*$/, "")
       return [] if body.strip.empty?
       body.split(/(?<!\\)\|/).map { |cell| cell.gsub(/\\\|/, "|").strip }
     end
-  
+
     def self.parse_alignment_row(line, expected_count)
       cells = split_markdown_table_row(line)
       cells = cells.first(expected_count)
@@ -146,30 +146,30 @@ module Collavre
         end
       end
     end
-  
+
     def self.build_table_html(table_data, image_refs)
       helper = ApplicationController.helpers
       header_cells = table_data[:header]
       alignments = table_data[:alignments]
       rows = table_data[:rows]
-  
+
       header_html = header_cells.map { |cell| helper.markdown_links_to_html(cell, image_refs) }
       max_row_length = rows.map(&:length).max || 0
       column_count = [ header_html.length, max_row_length ].max
-  
+
       row_html = rows.map do |row|
         normalized = row.first(column_count)
         normalized.fill("", normalized.length...column_count)
         normalized.map { |cell| helper.markdown_links_to_html(cell, image_refs) }
       end
-  
+
       column_count = [ column_count, alignments.length ].max
       alignments = alignments.first(column_count)
       alignments.fill(nil, alignments.length...column_count)
-  
+
       build_html_table(header_html, row_html, alignments)
     end
-  
+
     def self.build_html_table(header_html, rows_html, alignments)
       table = +"<table>\n"
       table << "  <thead>\n"
@@ -193,7 +193,7 @@ module Collavre
       table << "</table>"
       table
     end
-  
+
     def self.table_cell_tag(tag_name, content, alignment)
       align_attr = alignment ? " style=\"text-align: #{alignment};\"" : ""
       "<#{tag_name}#{align_attr}>#{content}</#{tag_name}>"

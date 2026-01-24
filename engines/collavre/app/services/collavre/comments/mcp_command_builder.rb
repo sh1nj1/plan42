@@ -6,10 +6,10 @@ module Collavre
         @user = user
         @logger = logger
       end
-  
+
       def commands
         return [] unless defined?(RailsMcpEngine)
-  
+
         RailsMcpEngine::Engine.build_tools!
         tools = meta_tool_service.call(action: "list", tool_name: nil, query: nil, arguments: nil)
         Array(tools[:tools]).map do |tool|
@@ -19,11 +19,11 @@ module Collavre
         logger.error("MCP command registration failed: #{e.message}")
         []
       end
-  
+
       private
-  
+
       attr_reader :comment, :user, :logger
-  
+
       def meta_tool_service
         @meta_tool_service ||= Tools::MetaToolService.new
       end

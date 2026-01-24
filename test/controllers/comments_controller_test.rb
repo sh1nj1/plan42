@@ -206,7 +206,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "user can attach images to a comment" do
-    assert_difference -> { ActiveStorage::Attachment.where(record_type: ["Comment", "Collavre::Comment"]).count }, 1 do
+    assert_difference -> { ActiveStorage::Attachment.where(record_type: [ "Comment", "Collavre::Comment" ]).count }, 1 do
       post creative_comments_path(@creative), params: {
         comment: {
           content: "",
