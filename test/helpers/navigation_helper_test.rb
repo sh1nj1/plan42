@@ -3,7 +3,7 @@
 require "test_helper"
 
 class NavigationHelperTest < ActionView::TestCase
-  include NavigationHelper
+  include Collavre::NavigationHelper
   include ApplicationHelper
 
   setup do

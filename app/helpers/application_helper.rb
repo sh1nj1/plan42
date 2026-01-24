@@ -1,4 +1,9 @@
 module ApplicationHelper
+  include Collavre::NavigationHelper
+  include Collavre::CreativesHelper
+  include Collavre::CommentsHelper
+  include Collavre::UserThemesHelper
+
   def user_avatar_url(user, size: 32)
     if user.avatar.attached?
       main_app.url_for(user.avatar.variant(resize_to_fill: [ size, size ]))

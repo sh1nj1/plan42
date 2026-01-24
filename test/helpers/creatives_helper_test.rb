@@ -1,7 +1,7 @@
 require "test_helper"
 
 class CreativesHelperTest < ActionView::TestCase
-  include CreativesHelper
+  include Collavre::CreativesHelper
   test "markdown_links_to_html converts markdown link to HTML" do
     input = "Check [link](https://example.com)"
     expected = "Check <a href=\"https://example.com\">link</a>"

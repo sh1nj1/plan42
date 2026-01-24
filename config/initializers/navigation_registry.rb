@@ -59,7 +59,7 @@ Rails.application.config.to_prepare do
     key: :progress_filter,
     label: "",
     type: :component,
-    component: ProgressFilterComponent,
+    component: Collavre::ProgressFilterComponent,
     component_args: {
       current_state: -> {
         if params[:min_progress] == "1" && params[:max_progress] == "1"
@@ -84,7 +84,7 @@ Rails.application.config.to_prepare do
     key: :comment_filter,
     label: "",
     type: :component,
-    component: ProgressFilterComponent,
+    component: Collavre::ProgressFilterComponent,
     component_args: {
       current_state: -> { params[:comment] == "true" ? :comment : nil },
       states: [

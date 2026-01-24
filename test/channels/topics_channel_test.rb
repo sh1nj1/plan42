@@ -1,7 +1,7 @@
 require "test_helper"
 
 class TopicsChannelTest < ActionCable::Channel::TestCase
-  tests TopicsChannel
+  tests Collavre::TopicsChannel
 
   test "subscribes to creative stream when user has permission" do
     user = users(:one)

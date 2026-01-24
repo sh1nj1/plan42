@@ -43,7 +43,7 @@ module Collavre
         Rails.logger.error("Failed to log tool activity: #{e.message}")
       end
   
-      result = Tools::MetaToolWriteService.new.register_tool_from_source(
+      result = ::Tools::MetaToolWriteService.new.register_tool_from_source(
         source: source_code,
         before_call: before_call,
         after_call: after_call
@@ -113,7 +113,7 @@ module Collavre
     end
   
     def self.delete_tool(tool_name)
-      result = Tools::MetaToolWriteService.new.delete_tool(tool_name)
+      result = ::Tools::MetaToolWriteService.new.delete_tool(tool_name)
   
       if result[:error]
         Rails.logger.error("Failed to delete tool #{tool_name}: #{result[:error]}")
