@@ -121,7 +121,7 @@ class NavigationHelperTest < ActionView::TestCase
       key: :test,
       label: "Test",
       type: :partial,
-      partial: "shared/navigation/help_button"
+      partial: "collavre/shared/navigation/help_button"
     )
 
     item = Navigation::Registry.instance.find(:test)

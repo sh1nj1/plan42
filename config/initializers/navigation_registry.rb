@@ -16,7 +16,7 @@ Rails.application.config.to_prepare do
     label: "app.search_placeholder",
     section: :search,
     type: :partial,
-    partial: "shared/navigation/search_form",
+    partial: "collavre/shared/navigation/search_form",
     priority: 10
   )
 
@@ -27,7 +27,7 @@ Rails.application.config.to_prepare do
     key: :mobile_plans,
     label: "app.plans",
     type: :partial,
-    partial: "shared/navigation/mobile_plans_button",
+    partial: "collavre/shared/navigation/mobile_plans_button",
     priority: 100,
     requires_auth: true,
     desktop: false,
@@ -49,7 +49,7 @@ Rails.application.config.to_prepare do
     key: :plans,
     label: "app.plans",
     type: :partial,
-    partial: "shared/navigation/plans_button",
+    partial: "collavre/shared/navigation/plans_button",
     priority: 120,
     requires_auth: true,
     mobile: false
@@ -99,7 +99,7 @@ Rails.application.config.to_prepare do
     key: :inbox,
     label: "app.inbox",
     type: :partial,
-    partial: "shared/navigation/inbox_button",
+    partial: "collavre/shared/navigation/inbox_button",
     priority: 150,
     requires_user: true,
     mobile: false
@@ -109,7 +109,7 @@ Rails.application.config.to_prepare do
     key: :mobile_inbox,
     label: "app.inbox",
     type: :partial,
-    partial: "shared/navigation/mobile_inbox_button",
+    partial: "collavre/shared/navigation/mobile_inbox_button",
     priority: 155,
     requires_user: true,
     desktop: false,
@@ -129,7 +129,7 @@ Rails.application.config.to_prepare do
     key: :help,
     label: "?",
     type: :partial,
-    partial: "shared/navigation/help_button",
+    partial: "collavre/shared/navigation/help_button",
     priority: 170
   )
 

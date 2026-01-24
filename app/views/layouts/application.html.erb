@@ -47,7 +47,7 @@
     <% end %>
   </head>
   <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
-    <%= render 'shared/link_creative_modal' %>
+    <%= render 'collavre/shared/link_creative_modal' %>
     <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
     <div class="notice"><%= notice %></div>
 
