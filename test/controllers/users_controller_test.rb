@@ -9,15 +9,15 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
   test "non admin cannot access user index" do
     sign_in_as(@regular_user, password: "password")
 
-    get users_path
-    get users_path
+    get collavre.users_path
+    get collavre.users_path
     assert_response :not_found
   end
 
   test "system admin can access user index" do
     sign_in_as(@admin, password: "password")
 
-    get users_path
+    get collavre.users_path
     assert_response :success
     assert_includes response.body, @regular_user.email
   end
@@ -25,9 +25,9 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
   test "non admin cannot grant system admin" do
     sign_in_as(@regular_user, password: "password")
 
-    patch grant_system_admin_user_path(@regular_user)
+    patch collavre.grant_system_admin_user_path(@regular_user)
 
-    patch grant_system_admin_user_path(@regular_user)
+    patch collavre.grant_system_admin_user_path(@regular_user)
 
     assert_response :not_found
     assert_not @regular_user.reload.system_admin?
@@ -36,9 +36,9 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
   test "non admin cannot revoke system admin" do
     sign_in_as(@regular_user, password: "password")
 
-    patch revoke_system_admin_user_path(@admin)
+    patch collavre.revoke_system_admin_user_path(@admin)
 
-    patch revoke_system_admin_user_path(@admin)
+    patch collavre.revoke_system_admin_user_path(@admin)
 
     assert_response :not_found
     assert @admin.reload.system_admin?
@@ -49,9 +49,9 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     refute @regular_user.system_admin?
 
-    patch grant_system_admin_user_path(@regular_user)
+    patch collavre.grant_system_admin_user_path(@regular_user)
 
-    assert_redirected_to users_path
+    assert_redirected_to collavre.users_path
     follow_redirect!
     assert_equal I18n.t("users.system_admin.granted"), flash[:notice]
     assert @regular_user.reload.system_admin?
@@ -62,9 +62,9 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     @regular_user.update!(system_admin: true)
 
-    patch revoke_system_admin_user_path(@regular_user)
+    patch collavre.revoke_system_admin_user_path(@regular_user)
 
-    assert_redirected_to users_path
+    assert_redirected_to collavre.users_path
     follow_redirect!
     assert_equal I18n.t("users.system_admin.revoked"), flash[:notice]
     refute @regular_user.reload.system_admin?
@@ -74,10 +74,10 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(@admin, password: "password")
 
     assert_no_difference("User.count") do
-      delete user_path(@admin)
+      delete collavre.user_path(@admin)
     end
 
-    assert_redirected_to users_path
+    assert_redirected_to collavre.users_path
     follow_redirect!
     assert_equal I18n.t("users.destroy.cannot_delete_self"), flash[:alert]
   end
@@ -118,18 +118,22 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     tag = Tag.create!(label: plan, creative_id: creative.id)
     session = user_to_delete.sessions.create!(user_agent: "TestAgent", ip_address: "127.0.0.1")
 
-    fake_calendar_service = Minitest::Mock.new
-    fake_calendar_service.expect(:delete_event, true, [ calendar_event.google_event_id ])
+    delete_called = false
+    fake_calendar_service = Object.new
+    fake_calendar_service.define_singleton_method(:delete_event) do |event_id|
+      delete_called = true if event_id == "evt-123"
+      true
+    end
 
-    GoogleCalendarService.stub :new, fake_calendar_service do
+    Collavre::GoogleCalendarService.stub :new, ->(**_) { fake_calendar_service } do
       assert_difference("User.count", -1) do
-        delete user_path(user_to_delete)
+        delete collavre.user_path(user_to_delete)
       end
     end
 
-    fake_calendar_service.verify
+    assert delete_called, "Expected delete_event to be called"
 
-    assert_redirected_to users_path
+    assert_redirected_to collavre.users_path
     follow_redirect!
     assert_equal I18n.t("users.destroy.success"), flash[:notice]
 
@@ -164,10 +168,10 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     )
 
     assert_difference("User.count", -1) do
-      delete user_path(ai_user)
+      delete collavre.user_path(ai_user)
     end
 
-    assert_redirected_to user_path(@regular_user, tab: "contacts")
+    assert_redirected_to collavre.user_path(@regular_user, tab: "contacts")
     follow_redirect!
     assert_equal I18n.t("users.destroy.success"), flash[:notice]
   end
@@ -194,10 +198,10 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     )
 
     assert_no_difference("User.count") do
-      delete user_path(ai_user)
+      delete collavre.user_path(ai_user)
     end
 
-    assert_redirected_to user_path(@regular_user, tab: "contacts")
+    assert_redirected_to collavre.user_path(@regular_user, tab: "contacts")
     follow_redirect!
     assert_equal I18n.t("users.destroy.not_authorized"), flash[:alert]
   end
@@ -232,7 +236,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     )
 
     # Access the user show page contacts tab to trigger prepare_contacts
-    get user_path(@admin, tab: "contacts")
+    get collavre.user_path(@admin, tab: "contacts")
     assert_response :success
 
     # Verify that shared_user appears in the contacts list
@@ -264,7 +268,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     )
     CreativeShare.create!(creative: creative, user: permitted, permission: :feedback)
 
-    get search_users_path, params: { q: "feedback", creative_id: creative.id }
+    get collavre.search_users_path, params: { q: "feedback", creative_id: creative.id }
     assert_response :success
     results = JSON.parse(response.body)
 
@@ -291,7 +295,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       searchable: false
     )
 
-    get search_users_path, params: { q: "searchable" }
+    get collavre.search_users_path, params: { q: "searchable" }
     assert_response :success
     results = JSON.parse(response.body)
 
@@ -304,7 +308,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(@regular_user, password: "password")
 
     assert_difference("User.count", 1) do
-      post create_ai_users_path, params: {
+      post collavre.create_ai_users_path, params: {
         ai_id: "nobot",
         name: "No Bot",
         system_prompt: "You are a helpful bot.",
@@ -316,7 +320,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_not_nil ai_user
     refute ai_user.searchable?
 
-    assert_redirected_to user_path(@regular_user, tab: "contacts")
+    assert_redirected_to collavre.user_path(@regular_user, tab: "contacts")
     follow_redirect!
     assert_equal I18n.t("users.create_ai.success"), flash[:notice]
   end
@@ -337,7 +341,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     Contact.ensure(user: @regular_user, contact_user: ai_user)
 
-    get user_path(@regular_user, tab: "contacts")
+    get collavre.user_path(@regular_user, tab: "contacts")
     assert_response :success
     assert_includes response.body, I18n.t("users.destroy.delete_ai_user")
     assert_includes response.body, I18n.t("users.destroy.confirm_ai")
@@ -366,7 +370,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     Contact.ensure(user: @regular_user, contact_user: ai_user)
 
-    get user_path(@regular_user, tab: "contacts")
+    get collavre.user_path(@regular_user, tab: "contacts")
     assert_response :success
     refute_includes response.body, I18n.t("users.destroy.delete_ai_user")
   end
@@ -374,7 +378,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(@admin, password: "password")
 
     # @admin (one) has contact @regular_user (two) from fixtures
-    get search_users_path, params: { q: "two", scope: "contacts" }
+    get collavre.search_users_path, params: { q: "two", scope: "contacts" }
     assert_response :success
     results = JSON.parse(response.body)
 
@@ -385,7 +389,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
   test "search with scope contacts allows empty query" do
     sign_in_as(@admin, password: "password")
 
-    get search_users_path, params: { q: "", scope: "contacts" }
+    get collavre.search_users_path, params: { q: "", scope: "contacts" }
     assert_response :success
     results = JSON.parse(response.body)
 
@@ -404,13 +408,13 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       Contact.create!(user: @admin, contact_user: u)
     end
 
-    get search_users_path, params: { q: "", scope: "contacts", limit: 10 }
+    get collavre.search_users_path, params: { q: "", scope: "contacts", limit: 10 }
     assert_response :success
     results = JSON.parse(response.body)
     assert_equal 10, results.length
 
     # Default limit 20
-    get search_users_path, params: { q: "", scope: "contacts" }
+    get collavre.search_users_path, params: { q: "", scope: "contacts" }
     results = JSON.parse(response.body)
     assert_equal 20, results.length
   end
@@ -418,7 +422,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
   test "search returns correct json structure" do
     sign_in_as(@admin, password: "password")
 
-    get search_users_path, params: { q: "two", scope: "contacts" }
+    get collavre.search_users_path, params: { q: "two", scope: "contacts" }
     assert_response :success
     result = JSON.parse(response.body).first
 
@@ -431,35 +435,35 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(@regular_user, password: "password")
     other_user = users(:one) # admin user
 
-    get passkeys_user_path(other_user)
+    get collavre.passkeys_user_path(other_user)
 
-    assert_redirected_to user_path(@regular_user)
+    assert_redirected_to collavre.user_path(@regular_user)
     assert_equal I18n.t("users.destroy.not_authorized"), flash[:alert]
   end
 
   test "user can access their own passkeys page" do
     sign_in_as(@regular_user, password: "password")
 
-    get passkeys_user_path(@regular_user)
+    get collavre.passkeys_user_path(@regular_user)
     assert_response :success
   end
 
   test "system admin can access other user's passkeys page" do
     sign_in_as(@admin, password: "password")
 
-    get passkeys_user_path(@regular_user)
+    get collavre.passkeys_user_path(@regular_user)
     assert_response :success
   end
   test "admin link appears in profile for system admin" do
     sign_in_as(@admin, password: "password")
-    get user_path(@admin)
+    get collavre.user_path(@admin)
     assert_response :success
     assert_select "a[href=?]", admin_path
   end
 
   test "admin link does not appear in profile for regular user" do
     sign_in_as(@regular_user, password: "password")
-    get user_path(@regular_user)
+    get collavre.user_path(@regular_user)
     assert_response :success
     assert_select "a[href=?]", admin_path, count: 0
   end
@@ -472,7 +476,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     Rails.cache.clear
 
     assert_difference("User.count", 1) do
-      post create_ai_users_path, params: {
+      post collavre.create_ai_users_path, params: {
         ai_id: "maxbot",
         name: "Max Bot",
         system_prompt: "You are a helpful bot.",
@@ -482,7 +486,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     ai_user = User.find_by(email: "maxbot@ai.local")
     assert_not_nil ai_user
-    assert_redirected_to user_path(@regular_user, tab: "contacts")
+    assert_redirected_to collavre.user_path(@regular_user, tab: "contacts")
   ensure
     SystemSetting.find_by(key: "password_min_length")&.destroy
     Rails.cache.clear

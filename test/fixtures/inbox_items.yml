@@ -1,3 +1,6 @@
+_fixture:
+  model_class: Collavre::InboxItem
+
 one_new:
   message_key: inbox.no_messages
   message_params: {}

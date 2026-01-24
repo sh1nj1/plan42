@@ -19,7 +19,7 @@ class ContactsControllerTest < ActionDispatch::IntegrationTest
       delete collavre.contact_path(contact), params: { contact_page: 2 }
     end
 
-    assert_redirected_to user_path(@user, tab: "contacts", contact_page: 2)
+    assert_redirected_to collavre.user_path(@user, tab: "contacts", contact_page: 2)
     follow_redirect!
     assert_equal I18n.t("contacts.notices.removed"), flash[:notice]
   end

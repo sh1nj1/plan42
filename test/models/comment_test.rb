@@ -50,7 +50,7 @@ class CommentTest < ActiveSupport::TestCase
     formatter = Minitest::Mock.new
     formatter.expect(:format, "formatted content")
 
-    CommentLinkFormatter.stub(:new, formatter) do
+    Collavre::CommentLinkFormatter.stub(:new, formatter) do
       comment = Comment.create!(creative: creative, user: user, content: "https://example.com")
       assert_equal "formatted content", comment.content
     end
@@ -98,7 +98,7 @@ class CommentTest < ActiveSupport::TestCase
     creative = Creative.create!(user: owner, description: "Root")
 
     comment = Comment.create!(creative: creative, content: "hello")
-    assert_equal current_user, comment.user
+    assert_equal current_user.id, comment.user.id
   ensure
     Current.reset
   end

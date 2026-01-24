@@ -67,7 +67,7 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     assert_equal new_details["secret"], link.webhook_secret
 
     assert provisioner_args.present?, "Expected webhook provisioner to be invoked"
-    assert_equal @github_account, provisioner_args[:account]
+    assert_equal @github_account.id, provisioner_args[:account].id
     assert_equal github_webhook_url, provisioner_args[:webhook_url]
     returned_links = provisioner_args[:links]
     assert_equal payload[:repositories].sort, returned_links.map(&:repository_full_name).sort
@@ -108,7 +108,7 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     assert_equal({}, body["webhooks"])
     assert_empty @creative.github_repository_links.where(github_account: @github_account)
 
-    assert_equal @github_account, removal_args[:account]
+    assert_equal @github_account.id, removal_args[:account].id
     assert_equal github_webhook_url, removal_args[:webhook_url]
     assert_equal [ "sample-user/example" ], removal_args[:repositories]
   end

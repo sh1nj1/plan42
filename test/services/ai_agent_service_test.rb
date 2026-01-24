@@ -40,7 +40,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     reply = @creative.comments.order(:created_at).last
 
     assert_not_equal @comment.id, reply.id
-    assert_equal @agent, reply.user
+    assert_equal @agent.id, reply.user.id
     assert_equal "Chunk 1 Chunk 2", reply.content
 
     # Verify actions were logged

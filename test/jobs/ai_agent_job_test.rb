@@ -39,7 +39,7 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     # Verify Task creation
     task = Task.last
-    assert_equal @agent, task.agent
+    assert_equal @agent.id, task.agent.id
     assert_equal "test_event", task.trigger_event_name
     assert_equal "done", task.status
 

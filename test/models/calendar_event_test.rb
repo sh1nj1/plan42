@@ -10,14 +10,18 @@ class CalendarEventTest < ActiveSupport::TestCase
       end_time: 1.hour.from_now
     )
 
-    service = Minitest::Mock.new
-    service.expect(:delete_event, true, [ "abc123" ])
+    delete_called = false
+    fake_service = Object.new
+    fake_service.define_singleton_method(:delete_event) do |event_id|
+      delete_called = true if event_id == "abc123"
+      true
+    end
 
-    GoogleCalendarService.stub(:new, service) do
+    Collavre::GoogleCalendarService.stub(:new, ->(**_) { fake_service }) do
       event.destroy
     end
 
     assert_predicate event, :destroyed?
-    assert_mock service
+    assert delete_called, "Expected delete_event to be called"
   end
 end

@@ -120,7 +120,7 @@ Rails.application.config.to_prepare do
     key: :sign_in,
     label: "app.sign_in",
     type: :button,
-    path: -> { main_app.new_session_path },
+    path: -> { Collavre::Engine.routes.url_helpers.new_session_path },
     priority: 160,
     visible: -> { !authenticated? }
   )
@@ -151,7 +151,7 @@ Rails.application.config.to_prepare do
         key: :profile,
         label: "users.profile",
         type: :button,
-        path: -> { main_app.user_path(Current.user) },
+        path: -> { Collavre::Engine.routes.url_helpers.user_path(Current.user) },
         html_class: "popup-menu-item",
         priority: 100
       },
@@ -159,7 +159,7 @@ Rails.application.config.to_prepare do
         key: :sign_out,
         label: "app.sign_out",
         type: :button,
-        path: -> { main_app.session_path },
+        path: -> { Collavre::Engine.routes.url_helpers.session_path },
         method: :delete,
         priority: 900
       }

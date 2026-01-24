@@ -74,7 +74,7 @@ module Github
       assert_includes comment.content, "[##{suggestion.parent_id}](#{parent_path})"
       assert_includes comment.content, "Follow up"
       assert comment.action.present?
-      assert_equal account.user, comment.approver
+      assert_equal account.user.id, comment.approver.id
 
       action_payload = JSON.parse(comment.action)
       assert_equal 2, action_payload["actions"].size

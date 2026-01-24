@@ -2,7 +2,7 @@
 
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
-<%= form_with url: collavre.passwords_path, class: "stacked-form" do |form| %>
+<%= form_with url: passwords_path, class: "stacked-form" do |form| %>
   <%= form.email_field :email,
                        required: true,
                        autofocus: true,
@@ -14,4 +14,4 @@
 <% end %>
 
 <br/>
-<%= link_to t('users.new.back_to_sign_in'), collavre.new_session_path %>
+<%= link_to t('users.new.back_to_sign_in'), new_session_path %>

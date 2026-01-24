@@ -7,7 +7,7 @@
   </p>
 <% end %>
 
-<%= form_with model: @user, url: collavre.users_path, class: "stacked-form" do |form| %>
+<%= form_with model: @user, url: users_path, class: "stacked-form" do |form| %>
   <% if defined?(@invitation) && @invitation.present? %>
     <%= hidden_field_tag :invite_token, params[:invite_token] || params[:token] %>
   <% end %>
@@ -30,4 +30,4 @@
 </div>
 
 <br/>
-<%= link_to t('.back_to_sign_in'), collavre.new_session_path %>
+<%= link_to t('.back_to_sign_in'), new_session_path %>

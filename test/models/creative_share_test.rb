@@ -15,7 +15,7 @@ class CreativeShareTest < ActiveSupport::TestCase
     end
 
     item = InboxItem.last
-    assert_equal recipient, item.owner
+    assert_equal recipient.id, item.owner.id
     assert_equal "inbox.creative_shared", item.message_key
     msg = item.localized_message
     assert_includes msg, sharer.name

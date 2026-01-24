@@ -153,7 +153,7 @@ class CreativeTest < ActiveSupport::TestCase
 
     child = Creative.create!(parent: parent, description: "Child")
 
-    assert_equal parent.user, child.user
+    assert_equal parent.user.id, child.user.id
   ensure
     Current.reset
   end
@@ -164,7 +164,7 @@ class CreativeTest < ActiveSupport::TestCase
 
     creative = Creative.create!(description: "Root")
 
-    assert_equal current_user, creative.user
+    assert_equal current_user.id, creative.user.id
   ensure
     Current.reset
   end

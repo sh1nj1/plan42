@@ -21,7 +21,7 @@ class CommentsCalendarTest < ActionDispatch::IntegrationTest
       true
     end
 
-    GoogleCalendarService.stub(:new, ->(user:) { assert_equal @user, user; service }) do
+    GoogleCalendarService.stub(:new, ->(user:) { assert_equal @user.id, user.id; service }) do
       assert_difference("Comment.count", 1) do
         post creative_comments_path(@creative), params: { comment: { content: command } }
       end
@@ -45,7 +45,7 @@ class CommentsCalendarTest < ActionDispatch::IntegrationTest
       true
     end
 
-    GoogleCalendarService.stub(:new, ->(user:) { assert_equal @user, user; service }) do
+    GoogleCalendarService.stub(:new, ->(user:) { assert_equal @user.id, user.id; service }) do
       assert_difference("Comment.count", 1) do
         post creative_comments_path(@creative), params: { comment: { content: command } }
       end

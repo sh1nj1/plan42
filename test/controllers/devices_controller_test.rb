@@ -33,7 +33,7 @@ class DevicesControllerTest < ActionDispatch::IntegrationTest
     assert_response :no_content
 
     device.reload
-    assert_equal current_user, device.user
+    assert_equal current_user.id, device.user.id
     assert_equal "updated-client", device.client_id
     assert_equal "com.example.app.updated", device.app_id
     assert_equal "2.0.0", device.app_version

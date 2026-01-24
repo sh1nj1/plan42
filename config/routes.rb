@@ -1,7 +1,8 @@
 Rails.application.routes.draw do
-  # Mount Collavre engine - routes will be gradually migrated here
+  # Mount Collavre engine - all core functionality is in the engine
   mount Collavre::Engine => "/"
 
+  # Doorkeeper OAuth provider
   use_doorkeeper do
     controllers applications: "oauth/applications"
   end
@@ -14,80 +15,36 @@ Rails.application.routes.draw do
     end
   end
 
-  resource :session
-  match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
-  match "/auth/github/callback", to: "github_auth#callback", via: [ :get, :post ]
-  get "/auth/notion", to: "notion_auth#authorize"
-  get "/auth/notion/callback", to: "notion_auth#callback", as: :notion_auth_callback
-  resources :passwords, param: :token
+  # WebAuthn passkey authentication (host app specific)
   namespace :webauthn do
     resource :registration, only: [ :new, :create ]
     resource :session, only: [ :new, :create ]
     resources :credentials, only: [ :destroy ]
   end
-  # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 
-  # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
-  # Can be used by load balancers and uptime monitors to verify that the app is live.
+  # Health check
   get "up" => "rails/health#show", as: :rails_health_check
 
-  # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
+  # PWA manifest and service worker
   get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
   get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
-  # Defines the root path route ("/")
-  # Home page path is rewritten by HomePathRewriter middleware
-  # Default: /creatives, configurable via SystemSetting.home_page_path
+  # Root path
   root "collavre/creatives#index"
 
-  resources :users, only: [ :new, :create, :index, :show, :update, :destroy ] do
-    member do
-      get :edit_password
-      patch :update_password
-      patch :grant_system_admin
-      patch :revoke_system_admin
-      get :edit_ai
-      patch :update_ai
-      get :passkeys
-    end
-    collection do
-      get :exists
-      get :search
-      patch :notification_settings
-      get :new_ai
-      post :create_ai
-    end
-  end
-
+  # Admin settings (host app specific)
   get "/admin", to: "admin/settings#index"
   namespace :admin do
     resource :settings, only: [ :update ]
   end
 
-  # creatives routes moved to Collavre engine
-  # Keep integration routes nested under creatives for now
+  # Creative integrations (GitHub/Notion)
   resources :creatives, only: [] do
     resource :github_integration, only: [ :show, :update, :destroy ], module: :creatives
     resource :notion_integration, only: [ :show, :update, :destroy ], module: :creatives
   end
 
-  # comments routes moved to Collavre engine
-
-  # creative_imports and creative_plan routes moved to Collavre engine
-
-  # plans routes moved to Collavre engine
-
-  # calendar_events routes moved to Collavre engine
-
-  # inbox_items routes moved to Collavre engine
-
-  # contacts and devices routes moved to Collavre engine
-
-  # emails and invite routes moved to Collavre engine
-  resource :verify, controller: "email_verifications", only: [ :show ]
-
-  # user_themes routes moved to Collavre engine
-
+  # GitHub account and webhooks
   namespace :github do
     resource :account, only: [ :show ] do
       get :organizations
@@ -95,8 +52,6 @@ Rails.application.routes.draw do
     end
     post :webhook, to: "webhooks#create"
   end
-
-  # creative_expanded_states and comment_read_pointers routes moved to Collavre engine
 
   # Attachment deletion
   delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment

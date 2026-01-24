@@ -1,3 +1,6 @@
+_fixture:
+  model_class: Collavre::Contact
+
 one_two:
   user: one
   contact_user: two

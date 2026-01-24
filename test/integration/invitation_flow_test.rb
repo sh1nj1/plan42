@@ -12,7 +12,7 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
                                     permission: :read)
 
     ActionMailer::Base.deliveries.clear
-    InvitationMailer.with(invitation: invitation).invite.deliver_now
+    Collavre::InvitationMailer.with(invitation: invitation).invite.deliver_now
 
     mail = ActionMailer::Base.deliveries.last
     email_record = Email.order(:created_at).last
@@ -30,9 +30,9 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
     assert_match inviter.display_name, response.body
     assert_match inviter.email, response.body
     assert_match ActionController::Base.helpers.strip_tags(creative.description), response.body
-    assert_select "a[href=?]", new_session_path(invite_token: token),
+    assert_select "a[href=?]", collavre.new_session_path(invite_token: token),
                   text: I18n.t("invites.show.login")
-    assert_select "a[href=?]", new_user_path(invite_token: token),
+    assert_select "a[href=?]", collavre.new_user_path(invite_token: token),
                   text: I18n.t("invites.show.sign_up")
   end
 

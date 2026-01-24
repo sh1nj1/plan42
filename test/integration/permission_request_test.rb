@@ -15,7 +15,7 @@ class PermissionRequestTest < ActionDispatch::IntegrationTest
     assert_response :ok
 
     item = InboxItem.order(:created_at).last
-    assert_equal @owner, item.owner
+    assert_equal @owner.id, item.owner.id
     assert_equal "inbox.permission_requested", item.message_key
     message = item.localized_message
     assert_includes message, "Requester"

@@ -57,7 +57,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     shared_creative.reload
     converted_child = shared_creative.children.order(:id).last
     assert_equal "Shared task", ActionController::Base.helpers.strip_tags(converted_child.description).strip
-    assert_equal other_user, converted_child.user
+    assert_equal other_user.id, converted_child.user.id
   end
 
   test "converted creatives inherit parent creative user" do
@@ -74,7 +74,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :no_content
     child = @creative.children.order(:id).last
-    assert_equal @creative.user, child.user
+    assert_equal @creative.user.id, child.user.id
   end
 
   test "approver can execute comment action" do
@@ -96,9 +96,9 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, I18n.t("comments.approved_label")
     comment.reload
     assert_equal action_payload, JSON.parse(comment.action)
-    assert_equal @user, comment.approver
+    assert_equal @user.id, comment.approver.id
     assert_not_nil comment.action_executed_at
-    assert_equal @user, comment.action_executed_by
+    assert_equal @user.id, comment.action_executed_by.id
     assert_in_delta 0.9, comment.creative.reload.progress
   end
 
@@ -410,7 +410,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     # Verify inbox notification was created
     inbox_item = InboxItem.order(:id).last
-    assert_equal other_user, inbox_item.owner
+    assert_equal other_user.id, inbox_item.owner.id
     assert_equal "inbox.comment_deleted_by_admin", inbox_item.message_key
     assert_equal @user.name, inbox_item.message_params["admin_name"]
     assert_equal "Other user comment", inbox_item.message_params["comment_content"]

@@ -14,11 +14,11 @@ class CreativeUserRecursionTest < ActiveSupport::TestCase
 
     # Now accessing a.user should not crash
     assert_nothing_raised do
-      assert_equal user, a.user
+      assert_equal user.id, a.user.id
     end
 
     assert_nothing_raised do
-      assert_equal user, b.user
+      assert_equal user.id, b.user.id
     end
   end
 end

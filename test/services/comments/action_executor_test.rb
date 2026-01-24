@@ -25,9 +25,9 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
 
     comment.reload
     assert_equal action_payload, JSON.parse(comment.action)
-    assert_equal @user, comment.approver
+    assert_equal @user.id, comment.approver.id
     assert_not_nil comment.action_executed_at
-    assert_equal @user, comment.action_executed_by
+    assert_equal @user.id, comment.action_executed_by.id
     assert_in_delta 0.5, comment.creative.reload.progress
   end
 
@@ -79,7 +79,7 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
     child = @creative.reload.children.order(:created_at).last
     assert_equal "New idea", ActionController::Base.helpers.strip_tags(child.description).strip
     assert_in_delta 0.25, child.progress
-    assert_equal @creative.user, child.user
+    assert_equal @creative.user.id, child.user.id
   end
 
   test "supports multiple actions within a single payload" do

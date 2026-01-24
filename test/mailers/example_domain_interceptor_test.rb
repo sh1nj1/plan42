@@ -7,7 +7,7 @@ class ExampleDomainInterceptorTest < ActiveSupport::TestCase
   test "does not deliver emails to example.com addresses" do
     user = User.create!(email: "blocked@example.com", password: TEST_PASSWORD, name: "Blocked")
 
-    UserMailer.email_verification(user).deliver_now
+    Collavre::EmailVerificationMailer.verify(user).deliver_now
 
     assert_empty ActionMailer::Base.deliveries
   end
@@ -15,7 +15,7 @@ class ExampleDomainInterceptorTest < ActiveSupport::TestCase
   test "delivers emails to other domains" do
     user = User.create!(email: "allowed@domain.com", password: TEST_PASSWORD, name: "Allowed")
 
-    UserMailer.email_verification(user).deliver_now
+    Collavre::EmailVerificationMailer.verify(user).deliver_now
 
     assert_equal 1, ActionMailer::Base.deliveries.size
   end

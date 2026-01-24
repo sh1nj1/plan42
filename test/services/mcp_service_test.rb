@@ -156,7 +156,7 @@ class McpServiceTest < ActiveSupport::TestCase
     # Tool should be on origin
     tool = McpTool.find_by(name: "linked_tool")
     assert tool
-    assert_equal origin, tool.creative
+    assert_equal origin.id, tool.creative.id
     assert_not_equal linked, tool.creative
   end
 

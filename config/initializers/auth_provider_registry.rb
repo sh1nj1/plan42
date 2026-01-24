@@ -20,7 +20,7 @@ Rails.application.config.auth_providers << {
 Rails.application.config.auth_providers << {
   key: :google,
   name: "auth.providers.google",
-  partial_path: "sessions/providers/google",
+  partial_path: "collavre/sessions/providers/google",
   priority: 10
 }
 
@@ -28,6 +28,6 @@ Rails.application.config.auth_providers << {
 Rails.application.config.auth_providers << {
   key: :passkey,
   name: "auth.providers.passkey",
-  partial_path: "sessions/providers/passkey",
+  partial_path: "collavre/sessions/providers/passkey",
   priority: 20
 }

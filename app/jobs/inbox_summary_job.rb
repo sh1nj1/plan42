@@ -16,7 +16,7 @@ class InboxSummaryJob < ApplicationJob
       end
 
       Rails.logger.info("Sending inbox summary to #{user.email} with #{items.count} items")
-      InboxMailer.with(user: user, items: items).daily_summary.deliver_now
+      Collavre::InboxMailer.with(user: user, items: items).daily_summary.deliver_now
     end
   end
 end

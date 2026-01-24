@@ -1,3 +1,6 @@
+_fixture:
+  model_class: Collavre::User
+
 <% password_digest = BCrypt::Password.create("password") %>
 
 one:

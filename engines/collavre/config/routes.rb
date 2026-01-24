@@ -22,10 +22,10 @@ Collavre::Engine.routes.draw do
   end
   get "/email_verification/:token", to: "email_verifications#show", as: :email_verification
 
-  # OAuth callback routes
-  get "/auth/google/callback", to: "google_auth#callback"
-  get "/auth/github/callback", to: "github_auth#callback"
-  get "/auth/notion/callback", to: "notion_auth#callback"
+  # OAuth callback routes (paths match OmniAuth provider names)
+  match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
+  match "/auth/github/callback", to: "github_auth#callback", via: [ :get, :post ]
+  match "/auth/notion/callback", to: "notion_auth#callback", via: [ :get, :post ]
 
   resources :calendar_events, only: [:destroy]
   resources :contacts, only: [:destroy]
