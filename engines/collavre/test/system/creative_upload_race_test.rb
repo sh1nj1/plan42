@@ -1,4 +1,4 @@
-require "application_system_test_case"
+require_relative "../application_system_test_case"
 
 class CreativeUploadRaceTest < ApplicationSystemTestCase
   setup do
@@ -14,7 +14,7 @@ class CreativeUploadRaceTest < ApplicationSystemTestCase
 
     resize_window_to
     sign_in_via_ui(@user)
-    visit creatives_path
+    visit collavre.creatives_path
   end
 
   def open_inline_editor(creative)

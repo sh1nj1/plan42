@@ -1,8 +1,16 @@
 module SystemHelpers
   PASSWORD = "P4ssW0rd!2"
 
+  def collavre
+    Collavre::Engine.routes.url_helpers
+  end
+
+  def main_app
+    Rails.application.routes.url_helpers
+  end
+
   def sign_in_via_ui(user, password: PASSWORD)
-    visit new_session_path
+    visit collavre.new_session_path
     fill_in placeholder: I18n.t("users.new.enter_your_email"), with: user.email
     fill_in placeholder: I18n.t("users.new.enter_your_password"), with: password
     find("#sign-in-submit").click

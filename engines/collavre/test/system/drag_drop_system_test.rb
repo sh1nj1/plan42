@@ -1,4 +1,4 @@
-require "application_system_test_case"
+require_relative "../application_system_test_case"
 
 class DragDropSystemTest < ApplicationSystemTestCase
   setup do
@@ -18,7 +18,7 @@ class DragDropSystemTest < ApplicationSystemTestCase
   end
 
   test "user can reorder creatives with drag and drop" do
-    visit creative_path(@root)
+    visit collavre.creative_path(@root)
 
     assert_selector "#creative-#{@child_a.id}", wait: 5
     assert_selector "#creative-#{@child_b.id}", wait: 5

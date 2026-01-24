@@ -20,11 +20,11 @@ module Collavre
 
       respond_to do |format|
         format.html do
-          render partial: "inbox_items/list", locals: { items: @inbox_items, next_page: @next_page }
+          render partial: "collavre/inbox_items/list", locals: { items: @inbox_items, next_page: @next_page }
         end
         format.json do
           render json: {
-            items_html: render_to_string(partial: "inbox_items/items", formats: [ :html ], locals: { items: @inbox_items }),
+            items_html: render_to_string(partial: "collavre/inbox_items/items", formats: [ :html ], locals: { items: @inbox_items }),
             next_page: @next_page,
             empty: @inbox_items.empty?
           }

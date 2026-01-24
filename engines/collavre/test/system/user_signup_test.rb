@@ -1,8 +1,8 @@
-require "application_system_test_case"
+require_relative "../application_system_test_case"
 
 class UserSignupTest < ApplicationSystemTestCase
   test "user can sign up" do
-    visit new_user_path
+    visit collavre.new_user_path
     fill_in placeholder: I18n.t("users.new.enter_your_name"), with: "Test User"
     fill_in placeholder: I18n.t("users.new.enter_your_email"), with: "testuser@example.com"
     fill_in placeholder: I18n.t("users.new.enter_your_password"), with: SystemHelpers::PASSWORD

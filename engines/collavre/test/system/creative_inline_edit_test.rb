@@ -1,4 +1,4 @@
-require "application_system_test_case"
+require_relative "../application_system_test_case"
 
 class CreativeInlineEditTest < ApplicationSystemTestCase
   setup do
@@ -13,7 +13,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     resize_window_to
     sign_in_via_ui(@user)
-    visit creatives_path
+    visit collavre.creatives_path
   end
 
   def open_inline_editor(creative)
@@ -131,7 +131,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     child_a = Creative.create!(description: "A", user: @user, parent: @root_creative)
     child_b = Creative.create!(description: "B", user: @user, parent: @root_creative)
 
-    visit creative_path(@root_creative)
+    visit collavre.creative_path(@root_creative)
 
     open_inline_editor(child_b)
     find("#inline-add", wait: 5).click
@@ -150,7 +150,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     child = Creative.create!(description: "Child", user: @user, parent: @root_creative)
     Creative.create!(description: "Grandchild", user: @user, parent: child)
 
-    visit creative_path(@root_creative)
+    visit collavre.creative_path(@root_creative)
 
     open_inline_editor(child)
     find("#inline-add", wait: 5).click
@@ -164,7 +164,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   test "shows editor at top and saves as first child when parent context exists" do
     existing_child = Creative.create!(description: "Existing", user: @user, parent: @root_creative)
 
-    visit creative_path(@root_creative)
+    visit collavre.creative_path(@root_creative)
 
     find(".creative-actions-row .add-creative-btn").click
     fill_inline_editor("New child")
@@ -207,7 +207,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   test "disables inline actions when unavailable" do
     Creative.create!(description: "Second root", user: @user)
 
-    visit creatives_path
+    visit collavre.creatives_path
 
     open_inline_editor(@root_creative)
 
@@ -232,7 +232,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     creative1 = Creative.create!(description: "Creative 1", user: @user, parent: @root_creative)
     Creative.create!(description: "Creative 2", user: @user, parent: @root_creative)
 
-    visit creatives_path
+    visit collavre.creatives_path
     expand_creative(@root_creative)
 
     open_inline_editor(creative1)
