@@ -53,9 +53,6 @@ Rails.application.routes.draw do
     post :webhook, to: "webhooks#create"
   end
 
-  # Attachment deletion
-  delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment
-
   # MCP OAuth Discovery
   get "/.well-known/oauth-protected-resource", to: "mcp/discovery#oauth_protected_resource"
   get "/.well-known/oauth-authorization-server", to: "mcp/discovery#oauth_authorization_server"

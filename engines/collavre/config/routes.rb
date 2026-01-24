@@ -27,6 +27,8 @@ Collavre::Engine.routes.draw do
   match "/auth/github/callback", to: "github_auth#callback", via: [ :get, :post ]
   match "/auth/notion/callback", to: "notion_auth#callback", via: [ :get, :post ]
 
+  delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment
+
   resources :calendar_events, only: [:destroy]
   resources :contacts, only: [:destroy]
   resources :devices, only: [:create]

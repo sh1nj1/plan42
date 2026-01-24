@@ -51,7 +51,7 @@
     <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
     <div class="notice"><%= notice %></div>
 
-    <%= render 'shared/navigation' %>
+    <%= render 'collavre/shared/navigation' %>
 
     <% unless Rails.env.test? %>
     <div id="notification-permission-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
