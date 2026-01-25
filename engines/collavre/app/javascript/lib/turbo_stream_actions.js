@@ -1,5 +1,4 @@
 import { Turbo } from "@hotwired/turbo-rails"
-import { application } from "../controllers/application"
 
 Turbo.StreamActions.update_reactions = function () {
     const targetId = this.getAttribute("target")
@@ -17,8 +16,8 @@ Turbo.StreamActions.update_reactions = function () {
         const element = document.getElementById(targetId)
 
         if (element) {
-            // Find the stimulus controller instance using the global application instance
-            const controller = application.getControllerForElementAndIdentifier(element, "comment")
+            // Find the stimulus controller instance using the global Stimulus application
+            const controller = window.Stimulus?.getControllerForElementAndIdentifier(element, "comment")
             if (controller && typeof controller.updateReactionsUI === 'function') {
                 console.log("[Turbo] calling updateReactionsUI", data)
                 controller.updateReactionsUI(data)

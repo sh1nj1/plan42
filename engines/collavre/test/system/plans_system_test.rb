@@ -16,12 +16,9 @@ class PlansSystemTest < ApplicationSystemTestCase
 
 
   test "user can create a plan and see it on the timeline" do
-    skip "Skipping until Stimulus controller initialization issue is resolved"
-
     Creative.create!(user: @user, description: "Launch Creative")
 
     find_all(".plans-menu-btn").first.click
-
 
     # Click input to open search popup
     find("#plan-select-creative-input").click
@@ -48,8 +45,6 @@ class PlansSystemTest < ApplicationSystemTestCase
   end
 
   test "user can delete a plan" do
-    skip "Skipping until Stimulus controller initialization issue is resolved"
-
     creative = Creative.create!(user: @user, description: "Plan to be deleted")
 
     find_all(".plans-menu-btn").first.click
