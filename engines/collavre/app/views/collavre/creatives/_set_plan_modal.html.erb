@@ -7,7 +7,7 @@
       <div style="margin-bottom:1em;">
         <label for="plan-id-select"><%= t('creatives.index.select_plan', default: 'Select Plan') %></label>
         <select id="plan-id-select" name="plan_id" required style="width:100%;" data-creatives--set-plan-modal-target="planSelect">
-          <% Label.where(type: 'Plan').each do |plan| %>
+          <% Plan.all.each do |plan| %>
             <option value="<%= plan.id %>"><%= plan.creative&.effective_description(nil, false).presence || plan.target_date %></option>
           <% end %>
         </select>
