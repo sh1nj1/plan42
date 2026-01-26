@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 namespace :test do
+  # Clear any existing test:all task (Rails 8 may define one)
+  Rake::Task["test:all"].clear if Rake::Task.task_defined?("test:all")
+
   desc "Run all tests (host app + Collavre engine)"
   task all: :environment do
     # Directories that can be run at once (no issues)
@@ -42,5 +45,8 @@ namespace :test do
   end
 end
 
-# Make 'test:all' the default test task
+# Override the default test task to use test:all (excludes system tests)
+# Clear the default Rails test task to prevent it from running system tests
+Rake::Task["test"].clear if Rake::Task.task_defined?("test")
+desc "Run all tests except system tests"
 task test: "test:all"
