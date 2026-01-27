@@ -18,6 +18,11 @@ module Collavre
 
     initializer "collavre.assets" do |app|
       app.config.assets.precompile += %w[collavre.js collavre.css] if app.config.respond_to?(:assets)
+
+      # Add engine stylesheets to asset paths for Propshaft
+      if app.config.respond_to?(:assets) && app.config.assets.respond_to?(:paths)
+        app.config.assets.paths << root.join("app/assets/stylesheets")
+      end
     end
 
     initializer "collavre.importmap", before: "importmap" do |app|

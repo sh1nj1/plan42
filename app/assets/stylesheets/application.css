@@ -9,8 +9,12 @@
  * Consider organizing styles into separate files for maintainability.
  */
 
+/* Host-specific styles */
 @import "avatar_preview.css";
 @import "doorkeeper.css";
+
+/* Collavre engine styles */
+@import "collavre.css";
 
 body {
     font-family: var(--font-sans);

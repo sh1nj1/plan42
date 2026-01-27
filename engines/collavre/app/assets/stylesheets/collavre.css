@@ -1,0 +1,17 @@
+/*
+ * Collavre Engine Styles
+ *
+ * This manifest imports all Collavre-specific stylesheets.
+ * Include this in your host application to style Collavre components.
+ */
+
+@import "collavre/actiontext.css";
+@import "collavre/activity_logs.css";
+@import "collavre/comments_popup.css";
+@import "collavre/creatives.css";
+@import "collavre/dark_mode.css";
+@import "collavre/mention_menu.css";
+@import "collavre/popup.css";
+@import "collavre/print.css";
+@import "collavre/slide_view.css";
+@import "collavre/user_menu.css";
