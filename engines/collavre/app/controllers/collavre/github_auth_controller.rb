@@ -19,7 +19,7 @@ module Collavre
       gh.login = auth.info.nickname
       gh.save!
 
-      redirect_to collavre.creatives_path, notice: I18n.t("collavre.github_auth.connected")
+      redirect_to creatives_path, notice: I18n.t("collavre.github_auth.connected")
     end
   end
 end

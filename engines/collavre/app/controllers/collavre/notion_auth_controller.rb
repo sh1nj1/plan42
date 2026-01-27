@@ -17,10 +17,9 @@ module Collavre
 
       notion.token = auth.credentials.token
       notion.workspace_name = auth.info.name
-      notion.workspace_icon = auth.extra.raw_info.workspace_icon
       notion.save!
 
-      redirect_to collavre.creatives_path, notice: I18n.t("collavre.notion_auth.connected")
+      redirect_to creatives_path, notice: I18n.t("collavre.notion_auth.connected")
     end
   end
 end
