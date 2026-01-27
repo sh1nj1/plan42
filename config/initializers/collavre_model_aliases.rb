@@ -123,6 +123,7 @@ Rails.application.config.to_prepare do
   Inbox.const_set(:BadgeComponent, Collavre::Inbox::BadgeComponent) unless Inbox.const_defined?(:BadgeComponent)
 
   # Core models
+  Object.const_set(:Current, Collavre::Current) unless Object.const_defined?(:Current)
   Object.const_set(:User, Collavre::User) unless Object.const_defined?(:User)
   Object.const_set(:Session, Collavre::Session) unless Object.const_defined?(:Session)
   Object.const_set(:Creative, Collavre::Creative) unless Object.const_defined?(:Creative)
