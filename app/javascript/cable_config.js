@@ -1,4 +1,4 @@
-import { createConsumer } from "./services/cable"
+import { createConsumer } from "collavre/services/cable.js"
 import * as ActionCable from "@rails/actioncable"
 
 // Explicitly set the consumer for Turbo Rails to ensure the singleton is used

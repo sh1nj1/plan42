@@ -1,0 +1,12 @@
+_fixture:
+  model_class: Collavre::SystemSetting
+
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  key: help_menu_link
+  value: https://example.com/one
+
+two:
+  key: another_link
+  value: https://example.com/two

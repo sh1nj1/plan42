@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title><%= t('app.name') %></title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%= stylesheet_link_tag "collavre/creatives" %>
+    <%= stylesheet_link_tag "collavre/dark_mode" %>
+    <%= stylesheet_link_tag 'collavre/slide_view', media: 'all' %>
+    <%= javascript_include_tag 'actioncable', defer: true %>
+    <%= javascript_include_tag 'slide_view', defer: true %>
+    <% if Current.user&.theme.present? && !%w[light dark].include?(Current.user.theme) %>
+      <% if (custom_theme = UserTheme.find_by(id: Current.user.theme)) %>
+        <style id="user-theme-styles" data-turbo-track="reload">
+          body {
+            <% custom_theme.variables.each do |key, value| %>
+              <%= key %>: <%= value %> !important;
+            <% end %>
+          }
+        </style>
+      <% end %>
+    <% end %>
+  </head>
+  <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>">
+    <%= yield %>
+  </body>
+</html>

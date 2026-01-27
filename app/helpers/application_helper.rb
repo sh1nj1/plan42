@@ -1,4 +1,9 @@
 module ApplicationHelper
+  include Collavre::NavigationHelper
+  include Collavre::CreativesHelper
+  include Collavre::CommentsHelper
+  include Collavre::UserThemesHelper
+
   def user_avatar_url(user, size: 32)
     if user.avatar.attached?
       main_app.url_for(user.avatar.variant(resize_to_fill: [ size, size ]))
@@ -82,10 +87,10 @@ module ApplicationHelper
   end
 
   def render_contact_creatives(creatives)
-    return content_tag(:span, t("contacts.none"), class: "text-muted") if creatives.blank?
+    return "".html_safe if creatives.blank?
 
     safe_join(creatives.map do |creative|
-      link_to(creative_title_for_display(creative), creative_path(creative), class: "creative-chip")
+      link_to(creative_title_for_display(creative), collavre.creative_path(creative), class: "creative-chip")
     end)
   end
 

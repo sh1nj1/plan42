@@ -1,0 +1,12 @@
+<h1 class="no-top-margin"><%= t('collavre.users.change_password') %></h1>
+
+<%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
+
+<%= form_with url: collavre.password_path(params[:token]), method: :put do |form| %>
+  <%= form.password_field :password, required: true, autocomplete: "new-password", placeholder: t('collavre.users.new_password'), minlength: Collavre::SystemSetting.password_min_length, maxlength: 72 %>
+  <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em; margin-bottom: 0.5em;">
+    <%= t('collavre.users.password_min_length_hint', count: Collavre::SystemSetting.password_min_length) %>
+  </div>
+  <%= form.password_field :password_confirmation, required: true, autocomplete: "new-password", placeholder: t('collavre.users.confirm_new_password'), minlength: Collavre::SystemSetting.password_min_length, maxlength: 72 %><br>
+  <%= form.submit t('app.save') %>
+<% end %>

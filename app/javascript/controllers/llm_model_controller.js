@@ -1,5 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
-import CommonPopup from '../lib/common_popup'
+import CommonPopup from 'collavre/lib/common_popup.js'
 
 export default class extends Controller {
     static targets = ['input']

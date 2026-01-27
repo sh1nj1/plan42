@@ -1,0 +1,14 @@
+_fixture:
+  model_class: Collavre::InboxItem
+
+one_new:
+  message_key: inbox.no_messages
+  message_params: {}
+  owner: one
+  state: new
+
+one_read:
+  message_key: inbox.no_messages
+  message_params: {}
+  owner: one
+  state: read

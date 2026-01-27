@@ -13,26 +13,13 @@ if (typeof window !== "undefined") {
 
 ActiveStorage.start()
 
-// Creative page modules
-import "./creatives"
-import "./plans_timeline"
-import "./creative_row_swipe"
-import "./mention_menu"
-import "./export_to_markdown"
-import "./components/creative_tree_row"
+// Import Collavre engine modules (side-effect imports)
+import "collavre"
+
+// Host app specific modules
+import "./firebase_config"
 import "./github_integration"
 import "./notion_integration"
-import "./lib/apply_lexical_styles"
-import "./lib/turbo_stream_actions"
-import "./share_user_popup"
-
-// Layout modules (moved from inline scripts)
-import "./firebase_config"
-import "./plans_menu"
-import "./inbox_panel"
-import "./creative_guide"
-import "./share_modal"
 import "./timezone_detection"
 import "./oauth_callback"
 import "./doorkeeper_token"
-

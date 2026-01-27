@@ -53,11 +53,12 @@ module Authentication
       if request.get? && !request.path.start_with?("/inbox") && request.format.html?
         session[:return_to_after_authenticating] = request.url
       end
-      redirect_to new_session_path
+      # Use collavre engine routes for session
+      redirect_to collavre.new_session_path
     end
 
     def after_authentication_url
-      session.delete(:return_to_after_authenticating) || root_url
+      session.delete(:return_to_after_authenticating) || Rails.application.routes.url_helpers.root_path
     end
 
     def start_new_session_for(user)

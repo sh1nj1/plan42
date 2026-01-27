@@ -1,0 +1,10 @@
+<div id="import-markdown-area" data-creatives--import-target="area" style="display:none; margin: 1em 0;">
+  <div id="import-markdown-dropzone"
+    style="border:2px dashed var(--color-border);padding:2em;text-align:center;cursor:pointer;"
+    data-creatives--import-target="dropzone"
+    data-action="dragover->creatives--import#dragOver dragleave->creatives--import#dragLeave drop->creatives--import#drop click->creatives--import#pickFile">
+    <%= t('collavre.creatives.index.drop_or_click_markdown') %>
+    <input type="file" id="import-markdown-input" accept=".md,.ppt,.pptx" style="display:none;" data-creatives--import-target="input" data-action="change->creatives--import#fileChanged" />
+    <div id="import-markdown-progress" style="margin-top:1em;color:#0074d9;display:none;" data-creatives--import-target="progress"></div>
+  </div>
+</div>

@@ -1,0 +1,5 @@
+<h1 class="no-top-margin"><%= @email.subject %></h1>
+<p><strong><%= t('collavre.emails.list.title.to') %>:</strong> <%= @email.email %></p>
+<p><strong><%= t('collavre.emails.list.title.event') %>:</strong> <%= t("collavre.emails.event.#{@email.event}") %></p>
+<p><strong><%= t('collavre.emails.list.title.sent_at') %>:</strong> <%= l(@email.created_at, format: :long) %></p>
+<pre><%= @email.body %></pre>

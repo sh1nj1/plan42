@@ -75,6 +75,16 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   include SystemDragHelper
   include Html5DndHelpers
 
+  # Helper to access engine routes
+  def collavre
+    Collavre::Engine.routes.url_helpers
+  end
+
+  # Helper to access main app routes (for host app specific routes)
+  def main_app
+    Rails.application.routes.url_helpers
+  end
+
   driver_name = ENV.fetch(DRIVER_ENV_KEY, "custom_headless_chrome")
   if driver_name == "chrome"
     driven_by :selenium, using: :chrome, screen_size: [ 1920, 1080 ]

@@ -1,0 +1,3 @@
+<%= t('collavre.invitation_mailer.invite.message_text',
+       creative: strip_tags(@invitation.creative.effective_origin.description),
+       link: collavre.invite_url(token: @invitation.generate_token_for(:invite))) %>

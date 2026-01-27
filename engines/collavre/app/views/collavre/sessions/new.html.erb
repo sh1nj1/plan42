@@ -1,0 +1,27 @@
+<%= render 'collavre/users/app_header' %>
+
+<%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
+
+<%= form_with url: collavre.session_path, class: "stacked-form" do |form| %>
+  <% if auth_provider_enabled?(:email) %>
+    <%= render 'collavre/users/id_pwd_fields', form: form, skip_name_field: true %>
+    <%= form.hidden_field :timezone, id: 'login-timezone' %>
+    <%= form.hidden_field :invite_token, value: params[:invite_token] if params[:invite_token] %>
+    <%= form.submit t('app.sign_in'), id: 'sign-in-submit', class: "primary-action-button" %>
+  <% end %>
+<% end %>
+
+<% Rails.application.config.auth_providers.sort_by { |p| p[:priority] }.each do |provider| %>
+  <% next if provider[:key] == :email %>
+  <% if auth_provider_enabled?(provider[:key]) && provider[:partial_path].present? %>
+    <div class="auth-alt-action">
+      <%= render provider[:partial_path] %>
+    </div>
+  <% end %>
+<% end %>
+
+<% if auth_provider_enabled?(:email) %>
+  <%= link_to t('collavre.users.sessions.new.forgot_password'), collavre.new_password_path %>
+  <br>
+  <%= link_to t("collavre.users.new.sign_up"), params[:invite_token] ? collavre.new_user_path(invite_token: params[:invite_token]) : collavre.new_user_path, class: "sign-up-link" %>
+<% end %>

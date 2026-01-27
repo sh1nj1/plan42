@@ -1,0 +1,44 @@
+_fixture:
+  model_class: Collavre::Creative
+
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+tshirt:
+  user: one
+  progress: 0.5
+  description: "T-Shirt"
+
+root_parent:
+  user: one
+  progress: 0.3
+  description: "Root Parent"
+
+unconvert_target:
+  user: one
+  parent: root_parent
+  progress: 0.2
+  description: "Unconvert Target"
+
+unconvert_child_one:
+  user: one
+  parent: unconvert_target
+  progress: 0.1
+  description: "Unconvert Child One"
+
+unconvert_grandchild:
+  user: one
+  parent: unconvert_child_one
+  progress: 0.0
+  description: "Unconvert Grandchild"
+
+unconvert_child_two:
+  user: one
+  parent: unconvert_target
+  progress: 0.1
+  description: "Unconvert Child Two"
+
+childless_creative:
+  user: one
+  parent: root_parent
+  progress: 0.0
+  description: "Childless Creative"

@@ -1,4 +1,4 @@
-require "application_system_test_case"
+require_relative "../application_system_test_case"
 
 class InlineScriptsTest < ApplicationSystemTestCase
   setup do
@@ -186,7 +186,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
   test "share modal opens and closes correctly" do
     creative = Creative.create!(user: @user, description: "Shareable Creative")
 
-    visit creative_path(creative)
+    visit collavre.creative_path(creative)
 
     # Modal should be hidden initially
     assert_selector "#share-creative-modal", visible: :hidden
@@ -207,7 +207,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
   test "share modal closes when clicking on backdrop" do
     creative = Creative.create!(user: @user, description: "Another Shareable")
 
-    visit creative_path(creative)
+    visit collavre.creative_path(creative)
 
     find("#share-creative-btn").click
     assert_selector "#share-creative-modal", visible: :visible
@@ -229,7 +229,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     click_button I18n.t("app.sign_out")
 
     # Visit login page
-    visit new_session_path
+    visit collavre.new_session_path
 
     # Wait for turbo:load to fire and timezone to be set
     sleep 0.5
@@ -269,7 +269,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_selector "#inbox-panel.open", wait: 5
 
     # Navigate to a creative page and wait for it to load
-    visit creative_path(creative)
+    visit collavre.creative_path(creative)
     assert_selector "#inbox-panel", wait: 5
 
     # Inbox panel should still be open (localStorage preserves state)
@@ -322,7 +322,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
       owner: @user
     )
 
-    visit oauth_application_path(application)
+    visit main_app.oauth_application_path(application)
 
     # Scroll to the token form section
     page.execute_script("document.querySelector('.mcp-token-section').scrollIntoView()")
@@ -367,7 +367,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_selector ".plans-menu-btn", wait: 5
 
     # Then navigate to the application page via Turbo
-    visit oauth_application_path(application)
+    visit main_app.oauth_application_path(application)
 
     # Scroll to the token form section
     page.execute_script("document.querySelector('.mcp-token-section').scrollIntoView()")
@@ -410,7 +410,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_no_selector "#creative-guide-popover[style*='display: block']", wait: 5
 
     # Navigate to a different page
-    visit creative_path(creative)
+    visit collavre.creative_path(creative)
     assert_selector "#creative-guide-link", visible: :all, wait: 5
 
     # Navigate back using browser history (this restores from Turbo cache)
@@ -434,7 +434,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     )
 
     # Visit app page and generate token
-    visit oauth_application_path(application)
+    visit main_app.oauth_application_path(application)
     page.execute_script("document.querySelector('.mcp-token-section').scrollIntoView()")
     sleep 0.3
     click_button I18n.t("doorkeeper.applications.personal_access_token.form.submit")
@@ -524,7 +524,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     # Get the item element and click mark-read button
     item_selector = ".inbox-item[data-id='#{inbox_item.id}']"
     item = find(item_selector, visible: :all)
-    mark_read_btn = item.find("button", text: I18n.t("inbox.mark_read"), visible: :all)
+    mark_read_btn = item.find("button", text: I18n.t("collavre.inbox.mark_read"), visible: :all)
     page.execute_script("arguments[0].click()", mark_read_btn)
 
     # Wait for the item to disappear (inbox reloads after marking read, and default view hides read items)
@@ -542,7 +542,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
       owner: @user
     )
 
-    visit oauth_application_path(application)
+    visit main_app.oauth_application_path(application)
 
     page.execute_script("document.querySelector('.mcp-token-section').scrollIntoView()")
     sleep 0.3

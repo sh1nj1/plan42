@@ -1,0 +1,37 @@
+<nav>
+  <%# Search Section %>
+  <% navigation_items_for(:search).each do |item| %>
+    <%= render_navigation_item(item) %>
+  <% end %>
+
+  <%# Mobile Plans Button (special: outside popup) %>
+  <% if (mobile_plans = Navigation::Registry.instance.find(:mobile_plans)) && navigation_item_visible?(mobile_plans, desktop: false) %>
+    <%= render_navigation_item(mobile_plans, mobile: true) %>
+  <% end %>
+
+  <%# Desktop Navigation %>
+  <div class="desktop-only">
+    <% navigation_items_for(:main, desktop: true).each do |item| %>
+      <%= render_navigation_item(item) %>
+    <% end %>
+  </div>
+
+  <%# Mobile Popup Menu %>
+  <%= render PopupMenuComponent.new(
+        button_content: safe_join(['...', (render(Inbox::BadgeComponent.new(user: Current.user, badge_id: 'mobile-inbox-badge')) if Current.user)]),
+        button_classes: 'mobile-only',
+        menu_id: 'mobile-more-menu',
+        align: :right
+      ) do %>
+    <% navigation_items_for(:main, desktop: false).reject { |i| i[:key] == :mobile_plans }.each do |item| %>
+      <%= render_mobile_navigation_item(item) %>
+    <% end %>
+  <% end %>
+
+  <%# User Menu %>
+  <% navigation_items_for(:user).each do |item| %>
+    <%= render_navigation_item_with_children(item) %>
+  <% end %>
+</nav>
+
+<%= render "collavre/shared/navigation/panels" %>

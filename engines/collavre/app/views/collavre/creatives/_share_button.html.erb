@@ -1,0 +1,55 @@
+<button id="share-creative-btn" class="btn btn-primary desktop-only">
+  <span aria-hidden="true"><%= svg_tag 'share.svg', class: 'icon-up', width: 22, height: 20 %></span>
+</button>
+<!-- Share Creative Modal -->
+<div id="share-creative-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;" data-creative-id="<%= (@parent_creative || @creative).id %>">
+  <div class="popup-box" style="min-width:320px;max-width:90vw;">
+    <button id="close-share-modal" class="popup-close-btn">&times;</button>
+    <h2><%= t('collavre.creatives.index.share_creative') %></h2>
+    <form id="share-creative-form" action="<%= collavre.creative_creative_shares_path(@parent_creative || @creative) %>" method="post" data-controller="share-invite">
+      <%= csrf_meta_tags %>
+      <div style="margin-bottom:1em; position:relative;" 
+           data-controller="share-user-search"
+           data-share-user-search-creative-id-value="<%= (@parent_creative || @creative).id %>"
+           data-share-user-search-scope-value="contacts">
+        <label for="share-user-email"><%= t('collavre.creatives.index.user_email') %></label>
+        <input type="email" name="user_email" id="share-user-email" style="width:100%;" 
+          data-share-invite-target="email" 
+          data-share-user-search-target="input"
+          data-action="blur->share-invite#check input->share-user-search#input focus->share-user-search#focus keydown->share-user-search#handleKey"
+          autocomplete="off" />
+        <%= render UserMentionMenuComponent.new(menu_id: 'share-user-suggestions') %>
+      </div>
+      <div style="margin-bottom:1em;">
+        <select name="permission" id="share-permission" style="width:100%;">
+          <option value="no_access"><%= t('collavre.creatives.index.permission_no_access') %></option>
+          <option value="read"><%= t('collavre.creatives.index.permission_read') %></option>
+          <option value="feedback"><%= t('collavre.creatives.index.permission_feedback') %></option>
+          <option value="write"><%= t('collavre.creatives.index.permission_write') %></option>
+          <option value="admin"><%= t('collavre.creatives.index.permission_admin') %></option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" data-share-invite-target="submit" data-share="<%= t('collavre.creatives.index.share') %>" data-invite="<%= t('collavre.creatives.index.invite') %>"><%= t('collavre.creatives.index.share') %></button>
+      <button type="button" id="creative-invite-link" class="btn btn-secondary" data-creative-id="<%= (@parent_creative || @creative).id %>" data-no-access-message="<%= t('collavre.creatives.index.invite_link_no_access') %>" data-copied-template="<%= t('collavre.creatives.index.invite_link_copied_permission', permission: '__PERMISSION__') %>"><%= t('collavre.creatives.index.invite_link') %></button>
+    </form>
+    <% if @shared_list.any? %>
+      <div style="margin-top:1em;">
+        <strong><%= t('collavre.creatives.index.shared_with') %>:</strong>
+        <ul class="share-grid">
+          <% @shared_list.each do |share| %>
+            <li>
+              <span>
+                <%= render AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
+              </span>
+              <span><%= share.user&.display_name || (share.user_id.nil? ? t('collavre.creatives.index.public_share') : t('collavre.creatives.index.unknown_user')) %></span>
+              <span><%= t("collavre.creatives.index.permission_#{share.permission}") %></span>
+              <span>
+                <%= button_to '×', collavre.creative_creative_share_path(@parent_creative || @creative, share), method: :delete, form: { data: { turbo_confirm: t('collavre.creatives.index.are_you_sure_delete_share') } }, class: 'delete-share-btn', style: 'padding:0 0.5em;' %>
+              </span>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+  </div>
+</div>

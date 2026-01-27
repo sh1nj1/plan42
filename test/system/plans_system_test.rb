@@ -1,4 +1,4 @@
-require "application_system_test_case"
+require_relative "../application_system_test_case"
 
 class PlansSystemTest < ApplicationSystemTestCase
   setup do
@@ -20,9 +20,11 @@ class PlansSystemTest < ApplicationSystemTestCase
 
     find_all(".plans-menu-btn").first.click
 
-
     # Click input to open search popup
     find("#plan-select-creative-input").click
+
+    # Wait for popup to appear
+    assert_selector "#link-creative-modal", visible: :visible, wait: 5
 
     fill_in "link-creative-search", with: "Launch Creative"
     find("#link-creative-results li", text: "Launch Creative", wait: 5).click
@@ -30,7 +32,7 @@ class PlansSystemTest < ApplicationSystemTestCase
     within "#plans-list-area" do
       fill_in "plan-target-date", with: Date.current
       assert_selector "#add-plan-btn:not([disabled])", wait: 5
-      click_button I18n.t("plans.add_plan")
+      click_button I18n.t("collavre.plans.add_plan")
     end
 
     begin
@@ -50,13 +52,16 @@ class PlansSystemTest < ApplicationSystemTestCase
     # Click input to open search popup
     find("#plan-select-creative-input").click
 
+    # Wait for popup to appear
+    assert_selector "#link-creative-modal", visible: :visible, wait: 5
+
     fill_in "link-creative-search", with: "Plan to be deleted"
     find("#link-creative-results li", text: "Plan to be deleted", wait: 5).click
 
     within "#plans-list-area" do
       fill_in "plan-target-date", with: Date.current
       assert_selector "#add-plan-btn:not([disabled])", wait: 5
-      click_button I18n.t("plans.add_plan")
+      click_button I18n.t("collavre.plans.add_plan")
     end
 
     # Wait for the plan to appear on the timeline (use visible: :all since plan might be outside visible scroll area)

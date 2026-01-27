@@ -1,0 +1,4 @@
+<p>
+  <%= t('collavre.user_mailer.email_verification.message_html',
+         link: link_to(t('app.here'), collavre.email_verification_url(token: @user.generate_token_for(:email_verification)))) %>
+</p>

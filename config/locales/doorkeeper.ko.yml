@@ -29,6 +29,7 @@ ko:
         submit: '제출'
         cancel: '취소'
         authorize: '승인'
+        back: '뒤로'
       form:
         error: '오류가 발생했습니다! 폼을 확인해주세요.'
         confidential: '기밀'

@@ -16,7 +16,7 @@ Rails.application.config.to_prepare do
     label: "app.search_placeholder",
     section: :search,
     type: :partial,
-    partial: "shared/navigation/search_form",
+    partial: "collavre/shared/navigation/search_form",
     priority: 10
   )
 
@@ -27,7 +27,7 @@ Rails.application.config.to_prepare do
     key: :mobile_plans,
     label: "app.plans",
     type: :partial,
-    partial: "shared/navigation/mobile_plans_button",
+    partial: "collavre/shared/navigation/mobile_plans_button",
     priority: 100,
     requires_auth: true,
     desktop: false,
@@ -49,7 +49,7 @@ Rails.application.config.to_prepare do
     key: :plans,
     label: "app.plans",
     type: :partial,
-    partial: "shared/navigation/plans_button",
+    partial: "collavre/shared/navigation/plans_button",
     priority: 120,
     requires_auth: true,
     mobile: false
@@ -59,7 +59,7 @@ Rails.application.config.to_prepare do
     key: :progress_filter,
     label: "",
     type: :component,
-    component: ProgressFilterComponent,
+    component: Collavre::ProgressFilterComponent,
     component_args: {
       current_state: -> {
         if params[:min_progress] == "1" && params[:max_progress] == "1"
@@ -84,7 +84,7 @@ Rails.application.config.to_prepare do
     key: :comment_filter,
     label: "",
     type: :component,
-    component: ProgressFilterComponent,
+    component: Collavre::ProgressFilterComponent,
     component_args: {
       current_state: -> { params[:comment] == "true" ? :comment : nil },
       states: [
@@ -99,7 +99,7 @@ Rails.application.config.to_prepare do
     key: :inbox,
     label: "app.inbox",
     type: :partial,
-    partial: "shared/navigation/inbox_button",
+    partial: "collavre/shared/navigation/inbox_button",
     priority: 150,
     requires_user: true,
     mobile: false
@@ -109,7 +109,7 @@ Rails.application.config.to_prepare do
     key: :mobile_inbox,
     label: "app.inbox",
     type: :partial,
-    partial: "shared/navigation/mobile_inbox_button",
+    partial: "collavre/shared/navigation/mobile_inbox_button",
     priority: 155,
     requires_user: true,
     desktop: false,
@@ -120,7 +120,7 @@ Rails.application.config.to_prepare do
     key: :sign_in,
     label: "app.sign_in",
     type: :button,
-    path: -> { main_app.new_session_path },
+    path: -> { Collavre::Engine.routes.url_helpers.new_session_path },
     priority: 160,
     visible: -> { !authenticated? }
   )
@@ -129,7 +129,7 @@ Rails.application.config.to_prepare do
     key: :help,
     label: "?",
     type: :partial,
-    partial: "shared/navigation/help_button",
+    partial: "collavre/shared/navigation/help_button",
     priority: 170
   )
 
@@ -149,9 +149,9 @@ Rails.application.config.to_prepare do
     children: [
       {
         key: :profile,
-        label: "users.profile",
+        label: "collavre.users.profile",
         type: :button,
-        path: -> { main_app.user_path(Current.user) },
+        path: -> { Collavre::Engine.routes.url_helpers.user_path(Current.user) },
         html_class: "popup-menu-item",
         priority: 100
       },
@@ -159,7 +159,7 @@ Rails.application.config.to_prepare do
         key: :sign_out,
         label: "app.sign_out",
         type: :button,
-        path: -> { main_app.session_path },
+        path: -> { Collavre::Engine.routes.url_helpers.session_path },
         method: :delete,
         priority: 900
       }

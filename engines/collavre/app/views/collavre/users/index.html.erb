@@ -1,0 +1,80 @@
+<% content_for :head do %>
+  <%= stylesheet_link_tag 'collavre/comments_popup', media: 'all' %>
+<% end %>
+
+<h1 class="no-top-margin"><%= t('collavre.users.index_title') %></h1>
+
+<%= render "admin/shared/tabs" %>
+
+<table>
+  <thead>
+    <tr>
+      <th><%= t('collavre.users.table.avatar') %></th>
+      <th><%= t('collavre.users.table.name') %></th>
+      <th><%= t('collavre.users.table.email') %></th>
+      <th><%= t('collavre.users.table.last_login_at') %></th>
+      <th><%= t('collavre.users.table.push_token') %></th>
+      <th><%= t('collavre.users.table.notifications') %></th>
+      <th><%= t('collavre.users.table.actions') %></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @users.each do |user| %>
+      <% last_login_at = user.sessions.max_by(&:updated_at)&.updated_at %>
+      <tr>
+        <td>
+          <%= render AvatarComponent.new(
+                user: user,
+                size: 20,
+                classes: "avatar comment-presence-avatar#{' inactive' if user.sessions.empty?}" ) %>
+        </td>
+        <td>
+          <% if user.ai_user? %>
+            <%= link_to user.display_name, collavre.edit_ai_user_path(user) %>
+          <% else %>
+            <%= user.display_name %>
+          <% end %>
+        </td>
+        <td><%= user.email %></td>
+        <td>
+          <% if last_login_at %>
+            <%= I18n.l(last_login_at, format: :short) %>
+          <% else %>
+            <%= t('collavre.users.table.last_login_unknown') %>
+          <% end %>
+        </td>
+        <td><%= user.devices.any? ? t('collavre.users.push_token_present') : t('collavre.users.push_token_absent') %></td>
+        <td>
+          <% case user.notifications_enabled %>
+          <% when true %>
+            <%= t('collavre.users.table.notifications_enabled') %>
+          <% when false %>
+            <%= t('collavre.users.table.notifications_disabled') %>
+          <% else %>
+            <%= t('collavre.users.table.notifications_unset') %>
+          <% end %>
+        </td>
+        <td>
+          <% if user != Current.user %>
+            <% if user.system_admin? %>
+              <%= button_to t('collavre.users.make_normal_user'),
+                            collavre.revoke_system_admin_user_path(user),
+                            method: :patch %>
+            <% else %>
+              <%= button_to t('collavre.users.make_system_admin'),
+                            collavre.grant_system_admin_user_path(user),
+                            method: :patch,
+                            form: { data: { turbo_confirm: t('collavre.users.confirm_grant_system_admin') } } %>
+            <% end %>
+            <%= button_to t('collavre.users.delete'),
+                          collavre.user_path(user),
+                          method: :delete,
+                          form: { data: { turbo_confirm: t('collavre.users.confirm_destroy') } } %>
+          <% else %>
+            <span class="text-muted"><%= t('collavre.users.table.current_user') %></span>
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

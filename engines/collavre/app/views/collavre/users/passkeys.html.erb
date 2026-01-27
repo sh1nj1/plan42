@@ -1,0 +1,43 @@
+<h1 class="no-top-margin"><%= t('collavre.users.webauthn.passkeys') %></h1>
+
+<div class="webauthn-section" data-controller="webauthn" data-webauthn-not-supported-message-value="<%= t('collavre.users.webauthn.not_supported') %>">
+
+  <div class="add-passkey">
+    <form data-action="submit->webauthn#register" style="display: inline;">
+      <input type="text" data-webauthn-target="nickname" placeholder="<%= t('collavre.users.webauthn.nickname') %>" class="shared-input-surface" style="display: inline-block; width: auto; margin-right: 10px;">
+      <input type="submit" value="<%= t('collavre.users.webauthn.add') %>" class="primary-action-button">
+    </form>
+  </div>
+  <div class="passkey-list">
+    <% if @user.webauthn_credentials.any? %>
+      <div class="table-scroll">
+        <table class="contacts-table">
+          <thead>
+            <tr>
+              <th><%= t('collavre.users.webauthn.nickname') %></th>
+              <th><%= t('collavre.users.webauthn.date') %></th>
+              <th><%= t('collavre.users.table.actions') %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% @user.webauthn_credentials.each do |credential| %>
+              <tr>
+                <td><%= credential.nickname %></td>
+                <td><%= l(credential.created_at.to_date) %></td>
+                <td>
+                  <%= button_to t('collavre.users.webauthn.delete'), main_app.webauthn_credential_path(credential), method: :delete, class: "btn-danger btn-sm", data: { action: "click->webauthn#delete" } %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <p class="text-muted"><%= t('collavre.users.webauthn.list_empty') %></p>
+    <% end %>
+  </div>
+</div>
+
+<div style="margin-top: 1rem;">
+  <%= link_to t('collavre.users.back'), collavre.user_path(@user) %>
+</div>

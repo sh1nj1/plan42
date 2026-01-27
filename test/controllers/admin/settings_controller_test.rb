@@ -1,5 +1,4 @@
 require "test_helper"
-require_relative "../../../app/controllers/admin/settings_controller"
 
 class AdminSettingsControllerTest < ActionDispatch::IntegrationTest
   setup do

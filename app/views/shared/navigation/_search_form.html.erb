@@ -1,6 +1,0 @@
-<form action="<%= main_app.creatives_path %>" method="get">
-  <% if params[:id].present? %>
-    <input type="hidden" name="id" value="<%= params[:id] %>" />
-  <% end %>
-  <input type="text" id="search" class="shared-input-surface" name="search" value="<%= params[:search] %>" placeholder="<%= t('app.search_placeholder') %>" />
-</form>

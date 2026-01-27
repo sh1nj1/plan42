@@ -1,0 +1,12 @@
+<%= render PopupMenuComponent.new(
+      button_content: t('collavre.creatives.index.delete'),
+      button_classes: ["danger-link", local_assigns[:extra_button_classes]].compact.join(" "),
+      menu_id: 'delete-options-popup-' + [local_assigns[:extra_button_classes]].compact.join('-')) do %>
+  <%= button_to t('collavre.creatives.index.delete_only_this'), @parent_creative, method: :delete,
+      form: { data: { turbo_confirm: t('collavre.creatives.index.are_you_sure_delete_only_this') } },
+      params: {}, class: 'danger-link popup-menu-item' %>
+  <%= button_to t('collavre.creatives.index.delete_with_children'), @parent_creative, method: :delete,
+      params: { delete_with_children: true },
+      form: { data: { turbo_confirm: t('collavre.creatives.index.are_you_sure_delete_with_children') } },
+      class: 'danger-link' %>
+<% end %>

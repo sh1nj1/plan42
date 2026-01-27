@@ -27,10 +27,15 @@
 
     <%# Includes all stylesheet files in app/assets/stylesheets %>
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
-    <%= stylesheet_link_tag :dark_mode %>
-    <%= stylesheet_link_tag :print, media: 'print' %>
-    <%= stylesheet_link_tag 'user_menu' %>
-    <%= stylesheet_link_tag 'popup' %>
+    <%= stylesheet_link_tag "avatar_preview" %>
+    <%= stylesheet_link_tag "doorkeeper" %>
+    <%= stylesheet_link_tag "collavre/creatives" %>
+    <%= stylesheet_link_tag "collavre/actiontext" %>
+    <%= stylesheet_link_tag "collavre/activity_logs" %>
+    <%= stylesheet_link_tag "collavre/dark_mode" %>
+    <%= stylesheet_link_tag "collavre/print", media: 'print' %>
+    <%= stylesheet_link_tag "collavre/user_menu" %>
+    <%= stylesheet_link_tag "collavre/popup" %>
 
     <%= javascript_include_tag "application", "data-turbo-track": "reload", defer: true, type: "module" %>
 
@@ -47,11 +52,11 @@
     <% end %>
   </head>
   <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
-    <%= render 'shared/link_creative_modal' %>
+    <%= render 'collavre/shared/link_creative_modal' %>
     <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
     <div class="notice"><%= notice %></div>
 
-    <%= render 'shared/navigation' %>
+    <%= render 'collavre/shared/navigation' %>
 
     <% unless Rails.env.test? %>
     <div id="notification-permission-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
@@ -71,6 +76,6 @@
 
     <%= render 'shared/footer' %>
 
-    <%= render "comments/reaction_picker" %>
+    <%= render "collavre/comments/reaction_picker" %>
   </body>
 </html>

@@ -1,0 +1,32 @@
+_fixture:
+  model_class: Collavre::User
+
+<% password_digest = BCrypt::Password.create("password") %>
+
+one:
+  email: one@example1.com
+  password_digest: <%= password_digest %>
+  name: One
+  system_admin: true
+
+two:
+  email: two@example1.com
+  password_digest: <%= password_digest %>
+  name: Two
+  system_admin: false
+
+three:
+  email: three@example1.com
+  password_digest: <%= password_digest %>
+  name: Three
+  system_admin: false
+
+ai_bot:
+  email: bot@ai.local
+  password_digest: <%= password_digest %>
+  name: AI Bot
+  system_admin: false
+  llm_vendor: google
+  llm_model: gemini-1.5-flash
+  system_prompt: "You are a bot."
+  searchable: false

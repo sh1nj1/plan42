@@ -1,0 +1,38 @@
+{
+  "ignored_warnings": [
+    {
+      "warning_type": "Dynamic Render Path",
+      "warning_code": 15,
+      "fingerprint": "5077aaf00de7fd4c6b501f650b231831254c2ed87fb02557789a6aacd5f96454",
+      "check_name": "Render",
+      "message": "Render path contains parameter value",
+      "file": "engines/collavre/app/views/collavre/comments/_comment.html.erb",
+      "line": 11,
+      "link": "https://brakemanscanner.org/docs/warning_types/dynamic_render_path/",
+      "code": null,
+      "render_path": null,
+      "location": null,
+      "user_input": null,
+      "confidence": "Weak",
+      "note": "False positive: AvatarComponent is a fixed ViewComponent class, not a dynamic render path. The user parameter is component data, not a template path."
+    },
+    {
+      "warning_type": "Dynamic Render Path",
+      "warning_code": 15,
+      "fingerprint": "0458ec46d848b877e1babc9a59967a147d750cf709c10f46c837b59132153fcc",
+      "check_name": "Render",
+      "message": "Render path contains parameter value",
+      "file": "engines/collavre/app/views/collavre/users/show.html.erb",
+      "line": 45,
+      "link": "https://brakemanscanner.org/docs/warning_types/dynamic_render_path/",
+      "code": null,
+      "render_path": null,
+      "location": null,
+      "user_input": null,
+      "confidence": "Weak",
+      "note": "False positive: AvatarComponent is a fixed ViewComponent class, not a dynamic render path. The user parameter is component data, not a template path."
+    }
+  ],
+  "updated": "2026-01-26 15:15:00 +0900",
+  "brakeman_version": "7.1.2"
+}

@@ -44,4 +44,5 @@ end
 
 class ActionDispatch::IntegrationTest
   include IntegrationAuthHelper
+  include Collavre::Engine.routes.url_helpers
 end

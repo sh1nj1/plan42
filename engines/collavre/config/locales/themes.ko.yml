@@ -1,0 +1,27 @@
+---
+ko:
+  collavre:
+    themes:
+      manage: 테마 관리
+      manage_themes: 테마 관리
+      create_new: 새 테마 만들기
+      description_prompt: '테마를 설명해주세요 (예: "어두운 네온 사이버펑크 스타일")'
+      generate: 테마 생성
+      your_themes: 내 테마
+      name: 이름
+      preview: 미리보기
+      created_at: 생성일
+      actions: 관리
+      active: 사용 중
+      apply: 적용
+      delete: 삭제
+      confirm_delete: 정말 삭제하시겠습니까?
+      no_themes: 생성된 테마가 없습니다.
+      alerts:
+        description_empty: 테마 설명을 입력해주세요.
+        generation_failed: 테마 생성에 실패했습니다. AI 서비스를 사용할 수 없거나 잘못된 데이터가 반환되었습니다.
+        success: 테마가 성공적으로 생성되었습니다!
+        save_failed: 테마 저장에 실패했습니다.
+        deleted: 테마가 삭제되었습니다.
+        applied: 테마가 적용되었습니다!
+        apply_failed: '테마 적용 실패: %{errors}'

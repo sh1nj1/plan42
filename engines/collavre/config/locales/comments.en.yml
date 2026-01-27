@@ -1,0 +1,114 @@
+---
+en:
+  collavre:
+    topics:
+      delete_confirm: This will delete all messages in this topic. Are you sure?
+      new_placeholder: New Topic
+      no_permission: You don't have permission to perform this action.
+    github_auth:
+      login_first: Please sign in first.
+      connected: Github account connected successfully.
+    notion_auth:
+      login_first: Please sign in first.
+      connected: Notion account connected successfully.
+    comments:
+      reaction_invalid: Invalid reaction.
+      invalid_topic: Topic does not belong to this creative.
+      comments: Comments
+      delete_confirm: Are you sure you want to delete this comment?
+      no_comments: No comments yet.
+      anonymous: Anonymous
+      add_comment: Add Comment
+      update_comment: Update Comment
+      edit_button: Edit
+      delete: Delete Comment
+      delete_button: Delete
+      not_owner: Only the comment owner can modify this.
+      no_permission: You do not have permission to comment.
+      convert_not_allowed: Only the comment owner or a creative admin can convert
+        this message.
+      gemini: Gemini
+      convert_button: Convert
+      convert_to_creative: Convert to Creative
+      convert_confirm: This will add the comment content as a child creative of the
+        current creative. Continue?
+      copy_link_button: Copy link
+      copy_link_success: Link copied to clipboard
+      copy_link_error: Unable to copy link
+      approve_button: Approve
+      approve_not_allowed: Only the assigned approver can approve this comment.
+      approve_invalid_format: Invalid action format.
+      approve_admin_required: System administrator approval required.
+      approve_missing_action: No approval action is associated with this comment.
+      approve_missing_approver: This comment has no approver to run the action.
+      approve_already_executed: This comment action has already been executed.
+      approve_execution_failed: 'Comment action failed: %{message}'
+      approve_success: Action approved.
+      approve_error: Unable to approve the action.
+      approve_unsupported_action: 'Unsupported comment action: %{action}.'
+      approve_invalid_attributes: Comment action attributes must be an object.
+      approve_no_attributes: Comment action must include at least one allowed attribute.
+      approve_invalid_creative: Comment action targets an invalid creative.
+      approve_invalid_progress: Comment action progress must be a number.
+      approve_invalid_description: Comment action description must be text.
+      approved_label: Approved
+      action_summary: Action JSON
+      edit_action_button: Edit action
+      action_update_success: Action updated.
+      action_update_error: Unable to update the action.
+      private: Private
+      convert_system_message: 'System: Comment was converted to the [%{title}](%{url})
+        creative.'
+      convert_system_message_default_title: Untitled
+      system_user: System
+      search_button: Search
+      image_button: Image
+      search_empty_prompt: Please enter a search term in the chat message field.
+      voice_button: Voice
+      voice_stop: Stop
+      speech_unavailable: Speech recognition is not supported in this browser.
+      move_button: Move
+      move_no_selection: Select at least one message to move.
+      move_error: Unable to move messages.
+      move_invalid_target: Select a valid creative to move messages to.
+      move_not_allowed: You do not have permission to move these messages.
+      select_label: Select message
+      add_reaction: Add reaction
+      add_reaction_button: "+"
+      calendar_command:
+        event_created: 'event created: [Google Calendar event](%{url})'
+      read_by: Read by %{name}
+      activity_logs_summary: Activity Logs
+    calendar_events:
+      deleted: Calendar event deleted.
+    inbox:
+      mark_read: Read
+      mark_unread: Unread
+      delete: Delete
+      show_read: Show read
+      no_messages: No messages
+      comment_added: '%{user} added "%{comment}" to "%{creative}".'
+      creative_shared: '%{user} shared "%{short_title}".'
+      user_mentioned: '%{user} mentioned you in "%{creative}": "%{comment}"'
+      permission_requested: '%{user} requested access to "%{short_title}".'
+      comment_deleted_by_admin: '%{admin_name} deleted your comment in "%{creative_snippet}":
+        %{comment_content}'
+      comment_content_unavailable: "(comment unavailable)"
+      tool_approval_needed: Tool '%{tool_name}' has been detected/updated. Please approve
+        it to activate.
+    emails:
+      index_title: Emails
+      list:
+        title:
+          to: To
+          event: Event
+          subject: Subject
+          sent_at: Sent at
+      event:
+        invitation: Invitation
+        inbox_summary: Inbox summary
+    inbox_mailer:
+      daily_summary:
+        subject: Your inbox summary
+        greeting: 'Here are your unread messages:'
+        view: View

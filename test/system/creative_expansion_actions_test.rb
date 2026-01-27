@@ -1,4 +1,4 @@
-require "application_system_test_case"
+require_relative "../application_system_test_case"
 
 class CreativeExpansionActionsTest < ApplicationSystemTestCase
   setup do
@@ -14,7 +14,7 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
 
     resize_window_to
     sign_in_via_ui(@user)
-    visit creatives_path
+    visit collavre.creatives_path
   end
 
   def row_selector(creative)
@@ -70,7 +70,7 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     assert_selector row_selector(@child)
 
     visit root_path
-    visit creatives_path
+    visit collavre.creatives_path
 
     refute_selector row_selector(@child)
   end
@@ -87,7 +87,7 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
   test "visiting a comment share link opens popup and highlights comment" do
     comment = Comment.create!(creative: @child, user: @user, content: "Shared comment")
 
-    visit creative_comment_path(@child, comment)
+    visit collavre.creative_comment_path(@child, comment)
 
     assert_selector "#comments-popup", visible: :visible
     assert_selector "#comment_#{comment.id}.highlight-flash", wait: 5

@@ -1,0 +1,19 @@
+<h1 class="no-top-margin"><%= t('collavre.emails.index_title') %></h1>
+<table>
+  <thead>
+    <tr>
+      <th><%= t('collavre.emails.list.title.to') %></th>
+      <th><%= t('collavre.emails.list.title.event') %></th>
+      <th><%= t('collavre.emails.list.title.sent_at') %></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @emails.each do |email| %>
+      <tr>
+        <td><%= link_to email.email, email_path(email) %></td>
+        <td><%= t("collavre.emails.event.#{email.event}") %></td>
+        <td><%= l(email.created_at, format: :short) %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

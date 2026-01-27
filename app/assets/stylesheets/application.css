@@ -9,8 +9,7 @@
  * Consider organizing styles into separate files for maintainability.
  */
 
-@import "avatar_preview.css";
-@import "doorkeeper.css";
+/* Host-specific styles are loaded via stylesheet_link_tag in layouts */
 
 body {
     font-family: var(--font-sans);

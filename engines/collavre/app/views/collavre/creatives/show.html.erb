@@ -1,0 +1,29 @@
+<%#= TODO: remove this later, currently show uses index template, see controller %>
+<p><%= link_to t('collavre.users.back'), creatives_path %></p>
+
+<section class="creative">
+
+  <section class="creative-info">
+    <% cache @creative do %>
+      <% if @creative.parent %>
+        <h1>
+          <%= sanitize @creative.parent.description %>
+        </h1>
+      <% end %>
+      <div>
+        <%= embed_youtube_iframe(@creative.description) %>
+      </div>
+    <% end %>
+
+    <div class="creative-actions-row">
+      <% if authenticated? %>
+        <%= link_to t('collavre.creatives.index.new_sub_creative'), @creative&.id ? new_creative_path(parent_id: @creative.id, tags: params[:tags]) : new_creative_path(tags: params[:tags]) %>
+        <%= button_to t('collavre.creatives.index.delete'), @creative, method: :delete, data: { turbo_confirm: t('collavre.creatives.index.are_you_sure') } %>
+        <%= link_to slide_view_creative_path(@creative), aria: { label: t('collavre.creatives.index.slide_view') } do %>
+          <span aria-hidden="true"><%= svg_tag 'slide.svg', class: 'icon-slide', width: 16, height: 16 %></span>
+        <% end %>
+      <% end %>
+    </div>
+
+  </section>
+</section>

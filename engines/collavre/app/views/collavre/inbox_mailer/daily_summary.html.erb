@@ -1,0 +1,11 @@
+<h1><%= t('collavre.inbox_mailer.daily_summary.greeting') %></h1>
+<ul>
+  <% @items.each do |item| %>
+    <li>
+      <%= item.localized_message %>
+      <% if item.link.present? %>
+        (<a href="<%= item.link %>"><%= t('collavre.inbox_mailer.daily_summary.view') %></a>)
+      <% end %>
+    </li>
+  <% end %>
+</ul>

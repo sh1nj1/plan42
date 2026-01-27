@@ -48,6 +48,38 @@ class Webauthn::SessionsControllerTest < ActionDispatch::IntegrationTest
     assert_includes json_response["message"], I18n.t("users.sessions.new.email_not_verified")
   end
 
+  test "should return redirect_url on successful sign-in" do
+    user = users(:two)
+    user.update!(email_verified_at: Time.current)
+
+    credential = WebauthnCredential.create!(
+      user: user,
+      webauthn_id: "credential_id_redirect",
+      public_key: "public_key",
+      sign_count: 0
+    )
+    encoded_id = Base64.urlsafe_encode64("credential_id_redirect")
+
+    mock_credential = Object.new
+    def mock_credential.id; "credential_id_redirect"; end
+    def mock_credential.sign_count; 1; end
+    def mock_credential.verify(*args, **kwargs); true; end
+
+    WebAuthn::Credential.stub :from_get, mock_credential do
+      post webauthn_session_url, params: {
+        id: encoded_id,
+        rawId: encoded_id,
+        type: "public-key",
+        response: { clientDataJSON: "e30=", authenticatorData: "e30=", signature: "e30=", userHandle: "e30=" }
+      }
+    end
+
+    assert_response :ok
+    json_response = JSON.parse(response.body)
+    assert_equal "ok", json_response["status"]
+    assert_equal "/", json_response["redirect_url"], "redirect_url should be root path"
+  end
+
   test "should accept invitation during sign-in" do
     user = users(:two)
     user.update!(email_verified_at: Time.current)
