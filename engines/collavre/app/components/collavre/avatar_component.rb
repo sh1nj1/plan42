@@ -42,7 +42,7 @@ class AvatarComponent < ViewComponent::Base
     if @user
       @user.display_name
     else
-      I18n.t("comments.anonymous")
+      I18n.t("collavre.comments.anonymous")
     end
   end
 

@@ -196,7 +196,7 @@ module Collavre
     end
 
     def notify_approval_needed(creative, tool)
-      message = I18n.t("inbox.tool_approval_needed", tool_name: tool.name)
+      message = I18n.t("collavre.inbox.tool_approval_needed", tool_name: tool.name)
 
       # Create a comment with action payload for approval
       action_payload = {

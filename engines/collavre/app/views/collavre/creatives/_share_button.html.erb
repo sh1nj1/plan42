@@ -42,7 +42,7 @@
                 <%= render AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
               </span>
               <span><%= share.user&.display_name || (share.user_id.nil? ? t('collavre.creatives.index.public_share') : t('collavre.creatives.index.unknown_user')) %></span>
-              <span><%= t("creatives.index.permission_#{share.permission}") %></span>
+              <span><%= t("collavre.creatives.index.permission_#{share.permission}") %></span>
               <span>
                 <%= button_to '×', collavre.creative_creative_share_path(@parent_creative || @creative, share), method: :delete, form: { data: { turbo_confirm: t('collavre.creatives.index.are_you_sure_delete_share') } }, class: 'delete-share-btn', style: 'padding:0 0.5em;' %>
               </span>

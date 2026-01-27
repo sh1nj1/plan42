@@ -81,18 +81,18 @@ end
 
 ### 5. Include Stylesheets
 
-Add to your application layout or `application.css`:
-
-```css
-@import "collavre.css";
-```
-
-Or include individual stylesheets:
+Add to your application layout:
 
 ```erb
 <%= stylesheet_link_tag "collavre/creatives" %>
+<%= stylesheet_link_tag "collavre/actiontext" %>
+<%= stylesheet_link_tag "collavre/activity_logs" %>
 <%= stylesheet_link_tag "collavre/comments_popup" %>
 <%= stylesheet_link_tag "collavre/dark_mode" %>
+<%= stylesheet_link_tag "collavre/mention_menu" %>
+<%= stylesheet_link_tag "collavre/popup" %>
+<%= stylesheet_link_tag "collavre/user_menu" %>
+<%= stylesheet_link_tag "collavre/print", media: 'print' %>
 ```
 
 ### 6. Include JavaScript

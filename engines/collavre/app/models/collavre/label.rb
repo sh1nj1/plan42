@@ -15,9 +15,10 @@ module Collavre
     # creative_id, value, target_date etc attributes included
 
     # Resolve short STI class names to namespaced versions
+    # Use constantize to always get fresh class reference after hot reload
     def self.find_sti_class(type_name)
       type_name = "Collavre::#{type_name}" unless type_name.start_with?("Collavre::")
-      super(type_name)
+      type_name.constantize
     end
 
     after_create :create_auto_tag

@@ -1,5 +1,5 @@
 <p>
-  <%= t('invitation_mailer.invite.message_html',
+  <%= t('collavre.invitation_mailer.invite.message_html',
          creative: strip_tags(@invitation.creative.effective_origin.description),
          link: link_to(t('app.here'), collavre.invite_url(token: @invitation.generate_token_for(:invite)))) %>
 </p>

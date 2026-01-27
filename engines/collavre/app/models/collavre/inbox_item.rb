@@ -66,7 +66,7 @@ module Collavre
     def default_interpolation_value(key, locale:)
       case key.to_sym
       when :comment_content
-        I18n.t("inbox.comment_content_unavailable", locale: locale, default: "")
+        I18n.t("collavre.inbox.comment_content_unavailable", locale: locale, default: "")
       else
         ""
       end

@@ -524,7 +524,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     # Get the item element and click mark-read button
     item_selector = ".inbox-item[data-id='#{inbox_item.id}']"
     item = find(item_selector, visible: :all)
-    mark_read_btn = item.find("button", text: I18n.t("inbox.mark_read"), visible: :all)
+    mark_read_btn = item.find("button", text: I18n.t("collavre.inbox.mark_read"), visible: :all)
     page.execute_script("arguments[0].click()", mark_read_btn)
 
     # Wait for the item to disappear (inbox reloads after marking read, and default view hides read items)

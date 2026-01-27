@@ -40,6 +40,9 @@ en:
     sign_in: "Sign in"
     sign_out: "Sign out"
     cancel: "Cancel"
+    previous: "Previous"
+    next: "Next"
+    finish: "Finish"
     creative_guide: "A Creative is a content block that works like a task. It's similar to a to-do list, organized as a tree—letting you zoom out for high-level summaries or zoom in to detailed subtasks. Progress automatically summarizes progress from the steps below, and list of Creatives are presented as a document, complete with headings, bullet-point lists and progress indicators."
     search_placeholder: "Search..."
     plans: "Plans"
@@ -60,8 +63,13 @@ en:
     dark_mode: "Dark Mode"
     system_mode: "System Default"
     apply_tags: "Filter"
+    back_to_profile: "Back to Profile"
 
     here: "here"
+
+  common:
+    save: "Save"
+    cancel: "Cancel"
 
   admin:
     settings:
@@ -99,6 +107,26 @@ en:
       subject: "Your inbox summary"
       greeting: "Here are your unread messages:"
       view: "View"
+
+  contacts:
+    none: "No contacts"
+
+  users:
+    sessions:
+      new:
+        provider_disabled: "This authentication method is currently disabled."
+        email_not_verified: "You must verify your email before signing in."
+    webauthn:
+      deleted: "Passkey deleted."
+      credential_not_found: "Passkey not found. Please register a passkey in your profile settings after logging in with password."
+    table:
+      last_login_unknown: "Never"
+
+  notifications:
+    permission_prompt: "Would you like to enable browser notifications?"
+    confirm_deny: "Permanently deny notifications? You can change this later in settings."
+    deny: "Deny"
+    allow: "Allow"
 
   emails:
     index_title: "Emails"

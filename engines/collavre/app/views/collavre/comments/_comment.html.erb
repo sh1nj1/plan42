@@ -115,11 +115,11 @@
   <% if comment.action.present? %>
     <div class="comment-action-block" data-comment-id="<%= comment.id %>">
       <details class="comment-action-details">
-        <summary class="comment-action-summary"><%= t("comments.action_summary") %></summary>
+        <summary class="comment-action-summary"><%= t("collavre.comments.action_summary") %></summary>
         <div class="comment-action-body">
           <pre class="comment-action-json" data-comment-action-json><%= formatted_comment_action(comment) %></pre>
           <% if can_approve && comment.action_executed_at.blank? %>
-            <button class="edit-comment-action-btn" type="button" data-comment-id="<%= comment.id %>"><%= t("comments.edit_action_button") %></button>
+            <button class="edit-comment-action-btn" type="button" data-comment-id="<%= comment.id %>"><%= t("collavre.comments.edit_action_button") %></button>
             <form class="comment-action-edit-form" data-comment-id="<%= comment.id %>" style="display:none;">
               <textarea class="comment-action-edit-textarea" name="comment[action]" rows="8"><%= formatted_comment_action(comment) %></textarea>
               <div class="comment-action-edit-buttons">
@@ -135,7 +135,7 @@
   <% if comment.activity_logs.exists? %>
     <div class="comment-activity-log-block">
       <details>
-        <summary><%= t("comments.activity_logs_summary") %></summary>
+        <summary><%= t("collavre.comments.activity_logs_summary") %></summary>
         <%= turbo_frame_tag "activity_log_details_#{comment.id}", src: collavre.creative_comment_activity_log_path(comment.creative, comment), loading: "lazy" do %>
           Loading...
         <% end %>

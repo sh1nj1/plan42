@@ -78,6 +78,35 @@ en:
       calendar_command:
         event_created: 'event created: [Google Calendar event](%{url})'
       read_by: Read by %{name}
+      activity_logs_summary: Activity Logs
+    calendar_events:
+      deleted: Calendar event deleted.
+    inbox:
+      mark_read: Read
+      mark_unread: Unread
+      delete: Delete
+      show_read: Show read
+      no_messages: No messages
+      comment_added: '%{user} added "%{comment}" to "%{creative}".'
+      creative_shared: '%{user} shared "%{short_title}".'
+      user_mentioned: '%{user} mentioned you in "%{creative}": "%{comment}"'
+      permission_requested: '%{user} requested access to "%{short_title}".'
+      comment_deleted_by_admin: '%{admin_name} deleted your comment in "%{creative_snippet}":
+        %{comment_content}'
+      comment_content_unavailable: "(comment unavailable)"
+      tool_approval_needed: Tool '%{tool_name}' has been detected/updated. Please approve
+        it to activate.
+    emails:
+      index_title: Emails
+      list:
+        title:
+          to: To
+          event: Event
+          subject: Subject
+          sent_at: Sent at
+      event:
+        invitation: Invitation
+        inbox_summary: Inbox summary
     inbox_mailer:
       daily_summary:
         subject: Your inbox summary

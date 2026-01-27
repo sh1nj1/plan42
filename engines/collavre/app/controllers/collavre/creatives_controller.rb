@@ -158,7 +158,7 @@ module Collavre
       @slide_ids = []
       @root_depth = @creative.ancestors.count
       build_slide_ids(@creative)
-      render layout: "slide"
+      render layout: "collavre/slide"
     end
 
     def new

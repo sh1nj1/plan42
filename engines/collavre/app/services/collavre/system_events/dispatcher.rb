@@ -7,7 +7,7 @@ module Collavre
 
       def dispatch(event_name, context)
         # Build context once to ensure consistency between Router and Job
-        enriched_context = ContextBuilder.new(context).build
+        enriched_context = Collavre::SystemEvents::ContextBuilder.new(context).build
         agents = Router.new.route(event_name, enriched_context)
 
         agents.each do |agent|

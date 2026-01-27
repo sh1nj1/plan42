@@ -75,6 +75,34 @@ ko:
       calendar_command:
         event_created: '이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})'
       read_by: "%{name} 님이 읽음"
+      activity_logs_summary: 활동 기록
+    calendar_events:
+      deleted: 캘린더 이벤트가 삭제되었습니다.
+    inbox:
+      mark_read: 읽음
+      mark_unread: 안읽음
+      delete: 삭제
+      show_read: 읽은 메세지 포함
+      no_messages: 메세지가 없습니다
+      comment_added: '%{user} 가 "%{comment}" 를 "%{creative}" 에 추가했습니다.'
+      creative_shared: '%{user} 가 "%{short_title}" 을 공유했습니다.'
+      user_mentioned: '%{user} 님이 "%{creative}" 에서 당신을 언급했습니다: "%{comment}"'
+      permission_requested: '%{user} 이 크리에이티브 "%{short_title}" 에 대한 권한 요청을 했습니다.'
+      comment_deleted_by_admin: '%{admin_name} 님이 "%{creative_snippet}" 에서 당신의 댓글을
+        삭제했습니다: %{comment_content}'
+      comment_content_unavailable: "(삭제된 댓글 내용을 표시할 수 없습니다)"
+      tool_approval_needed: 도구 '%{tool_name}'가 감지/업데이트되었습니다. 활성화하려면 승인해주세요.
+    emails:
+      index_title: 이메일
+      list:
+        title:
+          to: 받는 사람
+          event: 이벤트
+          subject: 제목
+          sent_at: 보낸 시간
+      event:
+        invitation: 초대
+        inbox_summary: 인박스 요약
     inbox_mailer:
       daily_summary:
         subject: 인박스 요약

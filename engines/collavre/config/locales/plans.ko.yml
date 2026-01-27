@@ -7,6 +7,7 @@ ko:
       plan_name: 계획 이름
       created: 계획이 성공적으로 생성되었습니다.
       deleted: 계획이 삭제되었습니다.
+      delete_confirm: 이 계획을 삭제하시겠습니까?
       today: 오늘
       select_creative: 크리에이티브 선택
     activerecord:

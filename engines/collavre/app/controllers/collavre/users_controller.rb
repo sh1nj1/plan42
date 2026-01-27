@@ -270,10 +270,10 @@ module Collavre
       return [] unless defined?(RailsMcpEngine)
 
       RailsMcpEngine::Engine.build_tools!
-      tools = Tools::MetaToolService.new.call(action: "list", tool_name: nil, query: nil, arguments: nil)
+      tools = ::Tools::MetaToolService.new.call(action: "list", tool_name: nil, query: nil, arguments: nil)
 
       tool_list = Array(tools[:tools])
-      filtered_tools = McpService.filter_tools(tool_list, Current.user)
+      filtered_tools = Collavre::McpService.filter_tools(tool_list, Current.user)
 
       filtered_tools.map do |tool|
         {

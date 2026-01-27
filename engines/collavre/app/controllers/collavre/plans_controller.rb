@@ -37,7 +37,7 @@ module Collavre
       if @plan.save
         respond_to do |format|
           format.html do
-            redirect_back fallback_location: main_app.root_path, notice: t("plans.created")
+            redirect_back fallback_location: main_app.root_path, notice: t("collavre.plans.created")
           end
           format.json do
             render json: plan_json(@plan), status: :created
@@ -62,7 +62,7 @@ module Collavre
       respond_to do |format|
         format.html do
           redirect_back fallback_location: main_app.root_path,
-                        notice: t("plans.deleted", default: "Plan deleted.")
+                        notice: t("collavre.plans.deleted", default: "Plan deleted.")
         end
         format.json { head :no_content }
       end

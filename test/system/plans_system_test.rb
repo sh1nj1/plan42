@@ -32,7 +32,7 @@ class PlansSystemTest < ApplicationSystemTestCase
     within "#plans-list-area" do
       fill_in "plan-target-date", with: Date.current
       assert_selector "#add-plan-btn:not([disabled])", wait: 5
-      click_button I18n.t("plans.add_plan")
+      click_button I18n.t("collavre.plans.add_plan")
     end
 
     begin
@@ -61,7 +61,7 @@ class PlansSystemTest < ApplicationSystemTestCase
     within "#plans-list-area" do
       fill_in "plan-target-date", with: Date.current
       assert_selector "#add-plan-btn:not([disabled])", wait: 5
-      click_button I18n.t("plans.add_plan")
+      click_button I18n.t("collavre.plans.add_plan")
     end
 
     # Wait for the plan to appear on the timeline (use visible: :all since plan might be outside visible scroll area)

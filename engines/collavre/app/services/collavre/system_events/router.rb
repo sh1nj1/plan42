@@ -3,7 +3,7 @@ module Collavre
     class Router
       def route(event_name, context)
         # Build the context for Liquid
-        liquid_context = ContextBuilder.new(context).build
+        liquid_context = Collavre::SystemEvents::ContextBuilder.new(context).build
         liquid_context["event_name"] = event_name
 
         # Find all AI agents

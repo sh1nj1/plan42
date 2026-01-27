@@ -36,6 +36,7 @@ en:
         no_creatives: No creatives found.
         no_sub_creatives: No sub-creatives found.
         no_search_results: No creatives match your search.
+        search_placeholder: Search creatives...
         recommend_parent: Recommend Category
         import_uploading: Uploading...
         import_success: Import successful! Reloading...
@@ -88,6 +89,46 @@ en:
         github_integration_delete_select_warning: Select at least one repository to
           remove.
         github_integration_missing_creative: No Creative selected for integration.
+        github_integration_delete_confirm: Do you want to remove the Github integration?
+        github_integration_delete_success: Github integration removed successfully.
+        github_integration_delete_error: Failed to remove the Github integration.
+        github_integration_delete_button: Remove integration
+        github_integration_existing_intro: Already connected repositories
+        github_integration_prompt_title: Review the Gemini analysis prompt and edit
+          it if needed.
+        github_integration_prompt_help: 'Use the placeholders below to inject runtime
+          details as needed:'
+        notion_integration_saved: Notion integration saved successfully.
+        notion_integration_login_required: Sign in with your Notion account to start
+          the integration.
+        notion_integration_missing_creative: No Creative selected for integration.
+        notion_integration_existing_message: You're already connected to Notion pages
+          below.
+        notion_integration_delete_confirm: Do you want to remove the Notion integration?
+        notion_integration_delete_success: Notion integration removed successfully.
+        notion_integration_delete_error: Failed to remove the Notion integration.
+        notion_integration_delete_button: Remove integration
+        notion_export_success: Creative exported to Notion successfully.
+        notion_sync_success: Creative synced to Notion successfully.
+        notion_integration_title: Configure Notion integration
+        notion_integration_connect: Sign in with your Notion account to start exporting.
+        notion_login_button: Sign in with Notion
+        notion_integration_existing_intro: 'Linked Notion pages:'
+        notion_sync_button: Sync to Notion
+        notion_integration_workspace: Your Notion workspace is connected. Choose how
+          to export your creative.
+        notion_export_option: 'Export option:'
+        notion_export_new_page: Create new page
+        notion_export_under_page: Create as subpage under existing page
+        notion_parent_page: 'Parent page:'
+        notion_loading: Loading pages...
+        notion_integration_summary: 'Ready to export your creative tree to Notion:'
+        notion_creative_title: 'Root Creative:'
+        notion_workspace: 'Workspace:'
+        notion_export_as: 'Export as:'
+        notion_tree_note: This will export the selected creative and all its descendants
+          as a structured document.
+        notion_export_button: Export to Notion
         plan_tags_applied: Plan tags applied to selected creatives.
         plan_tag_failed: Please select a plan and at least one creative.
         plan_tags_removed: Plan tag removed from selected creatives.

@@ -116,6 +116,8 @@ en:
       send_password_reset_instructions: Email reset instructions
       email_verified: Email verified successfully.
       verification_invalid: Verification link is invalid or has expired.
+      email_verification:
+        invalid_token: Verification link is invalid or has expired.
       admin_required: You must be a system administrator to access that page.
       system_admin:
         granted: System admin access granted.

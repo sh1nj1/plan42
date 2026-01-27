@@ -11,8 +11,8 @@ module SystemHelpers
 
   def sign_in_via_ui(user, password: PASSWORD)
     visit collavre.new_session_path
-    fill_in placeholder: I18n.t("users.new.enter_your_email"), with: user.email
-    fill_in placeholder: I18n.t("users.new.enter_your_password"), with: password
+    fill_in placeholder: I18n.t("collavre.users.new.enter_your_email"), with: user.email
+    fill_in placeholder: I18n.t("collavre.users.new.enter_your_password"), with: password
     find("#sign-in-submit").click
     assert_current_path root_path, ignore_query: true
   end

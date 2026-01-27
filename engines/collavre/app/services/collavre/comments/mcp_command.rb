@@ -102,7 +102,7 @@ module Collavre
       end
 
       def default_meta_tool_service
-        Tools::MetaToolService.new
+        ::Tools::MetaToolService.new
       end
     end
   end

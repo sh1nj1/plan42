@@ -1,14 +1,14 @@
 <div class="plans-timeline-wrapper">
-  <button id="timeline-today-btn" type="button"><%= t('plans.today', default: '오늘') %></button>
-  <div id="plans-timeline" class="horizontal-timeline" data-plans='<%= raw plan_data.to_json %>' data-start-date="<%= @start_date %>" data-end-date="<%= @end_date %>" data-delete-confirm="<%= t('plans.delete_confirm', default: 'Are you sure?') %>"></div>
+  <button id="timeline-today-btn" type="button"><%= t('collavre.plans.today', default: '오늘') %></button>
+  <div id="plans-timeline" class="horizontal-timeline" data-plans='<%= raw plan_data.to_json %>' data-start-date="<%= @start_date %>" data-end-date="<%= @end_date %>" data-delete-confirm="<%= t('collavre.plans.delete_confirm', default: 'Are you sure?') %>"></div>
 </div>
 <hr>
 <div class="plan-form-container">
 <%= form_with(model: Plan.new, url: helpers.collavre.plans_path, local: true, id: 'new-plan-form') do |form| %>
     <%= form.hidden_field :creative_id, id: 'plan-creative-id' %>
-    <input type="text" id="plan-select-creative-input" placeholder="<%= t('plans.select_creative', default: 'Select Creative') %>" autocomplete="off">
-    <%= form.date_field :target_date, placeholder: t('plans.target_date'), id: 'plan-target-date' %>
-    <%= form.submit t('plans.add_plan'), id: 'add-plan-btn', disabled: true %>
+    <input type="text" id="plan-select-creative-input" placeholder="<%= t('collavre.plans.select_creative', default: 'Select Creative') %>" autocomplete="off">
+    <%= form.date_field :target_date, placeholder: t('collavre.plans.target_date'), id: 'plan-target-date' %>
+    <%= form.submit t('collavre.plans.add_plan'), id: 'add-plan-btn', disabled: true %>
 <% end %>
 </div>
 

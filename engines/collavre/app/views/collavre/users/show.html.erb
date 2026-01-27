@@ -90,7 +90,7 @@
           %>
           <%= f.select :theme, options_for_select(theme_options, @user.theme), {}, style: "width: 100%; display: block;" %>
           <div style="margin-top: 5px;">
-            <a href="<%= collavre.user_themes_path %>" style="font-size: 0.9em;"><%= t("themes.manage") %></a>
+            <a href="<%= collavre.user_themes_path %>" style="font-size: 0.9em;"><%= t("collavre.themes.manage") %></a>
           </div>
         </div>
         <div>
@@ -103,7 +103,7 @@
         </div>
         <div>
           <%= f.label :locale, t('collavre.users.locale') %>
-          <%= f.select :locale, I18n.available_locales.map { |loc| [t("users.locales.#{loc}"), loc] } %>
+          <%= f.select :locale, I18n.available_locales.map { |loc| [t("collavre.users.locales.#{loc}"), loc] } %>
         </div>
         <div>
           <%= f.label :timezone, t('collavre.users.timezone') %>

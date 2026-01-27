@@ -101,8 +101,8 @@
     <% title_templates << content_tag(:template, data: { part: "origin-link" }) do %>
       <%= link_to creative_path(@parent_creative.origin),
                   class: "creative-origin-link creative-action-btn unstyled-link",
-                  title: t("creatives.index.view_origin"),
-                  aria: { label: t("creatives.index.view_origin") } do %>
+                  title: t("collavre.creatives.index.view_origin"),
+                  aria: { label: t("collavre.creatives.index.view_origin") } do %>
         <%= svg_tag "arrow-right.svg", class: "creative-origin-link-icon", width: 16, height: 16 %>
       <% end %>
     <% end %>

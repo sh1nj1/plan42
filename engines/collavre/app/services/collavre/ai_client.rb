@@ -115,7 +115,7 @@ module Collavre
         end
         if tools.any?
           # Resolve tool names to classes using the gem's helper
-          tool_classes = Tools::MetaToolService.ruby_llm_tools(tools)
+          tool_classes = ::Tools::MetaToolService.ruby_llm_tools(tools)
           chat.with_tools(*tool_classes, replace: true)
         end
       end

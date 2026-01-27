@@ -16,15 +16,15 @@ class CreativeShareTest < ApplicationSystemTestCase
     resize_window_to
 
     visit collavre.new_session_path
-    assert_no_field placeholder: I18n.t("users.new.enter_your_name")
-    fill_in placeholder: I18n.t("users.new.enter_your_email"), with: @user.email
-    fill_in placeholder: I18n.t("users.new.enter_your_password"), with: SystemHelpers::PASSWORD
+    assert_no_field placeholder: I18n.t("collavre.users.new.enter_your_name")
+    fill_in placeholder: I18n.t("collavre.users.new.enter_your_email"), with: @user.email
+    fill_in placeholder: I18n.t("collavre.users.new.enter_your_password"), with: SystemHelpers::PASSWORD
     find("#sign-in-submit").click
     assert_current_path root_path
 
     visit collavre.creative_path(@creative)
 
-    assert_selector "#share-creative-modal", text: I18n.t("creatives.index.shared_with"), visible: :all
+    assert_selector "#share-creative-modal", text: I18n.t("collavre.creatives.index.shared_with"), visible: :all
     assert_selector "#share-creative-modal", text: "User1", visible: :all
     assert_selector "#share-creative-modal", text: "Read", visible: :all
   end

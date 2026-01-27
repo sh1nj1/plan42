@@ -78,6 +78,41 @@ ko:
         github_integration_existing_message: 이미 아래 Repository와 연동 중입니다.
         github_integration_delete_select_warning: 삭제할 Repository를 선택하세요.
         github_integration_missing_creative: 연동할 Creative가 선택되지 않았습니다.
+        github_integration_delete_confirm: Github 연동을 삭제하시겠습니까?
+        github_integration_delete_success: Github 연동이 삭제되었습니다.
+        github_integration_delete_error: Github 연동 삭제에 실패했습니다.
+        github_integration_delete_button: 연동 삭제
+        github_integration_existing_intro: '이미 연동된 Repository 목록입니다:'
+        github_integration_prompt_title: Gemini 분석 프롬프트를 확인하고 필요시 수정하세요.
+        github_integration_prompt_help: '아래 플레이스홀더를 사용하여 런타임 정보를 삽입할 수 있습니다:'
+        notion_integration_saved: Notion 연동이 저장되었습니다.
+        notion_integration_login_required: Notion 계정으로 로그인하여 연동을 시작하세요.
+        notion_integration_missing_creative: 연동할 Creative가 선택되지 않았습니다.
+        notion_integration_existing_message: 이미 아래 Notion 페이지와 연동 중입니다.
+        notion_integration_delete_confirm: Notion 연동을 삭제하시겠습니까?
+        notion_integration_delete_success: Notion 연동이 삭제되었습니다.
+        notion_integration_delete_error: Notion 연동 삭제에 실패했습니다.
+        notion_integration_delete_button: 연동 삭제
+        notion_export_success: Creative가 Notion으로 내보내기 되었습니다.
+        notion_sync_success: Creative가 Notion과 동기화되었습니다.
+        notion_integration_title: Notion 연동 설정
+        notion_integration_connect: Notion 계정으로 로그인하여 내보내기를 시작하세요.
+        notion_login_button: Notion 계정으로 로그인
+        notion_integration_existing_intro: '연동된 Notion 페이지:'
+        notion_sync_button: Notion으로 동기화
+        notion_integration_workspace: Notion 워크스페이스가 연결되었습니다. 내보내기 방법을 선택하세요.
+        notion_export_option: '내보내기 옵션:'
+        notion_export_new_page: 새 페이지 생성
+        notion_export_under_page: 기존 페이지 하위에 생성
+        notion_parent_page: '상위 페이지:'
+        notion_loading: 페이지 로딩 중...
+        notion_integration_summary: 'Creative 트리를 Notion으로 내보낼 준비가 되었습니다:'
+        notion_creative_title: '루트 Creative:'
+        notion_workspace: '워크스페이스:'
+        notion_export_as: '내보내기 형태:'
+        notion_tree_note: 선택한 크리에이티브와 모든 하위 항목이 구조화된 문서로 내보내집니다.
+        notion_export_button: Notion으로 내보내기
+        search_placeholder: 크리에이티브 검색...
         plan_tags_applied: 선택한 크리에이티브에 플랜 태그가 적용되었습니다.
         plan_tag_failed: 플랜과 하나 이상의 크리에이티브를 선택하세요.
         plan_tags_removed: 선택한 크리에이티브에서 플랜 태그가 제거되었습니다.

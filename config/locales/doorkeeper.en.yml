@@ -29,6 +29,7 @@ en:
         submit: 'Submit'
         cancel: 'Cancel'
         authorize: 'Authorize'
+        back: 'Back'
       form:
         error: 'Whoops! Check your form for possible errors'
         confidential: 'Confidential'

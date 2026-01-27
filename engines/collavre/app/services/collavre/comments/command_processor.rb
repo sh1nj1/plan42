@@ -26,11 +26,11 @@ module Collavre
       end
 
       def static_commands
-        [ CalendarCommand.new(comment: comment, user: user) ]
+        [ Collavre::Comments::CalendarCommand.new(comment: comment, user: user) ]
       end
 
       def mcp_commands
-        McpCommandBuilder.new(comment: comment, user: user).commands
+        Collavre::Comments::McpCommandBuilder.new(comment: comment, user: user).commands
       end
     end
   end

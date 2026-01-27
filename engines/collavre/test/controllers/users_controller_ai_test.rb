@@ -7,6 +7,38 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     sign_in_as @admin, password: "password"
   end
 
+  test "should get new_ai page with tools list" do
+    get new_ai_users_url
+    assert_response :success
+    assert_select "h1", I18n.t("collavre.users.new_ai.title")
+    assert_select "form[action=?]", create_ai_users_path
+    # Verify tools section is rendered
+    assert_select "label", I18n.t("collavre.users.edit_ai.tools_title")
+  end
+
+  test "should get new_ai page and display available tools" do
+    # Stub the controller's load_available_tools method to return mock tools
+    mock_tools = [
+      { name: "test_tool", description: "A test tool", parameters: { type: "object" } }
+    ]
+
+    # Store original method
+    original_method = Collavre::UsersController.instance_method(:load_available_tools)
+
+    Collavre::UsersController.send(:define_method, :load_available_tools) { mock_tools }
+
+    get new_ai_users_url
+    assert_response :success
+    # Verify tool is displayed
+    assert_select ".tools-selection" do
+      assert_select "strong", "test_tool"
+      assert_select ".text-muted.small", "A test tool"
+    end
+  ensure
+    # Restore original method
+    Collavre::UsersController.send(:define_method, :load_available_tools, original_method)
+  end
+
   test "should get edit_ai for ai user" do
     get edit_ai_user_url(@ai_user)
     assert_response :success

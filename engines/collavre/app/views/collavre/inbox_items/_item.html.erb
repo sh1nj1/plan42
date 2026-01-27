@@ -9,10 +9,10 @@
   <div class="time"><%= time_ago_in_words(item.created_at) %></div>
   <div class="actions">
     <% if item.state == 'read' %>
-      <button class="mark-unread" data-id="<%= item.id %>"><%= t('inbox.mark_unread') %></button>
+      <button class="mark-unread" data-id="<%= item.id %>"><%= t('collavre.inbox.mark_unread') %></button>
     <% else %>
-      <button class="mark-read" data-id="<%= item.id %>"><%= t('inbox.mark_read') %></button>
+      <button class="mark-read" data-id="<%= item.id %>"><%= t('collavre.inbox.mark_read') %></button>
     <% end %>
-    <button class="delete-item" data-id="<%= item.id %>"><%= t('inbox.delete') %></button>
+    <button class="delete-item" data-id="<%= item.id %>"><%= t('collavre.inbox.delete') %></button>
   </div>
 </div>
