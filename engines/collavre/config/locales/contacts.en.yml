@@ -1,0 +1,16 @@
+---
+en:
+  collavre:
+    contacts:
+      description: Manage users you have invited or share creatives with.
+      empty_state: No managed users yet.
+      none: None
+      table:
+        shared_creatives: Creatives you shared
+        shared_with_me: Creatives shared with you
+      pagination:
+        prev: Previous
+        next: Next
+        page_info: Page %{current} of %{total}
+      notices:
+        removed: User removed from your managed users.

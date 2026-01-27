@@ -1,0 +1,16 @@
+---
+ko:
+  collavre:
+    contacts:
+      description: 초대했거나 크리에이티브를 공유한 사용자를 관리합니다.
+      empty_state: 아직 관리할 사용자가 없습니다.
+      none: 없음
+      table:
+        shared_creatives: 공유한 크리에이티브
+        shared_with_me: 공유된 크리에이티브
+      pagination:
+        prev: 이전
+        next: 다음
+        page_info: "%{current}/%{total} 페이지"
+      notices:
+        removed: 사용자 관리 목록에서 제거했습니다.

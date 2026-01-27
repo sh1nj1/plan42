@@ -1,0 +1,11 @@
+---
+en:
+  collavre:
+    plans:
+      add_plan: Add Plan
+      target_date: Target Date
+      plan_name: Plan Name
+      created: Plan was successfully created.
+      deleted: Plan deleted.
+      today: Today
+      select_creative: Select Creative
