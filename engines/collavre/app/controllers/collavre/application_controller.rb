@@ -9,9 +9,7 @@ module Collavre
       Collavre::Engine.routes.url_helpers
     end
 
-    # Helper to access main app routes from engine views/controllers
-    def main_app
-      Rails.application.routes.url_helpers
-    end
+    # Note: main_app is provided automatically by Rails engines with proper
+    # request-aware URL generation (handles script_name, subpath mounting, etc.)
   end
 end
