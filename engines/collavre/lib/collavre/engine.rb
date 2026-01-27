@@ -45,10 +45,17 @@ module Collavre
       end
     end
 
-    # Make engine URL helpers available to views via the `collavre` helper method
+    # Make engine URL helpers available to controllers and views via the `collavre` method
     # This avoids conflicts with main app routes while still providing access to engine routes
     initializer "collavre.url_helpers" do
       ActiveSupport.on_load(:action_controller_base) do
+        # Add to controllers
+        define_method :collavre do
+          Collavre::Engine.routes.url_helpers
+        end
+        private :collavre
+
+        # Add to views via helper
         helper do
           def collavre
             Collavre::Engine.routes.url_helpers

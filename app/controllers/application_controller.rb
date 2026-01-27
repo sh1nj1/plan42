@@ -47,7 +47,7 @@ class ApplicationController < ActionController::Base
   def enforce_auth_provider!(key)
     return if auth_provider_enabled?(key)
 
-    redirect_to new_session_path, alert: I18n.t("users.sessions.new.provider_disabled")
+    redirect_to collavre.new_session_path, alert: I18n.t("users.sessions.new.provider_disabled")
   end
 
   def verify_cloudfront_origin!
