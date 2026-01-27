@@ -21,6 +21,6 @@ class ContactsControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to collavre.user_path(@user, tab: "contacts", contact_page: 2)
     follow_redirect!
-    assert_equal I18n.t("contacts.notices.removed"), flash[:notice]
+    assert_equal I18n.t("collavre.contacts.notices.removed"), flash[:notice]
   end
 end

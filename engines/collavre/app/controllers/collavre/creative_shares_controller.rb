@@ -9,7 +9,7 @@ module Collavre
         unless user
           invitation = Invitation.create!(email: params[:user_email], inviter: Current.user, creative: @creative, permission: params[:permission])
           InvitationMailer.with(invitation: invitation).invite.deliver_later
-          flash[:notice] = t("invites.invite_sent")
+          flash[:notice] = t("collavre.invites.invite_sent")
           redirect_back(fallback_location: creatives_path) and return
         end
       end
@@ -30,13 +30,13 @@ module Collavre
       Rails.logger.debug "### closest_parent_share = #{closest_parent_share.inspect}, is_param_no_access: #{is_param_no_access}"
       if closest_parent_share.present?
         if closest_parent_share.permission == :no_access.to_s
-          flash[:alert] = t("creatives.share.can_not_share_by_no_access_in_parent")
+          flash[:alert] = t("collavre.creatives.share.can_not_share_by_no_access_in_parent")
           redirect_back(fallback_location: creatives_path) and return
         else
           if is_param_no_access
             # can set!
           else
-            flash[:alert] = t("creatives.share.already_shared_in_parent")
+            flash[:alert] = t("collavre.creatives.share.already_shared_in_parent")
             redirect_back(fallback_location: creatives_path) and return
           end
         end
@@ -51,7 +51,7 @@ module Collavre
           Contact.ensure(user: Current.user, contact_user: user)
           Contact.ensure(user: @creative.user, contact_user: user)
         end
-        flash[:notice] = t("creatives.share.shared")
+        flash[:notice] = t("collavre.creatives.share.shared")
       else
         flash[:alert] = share.errors.full_messages.to_sentence
       end
@@ -65,7 +65,7 @@ module Collavre
       linked_creative = Creative.find_by(origin_id: @creative_share.creative_id, user_id: @creative_share.user_id)
       linked_creative&.destroy
       respond_to do |format|
-        format.html { redirect_back fallback_location: main_app.root_path, notice: t("creatives.index.share_deleted") }
+        format.html { redirect_back fallback_location: main_app.root_path, notice: t("collavre.creatives.index.share_deleted") }
         format.json { head :no_content }
       end
     end

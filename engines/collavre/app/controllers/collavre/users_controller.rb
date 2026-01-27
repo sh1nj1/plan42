@@ -36,12 +36,12 @@ module Collavre
           end
           Collavre::EmailVerificationMailer.verify(@user).deliver_later
           session.delete(:return_to_after_authenticating)
-          redirect_to new_session_path, notice: I18n.t("users.new.success_sign_up")
+          redirect_to new_session_path, notice: I18n.t("collavre.users.new.success_sign_up")
         else
           render :new, status: :unprocessable_entity
         end
       rescue ActiveSupport::MessageVerifier::InvalidSignature
-        flash.now[:alert] = I18n.t("invites.invalid")
+        flash.now[:alert] = I18n.t("collavre.invites.invalid")
         render :new, status: :unprocessable_entity
       end
     end
@@ -77,7 +77,7 @@ module Collavre
 
       if @user.save
         Collavre::Contact.ensure(user: Current.user, contact_user: @user)
-        redirect_to user_path(Current.user, tab: "contacts"), notice: I18n.t("users.create_ai.success")
+        redirect_to user_path(Current.user, tab: "contacts"), notice: I18n.t("collavre.users.create_ai.success")
       else
         flash.now[:alert] = @user.errors.full_messages.to_sentence
         @available_tools = load_available_tools
@@ -88,7 +88,7 @@ module Collavre
     def edit_ai
       @user = Collavre::User.find(params[:id])
       unless @user.ai_user?
-        redirect_to user_path(@user), alert: I18n.t("users.edit_ai.not_an_ai")
+        redirect_to user_path(@user), alert: I18n.t("collavre.users.edit_ai.not_an_ai")
         return
       end
 
@@ -98,7 +98,7 @@ module Collavre
     def update_ai
       @user = Collavre::User.find(params[:id])
       unless @user.ai_user?
-        redirect_to user_path(@user), alert: I18n.t("users.edit_ai.not_an_ai")
+        redirect_to user_path(@user), alert: I18n.t("collavre.users.edit_ai.not_an_ai")
         return
       end
 
@@ -107,14 +107,14 @@ module Collavre
 
       unless allowed
         fallback = user_path(Current.user, tab: "contacts")
-        redirect_back fallback_location: fallback, alert: I18n.t("users.destroy.not_authorized")
+        redirect_back fallback_location: fallback, alert: I18n.t("collavre.users.destroy.not_authorized")
         return
       end
 
       ai_params = params.require(:user).permit(:name, :system_prompt, :llm_model, :llm_api_key, :searchable, :routing_expression, tools: [])
 
       if @user.update(ai_params)
-        redirect_to edit_ai_user_path(@user), notice: I18n.t("users.update_ai.success")
+        redirect_to edit_ai_user_path(@user), notice: I18n.t("collavre.users.update_ai.success")
       else
         @available_tools = load_available_tools
         flash.now[:alert] = @user.errors.full_messages.to_sentence
@@ -178,7 +178,7 @@ module Collavre
       @user = Collavre::User.find(params[:id])
 
       if @user == Current.user
-        redirect_to users_path, alert: I18n.t("users.destroy.cannot_delete_self")
+        redirect_to users_path, alert: I18n.t("collavre.users.destroy.cannot_delete_self")
         return
       end
 
@@ -187,15 +187,15 @@ module Collavre
 
       unless allowed
         fallback = user_path(Current.user, tab: "contacts")
-        redirect_back fallback_location: fallback, alert: I18n.t("users.destroy.not_authorized")
+        redirect_back fallback_location: fallback, alert: I18n.t("collavre.users.destroy.not_authorized")
         return
       end
 
       if @user.destroy
         fallback = Current.user.system_admin? ? users_path : user_path(Current.user, tab: "contacts")
-        redirect_back fallback_location: fallback, notice: I18n.t("users.destroy.success")
+        redirect_back fallback_location: fallback, notice: I18n.t("collavre.users.destroy.success")
       else
-        redirect_to users_path, alert: I18n.t("users.destroy.failure")
+        redirect_to users_path, alert: I18n.t("collavre.users.destroy.failure")
       end
     end
 
@@ -203,9 +203,9 @@ module Collavre
       @user = Collavre::User.find(params[:id])
 
       if @user.update(system_admin: true)
-        redirect_to users_path, notice: I18n.t("users.system_admin.granted")
+        redirect_to users_path, notice: I18n.t("collavre.users.system_admin.granted")
       else
-        redirect_to users_path, alert: I18n.t("users.system_admin.failed")
+        redirect_to users_path, alert: I18n.t("collavre.users.system_admin.failed")
       end
     end
 
@@ -213,16 +213,16 @@ module Collavre
       @user = Collavre::User.find(params[:id])
 
       if @user.update(system_admin: false)
-        redirect_to users_path, notice: I18n.t("users.system_admin.revoked")
+        redirect_to users_path, notice: I18n.t("collavre.users.system_admin.revoked")
       else
-        redirect_to users_path, alert: I18n.t("users.system_admin.failed")
+        redirect_to users_path, alert: I18n.t("collavre.users.system_admin.failed")
       end
     end
 
     def update
       @user = Collavre::User.find(params[:id])
       if @user.update(profile_params)
-        redirect_to user_path(@user), notice: I18n.t("users.profile_updated")
+        redirect_to user_path(@user), notice: I18n.t("collavre.users.profile_updated")
       else
         render :show, status: :unprocessable_entity
       end
@@ -244,7 +244,7 @@ module Collavre
       @user = Collavre::User.find(params[:id])
 
       unless @user == Current.user || Current.user.system_admin?
-        redirect_to user_path(Current.user), alert: I18n.t("users.destroy.not_authorized")
+        redirect_to user_path(Current.user), alert: I18n.t("collavre.users.destroy.not_authorized")
       end
     end
 
@@ -252,14 +252,14 @@ module Collavre
       @user = Collavre::User.find(params[:id])
       if @user.authenticate(params[:user][:current_password])
         if @user.update(user_params)
-          redirect_to user_path(@user), notice: I18n.t("users.password_updated")
+          redirect_to user_path(@user), notice: I18n.t("collavre.users.password_updated")
         else
-          flash.now[:alert] = I18n.t("users.password_update_failed")
+          flash.now[:alert] = I18n.t("collavre.users.password_update_failed")
           render :edit_password, status: :unprocessable_entity
         end
       else
-        @user.errors.add(:current_password, I18n.t("users.current_password_incorrect"))
-        flash.now[:alert] = I18n.t("users.password_update_failed")
+        @user.errors.add(:current_password, I18n.t("collavre.users.current_password_incorrect"))
+        flash.now[:alert] = I18n.t("collavre.users.password_update_failed")
         render :edit_password, status: :unprocessable_entity
       end
     end

@@ -2,13 +2,13 @@
   <%= form.text_field :name,
                       autofocus: true,
                       required: true,
-                      placeholder: t('users.new.enter_your_name'),
+                      placeholder: t('collavre.users.new.enter_your_name'),
                       class: "stacked-form-control" %>
 <% end %>
 <%= form.email_field :email,
                      required: true,
                      autocomplete: "username",
-                     placeholder: t('users.new.enter_your_email'),
+                     placeholder: t('collavre.users.new.enter_your_email'),
                      value: (form.object.respond_to?(:email) && form.object.email.presence) || params[:email],
                      readonly: local_assigns[:disable_email],
                      class: "stacked-form-control" %>
@@ -16,12 +16,12 @@
 <%= form.password_field :password,
                         required: true,
                         autocomplete: is_login_form ? "current-password" : "new-password",
-                        placeholder: t('users.new.enter_your_password'),
+                        placeholder: t('collavre.users.new.enter_your_password'),
                         minlength: is_login_form ? nil : Collavre::SystemSetting.password_min_length,
                         maxlength: 72,
                         class: "stacked-form-control" %>
 <% unless is_login_form %>
   <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em; margin-bottom: 0.5em;">
-    <%= t('users.password_min_length_hint', count: Collavre::SystemSetting.password_min_length) %>
+    <%= t('collavre.users.password_min_length_hint', count: Collavre::SystemSetting.password_min_length) %>
   </div>
 <% end %>

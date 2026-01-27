@@ -220,8 +220,8 @@ module Creatives
       view_context.link_to(
         view_context.collavre.creative_path(creative.origin),
         class: "creative-origin-link creative-action-btn unstyled-link",
-        title: I18n.t("creatives.index.view_origin"),
-        aria: { label: I18n.t("creatives.index.view_origin") }
+        title: I18n.t("collavre.creatives.index.view_origin"),
+        aria: { label: I18n.t("collavre.creatives.index.view_origin") }
       ) do
         view_context.svg_tag("arrow-right.svg", class: "creative-origin-link-icon", width: 16, height: 16)
       end

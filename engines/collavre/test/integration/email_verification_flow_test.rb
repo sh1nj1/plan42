@@ -24,7 +24,7 @@ class EmailVerificationFlowTest < ActionDispatch::IntegrationTest
     end
     assert_redirected_to new_session_path
     follow_redirect!
-    assert_match I18n.t("users.email_verified"), response.body
+    assert_match I18n.t("collavre.users.email_verified"), response.body
 
     user.reload
     assert_not_nil user.email_verified_at

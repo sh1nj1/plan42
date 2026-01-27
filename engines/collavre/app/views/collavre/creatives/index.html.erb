@@ -2,12 +2,12 @@
 
 <div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--set-plan-modal"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"
-     data-creatives--import-uploading-value="<%= t('creatives.index.import_uploading') %>"
-     data-creatives--import-success-value="<%= t('creatives.index.import_success') %>"
-     data-creatives--import-failed-value="<%= t('creatives.index.import_failed') %>"
-     data-creatives--import-only-markdown-value="<%= t('creatives.index.only_markdown') %>"
-     data-creatives--set-plan-modal-select-one-value="<%= t('creatives.index.select_one_creative') %>"
-     data-creatives--set-plan-modal-select-plan-value="<%= t('creatives.index.select_plan_to_remove') %>">
+     data-creatives--import-uploading-value="<%= t('collavre.creatives.index.import_uploading') %>"
+     data-creatives--import-success-value="<%= t('collavre.creatives.index.import_success') %>"
+     data-creatives--import-failed-value="<%= t('collavre.creatives.index.import_failed') %>"
+     data-creatives--import-only-markdown-value="<%= t('collavre.creatives.index.only_markdown') %>"
+     data-creatives--set-plan-modal-select-one-value="<%= t('collavre.creatives.index.select_one_creative') %>"
+     data-creatives--set-plan-modal-select-plan-value="<%= t('collavre.creatives.index.select_plan_to_remove') %>">
   <div class="creative-actions-row">
   <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
   <% if @parent_creative&.parent_id.present? %>
@@ -28,7 +28,7 @@
 
   <% if can_manage_integrations %>
     <%= render PopupMenuComponent.new(
-          button_content: t('creatives.index.integrations', default: '연동'),
+          button_content: t('collavre.creatives.index.integrations', default: '연동'),
           menu_id: 'creative-integrations-menu',
           align: :left,
           button_classes: 'desktop-only'
@@ -39,7 +39,7 @@
   <% end %>
 
   <% if @parent_creative.present? %>
-    <%= button_to slide_view_creative_path(@parent_creative), method: :get, class: 'slide-view-btn desktop-only', aria: { label: t('creatives.index.slide_view') } do %>
+    <%= button_to slide_view_creative_path(@parent_creative), method: :get, class: 'slide-view-btn desktop-only', aria: { label: t('collavre.creatives.index.slide_view') } do %>
       <span aria-hidden="true"><%= svg_tag 'slide.svg', class: 'icon-slide', width: 22, height: 20 %></span>
     <% end %>
   <% end %>
@@ -50,7 +50,7 @@
     <button id="select-creative-btn" class="select-btn" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>" data-action="click->creatives--select-mode#toggle" data-creatives--select-mode-target="toggle"><%= t('app.select') %></button>
   <% end %>
   <% if (@parent_creative || @creative)&.has_permission?(Current.user, :admin) %>
-    <button id="delete-selection-btn" class="danger-link" style="display:none;" data-confirm="<%= t('creatives.index.are_you_sure_delete_selection') %>" data-action="click->creatives--select-mode#deleteSelected" data-creatives--select-mode-target="deleteButton"><%= t('creatives.index.delete_selection') %></button>
+    <button id="delete-selection-btn" class="danger-link" style="display:none;" data-confirm="<%= t('collavre.creatives.index.are_you_sure_delete_selection') %>" data-action="click->creatives--select-mode#deleteSelected" data-creatives--select-mode-target="deleteButton"><%= t('collavre.creatives.index.delete_selection') %></button>
   <% end %>
   <button id="expand-all-btn" class="expand-btn" style="width: 36px;" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" data-action="click->creatives--expansion#toggleAll" data-creatives--expansion-target="expand"><span aria-hidden="true">▼</span></button>
   <button id="toggle-edit-btn" class="edit-toggle-btn mobile-only" aria-label="<%= t('.edit') %>" title="<%= t('.edit') %>">
@@ -58,7 +58,7 @@
   <% if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
     <button id="import-markdown-btn" class="import-btn desktop-only" data-action="click->creatives--import#toggle" data-creatives--import-target="toggle"><%= t('.import_markdown') %></button>
   <% end %>
-  <button id="export-markdown-btn" class="export-btn desktop-only" data-parent-creative-id="<%= @parent_creative&.id %>" data-error="<%= t('creatives.index.export_failed') %>"><%= t('.export_markdown') %></button>
+  <button id="export-markdown-btn" class="export-btn desktop-only" data-parent-creative-id="<%= @parent_creative&.id %>" data-error="<%= t('collavre.creatives.index.export_failed') %>"><%= t('.export_markdown') %></button>
   <%= render 'mobile_actions_menu', current_creative: current_creative, can_manage_integrations: can_manage_integrations %>
 </div>
   <%= render 'import_upload_zone' %>

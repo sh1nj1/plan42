@@ -1,8 +1,8 @@
 <h1 class="no-top-margin"><%= t('.title') %></h1>
-<p><%= t('invites.show.invited_by', inviter: @invitation.inviter.display_name, email: @invitation.inviter.email, creative: strip_tags(@invitation.creative.effective_origin.description)) %></p>
-<p><%= t('invites.show.prompt') %></p>
+<p><%= t('collavre.invites.show.invited_by', inviter: @invitation.inviter.display_name, email: @invitation.inviter.email, creative: strip_tags(@invitation.creative.effective_origin.description)) %></p>
+<p><%= t('collavre.invites.show.prompt') %></p>
 <p>
-  <%= link_to t('invites.show.login'), new_session_path(invite_token: params[:token]) %> |
-  <%= link_to t('invites.show.sign_up'), new_user_path(invite_token: params[:token]) %>
+  <%= link_to t('collavre.invites.show.login'), new_session_path(invite_token: params[:token]) %> |
+  <%= link_to t('collavre.invites.show.sign_up'), new_user_path(invite_token: params[:token]) %>
 </p>
 </div>

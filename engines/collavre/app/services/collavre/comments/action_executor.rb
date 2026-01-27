@@ -20,7 +20,7 @@ module Collavre
         raise
       rescue StandardError, ScriptError => e
         Rails.logger.error("Comment action execution failed: #{e.class} #{e.message}")
-        raise ExecutionError, I18n.t("comments.approve_execution_failed", message: e.message)
+        raise ExecutionError, I18n.t("collavre.comments.approve_execution_failed", message: e.message)
       end
 
       private
@@ -33,17 +33,17 @@ module Collavre
         status = comment.approval_status(executor)
         if status != :ok
           error_key = case status
-          when :invalid_action_format then "comments.approve_invalid_format"
-          when :missing_action then "comments.approve_missing_action"
-          when :missing_approver then "comments.approve_missing_approver"
-          when :admin_required then "comments.approve_admin_required"
-          else "comments.approve_not_allowed"
+          when :invalid_action_format then "collavre.comments.approve_invalid_format"
+          when :missing_action then "collavre.comments.approve_missing_action"
+          when :missing_approver then "collavre.comments.approve_missing_approver"
+          when :admin_required then "collavre.comments.approve_admin_required"
+          else "collavre.comments.approve_not_allowed"
           end
           raise ExecutionError, I18n.t(error_key)
         end
 
         if comment.action_executed_at.present?
-          raise ExecutionError, I18n.t("comments.approve_already_executed")
+          raise ExecutionError, I18n.t("collavre.comments.approve_already_executed")
         end
       end
 
@@ -102,16 +102,16 @@ module Collavre
         private
 
         def parse_payload(code)
-          raise InvalidActionError, I18n.t("comments.approve_missing_action") if code.blank?
+          raise InvalidActionError, I18n.t("collavre.comments.approve_missing_action") if code.blank?
 
           payload = JSON.parse(code)
           unless payload.is_a?(Hash)
-            raise InvalidActionError, I18n.t("comments.approve_invalid_format")
+            raise InvalidActionError, I18n.t("collavre.comments.approve_invalid_format")
           end
 
           deep_stringify_keys(payload)
         rescue JSON::ParserError
-          raise InvalidActionError, I18n.t("comments.approve_invalid_format")
+          raise InvalidActionError, I18n.t("collavre.comments.approve_invalid_format")
         end
 
         def deep_stringify_keys(value)
@@ -161,15 +161,15 @@ module Collavre
 
         def process_action(payload)
           unless payload.is_a?(Hash)
-            raise InvalidActionError, I18n.t("comments.approve_invalid_format")
+            raise InvalidActionError, I18n.t("collavre.comments.approve_invalid_format")
           end
 
           action = payload["action"] || payload["type"]
-          raise InvalidActionError, I18n.t("comments.approve_missing_action") if action.blank?
+          raise InvalidActionError, I18n.t("collavre.comments.approve_missing_action") if action.blank?
 
           handler = SUPPORTED_ACTIONS[action]
           unless handler
-            raise InvalidActionError, I18n.t("comments.approve_unsupported_action", action: action)
+            raise InvalidActionError, I18n.t("collavre.comments.approve_unsupported_action", action: action)
           end
 
           send(handler, payload)
@@ -178,12 +178,12 @@ module Collavre
         def extract_attributes(payload)
           attributes = payload["attributes"]
           unless attributes.is_a?(Hash)
-            raise InvalidActionError, I18n.t("comments.approve_invalid_attributes")
+            raise InvalidActionError, I18n.t("collavre.comments.approve_invalid_attributes")
           end
 
           sanitized = attributes.slice(*CREATIVE_ATTRIBUTES)
           if sanitized.empty?
-            raise InvalidActionError, I18n.t("comments.approve_no_attributes")
+            raise InvalidActionError, I18n.t("collavre.comments.approve_no_attributes")
           end
 
           deep_stringify_keys(validate_attribute_types(sanitized))
@@ -194,11 +194,11 @@ module Collavre
             case key.to_s
             when "description"
               unless value.is_a?(String)
-                raise InvalidActionError, I18n.t("comments.approve_invalid_description")
+                raise InvalidActionError, I18n.t("collavre.comments.approve_invalid_description")
               end
             when "progress"
               unless value.is_a?(Numeric)
-                raise InvalidActionError, I18n.t("comments.approve_invalid_progress")
+                raise InvalidActionError, I18n.t("collavre.comments.approve_invalid_progress")
               end
             end
           end
@@ -220,7 +220,7 @@ module Collavre
 
           creative = find_creative_in_comment_tree(creative_id)
           unless creative
-            raise InvalidActionError, I18n.t("comments.approve_invalid_creative")
+            raise InvalidActionError, I18n.t("collavre.comments.approve_invalid_creative")
           end
 
           creative
@@ -232,7 +232,7 @@ module Collavre
 
           creative = find_creative_in_comment_tree(parent_id)
           unless creative
-            raise InvalidActionError, I18n.t("comments.approve_invalid_creative")
+            raise InvalidActionError, I18n.t("collavre.comments.approve_invalid_creative")
           end
 
           creative

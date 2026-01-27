@@ -7,18 +7,18 @@
     <% current_creative = local_assigns[:current_creative] || @parent_creative || @creative %>
     <% can_manage_integrations = local_assigns.fetch(:can_manage_integrations, current_creative&.has_permission?(Current.user, :admin)) %>
     <% if current_creative&.has_permission?(Current.user, :write) %>
-      <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="share-creative-btn" data-action="click->click-target#trigger"><%= t('creatives.index.share') %></button>
+      <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="share-creative-btn" data-action="click->click-target#trigger"><%= t('collavre.creatives.index.share') %></button>
     <% end %>
     <% if can_manage_integrations %>
-      <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="github-integration-btn" data-action="click->click-target#trigger"><%= t('creatives.index.integrations', default: '연동') %> - Github</button>
-       <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="notion-integration-btn" data-action="click->click-target#trigger"><%= t('creatives.index.integrations', default: '연동') %> - Notion</button>
+      <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="github-integration-btn" data-action="click->click-target#trigger"><%= t('collavre.creatives.index.integrations', default: '연동') %> - Github</button>
+       <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="notion-integration-btn" data-action="click->click-target#trigger"><%= t('collavre.creatives.index.integrations', default: '연동') %> - Notion</button>
     <% end %>
     <% if @parent_creative.present? %>
-      <%= button_to t('creatives.index.slide_view'), slide_view_creative_path(@parent_creative), method: :get, class: 'popup-menu-item' %>
+      <%= button_to t('collavre.creatives.index.slide_view'), slide_view_creative_path(@parent_creative), method: :get, class: 'popup-menu-item' %>
     <% end %>
     <% if authenticated? && (!params[:id] || (current_creative && current_creative.has_permission?(Current.user, :write))) %>
-      <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="import-markdown-btn" data-action="click->click-target#trigger"><%= t('creatives.index.import_markdown') %></button>
+      <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="import-markdown-btn" data-action="click->click-target#trigger"><%= t('collavre.creatives.index.import_markdown') %></button>
     <% end %>
-    <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="export-markdown-btn" data-action="click->click-target#trigger"><%= t('creatives.index.export_markdown') %></button>
+    <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="export-markdown-btn" data-action="click->click-target#trigger"><%= t('collavre.creatives.index.export_markdown') %></button>
   <% end %>
 </div>

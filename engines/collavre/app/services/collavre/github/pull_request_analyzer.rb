@@ -161,7 +161,7 @@ module Collavre
         locale ||= "en"
 
         label = if defined?(I18n)
-                  I18n.t("users.locales.#{locale}", default: locale)
+                  I18n.t("collavre.users.locales.#{locale}", default: locale)
         else
                   locale
         end

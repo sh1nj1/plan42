@@ -5,6 +5,6 @@
     <%= render partial: 'collavre/comments/comment', locals: { comment: comment, read_by_users: read_receipts&.[](comment.id), present_user_ids: present_user_ids, current_topic_id: current_topic_id } %>
   <% end %>
 <% else %>
-  <div id="no-comments"><%= t('comments.no_comments') %></div>
+  <div id="no-comments"><%= t('collavre.comments.no_comments') %></div>
 <% end %>
 

@@ -9,7 +9,7 @@ module Collavre
 
       if gh.new_record?
         unless Current.user
-          redirect_to new_session_path, alert: I18n.t("github_auth.login_first")
+          redirect_to new_session_path, alert: I18n.t("collavre.github_auth.login_first")
           return
         end
         gh.user = Current.user
@@ -19,7 +19,7 @@ module Collavre
       gh.login = auth.info.nickname
       gh.save!
 
-      redirect_to collavre.creatives_path, notice: I18n.t("github_auth.connected")
+      redirect_to collavre.creatives_path, notice: I18n.t("collavre.github_auth.connected")
     end
   end
 end

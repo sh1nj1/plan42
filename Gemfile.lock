@@ -2,8 +2,15 @@ PATH
   remote: engines/collavre
   specs:
     collavre (0.1.0)
+      bcrypt
       closure_tree
+      httparty
+      liquid
+      nokogiri
       rails (>= 8.0)
+      ruby_llm
+      stimulus-rails
+      turbo-rails
       view_component
 
 GEM

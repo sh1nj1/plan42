@@ -9,7 +9,7 @@ module Collavre
 
       if notion.new_record?
         unless Current.user
-          redirect_to new_session_path, alert: I18n.t("notion_auth.login_first")
+          redirect_to new_session_path, alert: I18n.t("collavre.notion_auth.login_first")
           return
         end
         notion.user = Current.user
@@ -20,7 +20,7 @@ module Collavre
       notion.workspace_icon = auth.extra.raw_info.workspace_icon
       notion.save!
 
-      redirect_to collavre.creatives_path, notice: I18n.t("notion_auth.connected")
+      redirect_to collavre.creatives_path, notice: I18n.t("collavre.notion_auth.connected")
     end
   end
 end

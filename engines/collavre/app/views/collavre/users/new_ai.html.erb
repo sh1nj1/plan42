@@ -1,18 +1,18 @@
-<h1 class="text-center" style="margin-top: 0;"><%= t('users.new_ai.title') %></h1>
+<h1 class="text-center" style="margin-top: 0;"><%= t('collavre.users.new_ai.title') %></h1>
 
 <%= form_with url: collavre.create_ai_users_path, class: "stacked-form" do |form| %>
   <div class="form-group">
-    <%= form.label :ai_id, t('users.new_ai.id_label') %>
+    <%= form.label :ai_id, t('collavre.users.new_ai.id_label') %>
     <%= form.text_field :ai_id, required: true, class: "stacked-form-control", placeholder: "e.g. my_bot" %>
   </div>
 
   <div class="form-group">
-    <%= form.label :name, t('users.new_ai.name_label') %>
+    <%= form.label :name, t('collavre.users.new_ai.name_label') %>
     <%= form.text_field :name, required: true, class: "stacked-form-control", placeholder: "e.g. My Bot" %>
   </div>
 
   <div class="form-group">
-    <%= form.label :system_prompt, t('users.new_ai.system_prompt_label') %>
+    <%= form.label :system_prompt, t('collavre.users.new_ai.system_prompt_label') %>
     <%= form.text_area :system_prompt, required: true, class: "stacked-form-control", rows: 5, value: AiClient::SYSTEM_INSTRUCTIONS %>
   </div>
 
@@ -23,7 +23,7 @@
   </div>
 
   <div class="form-group">
-    <%= form.label :llm_model, t('users.new_ai.model_label') %>
+    <%= form.label :llm_model, t('collavre.users.new_ai.model_label') %>
     <div style="position: relative;"
          data-controller="llm-model"
          data-llm-model-menu-id-value="llm-model-suggestions"
@@ -41,14 +41,14 @@
   </div>
 
   <div class="form-group">
-    <%= form.label :llm_api_key, t('users.new_ai.api_key_label') %>
+    <%= form.label :llm_api_key, t('collavre.users.new_ai.api_key_label') %>
     <%= form.password_field :llm_api_key, class: "stacked-form-control", placeholder: "sk-..." %>
-    <small class="form-text text-muted"><%= t('users.new_ai.api_key_help') %></small>
+    <small class="form-text text-muted"><%= t('collavre.users.new_ai.api_key_help') %></small>
   </div>
 
   <div class="form-group">
-    <label class="form-label"><%= t('users.edit_ai.tools_title') %></label>
-    <p class="text-muted small"><%= t('users.edit_ai.tools_description') %></p>
+    <label class="form-label"><%= t('collavre.users.edit_ai.tools_title') %></label>
+    <p class="text-muted small"><%= t('collavre.users.edit_ai.tools_description') %></p>
 
     <% if @available_tools.any? %>
       <div class="tools-selection">
@@ -68,19 +68,19 @@
         <% end %>
       </div>
     <% else %>
-      <p class="text-muted"><%= t('users.edit_ai.no_tools_found') %></p>
+      <p class="text-muted"><%= t('collavre.users.edit_ai.no_tools_found') %></p>
     <% end %>
   </div>
 
   <div class="form-group">
     <div class="form-check">
       <%= form.check_box :searchable, { class: "form-check-input" }, true, false %>
-      <%= form.label :searchable, t('users.new_ai.searchable_label'), class: "form-check-label" %>
+      <%= form.label :searchable, t('collavre.users.new_ai.searchable_label'), class: "form-check-label" %>
     </div>
-    <small class="form-text text-muted"><%= t('users.new_ai.searchable_help') %></small>
+    <small class="form-text text-muted"><%= t('collavre.users.new_ai.searchable_help') %></small>
   </div>
 
-  <%= form.button t('users.new_ai.submit'), type: "submit", class: "primary-action-button" %>
+  <%= form.button t('collavre.users.new_ai.submit'), type: "submit", class: "primary-action-button" %>
 <% end %>
 
 <br/>

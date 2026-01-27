@@ -1,7 +1,7 @@
 <div class="contact-management">
   <div class="flex-row-center-between">
-    <p class="text-muted"><%= t('contacts.description') %></p>
-    <%= link_to t('users.add_ai_user'), collavre.new_ai_users_path, class: "primary-action-button" %>
+    <p class="text-muted"><%= t('collavre.contacts.description') %></p>
+    <%= link_to t('collavre.users.add_ai_user'), collavre.new_ai_users_path, class: "primary-action-button" %>
   </div>
 
   <% show_actions = (contacts || []).any? { |c| c.contact_user.ai_user? && c.contact_user.created_by_id == Current.user.id } %>
@@ -11,13 +11,13 @@
       <table class="contacts-table">
         <thead>
           <tr>
-            <th><%= t('users.table.avatar') %></th>
-            <th><%= t('users.table.name') %></th>
-            <th><%= t('users.table.email') %></th>
-            <th><%= t('contacts.table.shared_creatives') %></th>
-            <th><%= t('contacts.table.shared_with_me') %></th>
+            <th><%= t('collavre.users.table.avatar') %></th>
+            <th><%= t('collavre.users.table.name') %></th>
+            <th><%= t('collavre.users.table.email') %></th>
+            <th><%= t('collavre.contacts.table.shared_creatives') %></th>
+            <th><%= t('collavre.contacts.table.shared_with_me') %></th>
             <% if show_actions %>
-              <th><%= t('users.table.actions') %></th>
+              <th><%= t('collavre.users.table.actions') %></th>
             <% end %>
           </tr>
         </thead>
@@ -43,11 +43,11 @@
               <% if show_actions %>
                 <td class="text-right">
                   <% if contact_user.ai_user? && contact_user.created_by_id == Current.user.id %>
-                    <%= link_to t('users.edit_ai.link'), collavre.edit_ai_user_path(contact_user), class: "btn btn-sm btn-secondary mr-1" %>
-                    <%= button_to t('users.destroy.delete_ai_user'),
+                    <%= link_to t('collavre.users.edit_ai.link'), collavre.edit_ai_user_path(contact_user), class: "btn btn-sm btn-secondary mr-1" %>
+                    <%= button_to t('collavre.users.destroy.delete_ai_user'),
                                   collavre.user_path(contact_user),
                                   method: :delete,
-                                  form: { data: { turbo_confirm: t('users.destroy.confirm_ai') } },
+                                  form: { data: { turbo_confirm: t('collavre.users.destroy.confirm_ai') } },
                                   class: "danger-link" %>
                   <% end %>
                 </td>
@@ -58,7 +58,7 @@
       </table>
     </div>
   <% else %>
-    <p class="text-muted"><%= t('contacts.empty_state') %></p>
+    <p class="text-muted"><%= t('collavre.contacts.empty_state') %></p>
   <% end %>
 
   <% if total_contact_pages.to_i > 1 %>
@@ -66,11 +66,11 @@
       <% prev_page = contact_page.to_i - 1 %>
       <% next_page = contact_page.to_i + 1 %>
       <% if contact_page.to_i > 1 %>
-        <%= link_to t('contacts.pagination.prev'), collavre.user_path(Current.user, tab: 'contacts', contact_page: prev_page), class: 'pagination-button' %>
+        <%= link_to t('collavre.contacts.pagination.prev'), collavre.user_path(Current.user, tab: 'contacts', contact_page: prev_page), class: 'pagination-button' %>
       <% end %>
-      <span class="pagination-status"><%= t('contacts.pagination.page_info', current: contact_page, total: total_contact_pages) %></span>
+      <span class="pagination-status"><%= t('collavre.contacts.pagination.page_info', current: contact_page, total: total_contact_pages) %></span>
       <% if contact_page.to_i < total_contact_pages.to_i %>
-        <%= link_to t('contacts.pagination.next'), collavre.user_path(Current.user, tab: 'contacts', contact_page: next_page), class: 'pagination-button' %>
+        <%= link_to t('collavre.contacts.pagination.next'), collavre.user_path(Current.user, tab: 'contacts', contact_page: next_page), class: 'pagination-button' %>
       <% end %>
     </nav>
   <% end %>

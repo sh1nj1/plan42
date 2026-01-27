@@ -8,7 +8,7 @@ module Collavre
       def create
         emoji = params[:emoji].to_s.strip
         if emoji.blank?
-          render json: { error: I18n.t("comments.reaction_invalid") }, status: :unprocessable_entity and return
+          render json: { error: I18n.t("collavre.comments.reaction_invalid") }, status: :unprocessable_entity and return
         end
 
         @comment.comment_reactions.find_or_create_by!(user: Current.user, emoji: emoji)
@@ -19,7 +19,7 @@ module Collavre
       def destroy
         emoji = params[:emoji].to_s.strip
         if emoji.blank?
-          render json: { error: I18n.t("comments.reaction_invalid") }, status: :unprocessable_entity and return
+          render json: { error: I18n.t("collavre.comments.reaction_invalid") }, status: :unprocessable_entity and return
         end
 
         reaction = @comment.comment_reactions.find_by(user: Current.user, emoji: emoji)
@@ -75,7 +75,7 @@ module Collavre
       def authorize_feedback!
         return if @creative.has_permission?(Current.user, :feedback)
 
-        render json: { error: I18n.t("comments.no_permission") }, status: :forbidden
+        render json: { error: I18n.t("collavre.comments.no_permission") }, status: :forbidden
       end
     end
   end

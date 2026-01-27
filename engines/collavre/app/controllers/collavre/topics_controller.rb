@@ -12,7 +12,7 @@ module Collavre
 
     def create
       unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
-        render json: { error: I18n.t("topics.no_permission") }, status: :forbidden and return
+        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
       end
 
       topic = @creative.topics.build(topic_params)
@@ -31,7 +31,7 @@ module Collavre
 
     def destroy
       unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
-        render json: { error: I18n.t("topics.no_permission") }, status: :forbidden and return
+        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
       end
 
       topic = @creative.topics.find(params[:id])

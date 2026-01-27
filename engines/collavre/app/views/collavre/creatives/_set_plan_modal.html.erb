@@ -1,11 +1,11 @@
 <div id="set-plan-modal" data-creatives--set-plan-modal-target="modal" data-action="click->creatives--set-plan-modal#backdrop" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
   <div class="popup-box" style="min-width:320px;max-width:90vw;">
     <button id="close-set-plan-modal" class="popup-close-btn" data-action="creatives--set-plan-modal#close">&times;</button>
-    <h2><%= t('creatives.index.set_plan_title', default: 'Set Plan for Selected Creatives') %></h2>
+    <h2><%= t('collavre.creatives.index.set_plan_title', default: 'Set Plan for Selected Creatives') %></h2>
     <form id="set-plan-form" method="post" action="<%= collavre.creative_plan_path %>" data-creatives--set-plan-modal-target="form" data-action="submit->creatives--set-plan-modal#submit">
       <%= csrf_meta_tags %>
       <div style="margin-bottom:1em;">
-        <label for="plan-id-select"><%= t('creatives.index.select_plan', default: 'Select Plan') %></label>
+        <label for="plan-id-select"><%= t('collavre.creatives.index.select_plan', default: 'Select Plan') %></label>
         <select id="plan-id-select" name="plan_id" required style="width:100%;" data-creatives--set-plan-modal-target="planSelect">
           <% Plan.all.each do |plan| %>
             <option value="<%= plan.id %>"><%= plan.creative&.effective_description(nil, false).presence || plan.target_date %></option>
@@ -16,9 +16,9 @@
       <input type="hidden" name="creative_ids" id="selected-creative-ids-input" data-creatives--set-plan-modal-target="idsInput" />
       <div style="display:flex; gap:1em; align-items:center;">
         <button type="button" id="remove-plan-btn" data-remove-path="<%= collavre.creative_plan_path %>" class="btn btn-danger" style="margin-right:0.5em;" data-action="click->creatives--set-plan-modal#remove">
-          <%= t('creatives.index.remove_plan', default: 'Remove Plan') %>
+          <%= t('collavre.creatives.index.remove_plan', default: 'Remove Plan') %>
         </button>
-        <button type="submit" class="btn btn-primary"><%= t('creatives.index.add_plan', default: 'Add Plan') %></button>
+        <button type="submit" class="btn btn-primary"><%= t('collavre.creatives.index.add_plan', default: 'Add Plan') %></button>
       </div>
     </form>
   </div>

@@ -55,6 +55,6 @@ class CommentsControllerSecurityTest < ActionDispatch::IntegrationTest
     }, xhr: true
 
     assert_response :unprocessable_entity
-    assert_equal I18n.t("comments.invalid_topic"), JSON.parse(response.body)["error"]
+    assert_equal I18n.t("collavre.comments.invalid_topic"), JSON.parse(response.body)["error"]
   end
 end

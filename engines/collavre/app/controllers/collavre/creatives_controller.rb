@@ -69,7 +69,7 @@ module Collavre
     def show
       unless @creative.has_permission?(Current.user, :read)
         if Current.user
-          redirect_to creatives_path, alert: t("creatives.errors.no_permission")
+          redirect_to creatives_path, alert: t("collavre.creatives.errors.no_permission")
         else
           request_authentication
         end
@@ -148,7 +148,7 @@ module Collavre
     def slide_view
       unless @creative.has_permission?(Current.user, :read)
         if Current.user
-          redirect_to creatives_path, alert: t("creatives.errors.no_permission")
+          redirect_to creatives_path, alert: t("collavre.creatives.errors.no_permission")
         else
           request_authentication
         end
@@ -265,7 +265,7 @@ module Collavre
     def destroy
       parent = @creative.parent
       unless @creative.has_permission?(Current.user, :admin)
-        redirect_to @creative, alert: t("creatives.errors.no_permission") and return
+        redirect_to @creative, alert: t("collavre.creatives.errors.no_permission") and return
       end
       if params[:delete_with_children]
         # Recursively destroy deletable descendants before deleting parent
@@ -387,15 +387,15 @@ module Collavre
       base_creative = @creative.effective_origin
       parent = base_creative.parent
       if parent.nil?
-        render json: { error: t("creatives.index.unconvert_no_parent") }, status: :unprocessable_entity and return
+        render json: { error: t("collavre.creatives.index.unconvert_no_parent") }, status: :unprocessable_entity and return
       end
 
       unless parent.has_permission?(Current.user, :feedback)
-        render json: { error: t("creatives.errors.no_permission") }, status: :forbidden and return
+        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
       end
 
       unless base_creative.has_permission?(Current.user, :admin)
-        render json: { error: t("creatives.errors.no_permission") }, status: :forbidden and return
+        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
       end
 
       markdown = helpers.render_creative_tree_markdown([ base_creative ])
@@ -418,7 +418,7 @@ module Collavre
         effective_origin = parent_creative.effective_origin
         unless parent_creative.has_permission?(Current.user, :read) &&
                effective_origin.has_permission?(Current.user, :read)
-          render plain: t("creatives.errors.no_permission"), status: :forbidden and return
+          render plain: t("collavre.creatives.errors.no_permission"), status: :forbidden and return
         end
         [ effective_origin ]
       else
@@ -428,7 +428,7 @@ module Collavre
       end
 
       if creatives.empty?
-        render plain: t("creatives.errors.no_permission"), status: :forbidden and return
+        render plain: t("collavre.creatives.errors.no_permission"), status: :forbidden and return
       end
 
       markdown = helpers.render_creative_tree_markdown(creatives)

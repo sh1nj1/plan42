@@ -5,18 +5,18 @@
     <input type="checkbox"
            class="comment-select-checkbox"
            value="<%= comment.id %>"
-           aria-label="<%= t('comments.select_label') %>" />
+           aria-label="<%= t('collavre.comments.select_label') %>" />
   </div>
   <div>
     <%= render AvatarComponent.new(user: comment.user, size: 20, classes: 'avatar comment-avatar') %>
-    <% system_prefix = "#{t('comments.system_user')}:" %>
+    <% system_prefix = "#{t('collavre.comments.system_user')}:" %>
     <% display_name =
          if comment.user.present?
            comment.user.display_name
          elsif comment.content.to_s.strip.start_with?(system_prefix)
-           t('comments.system_user')
+           t('collavre.comments.system_user')
          else
-           t('comments.gemini')
+           t('collavre.comments.gemini')
          end %>
     <% timestamp = comment.created_at.in_time_zone %>
     <strong><%= display_name %></strong>
@@ -34,37 +34,37 @@
       <%= render "collavre/comments/read_receipts", read_by_users: users_read, present_user_ids: present_user_ids unless comment.private? %>
     </span>
     <% if comment.private? %>
-      <span class="private-label">[<%= t('comments.private') %>]</span>
+      <span class="private-label">[<%= t('collavre.comments.private') %>]</span>
     <% end %>
     <% if comment.action_executed_at.present? %>
-      <span class="comment-status-label approved-label">[<%= t('comments.approved_label') %>]</span>
+      <span class="comment-status-label approved-label">[<%= t('collavre.comments.approved_label') %>]</span>
     <% end %>
     <% can_convert_comment = comment.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
   </div>
     <div class="comment-action-container">
-      <button class="add-reaction-btn" type="button" data-action="click->comment#triggerReactionPicker" title="<%= t('comments.add_reaction') %>">
+      <button class="add-reaction-btn" type="button" data-action="click->comment#triggerReactionPicker" title="<%= t('collavre.comments.add_reaction') %>">
         <span class="grayscale-emoji">☺</span>
       </button>
 
-      <button class="<%= ['convert-comment-btn', ('comment-owner-only' unless can_convert_comment)].compact.join(' ') %>" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('comments.convert_to_creative') %>">
-        <%= t('comments.convert_button') %>
+      <button class="<%= ['convert-comment-btn', ('comment-owner-only' unless can_convert_comment)].compact.join(' ') %>" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.convert_to_creative') %>">
+        <%= t('collavre.comments.convert_button') %>
       </button>
       <% can_approve = comment.approval_status(Current.user) == :ok %>
       <% if can_approve %>
-        <button class="approve-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.approve_button') %>">
-          <%= t('comments.approve_button') %>
+        <button class="approve-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.approve_button') %>">
+          <%= t('collavre.comments.approve_button') %>
         </button>
       <% end %>
-      <button class="edit-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('comments.update_comment') %>">
-        <%= t('comments.edit_button') %>
+      <button class="edit-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('collavre.comments.update_comment') %>">
+        <%= t('collavre.comments.edit_button') %>
       </button>
-      <button class="copy-comment-link-btn" data-comment-id="<%= comment.id %>" data-comment-url="<%= collavre.creative_comment_url(comment.creative, comment, Rails.application.config.action_mailer.default_url_options) %>" title="<%= t('comments.copy_link_button') %>">
-        <%= t('comments.copy_link_button') %>
+      <button class="copy-comment-link-btn" data-comment-id="<%= comment.id %>" data-comment-url="<%= collavre.creative_comment_url(comment.creative, comment, Rails.application.config.action_mailer.default_url_options) %>" title="<%= t('collavre.comments.copy_link_button') %>">
+        <%= t('collavre.comments.copy_link_button') %>
       </button>
       <% can_delete = comment.user == Current.user || comment.creative.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
       <% if can_delete %>
-        <button class="delete-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('comments.delete') %>">
-          <%= t('comments.delete_button') %>
+        <button class="delete-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.delete') %>">
+          <%= t('collavre.comments.delete_button') %>
         </button>
       <% end %>
     </div>

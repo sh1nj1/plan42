@@ -21,7 +21,7 @@
 <% end %>
 
 <% if auth_provider_enabled?(:email) %>
-  <%= link_to t('users.sessions.new.forgot_password'), collavre.new_password_path %>
+  <%= link_to t('collavre.users.sessions.new.forgot_password'), collavre.new_password_path %>
   <br>
   <%= link_to t("users.new.sign_up"), params[:invite_token] ? collavre.new_user_path(invite_token: params[:invite_token]) : collavre.new_user_path, class: "sign-up-link" %>
 <% end %>

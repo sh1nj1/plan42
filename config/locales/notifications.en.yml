@@ -1,7 +1,0 @@
-en:
-  notifications:
-    permission_prompt: "We would like to send you notifications about updates."
-    allow: "Allow"
-    deny: "Don't allow"
-    confirm_deny: "Are you sure you do not want to allow notifications?"
-

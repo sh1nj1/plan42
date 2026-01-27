@@ -1,7 +1,19 @@
 ---
 ko:
   collavre:
+    topics:
+      delete_confirm: 이 토픽의 모든 메시지가 삭제됩니다. 확실합니까?
+      new_placeholder: 새 토픽
+      no_permission: 이 작업을 수행할 권한이 없습니다.
+    github_auth:
+      login_first: 먼저 로그인해주세요.
+      connected: Github 계정이 연동되었습니다.
+    notion_auth:
+      login_first: 먼저 로그인해주세요.
+      connected: Notion 계정이 연동되었습니다.
     comments:
+      reaction_invalid: 잘못된 리액션입니다.
+      invalid_topic: 토픽이 이 크리에이티브에 속하지 않습니다.
       comments: 댓글
       delete_confirm: 댓글을 삭제하시겠습니까?
       no_comments: 댓글이 없습니다.
@@ -63,3 +75,8 @@ ko:
       calendar_command:
         event_created: '이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})'
       read_by: "%{name} 님이 읽음"
+    inbox_mailer:
+      daily_summary:
+        subject: 인박스 요약
+        greeting: '읽지 않은 메세지 목록입니다:'
+        view: 보기

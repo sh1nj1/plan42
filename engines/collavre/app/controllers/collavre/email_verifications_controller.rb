@@ -7,9 +7,9 @@ module Collavre
 
       if user
         user.update!(email_verified_at: Time.current)
-        redirect_to new_session_path, notice: I18n.t("users.email_verified")
+        redirect_to new_session_path, notice: I18n.t("collavre.users.email_verified")
       else
-        redirect_to new_session_path, alert: I18n.t("users.email_verification.invalid_token")
+        redirect_to new_session_path, alert: I18n.t("collavre.users.email_verification.invalid_token")
       end
     end
   end

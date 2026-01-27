@@ -53,7 +53,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to collavre.users_path
     follow_redirect!
-    assert_equal I18n.t("users.system_admin.granted"), flash[:notice]
+    assert_equal I18n.t("collavre.users.system_admin.granted"), flash[:notice]
     assert @regular_user.reload.system_admin?
   end
 
@@ -66,7 +66,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to collavre.users_path
     follow_redirect!
-    assert_equal I18n.t("users.system_admin.revoked"), flash[:notice]
+    assert_equal I18n.t("collavre.users.system_admin.revoked"), flash[:notice]
     refute @regular_user.reload.system_admin?
   end
 
@@ -79,7 +79,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to collavre.users_path
     follow_redirect!
-    assert_equal I18n.t("users.destroy.cannot_delete_self"), flash[:alert]
+    assert_equal I18n.t("collavre.users.destroy.cannot_delete_self"), flash[:alert]
   end
 
   test "system admin can delete a user and all associated data" do
@@ -135,7 +135,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to collavre.users_path
     follow_redirect!
-    assert_equal I18n.t("users.destroy.success"), flash[:notice]
+    assert_equal I18n.t("collavre.users.destroy.success"), flash[:notice]
 
     refute User.exists?(user_to_delete.id)
     refute Creative.exists?(creative.id)
@@ -173,7 +173,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to collavre.user_path(@regular_user, tab: "contacts")
     follow_redirect!
-    assert_equal I18n.t("users.destroy.success"), flash[:notice]
+    assert_equal I18n.t("collavre.users.destroy.success"), flash[:notice]
   end
 
   test "non creator non admin cannot delete ai user" do
@@ -203,7 +203,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to collavre.user_path(@regular_user, tab: "contacts")
     follow_redirect!
-    assert_equal I18n.t("users.destroy.not_authorized"), flash[:alert]
+    assert_equal I18n.t("collavre.users.destroy.not_authorized"), flash[:alert]
   end
 
   test "prepare_contacts includes shares on origin creatives for linked creatives" do
@@ -322,7 +322,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to collavre.user_path(@regular_user, tab: "contacts")
     follow_redirect!
-    assert_equal I18n.t("users.create_ai.success"), flash[:notice]
+    assert_equal I18n.t("collavre.users.create_ai.success"), flash[:notice]
   end
 
   test "ai user creator sees delete button in contacts" do
@@ -343,8 +343,8 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     get collavre.user_path(@regular_user, tab: "contacts")
     assert_response :success
-    assert_includes response.body, I18n.t("users.destroy.delete_ai_user")
-    assert_includes response.body, I18n.t("users.destroy.confirm_ai")
+    assert_includes response.body, I18n.t("collavre.users.destroy.delete_ai_user")
+    assert_includes response.body, I18n.t("collavre.users.destroy.confirm_ai")
   end
 
   test "non creator does not see delete button for ai user contact" do
@@ -372,7 +372,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     get collavre.user_path(@regular_user, tab: "contacts")
     assert_response :success
-    refute_includes response.body, I18n.t("users.destroy.delete_ai_user")
+    refute_includes response.body, I18n.t("collavre.users.destroy.delete_ai_user")
   end
   test "search with scope contacts returns contact users" do
     sign_in_as(@admin, password: "password")
@@ -438,7 +438,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     get collavre.passkeys_user_path(other_user)
 
     assert_redirected_to collavre.user_path(@regular_user)
-    assert_equal I18n.t("users.destroy.not_authorized"), flash[:alert]
+    assert_equal I18n.t("collavre.users.destroy.not_authorized"), flash[:alert]
   end
 
   test "user can access their own passkeys page" do

@@ -67,7 +67,7 @@ module Collavre
           creative: creative
         )
 
-        I18n.t("comments.calendar_command.event_created", url: event.html_link)
+        I18n.t("collavre.comments.calendar_command.event_created", url: event.html_link)
       end
 
       def calculate_times(timezone, date_str, time_str)

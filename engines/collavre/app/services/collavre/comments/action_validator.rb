@@ -33,15 +33,15 @@ module Collavre
 
       def validate_single_action(context, payload)
         unless payload.is_a?(Hash)
-          raise ValidationError, I18n.t("comments.approve_invalid_format")
+          raise ValidationError, I18n.t("collavre.comments.approve_invalid_format")
         end
 
         action = payload["action"] || payload["type"]
-        raise ValidationError, I18n.t("comments.approve_missing_action") if action.blank?
+        raise ValidationError, I18n.t("collavre.comments.approve_missing_action") if action.blank?
 
         handler = ActionExecutor::ExecutionContext::SUPPORTED_ACTIONS[action]
         unless handler
-          raise ValidationError, I18n.t("comments.approve_unsupported_action", action: action)
+          raise ValidationError, I18n.t("collavre.comments.approve_unsupported_action", action: action)
         end
 
         case handler

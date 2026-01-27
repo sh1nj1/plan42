@@ -2,7 +2,7 @@
 
 <% if defined?(@invitation) && @invitation.present? %>
   <p>
-    <strong><%= t('creatives.index.share_creative') %>:</strong>
+    <strong><%= t('collavre.creatives.index.share_creative') %>:</strong>
     <%= strip_tags(@invitation.creative.effective_origin.description) %>
   </p>
 <% end %>
@@ -22,7 +22,7 @@
   <%= form.submit t('.sign_up'), class: "primary-action-button" %>
 <% end %>
 <div class="auth-alt-action">
-  <%= button_to t('users.sessions.new.sign_in_with_google'),
+  <%= button_to t('collavre.users.sessions.new.sign_in_with_google'),
                 '/auth/google_oauth2',
                 method: :post,
                 class: "primary-action-button",

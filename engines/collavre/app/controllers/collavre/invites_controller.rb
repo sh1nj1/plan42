@@ -21,7 +21,7 @@ module Collavre
     def set_invitation
       @invitation = Invitation.find_by_token_for(:invite, params[:token])
     rescue ActiveSupport::MessageVerifier::InvalidSignature
-      redirect_to main_app.new_user_path, alert: t("invites.invalid")
+      redirect_to main_app.new_user_path, alert: t("collavre.invites.invalid")
     end
   end
 end

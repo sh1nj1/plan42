@@ -131,7 +131,7 @@ module Collavre
 
     def create
       unless @creative.has_permission?(Current.user, :feedback)
-        render json: { error: I18n.t("comments.no_permission") }, status: :forbidden and return
+        render json: { error: I18n.t("collavre.comments.no_permission") }, status: :forbidden and return
       end
 
       comment_attributes = comment_params.except(:images)
@@ -140,7 +140,7 @@ module Collavre
       @comment = @creative.comments.build(comment_attributes)
 
       if @comment.topic_id.present? && !@creative.topics.where(id: @comment.topic_id).exists?
-        render json: { error: I18n.t("comments.invalid_topic") }, status: :unprocessable_entity and return
+        render json: { error: I18n.t("collavre.comments.invalid_topic") }, status: :unprocessable_entity and return
       end
 
       @comment.user = Current.user
@@ -175,7 +175,7 @@ module Collavre
       if @comment.user == Current.user
         safe_params = comment_params
         if safe_params[:topic_id].present? && !@creative.topics.where(id: safe_params[:topic_id]).exists?
-          render json: { error: I18n.t("comments.invalid_topic") }, status: :unprocessable_entity and return
+          render json: { error: I18n.t("collavre.comments.invalid_topic") }, status: :unprocessable_entity and return
         end
 
         if @comment.update(safe_params)
@@ -185,7 +185,7 @@ module Collavre
           render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
         end
       else
-        render json: { error: I18n.t("comments.not_owner") }, status: :forbidden
+        render json: { error: I18n.t("collavre.comments.not_owner") }, status: :forbidden
       end
     end
 
@@ -217,13 +217,13 @@ module Collavre
         @comment.destroy
         head :no_content
       else
-        render json: { error: I18n.t("comments.not_owner") }, status: :forbidden
+        render json: { error: I18n.t("collavre.comments.not_owner") }, status: :forbidden
       end
     end
 
     def convert
       unless can_convert_comment?
-        render json: { error: I18n.t("comments.convert_not_allowed") }, status: :forbidden and return
+        render json: { error: I18n.t("collavre.comments.convert_not_allowed") }, status: :forbidden and return
       end
 
       created_creatives = ::MarkdownImporter.import(
@@ -251,11 +251,11 @@ module Collavre
       status = @comment.approval_status(Current.user)
       if status != :ok
         error_key = case status
-        when :invalid_action_format then "comments.approve_invalid_format"
-        when :missing_action then "comments.approve_missing_action"
-        when :missing_approver then "comments.approve_missing_approver"
-        when :admin_required then "comments.approve_admin_required"
-        else "comments.approve_not_allowed"
+        when :invalid_action_format then "collavre.comments.approve_invalid_format"
+        when :missing_action then "collavre.comments.approve_missing_action"
+        when :missing_approver then "collavre.comments.approve_missing_approver"
+        when :admin_required then "collavre.comments.approve_admin_required"
+        else "collavre.comments.approve_not_allowed"
         end
         http_status = case status
         when :invalid_action_format, :missing_action, :missing_approver
@@ -300,11 +300,11 @@ module Collavre
         if status_in_lock != :ok
           approver_mismatch_error = true
           status_error_key = case status_in_lock
-          when :invalid_action_format then "comments.approve_invalid_format"
-          when :missing_action then "comments.approve_missing_action"
-          when :missing_approver then "comments.approve_missing_approver"
-          when :admin_required then "comments.approve_admin_required"
-          else "comments.approve_not_allowed"
+          when :invalid_action_format then "collavre.comments.approve_invalid_format"
+          when :missing_action then "collavre.comments.approve_missing_action"
+          when :missing_approver then "collavre.comments.approve_missing_approver"
+          when :admin_required then "collavre.comments.approve_admin_required"
+          else "collavre.comments.approve_not_allowed"
           end
           status_http_status = case status_in_lock
           when :invalid_action_format, :missing_action, :missing_approver
@@ -317,7 +317,7 @@ module Collavre
         else
           action_payload = params.dig(:comment, :action)
           if action_payload.blank?
-            validation_error_message = I18n.t("comments.approve_missing_action")
+            validation_error_message = I18n.t("collavre.comments.approve_missing_action")
           else
             begin
               validator = ::Comments::ActionValidator.new(comment: @comment)
@@ -336,12 +336,12 @@ module Collavre
       elsif validation_error_message
         render json: { error: validation_error_message }, status: :unprocessable_entity
       elsif executed_error
-        render json: { error: I18n.t("comments.approve_already_executed") }, status: :unprocessable_entity
+        render json: { error: I18n.t("collavre.comments.approve_already_executed") }, status: :unprocessable_entity
       elsif update_success
         @comment = Comment.with_attached_images.includes(:comment_reactions).find(@comment.id)
         render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
       else
-        error_message = @comment.errors.full_messages.to_sentence.presence || I18n.t("comments.action_update_error")
+        error_message = @comment.errors.full_messages.to_sentence.presence || I18n.t("collavre.comments.action_update_error")
         render json: { error: error_message }, status: :unprocessable_entity
       end
     rescue ::Comments::ActionValidator::ValidationError => e
@@ -371,18 +371,18 @@ module Collavre
     def move
       comment_ids = Array(params[:comment_ids]).map(&:presence).compact.map(&:to_i)
       if comment_ids.empty?
-        render json: { error: I18n.t("comments.move_no_selection") }, status: :unprocessable_entity and return
+        render json: { error: I18n.t("collavre.comments.move_no_selection") }, status: :unprocessable_entity and return
       end
 
       target_creative = Creative.find_by(id: params[:target_creative_id])
       if target_creative.nil?
-        render json: { error: I18n.t("comments.move_invalid_target") }, status: :unprocessable_entity and return
+        render json: { error: I18n.t("collavre.comments.move_invalid_target") }, status: :unprocessable_entity and return
       end
 
       target_origin = target_creative.effective_origin
 
       unless @creative.has_permission?(Current.user, :feedback) && target_origin.has_permission?(Current.user, :feedback)
-        render json: { error: I18n.t("comments.move_not_allowed") }, status: :forbidden and return
+        render json: { error: I18n.t("collavre.comments.move_not_allowed") }, status: :forbidden and return
       end
 
       scope = @creative.comments.where(
@@ -395,7 +395,7 @@ module Collavre
       comments = scope.where(id: comment_ids).to_a
 
       if comments.length != comment_ids.length
-        render json: { error: I18n.t("comments.move_not_allowed") }, status: :forbidden and return
+        render json: { error: I18n.t("collavre.comments.move_not_allowed") }, status: :forbidden and return
       end
 
       ActiveRecord::Base.transaction do
@@ -413,7 +413,7 @@ module Collavre
 
       render json: { success: true }
     rescue ActiveRecord::RecordInvalid => e
-      render json: { error: e.record.errors.full_messages.to_sentence.presence || I18n.t("comments.move_error") }, status: :unprocessable_entity
+      render json: { error: e.record.errors.full_messages.to_sentence.presence || I18n.t("collavre.comments.move_error") }, status: :unprocessable_entity
     end
 
     private
@@ -452,9 +452,9 @@ module Collavre
 
     def build_convert_system_message(creative)
       title = helpers.strip_tags(creative.description).to_s.strip
-      title = I18n.t("comments.convert_system_message_default_title") if title.blank?
+      title = I18n.t("collavre.comments.convert_system_message_default_title") if title.blank?
       url = creative_path(creative)
-      I18n.t("comments.convert_system_message", title: title, url: url)
+      I18n.t("collavre.comments.convert_system_message", title: title, url: url)
     end
 
     def current_topic_context

@@ -14,7 +14,7 @@ class CreativePlansControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to creatives_path(select_mode: 1)
     assert_equal 1, @creative.tags.where(label: @plan).count
-    assert_equal I18n.t("creatives.index.plan_tags_applied", default: "Plan tags applied to selected creatives."), flash[:notice]
+    assert_equal I18n.t("collavre.creatives.index.plan_tags_applied", default: "Plan tags applied to selected creatives."), flash[:notice]
   end
 
   test "applies plan tags to creatives via JSON" do
@@ -22,7 +22,7 @@ class CreativePlansControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :ok
     json_response = JSON.parse(response.body)
-    assert_equal I18n.t("creatives.index.plan_tags_applied", default: "Plan tags applied to selected creatives."), json_response["message"]
+    assert_equal I18n.t("collavre.creatives.index.plan_tags_applied", default: "Plan tags applied to selected creatives."), json_response["message"]
     assert_equal 1, @creative.tags.where(label: @plan).count
   end
 
@@ -33,7 +33,7 @@ class CreativePlansControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to creatives_path(select_mode: 1)
     assert_not @creative.tags.exists?(label: @plan)
-    assert_equal I18n.t("creatives.index.plan_tags_removed", default: "Plan tag removed from selected creatives."), flash[:notice]
+    assert_equal I18n.t("collavre.creatives.index.plan_tags_removed", default: "Plan tag removed from selected creatives."), flash[:notice]
   end
 
   test "removes plan tags from creatives via JSON" do
@@ -43,7 +43,7 @@ class CreativePlansControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :ok
     json_response = JSON.parse(response.body)
-    assert_equal I18n.t("creatives.index.plan_tags_removed", default: "Plan tag removed from selected creatives."), json_response["message"]
+    assert_equal I18n.t("collavre.creatives.index.plan_tags_removed", default: "Plan tag removed from selected creatives."), json_response["message"]
     assert_not @creative.tags.exists?(label: @plan)
   end
 
@@ -51,7 +51,7 @@ class CreativePlansControllerTest < ActionDispatch::IntegrationTest
     post collavre.creative_plan_path, params: { plan_id: nil, creative_ids: "" }
 
     assert_redirected_to creatives_path(select_mode: 1)
-    assert_equal I18n.t("creatives.index.plan_tag_failed", default: "Please select a plan and at least one creative."), flash[:alert]
+    assert_equal I18n.t("collavre.creatives.index.plan_tag_failed", default: "Please select a plan and at least one creative."), flash[:alert]
   end
 
   test "returns error when parameters are missing via JSON" do
@@ -59,6 +59,6 @@ class CreativePlansControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_entity
     json_response = JSON.parse(response.body)
-    assert_equal I18n.t("creatives.index.plan_tag_failed", default: "Please select a plan and at least one creative."), json_response["error"]
+    assert_equal I18n.t("collavre.creatives.index.plan_tag_failed", default: "Please select a plan and at least one creative."), json_response["error"]
   end
 end

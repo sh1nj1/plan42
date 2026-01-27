@@ -34,7 +34,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_entity
     body = JSON.parse(response.body)
-    assert_equal I18n.t("creatives.index.unconvert_no_parent"), body["error"]
+    assert_equal I18n.t("collavre.creatives.index.unconvert_no_parent"), body["error"]
   end
 
   test "unconvert requires admin permission" do
@@ -50,7 +50,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :forbidden
     body = JSON.parse(response.body)
-    assert_equal I18n.t("creatives.errors.no_permission"), body["error"]
+    assert_equal I18n.t("collavre.creatives.errors.no_permission"), body["error"]
   end
 
   test "export markdown requires read permission for parent creative" do

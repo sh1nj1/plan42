@@ -1,4 +1,4 @@
-<h1 class="no-top-margin"><%= t('users.forgot_password') %></h1>
+<h1 class="no-top-margin"><%= t('collavre.users.forgot_password') %></h1>
 
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
@@ -10,8 +10,8 @@
                        placeholder: t("users.new.enter_your_email"),
                        value: params[:email],
                        class: "stacked-form-control" %>
-  <%= form.submit t('users.send_password_reset_instructions'), class: "primary-action-button" %>
+  <%= form.submit t('collavre.users.send_password_reset_instructions'), class: "primary-action-button" %>
 <% end %>
 
 <br/>
-<%= link_to t('users.new.back_to_sign_in'), new_session_path %>
+<%= link_to t('collavre.users.new.back_to_sign_in'), new_session_path %>

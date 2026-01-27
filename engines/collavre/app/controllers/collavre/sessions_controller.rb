@@ -8,7 +8,7 @@ module Collavre
     rate_limit to: (limit_cfg[:to] || 10),
                within: (limit_cfg[:within] || 3.minutes),
                only: :create,
-               with: -> { redirect_to new_session_url, alert: I18n.t("users.sessions.new.try_again_later") }
+               with: -> { redirect_to new_session_url, alert: I18n.t("collavre.users.sessions.new.try_again_later") }
 
     def new
     end
@@ -20,7 +20,7 @@ module Collavre
       # Check if account is locked
       if user&.locked?
         minutes = (user.remaining_lockout_time / 60.0).ceil
-        redirect_to new_session_path, alert: I18n.t("users.sessions.new.account_locked", minutes: minutes)
+        redirect_to new_session_path, alert: I18n.t("collavre.users.sessions.new.account_locked", minutes: minutes)
         return
       end
 
@@ -33,16 +33,16 @@ module Collavre
           user.update(timezone: tz) if tz.present? && user.timezone != tz
           redirect_to after_authentication_url
         else
-          redirect_to new_session_path, alert: I18n.t("users.sessions.new.email_not_verified")
+          redirect_to new_session_path, alert: I18n.t("collavre.users.sessions.new.email_not_verified")
         end
       else
         # Record failed login attempt if user exists
         user&.record_failed_login!
         if user&.locked?
           minutes = Collavre::SystemSetting.lockout_duration_minutes
-          redirect_to new_session_path, alert: I18n.t("users.sessions.new.account_locked_now", minutes: minutes)
+          redirect_to new_session_path, alert: I18n.t("collavre.users.sessions.new.account_locked_now", minutes: minutes)
         else
-          redirect_to new_session_path, alert: I18n.t("users.sessions.new.try_another_email_or_password")
+          redirect_to new_session_path, alert: I18n.t("collavre.users.sessions.new.try_another_email_or_password")
         end
       end
     end

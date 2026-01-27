@@ -5,7 +5,7 @@ module Collavre
       @items = params[:items]
       locale = @user.locale.presence || I18n.default_locale.to_s
       email = I18n.with_locale(locale) do
-        mail to: @user.email, subject: I18n.t("inbox_mailer.daily_summary.subject")
+        mail to: @user.email, subject: I18n.t("collavre.inbox_mailer.daily_summary.subject")
       end
       Collavre::Email.create!(
         user: @user,

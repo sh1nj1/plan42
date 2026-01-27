@@ -4,7 +4,7 @@ module Collavre
 
     def verify(user)
       @user = user
-      mail to: user.email, subject: I18n.t("user_mailer.email_verification.subject")
+      mail to: user.email, subject: I18n.t("collavre.user_mailer.email_verification.subject")
     end
 
     private

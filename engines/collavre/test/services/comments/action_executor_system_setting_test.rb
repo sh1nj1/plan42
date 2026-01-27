@@ -191,7 +191,7 @@ class Comments::ActionExecutorSystemSettingTest < ActiveSupport::TestCase
       Comments::ActionExecutor.new(comment: comment, executor: @user).call
     end
 
-    assert_equal I18n.t("comments.approve_invalid_format"), error.message
+    assert_equal I18n.t("collavre.comments.approve_invalid_format"), error.message
   end
 
   test "executor raises specific error for admin requirement" do
@@ -208,6 +208,6 @@ class Comments::ActionExecutorSystemSettingTest < ActiveSupport::TestCase
       Comments::ActionExecutor.new(comment: comment, executor: @user).call
     end
 
-    assert_equal I18n.t("comments.approve_admin_required"), error.message
+    assert_equal I18n.t("collavre.comments.approve_admin_required"), error.message
   end
 end

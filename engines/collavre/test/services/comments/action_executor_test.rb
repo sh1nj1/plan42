@@ -174,7 +174,7 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
       executor.call
     end
 
-    assert_equal I18n.t("comments.approve_invalid_creative"), error.message
+    assert_equal I18n.t("collavre.comments.approve_invalid_creative"), error.message
   end
 
   test "rejects actions outside the linked creative subtree" do
@@ -201,7 +201,7 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
       executor.call
     end
 
-    assert_equal I18n.t("comments.approve_invalid_creative"), error.message
+    assert_equal I18n.t("collavre.comments.approve_invalid_creative"), error.message
   end
 
   test "raises when executor no longer matches approver" do
@@ -223,7 +223,7 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
       executor.call
     end
 
-    assert_equal I18n.t("comments.approve_not_allowed"), error.message
+    assert_equal I18n.t("collavre.comments.approve_not_allowed"), error.message
     comment.reload
     assert_nil comment.action_executed_at
     assert_nil comment.action_executed_by

@@ -31,9 +31,9 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
     assert_match inviter.email, response.body
     assert_match ActionController::Base.helpers.strip_tags(creative.description), response.body
     assert_select "a[href=?]", collavre.new_session_path(invite_token: token),
-                  text: I18n.t("invites.show.login")
+                  text: I18n.t("collavre.invites.show.login")
     assert_select "a[href=?]", collavre.new_user_path(invite_token: token),
-                  text: I18n.t("invites.show.sign_up")
+                  text: I18n.t("collavre.invites.show.sign_up")
   end
 
   test "existing user accepts invitation by logging in" do

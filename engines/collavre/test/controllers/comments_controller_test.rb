@@ -26,7 +26,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     first_child = @creative.children.order(:id).first
     expected_title = ActionController::Base.helpers.strip_tags(first_child.description).strip
     expected_message = I18n.t(
-      "comments.convert_system_message",
+      "collavre.comments.convert_system_message",
       title: expected_title,
       url: creative_path(first_child)
     )
@@ -93,7 +93,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     post approve_creative_comment_path(@creative, comment)
 
     assert_response :success
-    assert_includes @response.body, I18n.t("comments.approved_label")
+    assert_includes @response.body, I18n.t("collavre.comments.approved_label")
     comment.reload
     assert_equal action_payload, JSON.parse(comment.action)
     assert_equal @user.id, comment.approver.id
@@ -122,7 +122,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_entity
     response_body = JSON.parse(@response.body)
-    assert_equal I18n.t("comments.approve_already_executed"), response_body["error"]
+    assert_equal I18n.t("collavre.comments.approve_already_executed"), response_body["error"]
   end
 
   test "non approver cannot execute comment action" do
@@ -285,7 +285,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     end
 
     response_body = JSON.parse(@response.body)
-    assert_equal I18n.t("comments.move_not_allowed"), response_body["error"]
+    assert_equal I18n.t("collavre.comments.move_not_allowed"), response_body["error"]
   end
 
   test "approver can update comment action" do
@@ -334,7 +334,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_entity
     body = JSON.parse(@response.body)
-    assert_equal I18n.t("comments.approve_invalid_format"), body["error"]
+    assert_equal I18n.t("collavre.comments.approve_invalid_format"), body["error"]
     assert_equal action_payload, JSON.parse(comment.reload.action)
   end
 
@@ -382,7 +382,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_entity
     body = JSON.parse(@response.body)
-    assert_equal I18n.t("comments.approve_already_executed"), body["error"]
+    assert_equal I18n.t("collavre.comments.approve_already_executed"), body["error"]
   end
 
   test "comment owner can delete their own comment" do
@@ -529,7 +529,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     comment = @creative.comments.create!(content: "No action", user: @user, approver: @user)
     post approve_creative_comment_path(@creative, comment)
     assert_response :unprocessable_entity
-    assert_equal I18n.t("comments.approve_missing_action"), JSON.parse(@response.body)["error"]
+    assert_equal I18n.t("collavre.comments.approve_missing_action"), JSON.parse(@response.body)["error"]
   end
 
   test "approve returns 422 for missing approver" do
@@ -542,7 +542,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     )
     post approve_creative_comment_path(@creative, comment)
     assert_response :unprocessable_entity
-    assert_equal I18n.t("comments.approve_missing_approver"), JSON.parse(@response.body)["error"]
+    assert_equal I18n.t("collavre.comments.approve_missing_approver"), JSON.parse(@response.body)["error"]
   end
 
   test "approve returns 403 with specific message when admin approval required" do
@@ -568,7 +568,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     # non_admin is not system admin
     post approve_creative_comment_path(@creative, comment)
     assert_response :forbidden
-    assert_equal I18n.t("comments.approve_admin_required"), JSON.parse(@response.body)["error"]
+    assert_equal I18n.t("collavre.comments.approve_admin_required"), JSON.parse(@response.body)["error"]
 
     # Cleanup
     SystemSetting.where(key: "mcp_tool_approval_required").destroy_all
@@ -619,7 +619,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     }
 
     assert_response :forbidden
-    assert_equal I18n.t("comments.approve_not_allowed"), JSON.parse(@response.body)["error"]
+    assert_equal I18n.t("collavre.comments.approve_not_allowed"), JSON.parse(@response.body)["error"]
 
     # Restore session
     delete session_path
@@ -646,7 +646,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     post approve_creative_comment_path(@creative, comment)
 
     assert_response :forbidden
-    assert_equal I18n.t("comments.approve_not_allowed"), JSON.parse(@response.body)["error"]
+    assert_equal I18n.t("collavre.comments.approve_not_allowed"), JSON.parse(@response.body)["error"]
 
     # Restore session
     delete session_path
@@ -674,7 +674,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     }
 
     assert_response :forbidden
-    assert_equal I18n.t("comments.approve_not_allowed"), JSON.parse(@response.body)["error"]
+    assert_equal I18n.t("collavre.comments.approve_not_allowed"), JSON.parse(@response.body)["error"]
 
     # Restore session
     delete session_path

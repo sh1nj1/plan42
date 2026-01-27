@@ -28,7 +28,7 @@ class CommentsCalendarTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :created
-    expected_content = "#{command}\n\n#{I18n.t("comments.calendar_command.event_created", url: event.html_link)}"
+    expected_content = "#{command}\n\n#{I18n.t("collavre.comments.calendar_command.event_created", url: event.html_link)}"
     assert_equal expected_content, Comment.last.content
     assert_mock service
   end
@@ -52,7 +52,7 @@ class CommentsCalendarTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :created
-    expected_content = "#{command}\n\n#{I18n.t("comments.calendar_command.event_created", url: event.html_link)}"
+    expected_content = "#{command}\n\n#{I18n.t("collavre.comments.calendar_command.event_created", url: event.html_link)}"
     assert_equal expected_content, Comment.last.content
     assert_mock service
   end

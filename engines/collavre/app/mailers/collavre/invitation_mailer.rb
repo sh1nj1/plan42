@@ -4,7 +4,7 @@ module Collavre
 
     def invite
       @invitation = params[:invitation]
-      email = mail to: @invitation.email, subject: I18n.t("invitation_mailer.invite.subject")
+      email = mail to: @invitation.email, subject: I18n.t("collavre.invitation_mailer.invite.subject")
       Collavre::Email.create!(
         email: @invitation.email,
         subject: email.subject,
