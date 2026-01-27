@@ -1,6 +1,8 @@
 module Collavre
   class Label < ApplicationRecord
     self.table_name = "labels"
+    # Use short class names for STI to avoid namespace issues during hot reload
+    self.store_full_sti_class = false
 
     has_many :tags, class_name: "Collavre::Tag", dependent: :destroy
     belongs_to :owner, class_name: Collavre.configuration.user_class_name, optional: true
@@ -11,6 +13,12 @@ module Collavre
 
     # STI: Plan, Version, etc subclasses use type column
     # creative_id, value, target_date etc attributes included
+
+    # Resolve short STI class names to namespaced versions
+    def self.find_sti_class(type_name)
+      type_name = "Collavre::#{type_name}" unless type_name.start_with?("Collavre::")
+      super(type_name)
+    end
 
     after_create :create_auto_tag
 

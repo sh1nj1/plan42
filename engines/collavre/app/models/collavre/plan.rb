@@ -2,12 +2,6 @@ require "set"
 
 module Collavre
   class Plan < Label
-    # Use short class name for STI to maintain backward compatibility
-    # This ensures records created by Collavre::Plan can be found by Plan queries
-    def self.sti_name
-      "Plan"
-    end
-
     validates :target_date, presence: true
 
     def progress(_user = nil)
