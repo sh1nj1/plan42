@@ -1,52 +1,67 @@
 # frozen_string_literal: true
 
 namespace :test do
-  # Clear any existing test:all task (Rails 8 may define one)
+  # Clear existing tasks to avoid conflicts/duplication
   Rake::Task["test:all"].clear if Rake::Task.task_defined?("test:all")
+  Rake::Task["test:system"].clear if Rake::Task.task_defined?("test:system")
 
-  desc "Run all tests (host app + Collavre engine)"
+  desc "Run all tests (host app + engines) excluding system tests"
   task all: :environment do
-    # Directories that can be run at once (no issues)
-    working_dirs = %w[
-      test/controllers/admin
-      test/controllers/oauth
-      test/controllers/webauthn
-      test/controllers/github
-      engines/collavre/test/assets
-      engines/collavre/test/channels
-      engines/collavre/test/components
-      engines/collavre/test/helpers
-      engines/collavre/test/jobs
-      engines/collavre/test/lib
-      engines/collavre/test/mailers
-      engines/collavre/test/models
-      engines/collavre/test/services
-      engines/collavre/test/controllers
-      engines/collavre/test/controllers/comments
-      engines/collavre/test/controllers/creatives
-    ]
+    test_roots = [ "test" ] + Dir.glob("engines/*/test")
+    test_paths = []
 
-    # Run each working directory
-    working_dirs.each do |dir|
-      next unless Dir.exist?(dir)
-      next if Dir.glob("#{dir}/*_test.rb").empty?
+    test_roots.each do |root|
+      next unless Dir.exist?(root)
 
-      puts "\n=== Testing #{dir} ==="
-      system("bin/rails test #{dir}/") || exit(1)
+      # Add top-level test files (e.g. test/foo_test.rb)
+      test_paths.concat(Dir.glob("#{root}/*_test.rb"))
+
+      # Add subdirectories, excluding 'system'
+      Dir.glob("#{root}/*").each do |path|
+        next unless File.directory?(path)
+        next if File.basename(path) == "system"
+
+        test_paths << path
+      end
     end
 
-    # Run integration tests file by file (they have issues with directory mode)
-    puts "\n=== Testing engines/collavre/test/integration ==="
-    Dir.glob("engines/collavre/test/integration/*_test.rb").sort.each do |file|
-      system("bin/rails test #{file}") || exit(1)
+    if test_paths.any?
+      puts "\n=== Running tests: #{test_paths.join(' ')} ==="
+      # Run all collected paths in a single process
+      system("bin/rails test #{test_paths.join(' ')}") || exit(1)
+    else
+      puts "\n=== No tests found ==="
     end
 
     puts "\n=== All tests passed! ==="
   end
+
+  desc "Run system tests (host app + engines)"
+  task system: :environment do
+    test_roots = [ "test" ] + Dir.glob("engines/*/test")
+    ran_any = false
+
+    test_roots.each do |dir|
+      system_dir = "#{dir}/system"
+      next unless Dir.exist?(system_dir)
+
+      # Check if there are actual test files to avoid noise
+      next if Dir.glob("#{system_dir}/**/*_test.rb").empty?
+
+      puts "\n=== Testing #{system_dir} ==="
+      system("bin/rails test #{system_dir}/") || exit(1)
+      ran_any = true
+    end
+
+    if ran_any
+      puts "\n=== All system tests passed! ==="
+    else
+      puts "\n=== No system tests found ==="
+    end
+  end
 end
 
-# Override the default test task to use test:all (excludes system tests)
-# Clear the default Rails test task to prevent it from running system tests
+# Override the default test task
 Rake::Task["test"].clear if Rake::Task.task_defined?("test")
 desc "Run all tests except system tests"
 task test: "test:all"

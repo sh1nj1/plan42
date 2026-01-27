@@ -1,0 +1,31 @@
+#!/usr/bin/env ruby
+# This script delegates to the host app's bin/rails
+# The host app serves as the test harness for this engine
+
+ENGINE_ROOT = File.expand_path("..", __dir__)
+HOST_APP_ROOT = File.expand_path("../..", ENGINE_ROOT)
+ENGINE_TEST_PATH = "engines/collavre/test"
+
+# Change to host app directory
+Dir.chdir(HOST_APP_ROOT)
+
+# Transform arguments for test command
+args = ARGV.dup
+if args[0] == "test"
+  if args.length == 1
+    # `bin/rails test` -> run all engine tests
+    args << "#{ENGINE_TEST_PATH}/"
+  else
+    # Transform test paths: test/system/ -> engines/collavre/test/system/
+    args = args.map do |arg|
+      if arg.start_with?("test/")
+        "#{ENGINE_TEST_PATH}/#{arg[5..]}"
+      else
+        arg
+      end
+    end
+  end
+end
+
+# Delegate to host app's bin/rails
+exec(File.join(HOST_APP_ROOT, "bin", "rails"), *args)

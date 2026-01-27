@@ -1,6 +1,6 @@
 require_relative "../application_system_test_case"
 
-class CreativeShareTest < ApplicationSystemTestCase
+class CreativeShareSystemTest < ApplicationSystemTestCase
   setup do
     @user = User.create!(
       email: "user1@example.com",
