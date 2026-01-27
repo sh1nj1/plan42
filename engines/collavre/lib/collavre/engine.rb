@@ -6,6 +6,16 @@ module Collavre
       g.test_framework :minitest
     end
 
+    # Add engine migrations to main app's migration path
+    # This allows migrations to live in the engine but be run from the host app
+    initializer "collavre.migrations" do |app|
+      unless app.root.to_s.match?(root.to_s)
+        config.paths["db/migrate"].expanded.each do |expanded_path|
+          app.config.paths["db/migrate"] << expanded_path
+        end
+      end
+    end
+
     initializer "collavre.assets" do |app|
       app.config.assets.precompile += %w[collavre.js collavre.css] if app.config.respond_to?(:assets)
     end
