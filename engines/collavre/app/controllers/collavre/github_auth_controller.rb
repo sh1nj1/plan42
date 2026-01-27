@@ -9,7 +9,7 @@ module Collavre
 
       if gh.new_record?
         unless Current.user
-          redirect_to new_session_path, alert: I18n.t("collavre.github_auth.login_first")
+          redirect_to collavre.new_session_path, alert: I18n.t("collavre.github_auth.login_first")
           return
         end
         gh.user = Current.user
