@@ -108,9 +108,6 @@ en:
       greeting: "Here are your unread messages:"
       view: "View"
 
-  contacts:
-    none: "No contacts"
-
   users:
     sessions:
       new:

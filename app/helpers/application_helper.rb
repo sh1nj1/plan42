@@ -87,7 +87,7 @@ module ApplicationHelper
   end
 
   def render_contact_creatives(creatives)
-    return content_tag(:span, t("contacts.none"), class: "text-muted") if creatives.blank?
+    return "".html_safe if creatives.blank?
 
     safe_join(creatives.map do |creative|
       link_to(creative_title_for_display(creative), collavre.creative_path(creative), class: "creative-chip")

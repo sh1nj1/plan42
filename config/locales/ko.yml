@@ -5,9 +5,6 @@ ko:
   comments:
     activity_logs_summary: "활동 기록"
 
-  contacts:
-    none: "연락처가 없습니다"
-
   users:
     sessions:
       new:
