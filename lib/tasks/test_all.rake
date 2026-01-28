@@ -5,10 +5,34 @@ namespace :test do
   Rake::Task["test:all"].clear if Rake::Task.task_defined?("test:all")
   Rake::Task["test:system"].clear if Rake::Task.task_defined?("test:system")
 
-  desc "Run all tests (host app + engines) excluding system tests"
+  # Parse excluded engines from E or EXCLUDE env var (comma-separated)
+  # Usage: rake test E=collavre or rake test EXCLUDE=collavre,other_engine
+  def self.excluded_engines
+    @excluded_engines ||= (ENV["E"] || ENV["EXCLUDE"] || "").split(",").map(&:strip).reject(&:empty?)
+  end
+
+  def self.filter_engine_roots(roots)
+    return roots if excluded_engines.empty?
+
+    roots.reject do |root|
+      # Check if this is an engine test root (engines/NAME/test)
+      if root.start_with?("engines/")
+        engine_name = root.split("/")[1]
+        excluded_engines.include?(engine_name)
+      else
+        false
+      end
+    end
+  end
+
+  desc "Run all tests (host app + engines) excluding system tests. Use E=engine1,engine2 to exclude engines."
   task all: :environment do
-    test_roots = [ "test" ] + Dir.glob("engines/*/test")
+    test_roots = filter_engine_roots([ "test" ] + Dir.glob("engines/*/test"))
     test_paths = []
+
+    if excluded_engines.any?
+      puts "\n=== Excluding engines: #{excluded_engines.join(', ')} ==="
+    end
 
     test_roots.each do |root|
       next unless Dir.exist?(root)
@@ -36,10 +60,14 @@ namespace :test do
     puts "\n=== All tests passed! ==="
   end
 
-  desc "Run system tests (host app + engines)"
+  desc "Run system tests (host app + engines). Use E=engine1,engine2 to exclude engines."
   task system: :environment do
-    test_roots = [ "test" ] + Dir.glob("engines/*/test")
+    test_roots = filter_engine_roots([ "test" ] + Dir.glob("engines/*/test"))
     ran_any = false
+
+    if excluded_engines.any?
+      puts "\n=== Excluding engines: #{excluded_engines.join(', ')} ==="
+    end
 
     test_roots.each do |dir|
       system_dir = "#{dir}/system"
@@ -63,5 +91,5 @@ end
 
 # Override the default test task
 Rake::Task["test"].clear if Rake::Task.task_defined?("test")
-desc "Run all tests except system tests"
+desc "Run all tests except system tests. Use E=engine1,engine2 to exclude engines."
 task test: "test:all"
