@@ -33,9 +33,6 @@ Rails.application.config.middleware.use OmniAuth::Builder do
     provider :notion,
              notion_client_id,
              notion_client_secret
-  elsif Rails.env.test?
-    # Register provider with dummy credentials for test mode
-    provider :notion, "test_notion_id", "test_notion_secret"
   end
 end
 
