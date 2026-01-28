@@ -94,10 +94,18 @@ else
 end
 
 # Load all local engines found in ./engines
+# Set USE_COLLAVRE_GEM=true to use installed gem instead of local path
 Dir.glob(File.expand_path("engines/*", __dir__)).each do |engine_path|
   # Only load if it looks like a ruby gem (has a .gemspec)
   if Dir.glob("#{engine_path}/*.gemspec").any?
     gem_name = File.basename(engine_path)
+    # Skip collavre from path if using installed gem
+    next if gem_name == "collavre" && ENV["USE_COLLAVRE_GEM"] == "true"
     gem gem_name, path: engine_path
   end
+end
+
+# Use installed collavre gem when USE_COLLAVRE_GEM=true
+if ENV["USE_COLLAVRE_GEM"] == "true"
+  gem "collavre", "0.1.0"
 end
