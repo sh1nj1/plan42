@@ -3,14 +3,15 @@ require_relative "lib/collavre/version"
 Gem::Specification.new do |spec|
   spec.name        = "collavre"
   spec.version     = Collavre::VERSION
-  spec.authors     = [ "Collavre Team" ]
-  spec.email       = [ "team@collavre.com" ]
+  spec.authors     = [ "Collavre" ]
+  spec.email       = [ "support@collavre.com" ]
   spec.homepage    = "https://collavre.com"
-  spec.summary     = "Core engine for Collavre platform"
-  spec.description = "Provides knowledge management, task management, and collaboration features"
-  spec.license     = "MIT"
+  spec.summary     = "Collavre platform engine"
+  spec.description = "A unified platform for knowledge, task management, and chat communication with AI Agents"
+  spec.license     = "AGPL"
 
   spec.metadata["homepage_uri"] = spec.homepage
+  spec.metadata["source_code_uri"] = "https://github.com/sh1nj1/plan42"
 
   spec.files = Dir.chdir(File.expand_path(__dir__)) do
     Dir["{app,config,db,lib}/**/*", "Rakefile", "README.md"]
