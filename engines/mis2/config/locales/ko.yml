@@ -1,0 +1,60 @@
+ko:
+  mis2:
+    activity_log:
+      messages:
+        h2_training_update: "'%{assignment_name}' 훈련(회차: %{round}) 업데이트 (대상: %{user_name}, ID: %{user_id}). 날짜 변경: %{old_start} ~ %{old_end} -> %{new_start} ~ %{new_end}."
+    home:
+      h2_assignment_link: "H2 훈련 날짜 관리"
+      activity_logs_link: "활동 로그"
+    activity_logs:
+      index:
+        title: "활동 로그"
+        back_home: "홈으로 돌아가기"
+        no_logs: "로그가 없습니다."
+      table:
+        headers:
+          timestamp: "일시"
+          user: "작업자"
+          details: "내용"
+      pagination:
+        prev: "이전"
+        next: "다음"
+        page_info: "%{page} / %{total} 페이지"
+    h2:
+      assignments:
+        index:
+          title: "H2 사용자 검색"
+          search_placeholder: "이름으로 사용자 검색..."
+          search_button: "검색"
+          select_action: "선택"
+          no_users_found: "\"%{query}\"에 해당하는 사용자가 없습니다."
+        edit:
+          title: "%{name}님의 훈련 목록"
+          back_button: "검색으로 돌아가기"
+          update_button: "수정"
+          confirm_update: "정말 날짜를 수정하시겠습니까?"
+        table:
+          headers:
+            id: "ID"
+            name: "이름"
+            date_of_birth: "생년월일"
+            phone: "전화번호"
+            organization: "소속"
+            actions: "관리"
+            round: "회차"
+            assignment_name: "훈련명"
+            start_date: "시작일"
+            end_date: "종료일"
+            progress_status: "진행상태"
+            created_time: "생성일시"
+          status:
+            scheduled: "예정"
+            in_progress: "진행중"
+            completed: "종료"
+        alerts:
+          user_not_found: "사용자를 찾을 수 없습니다."
+          date_order_error: "시작일은 종료일보다 늦을 수 없습니다."
+          overlap_error: "훈련 업데이트 실패. 기간이 중복됩니다."
+          general_error: "오류: %{message}"
+        notices:
+          update_success: "훈련이 성공적으로 업데이트되었습니다."

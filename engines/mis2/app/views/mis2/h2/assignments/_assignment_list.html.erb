@@ -1,0 +1,40 @@
+<% form_id = "update_assignment_#{assignment.assignment_user_idx}" %>
+<tr data-controller="assignment-row">
+  <td><%= assignment.round %></td>
+  <td><%= assignment.attributes["assignment_name"] %></td>
+
+  <td>
+    <%= form_with url: mis2.h2_assignment_path(assignment.assignment_user_idx), method: :patch, local: true, id: form_id, html: { style: "display: none;" } do |f| %>
+      <%= hidden_field_tag :user_idx, user.user_idx %>
+    <% end %>
+
+    <input type="date"
+           name="start_date"
+           value="<%= assignment.assignment_user_start %>"
+           form="<%= form_id %>"
+           data-original-value="<%= assignment.assignment_user_start %>"
+           class="assignment-date-input"
+           data-assignment-row-target="input"
+           data-action="input->assignment-row#checkChanges">
+  </td>
+  <td>
+    <input type="date"
+           name="end_date"
+           value="<%= assignment.assignment_user_end %>"
+           form="<%= form_id %>"
+           data-original-value="<%= assignment.assignment_user_end %>"
+           class="assignment-date-input"
+           data-assignment-row-target="input"
+           data-action="input->assignment-row#checkChanges">
+  </td>
+  <td><span class="status-chip status-chip--<%= assignment.progress_status.to_s.dasherize %>"><%= t("mis2.h2.assignments.table.status.#{assignment.progress_status}") %></span></td>
+  <td><%= assignment.create_time&.strftime('%Y-%m-%d %H:%M:%S') %></td>
+  <td>
+    <button type="submit"
+            class="btn btn-sm btn-primary assignment-update-btn"
+            form="<%= form_id %>"
+            disabled
+            data-assignment-row-target="submit"
+            data-turbo-confirm="<%= t("mis2.h2.assignments.edit.confirm_update") %>"><%= t("mis2.h2.assignments.edit.update_button") %></button>
+  </td>
+</tr>

@@ -8,6 +8,7 @@ gem "propshaft"
 gem "sqlite3", ">= 2.1", groups: [ :development, :test ]
 # Use postgresql as the database for production
 gem "pg", group: :production
+gem "mysql2"
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 5.0"
 # Bundle JavaScript via esbuild [https://github.com/rails/jsbundling-rails]
@@ -105,4 +106,4 @@ Dir.glob(File.expand_path("engines/*", __dir__)).each do |engine_path|
   end
 end
 
-gem "collavre", "0.1.0"
+gem "collavre", "0.1.1"

@@ -13,3 +13,6 @@ application.register("llm-model", LlmModelController)
 
 import WebauthnController from "./webauthn_controller"
 application.register("webauthn", WebauthnController)
+
+import AssignmentRowController from "./assignment_row_controller"
+application.register("assignment-row", AssignmentRowController)

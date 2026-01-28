@@ -7,6 +7,22 @@ require "minitest/mock"
 # Note: We do not auto-load engine tests here to avoid running them during targeted app tests.
 # Use `rails test engines/` or `rake test:engines` to run engine tests.
 
+# Load H2 test database schema
+# The H2 database is external in production but uses SQLite for testing
+h2_schema_file = Rails.root.join("db", "h2_test_schema.rb")
+if File.exist?(h2_schema_file)
+  # Ensure H2 database directory exists
+  h2_db_path = Rails.root.join("storage", "test-h2.sqlite3")
+  FileUtils.mkdir_p(File.dirname(h2_db_path))
+
+  # Load the schema module
+  require h2_schema_file
+
+  # Load schema into H2 database connection
+  ActiveRecord::Migration.verbose = false
+  H2TestSchema.load!(Mis2::H2Record.connection)
+end
+
 module ActiveSupport
   class TestCase
     include ActiveJob::TestHelper

@@ -35,7 +35,7 @@ en:
     activity_logs_summary: "Activity Logs"
 
   app:
-    name: "Collavre"
+    name: "MIS2"
     home: "Home"
     sign_in: "Sign in"
     sign_out: "Sign out"
@@ -136,3 +136,8 @@ en:
     event:
       invitation: "Invitation"
       inbox_summary: "Inbox summary"
+  collavre:
+    users:
+      app_header:
+        your_creativeness_is_coming: "The New MIS is Coming!"
+        a_tracker_of_your_creatives: "Your ultimate companion"

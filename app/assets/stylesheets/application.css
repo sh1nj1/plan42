@@ -603,6 +603,35 @@ input[type="password"] {
     vertical-align: top;
 }
 
+.contacts-table th {
+    white-space: nowrap;
+}
+
+/* Status chips */
+.status-chip {
+    display: inline-block;
+    padding: 0.2em 0.6em;
+    border-radius: 1em;
+    font-size: 0.85em;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.status-chip--scheduled {
+    background: var(--color-muted);
+    color: var(--color-bg);
+}
+
+.status-chip--in-progress {
+    background: var(--color-link);
+    color: white;
+}
+
+.status-chip--completed {
+    background: var(--color-complete);
+    color: white;
+}
+
 .contacts-table th:nth-child(1),
 .contacts-table td:nth-child(1) {
     min-width: 48px;

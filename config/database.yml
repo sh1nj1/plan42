@@ -15,16 +15,31 @@ default: &default
     synchronous: normal
   <% end %>
 
+
 development:
-  <<: *default
-  database: storage/development.sqlite3
+  primary:
+    <<: *default
+    database: storage/development.sqlite3
+  h2:
+    adapter: mysql2
+    encoding: utf8mb4
+    pool: 2
+    url: <%= ENV['H2_DATABASE_URL'] %>
+    database_tasks: false
 
 # Warning: The database defined as "test" will be erased and
 # re-generated from your development database when you run "rake".
 # Do not set this db to the same as development or production.
 test:
-  <<: *default
-  database: storage/test.sqlite3
+  primary:
+    <<: *default
+    database: storage/test.sqlite3
+  h2:
+    # H2 test database uses SQLite regardless of DATABASE_URL
+    adapter: sqlite3
+    pool: 5
+    database: storage/test-h2.sqlite3
+    database_tasks: false
 
 production:
   primary:
@@ -59,3 +74,9 @@ production:
     url: <%= ENV['CABLE_DATABASE_URL'] || ENV['DATABASE_URL'] %>
     encoding: unicode
     <% end %>
+  h2:
+    adapter: mysql2
+    encoding: utf8mb4
+    pool: 2
+    url: <%= ENV['H2_DATABASE_URL'] %>
+    database_tasks: false

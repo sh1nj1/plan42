@@ -1,0 +1,49 @@
+<div class="contact-management">
+  <div class="flex-row-center-between">
+    <h1 class="no-top-margin"><%= t("mis2.h2.assignments.index.title") %></h1>
+    <%= link_to t("mis2.activity_logs.index.back_home"), mis2.root_path, class: "btn btn-sm btn-secondary" %>
+  </div>
+
+  <div style="margin-bottom: 20px;">
+    <%= form_with url: mis2.h2_assignments_path, method: :get, local: true, class: "flex-row-center" do |f| %>
+      <%= f.text_field :query, placeholder: t("mis2.h2.assignments.index.search_placeholder"), value: params[:query], style: "margin-right: 10px; padding: 5px;" %>
+      <%= f.submit t("mis2.h2.assignments.index.search_button"), class: "btn btn-primary" %>
+    <% end %>
+  </div>
+
+  <% if @users.any? %>
+    <div class="table-scroll">
+      <table class="contacts-table">
+        <thead>
+          <tr>
+            <th><%= t("mis2.h2.assignments.table.headers.id") %></th>
+            <th><%= t("mis2.h2.assignments.table.headers.name") %></th>
+            <th><%= t("mis2.h2.assignments.table.headers.date_of_birth") %></th>
+            <th><%= t("mis2.h2.assignments.table.headers.phone") %></th>
+            <th><%= t("mis2.h2.assignments.table.headers.organization") %></th>
+            <th><%= t("mis2.h2.assignments.table.headers.actions") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @users.each do |user| %>
+            <tr>
+              <td><%= user.user_idx %></td>
+              <td><%= user.name %></td>
+              <td><%= user.date_of_birth.to_s.gsub(/(\d{4})(\d{2})(\d{2})/, '\1-\2-\3') %></td>
+              <td><%= user.phone.to_s.gsub(/(\d{3})(\d{4})(\d{4})/, '\1-\2-\3') %></td>
+              <td>
+                <%# organization_name is selected in the scope %>
+                <%= user.attributes["organization_name"] %>
+              </td>
+              <td>
+                <%= link_to t("mis2.h2.assignments.index.select_action"), mis2.edit_h2_assignment_path(user.user_idx), class: "btn btn-sm btn-secondary" %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% elsif params[:query].present? %>
+    <p class="text-muted"><%= t("mis2.h2.assignments.index.no_users_found", query: params[:query]) %></p>
+  <% end %>
+</div>

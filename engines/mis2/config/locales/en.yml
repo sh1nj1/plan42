@@ -1,0 +1,60 @@
+en:
+  mis2:
+    activity_log:
+      messages:
+        h2_training_update: "Updated H2 Training '%{assignment_name}' (Round %{round}) for user '%{user_name}' (ID: %{user_id}). Dates changed: %{old_start} ~ %{old_end} -> %{new_start} ~ %{new_end}."
+    home:
+      h2_assignment_link: "H2 Training Date Management"
+      activity_logs_link: "Activity Logs"
+    activity_logs:
+      index:
+        title: "Activity Logs"
+        back_home: "Back to Home"
+        no_logs: "No logs found."
+      table:
+        headers:
+          timestamp: "Timestamp"
+          user: "Operator"
+          details: "Details"
+      pagination:
+        prev: "Prev"
+        next: "Next"
+        page_info: "Page %{page} of %{total}"
+    h2:
+      assignments:
+        index:
+          title: "H2 User Search"
+          search_placeholder: "Search user by name..."
+          search_button: "Search"
+          select_action: "Select"
+          no_users_found: "No users found matching \"%{query}\"."
+        edit:
+          title: "Training List for %{name}"
+          back_button: "Back to Search"
+          update_button: "Update"
+          confirm_update: "Are you sure you want to update the dates?"
+        table:
+          headers:
+            id: "ID"
+            name: "Name"
+            date_of_birth: "Date of Birth"
+            phone: "Phone"
+            organization: "Organization"
+            actions: "Actions"
+            round: "Round"
+            assignment_name: "Training Name"
+            start_date: "Start Date"
+            end_date: "End Date"
+            progress_status: "Status"
+            created_time: "Created Time"
+          status:
+            scheduled: "Scheduled"
+            in_progress: "In Progress"
+            completed: "Completed"
+        alerts:
+          user_not_found: "User not found."
+          date_order_error: "Start date cannot be later than end date."
+          overlap_error: "Failed to update training. Date overlap detected."
+          general_error: "Error: %{message}"
+        notices:
+          update_success: "Training updated successfully."

@@ -21,9 +21,9 @@
     <%# Enable PWA manifest for installable apps (make sure to enable in config/routes.rb too!) %>
     <%= tag.link rel: "manifest", href: main_app.pwa_manifest_path(format: :json) %>
 
-    <link rel="icon" href="/icon-1e3cf549d2.png" type="image/png">
-    <link rel="icon" href="/icon-1e3cf549d2.svg" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="/icon-1e3cf549d2.png">
+    <link rel="icon" href="/icon-512-1a2e5d459a.png" type="image/png">
+    <link rel="icon" href="/icon-1a2e5d459a.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icon-512-1a2e5d459a.png">
 
     <%# Includes all stylesheet files in app/assets/stylesheets %>
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
@@ -54,7 +54,12 @@
   <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
     <%= render 'collavre/shared/link_creative_modal' %>
     <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
-    <div class="notice"><%= notice %></div>
+    <% if notice.present? %>
+       <div class="notice"><%= notice %></div>
+    <% end %>
+    <% if alert.present? %>
+       <div class="alert"><%= alert %></div>
+    <% end %>
 
     <%= render 'collavre/shared/navigation' %>
 

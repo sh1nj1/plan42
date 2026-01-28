@@ -1,0 +1,55 @@
+<div class="contact-management">
+  <div class="flex-row-center-between">
+    <h1 class="no-top-margin"><%= t("mis2.activity_logs.index.title") %></h1>
+    <%= link_to t("mis2.activity_logs.index.back_home"), mis2.root_path, class: "btn btn-sm btn-secondary" %>
+  </div>
+
+  <div class="table-scroll">
+    <table class="contacts-table">
+      <thead>
+        <tr>
+          <th><%= t("mis2.activity_logs.table.headers.timestamp") %></th>
+          <th><%= t("mis2.activity_logs.table.headers.user") %></th>
+          <th><%= t("mis2.activity_logs.table.headers.details") %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @logs.each do |log| %>
+          <tr>
+            <td style="white-space: nowrap;"><%= log.created_at.strftime('%Y-%m-%d %H:%M:%S') %></td>
+            <td style="white-space: nowrap;">
+              <strong><%= log.user_name %></strong>
+              <% if log.user_id %>
+                <br><span class="text-muted" style="font-size: 0.9em;">(ID: <%= log.user_id %>)</span>
+              <% end %>
+            </td>
+            <td><%= log.message %></td>
+          </tr>
+        <% end %>
+        <% if @logs.empty? %>
+          <tr>
+            <td colspan="3" class="text-center text-muted"><%= t("mis2.activity_logs.index.no_logs") %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+
+  <% if @total_pages > 1 %>
+    <div class="pagination flex-row-center-center" style="margin-top: 20px; gap: 10px;">
+      <% if @page > 1 %>
+        <%= link_to t("mis2.activity_logs.pagination.prev"), mis2.activity_logs_path(page: @page - 1), class: "btn btn-sm btn-secondary" %>
+      <% else %>
+        <span class="btn btn-sm btn-secondary disabled" style="opacity: 0.5;"><%= t("mis2.activity_logs.pagination.prev") %></span>
+      <% end %>
+
+      <span><%= t("mis2.activity_logs.pagination.page_info", page: @page, total: @total_pages) %></span>
+
+      <% if @page < @total_pages %>
+        <%= link_to t("mis2.activity_logs.pagination.next"), mis2.activity_logs_path(page: @page + 1), class: "btn btn-sm btn-secondary" %>
+      <% else %>
+        <span class="btn btn-sm btn-secondary disabled" style="opacity: 0.5;"><%= t("mis2.activity_logs.pagination.next") %></span>
+      <% end %>
+    </div>
+  <% end %>
+</div>

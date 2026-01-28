@@ -1,3 +1,9 @@
+PATH
+  remote: engines/mis2
+  specs:
+    mis2 (0.1.0)
+      rails (>= 8.1.2)
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -105,7 +111,7 @@ GEM
       activerecord (>= 7.2.0)
       with_advisory_lock (>= 7.0.0)
       zeitwerk (~> 2.7)
-    collavre (0.1.0)
+    collavre (0.1.1)
       bcrypt
       closure_tree
       httparty
@@ -292,6 +298,8 @@ GEM
     multi_xml (0.8.1)
       bigdecimal (>= 3.1, < 5)
     multipart-post (2.4.1)
+    mysql2 (0.5.7)
+      bigdecimal
     net-http (0.9.1)
       uri (>= 0.11.1)
     net-imap (0.6.2)
@@ -615,7 +623,7 @@ DEPENDENCIES
   brakeman
   capybara
   closure_tree
-  collavre (= 0.1.0)
+  collavre (= 0.1.1)
   debug
   doorkeeper (~> 5.8)
   dotenv
@@ -630,6 +638,8 @@ DEPENDENCIES
   kamal
   liquid
   minitest-mock
+  mis2!
+  mysql2
   octokit
   omniauth-github
   omniauth-google-oauth2

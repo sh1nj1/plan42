@@ -1,0 +1,27 @@
+<div class="contact-management">
+  <div class="flex-row-center-between">
+    <h1 class="no-top-margin"><%= t("mis2.h2.assignments.edit.title", name: @user.name) %></h1>
+    <%= link_to t("mis2.h2.assignments.edit.back_button"), mis2.h2_assignments_path(query: params[:query]), class: "btn btn-secondary" %>
+  </div>
+
+  <div class="table-scroll">
+    <table class="contacts-table">
+      <thead>
+        <tr>
+          <th><%= t("mis2.h2.assignments.table.headers.round") %></th>
+          <th><%= t("mis2.h2.assignments.table.headers.assignment_name") %></th>
+          <th><%= t("mis2.h2.assignments.table.headers.start_date") %></th>
+          <th><%= t("mis2.h2.assignments.table.headers.end_date") %></th>
+          <th><%= t("mis2.h2.assignments.table.headers.progress_status") %></th>
+          <th><%= t("mis2.h2.assignments.table.headers.created_time") %></th>
+          <th><%= t("mis2.h2.assignments.table.headers.actions") %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @assignments.each do |assignment| %>
+          <%= render partial: "assignment_list", locals: { assignment: assignment, user: @user } %>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</div>

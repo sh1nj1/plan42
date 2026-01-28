@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_20_163856) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_22_034848) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -175,14 +175,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_20_163856) do
 
   create_table "creatives", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.text "description"
+    t.text "description", limit: 4294967295
     t.text "github_gemini_prompt"
     t.integer "origin_id"
     t.integer "parent_id"
     t.float "progress", default: 0.0
     t.integer "sequence", default: 0, null: false
     t.datetime "updated_at", null: false
-    t.integer "user_id", null: false
+    t.integer "user_id"
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
@@ -296,6 +296,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_20_163856) do
     t.datetime "updated_at", null: false
     t.index ["creative_id"], name: "index_mcp_tools_on_creative_id"
     t.index ["name"], name: "index_mcp_tools_on_name", unique: true
+  end
+
+  create_table "mis_activity_log", force: :cascade do |t|
+    t.string "action"
+    t.datetime "created_at", null: false
+    t.text "message"
+    t.json "metadata"
+    t.string "target_id"
+    t.string "target_type"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.string "user_name"
+    t.index ["user_id"], name: "index_mis_activity_log_on_user_id"
   end
 
   create_table "notion_accounts", force: :cascade do |t|
