@@ -8,6 +8,7 @@ Collavre::Engine.routes.draw do
       post :create_ai
       get :search
       get :exists
+      patch :notification_settings
     end
     member do
       get :edit_ai
@@ -17,7 +18,6 @@ Collavre::Engine.routes.draw do
       get :edit_password
       patch :update_password
       get :passkeys
-      patch :notification_settings
     end
   end
   get "/email_verification/:token", to: "email_verifications#show", as: :email_verification
