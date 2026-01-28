@@ -22,7 +22,7 @@ class OauthAuthControllersTest < ActionDispatch::IntegrationTest
       credentials: { token: "github_token_123" }
     )
 
-    get "/auth/github/callback"
+    post "/auth/github/callback"
 
     assert_redirected_to collavre.creatives_path
     assert_equal I18n.t("collavre.github_auth.connected"), flash[:notice]
@@ -36,7 +36,7 @@ class OauthAuthControllersTest < ActionDispatch::IntegrationTest
       credentials: { token: "github_token_new" }
     )
 
-    get "/auth/github/callback"
+    post "/auth/github/callback"
 
     assert_redirected_to collavre.new_session_path
     assert_equal I18n.t("collavre.github_auth.login_first"), flash[:alert]
@@ -52,7 +52,7 @@ class OauthAuthControllersTest < ActionDispatch::IntegrationTest
       credentials: { token: "notion_token_123" }
     )
 
-    get "/auth/notion/callback"
+    post "/auth/notion/callback"
 
     assert_redirected_to collavre.creatives_path
     assert_equal I18n.t("collavre.notion_auth.connected"), flash[:notice]
@@ -66,7 +66,7 @@ class OauthAuthControllersTest < ActionDispatch::IntegrationTest
       credentials: { token: "notion_token_new" }
     )
 
-    get "/auth/notion/callback"
+    post "/auth/notion/callback"
 
     assert_redirected_to collavre.new_session_path
     assert_equal I18n.t("collavre.notion_auth.login_first"), flash[:alert]
