@@ -1,0 +1,7 @@
+# Built gem files
+*.gem
+
+# IDE files
+.idea/
+*.swp
+*.swo

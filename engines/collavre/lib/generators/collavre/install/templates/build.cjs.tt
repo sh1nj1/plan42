@@ -1,0 +1,100 @@
+const esbuild = require('esbuild');
+const glob = require('glob');
+const path = require('path');
+const { execSync } = require('child_process');
+
+// Find Collavre gem path using bundler
+function getCollavreGemPath() {
+    // Use environment variable if set
+    if (process.env.COLLAVRE_GEM_PATH) {
+        return process.env.COLLAVRE_GEM_PATH;
+    }
+
+    // Try to find via bundler
+    try {
+        const gemPath = execSync('bundle show collavre 2>/dev/null', { encoding: 'utf8' }).trim();
+        if (gemPath && !gemPath.includes('Could not find')) {
+            return gemPath;
+        }
+    } catch (e) {
+        // Gem not found or bundler not available
+    }
+
+    // Try local engines directory (monorepo setup)
+    const localPath = path.join(process.cwd(), 'engines/collavre');
+    if (require('fs').existsSync(localPath)) {
+        return localPath;
+    }
+
+    return null;
+}
+
+// Find all entry points
+const appEntries = glob.sync('app/javascript/*.*');
+const engineEntries = glob.sync('engines/*/app/javascript/*.*');
+
+// Construct entry points object to flatten output structure
+const entryPoints = {};
+
+[...appEntries, ...engineEntries].forEach(entry => {
+    const name = path.parse(entry).name;
+    if (entryPoints[name]) {
+        console.error(`[ERROR] Duplicate entry point name detected: '${name}'.`);
+        console.error(`  Existing: ${entryPoints[name]}`);
+        console.error(`  New:      ${entry}`);
+        console.error(`Build failed to prevent asset overwrites. Please rename one of the files.`);
+        process.exit(1);
+    }
+    entryPoints[name] = entry;
+});
+
+// Add Collavre gem entry points
+const collavreGemPath = getCollavreGemPath();
+if (collavreGemPath) {
+    console.log(`[INFO] Including Collavre assets from: ${collavreGemPath}`);
+    const collavreEntries = glob.sync(path.join(collavreGemPath, 'app/javascript/*.*'));
+    collavreEntries.forEach(entry => {
+        const name = path.parse(entry).name;
+        if (entryPoints[name]) {
+            console.warn(`[WARN] Collavre entry '${name}' conflicts with existing entry. Skipping.`);
+        } else {
+            entryPoints[name] = entry;
+        }
+    });
+} else {
+    console.log('[INFO] Collavre gem not found. Building without Collavre assets.');
+}
+
+if (Object.keys(entryPoints).length === 0) {
+    console.log('No entry points found for esbuild.');
+    process.exit(0);
+}
+
+const config = {
+    entryPoints: entryPoints,
+    bundle: true,
+    sourcemap: true,
+    format: 'esm',
+    jsx: 'automatic',
+    outdir: 'app/assets/builds',
+    publicPath: '/assets',
+};
+
+const watch = process.argv.includes('--watch');
+
+if (watch) {
+    esbuild.context(config)
+        .then(ctx => {
+            ctx.watch().catch(err => {
+                console.error(err);
+                process.exit(1);
+            });
+            console.log('Watching for changes...');
+        })
+        .catch(err => {
+            console.error(err);
+            process.exit(1);
+        });
+} else {
+    esbuild.build(config).catch(() => process.exit(1));
+}

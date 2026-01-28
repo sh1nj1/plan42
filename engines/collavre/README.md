@@ -2,6 +2,8 @@
 
 Collavre is a Rails engine that provides knowledge management, task management, and real-time collaboration features for Rails 8+ applications.
 
+> **Documentation**: See [docs/](docs/README.md) for detailed guides including [Installation](docs/installation.md).
+
 ## Features
 
 - **Creatives**: Hierarchical tree-structured items for documentation, tasks, and discussions
@@ -95,13 +97,29 @@ Add to your application layout:
 <%= stylesheet_link_tag "collavre/print", media: 'print' %>
 ```
 
-### 6. Include JavaScript
+### 6. Install Assets (jsbundling-rails)
 
-The engine provides JavaScript modules that integrate with your application's build system. Import in your `application.js`:
+Run the install generator to set up JavaScript asset building:
+
+```bash
+$ bin/rails generate collavre:install
+```
+
+This configures your `script/build.cjs` to include Collavre's JavaScript automatically.
+
+Then build assets:
+
+```bash
+$ npm run build
+```
+
+Import in your `application.js`:
 
 ```javascript
 import "collavre"
 ```
+
+See [docs/installation.md](docs/installation.md) for detailed configuration options.
 
 ## Optional Features
 

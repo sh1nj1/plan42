@@ -6,6 +6,16 @@ module Collavre
       g.test_framework :minitest
     end
 
+    # Path to engine's JavaScript sources for jsbundling-rails integration
+    def self.javascript_path
+      root.join("app/javascript")
+    end
+
+    # Path to engine's stylesheet sources
+    def self.stylesheet_path
+      root.join("app/assets/stylesheets")
+    end
+
     # Add engine migrations to main app's migration path
     # This allows migrations to live in the engine but be run from the host app
     initializer "collavre.migrations" do |app|
