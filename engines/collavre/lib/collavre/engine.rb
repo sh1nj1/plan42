@@ -41,12 +41,6 @@ module Collavre
       end
     end
 
-    # Add engine locales to I18n load path
-    # Host app can override these translations by defining the same keys
-    initializer "collavre.i18n" do |app|
-      config.i18n.load_path += Dir[root.join("config/locales/**/*.yml")]
-    end
-
     # Allow engine controllers to fall back to host app views during migration
     # This enables gradual view migration - views can stay in host app until moved to engine
     initializer "collavre.view_paths" do
