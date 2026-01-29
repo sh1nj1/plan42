@@ -6,10 +6,10 @@ ko:
         h2_organization_update: "'%{user_name}' (ID: %{user_id}) 소속 변경: '%{old_organization}' -> '%{new_organization}'."
     home:
       h2_assignment_link: "H2 사용자 리스트"
-      activity_logs_link: "활동 로그"
+      activity_logs_link: "작업 로그"
     activity_logs:
       index:
-        title: "활동 로그"
+        title: "작업 로그"
         back_home: "홈으로 돌아가기"
         no_logs: "로그가 없습니다."
       table:
