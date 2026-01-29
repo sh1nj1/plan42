@@ -1,8 +1,8 @@
 # Name of your application. Used to uniquely configure containers.
-service: collavre
+service: rowan-mis2
 
 # Name of the container image.
-image: <%= ENV['KAMAL_REGISTRY_USER'] %>/collavre
+image: rowan/mis2
 
 # Deploy to these servers.
 servers:
@@ -31,11 +31,11 @@ proxy:
 registry:
   # Specify the registry server, if you're not using Docker Hub
   # server: registry.digitalocean.com / ghcr.io / ...
-  username: <%= ENV['KAMAL_REGISTRY_USER'] %>
+  server: 444773787018.dkr.ecr.ap-northeast-2.amazonaws.com
+  username: AWS
 
   # Always use an access token rather than real password when possible.
-  password:
-    - KAMAL_REGISTRY_PASSWORD
+  password: <%= %x(aws ecr get-login-password --region ap-northeast-2).strip %>
 
 # Inject ENV variables into containers (secrets come from .kamal/secrets).
 env:
