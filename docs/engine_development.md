@@ -108,6 +108,28 @@ Rails.application.config.to_prepare do
 end
 ```
 
+#### Creating a Popup Menu
+
+Use the `:popup` type to create a dropdown menu with explicit children:
+
+```ruby
+Rails.application.config.to_prepare do
+  Navigation::Registry.instance.register(
+    key: :my_menu,
+    label: "My Menu",
+    type: :popup,
+    align: :right,                           # Popup alignment (:left or :right)
+    priority: 300,
+    children: [
+      { key: :item1, type: :link, label: "Item 1", path: "/path1" },
+      { key: :item2, type: :link, label: "Item 2", path: "/path2" },
+      { key: :divider, type: :divider, label: "-" },
+      { key: :item3, type: :button, label: "Action", path: -> { some_action_path } }
+    ]
+  )
+end
+```
+
 #### Navigation Item Types
 
 | Type | Description | Required Options |
@@ -118,6 +140,7 @@ end
 | `:component` | Renders a ViewComponent | `component`, `component_args` |
 | `:raw` | Raw HTML content | `content` |
 | `:divider` | Horizontal divider (`<hr>`) | - |
+| `:popup` | Dropdown popup menu | `children`, optional: `align` |
 
 > **Security Note:** The `:raw` type only trusts content already marked as `html_safe` (e.g., output from `render()`). Plain strings are automatically escaped to prevent XSS. Always use Procs that return trusted content:
 > ```ruby

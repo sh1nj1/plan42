@@ -138,6 +138,13 @@
   right: 0;
 }
 
+.popup-menu-item button,
+.popup-menu-item a {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
 #user-menu button {
   display: block;
   text-align: left;

@@ -118,7 +118,7 @@ module Navigation
       raise ArgumentError, "Navigation item must have a :key" unless item[:key]
       raise ArgumentError, "Navigation item must have a :label" unless item[:label]
 
-      valid_types = %i[button link component partial divider raw]
+      valid_types = %i[button link component partial divider raw popup]
       unless valid_types.include?(item[:type])
         raise ArgumentError, "Invalid navigation item type: #{item[:type]}#{context}. Valid types: #{valid_types.join(', ')}"
       end

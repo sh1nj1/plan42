@@ -2,6 +2,7 @@ require "collavre/version"
 require "collavre/configuration"
 require "collavre/engine"
 require "collavre/user_extensions"
+require "navigation/registry"
 
 module Collavre
   class << self

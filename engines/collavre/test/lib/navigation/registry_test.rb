@@ -196,4 +196,20 @@ class Navigation::RegistryTest < ActiveSupport::TestCase
     end
     assert_match(/Invalid navigation item type.*child of parent/i, error.message)
   end
+
+  test "accepts popup type for navigation items" do
+    @registry.register(
+      key: :popup_menu,
+      label: "Popup Menu",
+      type: :popup,
+      children: [
+        { key: :child1, label: "Child 1", type: :link },
+        { key: :child2, label: "Child 2", type: :button }
+      ]
+    )
+
+    item = @registry.find(:popup_menu)
+    assert_equal :popup, item[:type]
+    assert_equal 2, item[:children].size
+  end
 end

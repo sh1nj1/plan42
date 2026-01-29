@@ -40,6 +40,8 @@ module Collavre
         render_nav_divider(item)
       when :raw
         render_nav_raw(item)
+      when :popup
+        render_nav_dropdown(item, mobile: mobile)
       else
         raise ArgumentError, "Unknown navigation item type: #{item[:type]}"
       end
@@ -123,7 +125,7 @@ module Collavre
     def render_dropdown_child(item, mobile: false)
       content = render_navigation_item(item, mobile: mobile)
       return if content.blank?
-      content_tag(:div, content)
+      content_tag(:div, content, class: "popup-menu-item")
     end
 
     def resolve_nav_label(label)

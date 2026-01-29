@@ -264,4 +264,24 @@ class NavigationHelperTest < ActionView::TestCase
 
     assert_equal "", html
   end
+
+  test "render_navigation_item renders popup type as dropdown" do
+    Navigation::Registry.instance.register(
+      key: :test_popup,
+      label: "Popup Menu",
+      type: :popup,
+      align: :right,
+      children: [
+        { key: :child1, label: "Child 1", type: :link, path: -> { "/path1" } },
+        { key: :child2, label: "Child 2", type: :link, path: -> { "/path2" } }
+      ]
+    )
+
+    item = Navigation::Registry.instance.find(:test_popup)
+    html = render_navigation_item(item)
+
+    assert_match(/Popup Menu/, html)
+    assert_match(/Child 1/, html)
+    assert_match(/Child 2/, html)
+  end
 end
