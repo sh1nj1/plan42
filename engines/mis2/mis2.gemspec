@@ -3,11 +3,11 @@ require_relative "lib/mis2/version"
 Gem::Specification.new do |spec|
   spec.name        = "mis2"
   spec.version     = Mis2::VERSION
-  spec.authors     = [ "Soonoh Jung" ]
-  spec.email       = [ "soonoh.jung@gmail.com" ]
-  spec.homepage    = "TODO"
-  spec.summary     = "TODO: Summary of Mis2."
-  spec.description = "TODO: Description of Mis2."
+  spec.authors     = [ "Rowan Company" ]
+  spec.email       = [ "[EMAIL_ADDRESS]" ]
+  spec.homepage    = "https://github.com/RowanCompany/rowan-mis2"
+  spec.summary     = "Rowan MIS2 Engine"
+  spec.description = "Rowan MIS2 Engine"
 
   # Prevent pushing this gem to RubyGems.org. To allow pushes either set the "allowed_push_host"
   # to allow pushing to a single host or delete this section to allow pushing to any host.
