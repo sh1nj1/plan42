@@ -16,3 +16,6 @@ application.register("webauthn", WebauthnController)
 
 import AssignmentRowController from "./assignment_row_controller"
 application.register("assignment-row", AssignmentRowController)
+
+import OrganizationEditController from "./organization_edit_controller"
+application.register("organization-edit", OrganizationEditController)

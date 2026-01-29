@@ -710,3 +710,128 @@ input[type="password"] {
         min-width: 600px;
     }
 }
+
+/* Organization Edit Modal */
+.organization-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.organization-modal-content {
+    background: var(--color-bg);
+    border-radius: 8px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.organization-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.organization-modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.organization-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--color-text);
+    padding: 0;
+    line-height: 1;
+}
+
+.organization-modal-close:hover {
+    opacity: 0.7;
+}
+
+.organization-modal-body {
+    padding: 1rem;
+    overflow-y: auto;
+}
+
+.organization-modal-user-info {
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--color-text);
+}
+
+.organization-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 1rem;
+}
+
+.organization-search-results {
+    max-height: 300px;
+    overflow-y: auto;
+    border-radius: 4px;
+}
+
+.organization-search-results:not(:empty) {
+    border: 1px solid var(--color-border);
+}
+
+.organization-result-item {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.organization-result-item:last-child {
+    border-bottom: none;
+}
+
+.organization-result-item:hover {
+    background: var(--color-drag-over, #f0f0f0);
+}
+
+.organization-result-item.selected {
+    background: var(--color-btn-bg);
+    color: var(--color-btn-text);
+}
+
+.organization-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 1rem;
+    border-top: 1px solid var(--color-border);
+}
+
+/* Icon button for inline edit actions */
+.btn-icon {
+    background: none;
+    border: none;
+    padding: 0.25rem;
+    cursor: pointer;
+    vertical-align: middle;
+    opacity: 0.7;
+}
+
+.btn-icon:hover {
+    opacity: 1;
+}
+
+.icon-sm {
+    width: 1rem;
+    height: 1rem;
+}

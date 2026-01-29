@@ -3,8 +3,9 @@ en:
     activity_log:
       messages:
         h2_training_update: "Updated H2 Training '%{assignment_name}' (Round %{round}) for user '%{user_name}' (ID: %{user_id}). Dates changed: %{old_start} ~ %{old_end} -> %{new_start} ~ %{new_end}."
+        h2_organization_update: "Updated organization for '%{user_name}' (ID: %{user_id}): '%{old_organization}' -> '%{new_organization}'."
     home:
-      h2_assignment_link: "H2 Training Date Management"
+      h2_assignment_link: "H2 User List"
       activity_logs_link: "Activity Logs"
     activity_logs:
       index:
@@ -58,3 +59,18 @@ en:
           general_error: "Error: %{message}"
         notices:
           update_success: "Training updated successfully."
+      organizations:
+        modal_title: "Search Hospital"
+        search_placeholder: "Search by hospital name..."
+        no_results: "No results found."
+        search_failed: "Search failed. Please try again."
+        update_success: "Organization updated successfully."
+        update_error: "Failed to update organization."
+        confirm_change: "Change %{user_name}'s organization from %{old_organization} to %{new_organization}?"
+        btn_update: "Update"
+        btn_cancel: "Cancel"
+      users:
+        update_organization_success: "User organization updated successfully."
+        update_organization_error: "Failed to update organization: %{message}"
+        user_not_found: "User not found."
+        organization_not_found: "Organization not found."

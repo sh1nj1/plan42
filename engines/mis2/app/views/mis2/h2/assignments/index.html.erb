@@ -1,4 +1,9 @@
-<div class="contact-management">
+<div class="contact-management" data-controller="organization-edit"
+     data-organization-edit-search-url-value="<%= mis2.search_h2_organizations_path %>"
+     data-organization-edit-update-url-value="<%= mis2.update_organization_h2_user_path(':id') %>"
+     data-organization-edit-no-results-text-value="<%= t('mis2.h2.organizations.no_results') %>"
+     data-organization-edit-search-failed-text-value="<%= t('mis2.h2.organizations.search_failed') %>"
+     data-organization-edit-confirm-message-value="<%= t('mis2.h2.organizations.confirm_change', user_name: ':user_name', old_organization: ':old_organization', new_organization: ':new_organization') %>">
   <div class="flex-row-center-between">
     <h1 class="no-top-margin"><%= t("mis2.h2.assignments.index.title") %></h1>
     <%= link_to t("mis2.activity_logs.index.back_home"), mis2.root_path, class: "btn btn-sm btn-secondary" %>
@@ -26,14 +31,22 @@
         </thead>
         <tbody>
           <% @users.each do |user| %>
-            <tr>
+            <tr data-user-id="<%= user.user_idx %>">
               <td><%= user.user_idx %></td>
               <td><%= user.name %></td>
               <td><%= user.date_of_birth.to_s.gsub(/(\d{4})(\d{2})(\d{2})/, '\1-\2-\3') %></td>
               <td><%= user.phone.to_s.gsub(/(\d{3})(\d{4})(\d{4})/, '\1-\2-\3') %></td>
               <td>
-                <%# organization_name is selected in the scope %>
-                <%= user.attributes["organization_name"] %>
+                <span data-organization-edit-target="organizationName" data-user-id="<%= user.user_idx %>">
+                  <%= user.attributes["organization_name"] %>
+                </span>
+                <button type="button" class="btn-icon" title="<%= t('mis2.h2.organizations.modal_title') %>"
+                        data-action="click->organization-edit#openModal"
+                        data-user-id="<%= user.user_idx %>"
+                        data-user-name="<%= user.name %>"
+                        data-current-organization="<%= user.attributes['organization_name'] %>">
+                  <%= image_tag "edit.svg", alt: "Edit", class: "icon-sm" %>
+                </button>
               </td>
               <td>
                 <%= link_to t("mis2.h2.assignments.index.select_action"), mis2.edit_h2_assignment_path(user.user_idx), class: "btn btn-sm btn-secondary" %>
@@ -46,4 +59,32 @@
   <% elsif params[:query].present? %>
     <p class="text-muted"><%= t("mis2.h2.assignments.index.no_users_found", query: params[:query]) %></p>
   <% end %>
+
+  <!-- Organization Search Modal -->
+  <div class="organization-modal-overlay" data-organization-edit-target="modal" style="display: none;">
+    <div class="organization-modal-content">
+      <div class="organization-modal-header">
+        <h3><%= t("mis2.h2.organizations.modal_title") %></h3>
+        <button type="button" class="organization-modal-close" data-action="click->organization-edit#closeModal">&times;</button>
+      </div>
+      <div class="organization-modal-body">
+        <p class="organization-modal-user-info" data-organization-edit-target="userInfo"></p>
+        <input type="text"
+               data-organization-edit-target="searchInput"
+               data-action="input->organization-edit#search"
+               placeholder="<%= t('mis2.h2.organizations.search_placeholder') %>"
+               class="organization-search-input">
+        <div class="organization-search-results" data-organization-edit-target="results">
+        </div>
+      </div>
+      <div class="organization-modal-footer">
+        <button type="button" class="btn btn-secondary" data-action="click->organization-edit#closeModal">
+          <%= t("mis2.h2.organizations.btn_cancel") %>
+        </button>
+        <button type="button" class="btn btn-primary" data-action="click->organization-edit#confirmUpdate" data-organization-edit-target="updateBtn" disabled>
+          <%= t("mis2.h2.organizations.btn_update") %>
+        </button>
+      </div>
+    </div>
+  </div>
 </div>

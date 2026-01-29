@@ -3,8 +3,9 @@ ko:
     activity_log:
       messages:
         h2_training_update: "'%{assignment_name}' 훈련(회차: %{round}) 업데이트 (대상: %{user_name}, ID: %{user_id}). 날짜 변경: %{old_start} ~ %{old_end} -> %{new_start} ~ %{new_end}."
+        h2_organization_update: "'%{user_name}' (ID: %{user_id}) 소속 변경: '%{old_organization}' -> '%{new_organization}'."
     home:
-      h2_assignment_link: "H2 훈련 날짜 관리"
+      h2_assignment_link: "H2 사용자 리스트"
       activity_logs_link: "활동 로그"
     activity_logs:
       index:
@@ -58,3 +59,18 @@ ko:
           general_error: "오류: %{message}"
         notices:
           update_success: "훈련이 성공적으로 업데이트되었습니다."
+      organizations:
+        modal_title: "병원 검색"
+        search_placeholder: "병원 이름으로 검색..."
+        no_results: "검색 결과가 없습니다."
+        search_failed: "검색에 실패했습니다. 다시 시도해주세요."
+        update_success: "소속이 성공적으로 변경되었습니다."
+        update_error: "소속 변경에 실패했습니다."
+        confirm_change: "%{user_name}의 소속을 %{old_organization}에서 %{new_organization}으로 바꿀까요?"
+        btn_update: "수정"
+        btn_cancel: "취소"
+      users:
+        update_organization_success: "사용자 소속이 성공적으로 변경되었습니다."
+        update_organization_error: "소속 변경에 실패했습니다: %{message}"
+        user_not_found: "사용자를 찾을 수 없습니다."
+        organization_not_found: "조직을 찾을 수 없습니다."

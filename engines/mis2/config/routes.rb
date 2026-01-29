@@ -8,5 +8,17 @@ Mis2::Engine.routes.draw do
         post :validate
       end
     end
+
+    resources :organizations, only: [] do
+      collection do
+        get :search
+      end
+    end
+
+    resources :users, only: [] do
+      member do
+        patch :update_organization
+      end
+    end
   end
 end

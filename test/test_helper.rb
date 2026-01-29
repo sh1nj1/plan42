@@ -58,7 +58,23 @@ module IntegrationAuthHelper
   end
 end
 
+module H2TestHelper
+  # Ensures H2 schema is loaded for parallel test workers
+  # Each parallel worker may have its own database that needs the schema
+  def ensure_h2_schema_loaded!
+    h2_schema_file = Rails.root.join("db", "h2_test_schema.rb")
+    return unless File.exist?(h2_schema_file)
+
+    connection = Mis2::H2Record.connection
+    unless connection.table_exists?("brain_organization")
+      require h2_schema_file
+      H2TestSchema.load!(connection)
+    end
+  end
+end
+
 class ActionDispatch::IntegrationTest
   include IntegrationAuthHelper
+  include H2TestHelper
   include Collavre::Engine.routes.url_helpers
 end
