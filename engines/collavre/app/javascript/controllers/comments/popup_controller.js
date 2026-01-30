@@ -12,7 +12,6 @@ export default class extends Controller {
     'leftHandle',
     'rightHandle',
     'fullscreenLink',
-    'slackBadge',
   ]
 
   connect() {
@@ -134,9 +133,6 @@ export default class extends Controller {
 
     this.updateFullscreenLink(resolvedCreativeId)
 
-    // Load Slack channel info
-    this.loadSlackBadge(resolvedCreativeId)
-
     this.prepareSize()
 
     this.showPopup()
@@ -144,6 +140,15 @@ export default class extends Controller {
     document.body.classList.add('no-scroll')
 
     await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
+
+    // Dispatch event for integrations (e.g., Slack badge)
+    this.element.dispatchEvent(new CustomEvent('comments-popup:opened', {
+      bubbles: true,
+      detail: {
+        creativeId: resolvedCreativeId,
+        badgeContainer: this.element.querySelector('[data-integration-badges]')
+      }
+    }))
   }
 
   async openForCreative() {
@@ -161,6 +166,15 @@ export default class extends Controller {
     this.showPopup()
 
     await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment })
+
+    // Dispatch event for integrations (e.g., Slack badge)
+    this.element.dispatchEvent(new CustomEvent('comments-popup:opened', {
+      bubbles: true,
+      detail: {
+        creativeId: resolvedCreativeId,
+        badgeContainer: this.element.querySelector('[data-integration-badges]')
+      }
+    }))
   }
 
   async notifyChildControllers({ creativeId, canComment, highlightId }) {
@@ -201,11 +215,13 @@ export default class extends Controller {
       this.topicsController.onPopupClosed()
     }
 
-    // Hide Slack badge
-    if (this.hasSlackBadgeTarget) {
-      this.slackBadgeTarget.style.display = 'none'
-      this.slackBadgeTarget.textContent = ''
-    }
+    // Dispatch event for integrations
+    this.element.dispatchEvent(new CustomEvent('comments-popup:closed', {
+      bubbles: true,
+      detail: {
+        badgeContainer: this.element.querySelector('[data-integration-badges]')
+      }
+    }))
 
     this.element.style.display = 'none'
     this.element.classList.remove('open')
@@ -441,32 +457,4 @@ export default class extends Controller {
       this.openFromUrlTimeout = null
     }
   }
-
-  async loadSlackBadge(creativeId) {
-    if (!this.hasSlackBadgeTarget || !creativeId) {
-      return
-    }
-
-    // Hide badge initially
-    this.slackBadgeTarget.style.display = 'none'
-    this.slackBadgeTarget.textContent = ''
-
-    try {
-      // The API already resolves to origin creative on the server side
-      const response = await fetch(`/slack/creatives/${creativeId}/slack_integrations`, {
-        headers: { Accept: 'application/json' },
-      })
-      if (!response.ok) return
-
-      const data = await response.json()
-      if (data.links && data.links.length > 0) {
-        const channelNames = data.links.map((link) => `#${link.channel_name}`).join(', ')
-        this.slackBadgeTarget.textContent = `Slack: ${channelNames}`
-        this.slackBadgeTarget.style.display = 'inline-block'
-      }
-    } catch (error) {
-      console.warn('Failed to load Slack badge:', error)
-    }
-  }
-
 }
