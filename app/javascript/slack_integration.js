@@ -263,7 +263,6 @@ if (!slackIntegrationInitialized) {
       availableChannels.forEach(function (channel) {
         const div = document.createElement('div');
         div.className = 'slack-channel-item';
-        div.style.cssText = 'padding:0.5em 1em;cursor:pointer;border-bottom:1px solid var(--color-border);';
 
         const isLinked = existingLinks.some(link => link.channel_id === channel.id);
 
@@ -275,9 +274,9 @@ if (!slackIntegrationInitialized) {
         if (!isLinked) {
           div.addEventListener('click', function () {
             document.querySelectorAll('.slack-channel-item').forEach(el => {
-              el.style.background = '';
+              el.classList.remove('active');
             });
-            div.style.background = 'var(--color-bg-hover)';
+            div.classList.add('active');
             selectedChannel = channel;
             nextBtn.disabled = false;
           });
