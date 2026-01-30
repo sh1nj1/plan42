@@ -218,18 +218,24 @@ module CollavreSlack
     end
 
     def find_or_map_user(slack_account, slack_user_id)
-      # First check existing mapping
-      mapping = slack_account.slack_user_mappings.find_by(slack_user_id: slack_user_id)
-      return { user: mapping.collavre_user } if mapping
-
-      # Fetch user info from Slack API
+      # Fetch user info from Slack API first (needed for notifications even if mapping exists)
       client = SlackClient.new(access_token: slack_account.access_token)
       response = client.get_user_info(user_id: slack_user_id)
-      return { user: nil, slack_user_id: slack_user_id } unless response[:ok]
 
-      profile = response.dig(:user, :profile) || {}
-      slack_display_name = profile[:display_name].presence || profile[:real_name].presence || response.dig(:user, :name)
-      email = profile[:email]
+      slack_display_name = nil
+      email = nil
+
+      if response[:ok]
+        profile = response.dig(:user, :profile) || {}
+        slack_display_name = profile[:display_name].presence || profile[:real_name].presence || response.dig(:user, :name)
+        email = profile[:email]
+      end
+
+      slack_info = { slack_display_name: slack_display_name, slack_email: email, slack_user_id: slack_user_id }
+
+      # Check existing mapping
+      mapping = slack_account.slack_user_mappings.find_by(slack_user_id: slack_user_id)
+      return slack_info.merge(user: mapping.collavre_user) if mapping
 
       # Try to find Collavre user by email and auto-map
       if email.present?
@@ -240,11 +246,11 @@ module CollavreSlack
             collavre_user: collavre_user
           )
           Rails.logger.info("[CollavreSlack] Auto-mapped Slack user #{slack_user_id} to Collavre user #{collavre_user.id} by email")
-          return { user: collavre_user }
+          return slack_info.merge(user: collavre_user)
         end
       end
 
-      { user: nil, slack_display_name: slack_display_name, slack_email: email, slack_user_id: slack_user_id }
+      slack_info.merge(user: nil)
     rescue StandardError => e
       Rails.logger.warn("[CollavreSlack] Failed to map user: #{e.message}")
       { user: nil, slack_user_id: slack_user_id }
