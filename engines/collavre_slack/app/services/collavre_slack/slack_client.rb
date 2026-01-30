@@ -42,6 +42,10 @@ module CollavreSlack
       post("chat.postMessage", { channel: channel, text: text })
     end
 
+    def get_user_info(user_id:)
+      get("users.info", user: user_id)
+    end
+
     def redirect_uri
       CollavreSlack.config.redirect_uri
     end

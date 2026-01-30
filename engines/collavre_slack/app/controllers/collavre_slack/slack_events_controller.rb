@@ -5,15 +5,19 @@ module CollavreSlack
 
     def create
       body = request.raw_post
-      unless valid_signature?(body)
-        render json: { error: "Invalid signature" }, status: :unauthorized
+      payload = JSON.parse(body, symbolize_names: true)
+
+      # Handle URL verification challenge first (needed for initial Slack app setup)
+      # Slack sends a signed request, but we allow this through to complete setup
+      if payload[:type] == "url_verification"
+        render json: { challenge: payload[:challenge] }
         return
       end
 
-      payload = JSON.parse(body, symbolize_names: true)
-
-      if payload[:type] == "url_verification"
-        render json: { challenge: payload[:challenge] }
+      # For all other events, validate the signature
+      unless valid_signature?(body)
+        Rails.logger.warn("[SlackEvents] Invalid signature for event type: #{payload[:type]}")
+        render json: { error: "Invalid signature" }, status: :unauthorized
         return
       end
 
@@ -28,6 +32,8 @@ module CollavreSlack
     private
 
     def valid_signature?(body)
+      return false if signing_secret.blank?
+
       timestamp = request.headers["X-Slack-Request-Timestamp"].to_s
       signature = request.headers["X-Slack-Signature"].to_s
       return false if timestamp.blank? || signature.blank?

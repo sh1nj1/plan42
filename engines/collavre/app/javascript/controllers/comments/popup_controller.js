@@ -12,6 +12,7 @@ export default class extends Controller {
     'leftHandle',
     'rightHandle',
     'fullscreenLink',
+    'slackBadge',
   ]
 
   connect() {
@@ -133,6 +134,9 @@ export default class extends Controller {
 
     this.updateFullscreenLink(resolvedCreativeId)
 
+    // Load Slack channel info
+    this.loadSlackBadge(resolvedCreativeId)
+
     this.prepareSize()
 
     this.showPopup()
@@ -195,6 +199,12 @@ export default class extends Controller {
     }
     if (this.topicsController) {
       this.topicsController.onPopupClosed()
+    }
+
+    // Hide Slack badge
+    if (this.hasSlackBadgeTarget) {
+      this.slackBadgeTarget.style.display = 'none'
+      this.slackBadgeTarget.textContent = ''
     }
 
     this.element.style.display = 'none'
@@ -429,6 +439,33 @@ export default class extends Controller {
     if (this.openFromUrlTimeout) {
       window.clearTimeout(this.openFromUrlTimeout)
       this.openFromUrlTimeout = null
+    }
+  }
+
+  async loadSlackBadge(creativeId) {
+    if (!this.hasSlackBadgeTarget || !creativeId) {
+      return
+    }
+
+    // Hide badge initially
+    this.slackBadgeTarget.style.display = 'none'
+    this.slackBadgeTarget.textContent = ''
+
+    try {
+      // The API already resolves to origin creative on the server side
+      const response = await fetch(`/slack/creatives/${creativeId}/slack_integrations`, {
+        headers: { Accept: 'application/json' },
+      })
+      if (!response.ok) return
+
+      const data = await response.json()
+      if (data.links && data.links.length > 0) {
+        const channelNames = data.links.map((link) => `#${link.channel_name}`).join(', ')
+        this.slackBadgeTarget.textContent = `Slack: ${channelNames}`
+        this.slackBadgeTarget.style.display = 'inline-block'
+      }
+    } catch (error) {
+      console.warn('Failed to load Slack badge:', error)
     }
   }
 

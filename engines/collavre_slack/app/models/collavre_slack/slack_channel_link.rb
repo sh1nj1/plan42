@@ -4,7 +4,7 @@ module CollavreSlack
 
     belongs_to :creative, class_name: "Collavre::Creative"
     belongs_to :slack_account, class_name: "CollavreSlack::SlackAccount"
-    belongs_to :created_by, class_name: Collavre.configuration.user_class_name
+    belongs_to :created_by, class_name: "::User"
 
     has_many :slack_message_logs, class_name: "CollavreSlack::SlackMessageLog", dependent: :destroy
 

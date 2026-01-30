@@ -16,6 +16,9 @@ module CollavreSlack
         content: data[:content]
       )
 
+      # Mark this comment as coming from Slack to prevent loop
+      comment.instance_variable_set(:@from_slack, true)
+
       response = Collavre::Comments::CommandProcessor.new(comment: comment, user: user).call
       comment.content = "#{comment.content}\n\n#{response}" if response.present?
       comment.save!

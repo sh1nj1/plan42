@@ -31,6 +31,7 @@
   <% end %>
   <div class="comments-popup-header">
     <h3 id="comments-popup-title" data-comments--popup-target="title"><%= fullscreen && creative.present? ? creative.creative_snippet : t('collavre.comments.comments') %></h3>
+    <span id="slack-channel-badge" data-comments--popup-target="slackBadge" style="display:none;font-size:0.75em;background:#4A154B;color:white;padding:0.15em 0.5em;border-radius:4px;"></span>
     <div class="comments-popup-actions">
       <% if fullscreen && creative.present? %>
         <%= link_to collavre.creative_path(creative, open_comments: true),

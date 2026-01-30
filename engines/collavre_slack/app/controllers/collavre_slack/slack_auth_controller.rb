@@ -8,17 +8,43 @@ module CollavreSlack
         return
       end
 
-      redirect_to slack_client.oauth_authorize_url(state: oauth_state)
+      # Sign the state with user_id to recover it securely in callback (popup windows don't share session)
+      state_data = { nonce: SecureRandom.hex(16), user_id: Current.user.id, exp: 10.minutes.from_now.to_i }
+      state = message_verifier.generate(state_data)
+      session[:slack_oauth_state] = state
+
+      redirect_to slack_client.oauth_authorize_url(state: state), allow_other_host: true
     end
 
     def callback
-      if params[:state].present? && params[:state] != session[:slack_oauth_state]
-        render json: { error: "Invalid OAuth state" }, status: :unprocessable_entity
+      unless params[:code].present?
+        render json: { error: "Missing OAuth code" }, status: :unprocessable_entity
         return
       end
 
-      unless params[:code].present?
-        render json: { error: "Missing OAuth code" }, status: :unprocessable_entity
+      # Verify and decode user_id from signed state (required - popup windows don't share session)
+      unless params[:state].present?
+        render json: { error: "Missing OAuth state" }, status: :unprocessable_entity
+        return
+      end
+
+      begin
+        state_data = message_verifier.verify(params[:state]).with_indifferent_access
+        Rails.logger.info("[SlackAuth] State data: #{state_data.inspect}")
+        # Check expiration
+        if state_data[:exp] && Time.at(state_data[:exp]) < Time.current
+          render json: { error: "OAuth state expired" }, status: :unprocessable_entity
+          return
+        end
+        user = ::User.find(state_data[:user_id])
+        Rails.logger.info("[SlackAuth] Verified user_id=#{user.id} from signed state")
+      rescue ActiveSupport::MessageVerifier::InvalidSignature => e
+        Rails.logger.warn("[SlackAuth] Invalid state signature: #{e.message}")
+        render json: { error: "Invalid OAuth state" }, status: :unprocessable_entity
+        return
+      rescue ActiveRecord::RecordNotFound
+        Rails.logger.warn("[SlackAuth] User not found from state")
+        render json: { error: "User not found" }, status: :unprocessable_entity
         return
       end
 
@@ -28,15 +54,22 @@ module CollavreSlack
         return
       end
 
+      Rails.logger.info("[SlackAuth] OAuth response: team=#{oauth_response.dig(:team, :id)}, user=#{user&.id}")
+
       account = SlackAccount.find_or_initialize_by(team_id: oauth_response.dig(:team, :id))
-      account.user ||= Current.user
+      account.user ||= user
       account.team_name = oauth_response.dig(:team, :name)
       account.access_token = oauth_response[:access_token]
       account.authed_user_id = oauth_response.dig(:authed_user, :id)
       account.scopes = oauth_response[:scope]
-      account.save!
 
-      render json: { status: "connected", slack_account_id: account.id }
+      if account.save
+        # Render HTML that closes the popup and notifies the parent window
+        render html: close_popup_html.html_safe, layout: false
+      else
+        Rails.logger.error("[SlackAuth] Failed to save account: #{account.errors.full_messages.join(', ')}")
+        render json: { error: "Failed to save: #{account.errors.full_messages.join(', ')}" }, status: :unprocessable_entity
+      end
     end
 
     private
@@ -45,8 +78,26 @@ module CollavreSlack
       @slack_client ||= SlackClient.new
     end
 
-    def oauth_state
-      session[:slack_oauth_state] ||= SecureRandom.hex(16)
+    def message_verifier
+      @message_verifier ||= Rails.application.message_verifier("slack_oauth")
+    end
+
+    def close_popup_html
+      <<~HTML
+        <!DOCTYPE html>
+        <html>
+        <head><title>Slack Connected</title></head>
+        <body>
+          <p>Slack workspace connected successfully! You can close this window.</p>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: 'slack-auth-success' }, '*');
+            }
+            window.close();
+          </script>
+        </body>
+        </html>
+      HTML
     end
   end
 end

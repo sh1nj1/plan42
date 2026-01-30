@@ -13,5 +13,17 @@ module CollavreSlack
         end
       end
     end
+
+    # Hook into Comment creation to dispatch messages to Slack
+    initializer "collavre_slack.comment_hooks" do
+      ActiveSupport.on_load(:active_record) do
+        Rails.application.config.after_initialize do
+          if defined?(Collavre::Comment)
+            Collavre::Comment.include(CollavreSlack::SlackDispatchable)
+            Rails.logger.info("[CollavreSlack] SlackDispatchable included in Collavre::Comment")
+          end
+        end
+      end
+    end
   end
 end

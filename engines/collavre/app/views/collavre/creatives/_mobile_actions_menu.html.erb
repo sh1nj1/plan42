@@ -11,7 +11,8 @@
     <% end %>
     <% if can_manage_integrations %>
       <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="github-integration-btn" data-action="click->click-target#trigger"><%= t('collavre.creatives.index.integrations', default: '연동') %> - Github</button>
-       <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="notion-integration-btn" data-action="click->click-target#trigger"><%= t('collavre.creatives.index.integrations', default: '연동') %> - Notion</button>
+      <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="notion-integration-btn" data-action="click->click-target#trigger"><%= t('collavre.creatives.index.integrations', default: '연동') %> - Notion</button>
+      <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="slack-integration-btn" data-action="click->click-target#trigger"><%= t('collavre.creatives.index.integrations', default: '연동') %> - Slack</button>
     <% end %>
     <% if @parent_creative.present? %>
       <%= button_to t('collavre.creatives.index.slide_view'), slide_view_creative_path(@parent_creative), method: :get, class: 'popup-menu-item' %>

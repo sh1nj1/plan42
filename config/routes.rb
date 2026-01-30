@@ -2,6 +2,9 @@ Rails.application.routes.draw do
   # Mount Collavre engine - all core functionality is in the engine
   mount Collavre::Engine => "/"
 
+  # Mount CollavreSlack engine for Slack integration
+  mount CollavreSlack::Engine => "/slack", as: :slack_engine
+
   # Doorkeeper OAuth provider
   use_doorkeeper do
     controllers applications: "oauth/applications"

@@ -1,0 +1,56 @@
+<div id="slack-integration-modal"
+     data-success-message="<%= t('collavre.creatives.index.slack_integration_saved', default: 'Slack integration saved successfully.') %>"
+     data-login-required="<%= t('collavre.creatives.index.slack_integration_login_required', default: 'Sign in with your Slack workspace to start the integration.') %>"
+     data-no-creative="<%= t('collavre.creatives.index.slack_integration_missing_creative', default: 'No Creative selected for integration.') %>"
+     data-existing-message="<%= t('collavre.creatives.index.slack_integration_existing_message', default: 'You\'re already connected to Slack channels below.') %>"
+     data-delete-confirm="<%= t('collavre.creatives.index.slack_integration_delete_confirm', default: 'Do you want to remove this Slack channel link?') %>"
+     data-delete-success="<%= t('collavre.creatives.index.slack_integration_delete_success', default: 'Slack channel link removed successfully.') %>"
+     data-delete-error="<%= t('collavre.creatives.index.slack_integration_delete_error', default: 'Failed to remove the Slack channel link.') %>"
+     data-delete-button-label="<%= t('collavre.creatives.index.slack_integration_delete_button', default: 'Remove link') %>"
+     style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
+  <div class="popup-box" style="min-width:360px;max-width:90vw;">
+    <button type="button" id="close-slack-modal" class="popup-close-btn">&times;</button>
+    <h2><%= t('collavre.creatives.index.slack_integration_title', default: 'Configure Slack integration') %></h2>
+    <p id="slack-integration-status" class="slack-modal-status"></p>
+
+    <div class="slack-wizard-step" id="slack-step-connect">
+      <p id="slack-connect-message" class="slack-modal-subtext"><%= t('collavre.creatives.index.slack_integration_connect', default: 'Connect your Slack workspace to sync messages with this Creative.') %></p>
+      <a id="slack-login-btn" href="<%= slack_engine.auth_slack_path %>" class="btn btn-primary" target="slack-auth-window" data-window-width="620" data-window-height="720">
+        <%= t('collavre.creatives.index.slack_login_button', default: 'Connect Slack Workspace') %>
+      </a>
+      <div id="slack-existing-connections" style="display:none;margin-top:1.25em;">
+        <p style="margin-bottom:0.5em;"><%= t('collavre.creatives.index.slack_integration_existing_intro', default: 'Linked Slack channels:') %></p>
+        <ul id="slack-existing-channel-list" style="padding-left:1.2em;margin-bottom:0.75em;color:var(--color-text);"></ul>
+        <div style="display:flex;gap:0.5em;">
+          <button type="button" id="slack-delete-btn" class="btn btn-danger" style="display:none;">
+            <%= t('collavre.creatives.index.slack_integration_delete_button', default: 'Remove link') %>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="slack-wizard-step" id="slack-step-channels" style="display:none;">
+      <p class="slack-modal-subtext"><%= t('collavre.creatives.index.slack_integration_choose_channel', default: 'Select a Slack channel to link with this Creative.') %></p>
+      <div id="slack-channel-list" class="slack-list slack-modal-list-box" style="max-height:240px;overflow:auto;"></div>
+    </div>
+
+    <div class="slack-wizard-step" id="slack-step-summary" style="display:none;">
+      <p class="slack-modal-subtext"><%= t('collavre.creatives.index.slack_integration_summary', default: 'Ready to link your Slack channel:') %></p>
+      <div id="slack-link-summary" style="margin:1em 0;padding:1em;background:var(--color-bg-alt);border-radius:4px;">
+        <div><strong><%= t('collavre.creatives.index.slack_channel_name', default: 'Channel:') %></strong> <span id="slack-channel-summary"></span></div>
+        <div style="margin-top:0.5em;color:var(--color-text-secondary);font-size:0.9em;"><%= t('collavre.creatives.index.slack_sync_note', default: 'Messages posted in this Slack channel will appear in this Creative, and vice versa.') %></div>
+      </div>
+    </div>
+
+    <div id="slack-wizard-error" style="display:none;margin:0.5em 0;color:#c0392b;font-weight:bold;"></div>
+
+    <div class="slack-wizard-footer" style="display:flex;justify-content:space-between;gap:0.5em;margin-top:1.5em;">
+      <button type="button" id="slack-prev-btn" class="btn btn-secondary" style="display:none;"><%= t('app.previous', default: 'Previous') %></button>
+      <div style="margin-left:auto;display:flex;gap:0.5em;">
+        <button type="button" id="slack-refresh-btn" class="btn btn-secondary" style="display:none;"><%= t('app.refresh', default: 'Refresh') %></button>
+        <button type="button" id="slack-next-btn" class="btn btn-primary" style="display:none;"><%= t('app.next', default: 'Next') %></button>
+        <button type="button" id="slack-finish-btn" class="btn btn-primary" style="display:none;"><%= t('app.finish', default: 'Link Channel') %></button>
+      </div>
+    </div>
+  </div>
+</div>
