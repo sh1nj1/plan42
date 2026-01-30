@@ -4,6 +4,8 @@ module CollavreSlack
 
     included do
       after_create_commit :dispatch_to_slack_channels
+      after_update_commit :update_slack_messages, if: :saved_change_to_content?
+      after_destroy_commit :delete_slack_messages
     end
 
     private
@@ -34,6 +36,44 @@ module CollavreSlack
       end
     rescue StandardError => e
       Rails.logger.error("[CollavreSlack] Failed to dispatch to Slack: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+    end
+
+    def update_slack_messages
+      return if instance_variable_get(:@from_slack)
+
+      comment_links = CollavreSlack::SlackCommentLink.where(comment_id: id)
+      return if comment_links.empty?
+
+      message_text = content.to_plain_text rescue content.to_s
+      sender_name = user&.name || "Anonymous"
+      formatted_message = "[#{sender_name}] #{message_text}"
+
+      comment_links.each do |link|
+        CollavreSlack::SlackMessageUpdateJob.perform_later(
+          slack_comment_link_id: link.id,
+          message: formatted_message
+        )
+      end
+    rescue StandardError => e
+      Rails.logger.error("[CollavreSlack] Failed to update Slack messages: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+    end
+
+    def delete_slack_messages
+      return if instance_variable_get(:@from_slack)
+
+      comment_links = CollavreSlack::SlackCommentLink.where(comment_id: id)
+      return if comment_links.empty?
+
+      comment_links.each do |link|
+        CollavreSlack::SlackMessageDeleteJob.perform_later(
+          slack_channel_link_id: link.slack_channel_link_id,
+          message_ts: link.message_ts
+        )
+        # Clean up the comment link record
+        link.destroy
+      end
+    rescue StandardError => e
+      Rails.logger.error("[CollavreSlack] Failed to delete Slack messages: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
     end
   end
 end

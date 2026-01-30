@@ -42,6 +42,14 @@ module CollavreSlack
       post("chat.postMessage", { channel: channel, text: text })
     end
 
+    def update_message(channel:, timestamp:, text:)
+      post("chat.update", { channel: channel, ts: timestamp, text: text })
+    end
+
+    def delete_message(channel:, timestamp:)
+      post("chat.delete", { channel: channel, ts: timestamp })
+    end
+
     def get_user_info(user_id:)
       get("users.info", user: user_id)
     end

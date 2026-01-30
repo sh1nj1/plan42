@@ -9,6 +9,8 @@ The Slack integration enables bi-directional sync between Slack channels and Col
 **Messages:**
 - **Slack → Collavre**: Messages posted in linked Slack channels appear as comments in the Creative
 - **Collavre → Slack**: Comments posted in Collavre are sent to the linked Slack channel
+- **Edit sync**: Editing a comment in Collavre updates the corresponding Slack message
+- **Delete sync**: Deleting a comment in Collavre deletes the corresponding Slack message
 
 **Reactions:**
 - **Slack → Collavre**: Reactions added to Slack messages appear as CommentReactions in Collavre
@@ -181,6 +183,12 @@ client.list_channels
 # Post a message
 client.post_message(channel: "C123456", text: "Hello!")
 
+# Update a message
+client.update_message(channel: "C123456", timestamp: "1234567890.123456", text: "Updated text")
+
+# Delete a message
+client.delete_message(channel: "C123456", timestamp: "1234567890.123456")
+
 # Get message history
 client.list_messages(channel: "C123456", oldest: timestamp)
 
@@ -241,6 +249,8 @@ slack_text = mapping.collavre_to_slack("@john hello")
 | Job | Purpose |
 |-----|---------|
 | `SlackMessageJob` | Send messages to Slack (with rate limit handling) |
+| `SlackMessageUpdateJob` | Update messages on Slack when comments are edited |
+| `SlackMessageDeleteJob` | Delete messages from Slack when comments are deleted |
 | `SlackInboundMessageJob` | Process incoming Slack messages |
 | `SlackReactionJob` | Send reactions to Slack |
 | `SlackInboundReactionJob` | Process incoming Slack reactions |
