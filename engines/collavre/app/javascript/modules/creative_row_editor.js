@@ -3,6 +3,7 @@ import apiQueue from '../lib/api/queue_manager'
 import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
 import { createInlineEditor } from './lexical_inline_editor'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
+import { progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
 
@@ -152,15 +153,9 @@ export function initializeCreativeRowEditor() {
       return progressInput.checked ? 1 : 0;
     }
 
-    function progressBaselineValue() {
-      const numeric = Number(originalProgress);
-      if (Number.isNaN(numeric)) return 0;
-      return numeric >= 1 ? 1 : 0;
-    }
-
     function progressValueChanged() {
       if (!progressInput) return false;
-      return readProgressValue() !== progressBaselineValue();
+      return progressValueChangedFrom(originalProgress, progressInput.checked);
     }
 
     function setProgressState(value) {
@@ -928,7 +923,7 @@ export function initializeCreativeRowEditor() {
         // Capture values being saved to update dirty state on success
         const savedContent = descriptionInput.value;
         const shouldPersistProgress = progressValueChanged();
-        const savedProgress = shouldPersistProgress ? readProgressValue() : progressBaselineValue();
+        const savedProgress = shouldPersistProgress ? readProgressValue() : progressBaselineValueFrom(originalProgress);
         const savedOriginId = originIdInput ? originIdInput.value : '';
         const cascadeProgressUpdate = completionCascadePending;
         const progressInputsDisabled = progressInput?.disabled ?? false;
