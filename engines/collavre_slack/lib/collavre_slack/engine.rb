@@ -17,6 +17,21 @@ module CollavreSlack
       end
     end
 
+    # Register as Collavre integration
+    initializer "collavre_slack.register_integration", after: :load_config_initializers do
+      Rails.application.config.to_prepare do
+        if defined?(Collavre::IntegrationRegistry)
+          Collavre::IntegrationRegistry.register(:slack, {
+            label: I18n.t("collavre_slack.integration.label", default: "Slack"),
+            icon: "slack",
+            description: I18n.t("collavre_slack.integration.description", default: "Sync chat messages with Slack channels"),
+            routes: CollavreSlack::Engine.routes.url_helpers,
+            creative_menu_partial: "collavre_slack/integrations/modal"
+          })
+        end
+      end
+    end
+
     # Hook into Comment and CommentReaction to dispatch to Slack
     initializer "collavre_slack.comment_hooks", after: :load_config_initializers do
       Rails.application.config.to_prepare do

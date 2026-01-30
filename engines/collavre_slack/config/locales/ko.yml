@@ -1,0 +1,50 @@
+ko:
+  collavre_slack:
+    integration:
+      label: "Slack"
+      description: "Slack 채널과 채팅 메시지 동기화"
+    errors:
+      forbidden: "접근 권한이 없습니다"
+      not_found: "찾을 수 없습니다"
+      no_slack_account: "연결된 Slack 계정이 없습니다"
+      authentication_required: "인증이 필요합니다"
+      missing_oauth_code: "OAuth 코드가 없습니다"
+      missing_oauth_state: "OAuth 상태가 없습니다"
+      invalid_oauth_state: "잘못된 OAuth 상태입니다"
+      user_not_found: "사용자를 찾을 수 없습니다"
+      oauth_failed: "Slack OAuth 인증에 실패했습니다"
+      save_failed: "저장 실패: %{errors}"
+      invalid_signature: "잘못된 서명입니다"
+    messages:
+      anonymous: "익명"
+      thread_reply: "[스레드 답글]"
+      slack_user_prefix: "[Slack: @%{name}]"
+      attachments: "첨부파일:"
+    views:
+      slack_integrations:
+        title: "Slack 연동"
+        connect_slack: "Slack 연결"
+        no_channels_linked: "연결된 Slack 채널이 없습니다."
+      auth:
+        success_title: "Slack 연결됨"
+        success_message: "Slack 워크스페이스가 성공적으로 연결되었습니다! 이 창을 닫아도 됩니다."
+    modal:
+      title: "Slack 연동 설정"
+      success_message: "Slack 연동이 성공적으로 저장되었습니다."
+      login_required: "연동을 시작하려면 Slack 워크스페이스에 로그인하세요."
+      missing_creative: "연동할 Creative가 선택되지 않았습니다."
+      existing_message: "이미 아래 Slack 채널에 연결되어 있습니다."
+      delete_confirm: "이 Slack 채널 연결을 삭제하시겠습니까?"
+      delete_success: "Slack 채널 연결이 성공적으로 삭제되었습니다."
+      delete_error: "Slack 채널 연결 삭제에 실패했습니다."
+      delete_button: "삭제"
+      add_first_channel: "Slack 채널 연결하기"
+      connect_message: "이 Creative와 메시지를 동기화하려면 Slack 워크스페이스를 연결하세요."
+      login_button: "Slack 워크스페이스 연결"
+      connected_status: "Slack 연결됨"
+      existing_intro: "연결된 Slack 채널:"
+      add_channel: "다른 채널 추가"
+      choose_channel: "이 Creative와 연결할 Slack 채널을 선택하세요."
+      summary_intro: "Slack 채널을 연결할 준비가 되었습니다:"
+      channel_label: "채널:"
+      sync_note: "이 Slack 채널에 게시된 메시지가 이 Creative에 나타나고, 그 반대도 마찬가지입니다."

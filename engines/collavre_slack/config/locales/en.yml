@@ -1,5 +1,8 @@
 en:
   collavre_slack:
+    integration:
+      label: "Slack"
+      description: "Sync chat messages with Slack channels"
     errors:
       forbidden: "Forbidden"
       not_found: "Not found"
@@ -25,3 +28,23 @@ en:
       auth:
         success_title: "Slack Connected"
         success_message: "Slack workspace connected successfully! You can close this window."
+    modal:
+      title: "Configure Slack integration"
+      success_message: "Slack integration saved successfully."
+      login_required: "Sign in with your Slack workspace to start the integration."
+      missing_creative: "No Creative selected for integration."
+      existing_message: "You're already connected to Slack channels below."
+      delete_confirm: "Do you want to remove this Slack channel link?"
+      delete_success: "Slack channel link removed successfully."
+      delete_error: "Failed to remove the Slack channel link."
+      delete_button: "Remove"
+      add_first_channel: "Link a Slack Channel"
+      connect_message: "Connect your Slack workspace to sync messages with this Creative."
+      login_button: "Connect Slack Workspace"
+      connected_status: "Connected to Slack"
+      existing_intro: "Linked Slack channels:"
+      add_channel: "Add Another Channel"
+      choose_channel: "Select a Slack channel to link with this Creative."
+      summary_intro: "Ready to link your Slack channel:"
+      channel_label: "Channel:"
+      sync_note: "Messages posted in this Slack channel will appear in this Creative, and vice versa."
