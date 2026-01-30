@@ -32,9 +32,10 @@ module CollavreSlack
       get("conversations.list", limit: 1000, types: "public_channel,private_channel")
     end
 
-    def list_messages(channel:, oldest: nil)
-      params = { channel: channel, limit: 200 }.compact
+    def list_messages(channel:, oldest: nil, cursor: nil)
+      params = { channel: channel, limit: 200 }
       params[:oldest] = oldest if oldest.present?
+      params[:cursor] = cursor if cursor.present?
       get("conversations.history", params)
     end
 
