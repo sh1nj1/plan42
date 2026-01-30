@@ -22,11 +22,7 @@ module CollavreSlack
 
     def self.fetch_slack_display_name(slack_account, slack_user_id)
       client = SlackClient.new(access_token: slack_account.access_token)
-      response = client.get_user_info(user_id: slack_user_id)
-      return nil unless response[:ok]
-
-      profile = response.dig(:user, :profile) || {}
-      profile[:display_name].presence || profile[:real_name].presence || response.dig(:user, :name)
+      client.get_user_display_name(user_id: slack_user_id)
     rescue StandardError => e
       Rails.logger.warn("[CollavreSlack] Failed to fetch Slack user info: #{e.message}")
       nil

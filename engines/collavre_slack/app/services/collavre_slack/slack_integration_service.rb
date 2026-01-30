@@ -20,16 +20,8 @@ module CollavreSlack
       link.update!(is_active: false)
     end
 
-    def list_channels
-      slack_client.list_channels
-    end
-
     private
 
     attr_reader :user, :slack_account
-
-    def slack_client
-      @slack_client ||= SlackClient.new(access_token: slack_account.access_token)
-    end
   end
 end

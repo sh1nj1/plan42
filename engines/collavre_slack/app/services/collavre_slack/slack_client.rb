@@ -54,6 +54,14 @@ module CollavreSlack
       get("users.info", user: user_id)
     end
 
+    def get_user_display_name(user_id:)
+      response = get_user_info(user_id: user_id)
+      return nil unless response[:ok]
+
+      profile = response.dig(:user, :profile) || {}
+      profile[:display_name].presence || profile[:real_name].presence || response.dig(:user, :name)
+    end
+
     def add_reaction(channel:, timestamp:, name:)
       post("reactions.add", { channel: channel, timestamp: timestamp, name: name })
     end

@@ -161,28 +161,7 @@ module CollavreSlack
     end
 
     def normalize_emoji_from_slack(slack_emoji)
-      # Slack uses names like "thumbsup", convert to standard emoji or keep as-is
-      # Common Slack emoji names to Unicode mappings
-      slack_to_emoji = {
-        "thumbsup" => "\u{1F44D}",
-        "+1" => "\u{1F44D}",
-        "thumbsdown" => "\u{1F44E}",
-        "-1" => "\u{1F44E}",
-        "heart" => "\u{2764}",
-        "grinning" => "\u{1F600}",
-        "joy" => "\u{1F602}",
-        "clap" => "\u{1F44F}",
-        "tada" => "\u{1F389}",
-        "eyes" => "\u{1F440}",
-        "pray" => "\u{1F64F}",
-        "fire" => "\u{1F525}",
-        "white_check_mark" => "\u{2705}",
-        "x" => "\u{274C}",
-        "rocket" => "\u{1F680}"
-      }
-
-      # Return mapped emoji or the original name prefixed with colon
-      slack_to_emoji[slack_emoji.to_s] || ":#{slack_emoji}:"
+      EmojiMapping.to_unicode(slack_emoji)
     end
 
     def team_id
@@ -242,20 +221,19 @@ module CollavreSlack
       mapping = slack_account.slack_user_mappings.find_by(slack_user_id: slack_user_id)
       return { user: mapping.collavre_user, slack_display_name: nil } if mapping
 
-      # Try to find by email
+      # Fetch user info from Slack API
       client = SlackClient.new(access_token: slack_account.access_token)
       response = client.get_user_info(user_id: slack_user_id)
       return { user: nil, slack_display_name: nil } unless response[:ok]
 
       profile = response.dig(:user, :profile) || {}
       slack_display_name = profile[:display_name].presence || profile[:real_name].presence || response.dig(:user, :name)
-      email = profile[:email]
 
-      # Try to find Collavre user by email
+      # Try to find Collavre user by email and auto-map
+      email = profile[:email]
       if email.present?
         collavre_user = ::User.find_by(email: email)
         if collavre_user
-          # Auto-create mapping for future use
           slack_account.slack_user_mappings.create(
             slack_user_id: slack_user_id,
             collavre_user: collavre_user
@@ -265,7 +243,6 @@ module CollavreSlack
         end
       end
 
-      # No mapping found - return slack display name for attribution
       { user: nil, slack_display_name: slack_display_name }
     rescue StandardError => e
       Rails.logger.warn("[CollavreSlack] Failed to map user: #{e.message}")
