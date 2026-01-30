@@ -77,6 +77,7 @@ export function initializeCreativeRowEditor() {
     const progressValue = document.getElementById('inline-progress-value');
     const progressCompleteLabel = progressInput?.dataset.completeLabel || 'Complete';
     const progressIncompleteLabel = progressInput?.dataset.incompleteLabel || 'Incomplete';
+    const progressHiddenInput = document.querySelector('input[type="hidden"][name="creative[progress]"]');
     const upBtn = document.getElementById('inline-move-up');
     const downBtn = document.getElementById('inline-move-down');
     const addBtn = document.getElementById('inline-add');
@@ -149,6 +150,17 @@ export function initializeCreativeRowEditor() {
     function readProgressValue() {
       if (!progressInput) return 0;
       return progressInput.checked ? 1 : 0;
+    }
+
+    function progressBaselineValue() {
+      const numeric = Number(originalProgress);
+      if (Number.isNaN(numeric)) return 0;
+      return numeric >= 1 ? 1 : 0;
+    }
+
+    function progressValueChanged() {
+      if (!progressInput) return false;
+      return readProgressValue() !== progressBaselineValue();
     }
 
     function setProgressState(value) {
@@ -284,7 +296,7 @@ export function initializeCreativeRowEditor() {
       if (unlinkBtn) unlinkBtn.style.display = originId ? '' : 'none';
       const effectiveParent = parentInput.value;
       if (unconvertBtn) unconvertBtn.style.display = effectiveParent ? '' : 'none';
-      originalProgress = normalizedProgress >= 1 ? 1 : 0;
+      originalProgress = normalizedProgress;
       lexicalEditor.focus();
       updateActionButtonStates();
     }
@@ -915,9 +927,17 @@ export function initializeCreativeRowEditor() {
 
         // Capture values being saved to update dirty state on success
         const savedContent = descriptionInput.value;
-        const savedProgress = readProgressValue();
+        const shouldPersistProgress = progressValueChanged();
+        const savedProgress = shouldPersistProgress ? readProgressValue() : progressBaselineValue();
         const savedOriginId = originIdInput ? originIdInput.value : '';
         const cascadeProgressUpdate = completionCascadePending;
+        const progressInputsDisabled = progressInput?.disabled ?? false;
+        const hiddenProgressDisabled = progressHiddenInput?.disabled ?? false;
+
+        if (!shouldPersistProgress) {
+          if (progressInput) progressInput.disabled = true;
+          if (progressHiddenInput) progressHiddenInput.disabled = true;
+        }
 
         savePromise = creativesApi.save(form.action, method, form).then(function (r) {
           if (!r.ok) return r;
@@ -926,7 +946,9 @@ export function initializeCreativeRowEditor() {
           }).then(function (data) {
             // Update dirty state to reflect successful save
             originalContent = savedContent;
-            originalProgress = savedProgress;
+            if (shouldPersistProgress) {
+              originalProgress = savedProgress;
+            }
             originalOriginId = savedOriginId;
 
             // If current values match what was just saved, clear dirty flag
@@ -994,6 +1016,10 @@ export function initializeCreativeRowEditor() {
           });
           }).finally(function () {
             saving = false;
+            if (!shouldPersistProgress) {
+              if (progressInput) progressInput.disabled = progressInputsDisabled;
+              if (progressHiddenInput) progressHiddenInput.disabled = hiddenProgressDisabled;
+            }
           });
         return savePromise;
       });
@@ -1100,6 +1126,7 @@ export function initializeCreativeRowEditor() {
       // to a different creative while we're waiting for uploads
       let currentContent = descriptionInput.value;
       let currentProgress = readProgressValue();
+      let shouldPersistProgress = progressValueChanged();
       const currentParentId = tree.dataset.parentId || '';
       const currentBeforeId = tree.previousElementSibling ? creativeIdFrom(tree.previousElementSibling) : '';
       const currentAfterId = tree.nextElementSibling ? creativeIdFrom(tree.nextElementSibling) : '';
@@ -1121,15 +1148,19 @@ export function initializeCreativeRowEditor() {
       if (form.dataset.creativeId === startCreativeId) {
         currentContent = descriptionInput.value;
         currentProgress = readProgressValue();
+        shouldPersistProgress = progressValueChanged();
       }
 
       // Build request body
       // Note: before_id and after_id must be top-level params, not nested under creative[]
       // because CreativesController reads params[:before_id] and params[:after_id] for positioning
       const body = {
-        'creative[description]': currentContent,
-        'creative[progress]': currentProgress
+        'creative[description]': currentContent
       };
+
+      if (shouldPersistProgress) {
+        body['creative[progress]'] = currentProgress;
+      }
 
       // Always include parent_id, even if empty (for moving to root)
       body['creative[parent_id]'] = currentParentId;
@@ -1150,7 +1181,9 @@ export function initializeCreativeRowEditor() {
           row.dataset.descriptionHtml = currentContent;
           row.descriptionHtml = currentContent;
           row.dataset.descriptionRawHtml = currentContent;
-          row.dataset.progressValue = String(currentProgress);
+          if (shouldPersistProgress) {
+            row.dataset.progressValue = String(currentProgress);
+          }
           if (currentParentId) {
             tree.dataset.parentId = currentParentId;
             row.parentId = currentParentId;
@@ -1184,6 +1217,9 @@ export function initializeCreativeRowEditor() {
 
       // Reset dirty state
       originalContent = currentContent;
+      if (shouldPersistProgress) {
+        originalProgress = currentProgress;
+      }
       isDirty = false;
       pendingSave = false;
       clearTimeout(saveTimer);
@@ -1569,6 +1605,7 @@ export function initializeCreativeRowEditor() {
           descriptionInput.value = '';
           lexicalEditor.reset(`new-${Date.now()}`);
           setProgressState(0);
+          originalProgress = 0;
           if (unconvertBtn) unconvertBtn.style.display = 'none';
           pendingSave = false;
           lexicalEditor.focus();
