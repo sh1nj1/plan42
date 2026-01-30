@@ -2,6 +2,8 @@ require "test_helper"
 require "ostruct"
 
 class CommentsCalendarTest < ActionDispatch::IntegrationTest
+  include ActiveSupport::Testing::TimeHelpers
+
   setup do
     @user = User.create!(email: "user_cal@example.com", password: TEST_PASSWORD, name: "User Cal", google_refresh_token: "test_refresh_token")
     @creative = Creative.create!(user: @user, description: "Calendar test creative")
@@ -55,5 +57,57 @@ class CommentsCalendarTest < ActionDispatch::IntegrationTest
     expected_content = "#{command}\n\n#{I18n.t("collavre.comments.calendar_command.event_created", url: event.html_link)}"
     assert_equal expected_content, Comment.last.content
     assert_mock service
+  end
+
+  test "creates all-day event for tomorrow shortcut" do
+    travel_to Time.zone.local(2025, 1, 6, 9, 0, 0) do
+      command = "/calendar tomorrow"
+      tomorrow = Time.zone.today + 1.day
+      event = OpenStruct.new(html_link: "https://calendar.google.com/event/tomorrow123")
+      service = Minitest::Mock.new
+      service.expect(:create_event, event) do |params|
+        assert params[:all_day]
+        assert_equal tomorrow, params[:start_time]
+        assert_equal tomorrow, params[:end_time]
+        true
+      end
+
+      GoogleCalendarService.stub(:new, ->(user:) { assert_equal @user.id, user.id; service }) do
+        assert_difference("Comment.count", 1) do
+          post creative_comments_path(@creative), params: { comment: { content: command } }
+        end
+      end
+
+      assert_response :created
+      expected_content = "#{command}\n\n#{I18n.t("collavre.comments.calendar_command.event_created", url: event.html_link)}"
+      assert_equal expected_content, Comment.last.content
+      assert_mock service
+    end
+  end
+
+  test "creates all-day event for weekday offsets" do
+    travel_to Time.zone.local(2025, 1, 6, 9, 0, 0) do
+      command = "/calendar +2mon"
+      expected_date = Date.new(2025, 1, 20)
+      event = OpenStruct.new(html_link: "https://calendar.google.com/event/weekday123")
+      service = Minitest::Mock.new
+      service.expect(:create_event, event) do |params|
+        assert params[:all_day]
+        assert_equal expected_date, params[:start_time]
+        assert_equal expected_date, params[:end_time]
+        true
+      end
+
+      GoogleCalendarService.stub(:new, ->(user:) { assert_equal @user.id, user.id; service }) do
+        assert_difference("Comment.count", 1) do
+          post creative_comments_path(@creative), params: { comment: { content: command } }
+        end
+      end
+
+      assert_response :created
+      expected_content = "#{command}\n\n#{I18n.t("collavre.comments.calendar_command.event_created", url: event.html_link)}"
+      assert_equal expected_content, Comment.last.content
+      assert_mock service
+    end
   end
 end

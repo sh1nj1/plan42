@@ -30,21 +30,84 @@ module Collavre
       def parsed_args
         @parsed_args ||= begin
           args = command_body
-          args = args.sub(/\A(today)\b/i, Time.zone.today.to_s) if args.match?(/\Atoday\b/i)
-          match = args.match(/\A(?:(\d{4}-\d{2}-\d{2}))?(?:@(\d{2}:\d{2}))?(?:\s+(.*))?\z/)
-          return unless match
-          return unless match[1].present? || match[2].present?
+          return if args.blank?
+
+          date_token, time_token, memo = parse_command_parts(args)
+          return unless date_token || time_token
+
+          parsed_date = parse_date_token(date_token)
+          return if date_token.present? && parsed_date.blank?
 
           {
-            date: match[1],
-            time: match[2],
-            memo: match[3]
+            date: parsed_date&.to_s,
+            time: time_token,
+            memo: memo
           }
         end
       end
 
       def command_body
         comment.content.to_s.strip.sub(/\A\S+/, "").strip
+      end
+
+      def parse_command_parts(args)
+        if args.start_with?("@")
+          match = args.match(/\A@(\d{2}:\d{2})(?:\s+(.*))?\z/)
+          return unless match
+
+          return [ nil, match[1], match[2] ]
+        end
+
+        match = args.match(/\A(\S+)?(?:@(\d{2}:\d{2}))?(?:\s+(.*))?\z/)
+        return unless match
+
+        [ match[1], match[2], match[3] ]
+      end
+
+      def parse_date_token(token)
+        return if token.blank?
+
+        today = Time.zone.today
+        token = token.strip
+
+        return today if token.match?(/\Atoday\z/i)
+        return today + 1.day if token.match?(/\Atomorrow\z/i)
+
+        interval_match = token.match(/\A\+(\d+)(days?|weeks?|months?|years?)\z/i)
+        if interval_match
+          amount = interval_match[1].to_i
+          unit = interval_match[2].downcase
+          return today + amount.days if unit.start_with?("day")
+          return today + amount.weeks if unit.start_with?("week")
+          return today.advance(months: amount) if unit.start_with?("month")
+          return today.advance(years: amount) if unit.start_with?("year")
+        end
+
+        weekday_match = token.match(/\A\+(\d+)?(mon|tue|wed|thu|fri|sat|sun|[월화수목금토일])\z/i)
+        if weekday_match
+          count = weekday_match[1].present? ? weekday_match[1].to_i : 1
+          return next_weekday(today, weekday_index(weekday_match[2]), count)
+        end
+
+        Date.iso8601(token) if token.match?(/\A\d{4}-\d{2}-\d{2}\z/)
+      end
+
+      def weekday_index(token)
+        case token.to_s.downcase
+        when "mon", "월" then 1
+        when "tue", "화" then 2
+        when "wed", "수" then 3
+        when "thu", "목" then 4
+        when "fri", "금" then 5
+        when "sat", "토" then 6
+        when "sun", "일" then 0
+        end
+      end
+
+      def next_weekday(base_date, target_wday, count)
+        days_until = (target_wday - base_date.wday) % 7
+        days_until = 7 if days_until.zero?
+        base_date + days_until + (count - 1) * 7
       end
 
       def google_login?
