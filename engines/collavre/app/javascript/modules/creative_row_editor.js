@@ -168,6 +168,17 @@ export function initializeCreativeRowEditor() {
       }
     }
 
+    function updateProgressInputAvailability(value) {
+      if (!progressInput) return;
+      const numeric = Number(value);
+      const hasChildren = currentRowHasChildren();
+      const shouldDisable = hasChildren && !Number.isNaN(numeric) && numeric >= 1;
+      progressInput.disabled = shouldDisable;
+      if (progressHiddenInput) {
+        progressHiddenInput.disabled = shouldDisable;
+      }
+    }
+
     function treeRowElement(node) {
       return node && node.closest ? node.closest('creative-tree-row') : null;
     }
@@ -276,6 +287,7 @@ export function initializeCreativeRowEditor() {
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
       setProgressState(normalizedProgress);
+      updateProgressInputAvailability(normalizedProgress);
       completionCascadePending = false;
       const fallbackParent = tree?.dataset?.parentId || '';
       parentInput.value = data.parent_id ?? fallbackParent ?? '';
@@ -1738,6 +1750,7 @@ export function initializeCreativeRowEditor() {
             alert(alertMessage);
           }
         }
+        updateProgressInputAvailability(readProgressValue());
         scheduleSave();
       });
     }
