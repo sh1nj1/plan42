@@ -459,4 +459,51 @@ if (!slackIntegrationInitialized) {
       }
     });
   });
+
+  // Slack badge for comments popup
+  document.addEventListener('comments-popup:opened', async function (event) {
+    const { creativeId, badgeContainer } = event.detail;
+    if (!badgeContainer || !creativeId) return;
+
+    // Create or find slack badge element
+    let badge = badgeContainer.querySelector('[data-slack-badge]');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.setAttribute('data-slack-badge', '');
+      badge.className = 'slack-channel-badge';
+      badge.style.cssText = 'display:none;font-size:0.75em;background:#4A154B;color:white;padding:0.15em 0.5em;border-radius:4px;margin-left:0.5em;';
+      badgeContainer.appendChild(badge);
+    }
+
+    // Hide badge initially
+    badge.style.display = 'none';
+    badge.textContent = '';
+
+    try {
+      const response = await fetch(`/slack/creatives/${creativeId}/slack_integrations`, {
+        headers: { Accept: 'application/json' }
+      });
+      if (!response.ok) return;
+
+      const data = await response.json();
+      if (data.links && data.links.length > 0) {
+        const channelNames = data.links.map(link => `#${link.channel_name}`).join(', ');
+        badge.textContent = `Slack: ${channelNames}`;
+        badge.style.display = 'inline-block';
+      }
+    } catch (error) {
+      console.warn('Failed to load Slack badge:', error);
+    }
+  });
+
+  document.addEventListener('comments-popup:closed', function (event) {
+    const { badgeContainer } = event.detail;
+    if (!badgeContainer) return;
+
+    const badge = badgeContainer.querySelector('[data-slack-badge]');
+    if (badge) {
+      badge.style.display = 'none';
+      badge.textContent = '';
+    }
+  });
 }
