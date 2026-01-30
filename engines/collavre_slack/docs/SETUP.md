@@ -201,6 +201,21 @@ CollavreSlack::SlackUserMapping.create!(
 
 If no user can be matched, messages are attributed to the user who created the channel link.
 
+## Collavre Permissions
+
+The Slack integration respects Collavre's permission model:
+
+| Action | Required Permission |
+|--------|---------------------|
+| Link a Slack channel to a Creative | `:feedback` |
+| Unlink a Slack channel | `:feedback` |
+| Receive messages from Slack | `:feedback` (checked per user) |
+| Send messages to Slack | `:feedback` (implicit via comment creation) |
+| Receive reactions from Slack | `:feedback` (checked per user) |
+| Send reactions to Slack | `:feedback` (implicit via reaction creation) |
+
+**Note:** Messages from unmapped Slack users (no matching email) are attributed to the channel link creator, who must have `:feedback` permission.
+
 ## Security Notes
 
 - Never commit credentials to version control

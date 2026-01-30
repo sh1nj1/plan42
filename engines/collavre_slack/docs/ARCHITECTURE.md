@@ -293,3 +293,17 @@ For reaction sync to work, subscribe to these events in your Slack app's Event S
 | `message.groups` | Messages in private channels |
 | `reaction_added` | Reactions added to messages |
 | `reaction_removed` | Reactions removed from messages |
+
+## Collavre Permissions
+
+The integration respects Collavre's hierarchical permission model. All Slack sync operations require `:feedback` permission on the Creative.
+
+| Operation | Permission Check |
+|-----------|------------------|
+| Link/unlink channel | `creative.has_permission?(user, :feedback)` |
+| Inbound message | `creative.has_permission?(mapped_user, :feedback)` |
+| Inbound reaction | `creative.has_permission?(mapped_user, :feedback)` |
+| Outbound message | Implicit (user created comment) |
+| Outbound reaction | Implicit (user created reaction) |
+
+**Fallback behavior:** When a Slack user cannot be mapped to a Collavre user, messages are attributed to the channel link creator (who must have `:feedback` permission).
