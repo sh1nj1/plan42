@@ -51,7 +51,7 @@ module Collavre
     attr_accessor :filtered_progress
 
     belongs_to :origin, class_name: "Collavre::Creative", optional: true
-    has_many :linked_creatives, class_name: "Collavre::Creative", foreign_key: :origin_id, dependent: :delete_all
+    has_many :linked_creatives, class_name: "Collavre::Creative", foreign_key: :origin_id, dependent: :destroy
     belongs_to :user, class_name: Collavre.configuration.user_class_name, optional: true
 
     has_many :creative_shares, class_name: "Collavre::CreativeShare", dependent: :destroy
