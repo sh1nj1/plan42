@@ -1,0 +1,3 @@
+require_relative "lib/collavre_slack"
+
+CollavreSlack::Engine.load_tasks

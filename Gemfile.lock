@@ -1,4 +1,13 @@
 PATH
+  remote: engines/collavre_slack
+  specs:
+    collavre_slack (0.1.0)
+      collavre
+      faraday
+      faraday-retry
+      rails (>= 8.0)
+
+PATH
   remote: engines/collavre
   specs:
     collavre (0.1.1)
@@ -620,6 +629,7 @@ DEPENDENCIES
   capybara
   closure_tree
   collavre!
+  collavre_slack!
   debug
   doorkeeper (~> 5.8)
   dotenv

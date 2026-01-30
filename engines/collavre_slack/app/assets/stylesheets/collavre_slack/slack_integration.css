@@ -1,0 +1,15 @@
+/* Slack channel selection */
+.slack-channel-item {
+  padding: 0.5em 1em;
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.slack-channel-item:hover {
+  background: var(--color-drag-over);
+}
+
+.slack-channel-item.active {
+  background: var(--color-drag-over);
+  border-left: 3px solid var(--color-secondary-active);
+}

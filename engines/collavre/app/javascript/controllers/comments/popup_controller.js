@@ -140,6 +140,15 @@ export default class extends Controller {
     document.body.classList.add('no-scroll')
 
     await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
+
+    // Dispatch event for integrations (e.g., Slack badge)
+    this.element.dispatchEvent(new CustomEvent('comments-popup:opened', {
+      bubbles: true,
+      detail: {
+        creativeId: resolvedCreativeId,
+        badgeContainer: this.element.querySelector('[data-integration-badges]')
+      }
+    }))
   }
 
   async openForCreative() {
@@ -157,6 +166,15 @@ export default class extends Controller {
     this.showPopup()
 
     await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment })
+
+    // Dispatch event for integrations (e.g., Slack badge)
+    this.element.dispatchEvent(new CustomEvent('comments-popup:opened', {
+      bubbles: true,
+      detail: {
+        creativeId: resolvedCreativeId,
+        badgeContainer: this.element.querySelector('[data-integration-badges]')
+      }
+    }))
   }
 
   async notifyChildControllers({ creativeId, canComment, highlightId }) {
@@ -196,6 +214,14 @@ export default class extends Controller {
     if (this.topicsController) {
       this.topicsController.onPopupClosed()
     }
+
+    // Dispatch event for integrations
+    this.element.dispatchEvent(new CustomEvent('comments-popup:closed', {
+      bubbles: true,
+      detail: {
+        badgeContainer: this.element.querySelector('[data-integration-badges]')
+      }
+    }))
 
     this.element.style.display = 'none'
     this.element.classList.remove('open')
@@ -431,5 +457,4 @@ export default class extends Controller {
       this.openFromUrlTimeout = null
     }
   }
-
 }

@@ -86,6 +86,8 @@ module Collavre
         # Final save to ensure everything is consistent and trigger final callbacks
         if reply_comment
           if response_content.present?
+            # Force dirty tracking since update_column bypassed it during streaming
+            reply_comment.content_will_change!
             reply_comment.update!(content: response_content)
             log_action("reply_created", { comment_id: reply_comment.id, content: response_content })
           else

@@ -1,0 +1,8 @@
+<%# Render hidden trigger buttons for registered integrations %>
+<% Collavre::IntegrationRegistry.each do |integration| %>
+  <% if integration.enabled_for?(creative) %>
+    <button id="<%= integration.name %>-integration-btn"
+            data-creative-id="<%= creative&.id %>"
+            style="display:none;"></button>
+  <% end %>
+<% end %>

@@ -15,6 +15,7 @@ ActiveStorage.start()
 
 // Import Collavre engine modules (side-effect imports)
 import "collavre"
+import "collavre_slack"
 
 // Host app specific modules
 import "./firebase_config"
