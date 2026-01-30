@@ -23,6 +23,24 @@ module CollavreSlack
       comment.content = "#{comment.content}\n\n#{response}" if response.present?
       comment.save!
 
+      # Dispatch system event to trigger AI agents (same as CommentsController#create)
+      unless comment.private?
+        Collavre::SystemEvents::Dispatcher.dispatch("comment_created", {
+          comment: {
+            id: comment.id,
+            content: comment.content,
+            user_id: comment.user_id
+          },
+          creative: {
+            id: creative.id,
+            description: creative.description
+          },
+          chat: {
+            content: comment.content
+          }
+        })
+      end
+
       # Create link between Slack message and comment for reaction sync
       if data[:slack_channel_link_id].present? && data[:slack_message_ts].present?
         SlackCommentLink.create!(
