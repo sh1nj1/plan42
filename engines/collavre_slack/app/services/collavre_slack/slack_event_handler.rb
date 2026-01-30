@@ -37,7 +37,8 @@ module CollavreSlack
         user_id: user&.id,
         content: normalized_content,
         slack_channel_link_id: channel_link.id,
-        slack_message_ts: event_ts
+        slack_message_ts: event_ts,
+        slack_display_name: slack_display_name
       }
     end
 
