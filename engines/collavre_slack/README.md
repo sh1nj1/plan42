@@ -7,17 +7,36 @@ Slack integration plugin engine for Collavre. Provides OAuth installation, chann
 - [Setup Guide](docs/SETUP.md) - Step-by-step instructions for creating and configuring a Slack App
 - [Architecture](docs/ARCHITECTURE.md) - Technical documentation about the integration
 
-## Quick Start
+## Installation
 
-1. Create a Slack App at [api.slack.com/apps](https://api.slack.com/apps)
-2. Configure OAuth scopes and redirect URL
-3. Set up Event Subscriptions
-4. Configure environment variables
-5. Mount the engine in your routes
+### 1. Add to Gemfile
 
-See [docs/SETUP.md](docs/SETUP.md) for detailed instructions.
+```ruby
+# Gemfile
+gem "collavre_slack", path: "engines/collavre_slack"
+```
 
-## Required Environment Variables
+### 2. Add JavaScript Import (Required)
+
+The JavaScript must be explicitly imported in your host application:
+
+```javascript
+// app/javascript/application.js
+import "collavre_slack"
+```
+
+This is required because the host app controls which integrations are loaded. Without this import, the Slack integration modal and badge functionality will not work.
+
+### 3. Add Stylesheet (Required)
+
+Include the Slack integration stylesheet in your layout:
+
+```erb
+<%# app/views/layouts/application.html.erb %>
+<%= stylesheet_link_tag "collavre_slack/slack_integration" %>
+```
+
+### 4. Configure Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
@@ -25,14 +44,31 @@ See [docs/SETUP.md](docs/SETUP.md) for detailed instructions.
 | `SLACK_CLIENT_SECRET` | Yes | OAuth Client Secret |
 | `SLACK_SIGNING_SECRET` | Yes | Webhook signature verification |
 | `SLACK_REDIRECT_URI` | Yes | OAuth callback URL |
-| `SLACK_SCOPES` | No | OAuth scopes (has sensible defaults)
+| `SLACK_SCOPES` | No | OAuth scopes (has sensible defaults) |
 
-## Mounting the Engine
+### 5. Run Migrations
 
-```ruby
-# config/routes.rb
-mount CollavreSlack::Engine => "/slack", as: :slack_engine
+```bash
+rails db:migrate
 ```
+
+## Automatic Configuration
+
+The following are automatically configured by the engine:
+
+- **Routes**: Mounted at `/slack` (no manual `mount` needed in `routes.rb`)
+- **Asset Precompilation**: CSS files are automatically added to the asset pipeline
+- **Migrations**: Database migrations are automatically included
+- **i18n**: Locale files (en, ko) are automatically loaded
+- **Integration Registry**: Automatically registers with `Collavre::IntegrationRegistry`
+
+## Slack App Setup
+
+1. Create a Slack App at [api.slack.com/apps](https://api.slack.com/apps)
+2. Configure OAuth scopes and redirect URL
+3. Set up Event Subscriptions
+
+See [docs/SETUP.md](docs/SETUP.md) for detailed instructions.
 
 ## Features
 

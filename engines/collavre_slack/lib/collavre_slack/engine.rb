@@ -9,6 +9,20 @@ module CollavreSlack
     # Load locale files
     config.i18n.load_path += Dir[root.join("config", "locales", "*.yml")]
 
+    # Auto-mount engine routes
+    initializer "collavre_slack.routes", before: :add_routing_paths do |app|
+      app.routes.append do
+        mount CollavreSlack::Engine => "/slack", as: :slack_engine
+      end
+    end
+
+    # Auto-precompile stylesheets
+    initializer "collavre_slack.assets" do |app|
+      if app.config.respond_to?(:assets)
+        app.config.assets.precompile += %w[collavre_slack/slack_integration.css]
+      end
+    end
+
     initializer "collavre_slack.migrations" do |app|
       unless app.root.to_s.match?(root.to_s)
         config.paths["db/migrate"].expanded.each do |expanded_path|
