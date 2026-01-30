@@ -75,6 +75,8 @@ export function initializeCreativeRowEditor() {
     const editorContainer = template.querySelector('[data-lexical-editor-root]');
     const progressInput = document.getElementById('inline-creative-progress');
     const progressValue = document.getElementById('inline-progress-value');
+    const progressCompleteLabel = progressInput?.dataset.completeLabel || 'Complete';
+    const progressIncompleteLabel = progressInput?.dataset.incompleteLabel || 'Incomplete';
     const upBtn = document.getElementById('inline-move-up');
     const downBtn = document.getElementById('inline-move-down');
     const addBtn = document.getElementById('inline-add');
@@ -136,16 +138,37 @@ export function initializeCreativeRowEditor() {
     let originalProgress = 0;
     let originalOriginId = '';
     let isDirty = false;
+    let completionCascadePending = false;
 
     function formatProgressDisplay(value) {
       const numeric = Number(value);
-      if (Number.isNaN(numeric)) return '0%';
-      const percentage = Math.round(numeric * 100);
-      return `${percentage}%`;
+      if (Number.isNaN(numeric)) return progressIncompleteLabel;
+      return numeric >= 1 ? progressCompleteLabel : progressIncompleteLabel;
+    }
+
+    function readProgressValue() {
+      if (!progressInput) return 0;
+      return progressInput.checked ? 1 : 0;
+    }
+
+    function setProgressState(value) {
+      if (!progressInput) return;
+      const numeric = Number(value);
+      const isComplete = !Number.isNaN(numeric) && numeric >= 1;
+      progressInput.checked = isComplete;
+      if (progressValue) {
+        progressValue.textContent = formatProgressDisplay(isComplete ? 1 : 0);
+      }
     }
 
     function treeRowElement(node) {
       return node && node.closest ? node.closest('creative-tree-row') : null;
+    }
+
+    function currentRowHasChildren() {
+      const row = currentRowElement || (currentTree ? treeRowElement(currentTree) : null);
+      if (!row) return false;
+      return !!(row.hasChildren || row.getAttribute?.('has-children'));
     }
 
     function hasDatasetValue(element, key) {
@@ -245,8 +268,8 @@ export function initializeCreativeRowEditor() {
       isDirty = false;
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
-      progressInput.value = normalizedProgress;
-      progressValue.textContent = formatProgressDisplay(progressInput.value);
+      setProgressState(normalizedProgress);
+      completionCascadePending = false;
       const fallbackParent = tree?.dataset?.parentId || '';
       parentInput.value = data.parent_id ?? fallbackParent ?? '';
       beforeInput.value = '';
@@ -261,7 +284,7 @@ export function initializeCreativeRowEditor() {
       if (unlinkBtn) unlinkBtn.style.display = originId ? '' : 'none';
       const effectiveParent = parentInput.value;
       if (unconvertBtn) unconvertBtn.style.display = effectiveParent ? '' : 'none';
-      originalProgress = normalizedProgress;
+      originalProgress = normalizedProgress >= 1 ? 1 : 0;
       lexicalEditor.focus();
       updateActionButtonStates();
     }
@@ -892,8 +915,9 @@ export function initializeCreativeRowEditor() {
 
         // Capture values being saved to update dirty state on success
         const savedContent = descriptionInput.value;
-        const savedProgress = progressInput.value;
+        const savedProgress = readProgressValue();
         const savedOriginId = originIdInput ? originIdInput.value : '';
+        const cascadeProgressUpdate = completionCascadePending;
 
         savePromise = creativesApi.save(form.action, method, form).then(function (r) {
           if (!r.ok) return r;
@@ -907,7 +931,7 @@ export function initializeCreativeRowEditor() {
 
             // If current values match what was just saved, clear dirty flag
             if (descriptionInput.value === savedContent &&
-              progressInput.value === savedProgress &&
+              readProgressValue() === savedProgress &&
               originIdInput.value === savedOriginId) {
               isDirty = false;
             }
@@ -954,6 +978,10 @@ export function initializeCreativeRowEditor() {
             } else if (method === 'PATCH') {
               if (tree) refreshRow(tree);
             }
+            if (cascadeProgressUpdate && tree) {
+              refreshChildren(tree);
+              completionCascadePending = false;
+            }
 
             // Delete removed attachments after successful save
             if (lexicalEditor && typeof lexicalEditor.getDeletedAttachments === 'function') {
@@ -964,9 +992,9 @@ export function initializeCreativeRowEditor() {
             }
             updateActionButtonStates();
           });
-        }).finally(function () {
-          saving = false;
-        });
+          }).finally(function () {
+            saving = false;
+          });
         return savePromise;
       });
     }
@@ -1071,7 +1099,7 @@ export function initializeCreativeRowEditor() {
       // CRITICAL: Capture ALL values BEFORE awaiting, because the editor may switch
       // to a different creative while we're waiting for uploads
       let currentContent = descriptionInput.value;
-      let currentProgress = progressInput.value;
+      let currentProgress = readProgressValue();
       const currentParentId = tree.dataset.parentId || '';
       const currentBeforeId = tree.previousElementSibling ? creativeIdFrom(tree.previousElementSibling) : '';
       const currentAfterId = tree.nextElementSibling ? creativeIdFrom(tree.nextElementSibling) : '';
@@ -1092,7 +1120,7 @@ export function initializeCreativeRowEditor() {
       // This ensures we capture the final HTML with signed IDs instead of blob URLs
       if (form.dataset.creativeId === startCreativeId) {
         currentContent = descriptionInput.value;
-        currentProgress = progressInput.value;
+        currentProgress = readProgressValue();
       }
 
       // Build request body
@@ -1540,8 +1568,7 @@ export function initializeCreativeRowEditor() {
           resetOriginTracking();
           descriptionInput.value = '';
           lexicalEditor.reset(`new-${Date.now()}`);
-          progressInput.value = 0;
-          progressValue.textContent = formatProgressDisplay(0);
+          setProgressState(0);
           if (unconvertBtn) unconvertBtn.style.display = 'none';
           pendingSave = false;
           lexicalEditor.focus();
@@ -1666,10 +1693,22 @@ export function initializeCreativeRowEditor() {
       return !!node && $isRootOrShadowRoot(node);
     }
 
-    progressInput.addEventListener('input', function () {
-      progressValue.textContent = formatProgressDisplay(progressInput.value);
-      scheduleSave();
-    });
+    if (progressInput) {
+      progressInput.addEventListener('change', function () {
+        if (progressValue) {
+          progressValue.textContent = formatProgressDisplay(readProgressValue());
+        }
+        completionCascadePending = false;
+        if (progressInput.checked && currentRowHasChildren()) {
+          completionCascadePending = true;
+          const alertMessage = progressInput.dataset.childrenAlertMessage;
+          if (alertMessage) {
+            alert(alertMessage);
+          }
+        }
+        scheduleSave();
+      });
+    }
 
     if (parentSuggestBtn && parentSuggestions) {
       parentSuggestBtn.addEventListener('click', function () {
