@@ -1,6 +1,8 @@
 import { Controller } from '@hotwired/stimulus'
 import { copyTextToClipboard } from '../../utils/clipboard'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
+import creativesApi from '../../lib/api/creatives'
+import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 
 export default class extends Controller {
   static targets = ['list']
@@ -562,8 +564,33 @@ export default class extends Controller {
         // Conversion usually converts to creative, so maybe reload or redirect?
         // Original code reloaded initial comments. Safe to do:
         this.loadInitialComments()
+        this.reloadCreativeChildren()
       }
     })
+  }
+
+  reloadCreativeChildren() {
+    if (!this.creativeId) return Promise.resolve()
+    const container = document.getElementById(`creative-children-${this.creativeId}`)
+    const loadUrl = container?.dataset?.loadUrl
+    if (!container || !loadUrl) {
+      this.reloadCreativeTree()
+      return Promise.resolve()
+    }
+
+    return creativesApi.loadChildren(loadUrl).then((data) => {
+      const nodes = Array.isArray(data?.creatives) ? data.creatives : []
+      renderCreativeTree(container, nodes, { replace: false })
+      container.dataset.loaded = 'true'
+      dispatchCreativeTreeUpdated(container)
+    })
+  }
+
+  reloadCreativeTree() {
+    const treeElement = document.getElementById('creatives')
+    if (!treeElement) return
+    const controller = this.application.getControllerForElementAndIdentifier(treeElement, 'creatives--tree')
+    controller?.load?.()
   }
 
   approveComment(button) {
