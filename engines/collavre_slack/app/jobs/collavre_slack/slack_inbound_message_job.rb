@@ -10,29 +10,45 @@ module CollavreSlack
 
       return unless creative && channel_link
 
-      # If user exists in Collavre but lacks permission, silently skip
+      comment_user = user
+      slack_email = data[:slack_email]
+      slack_display_name = data[:slack_display_name]
+
+      # Case 1: User exists in Collavre but lacks permission
       if user && !creative.has_permission?(user, :feedback)
-        Rails.logger.info("[CollavreSlack] Skipping message - user #{user.id} lacks feedback permission on creative #{creative.id}")
-        return
+        grant_feedback_permission(creative: creative, user: user, granter: channel_link.created_by)
+        Rails.logger.info("[CollavreSlack] Granted feedback permission to user #{user.id} on creative #{creative.id}")
       end
 
-      # If user not found in Collavre, notify admins
+      # Case 2: User not in Collavre - invite by email and notify admins
       unless user
+        if slack_email.present?
+          invite_user_by_email(
+            creative: creative,
+            email: slack_email,
+            inviter: channel_link.created_by
+          )
+          Rails.logger.info("[CollavreSlack] Sent invitation to #{slack_email} for creative #{creative.id}")
+        end
+
         notify_admins_about_unmapped_user(
           creative: creative,
           channel_link: channel_link,
-          slack_display_name: data[:slack_display_name],
-          slack_email: data[:slack_email],
+          slack_display_name: slack_display_name,
+          slack_email: slack_email,
           slack_user_id: data[:slack_user_id],
           content: data[:content]
         )
-        return
+
+        # Use channel creator as fallback for comment
+        comment_user = channel_link.created_by
       end
 
+      # Create comment with appropriate user
       comment = Collavre::Comment.new(
         creative: creative,
-        user: user,
-        content: data[:content]
+        user: comment_user,
+        content: format_comment_content(data[:content], user, slack_display_name)
       )
 
       # Mark this comment as coming from Slack to prevent loop
@@ -117,6 +133,50 @@ module CollavreSlack
         "#{name} (#{email})"
       else
         name
+      end
+    end
+
+    def grant_feedback_permission(creative:, user:, granter:)
+      # Check if share already exists
+      existing_share = Collavre::CreativeShare.find_by(creative: creative, user: user)
+      return if existing_share && existing_share.permission_level >= Collavre::CreativeShare.permissions[:feedback]
+
+      if existing_share
+        existing_share.update!(permission: :feedback)
+      else
+        Collavre::CreativeShare.create!(
+          creative: creative,
+          user: user,
+          permission: :feedback,
+          shared_by: granter
+        )
+      end
+    end
+
+    def invite_user_by_email(creative:, email:, inviter:)
+      # Check if invitation already exists
+      existing_invitation = Collavre::Invitation.find_by(creative: creative, email: email)
+      return if existing_invitation
+
+      invitation = Collavre::Invitation.create!(
+        email: email,
+        inviter: inviter,
+        creative: creative,
+        permission: :feedback
+      )
+      Collavre::InvitationMailer.with(invitation: invitation).invite.deliver_later
+    end
+
+    def format_comment_content(content, user, slack_display_name)
+      # If user is mapped, no prefix needed (message will show their name)
+      return content if user
+
+      # If unmapped, prepend Slack username
+      if slack_display_name.present?
+        prefix = I18n.t("collavre_slack.messages.slack_user_prefix", name: slack_display_name)
+        "#{prefix} #{content}"
+      else
+        content
       end
     end
   end

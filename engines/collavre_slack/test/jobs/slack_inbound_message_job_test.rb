@@ -20,7 +20,7 @@ module CollavreSlack
       )
     end
 
-    test "notifies admins when Slack user is not in Collavre" do
+    test "invites and notifies admins when Slack user is not in Collavre" do
       payload = {
         creative_id: @creative.id,
         user_id: nil,
@@ -32,19 +32,35 @@ module CollavreSlack
         slack_user_id: "U999"
       }
 
+      # Should create inbox notification for admin
       assert_difference "Collavre::InboxItem.count", 1 do
-        SlackInboundMessageJob.perform_now(payload)
+        # Should create invitation
+        assert_difference "Collavre::Invitation.count", 1 do
+          # Should create comment (with channel creator as user)
+          assert_difference "Collavre::Comment.count", 1 do
+            SlackInboundMessageJob.perform_now(payload)
+          end
+        end
       end
 
-      inbox_item = Collavre::InboxItem.last
+      # Check inbox notification
+      inbox_item = Collavre::InboxItem.where(message_key: "collavre_slack.inbox.unmapped_user_message").last
       assert_equal @owner.id, inbox_item.owner_id
-      assert_equal @creative.id, inbox_item.creative_id
-      assert_equal "collavre_slack.inbox.unmapped_user_message", inbox_item.message_key
       assert_equal "John Doe (john@slack.com)", inbox_item.message_params["slack_user"]
-      assert_equal "test-channel", inbox_item.message_params["channel_name"]
+
+      # Check invitation
+      invitation = Collavre::Invitation.last
+      assert_equal "john@slack.com", invitation.email
+      assert_equal @creative.id, invitation.creative_id
+      assert_equal "feedback", invitation.permission
+
+      # Check comment (created with channel creator, prefixed with Slack username)
+      comment = Collavre::Comment.last
+      assert_equal @owner.id, comment.user_id
+      assert_includes comment.content, "[Slack: @John Doe]"
     end
 
-    test "silently skips when Slack user lacks feedback permission" do
+    test "grants permission and creates comment when Slack user lacks feedback permission" do
       # Create a user that exists but has no permission on the creative
       slack_user = create_user(email: "noperm@example.com", name: "No Permission")
 
@@ -59,13 +75,25 @@ module CollavreSlack
         slack_user_id: "U888"
       }
 
-      # User exists but has no permission - should silently skip (no inbox notification)
-      assert_no_difference "Collavre::InboxItem.count" do
-        SlackInboundMessageJob.perform_now(payload)
+      # Should not create inbox notification (user exists in Collavre)
+      assert_no_difference "Collavre::InboxItem.where(message_key: 'collavre_slack.inbox.unmapped_user_message').count" do
+        # Should create a share (granting permission)
+        assert_difference "Collavre::CreativeShare.count", 1 do
+          # Should create comment
+          assert_difference "Collavre::Comment.count", 1 do
+            SlackInboundMessageJob.perform_now(payload)
+          end
+        end
       end
 
-      # No comment should be created
-      assert_equal 0, Collavre::Comment.where(creative: @creative, user: slack_user).count
+      # Check permission was granted
+      share = Collavre::CreativeShare.find_by(creative: @creative, user: slack_user)
+      assert_equal "feedback", share.permission
+
+      # Check comment was created with the Slack user
+      comment = Collavre::Comment.last
+      assert_equal slack_user.id, comment.user_id
+      assert_equal "Hello from Slack!", comment.content
     end
 
     test "creates comment when Slack user has feedback permission" do
@@ -88,20 +116,64 @@ module CollavreSlack
         slack_user_id: "U777"
       }
 
-      # Count inbox items with our specific message key before
-      unmapped_inbox_count_before = Collavre::InboxItem.where(message_key: "collavre_slack.inbox.unmapped_user_message").count
-
-      assert_difference "Collavre::Comment.count", 1 do
-        SlackInboundMessageJob.perform_now(payload)
+      # Should not create additional share
+      assert_no_difference "Collavre::CreativeShare.count" do
+        assert_difference "Collavre::Comment.count", 1 do
+          SlackInboundMessageJob.perform_now(payload)
+        end
       end
-
-      # Should not create an unmapped user inbox notification
-      unmapped_inbox_count_after = Collavre::InboxItem.where(message_key: "collavre_slack.inbox.unmapped_user_message").count
-      assert_equal unmapped_inbox_count_before, unmapped_inbox_count_after
 
       comment = Collavre::Comment.last
       assert_equal slack_user.id, comment.user_id
       assert_equal "Hello from Slack!", comment.content
+    end
+
+    test "does not send duplicate invitation" do
+      # Create existing invitation
+      Collavre::Invitation.create!(
+        email: "existing@slack.com",
+        inviter: @owner,
+        creative: @creative,
+        permission: :feedback
+      )
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: nil,
+        content: "Test message",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1234567890.123456",
+        slack_display_name: "Existing User",
+        slack_email: "existing@slack.com",
+        slack_user_id: "U222"
+      }
+
+      # Should not create duplicate invitation
+      assert_no_difference "Collavre::Invitation.count" do
+        SlackInboundMessageJob.perform_now(payload)
+      end
+    end
+
+    test "creates comment without invitation when email is missing" do
+      payload = {
+        creative_id: @creative.id,
+        user_id: nil,
+        content: "Test message",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1234567890.123456",
+        slack_display_name: "No Email User",
+        slack_email: nil,
+        slack_user_id: "U111"
+      }
+
+      # Should still create comment and inbox notification, but no invitation
+      assert_no_difference "Collavre::Invitation.count" do
+        assert_difference "Collavre::Comment.count", 1 do
+          assert_difference "Collavre::InboxItem.count", 1 do
+            SlackInboundMessageJob.perform_now(payload)
+          end
+        end
+      end
     end
 
     test "formats slack user label with name and email" do
@@ -118,44 +190,8 @@ module CollavreSlack
 
       SlackInboundMessageJob.perform_now(payload)
 
-      inbox_item = Collavre::InboxItem.last
+      inbox_item = Collavre::InboxItem.where(message_key: "collavre_slack.inbox.unmapped_user_message").last
       assert_equal "Jane Smith (jane@company.com)", inbox_item.message_params["slack_user"]
-    end
-
-    test "formats slack user label with only name when email is missing" do
-      payload = {
-        creative_id: @creative.id,
-        user_id: nil,
-        content: "Test message",
-        slack_channel_link_id: @channel_link.id,
-        slack_message_ts: "1234567890.123456",
-        slack_display_name: "Anonymous User",
-        slack_email: nil,
-        slack_user_id: "U444"
-      }
-
-      SlackInboundMessageJob.perform_now(payload)
-
-      inbox_item = Collavre::InboxItem.last
-      assert_equal "Anonymous User", inbox_item.message_params["slack_user"]
-    end
-
-    test "formats slack user label with user_id when name is missing" do
-      payload = {
-        creative_id: @creative.id,
-        user_id: nil,
-        content: "Test message",
-        slack_channel_link_id: @channel_link.id,
-        slack_message_ts: "1234567890.123456",
-        slack_display_name: nil,
-        slack_email: nil,
-        slack_user_id: "U333"
-      }
-
-      SlackInboundMessageJob.perform_now(payload)
-
-      inbox_item = Collavre::InboxItem.last
-      assert_equal "U333", inbox_item.message_params["slack_user"]
     end
   end
 end
