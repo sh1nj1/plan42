@@ -111,6 +111,20 @@ module Collavre
       end
     end
 
+    # Fetch and filter available tools for the given user.
+    # Returns an array of tool hashes with :name, :description, :params keys.
+    def self.available_tools(user)
+      return [] unless defined?(RailsMcpEngine)
+
+      RailsMcpEngine::Engine.build_tools!
+      result = ::Tools::MetaToolService.new.call(action: "list", tool_name: nil, query: nil, arguments: nil)
+      tool_list = Array(result[:tools])
+      filter_tools(tool_list, user)
+    rescue StandardError => e
+      Rails.logger.error("Failed to load available tools: #{e.message}")
+      []
+    end
+
     def self.delete_tool(tool_name)
       result = ::Tools::MetaToolWriteService.new.delete_tool(tool_name)
 

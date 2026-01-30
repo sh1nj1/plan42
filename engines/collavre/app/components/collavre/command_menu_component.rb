@@ -1,9 +1,7 @@
 module Collavre
-  class CommandMenuComponent < ViewComponent::Base
+  class CommandMenuComponent < AutocompletePopupComponent
     def initialize(menu_id: "command-menu")
-      @menu_id = menu_id
+      super(menu_id: menu_id, extra_classes: nil)
     end
-
-    attr_reader :menu_id
   end
 end

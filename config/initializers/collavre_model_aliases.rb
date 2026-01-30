@@ -43,11 +43,12 @@ Rails.application.config.to_prepare do
 
   # Components
   set_alias(Object, :AvatarComponent, Collavre::AvatarComponent)
+  set_alias(Object, :AutocompletePopupComponent, Collavre::AutocompletePopupComponent)
+  set_alias(Object, :CommandMenuComponent, Collavre::CommandMenuComponent)
   set_alias(Object, :PlansTimelineComponent, Collavre::PlansTimelineComponent)
   set_alias(Object, :PopupMenuComponent, Collavre::PopupMenuComponent)
   set_alias(Object, :ProgressFilterComponent, Collavre::ProgressFilterComponent)
   set_alias(Object, :UserMentionMenuComponent, Collavre::UserMentionMenuComponent)
-  set_alias(Object, :CommandMenuComponent, Collavre::CommandMenuComponent)
 
   # Helpers
   set_alias(Object, :CreativesHelper, Collavre::CreativesHelper)

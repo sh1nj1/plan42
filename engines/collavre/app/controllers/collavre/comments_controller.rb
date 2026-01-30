@@ -443,15 +443,8 @@ module Collavre
     end
 
     def mcp_command_items
-      return [] unless defined?(RailsMcpEngine)
-
-      RailsMcpEngine::Engine.build_tools!
-      tools = ::Tools::MetaToolService.new.call(action: "list", tool_name: nil, query: nil, arguments: nil)
-      tool_list = Array(tools[:tools])
-      filtered_tools = Collavre::McpService.filter_tools(tool_list, Current.user)
-
-      filtered_tools.map do |tool|
-        tool_name = tool[:name] || tool["name"] || tool.try(:tool_name)
+      Collavre::McpService.available_tools(Current.user).filter_map do |tool|
+        tool_name = tool[:name] || tool["name"]
         next unless tool_name
 
         {
@@ -460,10 +453,7 @@ module Collavre
           description: tool[:description] || tool["description"],
           args: format_command_args(tool[:params] || tool["params"])
         }
-      end.compact
-    rescue StandardError => e
-      Rails.logger.error("Failed to load command menu: #{e.message}")
-      []
+      end
     end
 
     def format_command_args(params)
