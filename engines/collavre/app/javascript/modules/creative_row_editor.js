@@ -3,7 +3,7 @@ import apiQueue from '../lib/api/queue_manager'
 import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
 import { createInlineEditor } from './lexical_inline_editor'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
-import { progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
+import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
 
@@ -143,9 +143,7 @@ export function initializeCreativeRowEditor() {
     let completionCascadePending = false;
 
     function formatProgressDisplay(value) {
-      const numeric = Number(value);
-      if (Number.isNaN(numeric)) return progressIncompleteLabel;
-      return numeric >= 1 ? progressCompleteLabel : progressIncompleteLabel;
+      return isProgressComplete(value) ? progressCompleteLabel : progressIncompleteLabel;
     }
 
     function readProgressValue() {
@@ -160,24 +158,22 @@ export function initializeCreativeRowEditor() {
 
     function setProgressState(value) {
       if (!progressInput) return;
-      const numeric = Number(value);
-      const isComplete = !Number.isNaN(numeric) && numeric >= 1;
-      progressInput.checked = isComplete;
+      const complete = isProgressComplete(value);
+      progressInput.checked = complete;
       if (progressValue) {
-        progressValue.textContent = formatProgressDisplay(isComplete ? 1 : 0);
+        progressValue.textContent = formatProgressDisplay(value);
       }
     }
 
     function updateProgressInputAvailability(value) {
       if (!progressInput) return;
-      const numeric = Number(value);
       const hasChildren = currentRowHasChildren();
-      const isComplete = !Number.isNaN(numeric) && numeric >= 1;
-      const shouldDisable = hasChildren && isComplete;
+      const complete = isProgressComplete(value);
+      const shouldDisable = hasChildren && complete;
       progressInput.disabled = shouldDisable;
       if (progressHiddenInput) {
         progressHiddenInput.disabled = false;
-        progressHiddenInput.value = shouldDisable ? (isComplete ? '1' : '0') : '0';
+        progressHiddenInput.value = shouldDisable ? '1' : '0';
       }
     }
 
@@ -1023,13 +1019,13 @@ export function initializeCreativeRowEditor() {
             }
             updateActionButtonStates();
           });
-          }).finally(function () {
-            saving = false;
-            if (!shouldPersistProgress) {
-              if (progressInput) progressInput.disabled = progressInputsDisabled;
-              if (progressHiddenInput) progressHiddenInput.disabled = hiddenProgressDisabled;
-            }
-          });
+        }).finally(function () {
+          saving = false;
+          if (!shouldPersistProgress) {
+            if (progressInput) progressInput.disabled = progressInputsDisabled;
+            if (progressHiddenInput) progressHiddenInput.disabled = hiddenProgressDisabled;
+          }
+        });
         return savePromise;
       });
     }

@@ -1,7 +1,10 @@
+export function isProgressComplete(value) {
+  const numeric = Number(value);
+  return !Number.isNaN(numeric) && numeric >= 1;
+}
+
 export function progressBaselineValueFrom(originalProgress) {
-  const numeric = Number(originalProgress);
-  if (Number.isNaN(numeric)) return 0;
-  return numeric >= 1 ? 1 : 0;
+  return isProgressComplete(originalProgress) ? 1 : 0;
 }
 
 export function progressValueChangedFrom(originalProgress, checked) {
