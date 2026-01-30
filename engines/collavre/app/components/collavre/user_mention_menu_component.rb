@@ -1,8 +1,7 @@
 module Collavre
-class UserMentionMenuComponent < ViewComponent::Base
-  def initialize(menu_id: "mention-menu")
-    @menu_id = menu_id
+  class UserMentionMenuComponent < AutocompletePopupComponent
+    def initialize(menu_id: "mention-menu")
+      super(menu_id: menu_id, extra_classes: "mention-popup")
+    end
   end
-  attr_reader :menu_id
-end
 end

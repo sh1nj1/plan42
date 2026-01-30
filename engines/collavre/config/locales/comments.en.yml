@@ -77,6 +77,9 @@ en:
       select_label: Select message
       add_reaction: Add reaction
       add_reaction_button: "+"
+      command_menu:
+        calendar_description: "Create a Google Calendar event."
+        calendar_args: "YYYY-MM-DD@HH:MM memo (or 'today')"
       calendar_command:
         event_created: 'event created: [Google Calendar event](%{url})'
       read_by: Read by %{name}

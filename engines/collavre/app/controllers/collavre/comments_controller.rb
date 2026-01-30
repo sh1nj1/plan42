@@ -373,6 +373,14 @@ module Collavre
       render json: data
     end
 
+    def commands
+      unless @creative.has_permission?(Current.user, :read)
+        head :forbidden and return
+      end
+
+      render json: command_menu_items
+    end
+
     def move
       comment_ids = Array(params[:comment_ids]).map(&:presence).compact.map(&:to_i)
       if comment_ids.empty?
@@ -425,6 +433,57 @@ module Collavre
 
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin
+    end
+
+    def command_menu_items
+      [
+        {
+          name: "calendar",
+          label: "/calendar",
+          aliases: [ "/cal" ],
+          description: I18n.t("collavre.comments.command_menu.calendar_description"),
+          args: I18n.t("collavre.comments.command_menu.calendar_args")
+        }
+      ] + mcp_command_items
+    end
+
+    def mcp_command_items
+      Collavre::McpService.available_tools(Current.user).filter_map do |tool|
+        tool_name = tool[:name] || tool["name"]
+        next unless tool_name
+
+        {
+          name: tool_name,
+          label: "/#{tool_name}",
+          description: tool[:description] || tool["description"],
+          args: format_command_args(tool[:params] || tool["params"])
+        }
+      end
+    end
+
+    def format_command_args(params)
+      return if params.blank?
+
+      # Handle array format (from MetaToolService)
+      if params.is_a?(Array)
+        return params.map do |param|
+          name = param[:name] || param["name"]
+          required = param[:required] || param["required"]
+          name.to_s + (required ? "*" : "")
+        end.join(", ")
+      end
+
+      # Handle JSON Schema format (Hash with :properties)
+      properties = params[:properties] || params["properties"]
+      return unless properties.is_a?(Hash)
+
+      required = params[:required] || params["required"] || []
+      required = Array(required).map(&:to_s)
+
+      properties.keys.map do |key|
+        key = key.to_s
+        required.include?(key) ? "#{key}*" : key
+      end.join(", ")
     end
 
     def set_comment

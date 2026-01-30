@@ -267,24 +267,13 @@ module Collavre
     private
 
     def load_available_tools
-      return [] unless defined?(RailsMcpEngine)
-
-      RailsMcpEngine::Engine.build_tools!
-      tools = ::Tools::MetaToolService.new.call(action: "list", tool_name: nil, query: nil, arguments: nil)
-
-      tool_list = Array(tools[:tools])
-      filtered_tools = Collavre::McpService.filter_tools(tool_list, Current.user)
-
-      filtered_tools.map do |tool|
+      Collavre::McpService.available_tools(Current.user).map do |tool|
         {
           name: tool[:name],
           description: tool[:description],
           parameters: tool[:params]
         }
       end
-    rescue StandardError => e
-      Rails.logger.error("Failed to load MCP tools: #{e.message}")
-      []
     end
 
     def prepare_contacts

@@ -66,6 +66,7 @@ Collavre::Engine.routes.draw do
         get :participants
         get :fullscreen
         post :move
+        get :commands
       end
     end
     collection do
