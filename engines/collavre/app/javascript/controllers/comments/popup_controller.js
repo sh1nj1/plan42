@@ -11,6 +11,7 @@ export default class extends Controller {
     'closeButton',
     'leftHandle',
     'rightHandle',
+    'fullscreenLink',
   ]
 
   connect() {
@@ -52,7 +53,11 @@ export default class extends Controller {
       form.addEventListener('submit', () => window.localStorage.removeItem(SIZE_STORAGE_KEY))
     })
 
-    this.openFromUrl()
+    if (this.isFullscreen()) {
+      this.openForCreative()
+    } else {
+      this.openFromUrl()
+    }
   }
 
   disconnect() {
@@ -115,6 +120,8 @@ export default class extends Controller {
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.titleTarget.textContent = snippet
 
+    this.updateFullscreenLink(resolvedCreativeId)
+
     this.prepareSize()
 
     this.showPopup()
@@ -132,6 +139,40 @@ export default class extends Controller {
     if (this.listController) {
       const topicId = this.topicsController ? this.topicsController.currentTopicId : undefined
       this.listController.onPopupOpened({ creativeId: resolvedCreativeId, highlightId, topicId })
+    }
+    if (this.presenceController) {
+      this.presenceController.onPopupOpened({ creativeId: resolvedCreativeId })
+    }
+    if (this.mentionMenuController) {
+      this.mentionMenuController.onPopupOpened({ creativeId: resolvedCreativeId })
+    }
+  }
+
+  async openForCreative() {
+    const resolvedCreativeId = this.element.dataset.creativeId
+    const canComment = this.element.dataset.canComment === 'true'
+    const snippet = this.element.dataset.creativeSnippet || ''
+
+    this.currentButton = null
+    this.element.dataset.creativeId = resolvedCreativeId || ''
+    this.element.dataset.canComment = canComment ? 'true' : 'false'
+    this.titleTarget.textContent = snippet
+
+    this.updateFullscreenLink(resolvedCreativeId)
+
+    this.showPopup()
+
+    // Load topics first to establish context
+    if (this.topicsController) {
+      await this.topicsController.onPopupOpened({ creativeId: resolvedCreativeId })
+    }
+
+    if (this.formController) {
+      this.formController.onPopupOpened({ creativeId: resolvedCreativeId, canComment })
+    }
+    if (this.listController) {
+      const topicId = this.topicsController ? this.topicsController.currentTopicId : undefined
+      this.listController.onPopupOpened({ creativeId: resolvedCreativeId, topicId })
     }
     if (this.presenceController) {
       this.presenceController.onPopupOpened({ creativeId: resolvedCreativeId })
@@ -195,12 +236,16 @@ export default class extends Controller {
     }
   }
 
+  isFullscreen() {
+    return this.element.dataset.fullscreen === 'true'
+  }
+
   isMobile() {
     return window.innerWidth <= 600
   }
 
   updatePosition() {
-    if (!this.currentButton || this.isMobile() || this.element.dataset.resized === 'true') return
+    if (this.isFullscreen() || !this.currentButton || this.isMobile() || this.element.dataset.resized === 'true') return
     const rect = this.currentButton.getBoundingClientRect()
     const scrollY = window.scrollY || window.pageYOffset
     let top = rect.bottom + scrollY + 4
@@ -319,6 +364,13 @@ export default class extends Controller {
     if (!document.hidden && this.element.style.display === 'flex') {
       this.listController?.loadInitialComments()
     }
+  }
+
+  updateFullscreenLink(creativeId) {
+    if (!this.hasFullscreenLinkTarget || !creativeId) return
+    const template = this.element.dataset.fullscreenUrlTemplate
+    if (!template) return
+    this.fullscreenLinkTarget.href = template.replace('__CREATIVE_ID__', creativeId)
   }
 
   openFromUrl() {

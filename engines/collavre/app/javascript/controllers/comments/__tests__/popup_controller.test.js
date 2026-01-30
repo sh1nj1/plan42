@@ -14,9 +14,10 @@ describe('CommentsPopupController', () => {
     beforeEach(() => {
         container = document.createElement('div')
         container.innerHTML = `
-      <div id="comments-popup" data-controller="comments--popup" style="width: 300px; height: 400px; position: absolute;">
+      <div id="comments-popup" data-controller="comments--popup" data-fullscreen-url-template="/creatives/__CREATIVE_ID__/comments/fullscreen" style="width: 300px; height: 400px; position: absolute;">
         <h3 data-comments--popup-target="title">Title</h3>
         <div data-comments--popup-target="list">List</div>
+        <a data-comments--popup-target="fullscreenLink" href="#"></a>
         <button data-comments--popup-target="closeButton">Close</button>
         <div data-comments--popup-target="leftHandle"></div>
         <div data-comments--popup-target="rightHandle"></div>

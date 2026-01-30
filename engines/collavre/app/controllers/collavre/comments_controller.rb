@@ -1,7 +1,12 @@
 module Collavre
   class CommentsController < ApplicationController
+    layout "collavre/chat", only: [ :fullscreen ]
     before_action :set_creative
     before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action ]
+
+    def fullscreen
+      @creative_snippet = @creative.creative_snippet
+    end
 
     def index
       limit = 20
