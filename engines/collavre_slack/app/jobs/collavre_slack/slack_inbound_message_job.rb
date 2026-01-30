@@ -6,7 +6,6 @@ module CollavreSlack
       data = payload.with_indifferent_access
       creative = Collavre::Creative.find(data[:creative_id])
       user = Collavre.user_class.find_by(id: data[:user_id])
-      slack_display_name = data[:slack_display_name]
       channel_link = SlackChannelLink.find_by(id: data[:slack_channel_link_id])
 
       return unless creative && channel_link
@@ -16,7 +15,9 @@ module CollavreSlack
         notify_admins_about_unmapped_user(
           creative: creative,
           channel_link: channel_link,
-          slack_display_name: slack_display_name,
+          slack_display_name: data[:slack_display_name],
+          slack_email: data[:slack_email],
+          slack_user_id: data[:slack_user_id],
           content: data[:content]
         )
         return
@@ -65,7 +66,7 @@ module CollavreSlack
 
     private
 
-    def notify_admins_about_unmapped_user(creative:, channel_link:, slack_display_name:, content:)
+    def notify_admins_about_unmapped_user(creative:, channel_link:, slack_display_name:, slack_email:, slack_user_id:, content:)
       # Find admin users: owner + users with admin permission
       admin_user_ids = [ creative.user_id ]
 
@@ -77,6 +78,9 @@ module CollavreSlack
 
       admin_user_ids = admin_user_ids.compact.uniq
 
+      # Format slack user identifier: "name (email)" or "name" or "slack_user_id"
+      slack_user_label = format_slack_user_label(slack_display_name, slack_email, slack_user_id)
+
       # Create inbox item for each admin
       admin_user_ids.each do |admin_id|
         Collavre::InboxItem.create!(
@@ -84,7 +88,7 @@ module CollavreSlack
           creative: creative,
           message_key: "collavre_slack.inbox.unmapped_user_message",
           message_params: {
-            slack_user: slack_display_name || I18n.t("collavre_slack.messages.anonymous"),
+            slack_user: slack_user_label,
             channel_name: channel_link.channel_name,
             content_preview: content.to_s.truncate(100)
           },
@@ -95,9 +99,18 @@ module CollavreSlack
         )
       end
 
-      Rails.logger.info("[CollavreSlack] Notified #{admin_user_ids.size} admins about unmapped Slack user: #{slack_display_name}")
+      Rails.logger.info("[CollavreSlack] Notified #{admin_user_ids.size} admins about unmapped Slack user: #{slack_user_label}")
     rescue StandardError => e
       Rails.logger.error("[CollavreSlack] Failed to notify admins: #{e.message}")
+    end
+
+    def format_slack_user_label(display_name, email, user_id)
+      name = display_name.presence || user_id || "unknown"
+      if email.present?
+        "#{name} (#{email})"
+      else
+        name
+      end
     end
   end
 end

@@ -22,6 +22,8 @@ module CollavreSlack
       user_result = find_or_map_user(slack_account, event_user_id)
       user = user_result[:user] || channel_link.created_by
       slack_display_name = user_result[:slack_display_name]
+      slack_email = user_result[:slack_email]
+      slack_user_id = user_result[:slack_user_id]
 
       normalized_content = MentionMapping.from_slack(formatted_content, slack_account)
 
@@ -38,7 +40,9 @@ module CollavreSlack
         content: normalized_content,
         slack_channel_link_id: channel_link.id,
         slack_message_ts: event_ts,
-        slack_display_name: slack_display_name
+        slack_display_name: slack_display_name,
+        slack_email: slack_email,
+        slack_user_id: slack_user_id
       }
     end
 
@@ -216,18 +220,18 @@ module CollavreSlack
     def find_or_map_user(slack_account, slack_user_id)
       # First check existing mapping
       mapping = slack_account.slack_user_mappings.find_by(slack_user_id: slack_user_id)
-      return { user: mapping.collavre_user, slack_display_name: nil } if mapping
+      return { user: mapping.collavre_user } if mapping
 
       # Fetch user info from Slack API
       client = SlackClient.new(access_token: slack_account.access_token)
       response = client.get_user_info(user_id: slack_user_id)
-      return { user: nil, slack_display_name: nil } unless response[:ok]
+      return { user: nil, slack_user_id: slack_user_id } unless response[:ok]
 
       profile = response.dig(:user, :profile) || {}
       slack_display_name = profile[:display_name].presence || profile[:real_name].presence || response.dig(:user, :name)
+      email = profile[:email]
 
       # Try to find Collavre user by email and auto-map
-      email = profile[:email]
       if email.present?
         collavre_user = ::User.find_by(email: email)
         if collavre_user
@@ -236,14 +240,14 @@ module CollavreSlack
             collavre_user: collavre_user
           )
           Rails.logger.info("[CollavreSlack] Auto-mapped Slack user #{slack_user_id} to Collavre user #{collavre_user.id} by email")
-          return { user: collavre_user, slack_display_name: nil }
+          return { user: collavre_user }
         end
       end
 
-      { user: nil, slack_display_name: slack_display_name }
+      { user: nil, slack_display_name: slack_display_name, slack_email: email, slack_user_id: slack_user_id }
     rescue StandardError => e
       Rails.logger.warn("[CollavreSlack] Failed to map user: #{e.message}")
-      { user: nil, slack_display_name: nil }
+      { user: nil, slack_user_id: slack_user_id }
     end
   end
 end

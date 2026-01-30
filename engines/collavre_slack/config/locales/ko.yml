@@ -22,7 +22,7 @@ ko:
       slack_user_prefix: "[Slack: @%{name}]"
       attachments: "첨부파일:"
     inbox:
-      unmapped_user_message: "Slack 사용자 @%{slack_user}이(가) #%{channel_name}에서 메시지를 보냈습니다: \"%{content_preview}\" - 이 사용자는 Collavre에 없습니다. 메시지를 허용하려면 사용자를 추가하세요."
+      unmapped_user_message: "Slack 사용자 %{slack_user}이(가) #%{channel_name}에서 메시지를 보냈습니다: \"%{content_preview}\" - 이 사용자는 Collavre에 없습니다. 메시지를 허용하려면 사용자를 추가하세요."
     views:
       slack_integrations:
         title: "Slack 연동"
