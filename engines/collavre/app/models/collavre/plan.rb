@@ -5,8 +5,6 @@ module Collavre
     validates :target_date, presence: true
     validate :start_date_not_after_target_date
 
-    before_validation :set_default_start_date, on: :create
-
     def progress(_user = nil)
       tagged_ids = Tag.where(label_id: id).pluck(:creative_id)
       return 0 if tagged_ids.empty?
@@ -20,11 +18,19 @@ module Collavre
       values.sum.to_f / values.size
     end
 
-    private
-
-    def set_default_start_date
-      self.start_date ||= Date.current
+    # Delegate start_date to the associated creative's created_at
+    def start_date
+      creative&.created_at&.to_date
     end
+
+    def start_date=(value)
+      return unless creative
+
+      date = value.is_a?(Date) ? value : Date.parse(value.to_s)
+      creative.update_column(:created_at, date.to_datetime)
+    end
+
+    private
 
     def start_date_not_after_target_date
       return if start_date.blank? || target_date.blank?

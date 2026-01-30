@@ -8,9 +8,9 @@ module Collavre
       end
       start_date = center - 30
       end_date = center + 30
-      @plans = Plan.includes(:creative)
-                   .where("target_date >= ? AND COALESCE(start_date, DATE(created_at)) <= ?", start_date, end_date)
-                   .order(Arel.sql("COALESCE(start_date, DATE(created_at)) ASC"))
+      @plans = Plan.joins(:creative)
+                   .where("target_date >= ? AND DATE(creatives.created_at) <= ?", start_date, end_date)
+                   .order(Arel.sql("DATE(creatives.created_at) ASC"))
                    .select { |plan| plan.readable_by?(Current.user) }
       calendar_scope = CalendarEvent.includes(:creative)
                                     .where("DATE(start_time) <= ? AND DATE(end_time) >= ?", end_date, start_date)
@@ -133,14 +133,13 @@ module Collavre
         id: plan.id,
         name: (plan.creative&.effective_description(nil, false) || plan.name.presence || I18n.l(plan.target_date)),
         created_at: plan.created_at.to_date,
-        start_date: (plan.start_date || plan.created_at.to_date),
+        start_date: plan.start_date,
         target_date: plan.target_date,
         progress: plan.progress,
         path: plan_creatives_path(plan, creative_id: creative_id),
         deletable: plan.owner_id == Current.user&.id
       }
     end
-
 
     def calendar_json(event)
       {
