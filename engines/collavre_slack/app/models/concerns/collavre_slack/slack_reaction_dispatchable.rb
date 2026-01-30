@@ -10,13 +10,24 @@ module CollavreSlack
     private
 
     def dispatch_reaction_to_slack
-      return if instance_variable_get(:@from_slack)
-      return unless comment_id.present?
+      Rails.logger.info("[CollavreSlack] dispatch_reaction_to_slack called: comment_id=#{comment_id}, emoji=#{emoji}")
+
+      if instance_variable_get(:@from_slack)
+        Rails.logger.info("[CollavreSlack] Skipping - reaction from Slack")
+        return
+      end
+
+      unless comment_id.present?
+        Rails.logger.info("[CollavreSlack] Skipping - no comment_id")
+        return
+      end
 
       # Check if comment has any Slack links
-      return unless CollavreSlack::SlackCommentLink.exists?(comment_id: comment_id)
+      link_exists = CollavreSlack::SlackCommentLink.exists?(comment_id: comment_id)
+      Rails.logger.info("[CollavreSlack] SlackCommentLink exists: #{link_exists}")
+      return unless link_exists
 
-      Rails.logger.info("[CollavreSlack] Dispatching reaction add: comment_id=#{comment_id}, emoji=#{emoji}")
+      Rails.logger.info("[CollavreSlack] Enqueuing SlackReactionJob add: comment_id=#{comment_id}, emoji=#{emoji}")
       CollavreSlack::SlackReactionJob.perform_later(
         comment_id: comment_id,
         emoji: emoji,

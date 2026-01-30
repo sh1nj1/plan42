@@ -3,13 +3,15 @@ module CollavreSlack
     queue_as :default
 
     def perform(comment_id:, emoji:, action:, user_id: nil)
-      Rails.logger.info("[CollavreSlack] SlackReactionJob performing: comment_id=#{comment_id}, emoji=#{emoji}, action=#{action}")
+      Rails.logger.info("[CollavreSlack] SlackReactionJob performing: comment_id=#{comment_id}, emoji=#{emoji.inspect}, action=#{action}")
 
       comment_links = SlackCommentLink.where(comment_id: comment_id)
+      Rails.logger.info("[CollavreSlack] Found #{comment_links.count} comment links")
       return if comment_links.empty?
 
       # Convert emoji to Slack format (remove colons if present, handle common mappings)
       slack_emoji = normalize_emoji_for_slack(emoji)
+      Rails.logger.info("[CollavreSlack] Normalized emoji: #{emoji.inspect} -> #{slack_emoji.inspect}")
 
       comment_links.each do |link|
         channel_link = link.slack_channel_link
