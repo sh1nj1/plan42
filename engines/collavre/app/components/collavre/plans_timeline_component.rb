@@ -2,11 +2,13 @@ module Collavre
 class PlansTimelineComponent < ViewComponent::Base
   # Accepts pre-filtered plans and calendar_events from the controller
   def initialize(plans:, calendar_events: CalendarEvent.none)
+    @start_date = Date.current - 30
+    @end_date = Date.current + 30
     @plans = plans
     @calendar_events = calendar_events
   end
 
-  attr_reader :plans, :calendar_events
+  attr_reader :plans, :calendar_events, :start_date, :end_date
 
   # Called after component enters render context - safe to use helpers here
   def plan_data
