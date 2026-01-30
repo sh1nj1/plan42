@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_30_010001) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_30_020000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -766,9 +766,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_30_010001) do
   add_foreign_key "slack_channel_links", "creatives"
   add_foreign_key "slack_channel_links", "slack_accounts"
   add_foreign_key "slack_channel_links", "users", column: "created_by_id"
-  add_foreign_key "slack_comment_links", "comments"
+  add_foreign_key "slack_comment_links", "comments", on_delete: :cascade
   add_foreign_key "slack_comment_links", "slack_channel_links"
-  add_foreign_key "slack_message_logs", "comments"
+  add_foreign_key "slack_message_logs", "comments", on_delete: :cascade
   add_foreign_key "slack_message_logs", "slack_channel_links"
   add_foreign_key "slack_message_logs", "users", column: "sender_id"
   add_foreign_key "slack_user_mappings", "slack_accounts"
