@@ -44,7 +44,7 @@ module CollavreSlack
       assert_equal "test-channel", inbox_item.message_params["channel_name"]
     end
 
-    test "notifies admins when Slack user lacks feedback permission" do
+    test "silently skips when Slack user lacks feedback permission" do
       # Create a user that exists but has no permission on the creative
       slack_user = create_user(email: "noperm@example.com", name: "No Permission")
 
@@ -59,8 +59,8 @@ module CollavreSlack
         slack_user_id: "U888"
       }
 
-      # User exists but has no permission - should notify admin
-      assert_difference "Collavre::InboxItem.count", 1 do
+      # User exists but has no permission - should silently skip (no inbox notification)
+      assert_no_difference "Collavre::InboxItem.count" do
         SlackInboundMessageJob.perform_now(payload)
       end
 

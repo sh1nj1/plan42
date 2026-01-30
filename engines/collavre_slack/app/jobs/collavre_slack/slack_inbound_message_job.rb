@@ -10,8 +10,14 @@ module CollavreSlack
 
       return unless creative && channel_link
 
-      # If user not found or doesn't have permission, notify admins
-      unless user && creative.has_permission?(user, :feedback)
+      # If user exists in Collavre but lacks permission, silently skip
+      if user && !creative.has_permission?(user, :feedback)
+        Rails.logger.info("[CollavreSlack] Skipping message - user #{user.id} lacks feedback permission on creative #{creative.id}")
+        return
+      end
+
+      # If user not found in Collavre, notify admins
+      unless user
         notify_admins_about_unmapped_user(
           creative: creative,
           channel_link: channel_link,
