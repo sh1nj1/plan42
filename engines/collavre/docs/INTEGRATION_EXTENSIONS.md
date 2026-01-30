@@ -114,6 +114,74 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 ```
 
+## Comments Popup Badge
+
+Integrations can add badges to the comments popup header (e.g., showing linked Slack channels). Collavre dispatches custom events when the comments popup opens and closes.
+
+### Events
+
+| Event | Detail Properties | Description |
+|-------|-------------------|-------------|
+| `comments-popup:opened` | `creativeId`, `badgeContainer` | Fired when comments popup opens |
+| `comments-popup:closed` | `badgeContainer` | Fired when comments popup closes |
+
+### Adding a Badge
+
+Listen for the `comments-popup:opened` event and dynamically create your badge element:
+
+```javascript
+// In your engine's JavaScript
+document.addEventListener('comments-popup:opened', async function (event) {
+  const { creativeId, badgeContainer } = event.detail;
+  if (!badgeContainer || !creativeId) return;
+
+  // Create or find your badge element
+  let badge = badgeContainer.querySelector('[data-your-integration-badge]');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.setAttribute('data-your-integration-badge', '');
+    badge.className = 'your-integration-badge';
+    badge.style.cssText = 'display:none;font-size:0.75em;background:#4A154B;color:white;padding:0.15em 0.5em;border-radius:4px;margin-left:0.5em;';
+    badgeContainer.appendChild(badge);
+  }
+
+  // Hide initially while loading
+  badge.style.display = 'none';
+  badge.textContent = '';
+
+  try {
+    // Fetch your integration data
+    const response = await fetch(`/your-integration/creatives/${creativeId}/status`, {
+      headers: { Accept: 'application/json' }
+    });
+    if (!response.ok) return;
+
+    const data = await response.json();
+    if (data.connected) {
+      badge.textContent = 'Your Integration: Connected';
+      badge.style.display = 'inline-block';
+    }
+  } catch (error) {
+    console.warn('Failed to load badge:', error);
+  }
+});
+
+document.addEventListener('comments-popup:closed', function (event) {
+  const { badgeContainer } = event.detail;
+  if (!badgeContainer) return;
+
+  const badge = badgeContainer.querySelector('[data-your-integration-badge]');
+  if (badge) {
+    badge.style.display = 'none';
+    badge.textContent = '';
+  }
+});
+```
+
+### Badge Container
+
+The `badgeContainer` is a `<span data-integration-badges>` element in the comments popup header. Multiple integrations can add their badges to this container.
+
 ## i18n Support
 
 Add locale files to your engine:
@@ -141,8 +209,9 @@ See `engines/collavre_slack` for a complete example implementation:
 
 - `lib/collavre_slack/engine.rb` - Registration with IntegrationRegistry
 - `app/views/collavre_slack/integrations/_modal.html.erb` - Modal partial
-- `app/javascript/collavre_slack.js` - JavaScript for modal handling
-- `config/locales/en.yml` - i18n strings
+- `app/javascript/collavre_slack.js` - JavaScript for modal handling and comments popup badge
+- `config/locales/en.yml` - i18n strings (English)
+- `config/locales/ko.yml` - i18n strings (Korean)
 
 ## Testing
 
