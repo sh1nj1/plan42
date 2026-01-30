@@ -73,4 +73,5 @@ Rails.application.configure do
   # Allow ngrok hosts for tunneling (Slack webhooks, etc.)
   config.hosts << /.*\.ngrok\.app/
   config.hosts << /.*\.ngrok-free\.app/
+  config.hosts << /.*\.ngrok\.io/
 end
