@@ -82,6 +82,10 @@ module CollavreSlack
       slack_user_label = format_slack_user_label(slack_display_name, slack_email, slack_user_id)
 
       # Create inbox item for each admin
+      url_options = Rails.application.routes.default_url_options.presence ||
+                    Rails.application.config.action_mailer.default_url_options ||
+                    { host: "localhost", port: 3000 }
+
       admin_user_ids.each do |admin_id|
         Collavre::InboxItem.create!(
           owner_id: admin_id,
@@ -92,10 +96,7 @@ module CollavreSlack
             channel_name: channel_link.channel_name,
             content_preview: content.to_s.truncate(100)
           },
-          link: Collavre::Engine.routes.url_helpers.creative_url(
-            creative,
-            Rails.application.config.action_mailer.default_url_options
-          )
+          link: Collavre::Engine.routes.url_helpers.creative_url(creative, url_options)
         )
       end
 
