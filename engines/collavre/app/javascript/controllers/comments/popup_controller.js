@@ -37,16 +37,24 @@ export default class extends Controller {
     window.addEventListener('focus', this.handleWindowFocus)
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
 
-    this.closeButtonTarget?.addEventListener('click', () => this.close())
-    this.leftHandleTarget?.addEventListener('mousedown', (event) => this.startResize(event, 'left'))
-    this.rightHandleTarget?.addEventListener('mousedown', (event) => this.startResize(event, 'right'))
+    if (this.hasCloseButtonTarget) {
+      this.closeButtonTarget.addEventListener('click', () => this.close())
+    }
+    if (this.hasLeftHandleTarget) {
+      this.leftHandleTarget.addEventListener('mousedown', (event) => this.startResize(event, 'left'))
+    }
+    if (this.hasRightHandleTarget) {
+      this.rightHandleTarget.addEventListener('mousedown', (event) => this.startResize(event, 'right'))
+    }
 
     if (this.isMobile()) {
       // Handle touch events directly on the close button to resolve issues on mobile where layout shifts (e.g., keyboard dismissal) cause click events to be lost or delayed.
       this.element.addEventListener('touchstart', this.handleTouchStart)
       this.element.addEventListener('touchend', this.handleTouchEnd)
-      this.closeButtonTarget?.addEventListener('touchstart', this.handleCloseButtonTouchStart, { passive: false })
-      this.closeButtonTarget?.addEventListener('touchend', this.handleCloseButtonTouchEnd)
+      if (this.hasCloseButtonTarget) {
+        this.closeButtonTarget.addEventListener('touchstart', this.handleCloseButtonTouchStart, { passive: false })
+        this.closeButtonTarget.addEventListener('touchend', this.handleCloseButtonTouchEnd)
+      }
     }
 
     document.querySelectorAll('form[action="/session"]').forEach((form) => {
@@ -54,7 +62,8 @@ export default class extends Controller {
     })
 
     if (this.isFullscreen()) {
-      this.openForCreative()
+      // Defer to ensure all sibling controllers are connected
+      requestAnimationFrame(() => this.openForCreative())
     } else {
       this.openFromUrl()
     }
@@ -71,8 +80,10 @@ export default class extends Controller {
     if (this.isMobile()) {
       this.element.removeEventListener('touchstart', this.handleTouchStart)
       this.element.removeEventListener('touchend', this.handleTouchEnd)
-      this.closeButtonTarget?.removeEventListener('touchstart', this.handleCloseButtonTouchStart)
-      this.closeButtonTarget?.removeEventListener('touchend', this.handleCloseButtonTouchEnd)
+      if (this.hasCloseButtonTarget) {
+        this.closeButtonTarget.removeEventListener('touchstart', this.handleCloseButtonTouchStart)
+        this.closeButtonTarget.removeEventListener('touchend', this.handleCloseButtonTouchEnd)
+      }
     }
   }
 
@@ -375,6 +386,7 @@ export default class extends Controller {
 
   openFromUrl() {
     const params = new URLSearchParams(window.location.search)
+    const openComments = params.get('open_comments') === 'true'
     let commentId = params.get('comment_id')
     if (!commentId) {
       const pathCommentMatch = window.location.pathname.match(/\/creatives\/\d+\/comments\/(\d+)/)
@@ -397,13 +409,14 @@ export default class extends Controller {
       }
     }
 
-    if (!commentId || !creativeId) return
+    // Need either open_comments flag or comment_id, plus creativeId
+    if ((!commentId && !openComments) || !creativeId) return
     const selector = `[name="show-comments-btn"][data-creative-id="${creativeId}"]`
     const tryOpenWithButton = () => {
       const button = document.querySelector(selector)
       if (!button) return false
       this.clearPendingOpenFromUrl()
-      this.open(button, { highlightId: commentId })
+      this.open(button, { highlightId: commentId || undefined })
       return true
     }
 

@@ -71,6 +71,7 @@ en:
       move_no_selection: Select at least one message to move.
       move_error: Unable to move messages.
       fullscreen: Full screen
+      exit_fullscreen: Exit full screen
       move_invalid_target: Select a valid creative to move messages to.
       move_not_allowed: You do not have permission to move these messages.
       select_label: Select message
