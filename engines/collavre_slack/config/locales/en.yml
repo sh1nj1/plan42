@@ -21,8 +21,6 @@ en:
       thread_reply: "[Thread reply]"
       slack_user_prefix: "[Slack: @%{name}]"
       attachments: "Attachments:"
-    inbox:
-      unmapped_user_message: "Slack user %{slack_user} sent a message in #%{channel_name}: \"%{content_preview}\" - This user is not in Collavre. Add them to allow their messages."
     views:
       slack_integrations:
         title: "Slack Integrations"

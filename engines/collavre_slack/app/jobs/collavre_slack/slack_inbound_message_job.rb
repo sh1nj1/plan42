@@ -20,7 +20,7 @@ module CollavreSlack
         Rails.logger.info("[CollavreSlack] Granted feedback permission to user #{user.id} on creative #{creative.id}")
       end
 
-      # Case 2: User not in Collavre - invite by email and notify admins
+      # Case 2: User not in Collavre - invite by email
       unless user
         if slack_email.present?
           invite_user_by_email(
@@ -30,15 +30,6 @@ module CollavreSlack
           )
           Rails.logger.info("[CollavreSlack] Sent invitation to #{slack_email} for creative #{creative.id}")
         end
-
-        notify_admins_about_unmapped_user(
-          creative: creative,
-          channel_link: channel_link,
-          slack_display_name: slack_display_name,
-          slack_email: slack_email,
-          slack_user_id: data[:slack_user_id],
-          content: data[:content]
-        )
 
         # Use channel creator as fallback for comment
         comment_user = channel_link.created_by
@@ -87,54 +78,6 @@ module CollavreSlack
     end
 
     private
-
-    def notify_admins_about_unmapped_user(creative:, channel_link:, slack_display_name:, slack_email:, slack_user_id:, content:)
-      # Find admin users: owner + users with admin permission
-      admin_user_ids = [ creative.user_id ]
-
-      # Add users with admin shares on this creative or its ancestors
-      creative.self_and_ancestors.each do |c|
-        admin_shares = Collavre::CreativeShare.where(creative: c, permission: :admin)
-        admin_user_ids.concat(admin_shares.pluck(:user_id))
-      end
-
-      admin_user_ids = admin_user_ids.compact.uniq
-
-      # Format slack user identifier: "name (email)" or "name" or "slack_user_id"
-      slack_user_label = format_slack_user_label(slack_display_name, slack_email, slack_user_id)
-
-      # Create inbox item for each admin
-      url_options = Rails.application.routes.default_url_options.presence ||
-                    Rails.application.config.action_mailer.default_url_options ||
-                    { host: "localhost", port: 3000 }
-
-      admin_user_ids.each do |admin_id|
-        Collavre::InboxItem.create!(
-          owner_id: admin_id,
-          creative: creative,
-          message_key: "collavre_slack.inbox.unmapped_user_message",
-          message_params: {
-            slack_user: slack_user_label,
-            channel_name: channel_link.channel_name,
-            content_preview: content.to_s.truncate(100)
-          },
-          link: Collavre::Engine.routes.url_helpers.creative_url(creative, url_options)
-        )
-      end
-
-      Rails.logger.info("[CollavreSlack] Notified #{admin_user_ids.size} admins about unmapped Slack user: #{slack_user_label}")
-    rescue StandardError => e
-      Rails.logger.error("[CollavreSlack] Failed to notify admins: #{e.message}")
-    end
-
-    def format_slack_user_label(display_name, email, user_id)
-      name = display_name.presence || user_id || "unknown"
-      if email.present?
-        "#{name} (#{email})"
-      else
-        name
-      end
-    end
 
     def grant_feedback_permission(creative:, user:, granter:)
       # Check if share already exists
