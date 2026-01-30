@@ -34,4 +34,22 @@
   .creative-actions-row {
     visibility: visible !important;
   }
+
+  .creative-tree-bullet {
+    background: none;
+    width: auto;
+    height: auto;
+    min-width: 0;
+    min-height: 0;
+    margin-top: 0.1em;
+  }
+
+  .creative-tree-bullet::before {
+    content: "•";
+    display: inline-block;
+    color: var(--color-text);
+    font-size: 0.9em;
+    line-height: 1;
+    width: 0.6em;
+  }
 }
