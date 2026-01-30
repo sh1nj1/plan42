@@ -8,9 +8,9 @@ module Collavre
       end
       start_date = center - 30
       end_date = center + 30
-      @plans = Plan.includes(:creative)
-                   .where("target_date >= ? AND created_at <= ?", start_date, end_date)
-                   .order(:created_at)
+      @plans = Plan.joins(:creative)
+                   .where("target_date >= ? AND DATE(creatives.created_at) <= ?", start_date, end_date)
+                   .order(Arel.sql("DATE(creatives.created_at) ASC"))
                    .select { |plan| plan.readable_by?(Current.user) }
       calendar_scope = CalendarEvent.includes(:creative)
                                     .where("DATE(start_time) <= ? AND DATE(end_time) >= ?", end_date, start_date)
@@ -68,24 +68,78 @@ module Collavre
       end
     end
 
+    def update
+      @plan = Plan.find(params[:id])
+      return render_forbidden unless plan_editable_by_current_user?
+
+      if @plan.update(plan_update_params)
+        respond_to do |format|
+          format.html do
+            redirect_back fallback_location: main_app.root_path,
+                          notice: t("collavre.plans.updated", default: "Plan updated.")
+          end
+          format.json do
+            render json: plan_json(@plan, creative_id: params[:creative_id] || @plan.creative_id), status: :ok
+          end
+        end
+      else
+        respond_to do |format|
+          format.html do
+            flash[:alert] = @plan.errors.full_messages.join(", ")
+            redirect_back fallback_location: main_app.root_path
+          end
+          format.json do
+            render json: { errors: @plan.errors.full_messages }, status: :unprocessable_entity
+          end
+        end
+      end
+    end
+
     private
 
     def plan_params
-      params.require(:plan).permit(:target_date, :creative_id)
+      params.require(:plan).permit(:target_date, :start_date, :creative_id)
     end
 
-    def plan_json(plan)
+    def plan_update_params
+      params.require(:plan).permit(:target_date, :start_date)
+    end
+
+    def plan_editable_by_current_user?
+      return true if @plan.owner_id == Current.user&.id
+      return true if @plan.creative&.has_permission?(Current.user, :write)
+
+      tagged_creative = Creative.find_by(id: params[:creative_id])
+      return false unless tagged_creative
+      return false unless @plan.tags.exists?(creative_id: tagged_creative.id)
+
+      tagged_creative.has_permission?(Current.user, :write)
+    end
+
+    def render_forbidden
+      respond_to do |format|
+        format.html do
+          redirect_back fallback_location: main_app.root_path,
+                        alert: t("collavre.plans.update_forbidden", default: "You do not have permission to update this plan.")
+        end
+        format.json do
+          render json: { error: "forbidden" }, status: :forbidden
+        end
+      end
+    end
+
+    def plan_json(plan, creative_id: nil)
       {
         id: plan.id,
         name: (plan.creative&.effective_description(nil, false) || plan.name.presence || I18n.l(plan.target_date)),
         created_at: plan.created_at.to_date,
+        start_date: plan.start_date,
         target_date: plan.target_date,
         progress: plan.progress,
-        path: plan_creatives_path(plan),
+        path: plan_creatives_path(plan, creative_id: creative_id),
         deletable: plan.owner_id == Current.user&.id
       }
     end
-
 
     def calendar_json(event)
       {
@@ -99,8 +153,10 @@ module Collavre
       }
     end
 
-    def plan_creatives_path(plan)
-      if params[:id].present?
+    def plan_creatives_path(plan, creative_id: nil)
+      if creative_id.present?
+        creative_path(creative_id, tags: [ plan.id ])
+      elsif params[:id].present?
         creative_path(params[:id], tags: [ plan.id ])
       else
         creatives_path(tags: [ plan.id ])

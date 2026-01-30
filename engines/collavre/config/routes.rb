@@ -37,7 +37,7 @@ Collavre::Engine.routes.draw do
     get :count, on: :collection
   end
 
-  resources :plans, only: [ :create, :destroy, :index ]
+  resources :plans, only: [ :create, :destroy, :index, :update ]
 
   resources :user_themes, only: [ :index, :create, :destroy ] do
     member do
