@@ -1,4 +1,4 @@
-require "test_helper"
+require_relative "../test_helper"
 
 module CollavreSlack
   class SlackEventHandlerTest < ActiveSupport::TestCase
@@ -40,8 +40,8 @@ module CollavreSlack
 
       assert_equal creative.id, result[:creative_id]
       assert_equal link.id, result[:slack_channel_link_id]
-      assert_includes result[:content], "[Thread reply]"
-      assert_includes result[:content], "Attachments:"
+      assert_includes result[:content], I18n.t("collavre_slack.messages.thread_reply")
+      assert_includes result[:content], I18n.t("collavre_slack.messages.attachments")
       assert_includes result[:content], "spec.pdf"
     end
   end

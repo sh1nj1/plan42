@@ -1,0 +1,27 @@
+en:
+  collavre_slack:
+    errors:
+      forbidden: "Forbidden"
+      not_found: "Not found"
+      no_slack_account: "No Slack account connected"
+      authentication_required: "Authentication required"
+      missing_oauth_code: "Missing OAuth code"
+      missing_oauth_state: "Missing OAuth state"
+      invalid_oauth_state: "Invalid OAuth state"
+      user_not_found: "User not found"
+      oauth_failed: "Slack OAuth failed"
+      save_failed: "Failed to save: %{errors}"
+      invalid_signature: "Invalid signature"
+    messages:
+      anonymous: "Anonymous"
+      thread_reply: "[Thread reply]"
+      slack_user_prefix: "[Slack: @%{name}]"
+      attachments: "Attachments:"
+    views:
+      slack_integrations:
+        title: "Slack Integrations"
+        connect_slack: "Connect Slack"
+        no_channels_linked: "No Slack channels linked yet."
+      auth:
+        success_title: "Slack Connected"
+        success_message: "Slack workspace connected successfully! You can close this window."

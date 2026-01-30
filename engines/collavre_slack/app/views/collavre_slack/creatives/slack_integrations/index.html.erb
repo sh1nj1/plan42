@@ -1,7 +1,7 @@
-<h1>Slack Integrations</h1>
+<h1><%= t("collavre_slack.views.slack_integrations.title") %></h1>
 
 <p>
-  <%= link_to "Connect Slack", slack_engine.auth_slack_path %>
+  <%= link_to t("collavre_slack.views.slack_integrations.connect_slack"), slack_engine.auth_slack_path %>
 </p>
 
 <% if @links.any? %>
@@ -14,5 +14,5 @@
     <% end %>
   </ul>
 <% else %>
-  <p>No Slack channels linked yet.</p>
+  <p><%= t("collavre_slack.views.slack_integrations.no_channels_linked") %></p>
 <% end %>

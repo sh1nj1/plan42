@@ -4,7 +4,7 @@ module CollavreSlack
 
     def start
       unless Current.user
-        render json: { error: "Authentication required" }, status: :unauthorized
+        render json: { error: I18n.t("collavre_slack.errors.authentication_required") }, status: :unauthorized
         return
       end
 
@@ -18,13 +18,13 @@ module CollavreSlack
 
     def callback
       unless params[:code].present?
-        render json: { error: "Missing OAuth code" }, status: :unprocessable_entity
+        render json: { error: I18n.t("collavre_slack.errors.missing_oauth_code") }, status: :unprocessable_entity
         return
       end
 
       # Verify and decode user_id from signed state (required - popup windows don't share session)
       unless params[:state].present?
-        render json: { error: "Missing OAuth state" }, status: :unprocessable_entity
+        render json: { error: I18n.t("collavre_slack.errors.missing_oauth_state") }, status: :unprocessable_entity
         return
       end
 
@@ -33,24 +33,24 @@ module CollavreSlack
         Rails.logger.info("[SlackAuth] State data: #{state_data.inspect}")
         # Check expiration
         if state_data[:exp] && Time.at(state_data[:exp]) < Time.current
-          render json: { error: "OAuth state expired" }, status: :unprocessable_entity
+          render json: { error: I18n.t("collavre_slack.errors.invalid_oauth_state") }, status: :unprocessable_entity
           return
         end
         user = ::User.find(state_data[:user_id])
         Rails.logger.info("[SlackAuth] Verified user_id=#{user.id} from signed state")
       rescue ActiveSupport::MessageVerifier::InvalidSignature => e
         Rails.logger.warn("[SlackAuth] Invalid state signature: #{e.message}")
-        render json: { error: "Invalid OAuth state" }, status: :unprocessable_entity
+        render json: { error: I18n.t("collavre_slack.errors.invalid_oauth_state") }, status: :unprocessable_entity
         return
       rescue ActiveRecord::RecordNotFound
         Rails.logger.warn("[SlackAuth] User not found from state")
-        render json: { error: "User not found" }, status: :unprocessable_entity
+        render json: { error: I18n.t("collavre_slack.errors.user_not_found") }, status: :unprocessable_entity
         return
       end
 
       oauth_response = slack_client.oauth_access(code: params[:code], redirect_uri: slack_client.redirect_uri)
       if oauth_response[:ok] != true
-        render json: { error: oauth_response[:error] || "Slack OAuth failed" }, status: :unprocessable_entity
+        render json: { error: oauth_response[:error] || I18n.t("collavre_slack.errors.oauth_failed") }, status: :unprocessable_entity
         return
       end
 
@@ -68,7 +68,7 @@ module CollavreSlack
         render html: close_popup_html.html_safe, layout: false
       else
         Rails.logger.error("[SlackAuth] Failed to save account: #{account.errors.full_messages.join(', ')}")
-        render json: { error: "Failed to save: #{account.errors.full_messages.join(', ')}" }, status: :unprocessable_entity
+        render json: { error: I18n.t("collavre_slack.errors.save_failed", errors: account.errors.full_messages.join(", ")) }, status: :unprocessable_entity
       end
     end
 
@@ -83,12 +83,14 @@ module CollavreSlack
     end
 
     def close_popup_html
+      title = I18n.t("collavre_slack.views.auth.success_title")
+      message = I18n.t("collavre_slack.views.auth.success_message")
       <<~HTML
         <!DOCTYPE html>
         <html>
-        <head><title>Slack Connected</title></head>
+        <head><title>#{title}</title></head>
         <body>
-          <p>Slack workspace connected successfully! You can close this window.</p>
+          <p>#{message}</p>
           <script>
             if (window.opener) {
               window.opener.postMessage({ type: 'slack-auth-success' }, '*');

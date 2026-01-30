@@ -32,7 +32,7 @@ module CollavreSlack
         Rails.logger.info("[CollavreSlack] Dispatching to channel #{link.channel_name} (#{link.channel_id})")
         dispatcher = CollavreSlack::SlackMessageDispatcher.new(channel_link: link)
         message_text = content.to_plain_text rescue content.to_s
-        sender_name = user&.name || "Anonymous"
+        sender_name = user&.name || I18n.t("collavre_slack.messages.anonymous")
         dispatcher.enqueue(message: "[#{sender_name}] #{message_text}", sender: user, comment: self)
       end
     rescue StandardError => e
@@ -46,7 +46,7 @@ module CollavreSlack
       return if comment_links.empty?
 
       message_text = content.to_plain_text rescue content.to_s
-      sender_name = user&.name || "Anonymous"
+      sender_name = user&.name || I18n.t("collavre_slack.messages.anonymous")
       formatted_message = "[#{sender_name}] #{message_text}"
 
       comment_links.each do |link|

@@ -31,7 +31,7 @@ module CollavreSlack
 
       def create
         unless @creative.has_permission?(Current.user, :feedback)
-          render json: { success: false, error: "Forbidden" }, status: :forbidden
+          render json: { success: false, error: I18n.t("collavre_slack.errors.forbidden") }, status: :forbidden
           return
         end
 
@@ -43,7 +43,7 @@ module CollavreSlack
         end
 
         unless slack_account
-          render json: { success: false, error: "No Slack account connected" }, status: :unprocessable_entity
+          render json: { success: false, error: I18n.t("collavre_slack.errors.no_slack_account") }, status: :unprocessable_entity
           return
         end
 
@@ -65,12 +65,12 @@ module CollavreSlack
         # Check against origin creative
         target_creative = @creative.effective_origin
         unless link.creative_id == target_creative.id
-          render json: { success: false, error: "Not found" }, status: :not_found
+          render json: { success: false, error: I18n.t("collavre_slack.errors.not_found") }, status: :not_found
           return
         end
 
         unless @creative.has_permission?(Current.user, :feedback)
-          render json: { success: false, error: "Forbidden" }, status: :forbidden
+          render json: { success: false, error: I18n.t("collavre_slack.errors.forbidden") }, status: :forbidden
           return
         end
 

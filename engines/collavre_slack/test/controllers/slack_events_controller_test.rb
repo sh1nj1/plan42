@@ -1,4 +1,4 @@
-require "test_helper"
+require_relative "../test_helper"
 
 module CollavreSlack
   class SlackEventsControllerTest < ActionDispatch::IntegrationTest
@@ -13,7 +13,7 @@ module CollavreSlack
       timestamp = Time.now.to_i.to_s
       signature = "v0=" + OpenSSL::HMAC.hexdigest("SHA256", CollavreSlack.config.signing_secret, "v0:#{timestamp}:#{body}")
 
-      post "/slack/events",
+      post CollavreSlack::Engine.routes.url_helpers.slack_events_path,
            params: body,
            headers: {
              "CONTENT_TYPE" => "application/json",

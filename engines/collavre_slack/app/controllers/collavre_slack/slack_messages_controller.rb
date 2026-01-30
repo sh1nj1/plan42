@@ -4,7 +4,7 @@ module CollavreSlack
 
     def create
       unless @creative.has_permission?(Current.user, :feedback)
-        render json: { error: "Forbidden" }, status: :forbidden
+        render json: { error: I18n.t("collavre_slack.errors.forbidden") }, status: :forbidden
         return
       end
 

@@ -17,7 +17,7 @@ module CollavreSlack
       # For all other events, validate the signature
       unless valid_signature?(body)
         Rails.logger.warn("[SlackEvents] Invalid signature for event type: #{payload[:type]}")
-        render json: { error: "Invalid signature" }, status: :unauthorized
+        render json: { error: I18n.t("collavre_slack.errors.invalid_signature") }, status: :unauthorized
         return
       end
 

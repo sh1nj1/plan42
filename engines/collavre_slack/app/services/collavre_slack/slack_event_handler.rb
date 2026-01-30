@@ -28,7 +28,8 @@ module CollavreSlack
 
       # Prepend Slack username if user is not mapped
       if user_result[:user].nil? && slack_display_name.present?
-        normalized_content = "[Slack: @#{slack_display_name}] #{normalized_content}"
+        prefix = I18n.t("collavre_slack.messages.slack_user_prefix", name: slack_display_name)
+        normalized_content = "#{prefix} #{normalized_content}"
       end
 
       {
@@ -178,10 +179,10 @@ module CollavreSlack
 
     def formatted_content
       content = event_text
-      content = "[Thread reply]\n#{content}" if thread_reply?
+      content = "#{I18n.t('collavre_slack.messages.thread_reply')}\n#{content}" if thread_reply?
       attachment_lines = attachment_summaries
       if attachment_lines.any?
-        content = [content, "", "Attachments:", *attachment_lines].join("\n")
+        content = [content, "", I18n.t("collavre_slack.messages.attachments"), *attachment_lines].join("\n")
       end
       content
     end
