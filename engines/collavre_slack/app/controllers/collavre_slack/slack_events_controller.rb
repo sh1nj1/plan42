@@ -30,6 +30,10 @@ module CollavreSlack
           SlackInboundMessageJob.perform_later(normalized)
         when :reaction_added, :reaction_removed
           SlackInboundReactionJob.perform_later(normalized)
+        when :message_updated
+          SlackInboundMessageUpdateJob.perform_later(normalized)
+        when :message_deleted
+          SlackInboundMessageDeleteJob.perform_later(normalized)
         end
       end
 

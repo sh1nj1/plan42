@@ -6,6 +6,8 @@ module CollavreSlack
 
     def call
       return handle_reaction_event if reaction_event?
+      return handle_message_changed if message_changed_event?
+      return handle_message_deleted if message_deleted_event?
       return unless message_event?
 
       slack_account = SlackAccount.find_by(team_id: team_id)
@@ -36,6 +38,59 @@ module CollavreSlack
         content: normalized_content,
         slack_channel_link_id: channel_link.id,
         slack_message_ts: event_ts
+      }
+    end
+
+    def handle_message_changed
+      slack_account = SlackAccount.find_by(team_id: team_id)
+      return unless slack_account
+
+      # For message_changed, the edited message is in event.message
+      message = event_payload[:message] || {}
+      message_ts = message[:ts]
+      return unless message_ts
+
+      # Skip bot messages
+      return if message[:bot_id].present?
+
+      # Find the comment link by Slack message
+      comment_link = SlackCommentLink.find_by_slack_message(
+        slack_account: slack_account,
+        channel_id: channel_id,
+        message_ts: message_ts
+      )
+      return unless comment_link
+
+      new_text = message[:text].to_s
+      normalized_content = MentionMapping.from_slack(new_text, slack_account)
+
+      {
+        type: :message_updated,
+        comment_id: comment_link.comment_id,
+        content: normalized_content
+      }
+    end
+
+    def handle_message_deleted
+      slack_account = SlackAccount.find_by(team_id: team_id)
+      return unless slack_account
+
+      # For message_deleted, the deleted message ts is in event.deleted_ts
+      deleted_ts = event_payload[:deleted_ts]
+      return unless deleted_ts
+
+      # Find the comment link by Slack message
+      comment_link = SlackCommentLink.find_by_slack_message(
+        slack_account: slack_account,
+        channel_id: channel_id,
+        message_ts: deleted_ts
+      )
+      return unless comment_link
+
+      {
+        type: :message_deleted,
+        comment_id: comment_link.comment_id,
+        slack_comment_link_id: comment_link.id
       }
     end
 
@@ -87,6 +142,18 @@ module CollavreSlack
     def reaction_event?
       return false unless event_type == "event_callback"
       %w[reaction_added reaction_removed].include?(event_payload[:type])
+    end
+
+    def message_changed_event?
+      return false unless event_type == "event_callback"
+      return false unless event_payload[:type] == "message"
+      event_payload[:subtype] == "message_changed"
+    end
+
+    def message_deleted_event?
+      return false unless event_type == "event_callback"
+      return false unless event_payload[:type] == "message"
+      event_payload[:subtype] == "message_deleted"
     end
 
     def reaction_action

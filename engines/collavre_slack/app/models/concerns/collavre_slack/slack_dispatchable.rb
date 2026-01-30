@@ -5,6 +5,7 @@ module CollavreSlack
     included do
       after_create_commit :dispatch_to_slack_channels
       after_update_commit :update_slack_messages, if: :saved_change_to_content?
+      before_destroy :prepare_slack_message_deletion
       after_destroy_commit :delete_slack_messages
     end
 
@@ -58,19 +59,32 @@ module CollavreSlack
       Rails.logger.error("[CollavreSlack] Failed to update Slack messages: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
     end
 
+    def prepare_slack_message_deletion
+      return if instance_variable_get(:@from_slack)
+
+      # Save link info before the comment is deleted (to avoid foreign key issues)
+      comment_links = CollavreSlack::SlackCommentLink.where(comment_id: id)
+      @slack_links_to_delete = comment_links.map do |link|
+        { slack_channel_link_id: link.slack_channel_link_id, message_ts: link.message_ts }
+      end
+
+      # Delete the link records before the comment is destroyed
+      comment_links.destroy_all
+    rescue StandardError => e
+      Rails.logger.error("[CollavreSlack] Failed to prepare Slack message deletion: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+    end
+
     def delete_slack_messages
       return if instance_variable_get(:@from_slack)
 
-      comment_links = CollavreSlack::SlackCommentLink.where(comment_id: id)
-      return if comment_links.empty?
+      links_to_delete = instance_variable_get(:@slack_links_to_delete) || []
+      return if links_to_delete.empty?
 
-      comment_links.each do |link|
+      links_to_delete.each do |link_info|
         CollavreSlack::SlackMessageDeleteJob.perform_later(
-          slack_channel_link_id: link.slack_channel_link_id,
-          message_ts: link.message_ts
+          slack_channel_link_id: link_info[:slack_channel_link_id],
+          message_ts: link_info[:message_ts]
         )
-        # Clean up the comment link record
-        link.destroy
       end
     rescue StandardError => e
       Rails.logger.error("[CollavreSlack] Failed to delete Slack messages: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
