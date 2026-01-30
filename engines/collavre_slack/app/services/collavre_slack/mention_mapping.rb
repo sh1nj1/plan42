@@ -9,8 +9,27 @@ module CollavreSlack
       text.gsub(SLACK_MENTION_REGEX) do |match|
         slack_user_id = Regexp.last_match(1)
         mapping = slack_account.slack_user_mappings.includes(:collavre_user).find_by(slack_user_id: slack_user_id)
-        mapping ? "@#{mapping.collavre_user.name}:" : match
+
+        if mapping
+          "@#{mapping.collavre_user.name}:"
+        else
+          # Fetch display name from Slack API for unmapped users
+          display_name = fetch_slack_display_name(slack_account, slack_user_id)
+          display_name ? "@#{display_name}:" : match
+        end
       end
+    end
+
+    def self.fetch_slack_display_name(slack_account, slack_user_id)
+      client = SlackClient.new(access_token: slack_account.access_token)
+      response = client.get_user_info(user_id: slack_user_id)
+      return nil unless response[:ok]
+
+      profile = response.dig(:user, :profile) || {}
+      profile[:display_name].presence || profile[:real_name].presence || response.dig(:user, :name)
+    rescue StandardError => e
+      Rails.logger.warn("[CollavreSlack] Failed to fetch Slack user info: #{e.message}")
+      nil
     end
 
     def self.to_slack(text, slack_account)
