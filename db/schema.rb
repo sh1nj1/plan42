@@ -175,14 +175,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_30_020000) do
 
   create_table "creatives", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.text "description", limit: 4294967295
+    t.text "description"
     t.text "github_gemini_prompt"
     t.integer "origin_id"
     t.integer "parent_id"
     t.float "progress", default: 0.0
     t.integer "sequence", default: 0, null: false
     t.datetime "updated_at", null: false
-    t.integer "user_id"
+    t.integer "user_id", null: false
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
