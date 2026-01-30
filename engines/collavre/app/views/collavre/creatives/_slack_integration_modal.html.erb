@@ -6,7 +6,8 @@
      data-delete-confirm="<%= t('collavre.creatives.index.slack_integration_delete_confirm', default: 'Do you want to remove this Slack channel link?') %>"
      data-delete-success="<%= t('collavre.creatives.index.slack_integration_delete_success', default: 'Slack channel link removed successfully.') %>"
      data-delete-error="<%= t('collavre.creatives.index.slack_integration_delete_error', default: 'Failed to remove the Slack channel link.') %>"
-     data-delete-button-label="<%= t('collavre.creatives.index.slack_integration_delete_button', default: 'Remove link') %>"
+     data-delete-button-label="<%= t('collavre.creatives.index.slack_integration_delete_button', default: 'Remove') %>"
+     data-add-first-channel="<%= t('collavre.creatives.index.slack_add_first_channel', default: 'Link a Slack Channel') %>"
      style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1000;align-items:center;justify-content:center;">
   <div class="popup-box" style="min-width:360px;max-width:90vw;">
     <button type="button" id="close-slack-modal" class="popup-close-btn">&times;</button>
@@ -18,14 +19,17 @@
       <a id="slack-login-btn" href="<%= slack_engine.auth_slack_path %>" class="btn btn-primary" target="slack-auth-window" data-window-width="620" data-window-height="720">
         <%= t('collavre.creatives.index.slack_login_button', default: 'Connect Slack Workspace') %>
       </a>
-      <div id="slack-existing-connections" style="display:none;margin-top:1.25em;">
-        <p style="margin-bottom:0.5em;"><%= t('collavre.creatives.index.slack_integration_existing_intro', default: 'Linked Slack channels:') %></p>
-        <ul id="slack-existing-channel-list" style="padding-left:1.2em;margin-bottom:0.75em;color:var(--color-text);"></ul>
-        <div style="display:flex;gap:0.5em;">
-          <button type="button" id="slack-delete-btn" class="btn btn-danger" style="display:none;">
-            <%= t('collavre.creatives.index.slack_integration_delete_button', default: 'Remove link') %>
-          </button>
-        </div>
+      <div id="slack-connected-status" style="display:none;margin-bottom:1em;padding:0.75em 1em;background:var(--color-success-bg, #d4edda);border-radius:4px;color:var(--color-success-text, #155724);">
+        <strong><%= t('collavre.creatives.index.slack_connected', default: 'Connected to Slack') %></strong>
+      </div>
+      <div id="slack-existing-connections" style="display:none;margin-top:0.5em;">
+        <p style="margin-bottom:0.5em;font-weight:500;"><%= t('collavre.creatives.index.slack_integration_existing_intro', default: 'Linked Slack channels:') %></p>
+        <ul id="slack-existing-channel-list" style="padding-left:0;margin-bottom:0.75em;list-style:none;"></ul>
+      </div>
+      <div id="slack-add-channel-section" style="display:none;margin-top:1em;padding-top:1em;border-top:1px solid var(--color-border);">
+        <button type="button" id="slack-add-channel-btn" class="btn btn-primary">
+          <%= t('collavre.creatives.index.slack_add_channel', default: 'Add Another Channel') %>
+        </button>
       </div>
     </div>
 

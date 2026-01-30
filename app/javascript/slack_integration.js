@@ -14,11 +14,13 @@ if (!slackIntegrationInitialized) {
     const prevBtn = document.getElementById('slack-prev-btn');
     const nextBtn = document.getElementById('slack-next-btn');
     const finishBtn = document.getElementById('slack-finish-btn');
-    const deleteBtn = document.getElementById('slack-delete-btn');
     const refreshBtn = document.getElementById('slack-refresh-btn');
     const errorEl = document.getElementById('slack-wizard-error');
+    const connectedStatus = document.getElementById('slack-connected-status');
     const existingContainer = document.getElementById('slack-existing-connections');
     const existingList = document.getElementById('slack-existing-channel-list');
+    const addChannelSection = document.getElementById('slack-add-channel-section');
+    const addChannelBtn = document.getElementById('slack-add-channel-btn');
     const connectMessage = document.getElementById('slack-connect-message');
     const channelListEl = document.getElementById('slack-channel-list');
     const channelSummaryEl = document.getElementById('slack-channel-summary');
@@ -43,16 +45,21 @@ if (!slackIntegrationInitialized) {
       statusEl.textContent = '';
       errorEl.style.display = 'none';
       errorEl.textContent = '';
+      if (connectedStatus) {
+        connectedStatus.style.display = 'none';
+      }
       if (existingContainer) {
         existingContainer.style.display = 'none';
       }
       if (existingList) {
         existingList.innerHTML = '';
       }
+      if (addChannelSection) {
+        addChannelSection.style.display = 'none';
+      }
       if (connectMessage) {
         connectMessage.style.display = '';
       }
-      if (deleteBtn) deleteBtn.style.display = 'none';
       if (loginBtn) loginBtn.style.display = 'inline-block';
       if (channelListEl) channelListEl.innerHTML = '';
       updateStep();
@@ -69,12 +76,8 @@ if (!slackIntegrationInitialized) {
       if (currentStep === 'connect') {
         prevBtn.style.display = 'none';
         if (refreshBtn) refreshBtn.style.display = 'none';
-        if (hasExistingIntegration && availableChannels.length > 0) {
-          nextBtn.style.display = 'block';
-          nextBtn.disabled = false;
-        } else {
-          nextBtn.style.display = 'none';
-        }
+        // Hide Next button - use Add Channel button instead
+        nextBtn.style.display = 'none';
         finishBtn.style.display = 'none';
       } else if (currentStep === 'channels') {
         prevBtn.style.display = 'block';
@@ -128,10 +131,9 @@ if (!slackIntegrationInitialized) {
             if (existingLinks.length > 0) {
               hasExistingIntegration = true;
               showExistingIntegration(existingLinks);
-            } else if (availableChannels.length > 0) {
+            } else {
               hasExistingIntegration = true;
-              if (connectMessage) connectMessage.style.display = 'none';
-              if (loginBtn) loginBtn.style.display = 'none';
+              showConnectedNoLinks();
             }
           } else {
             hasExistingIntegration = false;
@@ -152,27 +154,100 @@ if (!slackIntegrationInitialized) {
       existingList.innerHTML = '';
       links.forEach(function (link) {
         const li = document.createElement('li');
-        li.textContent = `#${link.channel_name || link.channel_id}`;
+        li.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:0.5em 0.75em;margin-bottom:0.5em;background:var(--color-bg-alt);border-radius:4px;';
+
+        const channelInfo = document.createElement('div');
+        channelInfo.innerHTML = `<strong>#${link.channel_name || link.channel_id}</strong>`;
 
         if (link.last_synced_at) {
           const syncInfo = document.createElement('span');
           syncInfo.textContent = ` (synced ${new Date(link.last_synced_at).toLocaleDateString()})`;
-          syncInfo.style.color = 'var(--color-text-secondary)';
-          li.appendChild(syncInfo);
+          syncInfo.style.cssText = 'color:var(--color-text-secondary);font-size:0.85em;margin-left:0.5em;';
+          channelInfo.appendChild(syncInfo);
         }
 
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'btn btn-sm btn-danger';
+        deleteBtn.textContent = modal.dataset.deleteButtonLabel || 'Remove';
+        deleteBtn.style.cssText = 'padding:0.25em 0.5em;font-size:0.8em;';
+        deleteBtn.addEventListener('click', function () {
+          performDeleteLink(link);
+        });
+
+        li.appendChild(channelInfo);
+        li.appendChild(deleteBtn);
         existingList.appendChild(li);
       });
 
       if (connectMessage) connectMessage.style.display = 'none';
       if (loginBtn) loginBtn.style.display = 'none';
-      if (deleteBtn) deleteBtn.style.display = 'inline-block';
+      if (connectedStatus) connectedStatus.style.display = 'block';
       existingContainer.style.display = 'block';
 
-      // Show "Add Channel" button if connected
-      if (availableChannels.length > 0) {
+      // Show "Add Channel" button if connected and there are available channels
+      if (availableChannels.length > 0 && addChannelSection) {
+        addChannelSection.style.display = 'block';
         hasExistingIntegration = true;
       }
+    }
+
+    function showConnectedNoLinks() {
+      if (connectMessage) connectMessage.style.display = 'none';
+      if (loginBtn) loginBtn.style.display = 'none';
+      if (connectedStatus) connectedStatus.style.display = 'block';
+      if (existingContainer) existingContainer.style.display = 'none';
+
+      // Show "Add Channel" button
+      if (availableChannels.length > 0 && addChannelSection) {
+        addChannelSection.style.display = 'block';
+        // Change button text since there are no existing links
+        if (addChannelBtn) {
+          addChannelBtn.textContent = modal.dataset.addFirstChannel || 'Link a Slack Channel';
+        }
+        hasExistingIntegration = true;
+      }
+    }
+
+    function performDeleteLink(link) {
+      if (!confirm(modal.dataset.deleteConfirm)) return;
+
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = '...';
+      clearError();
+
+      fetch(`/slack/creatives/${creativeId}/slack_integrations/${link.id}`, {
+        method: 'DELETE',
+        headers: {
+          'X-CSRF-Token': csrfToken(),
+          'Accept': 'application/json'
+        }
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            // Remove the link from existingLinks and re-render
+            existingLinks = existingLinks.filter(l => l.id !== link.id);
+            if (existingLinks.length > 0) {
+              showExistingIntegration(existingLinks);
+            } else {
+              showConnectedNoLinks();
+            }
+            statusEl.textContent = modal.dataset.deleteSuccess || 'Channel link removed';
+            statusEl.style.color = 'green';
+          } else {
+            showError(data.message || data.error || 'Deletion failed');
+            btn.disabled = false;
+            btn.textContent = modal.dataset.deleteButtonLabel || 'Remove';
+          }
+        })
+        .catch(error => {
+          console.error('Delete error:', error);
+          showError('Deletion failed');
+          btn.disabled = false;
+          btn.textContent = modal.dataset.deleteButtonLabel || 'Remove';
+        });
     }
 
     function renderChannelList() {
@@ -266,47 +341,6 @@ if (!slackIntegrationInitialized) {
         });
     }
 
-    function performDelete() {
-      if (!confirm(modal.dataset.deleteConfirm)) return;
-      if (existingLinks.length === 0) return;
-
-      deleteBtn.disabled = true;
-      deleteBtn.textContent = 'Removing...';
-      clearError();
-
-      // Delete the first link (or could show a selection UI)
-      const linkToDelete = existingLinks[0];
-
-      fetch(`/slack/creatives/${creativeId}/slack_integrations/${linkToDelete.id}`, {
-        method: 'DELETE',
-        headers: {
-          'X-CSRF-Token': csrfToken(),
-          'Accept': 'application/json'
-        }
-      })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            statusEl.textContent = modal.dataset.deleteSuccess || 'Channel link removed successfully';
-            statusEl.style.color = 'green';
-            setTimeout(() => {
-              modal.style.display = 'none';
-              resetWizard();
-            }, 2000);
-          } else {
-            showError(data.message || data.error || 'Deletion failed');
-          }
-        })
-        .catch(error => {
-          console.error('Delete error:', error);
-          showError('Deletion failed');
-        })
-        .finally(() => {
-          deleteBtn.disabled = false;
-          deleteBtn.textContent = 'Remove link';
-        });
-    }
-
     // Event listeners
     openBtn.addEventListener('click', function () {
       creativeId = this.dataset.creativeId;
@@ -375,7 +409,15 @@ if (!slackIntegrationInitialized) {
     });
 
     finishBtn.addEventListener('click', performLink);
-    if (deleteBtn) deleteBtn.addEventListener('click', performDelete);
+
+    if (addChannelBtn) {
+      addChannelBtn.addEventListener('click', function () {
+        currentStep = 'channels';
+        selectedChannel = null;
+        renderChannelList();
+        updateStep();
+      });
+    }
 
     if (refreshBtn) {
       refreshBtn.addEventListener('click', function () {
