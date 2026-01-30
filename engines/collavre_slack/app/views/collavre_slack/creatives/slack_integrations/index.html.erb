@@ -1,0 +1,18 @@
+<h1>Slack Integrations</h1>
+
+<p>
+  <%= link_to "Connect Slack", slack_engine.auth_slack_path %>
+</p>
+
+<% if @links.any? %>
+  <ul>
+    <% @links.each do |link| %>
+      <li>
+        <strong><%= link.channel_name %></strong>
+        (<%= link.channel_id %>)
+      </li>
+    <% end %>
+  </ul>
+<% else %>
+  <p>No Slack channels linked yet.</p>
+<% end %>
