@@ -47,9 +47,14 @@ module Collavre
         comment.content.to_s.strip.sub(/\A\S+/, "").strip
       end
 
+      def google_login?
+        user&.google_refresh_token.present?
+      end
+
       def create_event
         data = parsed_args
         return unless data
+        return I18n.t("collavre.comments.calendar_command.google_login_required") unless google_login?
 
         timezone = Time.zone
         start_time, end_time = calculate_times(timezone, data[:date], data[:time])

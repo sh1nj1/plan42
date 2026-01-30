@@ -82,6 +82,7 @@ en:
         calendar_args: "YYYY-MM-DD@HH:MM memo (or 'today')"
       calendar_command:
         event_created: 'event created: [Google Calendar event](%{url})'
+        google_login_required: Please sign in with Google to create a calendar event.
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
     calendar_events:
