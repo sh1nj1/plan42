@@ -172,10 +172,12 @@ export function initializeCreativeRowEditor() {
       if (!progressInput) return;
       const numeric = Number(value);
       const hasChildren = currentRowHasChildren();
-      const shouldDisable = hasChildren && !Number.isNaN(numeric) && numeric >= 1;
+      const isComplete = !Number.isNaN(numeric) && numeric >= 1;
+      const shouldDisable = hasChildren && isComplete;
       progressInput.disabled = shouldDisable;
       if (progressHiddenInput) {
-        progressHiddenInput.disabled = shouldDisable;
+        progressHiddenInput.disabled = false;
+        progressHiddenInput.value = shouldDisable ? (isComplete ? '1' : '0') : '0';
       }
     }
 
