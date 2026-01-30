@@ -1745,7 +1745,9 @@ export function initializeCreativeRowEditor() {
           progressValue.textContent = formatProgressDisplay(readProgressValue());
         }
         completionCascadePending = false;
-        if (progressInput.checked && currentRowHasChildren()) {
+        const hasChildren = currentRowHasChildren();
+        const shouldCascade = hasChildren && progressValueChanged();
+        if (shouldCascade) {
           completionCascadePending = true;
           const alertMessage = progressInput.dataset.childrenAlertMessage;
           if (alertMessage) {
