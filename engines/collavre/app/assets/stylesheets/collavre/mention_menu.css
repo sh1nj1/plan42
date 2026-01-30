@@ -41,3 +41,29 @@
   padding: 0.35em 0.5em;
   cursor: pointer;
 }
+
+.command-item {
+  display: flex;
+  gap: 0.5em;
+  align-items: baseline;
+}
+
+.command-label {
+  font-weight: 600;
+}
+
+.command-args {
+  font-size: 0.85em;
+  color: var(--color-text-muted);
+}
+
+.command-aliases {
+  font-size: 0.85em;
+  color: var(--color-text-muted);
+}
+
+.command-description {
+  margin-top: 0.2em;
+  font-size: 0.85em;
+  color: var(--color-text-muted);
+}

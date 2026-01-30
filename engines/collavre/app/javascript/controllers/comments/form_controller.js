@@ -79,7 +79,8 @@ export default class extends Controller {
 
   isMentionMenuVisible() {
     const menu = document.getElementById('mention-menu')
-    return menu?.style.display === 'block'
+    const commandMenu = document.getElementById('command-menu')
+    return menu?.style.display === 'block' || commandMenu?.style.display === 'block'
   }
 
   disconnect() {

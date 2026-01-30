@@ -368,6 +368,14 @@ module Collavre
       render json: data
     end
 
+    def commands
+      unless @creative.has_permission?(Current.user, :read)
+        head :forbidden and return
+      end
+
+      render json: command_menu_items
+    end
+
     def move
       comment_ids = Array(params[:comment_ids]).map(&:presence).compact.map(&:to_i)
       if comment_ids.empty?
@@ -420,6 +428,57 @@ module Collavre
 
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin
+    end
+
+    def command_menu_items
+      [
+        {
+          name: "calendar",
+          label: "/calendar",
+          aliases: [ "/cal" ],
+          description: I18n.t("collavre.comments.command_menu.calendar_description"),
+          args: I18n.t("collavre.comments.command_menu.calendar_args")
+        }
+      ] + mcp_command_items
+    end
+
+    def mcp_command_items
+      return [] unless defined?(RailsMcpEngine)
+
+      RailsMcpEngine::Engine.build_tools!
+      tools = ::Tools::MetaToolService.new.call(action: "list", tool_name: nil, query: nil, arguments: nil)
+      tool_list = Array(tools[:tools])
+      filtered_tools = Collavre::McpService.filter_tools(tool_list, Current.user)
+
+      filtered_tools.map do |tool|
+        tool_name = tool[:name] || tool["name"] || tool.try(:tool_name)
+        next unless tool_name
+
+        {
+          name: tool_name,
+          label: "/#{tool_name}",
+          description: tool[:description] || tool["description"],
+          args: format_command_args(tool[:params] || tool["params"])
+        }
+      end.compact
+    rescue StandardError => e
+      Rails.logger.error("Failed to load command menu: #{e.message}")
+      []
+    end
+
+    def format_command_args(params)
+      return if params.blank?
+
+      properties = params[:properties] || params["properties"]
+      return unless properties.is_a?(Hash)
+
+      required = params[:required] || params["required"] || []
+      required = Array(required).map(&:to_s)
+
+      properties.keys.map do |key|
+        key = key.to_s
+        required.include?(key) ? "#{key}*" : key
+      end.join(", ")
     end
 
     def set_comment
