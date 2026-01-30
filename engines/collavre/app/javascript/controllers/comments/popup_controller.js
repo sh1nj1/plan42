@@ -139,24 +139,7 @@ export default class extends Controller {
     this.updatePosition()
     document.body.classList.add('no-scroll')
 
-    // Load topics first to establish context
-    if (this.topicsController) {
-      await this.topicsController.onPopupOpened({ creativeId: resolvedCreativeId })
-    }
-
-    if (this.formController) {
-      this.formController.onPopupOpened({ creativeId: resolvedCreativeId, canComment })
-    }
-    if (this.listController) {
-      const topicId = this.topicsController ? this.topicsController.currentTopicId : undefined
-      this.listController.onPopupOpened({ creativeId: resolvedCreativeId, highlightId, topicId })
-    }
-    if (this.presenceController) {
-      this.presenceController.onPopupOpened({ creativeId: resolvedCreativeId })
-    }
-    if (this.mentionMenuController) {
-      this.mentionMenuController.onPopupOpened({ creativeId: resolvedCreativeId })
-    }
+    await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
   }
 
   async openForCreative() {
@@ -173,23 +156,27 @@ export default class extends Controller {
 
     this.showPopup()
 
+    await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment })
+  }
+
+  async notifyChildControllers({ creativeId, canComment, highlightId }) {
     // Load topics first to establish context
     if (this.topicsController) {
-      await this.topicsController.onPopupOpened({ creativeId: resolvedCreativeId })
+      await this.topicsController.onPopupOpened({ creativeId })
     }
 
     if (this.formController) {
-      this.formController.onPopupOpened({ creativeId: resolvedCreativeId, canComment })
+      this.formController.onPopupOpened({ creativeId, canComment })
     }
     if (this.listController) {
       const topicId = this.topicsController ? this.topicsController.currentTopicId : undefined
-      this.listController.onPopupOpened({ creativeId: resolvedCreativeId, topicId })
+      this.listController.onPopupOpened({ creativeId, highlightId, topicId })
     }
     if (this.presenceController) {
-      this.presenceController.onPopupOpened({ creativeId: resolvedCreativeId })
+      this.presenceController.onPopupOpened({ creativeId })
     }
     if (this.mentionMenuController) {
-      this.mentionMenuController.onPopupOpened({ creativeId: resolvedCreativeId })
+      this.mentionMenuController.onPopupOpened({ creativeId })
     }
   }
 
@@ -239,11 +226,9 @@ export default class extends Controller {
 
 
   showPopup() {
+    this.element.style.display = 'flex'
     if (this.isMobile()) {
-      this.element.style.display = 'flex'
       this.element.classList.add('open')
-    } else {
-      this.element.style.display = 'flex'
     }
   }
 
