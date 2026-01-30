@@ -57,7 +57,7 @@ rails db:migrate
 The following are automatically configured by the engine:
 
 - **Routes**: Mounted at `/slack` (no manual `mount` needed in `routes.rb`)
-- **Asset Precompilation**: CSS files are automatically added to the asset pipeline
+- **Asset Paths**: Stylesheets are automatically added to Propshaft asset paths
 - **Migrations**: Database migrations are automatically included
 - **i18n**: Locale files (en, ko) are automatically loaded
 - **Integration Registry**: Automatically registers with `Collavre::IntegrationRegistry`

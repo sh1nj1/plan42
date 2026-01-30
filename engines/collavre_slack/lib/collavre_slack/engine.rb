@@ -6,6 +6,16 @@ module CollavreSlack
       g.test_framework :minitest
     end
 
+    # Path to engine's JavaScript sources for jsbundling-rails integration
+    def self.javascript_path
+      root.join("app/javascript")
+    end
+
+    # Path to engine's stylesheet sources
+    def self.stylesheet_path
+      root.join("app/assets/stylesheets")
+    end
+
     # Load locale files
     config.i18n.load_path += Dir[root.join("config", "locales", "*.yml")]
 
@@ -16,10 +26,10 @@ module CollavreSlack
       end
     end
 
-    # Auto-precompile stylesheets
+    # Add engine stylesheets to asset paths for Propshaft
     initializer "collavre_slack.assets" do |app|
-      if app.config.respond_to?(:assets)
-        app.config.assets.precompile += %w[collavre_slack/slack_integration.css]
+      if app.config.respond_to?(:assets) && app.config.assets.respond_to?(:paths)
+        app.config.assets.paths << root.join("app/assets/stylesheets")
       end
     end
 
