@@ -60,25 +60,31 @@ module CollavreSlack
     end
 
     def prepare_slack_message_deletion
+      Rails.logger.info("[CollavreSlack] prepare_slack_message_deletion called for comment #{id}")
       return if instance_variable_get(:@from_slack)
 
       # Save link info before the comment is deleted
       # The database will cascade delete the records, but we need the info for Slack API
       comment_links = CollavreSlack::SlackCommentLink.where(comment_id: id)
+      Rails.logger.info("[CollavreSlack] Found #{comment_links.count} slack comment links")
       @slack_links_to_delete = comment_links.map do |link|
         { slack_channel_link_id: link.slack_channel_link_id, message_ts: link.message_ts }
       end
+      Rails.logger.info("[CollavreSlack] Saved #{@slack_links_to_delete.size} links for deletion")
     rescue StandardError => e
       Rails.logger.error("[CollavreSlack] Failed to prepare Slack message deletion: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
     end
 
     def delete_slack_messages
+      Rails.logger.info("[CollavreSlack] delete_slack_messages called")
       return if instance_variable_get(:@from_slack)
 
       links_to_delete = instance_variable_get(:@slack_links_to_delete) || []
+      Rails.logger.info("[CollavreSlack] Links to delete: #{links_to_delete.size}")
       return if links_to_delete.empty?
 
       links_to_delete.each do |link_info|
+        Rails.logger.info("[CollavreSlack] Enqueuing SlackMessageDeleteJob for ts=#{link_info[:message_ts]}")
         CollavreSlack::SlackMessageDeleteJob.perform_later(
           slack_channel_link_id: link_info[:slack_channel_link_id],
           message_ts: link_info[:message_ts]
