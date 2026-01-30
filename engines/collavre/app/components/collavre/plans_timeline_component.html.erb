@@ -7,8 +7,8 @@
 <%= form_with(model: Plan.new, url: helpers.collavre.plans_path, local: true, id: 'new-plan-form') do |form| %>
     <%= form.hidden_field :creative_id, id: 'plan-creative-id' %>
     <input type="text" id="plan-select-creative-input" placeholder="<%= t('collavre.plans.select_creative', default: 'Select Creative') %>" autocomplete="off">
+    <%= form.date_field :start_date, placeholder: t('collavre.plans.start_date'), id: 'plan-start-date' %>
     <%= form.date_field :target_date, placeholder: t('collavre.plans.target_date'), id: 'plan-target-date' %>
     <%= form.submit t('collavre.plans.add_plan'), id: 'add-plan-btn', disabled: true %>
 <% end %>
 </div>
-

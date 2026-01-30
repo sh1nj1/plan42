@@ -3,10 +3,14 @@ ko:
   collavre:
     plans:
       add_plan: 계획 추가
+      start_date: 시작 날짜
       target_date: 목표 날짜
       plan_name: 계획 이름
       created: 계획이 성공적으로 생성되었습니다.
       deleted: 계획이 삭제되었습니다.
+      updated: 계획이 업데이트되었습니다.
+      update: 업데이트
+      update_forbidden: 이 계획을 업데이트할 권한이 없습니다.
       delete_confirm: 이 계획을 삭제하시겠습니까?
       today: 오늘
       select_creative: 크리에이티브 선택

@@ -4,9 +4,9 @@ class PlansTimelineComponent < ViewComponent::Base
     @start_date = Date.current - 30
     @end_date = Date.current + 30
     @plans = plans
-      .where("target_date >= ? AND created_at <= ?", @start_date, @end_date)
+      .where("target_date >= ? AND COALESCE(start_date, DATE(created_at)) <= ?", @start_date, @end_date)
       .select { |plan| plan.readable_by?(Current.user) }
-      .sort_by(&:created_at)
+      .sort_by { |plan| plan.start_date || plan.created_at.to_date }
     @calendar_events = calendar_events
       .includes(:creative)
       .where("DATE(start_time) <= ? AND DATE(end_time) >= ?", @end_date, @start_date)
@@ -22,6 +22,7 @@ class PlansTimelineComponent < ViewComponent::Base
           id: plan.id,
           name: (plan.creative&.effective_description(nil, false) || plan.name.presence || I18n.l(plan.target_date)),
           created_at: plan.created_at.to_date,
+          start_date: (plan.start_date || plan.created_at.to_date),
           target_date: plan.target_date,
           progress: plan.progress,
           path: plan_creatives_path(plan),

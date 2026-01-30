@@ -137,10 +137,10 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     assert_equal creative.id, plan.creative_id, "Plan should be linked to Creative"
   end
 
-  test "user with write permission on tagged creative can update plan target date" do
+  test "user with write permission on tagged creative can update plan dates" do
     creative = creatives(:tshirt)
     plan_creative = Creative.create!(user: @owner, description: "Plan Creative")
-    plan = Plan.create!(target_date: Date.current, creative: plan_creative, owner: @owner)
+    plan = Plan.create!(target_date: Date.current + 5.days, creative: plan_creative, owner: @owner)
     plan.tags.create!(creative_id: creative.id)
 
     perform_enqueued_jobs do
@@ -148,14 +148,17 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     end
 
     login_as(@collaborator)
-    new_date = Date.current + 3.days
+    new_start_date = Date.current + 1.day
+    new_target_date = Date.current + 6.days
     patch collavre.plan_url(plan, format: :json), params: {
-      plan: { target_date: new_date },
+      plan: { start_date: new_start_date, target_date: new_target_date },
       creative_id: creative.id
     }
 
     assert_response :success
-    assert_equal new_date, plan.reload.target_date
+    plan.reload
+    assert_equal new_start_date, plan.start_date
+    assert_equal new_target_date, plan.target_date
   end
 
   test "should return stripped html in json" do

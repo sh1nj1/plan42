@@ -10,6 +10,9 @@ if (!plansTimelineScriptInitialized) {
     var plans = [];
     try { plans = JSON.parse(container.dataset.plans || '[]'); } catch (e) { }
     plans = plans.map(function (p) {
+      if (p.start_date) {
+        p.start_date = new Date(p.start_date);
+      }
       p.created_at = new Date(p.created_at);
       p.target_date = new Date(p.target_date);
       return p;
@@ -64,8 +67,9 @@ if (!plansTimelineScriptInitialized) {
       el.className = 'plan-bar';
       el.dataset.path = plan.path;
       el.dataset.id = plan.id;
-      var left = dayDiff(plan.created_at, startDate) * dayWidth;
-      var width = (dayDiff(plan.target_date, plan.created_at) + 1) * dayWidth;
+      var startDateValue = plan.start_date || plan.created_at;
+      var left = dayDiff(startDateValue, startDate) * dayWidth;
+      var width = (dayDiff(plan.target_date, startDateValue) + 1) * dayWidth;
       el.style.left = left + 'px';
       el.style.top = (idx * rowHeight + 40) + 'px';
       el.style.width = width + 'px';
@@ -146,8 +150,9 @@ if (!plansTimelineScriptInitialized) {
       var visibleWidth = dayDiff(endDate, startDate) * dayWidth;
       planEls.forEach(function (item, idx) {
         var plan = item.plan;
-        var left = dayDiff(plan.created_at, startDate) * dayWidth;
-        var width = (dayDiff(plan.target_date, plan.created_at) + 1) * dayWidth;
+        var startDateValue = plan.start_date || plan.created_at;
+        var left = dayDiff(startDateValue, startDate) * dayWidth;
+        var width = (dayDiff(plan.target_date, startDateValue) + 1) * dayWidth;
         var right = left + width;
 
         if (right < 0 || left > visibleWidth) {
@@ -193,6 +198,9 @@ if (!plansTimelineScriptInitialized) {
         .then(function (r) { return r.json(); })
         .then(function (newPlans) {
           plans = newPlans.map(function (p) {
+            if (p.start_date) {
+              p.start_date = new Date(p.start_date);
+            }
             p.created_at = new Date(p.created_at);
             p.target_date = new Date(p.target_date);
             return p;
@@ -362,6 +370,9 @@ if (!plansTimelineScriptInitialized) {
           return r.json().then(function (j) { throw j; });
         }).then(function (plan) {
           // Add to local plans if available via closure or re-fetch
+          if (plan.start_date) {
+            plan.start_date = new Date(plan.start_date);
+          }
           plan.created_at = new Date(plan.created_at);
           plan.target_date = new Date(plan.target_date);
 

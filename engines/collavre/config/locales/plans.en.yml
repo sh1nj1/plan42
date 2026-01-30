@@ -3,6 +3,7 @@ en:
   collavre:
     plans:
       add_plan: Add Plan
+      start_date: Start Date
       target_date: Target Date
       plan_name: Plan Name
       created: Plan was successfully created.
