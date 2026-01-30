@@ -70,5 +70,28 @@ module CollavreSlack
         end
       end
     end
+
+    # Extend User model with Slack associations for proper cleanup on user deletion
+    initializer "collavre_slack.user_associations", after: :load_config_initializers do
+      Rails.application.config.to_prepare do
+        user_class = Collavre.user_class rescue nil
+        next unless user_class
+
+        unless user_class.reflect_on_association(:slack_accounts)
+          user_class.has_many :slack_accounts,
+                              class_name: "CollavreSlack::SlackAccount",
+                              dependent: :destroy
+          Rails.logger.info("[CollavreSlack] Added slack_accounts association to #{user_class.name}")
+        end
+
+        unless user_class.reflect_on_association(:slack_user_mappings)
+          user_class.has_many :slack_user_mappings,
+                              class_name: "CollavreSlack::SlackUserMapping",
+                              foreign_key: :collavre_user_id,
+                              dependent: :destroy
+          Rails.logger.info("[CollavreSlack] Added slack_user_mappings association to #{user_class.name}")
+        end
+      end
+    end
   end
 end

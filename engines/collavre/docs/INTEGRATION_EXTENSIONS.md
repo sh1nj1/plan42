@@ -235,3 +235,115 @@ Collavre::IntegrationRegistry.unregister(:your_integration)
 ```
 
 This is typically used in tests or when dynamically managing integrations.
+
+## Handling User Deletion
+
+When your integration stores data associated with users (via foreign keys to the `users` table), you need to handle cleanup when users are deleted. There are two recommended approaches:
+
+### Option 1: Database-level CASCADE (Simplest)
+
+Add `on_delete: :cascade` to foreign key constraints in your migrations. The database automatically deletes related records when a user is deleted.
+
+```ruby
+# In your migration
+class CreateYourIntegrationAccounts < ActiveRecord::Migration[8.0]
+  def change
+    create_table :your_integration_accounts do |t|
+      t.references :user, null: false, foreign_key: { to_table: :users, on_delete: :cascade }
+      # ...
+    end
+  end
+end
+```
+
+**Pros:**
+- Simple, no additional code needed
+- Works at database level, most reliable
+- Supported by PostgreSQL, MySQL (InnoDB), and SQLite3
+
+**Cons:**
+- Rails callbacks (`before_destroy`, `after_destroy`) are not executed
+- Cannot perform complex cleanup logic (e.g., API calls to external services)
+
+**When to use:** When you only need to delete records and don't need cleanup callbacks.
+
+### Option 2: Engine Initializer with Model Extension (Recommended)
+
+Extend the User model from your engine's initializer to add `has_many` associations with `dependent: :destroy`. This triggers Rails callbacks and allows cascade deletion through your model associations.
+
+```ruby
+# In your engine's lib/your_integration/engine.rb
+initializer "your_integration.user_associations", after: :load_config_initializers do
+  Rails.application.config.to_prepare do
+    user_class = Collavre.user_class rescue nil
+    next unless user_class
+
+    # Add association only if not already present
+    unless user_class.reflect_on_association(:your_integration_accounts)
+      user_class.has_many :your_integration_accounts,
+                          class_name: "YourIntegration::Account",
+                          dependent: :destroy
+      Rails.logger.info("[YourIntegration] Added your_integration_accounts association to #{user_class.name}")
+    end
+
+    # For associations with non-standard foreign keys
+    unless user_class.reflect_on_association(:your_integration_mappings)
+      user_class.has_many :your_integration_mappings,
+                          class_name: "YourIntegration::UserMapping",
+                          foreign_key: :linked_user_id,
+                          dependent: :destroy
+    end
+  end
+end
+```
+
+**Pros:**
+- Rails callbacks (`before_destroy`, `after_destroy`) are executed
+- Can perform complex cleanup (e.g., revoke OAuth tokens, notify external APIs)
+- Cascade deletion through model associations
+
+**Cons:**
+- Slightly more complex setup
+- Need to ensure proper loading order
+
+**When to use:** When you need callbacks for cleanup logic or want to leverage Rails model associations.
+
+### Example: collavre_slack
+
+The collavre_slack engine uses Option 2 to handle user deletion:
+
+```ruby
+# engines/collavre_slack/lib/collavre_slack/engine.rb
+initializer "collavre_slack.user_associations", after: :load_config_initializers do
+  Rails.application.config.to_prepare do
+    user_class = Collavre.user_class rescue nil
+    next unless user_class
+
+    unless user_class.reflect_on_association(:slack_accounts)
+      user_class.has_many :slack_accounts,
+                          class_name: "CollavreSlack::SlackAccount",
+                          dependent: :destroy
+    end
+
+    unless user_class.reflect_on_association(:slack_user_mappings)
+      user_class.has_many :slack_user_mappings,
+                          class_name: "CollavreSlack::SlackUserMapping",
+                          foreign_key: :collavre_user_id,
+                          dependent: :destroy
+    end
+  end
+end
+```
+
+**Deletion cascade flow:**
+1. User is deleted
+2. User's `SlackAccount` is deleted (via `dependent: :destroy`)
+3. SlackAccount's `SlackChannelLink` records are deleted (via its own `dependent: :destroy`)
+4. SlackChannelLink's `SlackMessageLog` and `SlackCommentLink` records are deleted
+
+### Best Practices
+
+1. **Choose one approach per foreign key** - Don't mix database CASCADE with Rails `dependent: :destroy` for the same association
+2. **Test deletion thoroughly** - Ensure all related records are properly cleaned up
+3. **Consider orphaned records** - For `belongs_to` associations that can be nullified, decide if records should be deleted or kept with null references
+4. **Log cleanup actions** - Add logging to track what gets deleted for debugging
