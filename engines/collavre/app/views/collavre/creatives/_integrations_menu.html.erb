@@ -1,0 +1,12 @@
+<%# Render integration menu items from IntegrationRegistry %>
+<% Collavre::IntegrationRegistry.each do |integration| %>
+  <% if integration.enabled_for?(creative) %>
+    <button type="button"
+            class="popup-menu-item"
+            data-controller="click-target"
+            data-click-target-id-value="<%= integration.name %>-integration-btn"
+            data-action="click->click-target#trigger">
+      <%= integration.label %>
+    </button>
+  <% end %>
+<% end %>

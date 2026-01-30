@@ -1,0 +1,6 @@
+<%# Render modals for registered integrations %>
+<% Collavre::IntegrationRegistry.each do |integration| %>
+  <% if integration.enabled_for?(creative) && integration.creative_menu_partial.present? %>
+    <%= render integration.creative_menu_partial, creative: creative, integration: integration %>
+  <% end %>
+<% end %>
