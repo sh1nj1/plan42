@@ -109,7 +109,7 @@ if (!slackIntegrationInitialized) {
     function loadIntegrationStatus() {
       if (!creativeId) return;
 
-      statusEl.textContent = 'Loading...';
+      statusEl.textContent = modal.dataset.loading || 'Loading...';
       clearError();
 
       fetch(`/slack/creatives/${creativeId}/slack_integrations`, {
@@ -266,9 +266,10 @@ if (!slackIntegrationInitialized) {
 
         const isLinked = existingLinks.some(link => link.channel_id === channel.id);
 
+        const linkedLabel = modal.dataset.linkedLabel || '(linked)';
         div.innerHTML = `
           <strong>#${channel.name}</strong>
-          ${isLinked ? '<span style="color:green;margin-left:0.5em;">(linked)</span>' : ''}
+          ${isLinked ? `<span style="color:green;margin-left:0.5em;">${linkedLabel}</span>` : ''}
         `;
 
         if (!isLinked) {
@@ -302,7 +303,7 @@ if (!slackIntegrationInitialized) {
       }
 
       finishBtn.disabled = true;
-      finishBtn.textContent = 'Linking...';
+      finishBtn.textContent = modal.dataset.linking || 'Linking...';
       clearError();
 
       fetch(`/slack/creatives/${creativeId}/slack_integrations`, {
@@ -336,7 +337,7 @@ if (!slackIntegrationInitialized) {
         })
         .finally(() => {
           finishBtn.disabled = false;
-          finishBtn.textContent = 'Link Channel';
+          finishBtn.textContent = modal.dataset.linkChannel || 'Link Channel';
         });
     }
 
@@ -421,7 +422,7 @@ if (!slackIntegrationInitialized) {
     if (refreshBtn) {
       refreshBtn.addEventListener('click', function () {
         refreshBtn.disabled = true;
-        refreshBtn.textContent = 'Loading...';
+        refreshBtn.textContent = modal.dataset.loading || 'Loading...';
         selectedChannel = null;
 
         fetch(`/slack/creatives/${creativeId}/slack_integrations`, {
@@ -441,11 +442,11 @@ if (!slackIntegrationInitialized) {
           })
           .catch(error => {
             console.error('Error refreshing channels:', error);
-            showError('Failed to refresh channels');
+            showError(modal.dataset.refreshError || 'Failed to refresh channels');
           })
           .finally(() => {
             refreshBtn.disabled = false;
-            refreshBtn.textContent = 'Refresh';
+            refreshBtn.textContent = modal.dataset.refresh || 'Refresh';
             updateStep();
           });
       });
