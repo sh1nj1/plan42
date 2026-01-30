@@ -22,6 +22,15 @@ module CollavreSlack
       response = Collavre::Comments::CommandProcessor.new(comment: comment, user: user).call
       comment.content = "#{comment.content}\n\n#{response}" if response.present?
       comment.save!
+
+      # Create link between Slack message and comment for reaction sync
+      if data[:slack_channel_link_id].present? && data[:slack_message_ts].present?
+        SlackCommentLink.create!(
+          comment: comment,
+          slack_channel_link_id: data[:slack_channel_link_id],
+          message_ts: data[:slack_message_ts]
+        )
+      end
     end
   end
 end

@@ -4,10 +4,15 @@ This document describes the architecture and data flow of the CollavreSlack engi
 
 ## Overview
 
-The Slack integration enables bi-directional message sync between Slack channels and Collavre Creatives:
+The Slack integration enables bi-directional sync between Slack channels and Collavre Creatives:
 
+**Messages:**
 - **Slack → Collavre**: Messages posted in linked Slack channels appear as comments in the Creative
 - **Collavre → Slack**: Comments posted in Collavre are sent to the linked Slack channel
+
+**Reactions:**
+- **Slack → Collavre**: Reactions added to Slack messages appear as CommentReactions in Collavre
+- **Collavre → Slack**: CommentReactions added in Collavre are synced to the Slack message
 
 ## Data Models
 
@@ -51,6 +56,18 @@ Maps Slack users to Collavre users for mention conversion and message attributio
 1. Fetches the user's email from Slack API
 2. Finds a Collavre user with the same email
 3. Creates a mapping for future messages
+
+### SlackCommentLink
+
+Links a Collavre Comment to its corresponding Slack message for reaction sync.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `comment_id` | integer | Linked Comment |
+| `slack_channel_link_id` | integer | Parent channel link |
+| `message_ts` | string | Slack message timestamp |
+
+This table enables bi-directional reaction sync by tracking which Comment corresponds to which Slack message.
 
 ## Message Flow
 
@@ -96,6 +113,49 @@ Maps Slack users to Collavre users for mention conversion and message attributio
 3. `SlackMessageJob` enqueued for async processing
 4. Finds linked Slack channels via `SlackChannelLink`
 5. `SlackClient` posts message to Slack
+6. `SlackCommentLink` created to link Comment with Slack message
+
+## Reaction Flow
+
+### Slack → Collavre
+
+```
+┌─────────────┐     ┌─────────────────────┐     ┌────────────────────┐
+│   Slack     │────▶│  SlackEventsController│────▶│ SlackEventHandler  │
+│ (reaction)  │     │  (verify signature)  │     │ (reaction_added)   │
+└─────────────┘     └─────────────────────┘     └────────────────────┘
+                                                          │
+                                                          ▼
+┌─────────────┐     ┌─────────────────────┐     ┌────────────────────┐
+│  Comment    │◀────│SlackInboundReaction │◀────│  SlackCommentLink  │
+│  Reaction   │     │       Job           │     │   (find comment)   │
+└─────────────┘     └─────────────────────┘     └────────────────────┘
+```
+
+1. Slack sends `reaction_added` or `reaction_removed` event
+2. `SlackEventsController` verifies signature
+3. `SlackEventHandler` finds linked comment via `SlackCommentLink`
+4. `SlackInboundReactionJob` creates/removes `CommentReaction`
+
+### Collavre → Slack
+
+```
+┌─────────────┐     ┌─────────────────────┐     ┌────────────────────┐
+│  Comment    │────▶│SlackReactionDispatch│────▶│  SlackReactionJob  │
+│  Reaction   │     │  (after_commit)     │     │    (async)         │
+└─────────────┘     └─────────────────────┘     └────────────────────┘
+                                                          │
+                                                          ▼
+┌─────────────┐     ┌─────────────────────┐     ┌────────────────────┐
+│   Slack     │◀────│    SlackClient      │◀────│  SlackCommentLink  │
+│ (reaction)  │     │ (add/remove_reaction)│     │  (find message_ts) │
+└─────────────┘     └─────────────────────┘     └────────────────────┘
+```
+
+1. `CommentReaction` created/destroyed in Collavre
+2. `SlackReactionDispatchable` triggered via callback
+3. `SlackReactionJob` finds Slack messages via `SlackCommentLink`
+4. `SlackClient` adds/removes reaction on Slack
 
 ## Rate Limiting
 
@@ -123,6 +183,12 @@ client.post_message(channel: "C123456", text: "Hello!")
 
 # Get message history
 client.list_messages(channel: "C123456", oldest: timestamp)
+
+# Add reaction to a message
+client.add_reaction(channel: "C123456", timestamp: "1234567890.123456", name: "thumbsup")
+
+# Remove reaction from a message
+client.remove_reaction(channel: "C123456", timestamp: "1234567890.123456", name: "thumbsup")
 ```
 
 ### SlackIntegrationService
@@ -176,6 +242,8 @@ slack_text = mapping.collavre_to_slack("@john hello")
 |-----|---------|
 | `SlackMessageJob` | Send messages to Slack (with rate limit handling) |
 | `SlackInboundMessageJob` | Process incoming Slack messages |
+| `SlackReactionJob` | Send reactions to Slack |
+| `SlackInboundReactionJob` | Process incoming Slack reactions |
 | `SlackChannelSyncJob` | Resync channel history |
 
 ## API Endpoints
@@ -210,6 +278,18 @@ CollavreSlack.configure do |config|
   config.client_secret = ENV["SLACK_CLIENT_SECRET"]
   config.signing_secret = ENV["SLACK_SIGNING_SECRET"]
   config.redirect_uri = ENV["SLACK_REDIRECT_URI"]
-  config.scopes = "chat:write,channels:read,channels:history"
+  # Required scopes for full functionality including reactions
+  config.scopes = "chat:write,channels:read,channels:history,reactions:read,reactions:write,users:read,users:read.email"
 end
 ```
+
+## Required Slack Event Subscriptions
+
+For reaction sync to work, subscribe to these events in your Slack app's Event Subscriptions:
+
+| Event | Description |
+|-------|-------------|
+| `message.channels` | Messages in public channels |
+| `message.groups` | Messages in private channels |
+| `reaction_added` | Reactions added to messages |
+| `reaction_removed` | Reactions removed from messages |

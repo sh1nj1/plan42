@@ -22,6 +22,11 @@ module CollavreSlack
             Collavre::Comment.include(CollavreSlack::SlackDispatchable)
             Rails.logger.info("[CollavreSlack] SlackDispatchable included in Collavre::Comment")
           end
+
+          if defined?(Collavre::CommentReaction)
+            Collavre::CommentReaction.include(CollavreSlack::SlackReactionDispatchable)
+            Rails.logger.info("[CollavreSlack] SlackReactionDispatchable included in Collavre::CommentReaction")
+          end
         end
       end
     end

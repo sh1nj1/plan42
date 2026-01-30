@@ -30,7 +30,7 @@ module CollavreSlack
         dispatcher = CollavreSlack::SlackMessageDispatcher.new(channel_link: link)
         message_text = content.to_plain_text rescue content.to_s
         sender_name = user&.name || "Anonymous"
-        dispatcher.enqueue(message: "[#{sender_name}] #{message_text}", sender: user)
+        dispatcher.enqueue(message: "[#{sender_name}] #{message_text}", sender: user, comment: self)
       end
     rescue StandardError => e
       Rails.logger.error("[CollavreSlack] Failed to dispatch to Slack: #{e.message}\n#{e.backtrace.first(5).join("\n")}")

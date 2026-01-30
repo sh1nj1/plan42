@@ -4,11 +4,12 @@ module CollavreSlack
       @channel_link = channel_link
     end
 
-    def enqueue(message:, sender: nil)
+    def enqueue(message:, sender: nil, comment: nil)
       formatted = MentionMapping.to_slack(message.to_s, channel_link.slack_account)
       log = SlackMessageLog.create!(
         slack_channel_link: channel_link,
         sender: sender,
+        comment: comment,
         message: formatted,
         status: "queued"
       )

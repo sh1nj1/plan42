@@ -46,6 +46,14 @@ module CollavreSlack
       get("users.info", user: user_id)
     end
 
+    def add_reaction(channel:, timestamp:, name:)
+      post("reactions.add", { channel: channel, timestamp: timestamp, name: name })
+    end
+
+    def remove_reaction(channel:, timestamp:, name:)
+      post("reactions.remove", { channel: channel, timestamp: timestamp, name: name })
+    end
+
     def redirect_uri
       CollavreSlack.config.redirect_uri
     end

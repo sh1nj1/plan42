@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_20_163856) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_30_010001) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -427,7 +427,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_20_163856) do
     t.index ["slack_account_id"], name: "index_slack_channel_links_on_slack_account_id"
   end
 
+  create_table "slack_comment_links", force: :cascade do |t|
+    t.integer "comment_id", null: false
+    t.datetime "created_at", null: false
+    t.string "message_ts", null: false
+    t.integer "slack_channel_link_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["comment_id"], name: "index_slack_comment_links_on_comment_id"
+    t.index ["slack_channel_link_id", "message_ts"], name: "idx_slack_comment_links_on_channel_and_ts", unique: true
+    t.index ["slack_channel_link_id"], name: "index_slack_comment_links_on_slack_channel_link_id"
+  end
+
   create_table "slack_message_logs", force: :cascade do |t|
+    t.integer "comment_id"
     t.datetime "created_at", null: false
     t.text "error_message"
     t.text "message", null: false
@@ -436,6 +448,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_20_163856) do
     t.integer "slack_channel_link_id", null: false
     t.string "status", default: "queued", null: false
     t.datetime "updated_at", null: false
+    t.index ["comment_id"], name: "index_slack_message_logs_on_comment_id"
     t.index ["sender_id"], name: "index_slack_message_logs_on_sender_id"
     t.index ["slack_channel_link_id"], name: "index_slack_message_logs_on_slack_channel_link_id"
   end
@@ -753,6 +766,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_20_163856) do
   add_foreign_key "slack_channel_links", "creatives"
   add_foreign_key "slack_channel_links", "slack_accounts"
   add_foreign_key "slack_channel_links", "users", column: "created_by_id"
+  add_foreign_key "slack_comment_links", "comments"
+  add_foreign_key "slack_comment_links", "slack_channel_links"
+  add_foreign_key "slack_message_logs", "comments"
   add_foreign_key "slack_message_logs", "slack_channel_links"
   add_foreign_key "slack_message_logs", "users", column: "sender_id"
   add_foreign_key "slack_user_mappings", "slack_accounts"

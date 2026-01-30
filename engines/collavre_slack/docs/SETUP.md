@@ -40,10 +40,12 @@ Under **Scopes** > **Bot Token Scopes**, add the following:
 | `mpim:read` | List group direct message channels |
 | `users:read` | Read user information for mention mapping |
 | `users:read.email` | Read user email addresses for auto-mapping |
+| `reactions:read` | Read reactions on messages |
+| `reactions:write` | Add/remove reactions on messages |
 
 **Note:** The default scopes used by the engine are:
 ```
-chat:write,channels:read,channels:history,groups:read,im:read,mpim:read,users:read,users:read.email
+chat:write,channels:read,channels:history,groups:read,im:read,mpim:read,users:read,users:read.email,reactions:read,reactions:write
 ```
 
 You can customize these via the `SLACK_SCOPES` environment variable.
@@ -66,6 +68,8 @@ Under **Subscribe to bot events**, add:
 | `message.groups` | Messages posted to private channels |
 | `message.im` | Direct messages to the bot |
 | `message.mpim` | Messages in group DMs |
+| `reaction_added` | Reactions added to messages (for reaction sync) |
+| `reaction_removed` | Reactions removed from messages (for reaction sync) |
 
 6. Click **Save Changes**
 
@@ -104,7 +108,7 @@ SLACK_SIGNING_SECRET=your-signing-secret
 SLACK_REDIRECT_URI=https://your-domain.com/slack/auth/slack/callback
 
 # Optional (defaults shown)
-SLACK_SCOPES=chat:write,channels:read,channels:history,groups:read,im:read,mpim:read,users:read,users:read.email
+SLACK_SCOPES=chat:write,channels:read,channels:history,groups:read,im:read,mpim:read,users:read,users:read.email,reactions:read,reactions:write
 ```
 
 ### Environment Variable Reference
@@ -134,9 +138,9 @@ end
 
 - [ ] Slack App created
 - [ ] OAuth Redirect URL added and matches `SLACK_REDIRECT_URI`
-- [ ] Required Bot Token Scopes added
+- [ ] Required Bot Token Scopes added (including `reactions:read` and `reactions:write`)
 - [ ] Event Subscriptions enabled and verified
-- [ ] Bot events subscribed (message.channels, etc.)
+- [ ] Bot events subscribed (message.channels, reaction_added, reaction_removed, etc.)
 - [ ] Environment variables configured
 - [ ] Engine mounted in routes
 

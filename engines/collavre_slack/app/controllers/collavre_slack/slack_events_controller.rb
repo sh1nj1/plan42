@@ -24,7 +24,14 @@ module CollavreSlack
       handler = SlackEventHandler.new(payload: payload)
       normalized = handler.call
 
-      SlackInboundMessageJob.perform_later(normalized) if normalized
+      if normalized
+        case normalized[:type]
+        when :message
+          SlackInboundMessageJob.perform_later(normalized)
+        when :reaction_added, :reaction_removed
+          SlackInboundReactionJob.perform_later(normalized)
+        end
+      end
 
       head :ok
     end

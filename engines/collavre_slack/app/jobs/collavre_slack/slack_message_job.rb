@@ -23,6 +23,15 @@ module CollavreSlack
       if response[:ok]
         log.update!(status: "sent", message_ts: response[:ts])
         Rails.logger.info("[CollavreSlack] Message sent successfully, ts=#{response[:ts]}")
+
+        # Create link between comment and Slack message for reaction sync
+        if log.comment_id.present?
+          SlackCommentLink.create!(
+            comment_id: log.comment_id,
+            slack_channel_link_id: link.id,
+            message_ts: response[:ts]
+          )
+        end
       else
         log.update!(status: "failed", error_message: response[:error])
         Rails.logger.error("[CollavreSlack] Failed to send message: #{response[:error]}")
