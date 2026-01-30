@@ -74,6 +74,7 @@ ko:
       add_reaction_button: "+"
       calendar_command:
         event_created: '이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})'
+        google_login_required: 구글 로그인 후 캘린더 이벤트를 생성할 수 있습니다.
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
     calendar_events:
