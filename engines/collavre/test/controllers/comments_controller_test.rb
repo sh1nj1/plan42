@@ -760,7 +760,15 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     my_creative = Creative.create!(user: @user, description: "My creative")
     McpTool.create!(creative: my_creative, name: "my_test_tool", source_code: "class Foo; end")
 
-    get commands_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    # Stub available_tools to return a tool list that includes the user's tool
+    mock_tools = [
+      { name: "creative_retrieval_service", description: "System tool" },
+      { name: "my_test_tool", description: "User's tool" }
+    ]
+
+    Collavre::McpService.stub(:available_tools, ->(user) { Collavre::McpService.filter_tools(mock_tools, user) }) do
+      get commands_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    end
 
     assert_response :success
     json = JSON.parse(response.body)
