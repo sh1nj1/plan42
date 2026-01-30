@@ -2,6 +2,8 @@ module Collavre
   require "google/apis/calendar_v3"
   require "googleauth"
 
+  class GoogleCalendarError < StandardError; end
+
   class GoogleCalendarService
     def initialize(user:)
       @user = user
@@ -109,12 +111,44 @@ module Collavre
     private
 
     def user_credentials
+      token = refresh_token
+      raise GoogleCalendarError, I18n.t("collavre.google_calendar.errors.not_connected") if token.blank?
+
       Google::Auth::UserRefreshCredentials.new(
         client_id:     ENV["GOOGLE_CLIENT_ID"] || Rails.application.credentials.dig(:google, :client_id),
         client_secret: ENV["GOOGLE_CLIENT_SECRET"] || Rails.application.credentials.dig(:google, :client_secret),
         scope:         [ Google::Apis::CalendarV3::AUTH_CALENDAR_APP_CREATED ],
-        refresh_token: @user.google_refresh_token
+        refresh_token: token
       ).tap(&:fetch_access_token!)
+    end
+
+    def refresh_token
+      raw_value = raw_google_refresh_token
+      return nil if raw_value.blank?
+
+      # If already encrypted (JSON format with "p":), decrypt normally
+      if encrypted_value?(raw_value)
+        @user.google_refresh_token
+      else
+        # Legacy unencrypted token - re-encrypt and return
+        @user.update!(google_refresh_token: raw_value)
+        raw_value
+      end
+    rescue ActiveSupport::MessageEncryptor::InvalidMessage, ActiveRecord::Encryption::Errors::Decryption
+      # Decryption failed - token may be corrupted or encrypted with different key
+      Rails.logger.error("Failed to decrypt google_refresh_token for user #{@user.id}")
+      nil
+    end
+
+    def raw_google_refresh_token
+      result = ActiveRecord::Base.connection.select_value(
+        "SELECT google_refresh_token FROM users WHERE id = #{@user.id}"
+      )
+      result
+    end
+
+    def encrypted_value?(value)
+      value.is_a?(String) && value.start_with?("{") && value.include?('"p":')
     end
 
     def create_app_calendar

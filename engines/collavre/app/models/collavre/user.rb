@@ -74,6 +74,20 @@ module Collavre
     encrypts :google_access_token, deterministic: false
     encrypts :google_refresh_token, deterministic: false
 
+    # Override encrypted attribute getters to handle decryption errors gracefully.
+    # This prevents the entire request from failing when a token can't be decrypted
+    # (e.g., if it was encrypted with a different key or is corrupted).
+    %i[google_access_token google_refresh_token llm_api_key].each do |attr|
+      define_method(attr) do
+        super()
+      rescue ActiveSupport::MessageEncryptor::InvalidMessage,
+             ActiveRecord::Encryption::Errors::Decryption,
+             OpenSSL::Cipher::CipherError => e
+        Rails.logger.error("Failed to decrypt #{attr} for user #{id}: #{e.class}")
+        nil
+      end
+    end
+
     SUPPORTED_LLM_MODELS = [
       "gemini-2.5-flash",
       "gemini-1.5-flash",

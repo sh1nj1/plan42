@@ -81,6 +81,9 @@ en:
       activity_logs_summary: Activity Logs
     calendar_events:
       deleted: Calendar event deleted.
+    google_calendar:
+      errors:
+        not_connected: Google Calendar is not connected. Please connect your Google account first.
     inbox:
       mark_read: Read
       mark_unread: Unread

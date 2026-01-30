@@ -21,7 +21,11 @@ module Collavre
       # for personal google service (like google calendar)
       user.google_uid = auth.uid
       user.google_access_token = auth.credentials.token
-      user.google_refresh_token = auth.credentials.refresh_token || user.google_refresh_token
+      # Only update refresh_token if Google provides a new one
+      # (Google doesn't always return refresh_token on re-authentication)
+      if auth.credentials.refresh_token.present?
+        user.google_refresh_token = auth.credentials.refresh_token
+      end
       user.google_token_expires_at = Time.at(auth.credentials.expires_at) if auth.credentials.expires_at
 
       user.save! if user.new_record? || user.changed?
