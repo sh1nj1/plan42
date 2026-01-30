@@ -81,7 +81,18 @@
            value="<%= label.id %>">
 
       <%= "##{strip_tags(label.name)}" %>
-      <% if label.type == "Plan" %> 🗓<%= label.target_date %><% end %>
+      <% if label.type == "Plan" %>
+        <% if @parent_creative&.has_permission?(Current.user, :write) %>
+          <%= form_with(model: label, url: collavre.plan_path(label), method: :patch, local: true, class: "plan-tag-date-form") do |form| %>
+            <%= hidden_field_tag :creative_id, @parent_creative.id %>
+            🗓
+            <%= form.date_field :target_date, value: label.target_date, class: "plan-tag-date-input" %>
+            <%= form.submit t("collavre.plans.update", default: "Update"), class: "plan-tag-date-submit" %>
+          <% end %>
+        <% else %>
+          🗓<%= label.target_date %>
+        <% end %>
+      <% end %>
 
   <% end %>
   <% if labels.present? %>

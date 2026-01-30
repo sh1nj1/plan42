@@ -68,10 +68,64 @@ module Collavre
       end
     end
 
+    def update
+      @plan = Plan.find(params[:id])
+      return render_forbidden unless plan_editable_by_current_user?
+
+      if @plan.update(plan_update_params)
+        respond_to do |format|
+          format.html do
+            redirect_back fallback_location: main_app.root_path,
+                          notice: t("collavre.plans.updated", default: "Plan updated.")
+          end
+          format.json do
+            render json: plan_json(@plan), status: :ok
+          end
+        end
+      else
+        respond_to do |format|
+          format.html do
+            flash[:alert] = @plan.errors.full_messages.join(", ")
+            redirect_back fallback_location: main_app.root_path
+          end
+          format.json do
+            render json: { errors: @plan.errors.full_messages }, status: :unprocessable_entity
+          end
+        end
+      end
+    end
+
     private
 
     def plan_params
       params.require(:plan).permit(:target_date, :creative_id)
+    end
+
+    def plan_update_params
+      params.require(:plan).permit(:target_date)
+    end
+
+    def plan_editable_by_current_user?
+      return true if @plan.owner_id == Current.user&.id
+      return true if @plan.creative&.has_permission?(Current.user, :write)
+
+      tagged_creative = Creative.find_by(id: params[:creative_id])
+      return false unless tagged_creative
+      return false unless @plan.tags.exists?(creative_id: tagged_creative.id)
+
+      tagged_creative.has_permission?(Current.user, :write)
+    end
+
+    def render_forbidden
+      respond_to do |format|
+        format.html do
+          redirect_back fallback_location: main_app.root_path,
+                        alert: t("collavre.plans.update_forbidden", default: "You do not have permission to update this plan.")
+        end
+        format.json do
+          render json: { error: "forbidden" }, status: :forbidden
+        end
+      end
     end
 
     def plan_json(plan)
