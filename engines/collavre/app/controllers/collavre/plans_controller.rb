@@ -79,7 +79,7 @@ module Collavre
                           notice: t("collavre.plans.updated", default: "Plan updated.")
           end
           format.json do
-            render json: plan_json(@plan), status: :ok
+            render json: plan_json(@plan, creative_id: params[:creative_id] || @plan.creative_id), status: :ok
           end
         end
       else
@@ -128,7 +128,7 @@ module Collavre
       end
     end
 
-    def plan_json(plan)
+    def plan_json(plan, creative_id: nil)
       {
         id: plan.id,
         name: (plan.creative&.effective_description(nil, false) || plan.name.presence || I18n.l(plan.target_date)),
@@ -136,7 +136,7 @@ module Collavre
         start_date: (plan.start_date || plan.created_at.to_date),
         target_date: plan.target_date,
         progress: plan.progress,
-        path: plan_creatives_path(plan),
+        path: plan_creatives_path(plan, creative_id: creative_id),
         deletable: plan.owner_id == Current.user&.id
       }
     end
@@ -154,8 +154,10 @@ module Collavre
       }
     end
 
-    def plan_creatives_path(plan)
-      if params[:id].present?
+    def plan_creatives_path(plan, creative_id: nil)
+      if creative_id.present?
+        creative_path(creative_id, tags: [ plan.id ])
+      elsif params[:id].present?
         creative_path(params[:id], tags: [ plan.id ])
       else
         creatives_path(tags: [ plan.id ])
