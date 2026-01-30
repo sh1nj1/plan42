@@ -37,12 +37,13 @@ Links a Slack channel to a Collavre Creative.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `creative_id` | integer | Linked Creative |
+| `creative_id` | integer | Linked Creative (unique - 1:1 relationship) |
 | `slack_account_id` | integer | Parent Slack account |
 | `channel_id` | string | Slack channel ID |
 | `channel_name` | string | Slack channel name |
-| `is_active` | boolean | Whether sync is enabled |
 | `last_synced_at` | datetime | Last sync timestamp |
+
+**Note:** Each Creative can only be linked to one Slack channel (1:1 relationship). To change the linked channel, delete the existing link first.
 
 ### SlackUserMapping
 

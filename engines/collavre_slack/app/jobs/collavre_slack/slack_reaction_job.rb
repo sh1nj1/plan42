@@ -10,7 +10,7 @@ module CollavreSlack
       return if comment_links.empty?
 
       # Convert emoji to Slack format (remove colons if present, handle common mappings)
-      slack_emoji = normalize_emoji_for_slack(emoji)
+      slack_emoji = EmojiMapping.to_slack(emoji)
       Rails.logger.info("[CollavreSlack] Normalized emoji: #{emoji.inspect} -> #{slack_emoji.inspect}")
 
       comment_links.each do |link|
@@ -40,12 +40,6 @@ module CollavreSlack
           end
         end
       end
-    end
-
-    private
-
-    def normalize_emoji_for_slack(emoji)
-      EmojiMapping.to_slack(emoji)
     end
   end
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_30_020000) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_31_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -416,7 +416,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_30_020000) do
     t.datetime "created_at", null: false
     t.integer "created_by_id", null: false
     t.integer "creative_id", null: false
-    t.boolean "is_active", default: true, null: false
     t.datetime "last_synced_at"
     t.integer "slack_account_id", null: false
     t.datetime "updated_at", null: false

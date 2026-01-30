@@ -21,19 +21,17 @@ module CollavreSlack
       # Use effective_origin since Slack links are on origin creative
       target_creative_id = creative.effective_origin.id
 
-      return unless CollavreSlack::SlackChannelLink.where(creative_id: target_creative_id, is_active: true).exists?
+      return unless CollavreSlack::SlackChannelLink.where(creative_id: target_creative_id).exists?
 
       Rails.logger.info("[CollavreSlack] dispatch_to_slack_channels called for comment #{id}, creative_id=#{creative_id}, target_creative_id=#{target_creative_id}")
 
-      links = CollavreSlack::SlackChannelLink.where(creative_id: target_creative_id, is_active: true)
+      links = CollavreSlack::SlackChannelLink.where(creative_id: target_creative_id)
       Rails.logger.info("[CollavreSlack] Found #{links.count} active Slack links")
 
       links.find_each do |link|
         Rails.logger.info("[CollavreSlack] Dispatching to channel #{link.channel_name} (#{link.channel_id})")
         dispatcher = CollavreSlack::SlackMessageDispatcher.new(channel_link: link)
-        message_text = content.to_plain_text rescue content.to_s
-        sender_name = user&.name || I18n.t("collavre_slack.messages.anonymous")
-        dispatcher.enqueue(message: "[#{sender_name}] #{message_text}", sender: user, comment: self)
+        dispatcher.enqueue(message: format_slack_message, sender: user, comment: self)
       end
     rescue StandardError => e
       Rails.logger.error("[CollavreSlack] Failed to dispatch to Slack: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
@@ -45,14 +43,10 @@ module CollavreSlack
       comment_links = CollavreSlack::SlackCommentLink.where(comment_id: id)
       return if comment_links.empty?
 
-      message_text = content.to_plain_text rescue content.to_s
-      sender_name = user&.name || I18n.t("collavre_slack.messages.anonymous")
-      formatted_message = "[#{sender_name}] #{message_text}"
-
       comment_links.each do |link|
         CollavreSlack::SlackMessageUpdateJob.perform_later(
           slack_comment_link_id: link.id,
-          message: formatted_message
+          message: format_slack_message
         )
       end
     rescue StandardError => e
@@ -73,6 +67,12 @@ module CollavreSlack
       Rails.logger.info("[CollavreSlack] Saved #{@slack_links_to_delete.size} links for deletion")
     rescue StandardError => e
       Rails.logger.error("[CollavreSlack] Failed to prepare Slack message deletion: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+    end
+
+    def format_slack_message
+      message_text = content.to_plain_text rescue content.to_s
+      sender_name = user&.name || I18n.t("collavre_slack.messages.anonymous")
+      "[#{sender_name}] #{message_text}"
     end
 
     def delete_slack_messages

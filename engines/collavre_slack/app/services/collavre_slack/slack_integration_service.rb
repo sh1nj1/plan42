@@ -11,8 +11,7 @@ module CollavreSlack
         slack_account: slack_account,
         channel_id: channel_id,
         channel_name: channel_name,
-        created_by: user,
-        is_active: true
+        created_by: user
       )
     end
 

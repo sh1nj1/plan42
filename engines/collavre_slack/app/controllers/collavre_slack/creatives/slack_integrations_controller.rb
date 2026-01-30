@@ -6,7 +6,7 @@ module CollavreSlack
       def index
         # Always use origin creative for Slack links (chat messages are on origin)
         target_creative = @creative.effective_origin
-        @links = SlackChannelLink.where(creative: target_creative, is_active: true)
+        @links = SlackChannelLink.where(creative: target_creative)
         respond_to do |format|
           format.json do
             slack_account = Current.user ? SlackAccount.find_by(user: Current.user) : nil

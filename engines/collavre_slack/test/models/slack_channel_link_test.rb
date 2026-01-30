@@ -17,8 +17,7 @@ module CollavreSlack
         slack_account: slack_account,
         channel_id: "C777",
         channel_name: "general",
-        created_by: user,
-        is_active: true
+        created_by: user
       )
 
       # Attempting to link the same creative to a different channel should fail
@@ -27,8 +26,7 @@ module CollavreSlack
         slack_account: slack_account,
         channel_id: "C888",
         channel_name: "random",
-        created_by: user,
-        is_active: true
+        created_by: user
       )
 
       assert_not duplicate.valid?

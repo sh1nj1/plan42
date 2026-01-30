@@ -15,8 +15,7 @@ module CollavreSlack
 
       channel_link = SlackChannelLink.find_by(
         slack_account: slack_account,
-        channel_id: channel_id,
-        is_active: true
+        channel_id: channel_id
       )
       return unless channel_link
 
@@ -123,7 +122,7 @@ module CollavreSlack
         type: reaction_action,
         comment_id: comment_link.comment_id,
         user_id: user.id,
-        emoji: normalize_emoji_from_slack(event_payload[:reaction])
+        emoji: EmojiMapping.to_unicode(event_payload[:reaction])
       }
     end
 
@@ -161,10 +160,6 @@ module CollavreSlack
       event_payload[:type] == "reaction_added" ? :reaction_added : :reaction_removed
     end
 
-    def normalize_emoji_from_slack(slack_emoji)
-      EmojiMapping.to_unicode(slack_emoji)
-    end
-
     def team_id
       payload[:team_id] || payload[:team]
     end
@@ -182,7 +177,7 @@ module CollavreSlack
       content = "#{I18n.t('collavre_slack.messages.thread_reply')}\n#{content}" if thread_reply?
       attachment_lines = attachment_summaries
       if attachment_lines.any?
-        content = [content, "", I18n.t("collavre_slack.messages.attachments"), *attachment_lines].join("\n")
+        content = [ content, "", I18n.t("collavre_slack.messages.attachments"), *attachment_lines ].join("\n")
       end
       content
     end

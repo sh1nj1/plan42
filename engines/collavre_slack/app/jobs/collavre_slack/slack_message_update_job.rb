@@ -9,7 +9,7 @@ module CollavreSlack
       return unless comment_link
 
       channel_link = comment_link.slack_channel_link
-      return unless channel_link&.is_active?
+      return unless channel_link
 
       formatted_message = MentionMapping.to_slack(message, channel_link.slack_account)
 

@@ -16,8 +16,7 @@ module CollavreSlack
         slack_account: slack_account,
         channel_id: "C123",
         channel_name: "general",
-        created_by: user,
-        is_active: true
+        created_by: user
       )
 
       payload = {

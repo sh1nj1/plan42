@@ -8,7 +8,7 @@ module CollavreSlack
         return
       end
 
-      channel_link = SlackChannelLink.find_by!(creative: @creative, is_active: true)
+      channel_link = SlackChannelLink.find_by!(creative: @creative)
       dispatcher = SlackMessageDispatcher.new(channel_link: channel_link)
       log = dispatcher.enqueue(message: params[:message], sender: Current.user)
 
