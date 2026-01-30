@@ -113,8 +113,24 @@ module Collavre
         client_id:     ENV["GOOGLE_CLIENT_ID"] || Rails.application.credentials.dig(:google, :client_id),
         client_secret: ENV["GOOGLE_CLIENT_SECRET"] || Rails.application.credentials.dig(:google, :client_secret),
         scope:         [ Google::Apis::CalendarV3::AUTH_CALENDAR_APP_CREATED ],
-        refresh_token: @user.google_refresh_token
+        refresh_token: refresh_token
       ).tap(&:fetch_access_token!)
+    end
+
+    def refresh_token
+      @user.google_refresh_token
+    rescue ActiveSupport::MessageEncryptor::InvalidMessage, ActiveRecord::Encryption::Errors::Decryption => e
+      raw_value = @user.read_attribute_before_type_cast(:google_refresh_token)
+      if raw_value.present? && unencrypted_value?(raw_value)
+        @user.update!(google_refresh_token: raw_value)
+        return raw_value
+      end
+
+      raise e
+    end
+
+    def unencrypted_value?(value)
+      value.is_a?(String) && !(value.start_with?("{") && value.include?('"p":'))
     end
 
     def create_app_calendar
