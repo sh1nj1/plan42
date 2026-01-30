@@ -191,20 +191,86 @@ end
 
 ## 4. JavaScript & CSS
 
+### Engine Setup for Assets
+
+Add helper methods and asset configuration in your engine's `lib/my_custom_feature/engine.rb`:
+
+```ruby
+module MyCustomFeature
+  class Engine < ::Rails::Engine
+    isolate_namespace MyCustomFeature
+
+    # Path to engine's JavaScript sources for jsbundling-rails integration
+    def self.javascript_path
+      root.join("app/javascript")
+    end
+
+    # Path to engine's stylesheet sources
+    def self.stylesheet_path
+      root.join("app/assets/stylesheets")
+    end
+
+    # Add engine stylesheets to asset paths for Propshaft
+    initializer "my_custom_feature.assets" do |app|
+      if app.config.respond_to?(:assets) && app.config.assets.respond_to?(:paths)
+        app.config.assets.paths << root.join("app/assets/stylesheets")
+      end
+    end
+  end
+end
+```
+
 ### JavaScript
+
 We use a shared build system (esbuild) driven by the Host App.
-1.  Places your entry file at `engines/my_custom_feature/app/javascript/my_custom_feature.js`.
-2.  It will be compiled to `app/assets/builds/my_custom_feature.js`.
-3.  Include it in your views: `<%= javascript_include_tag "my_custom_feature" %>`.
+
+**1. Create your entry file:**
+```
+engines/my_custom_feature/app/javascript/my_custom_feature.js
+```
+
+**2. Register in build config:**
+
+Add your engine to `script/build.cjs`:
+```javascript
+const GEM_ENGINES = [
+    { name: 'collavre', mainEntry: 'collavre.js' },
+    { name: 'my_custom_feature', mainEntry: 'my_custom_feature.js' },
+];
+```
+
+**3. Import in host app (Required):**
+
+The host app must explicitly import your engine's JavaScript:
+```javascript
+// app/javascript/application.js
+import "my_custom_feature"
+```
+
+> **Note:** This explicit import is intentional - it allows the host app to control which integrations are loaded.
 
 **Dependencies:**
 You can define dependencies in your engine's `package.json`.
 Run `npm install` in the project root to install them.
 
 ### CSS
-If you have a separate stylesheet:
-1.  Create `engines/my_custom_feature/app/assets/stylesheets/my_custom_feature.css`.
-2.  Add it to `config/initializers/assets.rb` in the Host App (ask a core dev if needed, or update if you have access).
+
+**1. Create your stylesheet:**
+```
+engines/my_custom_feature/app/assets/stylesheets/my_custom_feature/styles.css
+```
+
+**2. Configure asset paths (in engine.rb):**
+
+The `initializer "my_custom_feature.assets"` block (shown above) automatically adds your stylesheet directory to Propshaft's asset paths. This works whether your engine is a local path dependency or a published gem.
+
+**3. Include in host app layout:**
+```erb
+<%# app/views/layouts/application.html.erb %>
+<%= stylesheet_link_tag "my_custom_feature/styles" %>
+```
+
+> **Note:** With Propshaft, `config.assets.precompile` is not needed. Propshaft automatically serves all assets from registered paths.
 
 ## 5. Testing
 
