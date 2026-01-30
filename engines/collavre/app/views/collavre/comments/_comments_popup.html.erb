@@ -1,5 +1,14 @@
 
+<% fullscreen = local_assigns.fetch(:fullscreen, false) %>
+<% creative = local_assigns[:creative] %>
 <div id="comments-popup" data-controller="comments--popup comments--list comments--form comments--presence comments--mention-menu comments--topics" class="popup-box"
+     data-fullscreen="<%= fullscreen %>"
+     data-fullscreen-url-template="<%= collavre.fullscreen_creative_comments_path(creative_id: "__CREATIVE_ID__") %>"
+     <% if fullscreen && creative.present? %>
+     data-creative-id="<%= creative.id %>"
+     data-creative-snippet="<%= creative.creative_snippet %>"
+     data-can-comment="<%= creative.has_permission?(Current.user, :feedback) %>"
+     <% end %>
      data-loading-text="<%= t('app.loading') %>"
      data-delete-confirm-text="<%= t("collavre.comments.delete_confirm") %>"
      data-update-comment-text="<%= t('collavre.comments.update_comment') %>"
@@ -16,10 +25,30 @@
      data-voice-stop-text="<%= t('collavre.comments.voice_stop') %>"
      data-move-no-selection-text="<%= t('collavre.comments.move_no_selection') %>"
      data-move-error-text="<%= t('collavre.comments.move_error') %>">
-  <div class="resize-handle resize-handle-left" data-comments--popup-target="leftHandle"></div>
-  <div class="resize-handle resize-handle-right" data-comments--popup-target="rightHandle"></div>
-  <button id="close-comments-btn" data-comments--popup-target="closeButton" class="popup-close-btn">&times;</button>
-  <h3 id="comments-popup-title" data-comments--popup-target="title"><%= t('collavre.comments.comments') %></h3>
+  <% unless fullscreen %>
+    <div class="resize-handle resize-handle-left" data-comments--popup-target="leftHandle"></div>
+    <div class="resize-handle resize-handle-right" data-comments--popup-target="rightHandle"></div>
+  <% end %>
+  <div class="comments-popup-header">
+    <h3 id="comments-popup-title" data-comments--popup-target="title"><%= fullscreen && creative.present? ? creative.creative_snippet : t('collavre.comments.comments') %></h3>
+    <div class="comments-popup-actions">
+      <% if fullscreen && creative.present? %>
+        <%= link_to collavre.creative_path(creative, open_comments: true),
+                    class: "comments-popup-action comments-popup-fullscreen",
+                    aria: { label: t("collavre.comments.exit_fullscreen", default: "Exit full screen") } do %>
+          <%= svg_tag "exit-fullscreen.svg", class: "comments-popup-action-icon" %>
+        <% end %>
+      <% else %>
+        <%= link_to "#",
+                    class: "comments-popup-action comments-popup-fullscreen",
+                    data: { "comments--popup-target": "fullscreenLink" },
+                    aria: { label: t("collavre.comments.fullscreen", default: "Full screen") } do %>
+          <%= svg_tag "fullscreen.svg", class: "comments-popup-action-icon" %>
+        <% end %>
+        <button id="close-comments-btn" data-comments--popup-target="closeButton" class="comments-popup-action comments-popup-close" type="button">&times;</button>
+      <% end %>
+    </div>
+  </div>
   <div id="comment-participants" data-comments--presence-target="participants" data-comments--mention-menu-target="participants"></div>
   <div id="comment-topics" data-comments--topics-target="list" class="comment-topics-list"
        data-confirm-delete-text="<%= t('collavre.topics.delete_confirm') %>"

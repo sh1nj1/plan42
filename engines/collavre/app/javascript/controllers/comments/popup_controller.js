@@ -11,6 +11,7 @@ export default class extends Controller {
     'closeButton',
     'leftHandle',
     'rightHandle',
+    'fullscreenLink',
   ]
 
   connect() {
@@ -36,23 +37,36 @@ export default class extends Controller {
     window.addEventListener('focus', this.handleWindowFocus)
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
 
-    this.closeButtonTarget?.addEventListener('click', () => this.close())
-    this.leftHandleTarget?.addEventListener('mousedown', (event) => this.startResize(event, 'left'))
-    this.rightHandleTarget?.addEventListener('mousedown', (event) => this.startResize(event, 'right'))
+    if (this.hasCloseButtonTarget) {
+      this.closeButtonTarget.addEventListener('click', () => this.close())
+    }
+    if (this.hasLeftHandleTarget) {
+      this.leftHandleTarget.addEventListener('mousedown', (event) => this.startResize(event, 'left'))
+    }
+    if (this.hasRightHandleTarget) {
+      this.rightHandleTarget.addEventListener('mousedown', (event) => this.startResize(event, 'right'))
+    }
 
     if (this.isMobile()) {
       // Handle touch events directly on the close button to resolve issues on mobile where layout shifts (e.g., keyboard dismissal) cause click events to be lost or delayed.
       this.element.addEventListener('touchstart', this.handleTouchStart)
       this.element.addEventListener('touchend', this.handleTouchEnd)
-      this.closeButtonTarget?.addEventListener('touchstart', this.handleCloseButtonTouchStart, { passive: false })
-      this.closeButtonTarget?.addEventListener('touchend', this.handleCloseButtonTouchEnd)
+      if (this.hasCloseButtonTarget) {
+        this.closeButtonTarget.addEventListener('touchstart', this.handleCloseButtonTouchStart, { passive: false })
+        this.closeButtonTarget.addEventListener('touchend', this.handleCloseButtonTouchEnd)
+      }
     }
 
     document.querySelectorAll('form[action="/session"]').forEach((form) => {
       form.addEventListener('submit', () => window.localStorage.removeItem(SIZE_STORAGE_KEY))
     })
 
-    this.openFromUrl()
+    if (this.isFullscreen()) {
+      // Defer to ensure all sibling controllers are connected
+      requestAnimationFrame(() => this.openForCreative())
+    } else {
+      this.openFromUrl()
+    }
   }
 
   disconnect() {
@@ -66,8 +80,10 @@ export default class extends Controller {
     if (this.isMobile()) {
       this.element.removeEventListener('touchstart', this.handleTouchStart)
       this.element.removeEventListener('touchend', this.handleTouchEnd)
-      this.closeButtonTarget?.removeEventListener('touchstart', this.handleCloseButtonTouchStart)
-      this.closeButtonTarget?.removeEventListener('touchend', this.handleCloseButtonTouchEnd)
+      if (this.hasCloseButtonTarget) {
+        this.closeButtonTarget.removeEventListener('touchstart', this.handleCloseButtonTouchStart)
+        this.closeButtonTarget.removeEventListener('touchend', this.handleCloseButtonTouchEnd)
+      }
     }
   }
 
@@ -115,29 +131,52 @@ export default class extends Controller {
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.titleTarget.textContent = snippet
 
+    this.updateFullscreenLink(resolvedCreativeId)
+
     this.prepareSize()
 
     this.showPopup()
     this.updatePosition()
     document.body.classList.add('no-scroll')
 
+    await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
+  }
+
+  async openForCreative() {
+    const resolvedCreativeId = this.element.dataset.creativeId
+    const canComment = this.element.dataset.canComment === 'true'
+    const snippet = this.element.dataset.creativeSnippet || ''
+
+    this.currentButton = null
+    this.element.dataset.creativeId = resolvedCreativeId || ''
+    this.element.dataset.canComment = canComment ? 'true' : 'false'
+    this.titleTarget.textContent = snippet
+
+    this.updateFullscreenLink(resolvedCreativeId)
+
+    this.showPopup()
+
+    await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment })
+  }
+
+  async notifyChildControllers({ creativeId, canComment, highlightId }) {
     // Load topics first to establish context
     if (this.topicsController) {
-      await this.topicsController.onPopupOpened({ creativeId: resolvedCreativeId })
+      await this.topicsController.onPopupOpened({ creativeId })
     }
 
     if (this.formController) {
-      this.formController.onPopupOpened({ creativeId: resolvedCreativeId, canComment })
+      this.formController.onPopupOpened({ creativeId, canComment })
     }
     if (this.listController) {
       const topicId = this.topicsController ? this.topicsController.currentTopicId : undefined
-      this.listController.onPopupOpened({ creativeId: resolvedCreativeId, highlightId, topicId })
+      this.listController.onPopupOpened({ creativeId, highlightId, topicId })
     }
     if (this.presenceController) {
-      this.presenceController.onPopupOpened({ creativeId: resolvedCreativeId })
+      this.presenceController.onPopupOpened({ creativeId })
     }
     if (this.mentionMenuController) {
-      this.mentionMenuController.onPopupOpened({ creativeId: resolvedCreativeId })
+      this.mentionMenuController.onPopupOpened({ creativeId })
     }
   }
 
@@ -187,12 +226,14 @@ export default class extends Controller {
 
 
   showPopup() {
+    this.element.style.display = 'flex'
     if (this.isMobile()) {
-      this.element.style.display = 'flex'
       this.element.classList.add('open')
-    } else {
-      this.element.style.display = 'flex'
     }
+  }
+
+  isFullscreen() {
+    return this.element.dataset.fullscreen === 'true'
   }
 
   isMobile() {
@@ -200,7 +241,7 @@ export default class extends Controller {
   }
 
   updatePosition() {
-    if (!this.currentButton || this.isMobile() || this.element.dataset.resized === 'true') return
+    if (this.isFullscreen() || !this.currentButton || this.isMobile() || this.element.dataset.resized === 'true') return
     const rect = this.currentButton.getBoundingClientRect()
     const scrollY = window.scrollY || window.pageYOffset
     let top = rect.bottom + scrollY + 4
@@ -321,8 +362,16 @@ export default class extends Controller {
     }
   }
 
+  updateFullscreenLink(creativeId) {
+    if (!this.hasFullscreenLinkTarget || !creativeId) return
+    const template = this.element.dataset.fullscreenUrlTemplate
+    if (!template) return
+    this.fullscreenLinkTarget.href = template.replace('__CREATIVE_ID__', creativeId)
+  }
+
   openFromUrl() {
     const params = new URLSearchParams(window.location.search)
+    const openComments = params.get('open_comments') === 'true'
     let commentId = params.get('comment_id')
     if (!commentId) {
       const pathCommentMatch = window.location.pathname.match(/\/creatives\/\d+\/comments\/(\d+)/)
@@ -345,13 +394,14 @@ export default class extends Controller {
       }
     }
 
-    if (!commentId || !creativeId) return
+    // Need either open_comments flag or comment_id, plus creativeId
+    if ((!commentId && !openComments) || !creativeId) return
     const selector = `[name="show-comments-btn"][data-creative-id="${creativeId}"]`
     const tryOpenWithButton = () => {
       const button = document.querySelector(selector)
       if (!button) return false
       this.clearPendingOpenFromUrl()
-      this.open(button, { highlightId: commentId })
+      this.open(button, { highlightId: commentId || undefined })
       return true
     }
 

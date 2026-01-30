@@ -1,0 +1,5 @@
+<% content_for :title, "#{@creative_snippet} - #{t('collavre.comments.comments')}" %>
+
+<div class="comments-fullscreen-page">
+  <%= render "collavre/comments/comments_popup", fullscreen: true, creative: @creative %>
+</div>
