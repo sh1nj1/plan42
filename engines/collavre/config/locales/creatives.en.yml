@@ -136,6 +136,9 @@ en:
         select_plan: Select Plan
         remove_plan: Remove Plan
         add_plan: Add Plan
+        progress_complete: Complete
+        progress_incomplete: Incomplete
+        progress_complete_children_alert: Marking this creative complete will also mark all child creatives complete.
         set_plan_title: Set Plan for Selected Creative
         are_you_sure_delete_share: Are you sure delete share?
         share_deleted: The share are deleted.

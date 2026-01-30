@@ -236,6 +236,8 @@ module Collavre
         permitted = creative_params.to_h
         base = @creative.effective_origin(Set.new)
         success = true
+        previous_progress = base.progress
+        requested_progress = permitted["progress"] || permitted[:progress]
 
         # Handle parent_id change separately for Linked Creatives
         if @creative.origin_id.present? && permitted.key?("parent_id")
@@ -251,6 +253,12 @@ module Collavre
         permitted.delete(:origin_id)
 
         success &&= base.update(permitted)
+        if success && requested_progress.present? && requested_progress.to_f >= 1 && previous_progress.to_f < 1
+          if base.children.exists?
+            base.self_and_descendants.where(origin_id: nil)
+              .update_all(progress: 1.0, updated_at: Time.current)
+          end
+        end
 
         if success
           format.html { redirect_to @creative }

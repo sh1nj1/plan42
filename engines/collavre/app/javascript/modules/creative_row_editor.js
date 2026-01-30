@@ -3,6 +3,7 @@ import apiQueue from '../lib/api/queue_manager'
 import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
 import { createInlineEditor } from './lexical_inline_editor'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
+import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
 
@@ -75,6 +76,9 @@ export function initializeCreativeRowEditor() {
     const editorContainer = template.querySelector('[data-lexical-editor-root]');
     const progressInput = document.getElementById('inline-creative-progress');
     const progressValue = document.getElementById('inline-progress-value');
+    const progressCompleteLabel = progressInput?.dataset.completeLabel || 'Complete';
+    const progressIncompleteLabel = progressInput?.dataset.incompleteLabel || 'Incomplete';
+    const progressHiddenInput = document.querySelector('input[type="hidden"][name="creative[progress]"]');
     const upBtn = document.getElementById('inline-move-up');
     const downBtn = document.getElementById('inline-move-down');
     const addBtn = document.getElementById('inline-add');
@@ -136,16 +140,51 @@ export function initializeCreativeRowEditor() {
     let originalProgress = 0;
     let originalOriginId = '';
     let isDirty = false;
+    let completionCascadePending = false;
 
     function formatProgressDisplay(value) {
-      const numeric = Number(value);
-      if (Number.isNaN(numeric)) return '0%';
-      const percentage = Math.round(numeric * 100);
-      return `${percentage}%`;
+      return isProgressComplete(value) ? progressCompleteLabel : progressIncompleteLabel;
+    }
+
+    function readProgressValue() {
+      if (!progressInput) return 0;
+      return progressInput.checked ? 1 : 0;
+    }
+
+    function progressValueChanged() {
+      if (!progressInput) return false;
+      return progressValueChangedFrom(originalProgress, progressInput.checked);
+    }
+
+    function setProgressState(value) {
+      if (!progressInput) return;
+      const complete = isProgressComplete(value);
+      progressInput.checked = complete;
+      if (progressValue) {
+        progressValue.textContent = formatProgressDisplay(value);
+      }
+    }
+
+    function updateProgressInputAvailability(value) {
+      if (!progressInput) return;
+      const hasChildren = currentRowHasChildren();
+      const complete = isProgressComplete(value);
+      const shouldDisable = hasChildren && complete;
+      progressInput.disabled = shouldDisable;
+      if (progressHiddenInput) {
+        progressHiddenInput.disabled = false;
+        progressHiddenInput.value = shouldDisable ? '1' : '0';
+      }
     }
 
     function treeRowElement(node) {
       return node && node.closest ? node.closest('creative-tree-row') : null;
+    }
+
+    function currentRowHasChildren() {
+      const row = currentRowElement || (currentTree ? treeRowElement(currentTree) : null);
+      if (!row) return false;
+      return !!(row.hasChildren || row.getAttribute?.('has-children'));
     }
 
     function hasDatasetValue(element, key) {
@@ -245,8 +284,9 @@ export function initializeCreativeRowEditor() {
       isDirty = false;
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
-      progressInput.value = normalizedProgress;
-      progressValue.textContent = formatProgressDisplay(progressInput.value);
+      setProgressState(normalizedProgress);
+      updateProgressInputAvailability(normalizedProgress);
+      completionCascadePending = false;
       const fallbackParent = tree?.dataset?.parentId || '';
       parentInput.value = data.parent_id ?? fallbackParent ?? '';
       beforeInput.value = '';
@@ -892,8 +932,17 @@ export function initializeCreativeRowEditor() {
 
         // Capture values being saved to update dirty state on success
         const savedContent = descriptionInput.value;
-        const savedProgress = progressInput.value;
+        const shouldPersistProgress = progressValueChanged();
+        const savedProgress = shouldPersistProgress ? readProgressValue() : progressBaselineValueFrom(originalProgress);
         const savedOriginId = originIdInput ? originIdInput.value : '';
+        const cascadeProgressUpdate = completionCascadePending;
+        const progressInputsDisabled = progressInput?.disabled ?? false;
+        const hiddenProgressDisabled = progressHiddenInput?.disabled ?? false;
+
+        if (!shouldPersistProgress) {
+          if (progressInput) progressInput.disabled = true;
+          if (progressHiddenInput) progressHiddenInput.disabled = true;
+        }
 
         savePromise = creativesApi.save(form.action, method, form).then(function (r) {
           if (!r.ok) return r;
@@ -902,12 +951,14 @@ export function initializeCreativeRowEditor() {
           }).then(function (data) {
             // Update dirty state to reflect successful save
             originalContent = savedContent;
-            originalProgress = savedProgress;
+            if (shouldPersistProgress) {
+              originalProgress = savedProgress;
+            }
             originalOriginId = savedOriginId;
 
             // If current values match what was just saved, clear dirty flag
             if (descriptionInput.value === savedContent &&
-              progressInput.value === savedProgress &&
+              readProgressValue() === savedProgress &&
               originIdInput.value === savedOriginId) {
               isDirty = false;
             }
@@ -954,6 +1005,10 @@ export function initializeCreativeRowEditor() {
             } else if (method === 'PATCH') {
               if (tree) refreshRow(tree);
             }
+            if (cascadeProgressUpdate && tree) {
+              refreshChildren(tree);
+              completionCascadePending = false;
+            }
 
             // Delete removed attachments after successful save
             if (lexicalEditor && typeof lexicalEditor.getDeletedAttachments === 'function') {
@@ -966,6 +1021,10 @@ export function initializeCreativeRowEditor() {
           });
         }).finally(function () {
           saving = false;
+          if (!shouldPersistProgress) {
+            if (progressInput) progressInput.disabled = progressInputsDisabled;
+            if (progressHiddenInput) progressHiddenInput.disabled = hiddenProgressDisabled;
+          }
         });
         return savePromise;
       });
@@ -1071,7 +1130,8 @@ export function initializeCreativeRowEditor() {
       // CRITICAL: Capture ALL values BEFORE awaiting, because the editor may switch
       // to a different creative while we're waiting for uploads
       let currentContent = descriptionInput.value;
-      let currentProgress = progressInput.value;
+      let currentProgress = readProgressValue();
+      let shouldPersistProgress = progressValueChanged();
       const currentParentId = tree.dataset.parentId || '';
       const currentBeforeId = tree.previousElementSibling ? creativeIdFrom(tree.previousElementSibling) : '';
       const currentAfterId = tree.nextElementSibling ? creativeIdFrom(tree.nextElementSibling) : '';
@@ -1092,16 +1152,20 @@ export function initializeCreativeRowEditor() {
       // This ensures we capture the final HTML with signed IDs instead of blob URLs
       if (form.dataset.creativeId === startCreativeId) {
         currentContent = descriptionInput.value;
-        currentProgress = progressInput.value;
+        currentProgress = readProgressValue();
+        shouldPersistProgress = progressValueChanged();
       }
 
       // Build request body
       // Note: before_id and after_id must be top-level params, not nested under creative[]
       // because CreativesController reads params[:before_id] and params[:after_id] for positioning
       const body = {
-        'creative[description]': currentContent,
-        'creative[progress]': currentProgress
+        'creative[description]': currentContent
       };
+
+      if (shouldPersistProgress) {
+        body['creative[progress]'] = currentProgress;
+      }
 
       // Always include parent_id, even if empty (for moving to root)
       body['creative[parent_id]'] = currentParentId;
@@ -1122,7 +1186,9 @@ export function initializeCreativeRowEditor() {
           row.dataset.descriptionHtml = currentContent;
           row.descriptionHtml = currentContent;
           row.dataset.descriptionRawHtml = currentContent;
-          row.dataset.progressValue = String(currentProgress);
+          if (shouldPersistProgress) {
+            row.dataset.progressValue = String(currentProgress);
+          }
           if (currentParentId) {
             tree.dataset.parentId = currentParentId;
             row.parentId = currentParentId;
@@ -1156,6 +1222,9 @@ export function initializeCreativeRowEditor() {
 
       // Reset dirty state
       originalContent = currentContent;
+      if (shouldPersistProgress) {
+        originalProgress = currentProgress;
+      }
       isDirty = false;
       pendingSave = false;
       clearTimeout(saveTimer);
@@ -1540,8 +1609,8 @@ export function initializeCreativeRowEditor() {
           resetOriginTracking();
           descriptionInput.value = '';
           lexicalEditor.reset(`new-${Date.now()}`);
-          progressInput.value = 0;
-          progressValue.textContent = formatProgressDisplay(0);
+          setProgressState(0);
+          originalProgress = 0;
           if (unconvertBtn) unconvertBtn.style.display = 'none';
           pendingSave = false;
           lexicalEditor.focus();
@@ -1666,10 +1735,25 @@ export function initializeCreativeRowEditor() {
       return !!node && $isRootOrShadowRoot(node);
     }
 
-    progressInput.addEventListener('input', function () {
-      progressValue.textContent = formatProgressDisplay(progressInput.value);
-      scheduleSave();
-    });
+    if (progressInput) {
+      progressInput.addEventListener('change', function () {
+        if (progressValue) {
+          progressValue.textContent = formatProgressDisplay(readProgressValue());
+        }
+        completionCascadePending = false;
+        const hasChildren = currentRowHasChildren();
+        const shouldCascade = hasChildren && progressValueChanged();
+        if (shouldCascade) {
+          completionCascadePending = true;
+          const alertMessage = progressInput.dataset.childrenAlertMessage;
+          if (alertMessage) {
+            alert(alertMessage);
+          }
+        }
+        updateProgressInputAvailability(readProgressValue());
+        scheduleSave();
+      });
+    }
 
     if (parentSuggestBtn && parentSuggestions) {
       parentSuggestBtn.addEventListener('click', function () {
