@@ -74,16 +74,15 @@ module Collavre
       end
 
       # Check strict loading? No, simple where is fine.
-      dynamic_tools = McpTool.where(name: registered_names)
+      dynamic_tools = McpTool.where(name: registered_names).includes(:creative)
       dynamic_tool_names = dynamic_tools.pluck(:name).to_set
 
-      # If user is present, find their owned tools
-      user_owned_tool_names = if user
-                                dynamic_tools
-                                  .joins(:creative)
-                                  .where(creatives: { user_id: user.id })
-                                  .pluck(:name)
-                                  .to_set
+      # Build set of tool names the user has permission to run
+      # User needs write permission on the creative to run its tools
+      accessible_tool_names = if user
+                                dynamic_tools.select do |mcp_tool|
+                                  mcp_tool.creative&.has_permission?(user, :write)
+                                end.map(&:name).to_set
       else
                                 Set.new
       end
@@ -97,8 +96,8 @@ module Collavre
                  nil
         end
         if dynamic_tool_names.include?(name)
-          # It is a dynamic tool; user must own it.
-          user_owned_tool_names.include?(name)
+          # It is a dynamic tool; user must have write permission on its creative.
+          accessible_tool_names.include?(name)
         else
           # It is a system tool (not in McpTool database); allow it.
           true

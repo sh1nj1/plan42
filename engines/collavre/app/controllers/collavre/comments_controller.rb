@@ -469,6 +469,16 @@ module Collavre
     def format_command_args(params)
       return if params.blank?
 
+      # Handle array format (from MetaToolService)
+      if params.is_a?(Array)
+        return params.map do |param|
+          name = param[:name] || param["name"]
+          required = param[:required] || param["required"]
+          name.to_s + (required ? "*" : "")
+        end.join(", ")
+      end
+
+      # Handle JSON Schema format (Hash with :properties)
       properties = params[:properties] || params["properties"]
       return unless properties.is_a?(Hash)
 

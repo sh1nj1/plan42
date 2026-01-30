@@ -57,9 +57,9 @@ if (!commandMenuInitialized) {
 
     function insert(command) {
       const pos = textarea.selectionStart
-      const before = textarea.value.slice(0, pos)
       const after = textarea.value.slice(pos)
-      const replaced = before.replace(/\/[^\s/]*$/, `${command.label} `)
+      // Since "/" is always at the start, replace from beginning
+      const replaced = `${command.label} `
       textarea.value = replaced + after
       textarea.setSelectionRange(replaced.length, replaced.length)
     }
@@ -99,7 +99,8 @@ if (!commandMenuInitialized) {
     textarea.addEventListener('input', function () {
       const pos = textarea.selectionStart
       const before = textarea.value.slice(0, pos)
-      const match = before.match(/\/([^\s/]*)$/)
+      // Only trigger when "/" is at the very beginning of the message
+      const match = before.match(/^\/([^\s/]*)$/)
       if (!match) {
         hide()
         return

@@ -708,4 +708,75 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     delete session_path
     post session_path, params: { email: @user.email, password: "password" }
   end
+
+  test "commands returns static calendar command" do
+    get commands_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    json = JSON.parse(response.body)
+
+    calendar_command = json.find { |cmd| cmd["name"] == "calendar" }
+    assert_not_nil calendar_command, "Calendar command should be present"
+    assert_equal "/calendar", calendar_command["label"]
+    assert_includes calendar_command["aliases"], "/cal"
+  end
+
+  test "commands returns system MCP tools" do
+    skip "RailsMcpEngine not available" unless defined?(RailsMcpEngine)
+
+    get commands_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    json = JSON.parse(response.body)
+
+    # creative_retrieval_service is a system tool, should be included
+    retrieval_tool = json.find { |cmd| cmd["name"] == "creative_retrieval_service" }
+    assert_not_nil retrieval_tool, "System tool creative_retrieval_service should be present"
+    assert_equal "/creative_retrieval_service", retrieval_tool["label"]
+  end
+
+  test "commands excludes dynamic tools user does not have permission for" do
+    skip "RailsMcpEngine not available" unless defined?(RailsMcpEngine)
+
+    # Create a tool owned by another user
+    other_user = users(:two)
+    other_creative = Creative.create!(user: other_user, description: "Other user's creative")
+    McpTool.create!(creative: other_creative, name: "private_test_tool", source_code: "class Foo; end")
+
+    get commands_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    json = JSON.parse(response.body)
+
+    # Should not include the private tool
+    private_tool = json.find { |cmd| cmd["name"] == "private_test_tool" }
+    assert_nil private_tool, "Private tool should not be present for unauthorized user"
+  end
+
+  test "commands includes dynamic tools user has write permission for" do
+    skip "RailsMcpEngine not available" unless defined?(RailsMcpEngine)
+
+    # Create a tool owned by the current user
+    my_creative = Creative.create!(user: @user, description: "My creative")
+    McpTool.create!(creative: my_creative, name: "my_test_tool", source_code: "class Foo; end")
+
+    get commands_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    json = JSON.parse(response.body)
+
+    # Should include the user's own tool
+    my_tool = json.find { |cmd| cmd["name"] == "my_test_tool" }
+    assert_not_nil my_tool, "User's own tool should be present"
+  end
+
+  test "commands requires read permission on creative" do
+    other_user = users(:two)
+    other_user.update!(email_verified_at: Time.current)
+    private_creative = Creative.create!(user: other_user, description: "Private")
+
+    get commands_creative_comments_path(private_creative), headers: { "Accept" => "application/json" }
+
+    assert_response :forbidden
+  end
 end
