@@ -10,6 +10,7 @@ module CollavreSlack
     has_many :slack_comment_links, class_name: "CollavreSlack::SlackCommentLink", dependent: :destroy
 
     validates :channel_id, :channel_name, presence: true
-    validates :creative_id, uniqueness: { scope: :channel_id }
+    # 1:1 relationship: one creative can only be linked to one Slack channel
+    validates :creative_id, uniqueness: { message: I18n.t("collavre_slack.errors.creative_already_linked", default: "is already linked to a Slack channel") }
   end
 end

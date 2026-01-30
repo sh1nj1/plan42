@@ -6,6 +6,7 @@ en:
     errors:
       forbidden: "Forbidden"
       not_found: "Not found"
+      creative_already_linked: "is already linked to a Slack channel"
       no_slack_account: "No Slack account connected"
       authentication_required: "Authentication required"
       missing_oauth_code: "Missing OAuth code"

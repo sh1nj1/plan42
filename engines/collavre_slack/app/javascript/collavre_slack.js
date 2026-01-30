@@ -185,11 +185,11 @@ if (!slackIntegrationInitialized) {
       if (connectedStatus) connectedStatus.style.display = 'block';
       existingContainer.style.display = 'block';
 
-      // Show "Add Channel" button if connected and there are available channels
-      if (availableChannels.length > 0 && addChannelSection) {
-        addChannelSection.style.display = 'block';
-        hasExistingIntegration = true;
+      // 1:1 relationship: hide "Add Channel" button if already linked
+      if (addChannelSection) {
+        addChannelSection.style.display = 'none';
       }
+      hasExistingIntegration = true;
     }
 
     function showConnectedNoLinks() {
