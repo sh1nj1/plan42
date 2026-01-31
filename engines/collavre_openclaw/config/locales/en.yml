@@ -1,0 +1,36 @@
+en:
+  collavre_openclaw:
+    integration:
+      label: "OpenClaw"
+      description: "Connect AI agents via OpenClaw Gateway"
+
+    accounts:
+      created: "OpenClaw account created successfully"
+      updated: "OpenClaw account updated successfully"
+      deleted: "OpenClaw account deleted successfully"
+      new_title: "Connect OpenClaw"
+      edit_title: "Edit OpenClaw Connection"
+
+    form:
+      gateway_url: "Gateway URL"
+      gateway_url_hint: "The URL of your OpenClaw gateway (e.g., https://your-gateway.com)"
+      api_token: "API Token"
+      api_token_hint: "Optional. Used for authentication and webhook signatures"
+      channel_id: "Channel ID"
+      channel_id_hint: "Optional. Specific channel to use for this agent"
+      description: "Description"
+      description_hint: "Optional notes about this connection"
+      submit_create: "Connect OpenClaw"
+      submit_update: "Update Connection"
+      cancel: "Cancel"
+
+    errors:
+      user_not_found: "User not found"
+      account_not_found: "OpenClaw account not found"
+      unauthorized: "You are not authorized to perform this action"
+      connection_failed: "Failed to connect to OpenClaw gateway"
+
+    status:
+      connected: "Connected"
+      disconnected: "Disconnected"
+      error: "Error"

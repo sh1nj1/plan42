@@ -1,0 +1,13 @@
+<div class="max-w-2xl mx-auto p-6">
+  <h1 class="text-2xl font-bold mb-6"><%= t("collavre_openclaw.accounts.edit_title") %></h1>
+
+  <%= render "form", account: @account %>
+
+  <div class="mt-8 pt-6 border-t border-gray-200">
+    <%= button_to t("collavre_openclaw.form.cancel"),
+                  account_path(@account),
+                  method: :delete,
+                  class: "text-red-600 hover:text-red-800",
+                  data: { confirm: "Are you sure you want to disconnect OpenClaw?" } %>
+  </div>
+</div>

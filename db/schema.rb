@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_31_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_31_100000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -383,6 +383,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_31_000000) do
     t.datetime "updated_at", null: false
     t.index ["owner_id", "owner_type"], name: "index_oauth_applications_on_owner_id_and_owner_type"
     t.index ["uid"], name: "index_oauth_applications_on_uid", unique: true
+  end
+
+  create_table "openclaw_accounts", force: :cascade do |t|
+    t.string "api_token"
+    t.string "channel_id"
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.string "gateway_url", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.string "webhook_secret"
+    t.index ["user_id"], name: "index_openclaw_accounts_on_user_id", unique: true
   end
 
   create_table "sessions", force: :cascade do |t|
@@ -760,6 +772,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_31_000000) do
   add_foreign_key "notion_page_links", "notion_accounts"
   add_foreign_key "oauth_access_grants", "oauth_applications", column: "application_id"
   add_foreign_key "oauth_access_tokens", "oauth_applications", column: "application_id"
+  add_foreign_key "openclaw_accounts", "users"
   add_foreign_key "sessions", "users"
   add_foreign_key "slack_accounts", "users"
   add_foreign_key "slack_channel_links", "creatives"

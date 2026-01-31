@@ -1,0 +1,36 @@
+ko:
+  collavre_openclaw:
+    integration:
+      label: "OpenClaw"
+      description: "OpenClaw 게이트웨이를 통해 AI 에이전트 연결"
+
+    accounts:
+      created: "OpenClaw 계정이 생성되었습니다"
+      updated: "OpenClaw 계정이 업데이트되었습니다"
+      deleted: "OpenClaw 계정이 삭제되었습니다"
+      new_title: "OpenClaw 연결"
+      edit_title: "OpenClaw 연결 수정"
+
+    form:
+      gateway_url: "게이트웨이 URL"
+      gateway_url_hint: "OpenClaw 게이트웨이 URL (예: https://your-gateway.com)"
+      api_token: "API 토큰"
+      api_token_hint: "선택사항. 인증 및 웹훅 서명에 사용됩니다"
+      channel_id: "채널 ID"
+      channel_id_hint: "선택사항. 이 에이전트에 사용할 특정 채널"
+      description: "설명"
+      description_hint: "이 연결에 대한 선택적 메모"
+      submit_create: "OpenClaw 연결"
+      submit_update: "연결 업데이트"
+      cancel: "취소"
+
+    errors:
+      user_not_found: "사용자를 찾을 수 없습니다"
+      account_not_found: "OpenClaw 계정을 찾을 수 없습니다"
+      unauthorized: "이 작업을 수행할 권한이 없습니다"
+      connection_failed: "OpenClaw 게이트웨이에 연결하지 못했습니다"
+
+    status:
+      connected: "연결됨"
+      disconnected: "연결 끊김"
+      error: "오류"

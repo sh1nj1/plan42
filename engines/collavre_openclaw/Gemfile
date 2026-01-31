@@ -1,0 +1,10 @@
+source "https://rubygems.org"
+
+gemspec
+
+gem "rails", ">= 8.0"
+
+group :development, :test do
+  gem "debug"
+  gem "minitest"
+end
