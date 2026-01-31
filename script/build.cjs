@@ -19,6 +19,7 @@ const fs = require('fs');
 const GEM_ENGINES = [
     { name: 'collavre', mainEntry: 'collavre.js' },
     { name: 'collavre_slack', mainEntry: 'collavre_slack.js' },
+    { name: 'collavre_notion', mainEntry: 'collavre_notion.js' },
     // Add more engines here as needed:
     // { name: 'another_engine', mainEntry: 'another_engine.js' },
 ];

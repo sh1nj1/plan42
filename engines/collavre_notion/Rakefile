@@ -1,0 +1,3 @@
+require_relative "lib/collavre_notion"
+
+CollavreNotion::Engine.load_tasks

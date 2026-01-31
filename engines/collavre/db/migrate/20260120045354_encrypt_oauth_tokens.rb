@@ -12,7 +12,7 @@ class EncryptOauthTokens < ActiveRecord::Migration[8.1]
     end
 
     say_with_time "Encrypting NotionAccount tokens" do
-      encrypt_column(NotionAccount, :token)
+      encrypt_column(CollavreNotion::NotionAccount, :token)
     end
   end
 

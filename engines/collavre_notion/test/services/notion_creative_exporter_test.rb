@@ -1,19 +1,16 @@
-require "test_helper"
+require_relative "../test_helper"
 
 class NotionCreativeExporterTest < ActiveSupport::TestCase
   def setup
-    @user = User.create!(
-      email: "test@example.com",
-      password: "password123",
-      name: "Test User"
-    )
+    @user = create_user(email: "exporter-test@example.com", name: "Exporter Test User")
 
-    @creative = Creative.create!(
+    @creative = Collavre::Creative.create!(
       user: @user,
-      description: "Test Creative Title"
+      description: "Test Creative Title",
+      progress: 0.0
     )
 
-    @exporter = NotionCreativeExporter.new(@creative)
+    @exporter = CollavreNotion::NotionCreativeExporter.new(@creative)
   end
 
   test "should export creative as heading block" do
@@ -46,7 +43,7 @@ class NotionCreativeExporterTest < ActiveSupport::TestCase
 
   test "should export with progress when enabled" do
     @creative.update!(progress: 0.75)
-    exporter = NotionCreativeExporter.new(@creative, with_progress: true)
+    exporter = CollavreNotion::NotionCreativeExporter.new(@creative, with_progress: true)
 
     blocks = exporter.export_blocks
     block = blocks.first
@@ -55,37 +52,41 @@ class NotionCreativeExporterTest < ActiveSupport::TestCase
   end
 
   test "should handle deeper level creatives as bulleted lists" do
-    creative = Creative.create!(
+    creative = Collavre::Creative.create!(
       user: @user,
-      description: "Deep Level Creative"
+      description: "Deep Level Creative",
+      progress: 0.0
     )
 
     # Test with level 5 (should use bulleted list)
-    exporter = NotionCreativeExporter.new(creative)
+    exporter = CollavreNotion::NotionCreativeExporter.new(creative)
     blocks = exporter.send(:convert_creative_to_blocks, creative, level: 5)
 
     assert_equal "bulleted_list_item", blocks.first[:type]
   end
 
   test "should export tree of creatives" do
-    parent = Creative.create!(
+    parent = Collavre::Creative.create!(
       user: @user,
-      description: "Parent Creative"
+      description: "Parent Creative",
+      progress: 0.0
     )
 
-    child1 = Creative.create!(
+    Collavre::Creative.create!(
       user: @user,
       description: "Child 1",
-      parent: parent
+      parent: parent,
+      progress: 0.0
     )
 
-    child2 = Creative.create!(
+    Collavre::Creative.create!(
       user: @user,
       description: "Child 2",
-      parent: parent
+      parent: parent,
+      progress: 0.0
     )
 
-    exporter = NotionCreativeExporter.new(parent)
+    exporter = CollavreNotion::NotionCreativeExporter.new(parent)
     blocks = exporter.export_tree_blocks([ parent ])
 
     # Should have blocks for parent and both children
@@ -115,12 +116,13 @@ class NotionCreativeExporterTest < ActiveSupport::TestCase
   end
 
   test "should handle HTML content cleaning" do
-    creative = Creative.create!(
+    creative = Collavre::Creative.create!(
       user: @user,
-      description: "<div class='trix-content'><div>Clean Title</div></div>"
+      description: "<div class='trix-content'><div>Clean Title</div></div>",
+      progress: 0.0
     )
 
-    exporter = NotionCreativeExporter.new(creative)
+    exporter = CollavreNotion::NotionCreativeExporter.new(creative)
     blocks = exporter.export_blocks
 
     assert_equal "Clean Title", blocks.first[:heading_1][:rich_text][0][:text][:content]
@@ -134,19 +136,20 @@ class NotionCreativeExporterTest < ActiveSupport::TestCase
   end
 
   test "should handle empty or nil content" do
-    creative = Creative.create!(
+    creative = Collavre::Creative.create!(
       user: @user,
-      description: "Placeholder"
+      description: "Placeholder",
+      progress: 0.0
     )
 
     creative.stub(:effective_description, nil) do
-      exporter = NotionCreativeExporter.new(creative)
+      exporter = CollavreNotion::NotionCreativeExporter.new(creative)
       blocks = exporter.export_blocks
       assert_kind_of Array, blocks
     end
 
     creative.stub(:effective_description, ActionText::Content.new("")) do
-      exporter = NotionCreativeExporter.new(creative)
+      exporter = CollavreNotion::NotionCreativeExporter.new(creative)
       blocks = exporter.export_blocks
       assert_kind_of Array, blocks
     end

@@ -17,7 +17,6 @@ module Collavre
     has_many :contact_users, through: :contacts
     has_many :contact_memberships, class_name: "Collavre::Contact", foreign_key: :contact_user_id, dependent: :destroy, inverse_of: :contact_user
     has_one :github_account, class_name: "Collavre::GithubAccount", dependent: :destroy
-    has_one :notion_account, class_name: "Collavre::NotionAccount", dependent: :destroy
     has_many :tasks, class_name: "Collavre::Task", foreign_key: :agent_id, dependent: :destroy
 
     # Associations that reference creatives - must be destroyed BEFORE creatives

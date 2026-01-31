@@ -1,27 +1,20 @@
-require "test_helper"
+require_relative "../test_helper"
 
 class NotionPageLinkTest < ActiveSupport::TestCase
   def setup
-    @user = User.create!(
-      email: "test@example.com",
-      password: "password123",
-      name: "Test User"
-    )
+    @user = create_user(email: "page-link-test@example.com", name: "Page Link Test User")
 
-    @account = NotionAccount.create!(
+    @account = CollavreNotion::NotionAccount.create!(
       user: @user,
       notion_uid: "test-uid",
       token: "test-token"
     )
 
-    @creative = Creative.create!(
-      user: @user,
-      description: "Test Creative"
-    )
+    @creative = create_creative(@user)
   end
 
   test "should belong to creative and notion_account" do
-    link = NotionPageLink.new(
+    link = CollavreNotion::NotionPageLink.new(
       creative: @creative,
       notion_account: @account,
       page_id: "test-page-id",
@@ -31,7 +24,7 @@ class NotionPageLinkTest < ActiveSupport::TestCase
   end
 
   test "should require page_id and page_title" do
-    link = NotionPageLink.new(
+    link = CollavreNotion::NotionPageLink.new(
       creative: @creative,
       notion_account: @account
     )
@@ -41,14 +34,14 @@ class NotionPageLinkTest < ActiveSupport::TestCase
   end
 
   test "should validate uniqueness of page_id" do
-    NotionPageLink.create!(
+    CollavreNotion::NotionPageLink.create!(
       creative: @creative,
       notion_account: @account,
       page_id: "unique-page-id",
       page_title: "First Page"
     )
 
-    duplicate = NotionPageLink.new(
+    duplicate = CollavreNotion::NotionPageLink.new(
       creative: @creative,
       notion_account: @account,
       page_id: "unique-page-id",
@@ -59,7 +52,7 @@ class NotionPageLinkTest < ActiveSupport::TestCase
   end
 
   test "mark_synced! should update last_synced_at" do
-    link = NotionPageLink.create!(
+    link = CollavreNotion::NotionPageLink.create!(
       creative: @creative,
       notion_account: @account,
       page_id: "test-page-id",
@@ -73,7 +66,7 @@ class NotionPageLinkTest < ActiveSupport::TestCase
   end
 
   test "scopes should work correctly" do
-    synced_link = NotionPageLink.create!(
+    synced_link = CollavreNotion::NotionPageLink.create!(
       creative: @creative,
       notion_account: @account,
       page_id: "synced-page-id",
@@ -81,16 +74,16 @@ class NotionPageLinkTest < ActiveSupport::TestCase
       last_synced_at: 1.hour.ago
     )
 
-    unsynced_link = NotionPageLink.create!(
+    unsynced_link = CollavreNotion::NotionPageLink.create!(
       creative: @creative,
       notion_account: @account,
       page_id: "unsynced-page-id",
       page_title: "Unsynced Page"
     )
 
-    assert_includes NotionPageLink.synced, synced_link
-    assert_not_includes NotionPageLink.synced, unsynced_link
+    assert_includes CollavreNotion::NotionPageLink.synced, synced_link
+    assert_not_includes CollavreNotion::NotionPageLink.synced, unsynced_link
 
-    assert_equal synced_link, NotionPageLink.recent.first
+    assert_equal synced_link, CollavreNotion::NotionPageLink.recent.first
   end
 end

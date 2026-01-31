@@ -116,7 +116,7 @@ if (!notionIntegrationInitialized) {
       statusEl.textContent = 'Loading...';
       clearError();
 
-      fetch(`/creatives/${creativeId}/notion_integration`, {
+      fetch(`/notion/creatives/${creativeId}/notion_integration`, {
         method: 'GET',
         headers: {
           'X-CSRF-Token': csrfToken(),
@@ -299,7 +299,7 @@ if (!notionIntegrationInitialized) {
       console.log('Sending export request:', requestData);
       console.log('Export type:', exportType, 'Selected parent page:', selectedParentPage);
 
-      fetch(`/creatives/${creativeId}/notion_integration`, {
+      fetch(`/notion/creatives/${creativeId}/notion_integration`, {
         method: 'PATCH',
         headers: {
           'X-CSRF-Token': csrfToken(),
@@ -337,7 +337,7 @@ if (!notionIntegrationInitialized) {
       syncBtn.textContent = 'Syncing...';
       clearError();
 
-      fetch(`/creatives/${creativeId}/notion_integration`, {
+      fetch(`/notion/creatives/${creativeId}/notion_integration`, {
         method: 'PATCH',
         headers: {
           'X-CSRF-Token': csrfToken(),
@@ -371,7 +371,7 @@ if (!notionIntegrationInitialized) {
       deleteBtn.textContent = 'Removing...';
       clearError();
 
-      fetch(`/creatives/${creativeId}/notion_integration`, {
+      fetch(`/notion/creatives/${creativeId}/notion_integration`, {
         method: 'DELETE',
         headers: {
           'X-CSRF-Token': csrfToken(),

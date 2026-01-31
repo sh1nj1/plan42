@@ -1,25 +1,18 @@
-require "test_helper"
+require_relative "../../test_helper"
 
 class Creatives::NotionIntegrationsControllerTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
 
   def setup
-    @user = User.create!(
-      email: "test@example.com",
-      password: "password123",
-      name: "Test User"
-    )
+    @user = create_user(email: "notion-controller-test@example.com", name: "Notion Controller Test User")
 
-    @creative = Creative.create!(
-      user: @user,
-      description: "Test Creative"
-    )
+    @creative = create_creative(@user)
 
-    login_as(@user)
+    sign_in_as(@user)
   end
 
   test "should show integration status when not connected" do
-    get creative_notion_integration_path(@creative)
+    get notion_engine.creative_notion_integration_path(@creative)
 
     assert_response :success
     response_data = JSON.parse(response.body)
@@ -29,14 +22,14 @@ class Creatives::NotionIntegrationsControllerTest < ActionDispatch::IntegrationT
   end
 
   test "should show integration status when connected" do
-    account = NotionAccount.create!(
+    account = CollavreNotion::NotionAccount.create!(
       user: @user,
       notion_uid: "test-uid",
       workspace_name: "Test Workspace",
       token: "test-token"
     )
 
-    link = NotionPageLink.create!(
+    CollavreNotion::NotionPageLink.create!(
       creative: @creative,
       notion_account: account,
       page_id: "test-page-id",
@@ -44,7 +37,7 @@ class Creatives::NotionIntegrationsControllerTest < ActionDispatch::IntegrationT
       page_url: "https://notion.so/test-page"
     )
 
-    get creative_notion_integration_path(@creative)
+    get notion_engine.creative_notion_integration_path(@creative)
 
     assert_response :success
     response_data = JSON.parse(response.body)
@@ -55,7 +48,7 @@ class Creatives::NotionIntegrationsControllerTest < ActionDispatch::IntegrationT
   end
 
   test "should require authentication for updates" do
-    patch creative_notion_integration_path(@creative),
+    patch notion_engine.creative_notion_integration_path(@creative),
           params: { action: "export" },
           as: :json
 
@@ -65,7 +58,7 @@ class Creatives::NotionIntegrationsControllerTest < ActionDispatch::IntegrationT
   end
 
   test "should handle export action with valid account" do
-    account = NotionAccount.create!(
+    CollavreNotion::NotionAccount.create!(
       user: @user,
       notion_uid: "test-uid",
       workspace_name: "Test Workspace",
@@ -78,8 +71,8 @@ class Creatives::NotionIntegrationsControllerTest < ActionDispatch::IntegrationT
 
     begin
       # Mock the job enqueue since we don't want to actually call Notion API in tests
-      assert_enqueued_with(job: NotionExportJob) do
-        patch creative_notion_integration_path(@creative),
+      assert_enqueued_with(job: CollavreNotion::NotionExportJob) do
+        patch notion_engine.creative_notion_integration_path(@creative),
               params: { action: "export", parent_page_id: "parent-id" },
               as: :json
       end
@@ -94,53 +87,39 @@ class Creatives::NotionIntegrationsControllerTest < ActionDispatch::IntegrationT
   end
 
   test "should require admin permission for show and update" do
-    other_user = User.create!(
-      email: "other@example.com",
-      password: "password123",
-      name: "Other User"
-    )
-    other_creative = Creative.create!(
-      user: other_user,
-      description: "Other Creative"
-    )
+    other_user = create_user(email: "other-notion@example.com", name: "Other Notion User")
+    other_creative = create_creative(other_user)
 
-    get creative_notion_integration_path(other_creative)
+    get notion_engine.creative_notion_integration_path(other_creative)
     assert_response :forbidden
 
-    patch creative_notion_integration_path(other_creative),
+    patch notion_engine.creative_notion_integration_path(other_creative),
           params: { action: "export" },
           as: :json
     assert_response :forbidden
   end
 
   test "should delete page links" do
-    account = NotionAccount.create!(
+    account = CollavreNotion::NotionAccount.create!(
       user: @user,
       notion_uid: "test-uid",
       workspace_name: "Test Workspace",
       token: "test-token"
     )
 
-    link = NotionPageLink.create!(
+    CollavreNotion::NotionPageLink.create!(
       creative: @creative,
       notion_account: account,
       page_id: "test-page-id",
       page_title: "Test Page"
     )
 
-    assert_difference "NotionPageLink.count", -1 do
-      delete creative_notion_integration_path(@creative),
+    assert_difference "CollavreNotion::NotionPageLink.count", -1 do
+      delete notion_engine.creative_notion_integration_path(@creative),
              params: { page_id: "test-page-id" },
              as: :json
     end
 
     assert_response :success
-  end
-
-  private
-
-  def login_as(user)
-    user.update!(email_verified_at: Time.current)
-    post session_path, params: { email: user.email, password: "password123" }
   end
 end

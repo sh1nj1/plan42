@@ -1,4 +1,4 @@
-module Collavre
+module CollavreNotion
   require "digest"
 
   class NotionService

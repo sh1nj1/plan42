@@ -1,4 +1,12 @@
 PATH
+  remote: engines/collavre_notion
+  specs:
+    collavre_notion (0.1.0)
+      collavre
+      httparty
+      rails (>= 8.0)
+
+PATH
   remote: engines/collavre_openclaw
   specs:
     collavre_openclaw (0.1.0)
@@ -636,6 +644,7 @@ DEPENDENCIES
   capybara
   closure_tree
   collavre!
+  collavre_notion!
   collavre_openclaw!
   collavre_slack!
   debug

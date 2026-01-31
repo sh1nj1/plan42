@@ -35,7 +35,6 @@
         ) do %>
       <%# Legacy hardcoded integrations (to be migrated to IntegrationRegistry) %>
       <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="github-integration-btn" data-action="click->click-target#trigger">Github</button>
-      <button type="button" class="popup-menu-item" data-controller="click-target" data-click-target-id-value="notion-integration-btn" data-action="click->click-target#trigger">Notion</button>
       <%# Dynamically registered integrations %>
       <%= render 'integrations_menu', creative: current_creative %>
     <% end %>
@@ -69,7 +68,6 @@
 <% if can_manage_integrations %>
   <%# Legacy hardcoded integration triggers %>
   <button id="github-integration-btn" data-creative-id="<%= current_creative&.id %>" style="display:none;"></button>
-  <button id="notion-integration-btn" data-creative-id="<%= current_creative&.id %>" style="display:none;"></button>
   <%# Dynamically registered integration triggers %>
   <%= render 'integration_triggers', creative: current_creative %>
 <% end %>
@@ -206,7 +204,6 @@
 <% if can_manage_integrations %>
   <%# Legacy hardcoded integration modals %>
   <%= render 'github_integration_modal', creative: current_creative %>
-  <%= render 'notion_integration_modal', creative: current_creative %>
   <%# Dynamically registered integration modals %>
   <%= render 'integration_modals', creative: current_creative %>
 <% end %>

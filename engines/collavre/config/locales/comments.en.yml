@@ -8,9 +8,6 @@ en:
     github_auth:
       login_first: Please sign in first.
       connected: Github account connected successfully.
-    notion_auth:
-      login_first: Please sign in first.
-      connected: Notion account connected successfully.
     comments:
       reaction_invalid: Invalid reaction.
       invalid_topic: Topic does not belong to this creative.

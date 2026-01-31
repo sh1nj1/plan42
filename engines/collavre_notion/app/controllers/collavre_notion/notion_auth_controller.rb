@@ -1,15 +1,15 @@
-module Collavre
+module CollavreNotion
   class NotionAuthController < ApplicationController
     allow_unauthenticated_access only: :callback
     before_action -> { enforce_auth_provider!(:notion) }, only: :callback
 
     def callback
       auth = request.env["omniauth.auth"]
-      notion = Collavre::NotionAccount.find_or_initialize_by(notion_uid: auth.uid)
+      notion = CollavreNotion::NotionAccount.find_or_initialize_by(notion_uid: auth.uid)
 
       if notion.new_record?
         unless Current.user
-          redirect_to collavre.new_session_path, alert: I18n.t("collavre.notion_auth.login_first")
+          redirect_to collavre.new_session_path, alert: I18n.t("collavre_notion.notion_auth.login_first")
           return
         end
         notion.user = Current.user
@@ -19,7 +19,7 @@ module Collavre
       notion.workspace_name = auth.info.name
       notion.save!
 
-      redirect_to creatives_path, notice: I18n.t("collavre.notion_auth.connected")
+      redirect_to collavre.creatives_path, notice: I18n.t("collavre_notion.notion_auth.connected")
     end
   end
 end

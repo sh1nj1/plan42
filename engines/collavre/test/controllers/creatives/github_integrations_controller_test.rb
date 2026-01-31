@@ -22,7 +22,7 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
   end
 
   test "show returns webhook details for linked repositories" do
-    get creative_github_integration_path(@creative), as: :json
+    get main_app.creative_github_integration_path(@creative), as: :json
 
     assert_response :success
     body = JSON.parse(response.body)
@@ -47,7 +47,7 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
 
     assert_difference("GithubRepositoryLink.count", 1) do
       Github::WebhookProvisioner.stub(:ensure_for_links, ->(**kwargs) { provisioner_args = kwargs }) do
-        patch creative_github_integration_path(@creative), params: payload, as: :json
+        patch main_app.creative_github_integration_path(@creative), params: payload, as: :json
       end
     end
 
@@ -83,11 +83,11 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     sign_out
     sign_in_as(other_user, password: "password")
 
-    get creative_github_integration_path(@creative), as: :json
+    get main_app.creative_github_integration_path(@creative), as: :json
     assert_response :forbidden
 
     payload = { repositories: [ "sample-user/example" ] }
-    patch creative_github_integration_path(@creative), params: payload, as: :json
+    patch main_app.creative_github_integration_path(@creative), params: payload, as: :json
     assert_response :forbidden
   end
 
@@ -96,7 +96,7 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
 
     Github::WebhookProvisioner.stub(:remove_for_repositories, ->(**kwargs) { removal_args = kwargs }) do
       assert_difference("GithubRepositoryLink.count", -1) do
-        delete creative_github_integration_path(@creative), as: :json
+        delete main_app.creative_github_integration_path(@creative), as: :json
       end
     end
 
@@ -122,7 +122,7 @@ class Creatives::GithubIntegrationsControllerTest < ActionDispatch::IntegrationT
     )
 
     assert_difference("GithubRepositoryLink.count", -1) do
-      delete creative_github_integration_path(@creative),
+      delete main_app.creative_github_integration_path(@creative),
              params: { repository: "sample-user/example" },
              as: :json
     end

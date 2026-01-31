@@ -41,7 +41,6 @@ Rails.application.routes.draw do
   # Creative integrations (GitHub/Notion)
   resources :creatives, only: [] do
     resource :github_integration, only: [ :show, :update, :destroy ], module: :creatives
-    resource :notion_integration, only: [ :show, :update, :destroy ], module: :creatives
   end
 
   # GitHub account and webhooks

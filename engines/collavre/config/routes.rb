@@ -25,7 +25,6 @@ Collavre::Engine.routes.draw do
   # OAuth callback routes (paths match OmniAuth provider names)
   match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
   match "/auth/github/callback", to: "github_auth#callback", via: [ :get, :post ]
-  match "/auth/notion/callback", to: "notion_auth#callback", via: [ :get, :post ]
 
   delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment
 

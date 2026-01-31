@@ -60,8 +60,6 @@ module Collavre
     has_many :creative_expanded_states, class_name: "Collavre::CreativeExpandedState", dependent: :delete_all
     has_many :invitations, class_name: "Collavre::Invitation", dependent: :delete_all
     has_many :github_repository_links, dependent: :destroy
-    has_many :notion_page_links, dependent: :destroy
-    has_many :notion_block_links, dependent: :destroy
     has_many :topics, class_name: "Collavre::Topic", dependent: :destroy
     has_many :mcp_tools, dependent: :destroy
     has_many :activity_logs, class_name: "Collavre::ActivityLog", dependent: :destroy
