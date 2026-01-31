@@ -49,12 +49,23 @@ module CollavreOpenclaw
         system_prompt: @system_prompt,
         tools: tools.presence,
         context: {
-          creative_id: @context.dig(:creative, :id) || @context.dig("creative", "id"),
-          user_id: @user.id,
+          creative_id: extract_id(@context, :creative),
+          user_id: @user&.id,
           channel_id: @account.channel_id
         }.compact,
         stream: true
       }.compact
+    end
+
+    def extract_id(context, key)
+      value = context[key] || context[key.to_s]
+      return nil unless value
+
+      # Handle ActiveRecord objects
+      return value.id if value.respond_to?(:id)
+
+      # Handle hashes
+      value[:id] || value["id"]
     end
 
     def format_messages(messages)
