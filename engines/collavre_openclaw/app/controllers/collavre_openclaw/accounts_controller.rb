@@ -14,7 +14,7 @@ module CollavreOpenclaw
       @account.user = @ai_user
 
       if @account.save
-        redirect_to collavre.edit_user_path(@ai_user),
+        redirect_to collavre.edit_ai_user_path(@ai_user),
                     notice: I18n.t("collavre_openclaw.accounts.created")
       else
         render :new, status: :unprocessable_entity
@@ -26,7 +26,7 @@ module CollavreOpenclaw
 
     def update
       if @account.update(account_params)
-        redirect_to collavre.edit_user_path(@ai_user),
+        redirect_to collavre.edit_ai_user_path(@ai_user),
                     notice: I18n.t("collavre_openclaw.accounts.updated")
       else
         render :edit, status: :unprocessable_entity
@@ -35,7 +35,7 @@ module CollavreOpenclaw
 
     def destroy
       @account.destroy
-      redirect_to collavre.edit_user_path(@ai_user),
+      redirect_to collavre.edit_ai_user_path(@ai_user),
                   notice: I18n.t("collavre_openclaw.accounts.deleted")
     end
 

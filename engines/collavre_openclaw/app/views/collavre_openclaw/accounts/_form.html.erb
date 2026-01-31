@@ -38,6 +38,6 @@
 
   <div>
     <%= f.submit account.persisted? ? t("collavre_openclaw.form.submit_update") : t("collavre_openclaw.form.submit_create") %>
-    <%= link_to t("collavre_openclaw.form.cancel"), collavre.edit_user_path(@ai_user) %>
+    <%= link_to t("collavre_openclaw.form.cancel"), collavre.edit_ai_user_path(@ai_user) %>
   </div>
 <% end %>
