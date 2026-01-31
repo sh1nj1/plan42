@@ -4,18 +4,18 @@ require "json"
 module CollavreOpenclaw
   class OpenclawAdapter
     # Adapter for OpenClaw AI Gateway
-    # Implements the same interface as AiClient for seamless integration
+    # Uses OpenAI-compatible /v1/chat/completions endpoint
 
     def initialize(user:, system_prompt:, context: {})
       @user = user
       @system_prompt = system_prompt
       @context = context
-      @account = user.openclaw_account
+      @account = user&.openclaw_account
     end
 
     def chat(messages, tools: [], &block)
       unless @account
-        Rails.logger.error("[CollavreOpenclaw] No OpenClaw account configured for user #{@user.id}")
+        Rails.logger.error("[CollavreOpenclaw] No OpenClaw account configured for user #{@user&.id}")
         yield "Error: OpenClaw account not configured" if block_given?
         return nil
       end
@@ -23,8 +23,10 @@ module CollavreOpenclaw
       response_content = +""
 
       begin
-        # Build the request payload
+        # Build the request payload (OpenAI format)
         payload = build_payload(messages, tools)
+
+        Rails.logger.info("[CollavreOpenclaw] Sending request to #{api_endpoint}")
 
         # Make streaming request to OpenClaw
         stream_response(payload) do |chunk|
@@ -43,29 +45,31 @@ module CollavreOpenclaw
 
     private
 
-    def build_payload(messages, tools)
-      {
-        messages: format_messages(messages),
-        system_prompt: @system_prompt,
-        tools: tools.presence,
-        context: {
-          creative_id: extract_id(@context, :creative),
-          user_id: @user&.id,
-          channel_id: @account.channel_id
-        }.compact,
-        stream: true
-      }.compact
+    def api_endpoint
+      # OpenClaw uses /v1/chat/completions (OpenAI-compatible)
+      uri = URI.parse(@account.gateway_url)
+      uri.path = "/v1/chat/completions"
+      uri.to_s
     end
 
-    def extract_id(context, key)
-      value = context[key] || context[key.to_s]
-      return nil unless value
+    def build_payload(messages, tools)
+      payload = {
+        model: "openclaw",
+        messages: format_messages(messages),
+        stream: true
+      }
 
-      # Handle ActiveRecord objects
-      return value.id if value.respond_to?(:id)
+      # Add system prompt as first message if present
+      if @system_prompt.present?
+        payload[:messages].unshift({ role: "system", content: @system_prompt })
+      end
 
-      # Handle hashes
-      value[:id] || value["id"]
+      # Add user identifier for session continuity
+      if @account.channel_id.present?
+        payload[:user] = "collavre:#{@account.channel_id}"
+      end
+
+      payload
     end
 
     def format_messages(messages)
@@ -78,7 +82,7 @@ module CollavreOpenclaw
                     msg[:text] || msg["text"] || msg[:content] || msg["content"]
                   end
 
-        { role: normalize_role(role), content: content }
+        { role: normalize_role(role), content: content.to_s }
       end
     end
 
@@ -93,11 +97,10 @@ module CollavreOpenclaw
     def stream_response(payload, &block)
       connection = build_connection
 
-      # Use SSE streaming for real-time responses
       buffer = +""
 
       response = connection.post do |req|
-        req.url @account.api_endpoint
+        req.url api_endpoint
         req.headers["Content-Type"] = "application/json"
         req.headers["Accept"] = "text/event-stream"
         req.headers["Authorization"] = "Bearer #{@account.api_token}" if @account.api_token.present?
@@ -112,6 +115,11 @@ module CollavreOpenclaw
       # Process any remaining data in buffer
       process_sse_buffer(buffer, final: true, &block)
 
+      # Handle non-streaming response
+      if response.headers["content-type"]&.include?("application/json")
+        handle_json_response(response.body, &block)
+      end
+
       response
     rescue Faraday::TimeoutError
       raise "OpenClaw request timed out"
@@ -119,14 +127,20 @@ module CollavreOpenclaw
       raise "Failed to connect to OpenClaw: #{e.message}"
     end
 
+    def handle_json_response(body, &block)
+      json = JSON.parse(body, symbolize_names: true)
+      content = json.dig(:choices, 0, :message, :content)
+      yield content if content.present? && block_given?
+    rescue JSON::ParserError
+      # Ignore
+    end
+
     def process_sse_buffer(buffer, final: false, &block)
-      # Process complete SSE events from the buffer
       while (idx = buffer.index("\n\n"))
         event_data = buffer.slice!(0, idx + 2)
         parse_sse_event(event_data, &block)
       end
 
-      # Handle final chunk that might not end with \n\n
       if final && buffer.present?
         parse_sse_event(buffer, &block)
         buffer.clear
@@ -147,7 +161,6 @@ module CollavreOpenclaw
             content = extract_content(json)
             yield content if content.present?
           rescue JSON::ParserError
-            # Not JSON, might be plain text
             yield data if data.present?
           end
         end
@@ -155,10 +168,10 @@ module CollavreOpenclaw
     end
 
     def extract_content(json)
-      # Handle various response formats
-      json[:content] ||
-        json[:delta]&.dig(:content) ||
-        json[:choices]&.first&.dig(:delta, :content) ||
+      # OpenAI streaming format
+      json.dig(:choices, 0, :delta, :content) ||
+        json.dig(:choices, 0, :message, :content) ||
+        json[:content] ||
         json[:text]
     end
 
@@ -168,6 +181,14 @@ module CollavreOpenclaw
         builder.options.open_timeout = 10
         builder.adapter Faraday.default_adapter
       end
+    end
+
+    def extract_id(context, key)
+      value = context[key] || context[key.to_s]
+      return nil unless value
+
+      return value.id if value.respond_to?(:id)
+      value[:id] || value["id"]
     end
   end
 end

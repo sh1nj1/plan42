@@ -10,10 +10,10 @@ module CollavreOpenclaw
 
     encrypts :api_token, deterministic: false
 
-    # Build the full API endpoint URL
+    # Build the full API endpoint URL (OpenAI-compatible)
     def api_endpoint
       uri = URI.parse(gateway_url)
-      uri.path = "/api/v1/chat"
+      uri.path = "/v1/chat/completions"
       uri.to_s
     end
 
