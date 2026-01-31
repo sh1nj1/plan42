@@ -23,6 +23,8 @@ ko:
       submit_create: "OpenClaw 연결"
       submit_update: "연결 업데이트"
       cancel: "취소"
+      disconnect: "OpenClaw 연결 해제"
+      disconnect_confirm: "정말로 OpenClaw 연결을 해제하시겠습니까?"
 
     errors:
       user_not_found: "사용자를 찾을 수 없습니다"

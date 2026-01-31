@@ -23,6 +23,8 @@ en:
       submit_create: "Connect OpenClaw"
       submit_update: "Update Connection"
       cancel: "Cancel"
+      disconnect: "Disconnect OpenClaw"
+      disconnect_confirm: "Are you sure you want to disconnect OpenClaw?"
 
     errors:
       user_not_found: "User not found"

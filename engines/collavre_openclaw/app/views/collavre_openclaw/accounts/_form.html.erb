@@ -1,10 +1,10 @@
-<%= form_with model: account, url: account.persisted? ? account_path(account) : accounts_path, class: "space-y-6" do |f| %>
+<%= form_with model: account, url: account.persisted? ? account_path(account) : accounts_path, class: "profile-form" do |f| %>
   <%= f.hidden_field :user_id, value: @ai_user.id %>
 
   <% if account.errors.any? %>
-    <div class="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
-      <h3 class="text-red-800 font-medium"><%= pluralize(account.errors.count, "error") %> prevented this account from being saved:</h3>
-      <ul class="mt-2 list-disc list-inside text-red-700">
+    <div class="flash-alert">
+      <strong><%= pluralize(account.errors.count, "error") %> prevented this account from being saved:</strong>
+      <ul>
         <% account.errors.full_messages.each do |message| %>
           <li><%= message %></li>
         <% end %>
@@ -13,31 +13,31 @@
   <% end %>
 
   <div>
-    <%= f.label :gateway_url, t("collavre_openclaw.form.gateway_url"), class: "block text-sm font-medium text-gray-700" %>
-    <%= f.url_field :gateway_url, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500", required: true, placeholder: "https://your-openclaw-gateway.com" %>
-    <p class="mt-1 text-sm text-gray-500"><%= t("collavre_openclaw.form.gateway_url_hint") %></p>
+    <%= f.label :gateway_url, t("collavre_openclaw.form.gateway_url") %>
+    <%= f.url_field :gateway_url, required: true, placeholder: "https://your-openclaw-gateway.com" %>
+    <small><%= t("collavre_openclaw.form.gateway_url_hint") %></small>
   </div>
 
   <div>
-    <%= f.label :api_token, t("collavre_openclaw.form.api_token"), class: "block text-sm font-medium text-gray-700" %>
-    <%= f.password_field :api_token, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500", placeholder: account.persisted? ? "••••••••" : "" %>
-    <p class="mt-1 text-sm text-gray-500"><%= t("collavre_openclaw.form.api_token_hint") %></p>
+    <%= f.label :api_token, t("collavre_openclaw.form.api_token") %>
+    <%= f.password_field :api_token, placeholder: account.persisted? ? "••••••••" : "" %>
+    <small><%= t("collavre_openclaw.form.api_token_hint") %></small>
   </div>
 
   <div>
-    <%= f.label :channel_id, t("collavre_openclaw.form.channel_id"), class: "block text-sm font-medium text-gray-700" %>
-    <%= f.text_field :channel_id, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
-    <p class="mt-1 text-sm text-gray-500"><%= t("collavre_openclaw.form.channel_id_hint") %></p>
+    <%= f.label :channel_id, t("collavre_openclaw.form.channel_id") %>
+    <%= f.text_field :channel_id %>
+    <small><%= t("collavre_openclaw.form.channel_id_hint") %></small>
   </div>
 
   <div>
-    <%= f.label :description, t("collavre_openclaw.form.description"), class: "block text-sm font-medium text-gray-700" %>
-    <%= f.text_area :description, rows: 3, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
-    <p class="mt-1 text-sm text-gray-500"><%= t("collavre_openclaw.form.description_hint") %></p>
+    <%= f.label :description, t("collavre_openclaw.form.description") %>
+    <%= f.text_area :description, rows: 3 %>
+    <small><%= t("collavre_openclaw.form.description_hint") %></small>
   </div>
 
-  <div class="flex justify-end space-x-4">
-    <%= link_to t("collavre_openclaw.form.cancel"), collavre.edit_user_path(@ai_user), class: "px-4 py-2 text-gray-700 hover:text-gray-900" %>
-    <%= f.submit account.persisted? ? t("collavre_openclaw.form.submit_update") : t("collavre_openclaw.form.submit_create"), class: "px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 cursor-pointer" %>
+  <div>
+    <%= f.submit account.persisted? ? t("collavre_openclaw.form.submit_update") : t("collavre_openclaw.form.submit_create") %>
+    <%= link_to t("collavre_openclaw.form.cancel"), collavre.edit_user_path(@ai_user) %>
   </div>
 <% end %>
