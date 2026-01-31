@@ -10,12 +10,12 @@ module CollavreOpenclaw
 
     test "api_endpoint builds correct URL" do
       account = OpenclawAccount.new(gateway_url: "https://my-gateway.com")
-      assert_equal "https://my-gateway.com/api/v1/chat", account.api_endpoint
+      assert_equal "https://my-gateway.com/v1/chat/completions", account.api_endpoint
     end
 
     test "api_endpoint handles URL with path" do
       account = OpenclawAccount.new(gateway_url: "https://my-gateway.com/some/path")
-      assert_equal "https://my-gateway.com/api/v1/chat", account.api_endpoint
+      assert_equal "https://my-gateway.com/v1/chat/completions", account.api_endpoint
     end
   end
 end

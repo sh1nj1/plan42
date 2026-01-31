@@ -7,10 +7,6 @@ module CollavreOpenclaw
       @user = Minitest::Mock.new
       @account = Minitest::Mock.new
 
-      @account.expect :api_endpoint, "https://test-gateway.com/api/v1/chat"
-      @account.expect :api_token, "test-token"
-      @account.expect :channel_id, "test-channel"
-
       @user.expect :id, 1
       @user.expect :openclaw_account, @account
     end
@@ -26,8 +22,19 @@ module CollavreOpenclaw
     end
 
     test "builds correct payload format" do
+      # Account needs to support multiple calls for channel_id check
+      account = Object.new
+      def account.api_endpoint; "https://test-gateway.com/v1/chat/completions"; end
+      def account.api_token; "test-token"; end
+      def account.channel_id; "test-channel"; end
+      def account.gateway_url; "https://test-gateway.com"; end
+
+      user = Object.new
+      user.define_singleton_method(:id) { 1 }
+      user.define_singleton_method(:openclaw_account) { account }
+
       adapter = OpenclawAdapter.new(
-        user: @user,
+        user: user,
         system_prompt: "Test prompt",
         context: { creative: { id: 123 } }
       )
@@ -39,11 +46,17 @@ module CollavreOpenclaw
 
       payload = adapter.send(:build_payload, messages, [])
 
-      assert_equal "Test prompt", payload[:system_prompt]
-      assert_equal 2, payload[:messages].length
-      assert_equal "user", payload[:messages][0][:role]
-      assert_equal "Hello", payload[:messages][0][:content]
+      # System prompt is added as first message
+      assert_equal 3, payload[:messages].length
+      assert_equal "system", payload[:messages][0][:role]
+      assert_equal "Test prompt", payload[:messages][0][:content]
+      assert_equal "user", payload[:messages][1][:role]
+      assert_equal "Hello", payload[:messages][1][:content]
+      assert_equal "assistant", payload[:messages][2][:role]
+      assert_equal "Hi there!", payload[:messages][2][:content]
       assert payload[:stream]
+      assert_equal "openclaw", payload[:model]
+      assert_equal "collavre:test-channel", payload[:user]
     end
 
     test "normalizes message roles correctly" do

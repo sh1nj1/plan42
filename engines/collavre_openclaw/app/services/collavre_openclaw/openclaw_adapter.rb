@@ -95,36 +95,52 @@ module CollavreOpenclaw
     end
 
     def stream_response(payload, &block)
-      connection = build_connection
+      retries = 0
+      max_retries = CollavreOpenclaw.config.max_retries
 
-      buffer = +""
+      begin
+        connection = build_connection
+        buffer = +""
 
-      response = connection.post do |req|
-        req.url api_endpoint
-        req.headers["Content-Type"] = "application/json"
-        req.headers["Accept"] = "text/event-stream"
-        req.headers["Authorization"] = "Bearer #{@account.api_token}" if @account.api_token.present?
-        req.body = payload.to_json
+        response = connection.post do |req|
+          req.url api_endpoint
+          req.headers["Content-Type"] = "application/json"
+          req.headers["Accept"] = "text/event-stream"
+          req.headers["Authorization"] = "Bearer #{@account.api_token}" if @account.api_token.present?
+          req.body = payload.to_json
 
-        req.options.on_data = proc do |chunk, _size, _env|
-          buffer << chunk
-          process_sse_buffer(buffer, &block)
+          req.options.on_data = proc do |chunk, _size, _env|
+            buffer << chunk
+            process_sse_buffer(buffer, &block)
+          end
         end
+
+        # Process any remaining data in buffer
+        process_sse_buffer(buffer, final: true, &block)
+
+        # Handle non-streaming response
+        if response.headers["content-type"]&.include?("application/json")
+          handle_json_response(response.body, &block)
+        end
+
+        response
+      rescue Faraday::TimeoutError => e
+        retries += 1
+        if retries <= max_retries
+          Rails.logger.warn("[CollavreOpenclaw] Request timed out, retrying (#{retries}/#{max_retries})...")
+          sleep(1 * retries)  # Exponential backoff
+          retry
+        end
+        raise "OpenClaw request timed out after #{max_retries + 1} attempts (read_timeout: #{CollavreOpenclaw.config.read_timeout}s)"
+      rescue Faraday::ConnectionFailed => e
+        retries += 1
+        if retries <= max_retries
+          Rails.logger.warn("[CollavreOpenclaw] Connection failed, retrying (#{retries}/#{max_retries})...")
+          sleep(1 * retries)
+          retry
+        end
+        raise "Failed to connect to OpenClaw after #{max_retries + 1} attempts: #{e.message}"
       end
-
-      # Process any remaining data in buffer
-      process_sse_buffer(buffer, final: true, &block)
-
-      # Handle non-streaming response
-      if response.headers["content-type"]&.include?("application/json")
-        handle_json_response(response.body, &block)
-      end
-
-      response
-    rescue Faraday::TimeoutError
-      raise "OpenClaw request timed out"
-    rescue Faraday::ConnectionFailed => e
-      raise "Failed to connect to OpenClaw: #{e.message}"
     end
 
     def handle_json_response(body, &block)
@@ -177,8 +193,8 @@ module CollavreOpenclaw
 
     def build_connection
       Faraday.new do |builder|
-        builder.options.timeout = CollavreOpenclaw.config.request_timeout
-        builder.options.open_timeout = 10
+        builder.options.timeout = CollavreOpenclaw.config.read_timeout      # Read timeout (3 min default)
+        builder.options.open_timeout = CollavreOpenclaw.config.open_timeout # Connection timeout (10s)
         builder.adapter Faraday.default_adapter
       end
     end
