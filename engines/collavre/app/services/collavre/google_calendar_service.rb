@@ -12,50 +12,9 @@ module Collavre
       @service.authorization = user_credentials
     end
 
-    # Creates a Google Calendar event and associated CalendarEvent record.
+    # Creates a Google Calendar event.
     # Optional params supported: location, recurrence (array), attendees (array of emails or attendee hashes),
     # reminders (hash: { use_default: true/false, overrides: [{ method: 'email'|'popup', minutes: Integer }, ...] })
-    def create_event(
-      calendar_id: "primary",
-      start_time:,
-      end_time:,
-      summary:,
-      description: nil,
-      timezone: nil,
-      location: nil,
-      recurrence: nil,
-      attendees: nil,
-      reminders: nil,
-      all_day: false,
-      creative: nil
-    )
-      result = create_google_event(
-        calendar_id: calendar_id,
-        start_time: start_time,
-        end_time: end_time,
-        summary: summary,
-        description: description,
-        timezone: timezone,
-        location: location,
-        recurrence: recurrence,
-        attendees: attendees,
-        reminders: reminders,
-        all_day: all_day
-      )
-      CalendarEvent.create!(
-        user: @user,
-        creative: creative,
-        google_event_id: result.id,
-        summary: result.summary,
-        start_time: result.start.date_time || result.start.date,
-        end_time: result.end.date_time || result.end.date,
-        html_link: result.html_link
-      )
-      result
-    end
-
-    # Creates a Google Calendar event without creating a CalendarEvent record.
-    # Use this when you want to manage the CalendarEvent record separately.
     def create_google_event(
       calendar_id: "primary",
       start_time:,

@@ -176,10 +176,7 @@ module Collavre
       end
 
       def build_summary(memo)
-        return memo if memo.present?
-
-        base_summary = creative.effective_description(false, false)
-        base_summary
+        memo.presence || creative.effective_description(false, false)
       end
 
       def event_description

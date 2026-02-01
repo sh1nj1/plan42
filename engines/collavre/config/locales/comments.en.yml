@@ -84,7 +84,6 @@ en:
         event_created: 'event created: [Google Calendar event](%{url})'
         event_created_local: 'event created (local only - connect Google Calendar to sync)'
         event_created_sync_failed: 'event created (Google Calendar sync failed - please reconnect your Google account)'
-        google_login_required: Please sign in with Google to create a calendar event.
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
     calendar_events:
