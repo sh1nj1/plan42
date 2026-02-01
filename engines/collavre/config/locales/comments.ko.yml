@@ -76,10 +76,11 @@ ko:
       add_reaction_button: "+"
       command_menu:
         calendar_description: 구글 캘린더 이벤트를 생성합니다.
-        calendar_args: "YYYY-MM-DD@HH:MM 메모 (또는 'today')"
+        calendar_args: "YYYY-MM-DD@HH:MM 메모 (today/tomorrow, +3days, +2weeks, +1months, +1years, +mon/+월)"
       calendar_command:
         event_created: '이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})'
-        google_login_required: 구글 로그인 후 캘린더 이벤트를 생성할 수 있습니다.
+        event_created_local: '이벤트가 생성되었습니다 (로컬 전용 - 구글 캘린더 연동 시 동기화됩니다)'
+        event_created_sync_failed: '이벤트가 생성되었습니다 (구글 캘린더 동기화 실패 - 구글 계정을 다시 연동해주세요)'
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
     calendar_events:

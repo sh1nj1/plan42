@@ -79,10 +79,11 @@ en:
       add_reaction_button: "+"
       command_menu:
         calendar_description: "Create a Google Calendar event."
-        calendar_args: "YYYY-MM-DD@HH:MM memo (or 'today')"
+        calendar_args: "YYYY-MM-DD@HH:MM memo (today/tomorrow, +3days, +2weeks, +1months, +1years, +mon)"
       calendar_command:
         event_created: 'event created: [Google Calendar event](%{url})'
-        google_login_required: Please sign in with Google to create a calendar event.
+        event_created_local: 'event created (local only - connect Google Calendar to sync)'
+        event_created_sync_failed: 'event created (Google Calendar sync failed - please reconnect your Google account)'
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
     calendar_events:

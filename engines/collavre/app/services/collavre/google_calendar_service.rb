@@ -15,7 +15,7 @@ module Collavre
     # Creates a Google Calendar event.
     # Optional params supported: location, recurrence (array), attendees (array of emails or attendee hashes),
     # reminders (hash: { use_default: true/false, overrides: [{ method: 'email'|'popup', minutes: Integer }, ...] })
-    def create_event(
+    def create_google_event(
       calendar_id: "primary",
       start_time:,
       end_time:,
@@ -26,8 +26,7 @@ module Collavre
       recurrence: nil,
       attendees: nil,
       reminders: nil,
-      all_day: false,
-      creative: nil
+      all_day: false
     )
       timezone ||= @user.timezone || Time.zone.tzinfo.name
       event_args = { summary: summary, description: description }
@@ -76,17 +75,7 @@ module Collavre
         @user.calendar_id ||= create_app_calendar
         calendar_id = @user.calendar_id
       end
-      result = @service.insert_event(calendar_id, event)
-      CalendarEvent.create!(
-        user: @user,
-        creative: creative,
-        google_event_id: result.id,
-        summary: result.summary,
-        start_time: result.start.date_time || result.start.date,
-        end_time: result.end.date_time || result.end.date,
-        html_link: result.html_link
-      )
-      result
+      @service.insert_event(calendar_id, event)
     rescue Google::Apis::ClientError => e
       # Surface helpful error info to aid debugging 400 errors
       Rails.logger.error("Google Calendar insert_event 4xx: #{e.class} #{e.status_code} - #{e.message} body=#{e.body}")
