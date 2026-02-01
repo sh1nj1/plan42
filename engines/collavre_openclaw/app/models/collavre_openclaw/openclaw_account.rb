@@ -5,6 +5,11 @@ module CollavreOpenclaw
     # The user is the AI agent in Collavre
     belongs_to :user, class_name: "::User"
 
+    # Pending callbacks for async responses - cascade delete when account is deleted
+    has_many :pending_callbacks,
+             class_name: "CollavreOpenclaw::PendingCallback",
+             dependent: :destroy
+
     validates :gateway_url, presence: true
     validates :user_id, uniqueness: true
 
