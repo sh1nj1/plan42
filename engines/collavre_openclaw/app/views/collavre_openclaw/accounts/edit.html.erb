@@ -3,6 +3,10 @@
 <%= render "form", account: @account %>
 
 <div class="profile-actions">
+  <%= button_to t("collavre_openclaw.form.test_connection"),
+                test_connection_account_path(@account),
+                method: :post,
+                class: "btn-secondary" %>
   <%= button_to t("collavre_openclaw.form.disconnect"),
                 account_path(@account),
                 method: :delete,

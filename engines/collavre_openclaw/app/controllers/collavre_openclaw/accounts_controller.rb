@@ -2,7 +2,7 @@ module CollavreOpenclaw
   class AccountsController < ApplicationController
     before_action :require_authentication
     before_action :set_ai_user
-    before_action :set_account, only: [ :edit, :update, :destroy ]
+    before_action :set_account, only: [ :edit, :update, :destroy, :test_connection, :clear_token ]
     before_action :authorize_admin!
 
     def new
@@ -37,6 +37,31 @@ module CollavreOpenclaw
       @account.destroy
       redirect_to collavre.edit_ai_user_path(@ai_user),
                   notice: I18n.t("collavre_openclaw.accounts.deleted")
+    end
+
+    def test_connection
+      result = @account.test_connection
+
+      respond_to do |format|
+        format.html do
+          if result[:success]
+            redirect_to edit_account_path(@account),
+                        notice: I18n.t("collavre_openclaw.test_connection.success", details: result[:details])
+          else
+            redirect_to edit_account_path(@account),
+                        alert: I18n.t("collavre_openclaw.test_connection.failure",
+                                      message: result[:message],
+                                      details: result[:details])
+          end
+        end
+        format.json { render json: result }
+      end
+    end
+
+    def clear_token
+      @account.clear_token!
+      redirect_to edit_account_path(@account),
+                  notice: I18n.t("collavre_openclaw.accounts.token_cleared")
     end
 
     private

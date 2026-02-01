@@ -15,6 +15,82 @@ module CollavreOpenclaw
 
     encrypts :api_token, deterministic: false
 
+    # Check if token is configured (without revealing the actual value)
+    def token_configured?
+      api_token.present?
+    end
+
+    # Clear the API token
+    def clear_token!
+      update!(api_token: nil)
+    end
+
+    # Test connection to OpenClaw gateway
+    # Returns { success: true/false, message: "...", details: "..." }
+    def test_connection
+      require "faraday"
+      require "json"
+
+      return { success: false, message: "Gateway URL not configured" } if gateway_url.blank?
+
+      begin
+        connection = Faraday.new do |builder|
+          builder.options.timeout = 10
+          builder.options.open_timeout = 5
+          builder.adapter Faraday.default_adapter
+        end
+
+        # Try to make a simple request to the gateway
+        # First try the health endpoint, then fall back to a minimal chat request
+        health_url = URI.parse(gateway_url)
+        health_url.path = "/health"
+
+        response = connection.get(health_url.to_s) do |req|
+          req.headers["Authorization"] = "Bearer #{api_token}" if api_token.present?
+        end
+
+        if response.success?
+          return { success: true, message: "Connection successful", details: "Gateway is reachable" }
+        end
+
+        # If health check fails, try a minimal chat completions request
+        test_payload = {
+          model: "openclaw",
+          messages: [ { role: "user", content: "ping" } ],
+          max_tokens: 1
+        }
+
+        response = connection.post(api_endpoint) do |req|
+          req.headers["Content-Type"] = "application/json"
+          req.headers["Authorization"] = "Bearer #{api_token}" if api_token.present?
+          req.body = test_payload.to_json
+        end
+
+        case response.status
+        when 200..299
+          { success: true, message: "Connection successful", details: "API endpoint is responding" }
+        when 401
+          { success: false, message: "Authentication failed", details: "Invalid or missing API token" }
+        when 403
+          { success: false, message: "Access denied", details: "API token does not have permission" }
+        when 404
+          { success: false, message: "Endpoint not found", details: "The gateway URL may be incorrect" }
+        when 500..599
+          { success: false, message: "Server error", details: "The gateway returned an error (#{response.status})" }
+        else
+          { success: false, message: "Unexpected response", details: "HTTP #{response.status}" }
+        end
+      rescue Faraday::ConnectionFailed => e
+        { success: false, message: "Connection failed", details: "Could not connect to gateway: #{e.message}" }
+      rescue Faraday::TimeoutError
+        { success: false, message: "Connection timeout", details: "Gateway did not respond in time" }
+      rescue URI::InvalidURIError
+        { success: false, message: "Invalid URL", details: "The gateway URL format is invalid" }
+      rescue StandardError => e
+        { success: false, message: "Error", details: e.message }
+      end
+    end
+
     # Build the full API endpoint URL (OpenAI-compatible)
     def api_endpoint
       uri = URI.parse(gateway_url)
