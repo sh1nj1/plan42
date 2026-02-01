@@ -2,7 +2,10 @@ require "test_helper"
 
 module CollavreOpenclaw
   class CallbacksControllerTest < ActionDispatch::IntegrationTest
-    include Engine.routes.url_helpers
+    # Define only the needed URL helpers to avoid test_ prefixed helpers being detected as test methods
+    def callback_path(account_id:)
+      "/openclaw/callback/#{account_id}"
+    end
 
     setup do
       @user = User.create!(
