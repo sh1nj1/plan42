@@ -32,8 +32,8 @@ module CollavreOpenclaw
       )
 
       messages = [
-        { role: "user", parts: [{ text: "Hello" }] },
-        { role: "model", parts: [{ text: "Hi there!" }] }
+        { role: "user", parts: [ { text: "Hello" } ] },
+        { role: "model", parts: [ { text: "Hi there!" } ] }
       ]
 
       payload = adapter.send(:build_payload, messages, [])

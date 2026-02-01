@@ -73,7 +73,7 @@ module CollavreOpenclaw
       creative_id = extract_id(@context, :creative) || @context[:creative_id]
       topic_id = @context[:thread_id] || @context[:topic_id]
 
-      parts = ["collavre", @account.id]
+      parts = [ "collavre", @account.id ]
       parts << "creative:#{creative_id}" if creative_id
       parts << "topic:#{topic_id}" if topic_id
 
@@ -145,9 +145,9 @@ module CollavreOpenclaw
         parts = msg[:parts] || msg["parts"]
         content = if parts
                     Array(parts).map { |p| p[:text] || p["text"] }.compact.join("\n")
-                  else
+        else
                     msg[:text] || msg["text"] || msg[:content] || msg["content"]
-                  end
+        end
 
         # Add sender attribution for user messages (multi-user support)
         sender_name = msg[:sender_name] || msg["sender_name"]

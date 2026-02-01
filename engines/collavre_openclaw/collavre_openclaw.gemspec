@@ -3,8 +3,8 @@ require_relative "lib/collavre_openclaw/version"
 Gem::Specification.new do |spec|
   spec.name        = "collavre_openclaw"
   spec.version     = CollavreOpenclaw::VERSION
-  spec.authors     = ["Collavre"]
-  spec.email       = ["support@collavre.com"]
+  spec.authors     = [ "Collavre" ]
+  spec.email       = [ "support@collavre.com" ]
   spec.homepage    = "https://github.com/sh1nj1/plan42"
   spec.summary     = "OpenClaw AI Gateway integration for Collavre"
   spec.description = "Enables AI agents in Collavre to use OpenClaw as their LLM backend"
