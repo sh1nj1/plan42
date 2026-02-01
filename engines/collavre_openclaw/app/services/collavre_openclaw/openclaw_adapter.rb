@@ -43,6 +43,11 @@ module CollavreOpenclaw
       end
     end
 
+    # Get the callback URL for this account
+    def callback_url
+      @account&.callback_url
+    end
+
     private
 
     def api_endpoint
@@ -64,12 +69,48 @@ module CollavreOpenclaw
         payload[:messages].unshift({ role: "system", content: @system_prompt })
       end
 
-      # Add user identifier for session continuity
-      if @account.channel_id.present?
-        payload[:user] = "collavre:#{@account.channel_id}"
-      end
+      # Build user context with callback information
+      payload[:user] = build_user_context
 
       payload
+    end
+
+    def build_user_context
+      context_data = {}
+
+      # Basic identification
+      if @account.channel_id.present?
+        context_data[:channel_id] = @account.channel_id
+      end
+
+      # Callback URL for async responses / proactive messages
+      if @account.callback_url.present?
+        context_data[:callback_url] = @account.callback_url
+      end
+
+      # Creative context (for routing responses)
+      if @context[:creative_id].present? || @context[:creative].present?
+        creative_id = extract_id(@context, :creative) || @context[:creative_id]
+        context_data[:creative_id] = creative_id if creative_id
+      end
+
+      # Comment context (for updating existing comments)
+      if @context[:comment_id].present? || @context[:comment].present?
+        comment_id = extract_id(@context, :comment) || @context[:comment_id]
+        context_data[:comment_id] = comment_id if comment_id
+      end
+
+      # Thread/Topic context
+      if @context[:thread_id].present? || @context[:topic_id].present?
+        context_data[:thread_id] = @context[:thread_id] || @context[:topic_id]
+      end
+
+      # Return as JSON string (OpenAI user field format)
+      if context_data.any?
+        "collavre:#{JSON.generate(context_data)}"
+      else
+        "collavre:#{@account.id}"
+      end
     end
 
     def format_messages(messages)
