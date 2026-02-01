@@ -4,18 +4,11 @@ module CollavreOpenclaw
   class ConfigurationTest < ActiveSupport::TestCase
     test "has default values" do
       config = Configuration.new
-      assert_equal "", config.default_webhook_secret
       assert_equal 10, config.open_timeout
       assert_equal 180, config.read_timeout      # 3 minutes for AI responses
       assert_equal 2, config.max_retries
       # Legacy accessor
       assert_equal 180, config.request_timeout
-    end
-
-    test "allows setting webhook secret" do
-      config = Configuration.new
-      config.default_webhook_secret = "my-secret"
-      assert_equal "my-secret", config.default_webhook_secret
     end
 
     test "allows setting timeouts" do

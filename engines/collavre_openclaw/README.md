@@ -25,8 +25,9 @@ bin/rails db:migrate
 
 ### Environment Variables
 
-- `OPENCLAW_WEBHOOK_SECRET` - Default webhook secret for verifying inbound requests
-- `OPENCLAW_REQUEST_TIMEOUT` - Timeout for outbound requests (default: 180 seconds)
+- `OPENCLAW_READ_TIMEOUT` - Read timeout for streaming responses (default: 180 seconds)
+- `OPENCLAW_OPEN_TIMEOUT` - Connection timeout (default: 10 seconds)
+- `OPENCLAW_MAX_RETRIES` - Max retries for transient failures (default: 2)
 
 ### Setting up an AI Agent with OpenClaw
 
