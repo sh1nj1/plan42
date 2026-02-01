@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_02_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_01_100000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -60,6 +60,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_000001) do
     t.index ["created_at"], name: "index_activity_logs_on_created_at"
     t.index ["creative_id"], name: "index_activity_logs_on_creative_id"
     t.index ["user_id"], name: "index_activity_logs_on_user_id"
+  end
+
+  create_table "agent_actions", force: :cascade do |t|
+    t.integer "agent_run_id", null: false
+    t.json "arguments", default: {}
+    t.datetime "created_at", null: false
+    t.text "result"
+    t.string "status", default: "pending"
+    t.string "tool_name"
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_agent_actions_on_agent_run_id"
+  end
+
+  create_table "agent_runs", force: :cascade do |t|
+    t.integer "ai_user_id", null: false
+    t.json "context", default: {}
+    t.datetime "created_at", null: false
+    t.integer "creative_id", null: false
+    t.text "goal"
+    t.integer "iteration_count", default: 0
+    t.datetime "next_run_at"
+    t.string "state", default: "planning"
+    t.string "status", default: "pending"
+    t.json "transcript", default: []
+    t.datetime "updated_at", null: false
+    t.index ["ai_user_id"], name: "index_agent_runs_on_ai_user_id"
+    t.index ["creative_id"], name: "index_agent_runs_on_creative_id"
   end
 
   create_table "calendar_events", force: :cascade do |t|
@@ -175,7 +202,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_000001) do
 
   create_table "creatives", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.text "description"
+    t.text "description", limit: 4294967295
     t.text "github_gemini_prompt"
     t.integer "origin_id"
     t.integer "parent_id"
@@ -383,32 +410,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_000001) do
     t.datetime "updated_at", null: false
     t.index ["owner_id", "owner_type"], name: "index_oauth_applications_on_owner_id_and_owner_type"
     t.index ["uid"], name: "index_oauth_applications_on_uid", unique: true
-  end
-
-  create_table "openclaw_accounts", force: :cascade do |t|
-    t.string "api_token"
-    t.string "channel_id"
-    t.datetime "created_at", null: false
-    t.text "description"
-    t.string "gateway_url", null: false
-    t.datetime "updated_at", null: false
-    t.integer "user_id", null: false
-    t.index ["user_id"], name: "index_openclaw_accounts_on_user_id", unique: true
-  end
-
-  create_table "openclaw_pending_callbacks", force: :cascade do |t|
-    t.integer "comment_id"
-    t.text "context"
-    t.datetime "created_at", null: false
-    t.integer "creative_id"
-    t.datetime "expires_at", null: false
-    t.string "nonce", null: false
-    t.integer "openclaw_account_id", null: false
-    t.integer "thread_id"
-    t.datetime "updated_at", null: false
-    t.index ["expires_at"], name: "index_openclaw_pending_callbacks_on_expires_at"
-    t.index ["nonce"], name: "index_openclaw_pending_callbacks_on_nonce", unique: true
-    t.index ["openclaw_account_id"], name: "index_openclaw_pending_callbacks_on_openclaw_account_id"
   end
 
   create_table "sessions", force: :cascade do |t|
@@ -762,7 +763,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_000001) do
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
-  add_foreign_key "creative_shares", "users", column: "shared_by_id", on_delete: :nullify
+  add_foreign_key "creative_shares", "users", column: "shared_by_id"
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
@@ -786,8 +787,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_000001) do
   add_foreign_key "notion_page_links", "notion_accounts"
   add_foreign_key "oauth_access_grants", "oauth_applications", column: "application_id"
   add_foreign_key "oauth_access_tokens", "oauth_applications", column: "application_id"
-  add_foreign_key "openclaw_accounts", "users"
-  add_foreign_key "openclaw_pending_callbacks", "openclaw_accounts"
   add_foreign_key "sessions", "users"
   add_foreign_key "slack_accounts", "users"
   add_foreign_key "slack_channel_links", "creatives"

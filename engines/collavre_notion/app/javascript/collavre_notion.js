@@ -418,6 +418,14 @@ if (!notionIntegrationInitialized) {
       resetWizard();
     });
 
+    // Listen for OAuth success message from popup window
+    window.addEventListener('message', function(event) {
+      if (event.data && event.data.type === 'notion_oauth_success') {
+        console.log('Received Notion OAuth success message');
+        loadIntegrationStatus();
+      }
+    });
+
     loginBtn.addEventListener('click', function () {
       console.log('Notion login button clicked');
       const width = parseInt(this.dataset.windowWidth) || 600;
