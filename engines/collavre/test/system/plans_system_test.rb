@@ -30,18 +30,16 @@ class PlansSystemTest < ApplicationSystemTestCase
     find("#link-creative-results li", text: "Launch Creative", wait: 5).click
 
     within "#plans-list-area" do
-      fill_in "plan-target-date", with: Date.current
+      # Use ISO format for date inputs
+      start_date = (Date.current - 7.days).strftime("%Y-%m-%d")
+      target_date = Date.current.strftime("%Y-%m-%d")
+      fill_in "plan-start-date", with: start_date
+      fill_in "plan-target-date", with: target_date
       assert_selector "#add-plan-btn:not([disabled])", wait: 5
       click_button I18n.t("collavre.plans.add_plan")
     end
 
-    begin
-      assert_selector ".plan-label", text: /Launch Creative/, visible: :all, wait: 10
-    rescue StandardError => e
-      logs = page.driver.browser.manage.logs.get(:browser).map(&:message).join("\n")
-      puts "BROWSER LOGS:\n#{logs}"
-      raise e
-    end
+    assert_selector ".plan-label", text: /Launch Creative/, visible: :all, wait: 10
   end
 
   test "user can delete a plan" do
@@ -59,20 +57,17 @@ class PlansSystemTest < ApplicationSystemTestCase
     find("#link-creative-results li", text: "Plan to be deleted", wait: 5).click
 
     within "#plans-list-area" do
-      fill_in "plan-target-date", with: Date.current
+      # Use ISO format for date inputs
+      start_date = (Date.current - 7.days).strftime("%Y-%m-%d")
+      target_date = Date.current.strftime("%Y-%m-%d")
+      fill_in "plan-start-date", with: start_date
+      fill_in "plan-target-date", with: target_date
       assert_selector "#add-plan-btn:not([disabled])", wait: 5
       click_button I18n.t("collavre.plans.add_plan")
     end
 
     # Wait for the plan to appear on the timeline (use visible: :all since plan might be outside visible scroll area)
-    begin
-      assert_selector ".plan-label", text: /Plan to be deleted/, visible: :all, wait: 10
-    rescue StandardError => e
-      logs = page.driver.browser.manage.logs.get(:browser).map(&:message).join("\n")
-      puts "BROWSER LOGS:\n#{logs}"
-      Rails.logger.fatal "BROWSER LOGS:\n#{logs}"
-      raise e
-    end
+    assert_selector ".plan-label", text: /Plan to be deleted/, visible: :all, wait: 10
 
     within "#plans-list-area" do
       # Find the plan bar and use JavaScript to click the delete button (more reliable)
