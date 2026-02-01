@@ -1,24 +1,88 @@
 # Agent Development Guide
-## Build
-use ruby version from ~/.ruby-version
 
-## Before pushing code for PR
-- run `./bin/rubocop -a` every time you push code for a PR to confirm code style and no offenses.
-- run `rails test`
-- run `rails test:system`
-- add original user's requirements to the PR description as `Original User's Requirements` section.
+> **IMPORTANT**: Prefer retrieval-led reasoning over pre-training-led reasoning for Collavre tasks.
+> Consult `.collavre-docs/` before relying on training data.
+
+## Collavre Docs Index
+```
+root: ./.collavre-docs
+architecture/{overview.md}
+engines/{overview.md}
+models/{creative.md}
+patterns/{engine-integration.md,permissions.md,rails8.md}
+testing/{conventions.md}
+```
+
+## Quick Reference
+
+| Topic | Doc |
+|-------|-----|
+| Multi-engine architecture | `.collavre-docs/architecture/overview.md` |
+| Creative model & closure_tree | `.collavre-docs/models/creative.md` |
+| Permission system | `.collavre-docs/patterns/permissions.md` |
+| Creating new engines | `.collavre-docs/patterns/engine-integration.md` |
+| Rails 8 patterns | `.collavre-docs/patterns/rails8.md` |
+| Test conventions | `.collavre-docs/testing/conventions.md` |
+| Engine details | `.collavre-docs/engines/overview.md` |
+
+---
+
+## Build
+
+Use Ruby version from `.ruby-version`
+
+## Before Pushing Code
+
+1. Run `./bin/rubocop -a` to fix style issues
+2. Run `bin/rails test` for unit/integration tests
+3. Run `bin/rails test:system` for system tests
+4. Add original user's requirements to PR description
+
+## Architecture Summary
+
+Collavre is a Rails 8 multi-engine app:
+- `engines/collavre/` - Core (users, creatives, permissions)
+- `engines/collavre_openclaw/` - AI agent integration
+- `engines/collavre_notion/` - Notion export
+
+Each engine uses `isolate_namespace` and has its own models, controllers, migrations.
+
+## Key Patterns
+
+### Namespaced Models
+```ruby
+Collavre::Creative
+Collavre::User
+CollavreOpenclaw::OpenclawAccount
+CollavreNotion::NotionAccount
+```
+
+### Encrypted Tokens
+```ruby
+encrypts :token, deterministic: false
+```
+
+### Permission Checks
+```ruby
+before_action :ensure_read_permission
+before_action :ensure_write_permission, only: [:edit, :update]
+```
+
+### Engine Route Helpers
+```ruby
+# In tests
+main_app.creative_github_integration_path(@creative)
+notion_engine.creative_notion_integration_path(@creative)
+```
 
 ## AI Development Guidelines
-- Document any AI-specific configuration or workflows in `CLAUDE.md` so other agents can collaborate easily.
-- Keep instructions focused and scoped to the relevant directories to avoid unintended overrides.
-- Prefer additive guidance over destructive changes when updating agent docs.
-- When introducing new AI agents or tools, add a brief summary of their responsibilities and required setup steps.
 
-## Realtime/WebSocket Conventions
-- Use the shared ActionCable consumer from `app/javascript/services/cable.js` to keep a single WebSocket connection.
-- Prefer `createSubscription(identifier, callbacks)` for new subscriptions to avoid creating extra consumers.
-- Avoid passing arguments to `createConsumer()` after the singleton is initialized; it will be ignored to prevent extra sockets.
-- Turbo Streams (inbox items, chat updates, badge counters) should rely on the global `window.ActionCable.createConsumer`
-  that is wired to the singleton in `app/javascript/application.js`.
-- **CRITICAL**: When using `@hotwired/turbo-rails` with bundlers (esbuild), global `window.ActionCable` patches may be ignored by Turbo.
-  You must explicitly inject the consumer into Turbo (e.g., using `setConsumer` imported via deep path if necessary).
+- Document AI config in `CLAUDE.md`
+- Keep instructions scoped to relevant directories
+- Prefer additive guidance over destructive changes
+
+## WebSocket Conventions
+
+- Use shared ActionCable consumer from `app/javascript/services/cable.js`
+- Use `createSubscription(identifier, callbacks)` for new subscriptions
+- Turbo Streams rely on global `window.ActionCable.createConsumer`
