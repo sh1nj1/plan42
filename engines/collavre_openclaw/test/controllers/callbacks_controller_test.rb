@@ -5,7 +5,6 @@ module CollavreOpenclaw
     include Engine.routes.url_helpers
 
     setup do
-      # Create a test user and account
       @user = User.create!(
         email: "test-openclaw@example.com",
         password: "password123",
@@ -20,6 +19,7 @@ module CollavreOpenclaw
     end
 
     teardown do
+      PendingCallback.delete_all
       @account&.destroy
       @user&.destroy
     end
@@ -124,6 +124,141 @@ module CollavreOpenclaw
       assert_response :bad_request
       json = JSON.parse(response.body)
       assert_equal "Invalid JSON", json["error"]
+    end
+
+    # Nonce-based authentication tests
+    test "accepts valid nonce" do
+      pending = PendingCallback.create_for_request(
+        account: @account,
+        creative_id: 123
+      )
+
+      body = {
+        type: "proactive",
+        nonce: pending.nonce,
+        content: "Proactive message"
+      }.to_json
+
+      perform_enqueued_jobs do
+        post callback_path(account_id: @account.id),
+             params: body,
+             headers: { "Content-Type" => "application/json" }
+      end
+
+      assert_response :ok
+      # Nonce should be consumed (deleted)
+      assert_nil PendingCallback.find_by(nonce: pending.nonce)
+    end
+
+    test "rejects invalid nonce" do
+      body = {
+        type: "proactive",
+        nonce: "invalid-nonce-12345",
+        content: "Proactive message"
+      }.to_json
+
+      post callback_path(account_id: @account.id),
+           params: body,
+           headers: { "Content-Type" => "application/json" }
+
+      assert_response :unauthorized
+      json = JSON.parse(response.body)
+      assert_equal "Invalid or expired nonce", json["error"]
+    end
+
+    test "rejects expired nonce" do
+      pending = PendingCallback.create_for_request(
+        account: @account,
+        creative_id: 123
+      )
+      pending.update!(expires_at: 1.hour.ago)
+
+      body = {
+        type: "proactive",
+        nonce: pending.nonce,
+        content: "Proactive message"
+      }.to_json
+
+      post callback_path(account_id: @account.id),
+           params: body,
+           headers: { "Content-Type" => "application/json" }
+
+      assert_response :unauthorized
+    end
+
+    test "rejects nonce from different account" do
+      other_user = User.create!(
+        email: "other-openclaw@example.com",
+        password: "password123",
+        name: "Other Bot"
+      )
+      other_account = OpenclawAccount.create!(
+        user: other_user,
+        gateway_url: "https://other-gateway.com",
+        api_token: "other-token"
+      )
+
+      pending = PendingCallback.create_for_request(
+        account: other_account,
+        creative_id: 123
+      )
+
+      body = {
+        type: "proactive",
+        nonce: pending.nonce,
+        content: "Proactive message"
+      }.to_json
+
+      post callback_path(account_id: @account.id),
+           params: body,
+           headers: { "Content-Type" => "application/json" }
+
+      assert_response :unauthorized
+    ensure
+      other_account&.destroy
+      other_user&.destroy
+    end
+
+    test "nonce callback merges context from pending callback" do
+      owner = User.create!(
+        email: "owner-test@example.com",
+        password: "password123",
+        name: "Owner"
+      )
+      creative = Collavre::Creative.create!(
+        description: "Test Creative",
+        user: owner
+      )
+
+      pending = PendingCallback.create_for_request(
+        account: @account,
+        creative_id: creative.id,
+        thread_id: 999
+      )
+
+      body = {
+        type: "proactive",
+        nonce: pending.nonce,
+        content: "Proactive message with context"
+      }.to_json
+
+      # The job should create a comment with merged context
+      perform_enqueued_jobs do
+        post callback_path(account_id: @account.id),
+             params: body,
+             headers: { "Content-Type" => "application/json" }
+      end
+
+      assert_response :ok
+
+      # Verify comment was created with the context from pending callback
+      comment = Collavre::Comment.last
+      assert_equal creative.id, comment.creative_id
+      assert_equal "Proactive message with context", comment.content
+    ensure
+      Collavre::Comment.where(creative: creative).destroy_all
+      creative&.destroy
+      owner&.destroy
     end
   end
 end

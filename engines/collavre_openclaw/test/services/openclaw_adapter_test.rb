@@ -28,7 +28,7 @@ module CollavreOpenclaw
       adapter = OpenclawAdapter.new(
         user: user,
         system_prompt: "Test prompt",
-        context: { creative_id: 123 }
+        context: {}
       )
 
       messages = [
@@ -64,73 +64,6 @@ module CollavreOpenclaw
       assert_equal "user", adapter.send(:normalize_role, "unknown")
     end
 
-    test "builds user context with callback_url" do
-      account = build_test_account(callback_url: "https://collavre.com/openclaw/callback/123")
-      user = build_test_user(account)
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "",
-        context: {}
-      )
-
-      user_context = adapter.send(:build_user_context)
-
-      assert user_context.start_with?("collavre:")
-      context_json = JSON.parse(user_context.sub("collavre:", ""))
-      assert_equal "https://collavre.com/openclaw/callback/123", context_json["callback_url"]
-    end
-
-    test "builds user context with creative_id" do
-      account = build_test_account
-      user = build_test_user(account)
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "",
-        context: { creative_id: 456 }
-      )
-
-      user_context = adapter.send(:build_user_context)
-      context_json = JSON.parse(user_context.sub("collavre:", ""))
-
-      assert_equal 456, context_json["creative_id"]
-    end
-
-    test "builds user context with creative object" do
-      account = build_test_account
-      user = build_test_user(account)
-
-      creative = OpenStruct.new(id: 789)
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "",
-        context: { creative: creative }
-      )
-
-      user_context = adapter.send(:build_user_context)
-      context_json = JSON.parse(user_context.sub("collavre:", ""))
-
-      assert_equal 789, context_json["creative_id"]
-    end
-
-    test "builds user context with thread_id" do
-      account = build_test_account
-      user = build_test_user(account)
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "",
-        context: { creative_id: 123, thread_id: 999 }
-      )
-
-      user_context = adapter.send(:build_user_context)
-      context_json = JSON.parse(user_context.sub("collavre:", ""))
-
-      assert_equal 999, context_json["thread_id"]
-    end
-
     test "returns callback_url from account" do
       account = build_test_account(callback_url: "https://example.com/callback/1")
       user = build_test_user(account)
@@ -162,6 +95,96 @@ module CollavreOpenclaw
       user.define_singleton_method(:id) { 1 }
       user.define_singleton_method(:openclaw_account) { account }
       user
+    end
+  end
+
+  # Integration test with real database
+  class OpenclawAdapterIntegrationTest < ActiveSupport::TestCase
+    setup do
+      @user = User.create!(
+        email: "adapter-test@example.com",
+        password: "password123",
+        name: "Test Bot"
+      )
+      @account = OpenclawAccount.create!(
+        user: @user,
+        gateway_url: "https://test-gateway.com",
+        api_token: "test-token",
+        channel_id: "test-channel"
+      )
+    end
+
+    teardown do
+      PendingCallback.delete_all
+      @account&.destroy
+      @user&.destroy
+    end
+
+    test "creates pending callback when creative_id is present" do
+      adapter = OpenclawAdapter.new(
+        user: @user,
+        system_prompt: "Test",
+        context: { creative_id: 456 }
+      )
+
+      # Stub callback_url
+      @account.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{id}" }
+
+      assert_difference "PendingCallback.count", 1 do
+        adapter.send(:build_user_context)
+      end
+
+      pending = PendingCallback.last
+      assert_equal @account.id, pending.openclaw_account_id
+      assert_equal 456, pending.creative_id
+      assert pending.nonce.present?
+    end
+
+    test "includes nonce in user context" do
+      adapter = OpenclawAdapter.new(
+        user: @user,
+        system_prompt: "Test",
+        context: { creative_id: 789 }
+      )
+
+      @account.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{id}" }
+
+      user_context = adapter.send(:build_user_context)
+
+      assert user_context.start_with?("collavre:")
+      context_json = JSON.parse(user_context.sub("collavre:", ""))
+
+      assert context_json["callback_url"].present?
+      assert context_json["callback_nonce"].present?
+      assert_equal 789, context_json["creative_id"]
+    end
+
+    test "does not create pending callback without creative_id" do
+      adapter = OpenclawAdapter.new(
+        user: @user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      @account.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{id}" }
+
+      assert_no_difference "PendingCallback.count" do
+        adapter.send(:build_user_context)
+      end
+    end
+
+    test "does not create pending callback without callback_url" do
+      adapter = OpenclawAdapter.new(
+        user: @user,
+        system_prompt: "Test",
+        context: { creative_id: 123 }
+      )
+
+      @account.define_singleton_method(:callback_url) { nil }
+
+      assert_no_difference "PendingCallback.count" do
+        adapter.send(:build_user_context)
+      end
     end
   end
 end

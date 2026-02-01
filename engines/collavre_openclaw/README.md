@@ -1,17 +1,30 @@
 # Collavre OpenClaw Integration
 
-This engine enables AI agents in Collavre to use [OpenClaw](https://github.com/openclaw/openclaw) as their LLM backend.
+This engine enables AI agents in Collavre to use [OpenClaw](https://github.com/openclaw/openclaw) as their LLM backend, with support for bidirectional communication.
+
+## Features
+
+- **OpenAI-compatible API**: Uses OpenClaw's `/v1/chat/completions` endpoint
+- **Streaming responses**: Real-time streaming of AI responses
+- **Proactive messaging**: OpenClaw can send messages to Collavre without user prompt
+- **Secure callbacks**: Nonce-based authentication for callback requests (no tokens exposed)
 
 ## Installation
 
 The engine is automatically loaded when placed in the `engines/` directory of a Collavre installation.
+
+### Run Migrations
+
+```bash
+bin/rails db:migrate
+```
 
 ## Configuration
 
 ### Environment Variables
 
 - `OPENCLAW_WEBHOOK_SECRET` - Default webhook secret for verifying inbound requests
-- `OPENCLAW_REQUEST_TIMEOUT` - Timeout for outbound requests (default: 30 seconds)
+- `OPENCLAW_REQUEST_TIMEOUT` - Timeout for outbound requests (default: 180 seconds)
 
 ### Setting up an AI Agent with OpenClaw
 
@@ -19,33 +32,146 @@ The engine is automatically loaded when placed in the `engines/` directory of a 
 2. Set the `llm_vendor` to `"openclaw"`
 3. Configure the OpenClaw account with:
    - **Gateway URL**: The URL of your OpenClaw gateway
-   - **API Token**: (Optional) For authentication
+   - **API Token**: (Optional) For authentication to OpenClaw
    - **Channel ID**: (Optional) Specific channel to use
 
 ## How it Works
 
-1. When a comment mentions an AI agent with `llm_vendor: "openclaw"`, the system triggers the agent
-2. The `OpenclawAdapter` sends the conversation context to the OpenClaw gateway
-3. Responses are streamed back and displayed in real-time
-4. The adapter supports both synchronous streaming and async callbacks
+### Request Flow (Collavre → OpenClaw)
+
+```
+User mentions AI agent in Collavre
+    ↓
+OpenclawAdapter builds request with context
+    ↓
+Creates PendingCallback with secure nonce
+    ↓
+Sends request to OpenClaw /v1/chat/completions
+    ↓
+Streams response back to Collavre
+```
+
+### Callback Flow (OpenClaw → Collavre)
+
+```
+OpenClaw wants to send proactive message
+    ↓
+Extracts nonce from user context
+    ↓
+POST /openclaw/callback/:account_id
+    { "nonce": "...", "type": "proactive", "content": "..." }
+    ↓
+Collavre verifies nonce (one-time use)
+    ↓
+Creates comment on the creative
+```
 
 ## API Endpoints
 
-- `POST /openclaw/callback/:account_id` - Webhook for async responses from OpenClaw
-- `GET /openclaw/health` - Health check endpoint
+### `POST /openclaw/callback/:account_id`
+
+Webhook endpoint for receiving messages from OpenClaw.
+
+**Authentication Methods** (in priority order):
+
+1. **Nonce** (recommended, most secure):
+   ```json
+   {
+     "nonce": "abc123...",
+     "type": "proactive",
+     "content": "Hello from OpenClaw!"
+   }
+   ```
+   - Nonce is provided in the `user` field when Collavre sends requests
+   - One-time use, expires after 10 minutes
+   - No token exposure
+
+2. **HMAC Signature**:
+   ```
+   X-OpenClaw-Signature: <hmac-sha256-hex>
+   ```
+   - Signature = HMAC-SHA256(api_token, request_body)
+
+3. **Bearer Token**:
+   ```
+   Authorization: Bearer <api_token>
+   ```
+
+### Payload Types
+
+**Proactive Message** (OpenClaw initiates):
+```json
+{
+  "type": "proactive",
+  "nonce": "callback_nonce_from_user_context",
+  "content": "This is a proactive message from AI!",
+  "creative_id": 123,  // Optional if using nonce
+  "thread_id": 456     // Optional
+}
+```
+
+**Response** (async response to request):
+```json
+{
+  "type": "response",
+  "nonce": "...",
+  "content": "AI response content",
+  "context": {
+    "comment_id": 789  // Updates existing comment
+  }
+}
+```
+
+**Error**:
+```json
+{
+  "type": "error",
+  "nonce": "...",
+  "error": "Rate limit exceeded"
+}
+```
+
+### `GET /openclaw/health`
+
+Health check endpoint.
+
+## Security
+
+### Nonce-based Authentication
+
+When Collavre sends a request to OpenClaw, it includes callback information in the `user` field:
+
+```json
+{
+  "model": "openclaw",
+  "messages": [...],
+  "user": "collavre:{\"callback_url\":\"https://collavre.com/openclaw/callback/1\",\"callback_nonce\":\"abc123...\",\"creative_id\":456}"
+}
+```
+
+The nonce:
+- Is unique per request
+- Expires after 10 minutes
+- Can only be used once (consumed on verification)
+- Is tied to a specific account
+
+This means:
+- **No tokens are transmitted** in the callback request
+- **Replay attacks are prevented** (nonce is consumed)
+- **Expired requests are rejected**
+- **Cross-account attacks are blocked** (nonce is bound to account)
+
+### Cleanup
+
+Expired pending callbacks are automatically cleaned up. You can also run:
+
+```ruby
+CollavreOpenclaw::PendingCallback.cleanup_expired!
+```
 
 ## OpenAI API Compatibility
 
-OpenClaw Gateway provides an **OpenAI-compatible Chat Completions endpoint** at `/v1/chat/completions`. This allows tools that support the OpenAI API format to connect to OpenClaw.
-
-### Key Points
-
-| Item | Description |
-|------|-------------|
-| **Compatibility** | Compatible with OpenAI Chat Completions format (minimal implementation) |
-| **Default State** | Disabled by default (must enable in config) |
-| **Endpoint** | `POST /v1/chat/completions` |
-| **Supported Fields** | `messages`, `stream`, `model`, `user` |
+OpenClaw Gateway provides an **OpenAI-compatible Chat Completions endpoint** at `/v1/chat/completions`.
 
 ### Enabling the Endpoint
 
@@ -65,33 +191,10 @@ In your OpenClaw Gateway config (`openclaw.config.json5`):
 
 ### Authentication
 
-Uses Gateway auth configuration. Send a bearer token:
-
+Send a bearer token:
 ```
 Authorization: Bearer <token>
 ```
-
-- When `gateway.auth.mode="token"`, use `gateway.auth.token` (or `OPENCLAW_GATEWAY_TOKEN`)
-- When `gateway.auth.mode="password"`, use `gateway.auth.password` (or `OPENCLAW_GATEWAY_PASSWORD`)
-
-### Agent Routing
-
-Specify which OpenClaw agent to use via the `model` field:
-
-- `model: "openclaw:main"` - Routes to the `main` agent
-- `model: "openclaw:<agentId>"` - Routes to a specific agent
-- `model: "agent:<agentId>"` - Alias format
-
-Or use a header:
-
-```
-x-openclaw-agent-id: <agentId>
-```
-
-### Session Behavior
-
-- **Stateless by default**: A new session key is generated for each request
-- **Stateful option**: Include an OpenAI `user` string to derive a stable session key across calls
 
 ### Example: Non-streaming Request
 
@@ -118,15 +221,30 @@ curl -N http://127.0.0.1:18789/v1/chat/completions \
   }'
 ```
 
-### Limitations
+## OpenClaw Callback (For OpenClaw Users)
 
-This is a minimal OpenAI-compatible implementation. Some advanced OpenAI features may not be fully supported:
+When OpenClaw receives a request from Collavre, the `user` field contains callback information:
 
-- Function calling format may differ
-- Vision/multimodal requests have limited support
-- Not all OpenAI-specific parameters are implemented
+```
+collavre:{"callback_url":"https://...","callback_nonce":"...","creative_id":123}
+```
 
-For full details, see the [OpenClaw Gateway HTTP API documentation](https://docs.openclaw.ai/gateway/openai-http-api).
+To send a proactive message back:
+
+```bash
+# Parse the user field to extract callback info
+CALLBACK_URL="https://collavre.com/openclaw/callback/1"
+NONCE="abc123..."
+
+# Send proactive message (no auth header needed - nonce is the auth)
+curl -X POST "$CALLBACK_URL" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "proactive",
+    "nonce": "'"$NONCE"'",
+    "content": "Hello from OpenClaw!"
+  }'
+```
 
 ## License
 

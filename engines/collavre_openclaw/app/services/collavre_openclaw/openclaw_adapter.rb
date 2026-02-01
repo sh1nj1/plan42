@@ -69,7 +69,7 @@ module CollavreOpenclaw
         payload[:messages].unshift({ role: "system", content: @system_prompt })
       end
 
-      # Build user context with callback information
+      # Build user context with callback information (includes nonce for secure callbacks)
       payload[:user] = build_user_context
 
       payload
@@ -83,26 +83,28 @@ module CollavreOpenclaw
         context_data[:channel_id] = @account.channel_id
       end
 
-      # Callback URL for async responses / proactive messages
-      if @account.callback_url.present?
+      # Extract IDs from context
+      creative_id = extract_id(@context, :creative) || @context[:creative_id]
+      comment_id = extract_id(@context, :comment) || @context[:comment_id]
+      thread_id = @context[:thread_id] || @context[:topic_id]
+
+      # Create pending callback with nonce for secure async responses
+      if @account.callback_url.present? && creative_id.present?
+        pending = PendingCallback.create_for_request(
+          account: @account,
+          creative_id: creative_id,
+          comment_id: comment_id,
+          thread_id: thread_id,
+          context: @context.slice(:extra_data).to_h
+        )
+
         context_data[:callback_url] = @account.callback_url
-      end
-
-      # Creative context (for routing responses)
-      if @context[:creative_id].present? || @context[:creative].present?
-        creative_id = extract_id(@context, :creative) || @context[:creative_id]
-        context_data[:creative_id] = creative_id if creative_id
-      end
-
-      # Comment context (for updating existing comments)
-      if @context[:comment_id].present? || @context[:comment].present?
-        comment_id = extract_id(@context, :comment) || @context[:comment_id]
+        context_data[:callback_nonce] = pending.nonce
+        context_data[:creative_id] = creative_id
         context_data[:comment_id] = comment_id if comment_id
-      end
+        context_data[:thread_id] = thread_id if thread_id
 
-      # Thread/Topic context
-      if @context[:thread_id].present? || @context[:topic_id].present?
-        context_data[:thread_id] = @context[:thread_id] || @context[:topic_id]
+        Rails.logger.info("[CollavreOpenclaw] Created pending callback with nonce: #{pending.nonce[0..8]}...")
       end
 
       # Return as JSON string (OpenAI user field format)
