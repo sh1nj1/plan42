@@ -26,7 +26,28 @@ module CollavreOpenclaw
           system_prompt: system_prompt,
           context: context
         )
-        return adapter.chat(contents, tools: tools, &block)
+
+        response_content = nil
+        error_message = nil
+
+        begin
+          response_content = adapter.chat(contents, tools: tools, &block)
+        rescue StandardError => e
+          error_message = e.message
+          raise
+        ensure
+          # Log the interaction just like AiClient does
+          log_interaction(
+            messages: Array(contents),
+            tools: tools,
+            response_content: response_content,
+            error_message: error_message,
+            input_tokens: nil,
+            output_tokens: nil
+          )
+        end
+
+        return response_content
       end
 
       # Fall back to original implementation
