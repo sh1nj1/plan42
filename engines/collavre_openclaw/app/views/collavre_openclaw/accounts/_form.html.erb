@@ -52,6 +52,23 @@
   </div>
 
   <div>
+    <%= f.label :agent_id, t("collavre_openclaw.form.agent_id") %>
+    <%= f.text_field :agent_id, placeholder: "my-agent" %>
+    <small><%= t("collavre_openclaw.form.agent_id_hint") %></small>
+    <% if account.persisted? && account.agent_id.present? %>
+      <div class="agent-status <%= account.agent_provisioned_at? ? 'agent-status--provisioned' : 'agent-status--pending' %>">
+        <% if account.agent_provisioned_at? %>
+          <span class="agent-status__indicator">✓</span>
+          <span class="agent-status__text"><%= t("collavre_openclaw.form.agent_provisioned", time: l(account.agent_provisioned_at, format: :short)) %></span>
+        <% else %>
+          <span class="agent-status__indicator">○</span>
+          <span class="agent-status__text"><%= t("collavre_openclaw.form.agent_not_provisioned") %></span>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+
+  <div>
     <%= f.label :description, t("collavre_openclaw.form.description") %>
     <%= f.text_area :description, rows: 3 %>
     <small><%= t("collavre_openclaw.form.description_hint") %></small>

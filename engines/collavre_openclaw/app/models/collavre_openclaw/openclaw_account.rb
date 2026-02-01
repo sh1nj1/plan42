@@ -91,6 +91,107 @@ module CollavreOpenclaw
       end
     end
 
+    # Check if the agent is provisioned
+    def agent_provisioned?
+      agent_id.present? && agent_provisioned_at.present?
+    end
+
+    # Provision the agent on the OpenClaw gateway
+    # Creates the agent with workspace if it doesn't exist
+    # Uses the AI user's system_prompt as SOUL.md content
+    def provision_agent!(soul_content: nil)
+      return { success: false, message: "No agent_id configured" } if agent_id.blank?
+      return { success: false, message: "Gateway URL not configured" } if gateway_url.blank?
+
+      require "faraday"
+      require "json"
+
+      begin
+        connection = Faraday.new do |builder|
+          builder.options.timeout = 30
+          builder.options.open_timeout = 10
+          builder.adapter Faraday.default_adapter
+        end
+
+        # Build the agents API endpoint
+        uri = URI.parse(gateway_url)
+        uri.path = "/api/agents"
+
+        # Use provided soul_content or try to get from associated user's system_prompt
+        soul = soul_content || user&.system_prompt
+
+        payload = {
+          id: agent_id,
+          createWorkspace: true
+        }
+        payload[:soul] = soul if soul.present?
+
+        response = connection.post(uri.to_s) do |req|
+          req.headers["Content-Type"] = "application/json"
+          req.headers["Authorization"] = "Bearer #{api_token}" if api_token.present?
+          req.body = payload.to_json
+        end
+
+        case response.status
+        when 200..299
+          update!(agent_provisioned_at: Time.current)
+          { success: true, message: "Agent provisioned successfully" }
+        when 409
+          # Agent already exists - that's fine, mark as provisioned
+          update!(agent_provisioned_at: Time.current)
+          { success: true, message: "Agent already exists" }
+        when 401
+          { success: false, message: "Authentication failed" }
+        when 403
+          { success: false, message: "Access denied" }
+        else
+          body = JSON.parse(response.body) rescue {}
+          { success: false, message: body["error"] || "Failed with status #{response.status}" }
+        end
+      rescue Faraday::ConnectionFailed => e
+        { success: false, message: "Connection failed: #{e.message}" }
+      rescue Faraday::TimeoutError
+        { success: false, message: "Request timed out" }
+      rescue StandardError => e
+        { success: false, message: "Error: #{e.message}" }
+      end
+    end
+
+    # Check if the agent exists on the gateway
+    def check_agent_exists
+      return { exists: false, message: "No agent_id configured" } if agent_id.blank?
+      return { exists: false, message: "Gateway URL not configured" } if gateway_url.blank?
+
+      require "faraday"
+      require "json"
+
+      begin
+        connection = Faraday.new do |builder|
+          builder.options.timeout = 10
+          builder.options.open_timeout = 5
+          builder.adapter Faraday.default_adapter
+        end
+
+        uri = URI.parse(gateway_url)
+        uri.path = "/api/agents/#{agent_id}"
+
+        response = connection.get(uri.to_s) do |req|
+          req.headers["Authorization"] = "Bearer #{api_token}" if api_token.present?
+        end
+
+        case response.status
+        when 200
+          { exists: true, agent: JSON.parse(response.body) }
+        when 404
+          { exists: false, message: "Agent not found" }
+        else
+          { exists: false, message: "Unknown status: #{response.status}" }
+        end
+      rescue StandardError => e
+        { exists: false, message: "Error: #{e.message}" }
+      end
+    end
+
     # Build the full API endpoint URL (OpenAI-compatible)
     def api_endpoint
       uri = URI.parse(gateway_url)
