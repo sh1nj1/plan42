@@ -8,14 +8,26 @@ ko:
       created: "OpenClaw 계정이 생성되었습니다"
       updated: "OpenClaw 계정이 업데이트되었습니다"
       deleted: "OpenClaw 계정이 삭제되었습니다"
+      token_cleared: "API 토큰이 삭제되었습니다"
       new_title: "OpenClaw 연결"
       edit_title: "OpenClaw 연결 수정"
+
+    test_connection:
+      success: "연결 테스트 성공: %{details}"
+      failure: "%{message}: %{details}"
 
     form:
       gateway_url: "게이트웨이 URL"
       gateway_url_hint: "OpenClaw 게이트웨이 URL (예: https://your-gateway.com)"
       api_token: "API 토큰"
       api_token_hint: "선택사항. 인증 및 웹훅 서명에 사용됩니다"
+      api_token_hint_update: "현재 토큰을 유지하려면 비워두고, 새 토큰으로 교체하려면 입력하세요"
+      token_configured: "토큰이 설정됨"
+      token_not_configured: "토큰이 설정되지 않음"
+      token_placeholder_update: "교체할 새 토큰 입력..."
+      clear_token: "토큰 삭제"
+      clear_token_confirm: "정말로 API 토큰을 삭제하시겠습니까? 인증을 위해 다시 입력해야 합니다."
+      test_connection: "연결 테스트"
       channel_id: "채널 ID"
       channel_id_hint: "선택사항. 이 에이전트에 사용할 특정 채널"
       description: "설명"

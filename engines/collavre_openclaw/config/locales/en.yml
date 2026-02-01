@@ -8,14 +8,26 @@ en:
       created: "OpenClaw account created successfully"
       updated: "OpenClaw account updated successfully"
       deleted: "OpenClaw account deleted successfully"
+      token_cleared: "API token has been cleared"
       new_title: "Connect OpenClaw"
       edit_title: "Edit OpenClaw Connection"
+
+    test_connection:
+      success: "Connection test successful: %{details}"
+      failure: "%{message}: %{details}"
 
     form:
       gateway_url: "Gateway URL"
       gateway_url_hint: "The URL of your OpenClaw gateway (e.g., https://your-gateway.com)"
       api_token: "API Token"
       api_token_hint: "Optional. Used for authentication and webhook signatures"
+      api_token_hint_update: "Leave blank to keep current token, or enter a new token to replace it"
+      token_configured: "Token is configured"
+      token_not_configured: "No token configured"
+      token_placeholder_update: "Enter new token to replace..."
+      clear_token: "Clear Token"
+      clear_token_confirm: "Are you sure you want to clear the API token? You will need to re-enter it to authenticate."
+      test_connection: "Test Connection"
       channel_id: "Channel ID"
       channel_id_hint: "Optional. Specific channel to use for this agent"
       description: "Description"
