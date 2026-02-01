@@ -420,6 +420,9 @@ if (!notionIntegrationInitialized) {
 
     // Listen for OAuth success message from popup window
     window.addEventListener('message', function(event) {
+      // Verify origin for security
+      if (event.origin !== window.location.origin) return;
+      
       if (event.data && event.data.type === 'notion_oauth_success') {
         console.log('Received Notion OAuth success message');
         loadIntegrationStatus();

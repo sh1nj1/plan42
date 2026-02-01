@@ -19,7 +19,7 @@ module OmniAuth
 
       # Store popup flag in session before redirecting to Notion
       def request_phase
-        session["oauth_popup"] = request.params["popup"] == "true"
+        session[:oauth_popup] = request.params["popup"] == "true"
         super
       end
 
