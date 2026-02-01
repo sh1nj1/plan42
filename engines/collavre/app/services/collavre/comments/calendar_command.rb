@@ -58,7 +58,8 @@ module Collavre
           return [ nil, match[1], match[2] ]
         end
 
-        match = args.match(/\A(\S+)?(?:@(\d{2}:\d{2}))?(?:\s+(.*))?\z/)
+        # Use [^\s@]+ to stop before @ so "today@14:00" splits correctly
+        match = args.match(/\A([^\s@]+)?(?:@(\d{2}:\d{2}))?(?:\s+(.*))?\z/)
         return unless match
 
         [ match[1], match[2], match[3] ]
@@ -117,25 +118,50 @@ module Collavre
       def create_event
         data = parsed_args
         return unless data
-        return I18n.t("collavre.comments.calendar_command.google_login_required") unless google_login?
 
         timezone = Time.zone
         start_time, end_time = calculate_times(timezone, data[:date], data[:time])
         summary = build_summary(data[:memo])
-        calendar_id = comment.user&.calendar_id.presence || "primary"
 
-        event = GoogleCalendarService.new(user: user).create_event(
-          calendar_id: calendar_id,
-          start_time: start_time,
-          end_time: end_time,
+        # Always create local CalendarEvent first
+        calendar_event = CalendarEvent.create!(
+          user: user,
+          creative: creative,
           summary: summary,
-          description: event_description,
-          timezone: timezone.tzinfo.name,
-          all_day: data[:time].nil?,
-          creative: creative
+          start_time: start_time,
+          end_time: end_time
         )
 
-        I18n.t("collavre.comments.calendar_command.event_created", url: event.html_link)
+        # Sync to Google Calendar if connected
+        if google_login?
+          sync_to_google(calendar_event, timezone, data[:time].nil?)
+        else
+          I18n.t("collavre.comments.calendar_command.event_created_local")
+        end
+      end
+
+      def sync_to_google(calendar_event, timezone, all_day)
+        calendar_id = comment.user&.calendar_id.presence || "primary"
+
+        google_event = GoogleCalendarService.new(user: user).create_google_event(
+          calendar_id: calendar_id,
+          start_time: calendar_event.start_time,
+          end_time: calendar_event.end_time,
+          summary: calendar_event.summary,
+          description: event_description,
+          timezone: timezone.tzinfo.name,
+          all_day: all_day
+        )
+
+        calendar_event.update!(
+          google_event_id: google_event.id,
+          html_link: google_event.html_link
+        )
+
+        I18n.t("collavre.comments.calendar_command.event_created", url: google_event.html_link)
+      rescue StandardError => e
+        Rails.logger.error("Google Calendar sync failed: #{e.message}")
+        I18n.t("collavre.comments.calendar_command.event_created_sync_failed")
       end
 
       def calculate_times(timezone, date_str, time_str)
