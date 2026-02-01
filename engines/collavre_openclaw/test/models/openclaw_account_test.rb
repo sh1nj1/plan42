@@ -32,7 +32,11 @@ module CollavreOpenclaw
     end
 
     test "clear_token! removes the api_token" do
-      user = users(:ai_agent_user)
+      user = User.create!(
+        email: "clear-token-test-#{SecureRandom.hex(4)}@example.com",
+        password: "password123",
+        name: "Test User"
+      )
       account = OpenclawAccount.create!(
         user: user,
         gateway_url: "https://example.com",
@@ -43,6 +47,9 @@ module CollavreOpenclaw
       account.clear_token!
       assert_not account.token_configured?
       assert_nil account.reload.api_token
+    ensure
+      account&.destroy
+      user&.destroy
     end
 
     test "test_connection returns error when gateway_url is blank" do
