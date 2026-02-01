@@ -66,6 +66,61 @@ require "collavre_openclaw/some_service"
 
 ---
 
+## 🌐 Internationalization (i18n)
+
+**모든 사용자 노출 텍스트는 반드시 i18n을 사용하고, EN/KO 두 언어 모두 작성해야 함.**
+
+### 규칙
+
+1. **하드코딩 금지**: 뷰, 플래시 메시지, 에러 메시지에 문자열 직접 사용 금지
+2. **양쪽 언어 필수**: `config/locales/en.yml`과 `config/locales/ko.yml` 모두 작성
+3. **엔진별 분리**: 각 엔진은 자체 locale 파일 사용 (`engines/<name>/config/locales/`)
+
+### 예시
+
+```erb
+<%# Bad: 하드코딩 %>
+<h1>Settings</h1>
+<%= flash[:notice] = "Saved successfully" %>
+
+<%# Good: i18n 사용 %>
+<h1><%= t("settings.title") %></h1>
+<%= flash[:notice] = t("settings.saved") %>
+```
+
+```yaml
+# config/locales/en.yml
+en:
+  settings:
+    title: "Settings"
+    saved: "Saved successfully"
+
+# config/locales/ko.yml
+ko:
+  settings:
+    title: "설정"
+    saved: "저장되었습니다"
+```
+
+### 엔진 i18n 구조
+
+```
+engines/collavre_openclaw/config/locales/
+├── en.yml
+└── ko.yml
+```
+
+### 체크리스트
+
+| 항목 | 확인 |
+|------|------|
+| 모든 UI 텍스트가 `t()` 사용 | ✅ |
+| en.yml 작성 완료 | ✅ |
+| ko.yml 작성 완료 | ✅ |
+| 키 네이밍 일관성 (snake_case) | ✅ |
+
+---
+
 ## 🧹 Code Quality Principles
 
 ### Dead Code / Duplicate Code Removal

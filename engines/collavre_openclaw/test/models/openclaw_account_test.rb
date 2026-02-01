@@ -76,5 +76,70 @@ module CollavreOpenclaw
       assert_not result[:success]
       assert_includes [ "Connection failed", "Connection timeout", "Error" ], result[:message]
     end
+
+    # Agent ID and provisioning tests
+
+    test "agent_provisioned? returns false when agent_id is blank" do
+      account = OpenclawAccount.new(gateway_url: "https://example.com")
+      assert_not account.agent_provisioned?
+    end
+
+    test "agent_provisioned? returns false when agent_provisioned_at is nil" do
+      account = OpenclawAccount.new(gateway_url: "https://example.com", agent_id: "my-agent")
+      assert_not account.agent_provisioned?
+    end
+
+    test "agent_provisioned? returns true when both agent_id and agent_provisioned_at are present" do
+      account = OpenclawAccount.new(
+        gateway_url: "https://example.com",
+        agent_id: "my-agent"
+      )
+      # Simulate provisioned state without hitting DB
+      account.agent_provisioned_at = Time.current
+      assert account.agent_provisioned?
+    end
+
+    test "provision_agent! returns error when agent_id is blank" do
+      account = OpenclawAccount.new(gateway_url: "https://example.com")
+      result = account.provision_agent!
+
+      assert_not result[:success]
+      assert_equal "No agent_id configured", result[:message]
+    end
+
+    test "provision_agent! returns error when gateway_url is blank" do
+      account = OpenclawAccount.new(agent_id: "my-agent")
+      result = account.provision_agent!
+
+      assert_not result[:success]
+      assert_equal "Gateway URL not configured", result[:message]
+    end
+
+    test "provision_agent! returns connection error for unreachable host" do
+      account = OpenclawAccount.new(
+        gateway_url: "https://nonexistent.invalid.host.example.com",
+        agent_id: "my-agent"
+      )
+      result = account.provision_agent!
+
+      assert_not result[:success]
+      assert result[:message].present?
+    end
+
+    test "check_agent_exists returns error when agent_id is blank" do
+      account = OpenclawAccount.new(gateway_url: "https://example.com")
+      result = account.check_agent_exists
+
+      assert_not result[:exists]
+      assert_equal "No agent_id configured", result[:message]
+    end
+
+    test "check_agent_exists returns error when gateway_url is blank" do
+      account = OpenclawAccount.new(agent_id: "my-agent")
+      result = account.check_agent_exists
+
+      assert_not result[:exists]
+      assert_equal "Gateway URL not configured", result[:message]
+    end
   end
 end
