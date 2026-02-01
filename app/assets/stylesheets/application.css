@@ -538,6 +538,13 @@ input[type="password"] {
     margin-top: 1em;
 }
 
+.profile-form small {
+    display: block;
+    color: var(--color-text-muted, #6b7280);
+    font-size: 0.875em;
+    margin-top: 0.25em;
+}
+
 /* Tabs */
 .tab-list {
     display: flex;

@@ -1,4 +1,11 @@
 PATH
+  remote: engines/collavre_openclaw
+  specs:
+    collavre_openclaw (0.1.0)
+      faraday (>= 2.0)
+      rails (>= 8.0)
+
+PATH
   remote: engines/collavre_slack
   specs:
     collavre_slack (0.1.0)
@@ -629,6 +636,7 @@ DEPENDENCIES
   capybara
   closure_tree
   collavre!
+  collavre_openclaw!
   collavre_slack!
   debug
   doorkeeper (~> 5.8)

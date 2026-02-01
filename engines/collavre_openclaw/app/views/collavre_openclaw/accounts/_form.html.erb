@@ -1,0 +1,43 @@
+<%= form_with model: account, url: account.persisted? ? account_path(account) : accounts_path, class: "profile-form" do |f| %>
+  <%= f.hidden_field :user_id, value: @ai_user.id %>
+
+  <% if account.errors.any? %>
+    <div class="flash-alert">
+      <strong><%= pluralize(account.errors.count, "error") %> prevented this account from being saved:</strong>
+      <ul>
+        <% account.errors.full_messages.each do |message| %>
+          <li><%= message %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <div>
+    <%= f.label :gateway_url, t("collavre_openclaw.form.gateway_url") %>
+    <%= f.url_field :gateway_url, required: true, placeholder: "https://your-openclaw-gateway.com" %>
+    <small><%= t("collavre_openclaw.form.gateway_url_hint") %></small>
+  </div>
+
+  <div>
+    <%= f.label :api_token, t("collavre_openclaw.form.api_token") %>
+    <%= f.password_field :api_token, placeholder: account.persisted? ? "••••••••" : "" %>
+    <small><%= t("collavre_openclaw.form.api_token_hint") %></small>
+  </div>
+
+  <div>
+    <%= f.label :channel_id, t("collavre_openclaw.form.channel_id") %>
+    <%= f.text_field :channel_id %>
+    <small><%= t("collavre_openclaw.form.channel_id_hint") %></small>
+  </div>
+
+  <div>
+    <%= f.label :description, t("collavre_openclaw.form.description") %>
+    <%= f.text_area :description, rows: 3 %>
+    <small><%= t("collavre_openclaw.form.description_hint") %></small>
+  </div>
+
+  <div>
+    <%= f.submit account.persisted? ? t("collavre_openclaw.form.submit_update") : t("collavre_openclaw.form.submit_create") %>
+    <%= link_to t("collavre_openclaw.form.cancel"), collavre.edit_ai_user_path(@ai_user) %>
+  </div>
+<% end %>

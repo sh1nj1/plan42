@@ -1,0 +1,10 @@
+<h1 class="no-top-margin"><%= t("collavre_openclaw.accounts.edit_title") %></h1>
+
+<%= render "form", account: @account %>
+
+<div class="profile-actions">
+  <%= button_to t("collavre_openclaw.form.disconnect"),
+                account_path(@account),
+                method: :delete,
+                data: { confirm: t("collavre_openclaw.form.disconnect_confirm") } %>
+</div>
