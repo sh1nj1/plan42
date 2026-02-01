@@ -77,6 +77,104 @@ module CollavreOpenclaw
       assert_equal "https://example.com/callback/1", adapter.callback_url
     end
 
+    test "formats messages with sender attribution" do
+      account = build_test_account
+      user = build_test_user(account)
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: {}
+      )
+
+      messages = [
+        { role: "user", content: "Hello", sender_name: "Shinji" },
+        { role: "assistant", content: "Hi there!" },
+        { role: "user", content: "Question", sender_name: "Jane" }
+      ]
+
+      formatted = adapter.send(:format_messages, messages)
+
+      assert_equal "[Shinji]: Hello", formatted[0][:content]
+      assert_equal "Hi there!", formatted[1][:content]
+      assert_equal "[Jane]: Question", formatted[2][:content]
+    end
+
+    test "does not add sender attribution to assistant messages" do
+      account = build_test_account
+      user = build_test_user(account)
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: {}
+      )
+
+      messages = [
+        { role: "assistant", content: "Response", sender_name: "AI Bot" }
+      ]
+
+      formatted = adapter.send(:format_messages, messages)
+
+      # Should NOT have sender attribution for assistant
+      assert_equal "Response", formatted[0][:content]
+    end
+
+    test "builds session key based on topic" do
+      account = build_test_account
+      user = build_test_user(account)
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: { creative_id: 123, topic_id: 456 }
+      )
+
+      session_key = adapter.session_key
+
+      assert_includes session_key, "collavre"
+      assert_includes session_key, "creative:123"
+      assert_includes session_key, "topic:456"
+    end
+
+    test "session key is stable for same topic" do
+      account = build_test_account
+      user = build_test_user(account)
+
+      adapter1 = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: { creative_id: 100, topic_id: 200 }
+      )
+
+      adapter2 = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: { creative_id: 100, topic_id: 200 }
+      )
+
+      assert_equal adapter1.session_key, adapter2.session_key
+    end
+
+    test "session key differs for different topics" do
+      account = build_test_account
+      user = build_test_user(account)
+
+      adapter1 = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: { creative_id: 100, topic_id: 200 }
+      )
+
+      adapter2 = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: { creative_id: 100, topic_id: 300 }
+      )
+
+      assert_not_equal adapter1.session_key, adapter2.session_key
+    end
+
     private
 
     def build_test_account(callback_url: nil)
@@ -144,7 +242,7 @@ module CollavreOpenclaw
       adapter = OpenclawAdapter.new(
         user: @user,
         system_prompt: "Test",
-        context: { creative_id: 789 }
+        context: { creative_id: 789, topic_id: 111 }
       )
 
       @account.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{id}" }
@@ -157,6 +255,7 @@ module CollavreOpenclaw
       assert context_json["callback_url"].present?
       assert context_json["callback_nonce"].present?
       assert_equal 789, context_json["creative_id"]
+      assert_equal 111, context_json["topic_id"]
     end
 
     test "does not create pending callback without creative_id" do
@@ -185,6 +284,16 @@ module CollavreOpenclaw
       assert_no_difference "PendingCallback.count" do
         adapter.send(:build_user_context)
       end
+    end
+
+    test "session key includes account id" do
+      adapter = OpenclawAdapter.new(
+        user: @user,
+        system_prompt: "Test",
+        context: { creative_id: 100, topic_id: 200 }
+      )
+
+      assert_includes adapter.session_key, @account.id.to_s
     end
   end
 end

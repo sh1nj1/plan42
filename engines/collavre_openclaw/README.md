@@ -8,6 +8,8 @@ This engine enables AI agents in Collavre to use [OpenClaw](https://github.com/o
 - **Streaming responses**: Real-time streaming of AI responses
 - **Proactive messaging**: OpenClaw can send messages to Collavre without user prompt
 - **Secure callbacks**: Nonce-based authentication for callback requests (no tokens exposed)
+- **Topic-based sessions**: Each Topic gets its own OpenClaw session (isolated context)
+- **Multi-user support**: Multiple users can share the same Topic context with sender attribution
 
 ## Installation
 
@@ -34,6 +36,37 @@ bin/rails db:migrate
    - **Gateway URL**: The URL of your OpenClaw gateway
    - **API Token**: (Optional) For authentication to OpenClaw
    - **Channel ID**: (Optional) Specific channel to use
+
+## Session Mapping
+
+Collavre's structure maps to OpenClaw sessions as follows:
+
+```
+Collavre                          OpenClaw
+─────────────────────────────────────────────────────
+Creative (Chat Room)
+  └── Topic A ──────────────────→ Session A
+  │     ├── [User1]: "Hello"      (shared context)
+  │     ├── [User2]: "Hi there"
+  │     └── AI: "Hello everyone!"
+  │
+  └── Topic B ──────────────────→ Session B
+        └── [User1]: "New topic"   (isolated context)
+```
+
+**Key concepts:**
+- **Topic = Session**: Each Topic gets its own OpenClaw session
+- **Shared context**: All users in the same Topic share the conversation history
+- **User attribution**: Messages include sender name: `[Username]: message`
+- **Session key**: Stable key based on `account:creative:topic` (not nonce)
+
+### Session Key Format
+
+```
+collavre:<account_id>:creative:<creative_id>:topic:<topic_id>
+```
+
+This key is sent via `x-openclaw-session-key` header to ensure stable session routing.
 
 ## How it Works
 

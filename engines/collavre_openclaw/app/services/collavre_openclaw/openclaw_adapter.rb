@@ -5,6 +5,11 @@ module CollavreOpenclaw
   class OpenclawAdapter
     # Adapter for OpenClaw AI Gateway
     # Uses OpenAI-compatible /v1/chat/completions endpoint
+    #
+    # Session mapping:
+    #   Collavre Topic → OpenClaw Session (1:1)
+    #   Same Topic, multiple users → shared context
+    #   Different Topics → isolated sessions
 
     def initialize(user:, system_prompt:, context: {})
       @user = user
@@ -26,7 +31,7 @@ module CollavreOpenclaw
         # Build the request payload (OpenAI format)
         payload = build_payload(messages, tools)
 
-        Rails.logger.info("[CollavreOpenclaw] Sending request to #{api_endpoint}")
+        Rails.logger.info("[CollavreOpenclaw] Sending request to #{api_endpoint} (session: #{session_key})")
 
         # Make streaming request to OpenClaw
         stream_response(payload) do |chunk|
@@ -48,6 +53,11 @@ module CollavreOpenclaw
       @account&.callback_url
     end
 
+    # Get the stable session key for this context
+    def session_key
+      @session_key ||= build_session_key
+    end
+
     private
 
     def api_endpoint
@@ -55,6 +65,19 @@ module CollavreOpenclaw
       uri = URI.parse(@account.gateway_url)
       uri.path = "/v1/chat/completions"
       uri.to_s
+    end
+
+    # Build stable session key based on Topic (not nonce)
+    # Same Topic = Same Session = Shared context between users
+    def build_session_key
+      creative_id = extract_id(@context, :creative) || @context[:creative_id]
+      topic_id = @context[:thread_id] || @context[:topic_id]
+
+      parts = ["collavre", @account.id]
+      parts << "creative:#{creative_id}" if creative_id
+      parts << "topic:#{topic_id}" if topic_id
+
+      parts.join(":")
     end
 
     def build_payload(messages, tools)
@@ -69,7 +92,7 @@ module CollavreOpenclaw
         payload[:messages].unshift({ role: "system", content: @system_prompt })
       end
 
-      # Build user context with callback information (includes nonce for secure callbacks)
+      # Build user context with callback information
       payload[:user] = build_user_context
 
       payload
@@ -86,7 +109,7 @@ module CollavreOpenclaw
       # Extract IDs from context
       creative_id = extract_id(@context, :creative) || @context[:creative_id]
       comment_id = extract_id(@context, :comment) || @context[:comment_id]
-      thread_id = @context[:thread_id] || @context[:topic_id]
+      topic_id = @context[:thread_id] || @context[:topic_id]
 
       # Create pending callback with nonce for secure async responses
       if @account.callback_url.present? && creative_id.present?
@@ -94,7 +117,7 @@ module CollavreOpenclaw
           account: @account,
           creative_id: creative_id,
           comment_id: comment_id,
-          thread_id: thread_id,
+          thread_id: topic_id,
           context: @context.slice(:extra_data).to_h
         )
 
@@ -102,7 +125,7 @@ module CollavreOpenclaw
         context_data[:callback_nonce] = pending.nonce
         context_data[:creative_id] = creative_id
         context_data[:comment_id] = comment_id if comment_id
-        context_data[:thread_id] = thread_id if thread_id
+        context_data[:topic_id] = topic_id if topic_id
 
         Rails.logger.info("[CollavreOpenclaw] Created pending callback with nonce: #{pending.nonce[0..8]}...")
       end
@@ -115,6 +138,7 @@ module CollavreOpenclaw
       end
     end
 
+    # Format messages with sender attribution for multi-user context
     def format_messages(messages)
       Array(messages).map do |msg|
         role = msg[:role] || msg["role"]
@@ -124,6 +148,12 @@ module CollavreOpenclaw
                   else
                     msg[:text] || msg["text"] || msg[:content] || msg["content"]
                   end
+
+        # Add sender attribution for user messages (multi-user support)
+        sender_name = msg[:sender_name] || msg["sender_name"]
+        if sender_name.present? && normalize_role(role) == "user"
+          content = "[#{sender_name}]: #{content}"
+        end
 
         { role: normalize_role(role), content: content.to_s }
       end
@@ -150,6 +180,10 @@ module CollavreOpenclaw
           req.headers["Content-Type"] = "application/json"
           req.headers["Accept"] = "text/event-stream"
           req.headers["Authorization"] = "Bearer #{@account.api_token}" if @account.api_token.present?
+
+          # Set stable session key for topic-based context sharing
+          req.headers["x-openclaw-session-key"] = session_key
+
           req.body = payload.to_json
 
           req.options.on_data = proc do |chunk, _size, _env|
