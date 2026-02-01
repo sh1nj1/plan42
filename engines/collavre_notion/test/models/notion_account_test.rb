@@ -1,16 +1,12 @@
-require "test_helper"
+require_relative "../test_helper"
 
 class NotionAccountTest < ActiveSupport::TestCase
   def setup
-    @user = User.create!(
-      email: "test@example.com",
-      password: "password123",
-      name: "Test User"
-    )
+    @user = create_user(email: "notion-test@example.com", name: "Notion Test User")
   end
 
   test "should belong to user" do
-    account = NotionAccount.new(
+    account = CollavreNotion::NotionAccount.new(
       user: @user,
       notion_uid: "test-uid",
       workspace_name: "Test Workspace",
@@ -20,21 +16,22 @@ class NotionAccountTest < ActiveSupport::TestCase
   end
 
   test "should require notion_uid and token" do
-    account = NotionAccount.new(user: @user)
+    account = CollavreNotion::NotionAccount.new(user: @user)
     assert_not account.valid?
     assert_includes account.errors[:notion_uid], "can't be blank"
     assert_includes account.errors[:token], "can't be blank"
   end
 
   test "should validate uniqueness of notion_uid" do
-    NotionAccount.create!(
+    CollavreNotion::NotionAccount.create!(
       user: @user,
       notion_uid: "unique-uid",
       token: "token1"
     )
 
-    duplicate = NotionAccount.new(
-      user: @user,
+    other_user = create_user(email: "other@example.com", name: "Other User")
+    duplicate = CollavreNotion::NotionAccount.new(
+      user: other_user,
       notion_uid: "unique-uid",
       token: "token2"
     )
@@ -43,7 +40,7 @@ class NotionAccountTest < ActiveSupport::TestCase
   end
 
   test "expired? should work with token_expires_at" do
-    account = NotionAccount.new(
+    account = CollavreNotion::NotionAccount.new(
       user: @user,
       notion_uid: "test-uid",
       token: "test-token",
@@ -59,18 +56,15 @@ class NotionAccountTest < ActiveSupport::TestCase
   end
 
   test "should have many notion_page_links" do
-    account = NotionAccount.create!(
+    account = CollavreNotion::NotionAccount.create!(
       user: @user,
       notion_uid: "test-uid",
       token: "test-token"
     )
 
-    creative = Creative.create!(
-      user: @user,
-      description: "Test Creative"
-    )
+    creative = create_creative(@user)
 
-    page_link = NotionPageLink.create!(
+    page_link = CollavreNotion::NotionPageLink.create!(
       creative: creative,
       notion_account: account,
       page_id: "test-page-id",
@@ -81,25 +75,22 @@ class NotionAccountTest < ActiveSupport::TestCase
   end
 
   test "should destroy dependent notion_page_links" do
-    account = NotionAccount.create!(
+    account = CollavreNotion::NotionAccount.create!(
       user: @user,
       notion_uid: "test-uid",
       token: "test-token"
     )
 
-    creative = Creative.create!(
-      user: @user,
-      description: "Test Creative"
-    )
+    creative = create_creative(@user)
 
-    page_link = NotionPageLink.create!(
+    CollavreNotion::NotionPageLink.create!(
       creative: creative,
       notion_account: account,
       page_id: "test-page-id",
       page_title: "Test Page"
     )
 
-    assert_difference "NotionPageLink.count", -1 do
+    assert_difference "CollavreNotion::NotionPageLink.count", -1 do
       account.destroy!
     end
   end

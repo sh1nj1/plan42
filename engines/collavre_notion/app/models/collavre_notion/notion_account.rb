@@ -1,9 +1,9 @@
-module Collavre
+module CollavreNotion
   class NotionAccount < ApplicationRecord
     self.table_name = "notion_accounts"
 
-    belongs_to :user, class_name: Collavre.configuration.user_class_name
-    has_many :notion_page_links, class_name: "Collavre::NotionPageLink", dependent: :destroy
+    belongs_to :user, class_name: "::User"
+    has_many :notion_page_links, class_name: "CollavreNotion::NotionPageLink", dependent: :destroy
 
     encrypts :token, deterministic: false
 

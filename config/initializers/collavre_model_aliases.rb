@@ -23,15 +23,15 @@ Rails.application.config.to_prepare do
   set_alias(Object, :GeminiParentRecommender, Collavre::GeminiParentRecommender)
   set_alias(Object, :PptImporter, Collavre::PptImporter)
   set_alias(Object, :RubyLlmInteractionLogger, Collavre::RubyLlmInteractionLogger)
-  set_alias(Object, :NotionClient, Collavre::NotionClient)
-  set_alias(Object, :NotionService, Collavre::NotionService)
-  set_alias(Object, :NotionCreativeExporter, Collavre::NotionCreativeExporter)
+  set_alias(Object, :NotionClient, CollavreNotion::NotionClient)
+  set_alias(Object, :NotionService, CollavreNotion::NotionService)
+  set_alias(Object, :NotionCreativeExporter, CollavreNotion::NotionCreativeExporter)
 
   # Jobs
   set_alias(Object, :AiAgentJob, Collavre::AiAgentJob)
   set_alias(Object, :InboxSummaryJob, Collavre::InboxSummaryJob)
-  set_alias(Object, :NotionExportJob, Collavre::NotionExportJob)
-  set_alias(Object, :NotionSyncJob, Collavre::NotionSyncJob)
+  set_alias(Object, :NotionExportJob, CollavreNotion::NotionExportJob)
+  set_alias(Object, :NotionSyncJob, CollavreNotion::NotionSyncJob)
   set_alias(Object, :PermissionCacheCleanupJob, Collavre::PermissionCacheCleanupJob)
   set_alias(Object, :PermissionCacheJob, Collavre::PermissionCacheJob)
   set_alias(Object, :PushNotificationJob, Collavre::PushNotificationJob)
@@ -144,9 +144,9 @@ Rails.application.config.to_prepare do
   set_alias(Object, :McpTool, Collavre::McpTool)
   set_alias(Object, :GithubAccount, Collavre::GithubAccount)
   set_alias(Object, :GithubRepositoryLink, Collavre::GithubRepositoryLink)
-  set_alias(Object, :NotionAccount, Collavre::NotionAccount)
-  set_alias(Object, :NotionPageLink, Collavre::NotionPageLink)
-  set_alias(Object, :NotionBlockLink, Collavre::NotionBlockLink)
+  set_alias(Object, :NotionAccount, CollavreNotion::NotionAccount)
+  set_alias(Object, :NotionPageLink, CollavreNotion::NotionPageLink)
+  set_alias(Object, :NotionBlockLink, CollavreNotion::NotionBlockLink)
   set_alias(Object, :WebauthnCredential, Collavre::WebauthnCredential)
 end
 

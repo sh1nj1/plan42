@@ -1,4 +1,4 @@
-module Collavre
+module CollavreNotion
   class NotionClient
     BASE_URL = "https://api.notion.com/v1"
     API_VERSION = "2022-06-28"

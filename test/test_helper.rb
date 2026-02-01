@@ -45,4 +45,9 @@ end
 class ActionDispatch::IntegrationTest
   include IntegrationAuthHelper
   include Collavre::Engine.routes.url_helpers
+
+  # Helper to access main app routes when needed
+  def main_app
+    Rails.application.routes.url_helpers
+  end
 end

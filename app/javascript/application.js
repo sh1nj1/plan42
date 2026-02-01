@@ -16,11 +16,11 @@ ActiveStorage.start()
 // Import Collavre engine modules (side-effect imports)
 import "collavre"
 import "collavre_slack"
+import "collavre_notion"
 
 // Host app specific modules
 import "./firebase_config"
 import "./github_integration"
-import "./notion_integration"
 import "./timezone_detection"
 import "./oauth_callback"
 import "./doorkeeper_token"

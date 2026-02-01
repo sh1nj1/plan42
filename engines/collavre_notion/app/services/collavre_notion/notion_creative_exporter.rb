@@ -1,6 +1,6 @@
-module Collavre
+module CollavreNotion
   class NotionCreativeExporter
-    include CreativesHelper
+    include Collavre::CreativesHelper
 
     def initialize(creative, with_progress: false)
       @creative = creative

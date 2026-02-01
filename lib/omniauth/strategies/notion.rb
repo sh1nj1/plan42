@@ -17,6 +17,25 @@ module OmniAuth
         owner: "user"
       }
 
+      # Store popup flag in session before redirecting to Notion
+      def request_phase
+        session[:oauth_popup] = request.params["popup"] == "true"
+        super
+      end
+
+      # Notion requires redirect_uri to match exactly between authorize and token requests
+      def redirect_uri
+        full_host + callback_path
+      end
+
+      def token_params
+        super.merge(redirect_uri: redirect_uri)
+      end
+
+      def authorize_params
+        super.merge(redirect_uri: redirect_uri)
+      end
+
       uid { raw_info["owner"]["user"]["id"] }
 
       info do
