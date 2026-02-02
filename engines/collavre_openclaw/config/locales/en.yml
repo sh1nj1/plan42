@@ -1,59 +1,6 @@
 en:
   collavre_openclaw:
-    integration:
-      label: "OpenClaw"
-      description: "Connect AI agents via OpenClaw Gateway"
-
-    accounts:
-      created: "OpenClaw account created successfully"
-      updated: "OpenClaw account updated successfully"
-      deleted: "OpenClaw account deleted successfully"
-      token_cleared: "API Key has been cleared"
-      new_title: "Connect OpenClaw"
-      edit_title: "Edit OpenClaw Connection"
-
-    test_connection:
-      success: "Connection test successful: %{details}"
-      failure: "%{message}: %{details}"
-
-    provision:
-      success: "Agent provisioned successfully on gateway"
-      failure: "Provisioning failed: %{message}"
-      no_agent_id: "No agent ID configured"
-      button: "Provision Agent"
-      retry: "Retry Provisioning"
-
-    form:
-      gateway_url: "Gateway URL"
-      gateway_url_hint: "The URL of your OpenClaw gateway (e.g., https://your-gateway.com)"
-      api_key: "API Key"
-      api_key_hint: "Optional. Used for authentication and webhook signatures"
-      api_key_hint_update: "Leave blank to keep current key, or enter a new key to replace it"
-      token_configured: "API Key is configured"
-      token_not_configured: "No API Key configured"
-      token_placeholder_update: "Enter new key to replace..."
-      clear_token: "Clear Key"
-      clear_token_confirm: "Are you sure you want to clear the API Key? You will need to re-enter it to authenticate."
-      test_connection: "Test Connection"
-      channel_id: "Channel ID"
-      channel_id_hint: "Optional. Specific channel to use for this agent (e.g., telegram, discord, whatsapp)"
-      agent_id: "Agent ID"
-      agent_id_hint: "Optional. Create a dedicated agent with isolated workspace and memory on the gateway"
-      agent_provisioned: "Agent provisioned at %{time}"
-      agent_not_provisioned: "Agent not yet provisioned on gateway"
-      submit_create: "Connect OpenClaw"
-      submit_update: "Update Connection"
-      cancel: "Cancel"
-      disconnect: "Disconnect OpenClaw"
-      disconnect_confirm: "Are you sure you want to disconnect OpenClaw?"
-
     errors:
       user_not_found: "User not found"
-      account_not_found: "OpenClaw account not found"
       unauthorized: "You are not authorized to perform this action"
       connection_failed: "Failed to connect to OpenClaw gateway"
-
-    status:
-      connected: "Connected"
-      disconnected: "Disconnected"
-      error: "Error"

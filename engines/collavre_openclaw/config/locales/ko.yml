@@ -1,59 +1,6 @@
 ko:
   collavre_openclaw:
-    integration:
-      label: "OpenClaw"
-      description: "OpenClaw 게이트웨이를 통해 AI 에이전트 연결"
-
-    accounts:
-      created: "OpenClaw 계정이 생성되었습니다"
-      updated: "OpenClaw 계정이 업데이트되었습니다"
-      deleted: "OpenClaw 계정이 삭제되었습니다"
-      token_cleared: "API 키가 삭제되었습니다"
-      new_title: "OpenClaw 연결"
-      edit_title: "OpenClaw 연결 수정"
-
-    test_connection:
-      success: "연결 테스트 성공: %{details}"
-      failure: "%{message}: %{details}"
-
-    provision:
-      success: "에이전트가 게이트웨이에 성공적으로 프로비저닝되었습니다"
-      failure: "프로비저닝 실패: %{message}"
-      no_agent_id: "에이전트 ID가 설정되지 않았습니다"
-      button: "에이전트 프로비저닝"
-      retry: "프로비저닝 재시도"
-
-    form:
-      gateway_url: "게이트웨이 URL"
-      gateway_url_hint: "OpenClaw 게이트웨이 URL (예: https://your-gateway.com)"
-      api_key: "API 키"
-      api_key_hint: "선택사항. 인증 및 웹훅 서명에 사용됩니다"
-      api_key_hint_update: "현재 키를 유지하려면 비워두고, 새 키로 교체하려면 입력하세요"
-      token_configured: "API 키가 설정됨"
-      token_not_configured: "API 키가 설정되지 않음"
-      token_placeholder_update: "교체할 새 키 입력..."
-      clear_token: "키 삭제"
-      clear_token_confirm: "정말로 API 키를 삭제하시겠습니까? 인증을 위해 다시 입력해야 합니다."
-      test_connection: "연결 테스트"
-      channel_id: "채널 ID"
-      channel_id_hint: "선택사항. 이 에이전트에 사용할 특정 채널 (예: telegram, discord, whatsapp)"
-      agent_id: "에이전트 ID"
-      agent_id_hint: "선택사항. 게이트웨이에 분리된 워크스페이스와 메모리를 가진 전용 에이전트 생성"
-      agent_provisioned: "%{time}에 에이전트 프로비저닝됨"
-      agent_not_provisioned: "아직 게이트웨이에 에이전트가 프로비저닝되지 않음"
-      submit_create: "OpenClaw 연결"
-      submit_update: "연결 업데이트"
-      cancel: "취소"
-      disconnect: "OpenClaw 연결 해제"
-      disconnect_confirm: "정말로 OpenClaw 연결을 해제하시겠습니까?"
-
     errors:
       user_not_found: "사용자를 찾을 수 없습니다"
-      account_not_found: "OpenClaw 계정을 찾을 수 없습니다"
       unauthorized: "이 작업을 수행할 권한이 없습니다"
       connection_failed: "OpenClaw 게이트웨이에 연결하지 못했습니다"
-
-    status:
-      connected: "연결됨"
-      disconnected: "연결 끊김"
-      error: "오류"
