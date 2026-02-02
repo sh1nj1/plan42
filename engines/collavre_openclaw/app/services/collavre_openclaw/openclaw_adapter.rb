@@ -81,8 +81,16 @@ module CollavreOpenclaw
     end
 
     def build_payload(messages, tools)
+      # Build model string with agent_id if present
+      # OpenClaw accepts "openclaw:<agentId>" format (e.g., "openclaw:collavre")
+      model_value = if @account.agent_id.present?
+        "openclaw:#{@account.agent_id}"
+      else
+        "openclaw"
+      end
+
       payload = {
-        model: "openclaw",
+        model: model_value,
         messages: format_messages(messages),
         stream: true
       }

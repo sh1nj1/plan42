@@ -50,6 +50,40 @@ module CollavreOpenclaw
       assert_equal "openclaw", payload[:model]
     end
 
+    test "includes agent_id in model field when present" do
+      account = build_test_account(agent_id: "collavre")
+      user = build_test_user(account)
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      messages = [ { role: "user", content: "Hello" } ]
+
+      payload = adapter.send(:build_payload, messages, [])
+
+      assert_equal "openclaw:collavre", payload[:model]
+    end
+
+    test "uses plain openclaw model when agent_id is blank" do
+      account = build_test_account(agent_id: "")
+      user = build_test_user(account)
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      messages = [ { role: "user", content: "Hello" } ]
+
+      payload = adapter.send(:build_payload, messages, [])
+
+      assert_equal "openclaw", payload[:model]
+    end
+
     test "normalizes message roles correctly" do
       adapter = OpenclawAdapter.new(
         user: @user,
@@ -177,7 +211,7 @@ module CollavreOpenclaw
 
     private
 
-    def build_test_account(callback_url: nil)
+    def build_test_account(callback_url: nil, agent_id: nil)
       account = Object.new
       account.define_singleton_method(:api_endpoint) { "https://test-gateway.com/v1/chat/completions" }
       account.define_singleton_method(:api_token) { "test-token" }
@@ -185,6 +219,8 @@ module CollavreOpenclaw
       account.define_singleton_method(:gateway_url) { "https://test-gateway.com" }
       account.define_singleton_method(:callback_url) { callback_url }
       account.define_singleton_method(:id) { 123 }
+      aid = agent_id
+      account.define_singleton_method(:agent_id) { aid }
       account
     end
 
