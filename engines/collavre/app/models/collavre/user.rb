@@ -67,6 +67,7 @@ module Collavre
     attribute :llm_vendor, :string
     attribute :llm_model, :string
     attribute :llm_api_key, :string
+    attribute :gateway_url, :string
     attribute :tools, :json, default: -> { [] }
 
     encrypts :llm_api_key, deterministic: false

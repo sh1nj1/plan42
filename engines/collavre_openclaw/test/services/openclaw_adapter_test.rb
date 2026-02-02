@@ -5,10 +5,8 @@ module CollavreOpenclaw
   class OpenclawAdapterTest < ActiveSupport::TestCase
     def setup
       @user = Minitest::Mock.new
-      @account = Minitest::Mock.new
-
       @user.expect :id, 1
-      @user.expect :openclaw_account, @account
+      @user.expect :gateway_url, "https://test-gateway.com"
     end
 
     test "initializes with user and system prompt" do
@@ -22,8 +20,7 @@ module CollavreOpenclaw
     end
 
     test "builds correct payload format" do
-      account = build_test_account
-      user = build_test_user(account)
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
@@ -52,8 +49,7 @@ module CollavreOpenclaw
     end
 
     test "includes agent_id derived from user email in model field" do
-      account = build_test_account
-      user = build_test_user(account, email: "ai-bot@collavre.com")
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "ai-bot@collavre.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
@@ -69,8 +65,7 @@ module CollavreOpenclaw
     end
 
     test "uses plain openclaw model when user email is blank" do
-      account = build_test_account
-      user = build_test_user(account, email: nil)
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: nil)
 
       adapter = OpenclawAdapter.new(
         user: user,
@@ -86,8 +81,10 @@ module CollavreOpenclaw
     end
 
     test "normalizes message roles correctly" do
+      user = build_test_user(gateway_url: "https://test-gateway.com")
+
       adapter = OpenclawAdapter.new(
-        user: @user,
+        user: user,
         system_prompt: "",
         context: {}
       )
@@ -99,22 +96,8 @@ module CollavreOpenclaw
       assert_equal "user", adapter.send(:normalize_role, "unknown")
     end
 
-    test "returns callback_url from account" do
-      account = build_test_account(callback_url: "https://example.com/callback/1")
-      user = build_test_user(account)
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "",
-        context: {}
-      )
-
-      assert_equal "https://example.com/callback/1", adapter.callback_url
-    end
-
     test "formats messages with sender attribution" do
-      account = build_test_account
-      user = build_test_user(account)
+      user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
@@ -136,8 +119,7 @@ module CollavreOpenclaw
     end
 
     test "does not add sender attribution to assistant messages" do
-      account = build_test_account
-      user = build_test_user(account)
+      user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
@@ -156,8 +138,7 @@ module CollavreOpenclaw
     end
 
     test "builds session key based on topic" do
-      account = build_test_account
-      user = build_test_user(account)
+      user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
@@ -173,8 +154,7 @@ module CollavreOpenclaw
     end
 
     test "session key is stable for same topic" do
-      account = build_test_account
-      user = build_test_user(account)
+      user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter1 = OpenclawAdapter.new(
         user: user,
@@ -192,8 +172,7 @@ module CollavreOpenclaw
     end
 
     test "session key differs for different topics" do
-      account = build_test_account
-      user = build_test_user(account)
+      user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter1 = OpenclawAdapter.new(
         user: user,
@@ -212,21 +191,11 @@ module CollavreOpenclaw
 
     private
 
-    def build_test_account(callback_url: nil)
-      account = Object.new
-      account.define_singleton_method(:api_endpoint) { "https://test-gateway.com/v1/chat/completions" }
-      account.define_singleton_method(:api_key) { "test-token" }
-      account.define_singleton_method(:channel_id) { "test-channel" }
-      account.define_singleton_method(:gateway_url) { "https://test-gateway.com" }
-      account.define_singleton_method(:callback_url) { callback_url }
-      account.define_singleton_method(:id) { 123 }
-      account
-    end
-
-    def build_test_user(account, email: "test@example.com")
+    def build_test_user(gateway_url: nil, email: "test@example.com")
       user = Object.new
       user.define_singleton_method(:id) { 1 }
-      user.define_singleton_method(:openclaw_account) { account }
+      gw = gateway_url
+      user.define_singleton_method(:gateway_url) { gw }
       user_email = email
       user.define_singleton_method(:email) { user_email }
       user
@@ -239,19 +208,13 @@ module CollavreOpenclaw
       @user = User.create!(
         email: "adapter-test@example.com",
         password: "password123",
-        name: "Test Bot"
-      )
-      @account = OpenclawAccount.create!(
-        user: @user,
-        gateway_url: "https://test-gateway.com",
-        api_key: "test-token",
-        channel_id: "test-channel"
+        name: "Test Bot",
+        gateway_url: "https://test-gateway.com"
       )
     end
 
     teardown do
       PendingCallback.delete_all
-      @account&.destroy
       @user&.destroy
     end
 
@@ -262,15 +225,15 @@ module CollavreOpenclaw
         context: { creative_id: 456 }
       )
 
-      # Stub callback_url
-      @account.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{id}" }
+      # Stub the callback_url
+      adapter.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{@user.id}" }
 
       assert_difference "PendingCallback.count", 1 do
         adapter.send(:build_user_context)
       end
 
       pending = PendingCallback.last
-      assert_equal @account.id, pending.openclaw_account_id
+      assert_equal @user.id, pending.user_id
       assert_equal 456, pending.creative_id
       assert pending.nonce.present?
     end
@@ -282,7 +245,7 @@ module CollavreOpenclaw
         context: { creative_id: 789, topic_id: 111 }
       )
 
-      @account.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{id}" }
+      adapter.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{@user.id}" }
 
       user_context = adapter.send(:build_user_context)
 
@@ -302,7 +265,7 @@ module CollavreOpenclaw
         context: {}
       )
 
-      @account.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{id}" }
+      adapter.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{@user.id}" }
 
       assert_no_difference "PendingCallback.count" do
         adapter.send(:build_user_context)
@@ -316,21 +279,21 @@ module CollavreOpenclaw
         context: { creative_id: 123 }
       )
 
-      @account.define_singleton_method(:callback_url) { nil }
+      adapter.define_singleton_method(:callback_url) { nil }
 
       assert_no_difference "PendingCallback.count" do
         adapter.send(:build_user_context)
       end
     end
 
-    test "session key includes account id" do
+    test "session key includes user id" do
       adapter = OpenclawAdapter.new(
         user: @user,
         system_prompt: "Test",
         context: { creative_id: 100, topic_id: 200 }
       )
 
-      assert_includes adapter.session_key, @account.id.to_s
+      assert_includes adapter.session_key, @user.id.to_s
     end
   end
 end

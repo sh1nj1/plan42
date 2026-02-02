@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_02_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_02_150002) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -412,16 +412,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_140000) do
     t.index ["uid"], name: "index_oauth_applications_on_uid", unique: true
   end
 
-  create_table "openclaw_accounts", force: :cascade do |t|
-    t.string "api_key"
-    t.string "channel_id"
-    t.datetime "created_at", null: false
-    t.string "gateway_url", null: false
-    t.datetime "updated_at", null: false
-    t.integer "user_id", null: false
-    t.index ["user_id"], name: "index_openclaw_accounts_on_user_id", unique: true
-  end
-
   create_table "openclaw_pending_callbacks", force: :cascade do |t|
     t.integer "comment_id"
     t.text "context"
@@ -429,12 +419,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_140000) do
     t.integer "creative_id"
     t.datetime "expires_at", null: false
     t.string "nonce", null: false
-    t.integer "openclaw_account_id", null: false
     t.integer "thread_id"
     t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
     t.index ["expires_at"], name: "index_openclaw_pending_callbacks_on_expires_at"
     t.index ["nonce"], name: "index_openclaw_pending_callbacks_on_nonce", unique: true
-    t.index ["openclaw_account_id"], name: "index_openclaw_pending_callbacks_on_openclaw_account_id"
+    t.index ["user_id"], name: "index_openclaw_pending_callbacks_on_user_id"
   end
 
   create_table "sessions", force: :cascade do |t|
@@ -728,6 +718,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_140000) do
     t.string "email", null: false
     t.datetime "email_verified_at"
     t.integer "failed_login_attempts", default: 0, null: false
+    t.string "gateway_url"
     t.string "google_access_token"
     t.string "google_refresh_token"
     t.datetime "google_token_expires_at"
@@ -812,8 +803,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_140000) do
   add_foreign_key "notion_page_links", "notion_accounts"
   add_foreign_key "oauth_access_grants", "oauth_applications", column: "application_id"
   add_foreign_key "oauth_access_tokens", "oauth_applications", column: "application_id"
-  add_foreign_key "openclaw_accounts", "users"
-  add_foreign_key "openclaw_pending_callbacks", "openclaw_accounts"
+  add_foreign_key "openclaw_pending_callbacks", "users"
   add_foreign_key "sessions", "users"
   add_foreign_key "slack_accounts", "users"
   add_foreign_key "slack_channel_links", "creatives"

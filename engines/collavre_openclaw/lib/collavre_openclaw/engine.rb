@@ -41,19 +41,5 @@ module CollavreOpenclaw
       end
     end
 
-    # Extend User model with OpenClaw associations
-    initializer "collavre_openclaw.user_associations", after: :load_config_initializers do
-      Rails.application.config.to_prepare do
-        user_class = Collavre.user_class rescue nil
-        next unless user_class
-
-        unless user_class.reflect_on_association(:openclaw_account)
-          user_class.has_one :openclaw_account,
-                             class_name: "CollavreOpenclaw::OpenclawAccount",
-                             dependent: :destroy
-          Rails.logger.info("[CollavreOpenclaw] Added openclaw_account association to #{user_class.name}")
-        end
-      end
-    end
   end
 end

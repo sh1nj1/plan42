@@ -2,14 +2,14 @@ module CollavreOpenclaw
   class CallbackProcessorJob < ApplicationJob
     queue_as :default
 
-    def perform(account_id, payload)
-      @account = OpenclawAccount.find_by(id: account_id)
-      return unless @account
+    def perform(user_id, payload)
+      @user = User.find_by(id: user_id)
+      return unless @user
 
       # Symbolize keys for consistent access
       payload = payload.deep_symbolize_keys
 
-      Rails.logger.info("[CollavreOpenclaw] Processing callback for account #{account_id}, type: #{payload[:type]}")
+      Rails.logger.info("[CollavreOpenclaw] Processing callback for user #{user_id}, type: #{payload[:type]}")
 
       case payload[:type]&.to_s
       when "response"
@@ -98,17 +98,10 @@ module CollavreOpenclaw
         return
       end
 
-      # Get the AI agent user
-      ai_user = @account.user
-      unless ai_user
-        Rails.logger.error("[CollavreOpenclaw] No user associated with OpenClaw account #{@account.id}")
-        return
-      end
-
       # Build comment attributes
       comment_attrs = {
         creative: creative.effective_origin,
-        user: ai_user,
+        user: @user,
         content: content,
         private: false
       }

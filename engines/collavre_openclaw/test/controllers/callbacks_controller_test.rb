@@ -2,127 +2,48 @@ require "test_helper"
 
 module CollavreOpenclaw
   class CallbacksControllerTest < ActionDispatch::IntegrationTest
-    # Define only the needed URL helpers to avoid test_ prefixed helpers being detected as test methods
-    def callback_path(account_id:)
-      "/openclaw/callback/#{account_id}"
+    def callback_path(user_id:)
+      "/openclaw/callback/#{user_id}"
     end
 
     setup do
       @user = User.create!(
         email: "test-openclaw@example.com",
         password: "password123",
-        name: "Test Bot"
-      )
-      @account = OpenclawAccount.create!(
-        user: @user,
-        gateway_url: "https://test-gateway.com",
-        api_key: "test-secret-token",
-        channel_id: "test-channel"
+        name: "Test Bot",
+        gateway_url: "https://test-gateway.com"
       )
     end
 
     teardown do
       PendingCallback.delete_all
-      @account&.destroy
       @user&.destroy
     end
 
-    test "returns not_found for non-existent account" do
-      post callback_path(account_id: 999999),
+    test "returns not_found for non-existent user" do
+      post callback_path(user_id: 999999),
            params: { message: "test" }.to_json,
            headers: { "Content-Type" => "application/json" }
 
       assert_response :not_found
       json = JSON.parse(response.body)
-      assert_equal "Account not found", json["error"]
+      assert_equal "User not found", json["error"]
     end
 
-    test "returns unauthorized for missing auth when token is set" do
-      post callback_path(account_id: @account.id),
+    test "returns unauthorized without nonce" do
+      post callback_path(user_id: @user.id),
            params: { message: "test" }.to_json,
            headers: { "Content-Type" => "application/json" }
 
       assert_response :unauthorized
       json = JSON.parse(response.body)
-      assert_equal "Unauthorized", json["error"]
-    end
-
-    test "returns unauthorized for invalid signature" do
-      body = { message: "test" }.to_json
-
-      post callback_path(account_id: @account.id),
-           params: body,
-           headers: {
-             "Content-Type" => "application/json",
-             "X-OpenClaw-Signature" => "invalid-signature"
-           }
-
-      assert_response :unauthorized
-    end
-
-    test "accepts valid HMAC signature" do
-      body = { message: "test", content: "Hello from OpenClaw" }.to_json
-      signature = OpenSSL::HMAC.hexdigest("SHA256", "test-secret-token", body)
-
-      perform_enqueued_jobs do
-        post callback_path(account_id: @account.id),
-             params: body,
-             headers: {
-               "Content-Type" => "application/json",
-               "X-OpenClaw-Signature" => signature
-             }
-      end
-
-      assert_response :ok
-    end
-
-    test "accepts valid Bearer token" do
-      body = { message: "test", content: "Hello from OpenClaw" }.to_json
-
-      perform_enqueued_jobs do
-        post callback_path(account_id: @account.id),
-             params: body,
-             headers: {
-               "Content-Type" => "application/json",
-               "Authorization" => "Bearer test-secret-token"
-             }
-      end
-
-      assert_response :ok
-    end
-
-    test "rejects invalid Bearer token" do
-      body = { message: "test" }.to_json
-
-      post callback_path(account_id: @account.id),
-           params: body,
-           headers: {
-             "Content-Type" => "application/json",
-             "Authorization" => "Bearer wrong-token"
-           }
-
-      assert_response :unauthorized
-    end
-
-    test "accepts callback without token verification when no token set" do
-      @account.update!(api_key: nil)
-
-      perform_enqueued_jobs do
-        post callback_path(account_id: @account.id),
-             params: { message: "test" }.to_json,
-             headers: { "Content-Type" => "application/json" }
-      end
-
-      assert_response :ok
+      assert_equal "Nonce required for callback authentication", json["error"]
     end
 
     test "returns bad_request for invalid JSON" do
-      post callback_path(account_id: @account.id),
+      post callback_path(user_id: @user.id),
            params: "not valid json {{{",
-           headers: {
-             "Content-Type" => "application/json",
-             "Authorization" => "Bearer test-secret-token"
-           }
+           headers: { "Content-Type" => "application/json" }
 
       assert_response :bad_request
       json = JSON.parse(response.body)
@@ -132,7 +53,7 @@ module CollavreOpenclaw
     # Nonce-based authentication tests
     test "accepts valid nonce" do
       pending = PendingCallback.create_for_request(
-        account: @account,
+        user: @user,
         creative_id: 123
       )
 
@@ -143,7 +64,7 @@ module CollavreOpenclaw
       }.to_json
 
       perform_enqueued_jobs do
-        post callback_path(account_id: @account.id),
+        post callback_path(user_id: @user.id),
              params: body,
              headers: { "Content-Type" => "application/json" }
       end
@@ -160,7 +81,7 @@ module CollavreOpenclaw
         content: "Proactive message"
       }.to_json
 
-      post callback_path(account_id: @account.id),
+      post callback_path(user_id: @user.id),
            params: body,
            headers: { "Content-Type" => "application/json" }
 
@@ -171,7 +92,7 @@ module CollavreOpenclaw
 
     test "rejects expired nonce" do
       pending = PendingCallback.create_for_request(
-        account: @account,
+        user: @user,
         creative_id: 123
       )
       pending.update!(expires_at: 1.hour.ago)
@@ -182,27 +103,23 @@ module CollavreOpenclaw
         content: "Proactive message"
       }.to_json
 
-      post callback_path(account_id: @account.id),
+      post callback_path(user_id: @user.id),
            params: body,
            headers: { "Content-Type" => "application/json" }
 
       assert_response :unauthorized
     end
 
-    test "rejects nonce from different account" do
+    test "rejects nonce from different user" do
       other_user = User.create!(
         email: "other-openclaw@example.com",
         password: "password123",
-        name: "Other Bot"
-      )
-      other_account = OpenclawAccount.create!(
-        user: other_user,
-        gateway_url: "https://other-gateway.com",
-        api_key: "other-token"
+        name: "Other Bot",
+        gateway_url: "https://other-gateway.com"
       )
 
       pending = PendingCallback.create_for_request(
-        account: other_account,
+        user: other_user,
         creative_id: 123
       )
 
@@ -212,13 +129,12 @@ module CollavreOpenclaw
         content: "Proactive message"
       }.to_json
 
-      post callback_path(account_id: @account.id),
+      post callback_path(user_id: @user.id),
            params: body,
            headers: { "Content-Type" => "application/json" }
 
       assert_response :unauthorized
     ensure
-      other_account&.destroy
       other_user&.destroy
     end
 
@@ -234,7 +150,7 @@ module CollavreOpenclaw
       )
 
       pending = PendingCallback.create_for_request(
-        account: @account,
+        user: @user,
         creative_id: creative.id,
         thread_id: 999
       )
@@ -247,7 +163,7 @@ module CollavreOpenclaw
 
       # The job should create a comment with merged context
       perform_enqueued_jobs do
-        post callback_path(account_id: @account.id),
+        post callback_path(user_id: @user.id),
              params: body,
              headers: { "Content-Type" => "application/json" }
       end

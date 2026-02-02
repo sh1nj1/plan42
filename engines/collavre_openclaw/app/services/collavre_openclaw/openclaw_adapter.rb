@@ -15,13 +15,12 @@ module CollavreOpenclaw
       @user = user
       @system_prompt = system_prompt
       @context = context
-      @account = user&.openclaw_account
     end
 
     def chat(messages, tools: [], &block)
-      unless @account
-        Rails.logger.error("[CollavreOpenclaw] No OpenClaw account configured for user #{@user&.id}")
-        yield "Error: OpenClaw account not configured" if block_given?
+      unless @user&.gateway_url.present?
+        Rails.logger.error("[CollavreOpenclaw] No Gateway URL configured for user #{@user&.id}")
+        yield "Error: OpenClaw Gateway URL not configured" if block_given?
         return nil
       end
 
@@ -48,9 +47,20 @@ module CollavreOpenclaw
       end
     end
 
-    # Get the callback URL for this account
+    # Get the callback URL for this user
     def callback_url
-      @account&.callback_url
+      return nil unless @user
+
+      host_options = default_url_options
+      return nil if host_options[:host].blank?
+
+      CollavreOpenclaw::Engine.routes.url_helpers.callback_url(
+        user_id: @user.id,
+        **host_options
+      )
+    rescue StandardError => e
+      Rails.logger.warn("[CollavreOpenclaw] Failed to generate callback URL: #{e.message}")
+      nil
     end
 
     # Get the stable session key for this context
@@ -62,7 +72,7 @@ module CollavreOpenclaw
 
     def api_endpoint
       # OpenClaw uses /v1/chat/completions (OpenAI-compatible)
-      uri = URI.parse(@account.gateway_url)
+      uri = URI.parse(@user.gateway_url)
       uri.path = "/v1/chat/completions"
       uri.to_s
     end
@@ -73,7 +83,7 @@ module CollavreOpenclaw
       creative_id = extract_id(@context, :creative) || @context[:creative_id]
       topic_id = @context[:thread_id] || @context[:topic_id]
 
-      parts = [ "collavre", @account.id ]
+      parts = [ "collavre", @user.id ]
       parts << "creative:#{creative_id}" if creative_id
       parts << "topic:#{topic_id}" if topic_id
 
@@ -106,27 +116,23 @@ module CollavreOpenclaw
     def build_user_context
       context_data = {}
 
-      # Basic identification
-      if @account.channel_id.present?
-        context_data[:channel_id] = @account.channel_id
-      end
-
       # Extract IDs from context
       creative_id = extract_id(@context, :creative) || @context[:creative_id]
       comment_id = extract_id(@context, :comment) || @context[:comment_id]
       topic_id = @context[:thread_id] || @context[:topic_id]
 
       # Create pending callback with nonce for secure async responses
-      if @account.callback_url.present? && creative_id.present?
+      callback = callback_url
+      if callback.present? && creative_id.present?
         pending = PendingCallback.create_for_request(
-          account: @account,
+          user: @user,
           creative_id: creative_id,
           comment_id: comment_id,
           thread_id: topic_id,
           context: @context.slice(:extra_data).to_h
         )
 
-        context_data[:callback_url] = @account.callback_url
+        context_data[:callback_url] = callback
         context_data[:callback_nonce] = pending.nonce
         context_data[:creative_id] = creative_id
         context_data[:comment_id] = comment_id if comment_id
@@ -139,7 +145,7 @@ module CollavreOpenclaw
       if context_data.any?
         "collavre:#{JSON.generate(context_data)}"
       else
-        "collavre:#{@account.id}"
+        "collavre:#{@user.id}"
       end
     end
 
@@ -184,7 +190,6 @@ module CollavreOpenclaw
           req.url api_endpoint
           req.headers["Content-Type"] = "application/json"
           req.headers["Accept"] = "text/event-stream"
-          req.headers["Authorization"] = "Bearer #{@account.api_key}" if @account.api_key.present?
 
           # Set stable session key for topic-based context sharing
           req.headers["x-openclaw-session-key"] = session_key
@@ -296,6 +301,21 @@ module CollavreOpenclaw
 
       # Extract local part (before @) from email
       @user.email.split("@").first
+    end
+
+    def default_url_options
+      options = Rails.application.config.action_mailer.default_url_options || {}
+
+      host = options[:host]
+      host ||= Rails.application.config.action_controller.default_url_options&.dig(:host)
+      host ||= ENV["APP_HOST"]
+      host ||= ENV["RAILS_HOST"]
+
+      result = { host: host }
+      result[:protocol] = options[:protocol] || "https"
+      result[:port] = options[:port] if options[:port].present?
+
+      result
     end
   end
 end
