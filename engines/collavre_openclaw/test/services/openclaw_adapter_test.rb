@@ -215,7 +215,7 @@ module CollavreOpenclaw
     def build_test_account(callback_url: nil)
       account = Object.new
       account.define_singleton_method(:api_endpoint) { "https://test-gateway.com/v1/chat/completions" }
-      account.define_singleton_method(:api_token) { "test-token" }
+      account.define_singleton_method(:api_key) { "test-token" }
       account.define_singleton_method(:channel_id) { "test-channel" }
       account.define_singleton_method(:gateway_url) { "https://test-gateway.com" }
       account.define_singleton_method(:callback_url) { callback_url }
@@ -244,7 +244,7 @@ module CollavreOpenclaw
       @account = OpenclawAccount.create!(
         user: @user,
         gateway_url: "https://test-gateway.com",
-        api_token: "test-token",
+        api_key: "test-token",
         channel_id: "test-channel"
       )
     end

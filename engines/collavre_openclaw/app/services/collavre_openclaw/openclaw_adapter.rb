@@ -184,7 +184,7 @@ module CollavreOpenclaw
           req.url api_endpoint
           req.headers["Content-Type"] = "application/json"
           req.headers["Accept"] = "text/event-stream"
-          req.headers["Authorization"] = "Bearer #{@account.api_token}" if @account.api_token.present?
+          req.headers["Authorization"] = "Bearer #{@account.api_key}" if @account.api_key.present?
 
           # Set stable session key for topic-based context sharing
           req.headers["x-openclaw-session-key"] = session_key

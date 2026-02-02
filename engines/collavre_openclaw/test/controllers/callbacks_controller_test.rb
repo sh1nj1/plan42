@@ -16,7 +16,7 @@ module CollavreOpenclaw
       @account = OpenclawAccount.create!(
         user: @user,
         gateway_url: "https://test-gateway.com",
-        api_token: "test-secret-token",
+        api_key: "test-secret-token",
         channel_id: "test-channel"
       )
     end
@@ -105,7 +105,7 @@ module CollavreOpenclaw
     end
 
     test "accepts callback without token verification when no token set" do
-      @account.update!(api_token: nil)
+      @account.update!(api_key: nil)
 
       perform_enqueued_jobs do
         post callback_path(account_id: @account.id),
@@ -198,7 +198,7 @@ module CollavreOpenclaw
       other_account = OpenclawAccount.create!(
         user: other_user,
         gateway_url: "https://other-gateway.com",
-        api_token: "other-token"
+        api_key: "other-token"
       )
 
       pending = PendingCallback.create_for_request(

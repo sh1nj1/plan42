@@ -11,7 +11,7 @@ module CollavreOpenclaw
       @account = OpenclawAccount.create!(
         user: @user,
         gateway_url: "https://test-gateway.com",
-        api_token: "test-token"
+        api_key: "test-token"
       )
 
       # Create a creative for testing

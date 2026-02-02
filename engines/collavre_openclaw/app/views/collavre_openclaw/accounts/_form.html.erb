@@ -19,7 +19,7 @@
   </div>
 
   <div>
-    <%= f.label :api_token, t("collavre_openclaw.form.api_token") %>
+    <%= f.label :api_key, t("collavre_openclaw.form.api_key") %>
     <% if account.persisted? && account.token_configured? %>
       <div class="token-status token-status--configured">
         <span class="token-status__indicator">✓</span>
@@ -29,18 +29,18 @@
                     class: "token-status__clear-btn",
                     data: { turbo_method: :delete, turbo_confirm: t("collavre_openclaw.form.clear_token_confirm") } %>
       </div>
-      <%= f.password_field :api_token, placeholder: t("collavre_openclaw.form.token_placeholder_update") %>
-      <small><%= t("collavre_openclaw.form.api_token_hint_update") %></small>
+      <%= f.password_field :api_key, placeholder: t("collavre_openclaw.form.token_placeholder_update") %>
+      <small><%= t("collavre_openclaw.form.api_key_hint_update") %></small>
     <% elsif account.persisted? %>
       <div class="token-status token-status--not-configured">
         <span class="token-status__indicator">○</span>
         <span class="token-status__text"><%= t("collavre_openclaw.form.token_not_configured") %></span>
       </div>
-      <%= f.password_field :api_token, placeholder: "" %>
-      <small><%= t("collavre_openclaw.form.api_token_hint") %></small>
+      <%= f.password_field :api_key, placeholder: "" %>
+      <small><%= t("collavre_openclaw.form.api_key_hint") %></small>
     <% else %>
-      <%= f.password_field :api_token, placeholder: "" %>
-      <small><%= t("collavre_openclaw.form.api_token_hint") %></small>
+      <%= f.password_field :api_key, placeholder: "" %>
+      <small><%= t("collavre_openclaw.form.api_key_hint") %></small>
     <% end %>
   </div>
 

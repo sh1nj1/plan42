@@ -19,19 +19,19 @@ module CollavreOpenclaw
     end
 
     test "token_configured? returns true when token is present" do
-      account = OpenclawAccount.new(gateway_url: "https://example.com", api_token: "secret_token")
+      account = OpenclawAccount.new(gateway_url: "https://example.com", api_key: "secret_token")
       assert account.token_configured?
     end
 
     test "token_configured? returns false when token is blank" do
-      account = OpenclawAccount.new(gateway_url: "https://example.com", api_token: nil)
+      account = OpenclawAccount.new(gateway_url: "https://example.com", api_key: nil)
       assert_not account.token_configured?
 
-      account.api_token = ""
+      account.api_key = ""
       assert_not account.token_configured?
     end
 
-    test "clear_token! removes the api_token" do
+    test "clear_token! removes the api_key" do
       user = User.create!(
         email: "clear-token-test-#{SecureRandom.hex(4)}@example.com",
         password: "password123",
@@ -40,13 +40,13 @@ module CollavreOpenclaw
       account = OpenclawAccount.create!(
         user: user,
         gateway_url: "https://example.com",
-        api_token: "secret_token"
+        api_key: "secret_token"
       )
 
       assert account.token_configured?
       account.clear_token!
       assert_not account.token_configured?
-      assert_nil account.reload.api_token
+      assert_nil account.reload.api_key
     ensure
       account&.destroy
       user&.destroy

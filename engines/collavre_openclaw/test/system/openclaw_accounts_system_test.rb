@@ -54,7 +54,7 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
 
     # All required fields should be present
     assert_selector "label", text: I18n.t("collavre_openclaw.form.gateway_url")
-    assert_selector "label", text: I18n.t("collavre_openclaw.form.api_token")
+    assert_selector "label", text: I18n.t("collavre_openclaw.form.api_key")
   end
 
   test "can create OpenClaw connection" do
@@ -178,7 +178,7 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
     account = CollavreOpenclaw::OpenclawAccount.create!(
       user: @ai_user,
       gateway_url: "http://localhost:18789",
-      api_token: "existing-secret-token"
+      api_key: "existing-secret-token"
     )
 
     visit collavre_openclaw.edit_account_path(account)
@@ -208,7 +208,7 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
     account = CollavreOpenclaw::OpenclawAccount.create!(
       user: @ai_user,
       gateway_url: "http://localhost:18789",
-      api_token: "existing-secret-token"
+      api_key: "existing-secret-token"
     )
 
     visit collavre_openclaw.edit_account_path(account)

@@ -69,7 +69,7 @@ module CollavreOpenclaw
       end
 
       # Method 4: No auth required if account has no token set
-      if account.api_token.blank?
+      if account.api_key.blank?
         return { success: true }
       end
 
@@ -92,18 +92,18 @@ module CollavreOpenclaw
     end
 
     def valid_signature?(account)
-      return false if account.api_token.blank?
+      return false if account.api_key.blank?
 
       signature = request.headers["X-OpenClaw-Signature"]
       return false if signature.blank?
 
       body = request.raw_post
-      expected = OpenSSL::HMAC.hexdigest("SHA256", account.api_token, body)
+      expected = OpenSSL::HMAC.hexdigest("SHA256", account.api_key, body)
       ActiveSupport::SecurityUtils.secure_compare(expected, signature)
     end
 
     def valid_bearer_token?(account)
-      return false if account.api_token.blank?
+      return false if account.api_key.blank?
 
       auth_header = request.headers["Authorization"]
       return false if auth_header.blank?
@@ -111,7 +111,7 @@ module CollavreOpenclaw
       token = auth_header.to_s.sub(/^Bearer\s+/i, "")
       return false if token.blank?
 
-      ActiveSupport::SecurityUtils.secure_compare(account.api_token, token)
+      ActiveSupport::SecurityUtils.secure_compare(account.api_key, token)
     end
   end
 end

@@ -9,7 +9,7 @@ module CollavreOpenclaw
     test "OpenclawAccount#test_connection returns proper structure" do
       account = OpenclawAccount.new(
         gateway_url: "https://test-gateway.example.com",
-        api_token: "test-token"
+        api_key: "test-token"
       )
 
       result = account.test_connection
@@ -22,7 +22,7 @@ module CollavreOpenclaw
     test "OpenclawAccount#test_connection handles unreachable host" do
       account = OpenclawAccount.new(
         gateway_url: "https://192.0.2.1",  # TEST-NET-1, guaranteed unreachable
-        api_token: "test-token"
+        api_key: "test-token"
       )
 
       result = account.test_connection
@@ -34,7 +34,7 @@ module CollavreOpenclaw
     test "OpenclawAccount#test_connection handles missing gateway_url" do
       account = OpenclawAccount.new(
         gateway_url: nil,
-        api_token: "test-token"
+        api_key: "test-token"
       )
 
       result = account.test_connection
@@ -46,7 +46,7 @@ module CollavreOpenclaw
     test "OpenclawAccount#token_configured? returns true when token present" do
       account = OpenclawAccount.new(
         gateway_url: "https://example.com",
-        api_token: "secret"
+        api_key: "secret"
       )
 
       assert account.token_configured?
@@ -55,7 +55,7 @@ module CollavreOpenclaw
     test "OpenclawAccount#token_configured? returns false when token absent" do
       account = OpenclawAccount.new(
         gateway_url: "https://example.com",
-        api_token: nil
+        api_key: nil
       )
 
       assert_not account.token_configured?

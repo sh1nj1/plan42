@@ -13,26 +13,26 @@ module CollavreOpenclaw
     validates :gateway_url, presence: true
     validates :user_id, uniqueness: true
 
-    encrypts :api_token, deterministic: false
+    encrypts :api_key, deterministic: false
 
-    # Skip updating api_token if empty string (preserve existing token)
+    # Skip updating api_key if empty string (preserve existing token)
     # Note: nil is allowed (for clear_token!), only empty string "" is rejected
     before_validation :preserve_existing_token
 
     def preserve_existing_token
-      if persisted? && api_token_changed? && api_token == ""
-        restore_attribute!(:api_token)
+      if persisted? && api_key_changed? && api_key == ""
+        restore_attribute!(:api_key)
       end
     end
 
     # Check if token is configured (without revealing the actual value)
     def token_configured?
-      api_token.present?
+      api_key.present?
     end
 
     # Clear the API token
     def clear_token!
-      update!(api_token: nil)
+      update!(api_key: nil)
     end
 
     # Test connection to OpenClaw gateway
@@ -56,7 +56,7 @@ module CollavreOpenclaw
         health_url.path = "/health"
 
         response = connection.get(health_url.to_s) do |req|
-          req.headers["Authorization"] = "Bearer #{api_token}" if api_token.present?
+          req.headers["Authorization"] = "Bearer #{api_key}" if api_key.present?
         end
 
         if response.success?
@@ -72,7 +72,7 @@ module CollavreOpenclaw
 
         response = connection.post(api_endpoint) do |req|
           req.headers["Content-Type"] = "application/json"
-          req.headers["Authorization"] = "Bearer #{api_token}" if api_token.present?
+          req.headers["Authorization"] = "Bearer #{api_key}" if api_key.present?
           req.body = test_payload.to_json
         end
 
