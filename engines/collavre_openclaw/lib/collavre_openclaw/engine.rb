@@ -40,6 +40,5 @@ module CollavreOpenclaw
         end
       end
     end
-
   end
 end

@@ -27,6 +27,8 @@ en:
         api_key_label: API Key
         api_key_help: If provided, this key will be used instead of the system default.
           Stored encrypted.
+        gateway_url_label: Gateway URL
+        gateway_url_help: Required for OpenClaw. The URL of your OpenClaw gateway.
         searchable_label: Allow this AI to be searchable and mentionable
         searchable_help: When enabled, others can find and mention this AI by name.
         submit: Add AI Agent

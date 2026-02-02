@@ -90,10 +90,5 @@
     <small class="form-text text-muted"><%= t('collavre.users.new_ai.searchable_help') %></small>
   </div>
 
-  <%# Integration hooks for AI agent vendors %>
-  <% if defined?(CollavreOpenclaw) && @user.llm_vendor == "openclaw" %>
-    <%= render "collavre_openclaw/integrations/user_settings", user: @user %>
-  <% end %>
-
   <%= form.button t('common.save'), type: "submit", class: "primary-action-button" %>
 <% end %>
