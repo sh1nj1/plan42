@@ -16,6 +16,13 @@ en:
       success: "Connection test successful: %{details}"
       failure: "%{message}: %{details}"
 
+    provision:
+      success: "Agent provisioned successfully on gateway"
+      failure: "Provisioning failed: %{message}"
+      no_agent_id: "No agent ID configured"
+      button: "Provision Agent"
+      retry: "Retry Provisioning"
+
     form:
       gateway_url: "Gateway URL"
       gateway_url_hint: "The URL of your OpenClaw gateway (e.g., https://your-gateway.com)"
@@ -34,8 +41,6 @@ en:
       agent_id_hint: "Optional. Create a dedicated agent with isolated workspace and memory on the gateway"
       agent_provisioned: "Agent provisioned at %{time}"
       agent_not_provisioned: "Agent not yet provisioned on gateway"
-      description: "Description"
-      description_hint: "Optional notes about this connection"
       submit_create: "Connect OpenClaw"
       submit_update: "Update Connection"
       cancel: "Cancel"

@@ -45,10 +45,10 @@ module CollavreOpenclaw
       respond_to do |format|
         format.html do
           if result[:success]
-            redirect_to edit_account_path(@account),
+            redirect_to collavre_openclaw.edit_account_path(@account),
                         notice: I18n.t("collavre_openclaw.test_connection.success", details: result[:details])
           else
-            redirect_to edit_account_path(@account),
+            redirect_to collavre_openclaw.edit_account_path(@account),
                         alert: I18n.t("collavre_openclaw.test_connection.failure",
                                       message: result[:message],
                                       details: result[:details])
@@ -60,22 +60,32 @@ module CollavreOpenclaw
 
     def clear_token
       @account.clear_token!
-      redirect_to edit_account_path(@account),
+      redirect_to collavre_openclaw.edit_account_path(@account),
                   notice: I18n.t("collavre_openclaw.accounts.token_cleared")
     end
 
     private
 
     def set_ai_user
+      # For actions with :id param (edit, update, destroy, test_connection, clear_token),
+      # get user from the account if user_id is not provided
+      if params[:id].present? && params[:user_id].blank?
+        account = OpenclawAccount.find_by(id: params[:id])
+        if account
+          @ai_user = account.user
+          return
+        end
+      end
+
       @ai_user = Collavre.user_class.find(params[:user_id] || params.dig(:openclaw_account, :user_id))
     rescue ActiveRecord::RecordNotFound
       redirect_to collavre.users_path, alert: I18n.t("collavre_openclaw.errors.user_not_found")
     end
 
     def set_account
-      @account = @ai_user.openclaw_account
+      @account = @ai_user&.openclaw_account || OpenclawAccount.find_by(id: params[:id])
       unless @account
-        redirect_to new_account_path(user_id: @ai_user.id),
+        redirect_to collavre_openclaw.new_account_path(user_id: @ai_user&.id),
                     alert: I18n.t("collavre_openclaw.errors.account_not_found")
       end
     end
@@ -87,7 +97,7 @@ module CollavreOpenclaw
     end
 
     def account_params
-      params.require(:openclaw_account).permit(:gateway_url, :api_token, :channel_id, :description, :agent_id)
+      params.require(:openclaw_account).permit(:gateway_url, :api_token, :channel_id, :agent_id)
     end
   end
 end

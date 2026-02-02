@@ -76,5 +76,18 @@ module CollavreOpenclaw
       assert_not_nil route, "clear_token route should be defined"
       assert_equal "accounts", route.defaults[:controller].split("/").last
     end
+
+    test "edit_account_path generates correct engine-scoped path" do
+      # Verify the URL helper generates correct path
+      url_helpers = CollavreOpenclaw::Engine.routes.url_helpers
+      path = url_helpers.edit_account_path(id: 123)
+      assert_equal "/openclaw/accounts/123/edit", path
+    end
+
+    test "test_connection_account_path generates correct engine-scoped path" do
+      url_helpers = CollavreOpenclaw::Engine.routes.url_helpers
+      path = url_helpers.test_connection_account_path(id: 123)
+      assert_equal "/openclaw/accounts/123/test_connection", path
+    end
   end
 end
