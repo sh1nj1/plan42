@@ -9,10 +9,10 @@ module CollavreOpenclaw
     end
 
     def create
-      account = OpenclawAccount.find_by(id: params[:account_id])
+      user = User.find_by(id: params[:user_id])
 
-      unless account
-        render json: { error: "Account not found" }, status: :not_found
+      unless user
+        render json: { error: "User not found" }, status: :not_found
         return
       end
 
@@ -24,8 +24,8 @@ module CollavreOpenclaw
         return
       end
 
-      # Authenticate the request
-      auth_result = authenticate_request(account, payload)
+      # Authenticate the request via nonce
+      auth_result = authenticate_request(user, payload)
       unless auth_result[:success]
         render json: { error: auth_result[:error] }, status: :unauthorized
         return
@@ -37,43 +37,27 @@ module CollavreOpenclaw
       end
 
       # Process the callback payload
-      CallbackProcessorJob.perform_later(account.id, payload.deep_stringify_keys)
+      CallbackProcessorJob.perform_later(user.id, payload.deep_stringify_keys)
 
       head :ok
     end
 
     private
 
-    # Authenticate using multiple methods (in priority order)
-    def authenticate_request(account, payload)
-      # Method 1: Nonce verification (most secure, preferred)
+    # Authenticate using nonce verification
+    def authenticate_request(user, payload)
+      # Nonce verification (required for callbacks)
       nonce = payload[:nonce] || payload[:callback_nonce]
       if nonce.present?
         pending = PendingCallback.verify_and_consume!(nonce)
-        if pending && pending.openclaw_account_id == account.id
+        if pending && pending.user_id == user.id
           return { success: true, pending_callback: pending }
-        elsif nonce.present?
-          # Nonce provided but invalid
+        else
           return { success: false, error: "Invalid or expired nonce" }
         end
       end
 
-      # Method 2: HMAC Signature (for backward compatibility)
-      if valid_signature?(account)
-        return { success: true }
-      end
-
-      # Method 3: Bearer Token (for backward compatibility)
-      if valid_bearer_token?(account)
-        return { success: true }
-      end
-
-      # Method 4: No auth required if account has no token set
-      if account.api_token.blank?
-        return { success: true }
-      end
-
-      { success: false, error: "Unauthorized" }
+      { success: false, error: "Nonce required for callback authentication" }
     end
 
     def merge_pending_callback_context(payload, pending)
@@ -89,29 +73,6 @@ module CollavreOpenclaw
       end
 
       payload
-    end
-
-    def valid_signature?(account)
-      return false if account.api_token.blank?
-
-      signature = request.headers["X-OpenClaw-Signature"]
-      return false if signature.blank?
-
-      body = request.raw_post
-      expected = OpenSSL::HMAC.hexdigest("SHA256", account.api_token, body)
-      ActiveSupport::SecurityUtils.secure_compare(expected, signature)
-    end
-
-    def valid_bearer_token?(account)
-      return false if account.api_token.blank?
-
-      auth_header = request.headers["Authorization"]
-      return false if auth_header.blank?
-
-      token = auth_header.to_s.sub(/^Bearer\s+/i, "")
-      return false if token.blank?
-
-      ActiveSupport::SecurityUtils.secure_compare(account.api_token, token)
     end
   end
 end

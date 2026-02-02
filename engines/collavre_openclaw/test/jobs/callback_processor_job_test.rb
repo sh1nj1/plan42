@@ -6,12 +6,8 @@ module CollavreOpenclaw
       @user = User.create!(
         email: "job-test@example.com",
         password: "password123",
-        name: "Test Bot"
-      )
-      @account = OpenclawAccount.create!(
-        user: @user,
-        gateway_url: "https://test-gateway.com",
-        api_token: "test-token"
+        name: "Test Bot",
+        gateway_url: "https://test-gateway.com"
       )
 
       # Create a creative for testing
@@ -29,12 +25,11 @@ module CollavreOpenclaw
     teardown do
       Collavre::Comment.where(creative: @creative).destroy_all
       @creative&.destroy
-      @account&.destroy
       @user&.destroy
       @owner&.destroy
     end
 
-    test "skips processing for non-existent account" do
+    test "skips processing for non-existent user" do
       assert_nothing_raised do
         CallbackProcessorJob.perform_now(999999, { "type" => "response" })
       end
@@ -42,7 +37,7 @@ module CollavreOpenclaw
 
     test "handles response type payload" do
       assert_nothing_raised do
-        CallbackProcessorJob.perform_now(@account.id, {
+        CallbackProcessorJob.perform_now(@user.id, {
           "type" => "response",
           "content" => "AI response content",
           "context" => { "task_id" => 123 }
@@ -52,7 +47,7 @@ module CollavreOpenclaw
 
     test "handles error type payload" do
       assert_nothing_raised do
-        CallbackProcessorJob.perform_now(@account.id, {
+        CallbackProcessorJob.perform_now(@user.id, {
           "type" => "error",
           "error" => "Something went wrong"
         })
@@ -61,7 +56,7 @@ module CollavreOpenclaw
 
     test "handles unknown callback type gracefully" do
       assert_nothing_raised do
-        CallbackProcessorJob.perform_now(@account.id, {
+        CallbackProcessorJob.perform_now(@user.id, {
           "type" => "unknown_type",
           "data" => "some data"
         })
@@ -70,7 +65,7 @@ module CollavreOpenclaw
 
     test "processes payload with string keys" do
       assert_nothing_raised do
-        CallbackProcessorJob.perform_now(@account.id, {
+        CallbackProcessorJob.perform_now(@user.id, {
           "type" => "response",
           "content" => "Response with string keys"
         })
@@ -79,7 +74,7 @@ module CollavreOpenclaw
 
     test "creates comment for proactive message" do
       assert_difference "Collavre::Comment.count", 1 do
-        CallbackProcessorJob.perform_now(@account.id, {
+        CallbackProcessorJob.perform_now(@user.id, {
           "type" => "proactive",
           "creative_id" => @creative.id,
           "content" => "This is a proactive message from OpenClaw!"
@@ -94,7 +89,7 @@ module CollavreOpenclaw
 
     test "creates comment for proactive message with nested context" do
       assert_difference "Collavre::Comment.count", 1 do
-        CallbackProcessorJob.perform_now(@account.id, {
+        CallbackProcessorJob.perform_now(@user.id, {
           "type" => "proactive",
           "context" => { "creative_id" => @creative.id },
           "message" => "Proactive message via context"
@@ -107,7 +102,7 @@ module CollavreOpenclaw
 
     test "proactive message without creative_id logs error" do
       assert_no_difference "Collavre::Comment.count" do
-        CallbackProcessorJob.perform_now(@account.id, {
+        CallbackProcessorJob.perform_now(@user.id, {
           "type" => "proactive",
           "content" => "Missing creative_id"
         })
@@ -116,7 +111,7 @@ module CollavreOpenclaw
 
     test "proactive message without content logs error" do
       assert_no_difference "Collavre::Comment.count" do
-        CallbackProcessorJob.perform_now(@account.id, {
+        CallbackProcessorJob.perform_now(@user.id, {
           "type" => "proactive",
           "creative_id" => @creative.id
         })
@@ -125,7 +120,7 @@ module CollavreOpenclaw
 
     test "response with creative_id creates new comment" do
       assert_difference "Collavre::Comment.count", 1 do
-        CallbackProcessorJob.perform_now(@account.id, {
+        CallbackProcessorJob.perform_now(@user.id, {
           "type" => "response",
           "content" => "Async response to creative",
           "context" => { "creative_id" => @creative.id }
@@ -135,7 +130,7 @@ module CollavreOpenclaw
 
     test "error with creative_id creates error comment" do
       assert_difference "Collavre::Comment.count", 1 do
-        CallbackProcessorJob.perform_now(@account.id, {
+        CallbackProcessorJob.perform_now(@user.id, {
           "type" => "error",
           "error" => "API limit exceeded",
           "context" => { "creative_id" => @creative.id }

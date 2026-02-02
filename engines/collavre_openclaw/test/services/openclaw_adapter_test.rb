@@ -5,10 +5,8 @@ module CollavreOpenclaw
   class OpenclawAdapterTest < ActiveSupport::TestCase
     def setup
       @user = Minitest::Mock.new
-      @account = Minitest::Mock.new
-
       @user.expect :id, 1
-      @user.expect :openclaw_account, @account
+      @user.expect :gateway_url, "https://test-gateway.com"
     end
 
     test "initializes with user and system prompt" do
@@ -22,8 +20,7 @@ module CollavreOpenclaw
     end
 
     test "builds correct payload format" do
-      account = build_test_account
-      user = build_test_user(account)
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
@@ -47,12 +44,47 @@ module CollavreOpenclaw
       assert_equal "assistant", payload[:messages][2][:role]
       assert_equal "Hi there!", payload[:messages][2][:content]
       assert payload[:stream]
+      # Model includes agent_id derived from user email (test@example.com -> test)
+      assert_equal "openclaw:test", payload[:model]
+    end
+
+    test "includes agent_id derived from user email in model field" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "ai-bot@collavre.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      messages = [ { role: "user", content: "Hello" } ]
+
+      payload = adapter.send(:build_payload, messages, [])
+
+      assert_equal "openclaw:ai-bot", payload[:model]
+    end
+
+    test "uses plain openclaw model when user email is blank" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: nil)
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      messages = [ { role: "user", content: "Hello" } ]
+
+      payload = adapter.send(:build_payload, messages, [])
+
       assert_equal "openclaw", payload[:model]
     end
 
     test "normalizes message roles correctly" do
+      user = build_test_user(gateway_url: "https://test-gateway.com")
+
       adapter = OpenclawAdapter.new(
-        user: @user,
+        user: user,
         system_prompt: "",
         context: {}
       )
@@ -64,22 +96,8 @@ module CollavreOpenclaw
       assert_equal "user", adapter.send(:normalize_role, "unknown")
     end
 
-    test "returns callback_url from account" do
-      account = build_test_account(callback_url: "https://example.com/callback/1")
-      user = build_test_user(account)
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "",
-        context: {}
-      )
-
-      assert_equal "https://example.com/callback/1", adapter.callback_url
-    end
-
     test "formats messages with sender attribution" do
-      account = build_test_account
-      user = build_test_user(account)
+      user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
@@ -101,8 +119,7 @@ module CollavreOpenclaw
     end
 
     test "does not add sender attribution to assistant messages" do
-      account = build_test_account
-      user = build_test_user(account)
+      user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
@@ -121,8 +138,7 @@ module CollavreOpenclaw
     end
 
     test "builds session key based on topic" do
-      account = build_test_account
-      user = build_test_user(account)
+      user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
@@ -138,8 +154,7 @@ module CollavreOpenclaw
     end
 
     test "session key is stable for same topic" do
-      account = build_test_account
-      user = build_test_user(account)
+      user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter1 = OpenclawAdapter.new(
         user: user,
@@ -157,8 +172,7 @@ module CollavreOpenclaw
     end
 
     test "session key differs for different topics" do
-      account = build_test_account
-      user = build_test_user(account)
+      user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter1 = OpenclawAdapter.new(
         user: user,
@@ -175,23 +189,205 @@ module CollavreOpenclaw
       assert_not_equal adapter1.session_key, adapter2.session_key
     end
 
-    private
+    test "builds authorization header with llm_api_key" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-api-key-123")
 
-    def build_test_account(callback_url: nil)
-      account = Object.new
-      account.define_singleton_method(:api_endpoint) { "https://test-gateway.com/v1/chat/completions" }
-      account.define_singleton_method(:api_token) { "test-token" }
-      account.define_singleton_method(:channel_id) { "test-channel" }
-      account.define_singleton_method(:gateway_url) { "https://test-gateway.com" }
-      account.define_singleton_method(:callback_url) { callback_url }
-      account.define_singleton_method(:id) { 123 }
-      account
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      headers = adapter.send(:build_headers)
+
+      assert_equal "Bearer test-api-key-123", headers["Authorization"]
+      assert_equal "application/json", headers["Content-Type"]
+      assert_equal "text/event-stream", headers["Accept"]
     end
 
-    def build_test_user(account)
+    test "does not include authorization header when llm_api_key is blank" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: nil)
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      headers = adapter.send(:build_headers)
+
+      assert_nil headers["Authorization"]
+    end
+
+    test "includes tools in payload when provided" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      messages = [ { role: "user", content: "Hello" } ]
+      tools = [
+        {
+          type: "function",
+          function: {
+            name: "search_documents",
+            description: "Search for documents",
+            parameters: {
+              type: "object",
+              properties: {
+                query: { type: "string", description: "Search query" }
+              },
+              required: [ "query" ]
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "get_weather",
+            description: "Get weather information",
+            parameters: {
+              type: "object",
+              properties: {
+                location: { type: "string" }
+              }
+            }
+          }
+        }
+      ]
+
+      payload = adapter.send(:build_payload, messages, tools)
+
+      assert payload[:tools].present?, "Tools should be included in payload"
+      assert_equal 2, payload[:tools].length
+      assert_equal "search_documents", payload[:tools][0][:function][:name]
+      assert_equal "get_weather", payload[:tools][1][:function][:name]
+    end
+
+    test "does not include tools key when tools array is empty" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      messages = [ { role: "user", content: "Hello" } ]
+
+      payload = adapter.send(:build_payload, messages, [])
+
+      assert_not payload.key?(:tools), "Tools key should not be present when empty"
+    end
+
+    test "does not include tools key when tools is nil" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      messages = [ { role: "user", content: "Hello" } ]
+
+      payload = adapter.send(:build_payload, messages, nil)
+
+      assert_not payload.key?(:tools), "Tools key should not be present when nil"
+    end
+
+    test "converts MCP tool format to OpenAI format" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      mcp_tool = {
+        name: "search_documents",
+        description: "Search for documents",
+        params: [
+          { name: "query", type: "string", description: "Search query", required: true },
+          { name: "limit", type: "integer", description: "Max results", required: false }
+        ]
+      }
+
+      result = adapter.send(:convert_mcp_tool_to_openai_format, mcp_tool)
+
+      assert_equal "function", result[:type]
+      assert_equal "search_documents", result[:function][:name]
+      assert_equal "Search for documents", result[:function][:description]
+      assert_equal "object", result[:function][:parameters][:type]
+      assert_equal "string", result[:function][:parameters][:properties]["query"][:type]
+      assert_equal "integer", result[:function][:parameters][:properties]["limit"][:type]
+      assert_includes result[:function][:parameters][:required], "query"
+      assert_not_includes result[:function][:parameters][:required], "limit"
+    end
+
+    test "format_tools passes through OpenAI format tools unchanged" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      openai_tool = {
+        type: "function",
+        function: {
+          name: "get_weather",
+          description: "Get weather",
+          parameters: { type: "object", properties: {}, required: [] }
+        }
+      }
+
+      result = adapter.send(:format_tools, [ openai_tool ])
+
+      assert_equal 1, result.length
+      assert_equal openai_tool, result.first
+    end
+
+    test "format_tools converts MCP format tools to OpenAI format" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      mcp_tool = {
+        name: "calculate",
+        description: "Perform calculation",
+        params: [
+          { name: "expression", type: "string", required: true }
+        ]
+      }
+
+      result = adapter.send(:format_tools, [ mcp_tool ])
+
+      assert_equal 1, result.length
+      assert_equal "function", result.first[:type]
+      assert_equal "calculate", result.first[:function][:name]
+    end
+
+    private
+
+    def build_test_user(gateway_url: nil, email: "test@example.com", llm_api_key: nil)
       user = Object.new
       user.define_singleton_method(:id) { 1 }
-      user.define_singleton_method(:openclaw_account) { account }
+      gw = gateway_url
+      user.define_singleton_method(:gateway_url) { gw }
+      user_email = email
+      user.define_singleton_method(:email) { user_email }
+      api_key = llm_api_key
+      user.define_singleton_method(:llm_api_key) { api_key }
       user
     end
   end
@@ -202,19 +398,13 @@ module CollavreOpenclaw
       @user = User.create!(
         email: "adapter-test@example.com",
         password: "password123",
-        name: "Test Bot"
-      )
-      @account = OpenclawAccount.create!(
-        user: @user,
-        gateway_url: "https://test-gateway.com",
-        api_token: "test-token",
-        channel_id: "test-channel"
+        name: "Test Bot",
+        gateway_url: "https://test-gateway.com"
       )
     end
 
     teardown do
       PendingCallback.delete_all
-      @account&.destroy
       @user&.destroy
     end
 
@@ -225,15 +415,15 @@ module CollavreOpenclaw
         context: { creative_id: 456 }
       )
 
-      # Stub callback_url
-      @account.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{id}" }
+      # Stub the callback_url
+      adapter.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{@user.id}" }
 
       assert_difference "PendingCallback.count", 1 do
         adapter.send(:build_user_context)
       end
 
       pending = PendingCallback.last
-      assert_equal @account.id, pending.openclaw_account_id
+      assert_equal @user.id, pending.user_id
       assert_equal 456, pending.creative_id
       assert pending.nonce.present?
     end
@@ -245,7 +435,7 @@ module CollavreOpenclaw
         context: { creative_id: 789, topic_id: 111 }
       )
 
-      @account.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{id}" }
+      adapter.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{@user.id}" }
 
       user_context = adapter.send(:build_user_context)
 
@@ -265,7 +455,7 @@ module CollavreOpenclaw
         context: {}
       )
 
-      @account.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{id}" }
+      adapter.define_singleton_method(:callback_url) { "https://collavre.com/openclaw/callback/#{@user.id}" }
 
       assert_no_difference "PendingCallback.count" do
         adapter.send(:build_user_context)
@@ -279,21 +469,21 @@ module CollavreOpenclaw
         context: { creative_id: 123 }
       )
 
-      @account.define_singleton_method(:callback_url) { nil }
+      adapter.define_singleton_method(:callback_url) { nil }
 
       assert_no_difference "PendingCallback.count" do
         adapter.send(:build_user_context)
       end
     end
 
-    test "session key includes account id" do
+    test "session key includes user id" do
       adapter = OpenclawAdapter.new(
         user: @user,
         system_prompt: "Test",
         context: { creative_id: 100, topic_id: 200 }
       )
 
-      assert_includes adapter.session_key, @account.id.to_s
+      assert_includes adapter.session_key, @user.id.to_s
     end
   end
 end

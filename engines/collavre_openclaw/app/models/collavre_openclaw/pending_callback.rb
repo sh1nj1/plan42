@@ -2,7 +2,7 @@ module CollavreOpenclaw
   class PendingCallback < ApplicationRecord
     self.table_name = "openclaw_pending_callbacks"
 
-    belongs_to :openclaw_account, class_name: "CollavreOpenclaw::OpenclawAccount"
+    belongs_to :user, class_name: "::User"
 
     # Serialize context as JSON for SQLite compatibility
     serialize :context, coder: JSON
@@ -17,9 +17,9 @@ module CollavreOpenclaw
     EXPIRATION_TIME = 7.days
 
     # Generate a new pending callback for a request
-    def self.create_for_request(account:, creative_id: nil, comment_id: nil, thread_id: nil, context: {})
+    def self.create_for_request(user:, creative_id: nil, comment_id: nil, thread_id: nil, context: {})
       create!(
-        openclaw_account: account,
+        user: user,
         nonce: generate_nonce,
         creative_id: creative_id,
         comment_id: comment_id,

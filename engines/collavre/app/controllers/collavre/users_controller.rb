@@ -68,6 +68,7 @@ module Collavre
         llm_vendor: params[:llm_vendor].presence || "google",
         llm_model: params[:llm_model],
         llm_api_key: params[:llm_api_key],
+        gateway_url: params[:gateway_url],
         tools: params[:tools] || [],
         searchable: searchable,
         email_verified_at: Time.current,
@@ -111,7 +112,7 @@ module Collavre
         return
       end
 
-      ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :searchable, :routing_expression, tools: [])
+      ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :gateway_url, :searchable, :routing_expression, tools: [])
 
       if @user.update(ai_params)
         redirect_to edit_ai_user_path(@user), notice: I18n.t("collavre.users.update_ai.success")

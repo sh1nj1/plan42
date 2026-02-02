@@ -15,13 +15,12 @@ module CollavreOpenclaw
       @user = user
       @system_prompt = system_prompt
       @context = context
-      @account = user&.openclaw_account
     end
 
     def chat(messages, tools: [], &block)
-      unless @account
-        Rails.logger.error("[CollavreOpenclaw] No OpenClaw account configured for user #{@user&.id}")
-        yield "Error: OpenClaw account not configured" if block_given?
+      unless @user&.gateway_url.present?
+        Rails.logger.error("[CollavreOpenclaw] No Gateway URL configured for user #{@user&.id}")
+        yield "Error: OpenClaw Gateway URL not configured" if block_given?
         return nil
       end
 
@@ -48,9 +47,20 @@ module CollavreOpenclaw
       end
     end
 
-    # Get the callback URL for this account
+    # Get the callback URL for this user
     def callback_url
-      @account&.callback_url
+      return nil unless @user
+
+      host_options = default_url_options
+      return nil if host_options[:host].blank?
+
+      CollavreOpenclaw::Engine.routes.url_helpers.callback_url(
+        user_id: @user.id,
+        **host_options
+      )
+    rescue StandardError => e
+      Rails.logger.warn("[CollavreOpenclaw] Failed to generate callback URL: #{e.message}")
+      nil
     end
 
     # Get the stable session key for this context
@@ -62,7 +72,7 @@ module CollavreOpenclaw
 
     def api_endpoint
       # OpenClaw uses /v1/chat/completions (OpenAI-compatible)
-      uri = URI.parse(@account.gateway_url)
+      uri = URI.parse(@user.gateway_url)
       uri.path = "/v1/chat/completions"
       uri.to_s
     end
@@ -73,7 +83,7 @@ module CollavreOpenclaw
       creative_id = extract_id(@context, :creative) || @context[:creative_id]
       topic_id = @context[:thread_id] || @context[:topic_id]
 
-      parts = [ "collavre", @account.id ]
+      parts = [ "collavre", @user.id ]
       parts << "creative:#{creative_id}" if creative_id
       parts << "topic:#{topic_id}" if topic_id
 
@@ -81,8 +91,13 @@ module CollavreOpenclaw
     end
 
     def build_payload(messages, tools)
+      # Build model string with agent_id derived from user email
+      # OpenClaw accepts "openclaw:<agentId>" format (e.g., "openclaw:collavre")
+      agent_id = extract_agent_id_from_email
+      model_value = agent_id.present? ? "openclaw:#{agent_id}" : "openclaw"
+
       payload = {
-        model: "openclaw",
+        model: model_value,
         messages: format_messages(messages),
         stream: true
       }
@@ -92,19 +107,101 @@ module CollavreOpenclaw
         payload[:messages].unshift({ role: "system", content: @system_prompt })
       end
 
+      # Add tools if provided (convert to OpenAI function calling format)
+      if tools.present?
+        payload[:tools] = format_tools(tools)
+      end
+
       # Build user context with callback information
       payload[:user] = build_user_context
 
       payload
     end
 
+    # Convert tools to OpenAI function calling format
+    # Accepts either:
+    #   - Array of tool names (strings): ["meta_tool", "search"]
+    #   - Array of OpenAI-format tool objects (already formatted)
+    def format_tools(tools)
+      Array(tools).filter_map do |tool|
+        if tool.is_a?(String)
+          # Tool name - fetch from MCP and convert to OpenAI format
+          convert_tool_name_to_openai_format(tool)
+        elsif tool.is_a?(Hash)
+          # Already a hash - check if it's OpenAI format or needs conversion
+          if tool[:type] == "function" || tool["type"] == "function"
+            # Already OpenAI format
+            tool
+          else
+            # MCP format - convert to OpenAI format
+            convert_mcp_tool_to_openai_format(tool)
+          end
+        end
+      end.compact
+    end
+
+    # Convert a tool name to OpenAI function format by fetching from MCP
+    def convert_tool_name_to_openai_format(tool_name)
+      return nil unless defined?(::Tools::MetaToolService)
+
+      result = ::Tools::MetaToolService.new.call(action: "get", tool_name: tool_name, query: nil, arguments: nil)
+      return nil if result[:error] || result[:tool].nil?
+
+      convert_mcp_tool_to_openai_format(result[:tool])
+    rescue StandardError => e
+      Rails.logger.warn("[CollavreOpenclaw] Failed to fetch tool #{tool_name}: #{e.message}")
+      nil
+    end
+
+    # Convert MCP tool format to OpenAI function format
+    # MCP format: { name:, description:, params: [...], return_type: }
+    # OpenAI format: { type: "function", function: { name:, description:, parameters: { type: "object", properties:, required: } } }
+    def convert_mcp_tool_to_openai_format(mcp_tool)
+      name = mcp_tool[:name] || mcp_tool["name"]
+      description = mcp_tool[:description] || mcp_tool["description"]
+      params = mcp_tool[:params] || mcp_tool["params"] || mcp_tool[:parameters] || mcp_tool["parameters"] || []
+
+      properties = {}
+      required = []
+
+      Array(params).each do |param|
+        param_name = (param[:name] || param["name"]).to_s
+        param_type = param[:type] || param["type"] || "string"
+        param_desc = param[:description] || param["description"]
+        param_required = param[:required] || param["required"]
+
+        # Convert Ruby/MCP types to JSON Schema types
+        json_type = case param_type.to_s.downcase
+        when "integer", "int" then "integer"
+        when "number", "float", "decimal" then "number"
+        when "boolean", "bool" then "boolean"
+        when "array" then "array"
+        when "object", "hash" then "object"
+        else "string"
+        end
+
+        properties[param_name] = { type: json_type }
+        properties[param_name][:description] = param_desc if param_desc.present?
+
+        required << param_name if param_required
+      end
+
+      {
+        type: "function",
+        function: {
+          name: name,
+          description: description || "",
+          parameters: {
+            type: "object",
+            properties: properties,
+            required: required
+          }
+        }
+      }
+    end
+
     def build_user_context
       context_data = {}
-
-      # Basic identification
-      if @account.channel_id.present?
-        context_data[:channel_id] = @account.channel_id
-      end
 
       # Extract IDs from context
       creative_id = extract_id(@context, :creative) || @context[:creative_id]
@@ -112,16 +209,17 @@ module CollavreOpenclaw
       topic_id = @context[:thread_id] || @context[:topic_id]
 
       # Create pending callback with nonce for secure async responses
-      if @account.callback_url.present? && creative_id.present?
+      callback = callback_url
+      if callback.present? && creative_id.present?
         pending = PendingCallback.create_for_request(
-          account: @account,
+          user: @user,
           creative_id: creative_id,
           comment_id: comment_id,
           thread_id: topic_id,
           context: @context.slice(:extra_data).to_h
         )
 
-        context_data[:callback_url] = @account.callback_url
+        context_data[:callback_url] = callback
         context_data[:callback_nonce] = pending.nonce
         context_data[:creative_id] = creative_id
         context_data[:comment_id] = comment_id if comment_id
@@ -134,7 +232,7 @@ module CollavreOpenclaw
       if context_data.any?
         "collavre:#{JSON.generate(context_data)}"
       else
-        "collavre:#{@account.id}"
+        "collavre:#{@user.id}"
       end
     end
 
@@ -167,6 +265,21 @@ module CollavreOpenclaw
       end
     end
 
+    def build_headers
+      headers = {
+        "Content-Type" => "application/json",
+        "Accept" => "text/event-stream",
+        "x-openclaw-session-key" => session_key
+      }
+
+      # Add Authorization header if API key is configured
+      if @user&.llm_api_key.present?
+        headers["Authorization"] = "Bearer #{@user.llm_api_key}"
+      end
+
+      headers
+    end
+
     def stream_response(payload, &block)
       retries = 0
       max_retries = CollavreOpenclaw.config.max_retries
@@ -174,15 +287,11 @@ module CollavreOpenclaw
       begin
         connection = build_connection
         buffer = +""
+        request_headers = build_headers
 
         response = connection.post do |req|
           req.url api_endpoint
-          req.headers["Content-Type"] = "application/json"
-          req.headers["Accept"] = "text/event-stream"
-          req.headers["Authorization"] = "Bearer #{@account.api_token}" if @account.api_token.present?
-
-          # Set stable session key for topic-based context sharing
-          req.headers["x-openclaw-session-key"] = session_key
+          request_headers.each { |k, v| req.headers[k] = v }
 
           req.body = payload.to_json
 
@@ -282,6 +391,30 @@ module CollavreOpenclaw
 
       return value.id if value.respond_to?(:id)
       value[:id] || value["id"]
+    end
+
+    # Extract agent_id from user email
+    # e.g., "ai-agent@collavre.com" -> "ai-agent"
+    def extract_agent_id_from_email
+      return nil unless @user&.email.present?
+
+      # Extract local part (before @) from email
+      @user.email.split("@").first
+    end
+
+    def default_url_options
+      options = Rails.application.config.action_mailer.default_url_options || {}
+
+      host = options[:host]
+      host ||= Rails.application.config.action_controller.default_url_options&.dig(:host)
+      host ||= ENV["APP_HOST"]
+      host ||= ENV["RAILS_HOST"]
+
+      result = { host: host }
+      result[:protocol] = options[:protocol] || "https"
+      result[:port] = options[:port] if options[:port].present?
+
+      result
     end
   end
 end
