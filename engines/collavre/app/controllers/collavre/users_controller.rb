@@ -68,6 +68,7 @@ module Collavre
         llm_vendor: params[:llm_vendor].presence || "google",
         llm_model: params[:llm_model],
         llm_api_key: params[:llm_api_key],
+        gateway_url: params[:gateway_url],
         tools: params[:tools] || [],
         searchable: searchable,
         email_verified_at: Time.current,

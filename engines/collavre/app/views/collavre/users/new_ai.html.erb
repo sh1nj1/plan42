@@ -56,6 +56,12 @@
   </div>
 
   <div class="form-group">
+    <%= form.label :gateway_url, t('collavre.users.new_ai.gateway_url_label', default: 'Gateway URL') %>
+    <%= form.url_field :gateway_url, class: "stacked-form-control", placeholder: "http://localhost:18789" %>
+    <small class="form-text text-muted"><%= t('collavre.users.new_ai.gateway_url_help', default: 'Required for OpenClaw. The URL of your OpenClaw gateway.') %></small>
+  </div>
+
+  <div class="form-group">
     <label class="form-label"><%= t('collavre.users.edit_ai.tools_title') %></label>
     <p class="text-muted small"><%= t('collavre.users.edit_ai.tools_description') %></p>
 
