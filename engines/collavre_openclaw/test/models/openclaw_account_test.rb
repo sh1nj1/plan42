@@ -77,11 +77,5 @@ module CollavreOpenclaw
       assert_includes [ "Connection failed", "Connection timeout", "Error" ], result[:message]
     end
 
-    # Agent ID tests
-
-    test "agent_id can be set and retrieved" do
-      account = OpenclawAccount.new(gateway_url: "https://example.com", agent_id: "my-agent")
-      assert_equal "my-agent", account.agent_id
-    end
   end
 end

@@ -47,12 +47,13 @@ module CollavreOpenclaw
       assert_equal "assistant", payload[:messages][2][:role]
       assert_equal "Hi there!", payload[:messages][2][:content]
       assert payload[:stream]
-      assert_equal "openclaw", payload[:model]
+      # Model includes agent_id derived from user email (test@example.com -> test)
+      assert_equal "openclaw:test", payload[:model]
     end
 
-    test "includes agent_id in model field when present" do
-      account = build_test_account(agent_id: "collavre")
-      user = build_test_user(account)
+    test "includes agent_id derived from user email in model field" do
+      account = build_test_account
+      user = build_test_user(account, email: "ai-bot@collavre.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
@@ -64,12 +65,12 @@ module CollavreOpenclaw
 
       payload = adapter.send(:build_payload, messages, [])
 
-      assert_equal "openclaw:collavre", payload[:model]
+      assert_equal "openclaw:ai-bot", payload[:model]
     end
 
-    test "uses plain openclaw model when agent_id is blank" do
-      account = build_test_account(agent_id: "")
-      user = build_test_user(account)
+    test "uses plain openclaw model when user email is blank" do
+      account = build_test_account
+      user = build_test_user(account, email: nil)
 
       adapter = OpenclawAdapter.new(
         user: user,
@@ -211,7 +212,7 @@ module CollavreOpenclaw
 
     private
 
-    def build_test_account(callback_url: nil, agent_id: nil)
+    def build_test_account(callback_url: nil)
       account = Object.new
       account.define_singleton_method(:api_endpoint) { "https://test-gateway.com/v1/chat/completions" }
       account.define_singleton_method(:api_token) { "test-token" }
@@ -219,15 +220,15 @@ module CollavreOpenclaw
       account.define_singleton_method(:gateway_url) { "https://test-gateway.com" }
       account.define_singleton_method(:callback_url) { callback_url }
       account.define_singleton_method(:id) { 123 }
-      aid = agent_id
-      account.define_singleton_method(:agent_id) { aid }
       account
     end
 
-    def build_test_user(account)
+    def build_test_user(account, email: "test@example.com")
       user = Object.new
       user.define_singleton_method(:id) { 1 }
       user.define_singleton_method(:openclaw_account) { account }
+      user_email = email
+      user.define_singleton_method(:email) { user_email }
       user
     end
   end

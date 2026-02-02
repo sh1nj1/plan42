@@ -55,14 +55,12 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
     # All required fields should be present
     assert_selector "label", text: I18n.t("collavre_openclaw.form.gateway_url")
     assert_selector "label", text: I18n.t("collavre_openclaw.form.api_token")
-    assert_selector "label", text: I18n.t("collavre_openclaw.form.agent_id")
   end
 
   test "can create OpenClaw connection" do
     visit collavre_openclaw.new_account_path(user_id: @ai_user.id)
 
     fill_in I18n.t("collavre_openclaw.form.gateway_url"), with: "http://localhost:18789"
-    fill_in I18n.t("collavre_openclaw.form.agent_id"), with: "test-agent"
 
     click_button I18n.t("collavre_openclaw.form.submit_create")
 
@@ -124,8 +122,7 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
     account = CollavreOpenclaw::OpenclawAccount.create!(
       user: @ai_user,
       gateway_url: "http://localhost:18789",
-      channel_id: "old-channel",
-      agent_id: "old-agent"
+      channel_id: "old-channel"
     )
 
     visit collavre_openclaw.edit_account_path(account)
@@ -134,10 +131,6 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
     channel_field = find_field(I18n.t("collavre_openclaw.form.channel_id"))
     channel_field.native.clear
     channel_field.set("new-channel")
-    
-    agent_field = find_field(I18n.t("collavre_openclaw.form.agent_id"))
-    agent_field.native.clear
-    agent_field.set("new-agent")
 
     # Submit form via JavaScript to bypass Turbo
     page.execute_script("document.querySelector('form.profile-form').submit()")
@@ -152,15 +145,13 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
     # Verify changes were saved
     account.reload
     assert_equal "new-channel", account.channel_id
-    assert_equal "new-agent", account.agent_id
   end
 
   test "edit form shows existing values" do
     account = CollavreOpenclaw::OpenclawAccount.create!(
       user: @ai_user,
       gateway_url: "http://localhost:18789",
-      channel_id: "existing-channel",
-      agent_id: "existing-agent"
+      channel_id: "existing-channel"
     )
 
     visit collavre_openclaw.edit_account_path(account)
@@ -168,7 +159,6 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
     # Verify existing values are displayed in form
     assert_field I18n.t("collavre_openclaw.form.gateway_url"), with: "http://localhost:18789"
     assert_field I18n.t("collavre_openclaw.form.channel_id"), with: "existing-channel"
-    assert_field I18n.t("collavre_openclaw.form.agent_id"), with: "existing-agent"
   end
 
   test "update with invalid data shows errors on same page" do

@@ -81,13 +81,10 @@ module CollavreOpenclaw
     end
 
     def build_payload(messages, tools)
-      # Build model string with agent_id if present
+      # Build model string with agent_id derived from user email
       # OpenClaw accepts "openclaw:<agentId>" format (e.g., "openclaw:collavre")
-      model_value = if @account.agent_id.present?
-        "openclaw:#{@account.agent_id}"
-      else
-        "openclaw"
-      end
+      agent_id = extract_agent_id_from_email
+      model_value = agent_id.present? ? "openclaw:#{agent_id}" : "openclaw"
 
       payload = {
         model: model_value,
@@ -290,6 +287,15 @@ module CollavreOpenclaw
 
       return value.id if value.respond_to?(:id)
       value[:id] || value["id"]
+    end
+
+    # Extract agent_id from user email
+    # e.g., "ai-agent@collavre.com" -> "ai-agent"
+    def extract_agent_id_from_email
+      return nil unless @user&.email.present?
+
+      # Extract local part (before @) from email
+      @user.email.split("@").first
     end
   end
 end

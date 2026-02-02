@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_02_120254) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_02_130000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -413,7 +413,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_120254) do
   end
 
   create_table "openclaw_accounts", force: :cascade do |t|
-    t.string "agent_id"
     t.string "api_token"
     t.string "channel_id"
     t.datetime "created_at", null: false
