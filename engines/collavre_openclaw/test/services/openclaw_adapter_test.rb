@@ -219,6 +219,86 @@ module CollavreOpenclaw
       assert_nil headers["Authorization"]
     end
 
+    test "includes tools in payload when provided" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      messages = [ { role: "user", content: "Hello" } ]
+      tools = [
+        {
+          type: "function",
+          function: {
+            name: "search_documents",
+            description: "Search for documents",
+            parameters: {
+              type: "object",
+              properties: {
+                query: { type: "string", description: "Search query" }
+              },
+              required: [ "query" ]
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "get_weather",
+            description: "Get weather information",
+            parameters: {
+              type: "object",
+              properties: {
+                location: { type: "string" }
+              }
+            }
+          }
+        }
+      ]
+
+      payload = adapter.send(:build_payload, messages, tools)
+
+      assert payload[:tools].present?, "Tools should be included in payload"
+      assert_equal 2, payload[:tools].length
+      assert_equal "search_documents", payload[:tools][0][:function][:name]
+      assert_equal "get_weather", payload[:tools][1][:function][:name]
+    end
+
+    test "does not include tools key when tools array is empty" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      messages = [ { role: "user", content: "Hello" } ]
+
+      payload = adapter.send(:build_payload, messages, [])
+
+      assert_not payload.key?(:tools), "Tools key should not be present when empty"
+    end
+
+    test "does not include tools key when tools is nil" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      messages = [ { role: "user", content: "Hello" } ]
+
+      payload = adapter.send(:build_payload, messages, nil)
+
+      assert_not payload.key?(:tools), "Tools key should not be present when nil"
+    end
+
     private
 
     def build_test_user(gateway_url: nil, email: "test@example.com", llm_api_key: nil)

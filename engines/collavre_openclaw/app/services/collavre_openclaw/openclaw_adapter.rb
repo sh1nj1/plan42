@@ -107,6 +107,11 @@ module CollavreOpenclaw
         payload[:messages].unshift({ role: "system", content: @system_prompt })
       end
 
+      # Add tools if provided (OpenAI function calling format)
+      if tools.present?
+        payload[:tools] = tools
+      end
+
       # Build user context with callback information
       payload[:user] = build_user_context
 
