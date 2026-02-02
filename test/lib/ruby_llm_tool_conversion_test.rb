@@ -2,7 +2,7 @@ require "test_helper"
 
 class RubyLlmToolConversionTest < ActiveSupport::TestCase
   test "converts creative_create_service to RubyLLM tool without error" do
-    tool_names = ["creative_create_service"]
+    tool_names = [ "creative_create_service" ]
 
     # This should not raise "undefined method 'float'" error
     assert_nothing_raised do
@@ -12,7 +12,7 @@ class RubyLlmToolConversionTest < ActiveSupport::TestCase
   end
 
   test "converts creative_update_service to RubyLLM tool without error" do
-    tool_names = ["creative_update_service"]
+    tool_names = [ "creative_update_service" ]
 
     assert_nothing_raised do
       tool_classes = ::Tools::MetaToolService.ruby_llm_tools(tool_names)
@@ -21,7 +21,7 @@ class RubyLlmToolConversionTest < ActiveSupport::TestCase
   end
 
   test "converts all creative tools to RubyLLM tools" do
-    tool_names = ["creative_create_service", "creative_update_service", "creative_retrieval_service"]
+    tool_names = [ "creative_create_service", "creative_update_service", "creative_retrieval_service" ]
 
     assert_nothing_raised do
       tool_classes = ::Tools::MetaToolService.ruby_llm_tools(tool_names)
