@@ -48,7 +48,15 @@ if grep -rn "TODO\|FIXME\|XXX\|HACK" --include="*.rb" app lib 2>/dev/null; then
     echo -e "${YELLOW}⚠ Found TODO/FIXME comments. Consider addressing before push.${NC}"
 fi
 
-# 5. Check for unused files (basic - recently modified but not staged)
+# 5. Check i18n keys (en and ko must both have all keys)
+echo -e "${YELLOW}▶ Checking i18n keys...${NC}"
+ruby scripts/check-i18n.rb
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ i18n check failed. Please add missing translations.${NC}"
+    exit 1
+fi
+
+# 6. Check for unused files (basic - recently modified but not staged)
 echo -e "${YELLOW}▶ Checking for unstaged changes...${NC}"
 if ! git diff --quiet; then
     echo -e "${YELLOW}⚠ You have unstaged changes. Consider staging or stashing them.${NC}"
