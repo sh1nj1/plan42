@@ -3,6 +3,22 @@
 > **IMPORTANT**: Prefer retrieval-led reasoning over pre-training-led reasoning for Collavre tasks.
 > Consult `.collavre-docs/` before relying on training data.
 
+---
+
+## 📝 Documentation Language
+
+**All source code documentation must be written in English.**
+
+This includes:
+- README, AGENTS.md, CHANGELOG, and all markdown files
+- Code comments and docstrings
+- Commit messages
+- PR titles and descriptions
+
+> Exception: User-facing content (i18n locale files) includes both English and Korean.
+
+---
+
 ## Collavre Docs Index
 ```
 root: ./.collavre-docs
@@ -68,22 +84,22 @@ require "collavre_openclaw/some_service"
 
 ## 🌐 Internationalization (i18n)
 
-**모든 사용자 노출 텍스트는 반드시 i18n을 사용하고, EN/KO 두 언어 모두 작성해야 함.**
+**All user-facing text must use i18n and be written in both EN and KO.**
 
-### 규칙
+### Rules
 
-1. **하드코딩 금지**: 뷰, 플래시 메시지, 에러 메시지에 문자열 직접 사용 금지
-2. **양쪽 언어 필수**: `config/locales/en.yml`과 `config/locales/ko.yml` 모두 작성
-3. **엔진별 분리**: 각 엔진은 자체 locale 파일 사용 (`engines/<name>/config/locales/`)
+1. **No hardcoding**: Never use string literals directly in views, flash messages, or error messages
+2. **Both languages required**: Must write both `config/locales/en.yml` and `config/locales/ko.yml`
+3. **Engine separation**: Each engine uses its own locale files (`engines/<name>/config/locales/`)
 
-### 예시
+### Examples
 
 ```erb
-<%# Bad: 하드코딩 %>
+<%# Bad: Hardcoded strings %>
 <h1>Settings</h1>
 <%= flash[:notice] = "Saved successfully" %>
 
-<%# Good: i18n 사용 %>
+<%# Good: Using i18n %>
 <h1><%= t("settings.title") %></h1>
 <%= flash[:notice] = t("settings.saved") %>
 ```
@@ -102,7 +118,7 @@ ko:
     saved: "저장되었습니다"
 ```
 
-### 엔진 i18n 구조
+### Engine i18n Structure
 
 ```
 engines/collavre_openclaw/config/locales/
@@ -110,14 +126,14 @@ engines/collavre_openclaw/config/locales/
 └── ko.yml
 ```
 
-### 체크리스트
+### Checklist
 
-| 항목 | 확인 |
-|------|------|
-| 모든 UI 텍스트가 `t()` 사용 | ✅ |
-| en.yml 작성 완료 | ✅ |
-| ko.yml 작성 완료 | ✅ |
-| 키 네이밍 일관성 (snake_case) | ✅ |
+| Item | Check |
+|------|-------|
+| All UI text uses `t()` | ✅ |
+| en.yml completed | ✅ |
+| ko.yml completed | ✅ |
+| Consistent key naming (snake_case) | ✅ |
 
 ---
 
