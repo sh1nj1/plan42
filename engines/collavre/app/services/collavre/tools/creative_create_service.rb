@@ -73,11 +73,7 @@ module Tools
     def handle_ordering(creative, before_id:, after_id:)
       return unless before_id.present? || after_id.present?
 
-      siblings = if creative.parent
-                   creative.parent.children.order(:sequence).to_a
-                 else
-                   Creative.roots.order(:sequence).to_a
-                 end
+      siblings = creative.parent ? creative.parent.children.order(:sequence).to_a : Creative.roots.order(:sequence).to_a
       siblings.reject! { |s| s.id == creative.id }
 
       if before_id.present?
