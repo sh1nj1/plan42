@@ -13,8 +13,8 @@ module CollavreOpenclaw
     scope :valid, -> { where("expires_at > ?", Time.current) }
     scope :expired, -> { where("expires_at <= ?", Time.current) }
 
-    # Default expiration time
-    EXPIRATION_TIME = 10.minutes
+    # Default expiration time (7 days to support scheduled callbacks like cron jobs)
+    EXPIRATION_TIME = 7.days
 
     # Generate a new pending callback for a request
     def self.create_for_request(account:, creative_id: nil, comment_id: nil, thread_id: nil, context: {})
