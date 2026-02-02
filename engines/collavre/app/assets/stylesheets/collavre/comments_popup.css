@@ -123,10 +123,18 @@ body.chat-fullscreen main {
 
 .comment-topics-list {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0.5em;
-    padding-bottom: 0.5em;
+    padding: 0.5em 0;
     margin-bottom: 0.5em;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+}
+
+.comment-topics-list::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
 }
 
 #comments-list::before {
@@ -646,15 +654,24 @@ body.chat-fullscreen main {
 
 .comment-topics-list {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0.5em;
-    padding-bottom: 0.5em;
+    padding: 0.5em 0;
     margin-bottom: 0.5em;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+}
+
+.comment-topics-list::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
 }
 
 .topic-tag {
     display: inline-flex;
     align-items: center;
+    flex-shrink: 0;
     gap: 4px;
     padding: 0.2em 0.6em;
     border-radius: 12px;
@@ -664,6 +681,7 @@ body.chat-fullscreen main {
     font-size: 0.85em;
     cursor: pointer;
     transition: all 0.2s;
+    white-space: nowrap;
 }
 
 .topic-tag:hover {
