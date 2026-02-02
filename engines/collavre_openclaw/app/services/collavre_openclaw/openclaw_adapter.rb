@@ -178,6 +178,21 @@ module CollavreOpenclaw
       end
     end
 
+    def build_headers
+      headers = {
+        "Content-Type" => "application/json",
+        "Accept" => "text/event-stream",
+        "x-openclaw-session-key" => session_key
+      }
+
+      # Add Authorization header if API key is configured
+      if @user&.llm_api_key.present?
+        headers["Authorization"] = "Bearer #{@user.llm_api_key}"
+      end
+
+      headers
+    end
+
     def stream_response(payload, &block)
       retries = 0
       max_retries = CollavreOpenclaw.config.max_retries
@@ -185,14 +200,11 @@ module CollavreOpenclaw
       begin
         connection = build_connection
         buffer = +""
+        request_headers = build_headers
 
         response = connection.post do |req|
           req.url api_endpoint
-          req.headers["Content-Type"] = "application/json"
-          req.headers["Accept"] = "text/event-stream"
-
-          # Set stable session key for topic-based context sharing
-          req.headers["x-openclaw-session-key"] = session_key
+          request_headers.each { |k, v| req.headers[k] = v }
 
           req.body = payload.to_json
 

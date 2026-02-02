@@ -189,15 +189,47 @@ module CollavreOpenclaw
       assert_not_equal adapter1.session_key, adapter2.session_key
     end
 
+    test "builds authorization header with llm_api_key" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-api-key-123")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      headers = adapter.send(:build_headers)
+
+      assert_equal "Bearer test-api-key-123", headers["Authorization"]
+      assert_equal "application/json", headers["Content-Type"]
+      assert_equal "text/event-stream", headers["Accept"]
+    end
+
+    test "does not include authorization header when llm_api_key is blank" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: nil)
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      headers = adapter.send(:build_headers)
+
+      assert_nil headers["Authorization"]
+    end
+
     private
 
-    def build_test_user(gateway_url: nil, email: "test@example.com")
+    def build_test_user(gateway_url: nil, email: "test@example.com", llm_api_key: nil)
       user = Object.new
       user.define_singleton_method(:id) { 1 }
       gw = gateway_url
       user.define_singleton_method(:gateway_url) { gw }
       user_email = email
       user.define_singleton_method(:email) { user_email }
+      api_key = llm_api_key
+      user.define_singleton_method(:llm_api_key) { api_key }
       user
     end
   end
