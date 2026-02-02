@@ -107,15 +107,97 @@ module CollavreOpenclaw
         payload[:messages].unshift({ role: "system", content: @system_prompt })
       end
 
-      # Add tools if provided (OpenAI function calling format)
+      # Add tools if provided (convert to OpenAI function calling format)
       if tools.present?
-        payload[:tools] = tools
+        payload[:tools] = format_tools(tools)
       end
 
       # Build user context with callback information
       payload[:user] = build_user_context
 
       payload
+    end
+
+    # Convert tools to OpenAI function calling format
+    # Accepts either:
+    #   - Array of tool names (strings): ["meta_tool", "search"]
+    #   - Array of OpenAI-format tool objects (already formatted)
+    def format_tools(tools)
+      Array(tools).filter_map do |tool|
+        if tool.is_a?(String)
+          # Tool name - fetch from MCP and convert to OpenAI format
+          convert_tool_name_to_openai_format(tool)
+        elsif tool.is_a?(Hash)
+          # Already a hash - check if it's OpenAI format or needs conversion
+          if tool[:type] == "function" || tool["type"] == "function"
+            # Already OpenAI format
+            tool
+          else
+            # MCP format - convert to OpenAI format
+            convert_mcp_tool_to_openai_format(tool)
+          end
+        end
+      end.compact
+    end
+
+    # Convert a tool name to OpenAI function format by fetching from MCP
+    def convert_tool_name_to_openai_format(tool_name)
+      return nil unless defined?(::Tools::MetaToolService)
+
+      result = ::Tools::MetaToolService.new.call(action: "get", tool_name: tool_name, query: nil, arguments: nil)
+      return nil if result[:error] || result[:tool].nil?
+
+      convert_mcp_tool_to_openai_format(result[:tool])
+    rescue StandardError => e
+      Rails.logger.warn("[CollavreOpenclaw] Failed to fetch tool #{tool_name}: #{e.message}")
+      nil
+    end
+
+    # Convert MCP tool format to OpenAI function format
+    # MCP format: { name:, description:, params: [...], return_type: }
+    # OpenAI format: { type: "function", function: { name:, description:, parameters: { type: "object", properties:, required: } } }
+    def convert_mcp_tool_to_openai_format(mcp_tool)
+      name = mcp_tool[:name] || mcp_tool["name"]
+      description = mcp_tool[:description] || mcp_tool["description"]
+      params = mcp_tool[:params] || mcp_tool["params"] || mcp_tool[:parameters] || mcp_tool["parameters"] || []
+
+      properties = {}
+      required = []
+
+      Array(params).each do |param|
+        param_name = (param[:name] || param["name"]).to_s
+        param_type = param[:type] || param["type"] || "string"
+        param_desc = param[:description] || param["description"]
+        param_required = param[:required] || param["required"]
+
+        # Convert Ruby/MCP types to JSON Schema types
+        json_type = case param_type.to_s.downcase
+        when "integer", "int" then "integer"
+        when "number", "float", "decimal" then "number"
+        when "boolean", "bool" then "boolean"
+        when "array" then "array"
+        when "object", "hash" then "object"
+        else "string"
+        end
+
+        properties[param_name] = { type: json_type }
+        properties[param_name][:description] = param_desc if param_desc.present?
+
+        required << param_name if param_required
+      end
+
+      {
+        type: "function",
+        function: {
+          name: name,
+          description: description || "",
+          parameters: {
+            type: "object",
+            properties: properties,
+            required: required
+          }
+        }
+      }
     end
 
     def build_user_context

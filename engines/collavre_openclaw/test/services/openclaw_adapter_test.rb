@@ -299,6 +299,84 @@ module CollavreOpenclaw
       assert_not payload.key?(:tools), "Tools key should not be present when nil"
     end
 
+    test "converts MCP tool format to OpenAI format" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      mcp_tool = {
+        name: "search_documents",
+        description: "Search for documents",
+        params: [
+          { name: "query", type: "string", description: "Search query", required: true },
+          { name: "limit", type: "integer", description: "Max results", required: false }
+        ]
+      }
+
+      result = adapter.send(:convert_mcp_tool_to_openai_format, mcp_tool)
+
+      assert_equal "function", result[:type]
+      assert_equal "search_documents", result[:function][:name]
+      assert_equal "Search for documents", result[:function][:description]
+      assert_equal "object", result[:function][:parameters][:type]
+      assert_equal "string", result[:function][:parameters][:properties]["query"][:type]
+      assert_equal "integer", result[:function][:parameters][:properties]["limit"][:type]
+      assert_includes result[:function][:parameters][:required], "query"
+      assert_not_includes result[:function][:parameters][:required], "limit"
+    end
+
+    test "format_tools passes through OpenAI format tools unchanged" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      openai_tool = {
+        type: "function",
+        function: {
+          name: "get_weather",
+          description: "Get weather",
+          parameters: { type: "object", properties: {}, required: [] }
+        }
+      }
+
+      result = adapter.send(:format_tools, [ openai_tool ])
+
+      assert_equal 1, result.length
+      assert_equal openai_tool, result.first
+    end
+
+    test "format_tools converts MCP format tools to OpenAI format" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      mcp_tool = {
+        name: "calculate",
+        description: "Perform calculation",
+        params: [
+          { name: "expression", type: "string", required: true }
+        ]
+      }
+
+      result = adapter.send(:format_tools, [ mcp_tool ])
+
+      assert_equal 1, result.length
+      assert_equal "function", result.first[:type]
+      assert_equal "calculate", result.first[:function][:name]
+    end
+
     private
 
     def build_test_user(gateway_url: nil, email: "test@example.com", llm_api_key: nil)
