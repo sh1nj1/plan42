@@ -6,6 +6,31 @@ module Collavre
         liquid_context = Collavre::SystemEvents::ContextBuilder.new(context).build
         liquid_context["event_name"] = event_name
 
+        # Priority 1: Mention-based routing (exclusive)
+        # If any AI agent is mentioned, ONLY route to that agent
+        mentioned_agent = find_mentioned_agent(liquid_context, context)
+        return [ mentioned_agent ] if mentioned_agent
+
+        # Priority 2: Liquid expression routing (fallback)
+        route_by_liquid_expression(liquid_context, context)
+      end
+
+      private
+
+      def find_mentioned_agent(liquid_context, context)
+        mentioned_user_data = liquid_context.dig("chat", "mentioned_user")
+        return nil unless mentioned_user_data && mentioned_user_data["id"]
+
+        agent = User.find_by(id: mentioned_user_data["id"])
+        return nil unless agent&.ai_user?
+
+        # Permission check for mentioned agent
+        return nil unless has_creative_permission?(agent, context)
+
+        agent
+      end
+
+      def route_by_liquid_expression(liquid_context, context)
         # Find all AI agents
         agents = User.where.not(llm_vendor: nil)
 
@@ -15,32 +40,7 @@ module Collavre
           next if agent.routing_expression.blank?
 
           # Permission Check
-          # If agent is not searchable, it must have feedback permission on the creative
-          unless agent.searchable?
-            creative_id = context.dig("creative", "id") || context.dig(:creative, :id)
-            if creative_id
-              creative = Creative.find_by(id: creative_id)
-              if creative
-                # Check for feedback permission (which implies read access)
-                # has_permission? checks for the specific permission or higher
-                unless creative.has_permission?(agent, :feedback)
-                  # Rails.logger.info "Agent #{agent.id} skipped: No feedback permission on Creative #{creative.id}"
-                  next
-                end
-              else
-                # If creative ID is present but not found, skip for safety
-                next
-              end
-            else
-              # If no creative context, we might skip or allow depending on policy.
-              # Assuming 'chat.creative' implies creative context is required for this check.
-              # If it's a global event without creative, maybe searchable check isn't needed?
-              # But the user said "must have feedback permission on the chat.creative".
-              # If there is no creative, we can't check permission, so we should probably skip to be safe
-              # unless it's a purely global event. But for now, let's skip.
-              next
-            end
-          end
+          next unless has_creative_permission?(agent, context)
 
           begin
             # Add 'agent' to context so they can refer to themselves
@@ -66,6 +66,20 @@ module Collavre
         end
 
         matched_agents
+      end
+
+      def has_creative_permission?(agent, context)
+        # Searchable agents can receive any routed message
+        return true if agent.searchable?
+
+        # Non-searchable agents must have feedback permission on the creative
+        creative_id = context.dig("creative", "id") || context.dig(:creative, :id)
+        return false unless creative_id
+
+        creative = Creative.find_by(id: creative_id)
+        return false unless creative
+
+        creative.has_permission?(agent, :feedback)
       end
     end
   end
