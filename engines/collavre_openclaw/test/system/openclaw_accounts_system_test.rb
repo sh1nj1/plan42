@@ -177,4 +177,61 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
     # Should stay on edit page (re-render with errors)
     assert_selector "h1", text: I18n.t("collavre_openclaw.accounts.edit_title")
   end
+
+  test "update button works when token is configured" do
+    account = CollavreOpenclaw::OpenclawAccount.create!(
+      user: @ai_user,
+      gateway_url: "http://localhost:18789",
+      api_token: "existing-secret-token",
+      channel_id: "old-channel"
+    )
+
+    visit collavre_openclaw.edit_account_path(account)
+
+    # Verify token is shown as configured
+    assert_selector ".token-status--configured"
+
+    # Update channel_id field
+    channel_field = find_field(I18n.t("collavre_openclaw.form.channel_id"))
+    channel_field.native.clear
+    channel_field.set("updated-channel")
+
+    # Click update button
+    click_button I18n.t("collavre_openclaw.form.submit_update")
+
+    # Should redirect to AI user edit page with success message
+    assert_current_path collavre.edit_ai_user_path(@ai_user), ignore_query: true
+    assert_selector ".notice", text: I18n.t("collavre_openclaw.accounts.updated")
+
+    # Verify changes were saved and token is preserved
+    account.reload
+    assert_equal "updated-channel", account.channel_id
+    assert account.token_configured?, "Token should still be configured after update"
+  end
+
+  test "update button works when changing gateway url with token configured" do
+    account = CollavreOpenclaw::OpenclawAccount.create!(
+      user: @ai_user,
+      gateway_url: "http://localhost:18789",
+      api_token: "existing-secret-token"
+    )
+
+    visit collavre_openclaw.edit_account_path(account)
+
+    # Update gateway URL
+    gateway_field = find_field(I18n.t("collavre_openclaw.form.gateway_url"))
+    gateway_field.native.clear
+    gateway_field.set("http://new-gateway:18789")
+
+    # Click update button
+    click_button I18n.t("collavre_openclaw.form.submit_update")
+
+    # Should redirect with success
+    assert_current_path collavre.edit_ai_user_path(@ai_user), ignore_query: true
+    assert_selector ".notice", text: I18n.t("collavre_openclaw.accounts.updated")
+
+    # Verify changes
+    account.reload
+    assert_equal "http://new-gateway:18789", account.gateway_url
+  end
 end

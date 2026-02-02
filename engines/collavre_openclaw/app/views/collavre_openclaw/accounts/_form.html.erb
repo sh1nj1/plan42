@@ -24,11 +24,10 @@
       <div class="token-status token-status--configured">
         <span class="token-status__indicator">✓</span>
         <span class="token-status__text"><%= t("collavre_openclaw.form.token_configured") %></span>
-        <%= button_to t("collavre_openclaw.form.clear_token"),
-                      clear_token_account_path(account),
-                      method: :delete,
-                      class: "token-status__clear-btn",
-                      data: { confirm: t("collavre_openclaw.form.clear_token_confirm") } %>
+        <%= link_to t("collavre_openclaw.form.clear_token"),
+                    clear_token_account_path(account),
+                    class: "token-status__clear-btn",
+                    data: { turbo_method: :delete, turbo_confirm: t("collavre_openclaw.form.clear_token_confirm") } %>
       </div>
       <%= f.password_field :api_token, placeholder: t("collavre_openclaw.form.token_placeholder_update") %>
       <small><%= t("collavre_openclaw.form.api_token_hint_update") %></small>

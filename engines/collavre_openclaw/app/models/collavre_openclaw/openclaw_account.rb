@@ -15,6 +15,16 @@ module CollavreOpenclaw
 
     encrypts :api_token, deterministic: false
 
+    # Skip updating api_token if empty string (preserve existing token)
+    # Note: nil is allowed (for clear_token!), only empty string "" is rejected
+    before_validation :preserve_existing_token
+
+    def preserve_existing_token
+      if persisted? && api_token_changed? && api_token == ""
+        restore_attribute!(:api_token)
+      end
+    end
+
     # Check if token is configured (without revealing the actual value)
     def token_configured?
       api_token.present?
