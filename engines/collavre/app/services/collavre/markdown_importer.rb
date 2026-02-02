@@ -1,5 +1,8 @@
 module Collavre
   class MarkdownImporter
+    # Matches horizontal rules: ---, ***, ___ (with optional spaces)
+    HORIZONTAL_RULE_REGEX = /^\s*([-*_])\s*\1\s*\1[\s\1]*$/
+
     def self.import(content, parent:, user:, create_root: false)
       lines = content.to_s.lines
       image_refs = {}
@@ -26,21 +29,51 @@ module Collavre
         end
       end
       stack = [ [ 0, root ] ]
-      current_fence = nil
       while i < lines.size
         line = lines[i]
-        if (fence_match = line.match(/^\s*(`{3,}|~{3,})/))
-          fence_marker = fence_match[1]
-          fence_char = fence_marker[0]
-          fence_length = fence_marker.length
-          if current_fence.nil?
-            current_fence = { char: fence_char, length: fence_length }
-          elsif current_fence[:char] == fence_char && fence_length >= current_fence[:length]
-            current_fence = nil
-          end
+
+        # Skip horizontal rules (---, ***, ___)
+        if line =~ HORIZONTAL_RULE_REGEX
+          i += 1
+          next
         end
 
-        if current_fence.nil? && (table_data = parse_markdown_table(lines, i))
+        # Handle fenced code blocks (``` or ~~~)
+        if (fence_match = line.match(/^(\s*)(`{3,}|~{3,})(.*)$/))
+          fence_indent = fence_match[1]
+          fence_marker = fence_match[2]
+          fence_char = fence_marker[0]
+          fence_length = fence_marker.length
+          fence_info = fence_match[3].strip # language info (e.g., "ruby", "javascript")
+
+          # Collect all lines until closing fence
+          code_lines = []
+          i += 1
+          while i < lines.size
+            close_line = lines[i]
+            # Check for closing fence (same char, at least same length)
+            if (close_match = close_line.match(/^\s*(`{3,}|~{3+})\s*$/))
+              close_marker = close_match[1]
+              if close_marker[0] == fence_char && close_marker.length >= fence_length
+                i += 1
+                break
+              end
+            end
+            code_lines << close_line
+            i += 1
+          end
+
+          # Build code block HTML
+          code_content = code_lines.join
+          code_html = build_code_block_html(code_content, fence_info)
+
+          new_parent = stack.any? ? stack.last[1] : root
+          c = Creative.create(user: user, parent: new_parent, description: code_html)
+          created << c
+          next
+        end
+
+        if (table_data = parse_markdown_table(lines, i))
           table_html = build_table_html(table_data, image_refs)
           new_parent = stack.any? ? stack.last[1] : root
           c = Creative.create(user: user, parent: new_parent, description: table_html)
@@ -76,6 +109,12 @@ module Collavre
         end
       end
       created
+    end
+
+    def self.build_code_block_html(code_content, language = nil)
+      escaped_content = ERB::Util.html_escape(code_content)
+      lang_class = language.present? ? " class=\"language-#{ERB::Util.html_escape(language)}\"" : ""
+      "<pre><code#{lang_class}>#{escaped_content}</code></pre>"
     end
 
     def self.parse_markdown_table(lines, index)
