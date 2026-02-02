@@ -73,8 +73,7 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
     # Create account first
     account = CollavreOpenclaw::OpenclawAccount.create!(
       user: @ai_user,
-      gateway_url: "http://localhost:18789",
-      channel_id: "test-channel"
+      gateway_url: "http://localhost:18789"
     )
 
     visit collavre_openclaw.edit_account_path(account)
@@ -121,16 +120,15 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
   test "update button saves changes and redirects correctly" do
     account = CollavreOpenclaw::OpenclawAccount.create!(
       user: @ai_user,
-      gateway_url: "http://localhost:18789",
-      channel_id: "old-channel"
+      gateway_url: "http://localhost:18789"
     )
 
     visit collavre_openclaw.edit_account_path(account)
 
-    # Update fields (select all and replace)
-    channel_field = find_field(I18n.t("collavre_openclaw.form.channel_id"))
-    channel_field.native.clear
-    channel_field.set("new-channel")
+    # Update gateway URL field
+    gateway_field = find_field(I18n.t("collavre_openclaw.form.gateway_url"))
+    gateway_field.native.clear
+    gateway_field.set("http://new-gateway:18789")
 
     # Submit form via JavaScript to bypass Turbo
     page.execute_script("document.querySelector('form.profile-form').submit()")
@@ -144,21 +142,19 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
 
     # Verify changes were saved
     account.reload
-    assert_equal "new-channel", account.channel_id
+    assert_equal "http://new-gateway:18789", account.gateway_url
   end
 
   test "edit form shows existing values" do
     account = CollavreOpenclaw::OpenclawAccount.create!(
       user: @ai_user,
-      gateway_url: "http://localhost:18789",
-      channel_id: "existing-channel"
+      gateway_url: "http://localhost:18789"
     )
 
     visit collavre_openclaw.edit_account_path(account)
 
     # Verify existing values are displayed in form
     assert_field I18n.t("collavre_openclaw.form.gateway_url"), with: "http://localhost:18789"
-    assert_field I18n.t("collavre_openclaw.form.channel_id"), with: "existing-channel"
   end
 
   test "update with invalid data shows errors on same page" do
@@ -182,8 +178,7 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
     account = CollavreOpenclaw::OpenclawAccount.create!(
       user: @ai_user,
       gateway_url: "http://localhost:18789",
-      api_token: "existing-secret-token",
-      channel_id: "old-channel"
+      api_token: "existing-secret-token"
     )
 
     visit collavre_openclaw.edit_account_path(account)
@@ -191,10 +186,10 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
     # Verify token is shown as configured
     assert_selector ".token-status--configured"
 
-    # Update channel_id field
-    channel_field = find_field(I18n.t("collavre_openclaw.form.channel_id"))
-    channel_field.native.clear
-    channel_field.set("updated-channel")
+    # Update gateway URL field
+    gateway_field = find_field(I18n.t("collavre_openclaw.form.gateway_url"))
+    gateway_field.native.clear
+    gateway_field.set("http://updated-gateway:18789")
 
     # Click update button
     click_button I18n.t("collavre_openclaw.form.submit_update")
@@ -205,7 +200,7 @@ class OpenclawAccountsSystemTest < CollavreOpenclawSystemTestCase
 
     # Verify changes were saved and token is preserved
     account.reload
-    assert_equal "updated-channel", account.channel_id
+    assert_equal "http://updated-gateway:18789", account.gateway_url
     assert account.token_configured?, "Token should still be configured after update"
   end
 

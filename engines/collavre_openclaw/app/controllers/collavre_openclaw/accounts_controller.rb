@@ -97,7 +97,7 @@ module CollavreOpenclaw
     end
 
     def account_params
-      params.require(:openclaw_account).permit(:gateway_url, :api_token, :channel_id)
+      params.require(:openclaw_account).permit(:gateway_url, :api_token)
     end
   end
 end

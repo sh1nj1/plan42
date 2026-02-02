@@ -44,12 +44,6 @@
     <% end %>
   </div>
 
-  <div>
-    <%= f.label :channel_id, t("collavre_openclaw.form.channel_id") %>
-    <%= f.text_field :channel_id %>
-    <small><%= t("collavre_openclaw.form.channel_id_hint") %></small>
-  </div>
-
   <%= f.submit account.persisted? ? t("collavre_openclaw.form.submit_update") : t("collavre_openclaw.form.submit_create") %>
   <%= link_to t("collavre_openclaw.form.cancel"), collavre.edit_ai_user_path(@ai_user), class: "btn-link" %>
 <% end %>
