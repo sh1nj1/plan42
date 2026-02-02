@@ -34,6 +34,7 @@ The pre-push hook automatically runs before each push:
 - `./bin/rubocop -a` - Auto-fix linting issues
 - `rake test` - Run all tests
 - Dead code check - Detect debug statements (`binding.pry`, `debugger`, etc.)
+- i18n check - Ensure all keys exist in both `en.yml` and `ko.yml`
 
 To install hooks manually: `./scripts/install-hooks.sh`
 
