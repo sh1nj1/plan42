@@ -124,6 +124,7 @@ body.chat-fullscreen main {
 .comment-topics-list {
     display: flex;
     flex-wrap: nowrap;
+    align-items: center;
     gap: 0.5em;
     padding: 0.5em 0;
     margin-bottom: 0.5em;
@@ -131,6 +132,7 @@ body.chat-fullscreen main {
     overflow-y: hidden;
     scrollbar-width: none; /* Firefox */
     -ms-overflow-style: none; /* IE/Edge */
+    min-height: 36px; /* Prevent height collapse during scroll */
 }
 
 .comment-topics-list::-webkit-scrollbar {
@@ -655,6 +657,7 @@ body.chat-fullscreen main {
 .comment-topics-list {
     display: flex;
     flex-wrap: nowrap;
+    align-items: center;
     gap: 0.5em;
     padding: 0.5em 0;
     margin-bottom: 0.5em;
@@ -662,6 +665,7 @@ body.chat-fullscreen main {
     overflow-y: hidden;
     scrollbar-width: none; /* Firefox */
     -ms-overflow-style: none; /* IE/Edge */
+    min-height: 36px; /* Prevent height collapse during scroll */
 }
 
 .comment-topics-list::-webkit-scrollbar {
@@ -682,6 +686,8 @@ body.chat-fullscreen main {
     cursor: pointer;
     transition: all 0.2s;
     white-space: nowrap;
+    height: 26px; /* Fixed height to prevent shrinking */
+    box-sizing: border-box;
 }
 
 .topic-tag:hover {
@@ -757,6 +763,12 @@ body.chat-fullscreen main {
 
 #comments-list:not([data-current-topic-id=""]) .comment-topic-link {
     display: none;
+}
+
+.topic-creation-container {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
 }
 
 .add-topic-btn {
