@@ -88,9 +88,9 @@ end
 gem "doorkeeper", "~> 5.8"
 
 if File.exist?(File.expand_path("../rails_mcp_engine", __FILE__))
-  gem "rails_mcp_engine", "~> 0.4.0", path: "../rails_mcp_engine"
+  gem "rails_mcp_engine", "~> 0.4.1", path: "../rails_mcp_engine"
 else
-  gem "rails_mcp_engine", "~> 0.4.0"
+  gem "rails_mcp_engine", "~> 0.4.1"
 end
 
 # Load all local engines found in ./engines

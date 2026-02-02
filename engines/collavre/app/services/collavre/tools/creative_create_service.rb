@@ -15,7 +15,7 @@ module Tools
     tool_param :after_id, description: "ID of a sibling Creative to insert after. Used for ordering.", required: false
     tool_param :before_id, description: "ID of a sibling Creative to insert before. Used for ordering.", required: false
 
-    sig { params(description: String, parent_id: T.nilable(Integer), progress: T.nilable(Float), after_id: T.nilable(Integer), before_id: T.nilable(Integer)).returns(T::Hash[Symbol, T.untyped]) }
+    sig { params(description: String, parent_id: T.nilable(Integer), progress: T.nilable(Numeric), after_id: T.nilable(Integer), before_id: T.nilable(Integer)).returns(T::Hash[Symbol, T.untyped]) }
     def call(description:, parent_id: nil, progress: nil, after_id: nil, before_id: nil)
       raise "Current.user is required" unless Current.user
 
