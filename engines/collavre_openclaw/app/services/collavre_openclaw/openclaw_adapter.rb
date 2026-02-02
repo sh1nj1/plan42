@@ -79,11 +79,13 @@ module CollavreOpenclaw
 
     # Build stable session key based on Topic (not nonce)
     # Same Topic = Same Session = Shared context between users
+    # Format: agent:<agent_id>:collavre:<user_id>:creative:<id>:topic:<id>
     def build_session_key
       creative_id = extract_id(@context, :creative) || @context[:creative_id]
       topic_id = @context[:thread_id] || @context[:topic_id]
+      agent_id = extract_agent_id_from_email || "main"
 
-      parts = [ "collavre", @user.id ]
+      parts = [ "agent", agent_id, "collavre", @user.id ]
       parts << "creative:#{creative_id}" if creative_id
       parts << "topic:#{topic_id}" if topic_id
 

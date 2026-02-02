@@ -153,6 +153,52 @@ module CollavreOpenclaw
       assert_includes session_key, "topic:456"
     end
 
+    test "session key starts with agent prefix for OpenClaw routing" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "ming@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: { creative_id: 123 }
+      )
+
+      session_key = adapter.session_key
+
+      # Session key must start with "agent:" for OpenClaw to route correctly
+      assert session_key.start_with?("agent:"), "Session key must start with 'agent:' prefix"
+      assert_includes session_key, "agent:ming:"
+    end
+
+    test "session key includes agent_id derived from email" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "ai-bot@collavre.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: { creative_id: 100 }
+      )
+
+      session_key = adapter.session_key
+
+      # Should be: agent:ai-bot:collavre:1:creative:100
+      assert_match(/^agent:ai-bot:collavre:\d+:creative:100$/, session_key)
+    end
+
+    test "session key uses main agent when email is blank" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: nil)
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: { creative_id: 100 }
+      )
+
+      session_key = adapter.session_key
+
+      # Should fallback to "main" agent
+      assert session_key.start_with?("agent:main:"), "Should use 'main' agent when email is blank"
+    end
+
     test "session key is stable for same topic" do
       user = build_test_user(gateway_url: "https://test-gateway.com")
 
@@ -187,6 +233,28 @@ module CollavreOpenclaw
       )
 
       assert_not_equal adapter1.session_key, adapter2.session_key
+    end
+
+    test "session key differs for different agents" do
+      user1 = build_test_user(gateway_url: "https://test-gateway.com", email: "agent-a@example.com")
+      user2 = build_test_user(gateway_url: "https://test-gateway.com", email: "agent-b@example.com")
+
+      adapter1 = OpenclawAdapter.new(
+        user: user1,
+        system_prompt: "",
+        context: { creative_id: 100, topic_id: 200 }
+      )
+
+      adapter2 = OpenclawAdapter.new(
+        user: user2,
+        system_prompt: "",
+        context: { creative_id: 100, topic_id: 200 }
+      )
+
+      # Different agents should have different session keys even for same creative/topic
+      assert_not_equal adapter1.session_key, adapter2.session_key
+      assert_includes adapter1.session_key, "agent:agent-a:"
+      assert_includes adapter2.session_key, "agent:agent-b:"
     end
 
     test "builds authorization header with llm_api_key" do
