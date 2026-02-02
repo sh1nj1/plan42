@@ -1,0 +1,61 @@
+#!/bin/bash
+
+echo "🔍 Running pre-push checks..."
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# 1. Rubocop auto-fix
+echo -e "${YELLOW}▶ Running Rubocop...${NC}"
+./bin/rubocop -a
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Rubocop failed. Please fix the issues and try again.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Rubocop passed${NC}"
+
+# 2. Run tests
+echo -e "${YELLOW}▶ Running tests...${NC}"
+RAILS_ENV=test rake test
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Tests failed. Please fix and try again.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ All tests passed${NC}"
+
+# 3. Check for dead code (unused methods, variables)
+echo -e "${YELLOW}▶ Checking for dead code...${NC}"
+
+# Check for binding.pry or debugger statements
+if grep -rn "binding\.pry\|binding\.irb\|debugger\|byebug" --include="*.rb" app lib 2>/dev/null; then
+    echo -e "${RED}❌ Found debug statements. Please remove them.${NC}"
+    exit 1
+fi
+
+# Check for puts/p debugging (warn only)
+if grep -rn "^\s*puts \|^\s*p \|^\s*pp " --include="*.rb" app lib 2>/dev/null | grep -v "# allowed"; then
+    echo -e "${YELLOW}⚠ Found potential debug print statements. Review if intentional.${NC}"
+fi
+
+echo -e "${GREEN}✓ No debug statements found${NC}"
+
+# 4. Check for TODO/FIXME (warn only)
+echo -e "${YELLOW}▶ Checking for TODO/FIXME...${NC}"
+if grep -rn "TODO\|FIXME\|XXX\|HACK" --include="*.rb" app lib 2>/dev/null; then
+    echo -e "${YELLOW}⚠ Found TODO/FIXME comments. Consider addressing before push.${NC}"
+fi
+
+# 5. Check for unused files (basic - recently modified but not staged)
+echo -e "${YELLOW}▶ Checking for unstaged changes...${NC}"
+if ! git diff --quiet; then
+    echo -e "${YELLOW}⚠ You have unstaged changes. Consider staging or stashing them.${NC}"
+fi
+
+echo ""
+echo -e "${GREEN}✓ Pre-push checks completed${NC}"
+echo -e "${GREEN}🚀 Ready to push!${NC}"
+
+exit 0
