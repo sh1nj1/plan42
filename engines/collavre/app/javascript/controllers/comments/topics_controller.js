@@ -199,12 +199,19 @@ export default class extends Controller {
     updateSelectionUI(id) {
         this.currentTopicId = id
         // Update UI
+        let activeEl = null
         this.listTarget.querySelectorAll('.topic-tag').forEach(el => {
-            el.classList.toggle('active', String(el.dataset.id) === String(id))
-            if (String(el.dataset.id) === String(id)) {
+            const isActive = String(el.dataset.id) === String(id)
+            el.classList.toggle('active', isActive)
+            if (isActive) {
                 el.classList.remove('has-new-messages')
+                activeEl = el
             }
         })
+        // Scroll active topic into view
+        if (activeEl) {
+            activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+        }
     }
 
     handleNewMessage(event) {
