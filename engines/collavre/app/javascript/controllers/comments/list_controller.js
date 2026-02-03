@@ -488,6 +488,38 @@ export default class extends Controller {
     }
     this.updateDraggableState()
     this.notifySelectionChange()
+    this.updateSelectionHint()
+  }
+
+  updateSelectionHint() {
+    // Remove existing hint
+    const existingHint = this.listTarget.querySelector('.selection-hint-popup')
+    if (existingHint) {
+      existingHint.remove()
+    }
+
+    if (this.selection.size === 0) return
+
+    // Find the first selected checkbox
+    const firstSelected = this.listTarget.querySelector('.comment-item.selected-for-move')
+    if (!firstSelected) return
+
+    const checkbox = firstSelected.querySelector('.comment-select-checkbox')
+    if (!checkbox) return
+
+    // Create hint popup
+    const hint = document.createElement('div')
+    hint.className = 'selection-hint-popup'
+    hint.innerHTML = `
+      <div class="hint-content">
+        <span>🎯 드래그 → 토픽 이동</span>
+        <span>📤 이동 버튼 → 다른 채팅창</span>
+      </div>
+    `
+
+    // Position relative to checkbox
+    checkbox.parentElement.style.position = 'relative'
+    checkbox.parentElement.appendChild(hint)
   }
 
   updateDraggableState() {
@@ -576,6 +608,9 @@ export default class extends Controller {
       if (item) item.classList.remove('selected-for-move')
     })
     this.notifySelectionChange()
+    // Remove hint popup
+    const hint = this.listTarget.querySelector('.selection-hint-popup')
+    if (hint) hint.remove()
   }
 
   copyCommentLink(button) {

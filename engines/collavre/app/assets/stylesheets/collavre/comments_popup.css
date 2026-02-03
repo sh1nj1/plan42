@@ -854,3 +854,51 @@ body.chat-fullscreen main {
     width: 80px;
     outline: none;
 }
+
+/* Selection hint popup */
+.selection-hint-popup {
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-left: 8px;
+    background: var(--color-bg-secondary, #f8f9fa);
+    border: 1px solid var(--color-border, #dee2e6);
+    border-radius: 8px;
+    padding: 8px 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    white-space: nowrap;
+    z-index: 100;
+    animation: hint-fade-in 0.2s ease-out;
+}
+
+.selection-hint-popup .hint-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.8em;
+    color: var(--color-text-secondary, #6c757d);
+}
+
+.selection-hint-popup .hint-content span {
+    display: block;
+}
+
+@keyframes hint-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(-50%) translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(-50%) translateX(0);
+    }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .selection-hint-popup {
+        background: var(--color-bg-secondary, #2d2d2d);
+        border-color: var(--color-border, #444);
+    }
+}
