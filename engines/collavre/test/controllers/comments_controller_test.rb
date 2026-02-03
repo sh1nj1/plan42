@@ -254,6 +254,40 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_nil comment.approver_id
   end
 
+  test "user can uncheck private checkbox when updating comment" do
+    comment = @creative.comments.create!(content: "Secret", user: @user, private: true)
+    assert comment.private?, "Comment should start as private"
+
+    patch creative_comment_path(@creative, comment), params: {
+      comment: {
+        content: "No longer secret",
+        private: "0"
+      }
+    }
+
+    assert_response :success
+    comment.reload
+    assert_equal "No longer secret", comment.content
+    assert_not comment.private?, "Comment should no longer be private after unchecking"
+  end
+
+  test "user can check private checkbox when updating comment" do
+    comment = @creative.comments.create!(content: "Public", user: @user, private: false)
+    assert_not comment.private?, "Comment should start as public"
+
+    patch creative_comment_path(@creative, comment), params: {
+      comment: {
+        content: "Now secret",
+        private: "1"
+      }
+    }
+
+    assert_response :success
+    comment.reload
+    assert_equal "Now secret", comment.content
+    assert comment.private?, "Comment should be private after checking"
+  end
+
   test "user can move comments to another creative" do
     target = creatives(:childless_creative)
     comment = @creative.comments.create!(content: "Move me", user: @user)
