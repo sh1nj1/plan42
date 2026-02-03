@@ -87,7 +87,7 @@ export default class extends Controller {
 
     renderTopics(topics, canManage = false) {
         const dragActions = canManage 
-            ? 'draggable->comments--topics#handleTopicDragStart dragend->comments--topics#handleTopicDragEnd'
+            ? 'dragstart->comments--topics#handleTopicDragStart dragend->comments--topics#handleTopicDragEnd'
             : ''
         const dropActions = 'dragover->comments--topics#handleDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleDrop'
         const topicDropActions = canManage
