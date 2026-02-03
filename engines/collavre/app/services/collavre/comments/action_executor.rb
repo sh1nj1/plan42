@@ -73,7 +73,8 @@ module Collavre
         SUPPORTED_ACTIONS = {
           "create_creative" => :create_creative,
           "update_creative" => :update_creative,
-          "approve_tool" => :approve_tool
+          "approve_tool" => :approve_tool,
+          "execute_tool" => :execute_tool
         }.freeze
 
         CREATIVE_ATTRIBUTES = %w[description progress].freeze
@@ -157,6 +158,51 @@ module Collavre
           raise InvalidActionError, "Tool '#{tool_name}' not found" unless tool
 
           tool.approve!
+        end
+
+        def execute_tool(payload)
+          tool_name = payload["tool_name"]
+          arguments = payload["arguments"] || {}
+          resume_info = payload["resume"] || {}
+          task_id = resume_info["task_id"]
+          tool_call_id = resume_info["tool_call_id"]
+
+          raise InvalidActionError, "Tool name is required" if tool_name.blank?
+
+          # Execute the tool via MetaToolService
+          result = begin
+            ::Tools::MetaToolService.new.call(
+              action: "call",
+              tool_name: tool_name,
+              arguments: arguments
+            )
+          rescue StandardError => e
+            Rails.logger.error("Tool execution failed: #{e.message}")
+            { error: e.message }
+          end
+
+          # If there's a task to resume, update it and re-queue the job
+          if task_id.present?
+            task = Task.find_by(id: task_id)
+            if task
+              # Mark the tool call as approved with its result
+              task.update!(
+                pending_tool_call: {
+                  tool_name: tool_name,
+                  tool_call_id: tool_call_id,
+                  arguments: arguments,
+                  approved: true,
+                  result: result,
+                  approved_at: Time.current.iso8601
+                }
+              )
+
+              # Resume the AI agent job
+              AiAgentJob.perform_later(task)
+            end
+          end
+
+          result
         end
 
         def process_action(payload)

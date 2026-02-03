@@ -48,14 +48,18 @@ module Collavre
         end
 
         # we may pass event payload also to the AI client for more context if needed - TODO
+        @creative = @context.dig("creative", "id") ? Creative.find_by(id: @context["creative"]["id"]) : nil
+        @reply_comment = reply_comment
+
         client = AiClient.new(
           vendor: @agent.llm_vendor,
           model: @agent.llm_model,
           system_prompt: rendered_system_prompt,
           llm_api_key: @agent.llm_api_key,
           context: {
-            creative: @context.dig("creative", "id") ? Creative.find_by(id: @context["creative"]["id"]) : nil,
+            creative: @creative,
             user: @agent,
+            task: @task,
             comment: reply_comment || (@context.dig("comment", "id") ? Comment.find_by(id: @context["comment"]["id"]) : nil)
           }
         )
@@ -98,6 +102,9 @@ module Collavre
           reply_to_comment(target_comment_id, response_content)
         end
       end
+    rescue ApprovalPendingError => e
+      handle_approval_pending(e)
+      raise # Re-raise to signal the job to handle status
     end
 
     private
@@ -190,6 +197,80 @@ module Collavre
       )
 
       log_action("reply_created", { comment_id: reply.id, content: content })
+    end
+
+    def handle_approval_pending(error)
+      # Clean up placeholder comment if exists
+      @reply_comment&.destroy! if @reply_comment&.content == "..."
+
+      # Store pending tool call info in task
+      @task.update!(
+        status: "pending_approval",
+        pending_tool_call: {
+          tool_name: error.tool_name,
+          tool_call_id: error.tool_call_id,
+          arguments: error.tool_arguments,
+          requested_at: Time.current.iso8601
+        }
+      )
+
+      # Log the pending approval action
+      log_action("pending_approval", error.to_h)
+
+      # Create approval request comment
+      create_approval_comment(error)
+    end
+
+    def create_approval_comment(error)
+      return unless @creative
+
+      # Determine approver - creative owner or the user who triggered the conversation
+      approver = @creative.user || User.find_by(id: @context.dig("comment", "user_id"))
+      return unless approver
+
+      # Build approval action payload
+      action_payload = {
+        action: "execute_tool",
+        tool_name: error.tool_name,
+        arguments: error.tool_arguments,
+        resume: {
+          task_id: @task.id,
+          tool_call_id: error.tool_call_id
+        }
+      }
+
+      # Format arguments for display
+      args_display = if error.tool_arguments.present?
+                       JSON.pretty_generate(error.tool_arguments)
+      else
+                       "(no arguments)"
+      end
+
+      content = <<~CONTENT.strip
+        🔧 **Tool Approval Required**
+
+        **#{error.tool_name}** wants to execute with the following arguments:
+
+        ```json
+        #{args_display}
+        ```
+
+        Please approve or reject this action.
+      CONTENT
+
+      # Get topic_id from the original comment if available
+      original_comment = Comment.find_by(id: @context.dig("comment", "id"))
+      topic_id = original_comment&.topic_id
+
+      Comment.create!(
+        creative: @creative,
+        content: content,
+        user: @agent, # Posted by the agent requesting approval
+        approver: approver,
+        action: JSON.pretty_generate(action_payload),
+        topic_id: topic_id,
+        private: false
+      )
     end
   end
 end
