@@ -520,20 +520,25 @@ export default class extends Controller {
     // Append to body for proper positioning
     document.body.appendChild(hint)
 
-    // Position like CommonPopup - below and left-aligned, within viewport
+    // Position like CommonPopup - to the right of checkbox, within viewport
     requestAnimationFrame(() => {
       const checkboxRect = checkbox.getBoundingClientRect()
       const hintRect = hint.getBoundingClientRect()
       const boundsPadding = 8
 
-      // Start below the checkbox, aligned to left
-      let left = checkboxRect.left
-      let top = checkboxRect.bottom + 4
+      // Start to the right of the checkbox, vertically centered
+      let left = checkboxRect.right + 8
+      let top = checkboxRect.top + (checkboxRect.height / 2) - (hintRect.height / 2)
 
       // Keep within viewport bounds
       const maxLeft = window.innerWidth - hintRect.width - boundsPadding
       const maxTop = window.innerHeight - hintRect.height - boundsPadding
 
+      // If overflows right, position to the left of checkbox instead
+      if (left > maxLeft) {
+        left = checkboxRect.left - hintRect.width - 8
+      }
+      
       left = Math.max(boundsPadding, Math.min(left, maxLeft))
       top = Math.max(boundsPadding, Math.min(top, maxTop))
 
