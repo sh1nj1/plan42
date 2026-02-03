@@ -63,6 +63,30 @@ module Collavre
       head :no_content
     end
 
+    def reorder
+      unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
+        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
+      end
+
+      topic_ids = params[:topic_ids]
+      unless topic_ids.is_a?(Array) && topic_ids.present?
+        render json: { error: "Invalid topic_ids" }, status: :unprocessable_entity and return
+      end
+
+      Topic.transaction do
+        topic_ids.each_with_index do |id, index|
+          @creative.topics.where(id: id).update_all(position: index)
+        end
+      end
+
+      TopicsChannel.broadcast_to(
+        @creative,
+        { action: "reordered", topic_ids: topic_ids }
+      )
+
+      render json: { success: true }
+    end
+
     private
 
     def set_creative

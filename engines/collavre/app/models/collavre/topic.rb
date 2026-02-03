@@ -8,5 +8,15 @@ module Collavre
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
 
     validates :name, presence: true, uniqueness: { scope: :creative_id }
+
+    before_create :set_default_position
+
+    default_scope { order(:position) }
+
+    private
+
+    def set_default_position
+      self.position ||= (creative.topics.unscoped.where(creative_id: creative_id).maximum(:position) || -1) + 1
+    end
   end
 end

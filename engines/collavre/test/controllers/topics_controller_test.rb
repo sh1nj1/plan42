@@ -42,4 +42,34 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     @topic.reload
     assert_equal "Existing Topic", @topic.name
   end
+
+  test "should reorder topics" do
+    topic2 = @creative.topics.create!(name: "Topic 2", user: @user)
+    topic3 = @creative.topics.create!(name: "Topic 3", user: @user)
+
+    # Original order: @topic, topic2, topic3
+    assert_equal [ @topic.id, topic2.id, topic3.id ], @creative.topics.reload.pluck(:id)
+
+    # Reorder to: topic3, @topic, topic2
+    post reorder_creative_topics_url(@creative), params: { topic_ids: [ topic3.id, @topic.id, topic2.id ] }, as: :json
+
+    assert_response :success
+    assert_equal [ topic3.id, @topic.id, topic2.id ], @creative.topics.reload.pluck(:id)
+  end
+
+  test "should not reorder topics without permission" do
+    topic2 = @creative.topics.create!(name: "Topic 2", user: @user)
+    other_user = users(:two)
+    sign_in_as other_user, password: "password"
+
+    post reorder_creative_topics_url(@creative), params: { topic_ids: [ topic2.id, @topic.id ] }, as: :json
+
+    assert_response :forbidden
+  end
+
+  test "should return error for invalid topic_ids" do
+    post reorder_creative_topics_url(@creative), params: { topic_ids: nil }, as: :json
+
+    assert_response :unprocessable_entity
+  end
 end
