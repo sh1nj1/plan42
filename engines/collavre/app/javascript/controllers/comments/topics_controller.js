@@ -86,12 +86,16 @@ export default class extends Controller {
     }
 
     renderTopics(topics, canManage = false) {
-        let html = `<span class="topic-tag ${this.currentTopicId ? '' : 'active'}" data-action="click->comments--topics#select" data-id="">#Main</span>`
+        let html = `<span class="topic-tag topic-drop-target ${this.currentTopicId ? '' : 'active'}" 
+                          data-action="click->comments--topics#select dragover->comments--topics#handleDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleDrop" 
+                          data-id="">#Main</span>`
 
         topics.forEach(topic => {
             // Ensure comparison handles string/number difference
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
-            html += `<span class="topic-tag ${isActive}" data-action="click->comments--topics#select" data-id="${topic.id}">
+            html += `<span class="topic-tag topic-drop-target ${isActive}" 
+                          data-action="click->comments--topics#select dragover->comments--topics#handleDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleDrop" 
+                          data-id="${topic.id}">
                         #${topic.name}`
 
             if (canManage) {
@@ -109,6 +113,40 @@ export default class extends Controller {
         }
 
         this.listTarget.innerHTML = html
+    }
+
+    handleDragOver(event) {
+        // Only accept comment drops
+        if (!event.dataTransfer.types.includes('application/x-comment-ids')) return
+
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        event.currentTarget.classList.add('drag-over')
+    }
+
+    handleDragLeave(event) {
+        event.currentTarget.classList.remove('drag-over')
+    }
+
+    async handleDrop(event) {
+        event.preventDefault()
+        event.currentTarget.classList.remove('drag-over')
+
+        const commentIdsJson = event.dataTransfer.getData('application/x-comment-ids')
+        if (!commentIdsJson) return
+
+        const commentIds = JSON.parse(commentIdsJson)
+        if (!commentIds || commentIds.length === 0) return
+
+        const targetTopicId = event.currentTarget.dataset.id // Empty string for Main
+
+        // Dispatch event for list_controller to handle the move
+        this.dispatch('move-to-topic', { 
+            detail: { 
+                commentIds, 
+                targetTopicId 
+            } 
+        })
     }
 
     async deleteTopic(event) {

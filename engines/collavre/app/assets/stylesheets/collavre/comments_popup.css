@@ -718,6 +718,44 @@ body.chat-fullscreen main {
     font-weight: bold;
 }
 
+/* Drag and drop styles for moving comments to topics */
+.topic-tag.drag-over {
+    background-color: var(--color-accent, #007bff);
+    color: white;
+    border-color: var(--color-accent, #007bff);
+    transform: scale(1.05);
+    transition: all 0.15s ease;
+}
+
+.topic-drop-target {
+    transition: all 0.15s ease;
+}
+
+.comment-item[draggable="true"] {
+    cursor: grab;
+}
+
+.comment-item[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+#comments-list.dragging-comments .comment-item:not(.selected-for-move) {
+    opacity: 0.5;
+}
+
+.comment-drag-image {
+    position: fixed;
+    top: -1000px;
+    left: -1000px;
+    padding: 8px 16px;
+    background-color: var(--color-accent, #007bff);
+    color: white;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
 /* Hide the topic link if the message is displayed within that topic's context */
 /* Use Javascript to set data-current-topic-id on the list container */
 .comment-topic-link {
