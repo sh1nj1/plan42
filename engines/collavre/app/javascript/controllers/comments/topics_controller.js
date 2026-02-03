@@ -86,15 +86,24 @@ export default class extends Controller {
     }
 
     renderTopics(topics, canManage = false) {
+        const dragActions = canManage 
+            ? 'dragstart->comments--topics#handleTopicDragStart dragend->comments--topics#handleTopicDragEnd'
+            : ''
+        const dropActions = 'dragover->comments--topics#handleDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleDrop'
+        const topicDropActions = canManage
+            ? 'dragover->comments--topics#handleTopicReorderDragOver dragleave->comments--topics#handleTopicReorderDragLeave drop->comments--topics#handleTopicReorderDrop'
+            : ''
+
         let html = `<span class="topic-tag topic-drop-target ${this.currentTopicId ? '' : 'active'}" 
-                          data-action="click->comments--topics#select dragover->comments--topics#handleDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleDrop" 
+                          data-action="click->comments--topics#select ${dropActions}" 
                           data-id="">#Main</span>`
 
         topics.forEach(topic => {
             // Ensure comparison handles string/number difference
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
-            html += `<span class="topic-tag topic-drop-target ${isActive}" 
-                          data-action="click->comments--topics#select dragover->comments--topics#handleDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleDrop" 
+            const draggable = canManage ? 'draggable="true"' : ''
+            html += `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
+                          data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}" 
                           data-id="${topic.id}">
                         #${topic.name}`
 
@@ -147,6 +156,129 @@ export default class extends Controller {
                 targetTopicId 
             } 
         })
+    }
+
+    // Topic reorder drag & drop handlers
+    handleTopicDragStart(event) {
+        const topicEl = event.currentTarget
+        const topicId = topicEl.dataset.id
+        if (!topicId) {
+            event.preventDefault()
+            return
+        }
+
+        this.draggingTopicId = topicId
+        event.dataTransfer.setData('application/x-topic-id', topicId)
+        event.dataTransfer.effectAllowed = 'move'
+        
+        requestAnimationFrame(() => {
+            topicEl.classList.add('topic-dragging')
+        })
+    }
+
+    handleTopicDragEnd(event) {
+        this.draggingTopicId = null
+        event.currentTarget.classList.remove('topic-dragging')
+        this.listTarget.querySelectorAll('.topic-tag').forEach(el => {
+            el.classList.remove('topic-drag-over-left', 'topic-drag-over-right')
+        })
+    }
+
+    handleTopicReorderDragOver(event) {
+        // Only accept topic reorder drops
+        if (!event.dataTransfer.types.includes('application/x-topic-id')) return
+        if (!this.draggingTopicId) return
+
+        const targetEl = event.currentTarget
+        const targetId = targetEl.dataset.id
+
+        // Don't allow drop on self or Main
+        if (!targetId || targetId === this.draggingTopicId) return
+
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+
+        // Determine drop position (left or right) based on mouse position
+        const rect = targetEl.getBoundingClientRect()
+        const midpoint = rect.left + rect.width / 2
+        const isLeft = event.clientX < midpoint
+
+        targetEl.classList.toggle('topic-drag-over-left', isLeft)
+        targetEl.classList.toggle('topic-drag-over-right', !isLeft)
+    }
+
+    handleTopicReorderDragLeave(event) {
+        event.currentTarget.classList.remove('topic-drag-over-left', 'topic-drag-over-right')
+    }
+
+    async handleTopicReorderDrop(event) {
+        event.preventDefault()
+        
+        const targetEl = event.currentTarget
+        targetEl.classList.remove('topic-drag-over-left', 'topic-drag-over-right')
+
+        const draggedTopicId = event.dataTransfer.getData('application/x-topic-id')
+        const targetTopicId = targetEl.dataset.id
+
+        if (!draggedTopicId || !targetTopicId || draggedTopicId === targetTopicId) return
+
+        // Determine drop position
+        const rect = targetEl.getBoundingClientRect()
+        const midpoint = rect.left + rect.width / 2
+        const insertBefore = event.clientX < midpoint
+
+        // Reorder topics array
+        const topics = [...this.topics]
+        const draggedIndex = topics.findIndex(t => String(t.id) === String(draggedTopicId))
+        const targetIndex = topics.findIndex(t => String(t.id) === String(targetTopicId))
+
+        if (draggedIndex === -1 || targetIndex === -1) return
+
+        // Remove dragged topic
+        const [draggedTopic] = topics.splice(draggedIndex, 1)
+
+        // Calculate new position
+        let newIndex = targetIndex
+        if (draggedIndex < targetIndex) {
+            newIndex = insertBefore ? targetIndex - 1 : targetIndex
+        } else {
+            newIndex = insertBefore ? targetIndex : targetIndex + 1
+        }
+
+        // Insert at new position
+        topics.splice(newIndex, 0, draggedTopic)
+
+        // Update local state and UI immediately
+        this.topics = topics
+        this.renderTopics(topics, this.canManageTopics)
+        this.restoreSelection()
+
+        // Send to server
+        await this.saveTopicOrder(topics.map(t => t.id))
+    }
+
+    async saveTopicOrder(topicIds) {
+        if (!this.creativeId) return
+
+        try {
+            const response = await fetch(`/creatives/${this.creativeId}/topics/reorder`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({ topic_ids: topicIds })
+            })
+
+            if (!response.ok) {
+                console.error('Failed to save topic order')
+                // Reload to restore server state
+                this.loadTopics()
+            }
+        } catch (e) {
+            console.error('Error saving topic order', e)
+            this.loadTopics()
+        }
     }
 
     async deleteTopic(event) {
@@ -450,6 +582,11 @@ export default class extends Controller {
             return
         }
 
+        if (action === "reordered" && data.topic_ids) {
+            this.reorderTopicsFromServer(data.topic_ids)
+            return
+        }
+
         if (!data.topic) return
 
         const topics = this.topics || []
@@ -457,6 +594,27 @@ export default class extends Controller {
         if (exists) return
 
         this.topics = [...topics, data.topic]
+        this.renderTopics(this.topics, this.canManageTopics)
+        this.restoreSelection()
+    }
+
+    reorderTopicsFromServer(topicIds) {
+        if (!topicIds || !Array.isArray(topicIds)) return
+
+        const reorderedTopics = []
+        topicIds.forEach(id => {
+            const topic = this.topics.find(t => String(t.id) === String(id))
+            if (topic) reorderedTopics.push(topic)
+        })
+
+        // Add any topics not in the list (shouldn't happen, but safety)
+        this.topics.forEach(topic => {
+            if (!reorderedTopics.find(t => String(t.id) === String(topic.id))) {
+                reorderedTopics.push(topic)
+            }
+        })
+
+        this.topics = reorderedTopics
         this.renderTopics(this.topics, this.canManageTopics)
         this.restoreSelection()
     }

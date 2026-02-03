@@ -732,6 +732,29 @@ body.chat-fullscreen main {
     transition: all 0.15s ease;
 }
 
+/* Topic reorder drag styles */
+.topic-tag[draggable="true"] {
+    cursor: grab;
+}
+
+.topic-tag[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.topic-tag.topic-dragging {
+    opacity: 0.5;
+}
+
+.topic-tag.topic-drag-over-left {
+    border-left: 3px solid var(--color-accent, #007bff);
+    margin-left: -1px;
+}
+
+.topic-tag.topic-drag-over-right {
+    border-right: 3px solid var(--color-accent, #007bff);
+    margin-right: -1px;
+}
+
 .comment-item[draggable="true"] {
     cursor: grab;
 }
