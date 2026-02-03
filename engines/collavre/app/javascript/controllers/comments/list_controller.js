@@ -493,7 +493,7 @@ export default class extends Controller {
 
   updateSelectionHint() {
     // Remove existing hint
-    const existingHint = this.listTarget.querySelector('.selection-hint-popup')
+    const existingHint = document.querySelector('.selection-hint-popup')
     if (existingHint) {
       existingHint.remove()
     }
@@ -517,9 +517,29 @@ export default class extends Controller {
       </div>
     `
 
-    // Position relative to checkbox
-    checkbox.parentElement.style.position = 'relative'
-    checkbox.parentElement.appendChild(hint)
+    // Append to body for proper positioning
+    document.body.appendChild(hint)
+
+    // Position like CommonPopup - below and left-aligned, within viewport
+    requestAnimationFrame(() => {
+      const checkboxRect = checkbox.getBoundingClientRect()
+      const hintRect = hint.getBoundingClientRect()
+      const boundsPadding = 8
+
+      // Start below the checkbox, aligned to left
+      let left = checkboxRect.left
+      let top = checkboxRect.bottom + 4
+
+      // Keep within viewport bounds
+      const maxLeft = window.innerWidth - hintRect.width - boundsPadding
+      const maxTop = window.innerHeight - hintRect.height - boundsPadding
+
+      left = Math.max(boundsPadding, Math.min(left, maxLeft))
+      top = Math.max(boundsPadding, Math.min(top, maxTop))
+
+      hint.style.left = `${left}px`
+      hint.style.top = `${top}px`
+    })
   }
 
   updateDraggableState() {
@@ -608,8 +628,8 @@ export default class extends Controller {
       if (item) item.classList.remove('selected-for-move')
     })
     this.notifySelectionChange()
-    // Remove hint popup
-    const hint = this.listTarget.querySelector('.selection-hint-popup')
+    // Remove hint popup from body
+    const hint = document.querySelector('.selection-hint-popup')
     if (hint) hint.remove()
   }
 
