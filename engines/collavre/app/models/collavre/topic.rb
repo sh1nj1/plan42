@@ -16,7 +16,9 @@ module Collavre
     private
 
     def set_default_position
-      self.position ||= (Topic.unscoped.where(creative_id: creative_id).maximum(:position) || -1) + 1
+      return if position_changed? && position != 0
+
+      self.position = (Topic.unscoped.where(creative_id: creative_id).maximum(:position) || -1) + 1
     end
   end
 end

@@ -72,4 +72,27 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_entity
   end
+
+  test "new topic should be created at the end after reordering" do
+    # Create initial topics
+    topic2 = @creative.topics.create!(name: "Topic 2", user: @user)
+    topic3 = @creative.topics.create!(name: "Topic 3", user: @user)
+
+    # Verify initial order: @topic(0), topic2(1), topic3(2)
+    assert_equal [ @topic.id, topic2.id, topic3.id ], @creative.topics.reload.pluck(:id)
+
+    # Reorder to: topic3(0), @topic(1), topic2(2)
+    post reorder_creative_topics_url(@creative), params: { topic_ids: [ topic3.id, @topic.id, topic2.id ] }, as: :json
+    assert_response :success
+
+    # Create a new topic - should be at the end (position 3)
+    post collavre.creative_topics_url(@creative), params: { topic: { name: "New Topic" } }, as: :json
+    assert_response :created
+
+    new_topic = @creative.topics.find_by(name: "New Topic")
+
+    # Verify new topic is at the end
+    assert_equal [ topic3.id, @topic.id, topic2.id, new_topic.id ], @creative.topics.reload.pluck(:id)
+    assert_equal 3, new_topic.position
+  end
 end
