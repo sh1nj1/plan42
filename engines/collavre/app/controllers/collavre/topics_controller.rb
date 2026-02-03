@@ -29,6 +29,24 @@ module Collavre
       end
     end
 
+    def update
+      unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
+        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
+      end
+
+      topic = @creative.topics.find(params[:id])
+
+      if topic.update(topic_params)
+        TopicsChannel.broadcast_to(
+          @creative,
+          { action: "updated", topic: topic.slice(:id, :name) }
+        )
+        render json: topic
+      else
+        render json: { errors: topic.errors.full_messages }, status: :unprocessable_entity
+      end
+    end
+
     def destroy
       unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
         render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return

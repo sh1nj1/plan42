@@ -220,8 +220,17 @@ export default class extends Controller {
     select(event) {
         // Ignore if clicking on delete button (though stopPropagation should handle it)
         if (event.target.closest('.delete-topic-btn')) return
+        // Ignore if clicking on edit input
+        if (event.target.closest('.topic-edit-input')) return
 
         const id = event.currentTarget.dataset.id
+        
+        // If clicking on already active topic (not Main), show edit mode
+        if (id && String(this.currentTopicId) === String(id) && this.canManageTopics) {
+            this.showEditInput(event.currentTarget, id)
+            return
+        }
+        
         this.selectTopic(id)
     }
 
@@ -232,6 +241,89 @@ export default class extends Controller {
         }
         // Dispatch event
         this.dispatch("change", { detail: { topicId: id } })
+    }
+
+    showEditInput(topicEl, topicId) {
+        const topic = this.topics.find(t => String(t.id) === String(topicId))
+        if (!topic) return
+
+        const currentName = topic.name
+        
+        // Store original HTML for restore
+        topicEl.dataset.originalHtml = topicEl.innerHTML
+        
+        // Replace content with input
+        topicEl.innerHTML = `<input type="text" class="topic-edit-input" value="${currentName}"
+                              data-action="keydown->comments--topics#handleEditKey blur->comments--topics#cancelEdit"
+                              data-topic-id="${topicId}">`
+        
+        const input = topicEl.querySelector('input')
+        requestAnimationFrame(() => {
+            input.focus()
+            input.select()
+        })
+    }
+
+    handleEditKey(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault()
+            const name = event.target.value.trim()
+            const topicId = event.target.dataset.topicId
+            if (name) {
+                this.updateTopic(topicId, name)
+            } else {
+                this.cancelEdit(event)
+            }
+        } else if (event.key === 'Escape') {
+            event.preventDefault()
+            this.cancelEdit(event)
+        }
+    }
+
+    cancelEdit(event) {
+        // Prevent blur from firing multiple times
+        if (this.editCancelling) return
+        this.editCancelling = true
+
+        const topicEl = event.target.closest('.topic-tag')
+        if (topicEl && topicEl.dataset.originalHtml) {
+            topicEl.innerHTML = topicEl.dataset.originalHtml
+            delete topicEl.dataset.originalHtml
+        }
+
+        setTimeout(() => { this.editCancelling = false }, 100)
+    }
+
+    async updateTopic(topicId, name) {
+        if (!this.creativeId) return
+
+        try {
+            const response = await fetch(`/creatives/${this.creativeId}/topics/${topicId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({ topic: { name } })
+            })
+
+            if (response.ok) {
+                const updatedTopic = await response.json()
+                // Update local topics array
+                const index = this.topics.findIndex(t => String(t.id) === String(topicId))
+                if (index !== -1) {
+                    this.topics[index] = updatedTopic
+                }
+                this.renderTopics(this.topics, this.canManageTopics)
+                this.restoreSelection()
+            } else {
+                alert("Failed to update topic")
+                this.loadTopics() // Reload to restore state
+            }
+        } catch (e) {
+            console.error("Error updating topic", e)
+            this.loadTopics()
+        }
     }
 
     updateSelectionUI(id) {
@@ -353,6 +445,11 @@ export default class extends Controller {
             return
         }
 
+        if (action === "updated" && data.topic) {
+            this.updateTopicInList(data.topic)
+            return
+        }
+
         if (!data.topic) return
 
         const topics = this.topics || []
@@ -360,6 +457,16 @@ export default class extends Controller {
         if (exists) return
 
         this.topics = [...topics, data.topic]
+        this.renderTopics(this.topics, this.canManageTopics)
+        this.restoreSelection()
+    }
+
+    updateTopicInList(updatedTopic) {
+        const topics = this.topics || []
+        const index = topics.findIndex(t => String(t.id) === String(updatedTopic.id))
+        if (index === -1) return
+
+        this.topics[index] = updatedTopic
         this.renderTopics(this.topics, this.canManageTopics)
         this.restoreSelection()
     }

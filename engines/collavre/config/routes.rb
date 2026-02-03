@@ -49,7 +49,7 @@ Collavre::Engine.routes.draw do
 
   resources :creatives do
     resources :creative_shares, only: [ :create, :destroy ]
-    resources :topics, only: [ :index, :create, :destroy ]
+    resources :topics, only: [ :index, :create, :update, :destroy ]
     resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
       member do
         post :convert

@@ -23,4 +23,23 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :no_content
   end
+
+  test "should update topic name" do
+    patch collavre.creative_topic_url(@creative, @topic), params: { topic: { name: "Updated Name" } }, as: :json
+
+    assert_response :success
+    @topic.reload
+    assert_equal "Updated Name", @topic.name
+  end
+
+  test "should not update topic without permission" do
+    other_user = users(:two)
+    sign_in_as other_user, password: "password"
+
+    patch collavre.creative_topic_url(@creative, @topic), params: { topic: { name: "Hacked Name" } }, as: :json
+
+    assert_response :forbidden
+    @topic.reload
+    assert_equal "Existing Topic", @topic.name
+  end
 end

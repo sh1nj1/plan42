@@ -842,3 +842,15 @@ body.chat-fullscreen main {
     width: 100px;
     outline: none;
 }
+
+.topic-edit-input {
+    display: inline-block;
+    padding: 0.1em 0.4em;
+    border-radius: 8px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-accent, #007bff);
+    color: var(--color-text);
+    font-size: 0.85em;
+    width: 80px;
+    outline: none;
+}
