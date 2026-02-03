@@ -512,8 +512,8 @@ export default class extends Controller {
     hint.className = 'selection-hint-popup'
     hint.innerHTML = `
       <div class="hint-content">
-        <span>🎯 드래그 → 토픽 이동</span>
-        <span>📤 이동 버튼 → 다른 채팅창</span>
+        <span>🎯 Drag → Move to topic</span>
+        <span>📤 Move button → Another chat</span>
       </div>
     `
 
