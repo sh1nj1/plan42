@@ -25,7 +25,7 @@ class Comments::ActionExecutorExecuteToolTest < ActiveSupport::TestCase
 
     # Create a tool that requires approval
     @mcp_tool = Collavre::McpTool.create!(
-      name: "test_tool",
+      name: "test_tool_#{SecureRandom.hex(4)}",
       creative: @creative,
       source_code: "module TestTool; extend ToolMeta; tool_name 'test_tool'; end",
       requires_approval: true,
@@ -51,12 +51,13 @@ class Comments::ActionExecutorExecuteToolTest < ActiveSupport::TestCase
       action: JSON.pretty_generate(action_payload)
     )
 
-    # Mock MetaToolService
-    ::Tools::MetaToolService.any_instance.stubs(:call).returns({ result: "success" })
-
-    # Execute the action
-    assert_enqueued_with(job: Collavre::AiAgentJob) do
-      Comments::ActionExecutor.new(comment: comment, executor: @user).call
+    # Mock MetaToolService using Minitest stub
+    mock_result = { result: "success" }
+    ::Tools::MetaToolService.stub :new, -> { OpenStruct.new(call: mock_result) } do
+      # Execute the action
+      assert_enqueued_with(job: Collavre::AiAgentJob) do
+        Comments::ActionExecutor.new(comment: comment, executor: @user).call
+      end
     end
 
     # Verify task was updated
@@ -110,11 +111,16 @@ class Comments::ActionExecutorExecuteToolTest < ActiveSupport::TestCase
     )
 
     # Mock MetaToolService to raise an error
-    ::Tools::MetaToolService.any_instance.stubs(:call).raises(StandardError.new("Tool failed"))
+    error_service = Object.new
+    def error_service.call(*)
+      raise StandardError, "Tool failed"
+    end
 
-    # Execute should not raise, but store error in result
-    assert_enqueued_with(job: Collavre::AiAgentJob) do
-      Comments::ActionExecutor.new(comment: comment, executor: @user).call
+    ::Tools::MetaToolService.stub :new, -> { error_service } do
+      # Execute should not raise, but store error in result
+      assert_enqueued_with(job: Collavre::AiAgentJob) do
+        Comments::ActionExecutor.new(comment: comment, executor: @user).call
+      end
     end
 
     @task.reload
