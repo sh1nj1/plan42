@@ -64,6 +64,8 @@ ko:
       move_button: 이동
       move_no_selection: 이동할 메시지를 선택해주세요.
       move_error: 메시지를 이동할 수 없습니다.
+      hint_drag_topic: "🎯 드래그 → 토픽 이동"
+      hint_move_button: "📤 이동 버튼 → 다른 채팅창"
       fullscreen: 전체 화면
       exit_fullscreen: 전체 화면 종료
       move_invalid_target: 이동할 크리에이티브를 선택해주세요.

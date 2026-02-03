@@ -67,6 +67,8 @@ en:
       move_button: Move
       move_no_selection: Select at least one message to move.
       move_error: Unable to move messages.
+      hint_drag_topic: "🎯 Drag → Move to topic"
+      hint_move_button: "📤 Move button → Another chat"
       fullscreen: Full screen
       exit_fullscreen: Exit full screen
       move_invalid_target: Select a valid creative to move messages to.
