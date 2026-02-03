@@ -510,10 +510,12 @@ export default class extends Controller {
     // Create hint popup
     const hint = document.createElement('div')
     hint.className = 'selection-hint-popup'
+    const dragTopicText = this.element.dataset.hintDragTopicText || '🎯 Drag → Move to topic'
+    const moveButtonText = this.element.dataset.hintMoveButtonText || '📤 Move button → Another chat'
     hint.innerHTML = `
       <div class="hint-content">
-        <span>🎯 Drag → Move to topic</span>
-        <span>📤 Move button → Another chat</span>
+        <span>${dragTopicText}</span>
+        <span>${moveButtonText}</span>
       </div>
     `
 
