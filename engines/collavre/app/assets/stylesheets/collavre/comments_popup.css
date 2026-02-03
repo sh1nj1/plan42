@@ -435,8 +435,29 @@ body.chat-fullscreen main {
 
 .comment-status-label {
     margin-left: 0.4em;
-    font-size: 0.85em;
+    font-size: 0.75em;
+    padding: 0.15em 0.5em;
+    border-radius: 0.8em;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+    vertical-align: middle;
+}
+
+.comment-status-label.private-label {
+    background-color: var(--color-btn-bg);
     color: var(--color-muted);
+}
+
+.comment-status-label.approved-label {
+    background-color: color-mix(in srgb, var(--color-complete) 20%, transparent);
+    color: var(--color-complete);
+}
+
+.comment-status-label.pending-label {
+    background-color: color-mix(in srgb, orange 20%, transparent);
+    color: orange;
 }
 
 .comment-action-container {
