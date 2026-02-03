@@ -446,8 +446,8 @@ body.chat-fullscreen main {
 }
 
 .comment-status-label.private-label {
-    background-color: var(--color-btn-bg);
-    color: var(--color-muted);
+    background-color: color-mix(in srgb, var(--color-badge-bg) 20%, transparent);
+    color: var(--color-badge-bg);
 }
 
 .comment-status-label.approved-label {
