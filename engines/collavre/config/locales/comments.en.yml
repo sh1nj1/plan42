@@ -70,6 +70,7 @@ en:
       fullscreen: Full screen
       exit_fullscreen: Exit full screen
       move_invalid_target: Select a valid creative to move messages to.
+      move_invalid_topic: Invalid topic selected.
       move_not_allowed: You do not have permission to move these messages.
       select_label: Select message
       add_reaction: Add reaction
