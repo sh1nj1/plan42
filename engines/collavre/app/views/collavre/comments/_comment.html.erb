@@ -34,10 +34,10 @@
       <%= render "collavre/comments/read_receipts", read_by_users: users_read, present_user_ids: present_user_ids unless comment.private? %>
     </span>
     <% if comment.private? %>
-      <span class="private-label">[<%= t('collavre.comments.private') %>]</span>
+      <span class="comment-status-label private-label">🔒 <%= t('collavre.comments.private') %></span>
     <% end %>
     <% if comment.action_executed_at.present? %>
-      <span class="comment-status-label approved-label">[<%= t('collavre.comments.approved_label') %>]</span>
+      <span class="comment-status-label approved-label">✅ <%= t('collavre.comments.approved_label') %></span>
     <% end %>
     <% can_convert_comment = comment.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
   </div>
