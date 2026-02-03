@@ -11,15 +11,35 @@ module Collavre
     end
 
     def tool_name
-      tool_call&.name || tool_call&.dig("name")
+      return nil unless tool_call
+
+      if tool_call.respond_to?(:name)
+        tool_call.name
+      elsif tool_call.is_a?(Hash)
+        tool_call["name"] || tool_call[:name]
+      end
     end
 
     def tool_arguments
-      tool_call&.arguments || tool_call&.dig("arguments") || {}
+      return {} unless tool_call
+
+      if tool_call.respond_to?(:arguments)
+        tool_call.arguments
+      elsif tool_call.is_a?(Hash)
+        tool_call["arguments"] || tool_call[:arguments] || {}
+      else
+        {}
+      end
     end
 
     def tool_call_id
-      tool_call&.id || tool_call&.dig("id")
+      return nil unless tool_call
+
+      if tool_call.respond_to?(:id)
+        tool_call.id
+      elsif tool_call.is_a?(Hash)
+        tool_call["id"] || tool_call[:id]
+      end
     end
 
     def to_h

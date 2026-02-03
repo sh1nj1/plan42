@@ -242,9 +242,9 @@ module Collavre
       # Format arguments for display
       args_display = if error.tool_arguments.present?
                        JSON.pretty_generate(error.tool_arguments)
-                     else
+      else
                        "(no arguments)"
-                     end
+      end
 
       content = <<~CONTENT.strip
         🔧 **Tool Approval Required**
