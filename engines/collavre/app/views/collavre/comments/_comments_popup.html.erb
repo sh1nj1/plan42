@@ -64,7 +64,7 @@
     <textarea class="shared-input-surface" name="comment[content]" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" enterkeyhint="send"></textarea>
     <div class="comment-bottom">
     <input type="file" id="comment-images" name="comment[images][]" accept="image/*" multiple data-comments--form-target="imageInput" style="display:none;" />
-    <label style="height: 22px"><input type="checkbox" id="comment-private" data-comments--form-target="privateCheckbox" data-comments--presence-target="privateCheckbox" name="comment[private]" /> <%= t('collavre.comments.private') %></label>
+    <label style="height: 22px"><input type="hidden" name="comment[private]" value="0" /><input type="checkbox" id="comment-private" data-comments--form-target="privateCheckbox" data-comments--presence-target="privateCheckbox" name="comment[private]" value="1" /> <%= t('collavre.comments.private') %></label>
     <div class="comment-actions">
     <button class="creative-action-btn" id="attach-image-btn" data-comments--form-target="imageButton" type="button"><%= t('collavre.comments.image_button') %></button>
     <button class="creative-action-btn" id="voice-comments-btn" data-comments--form-target="voiceButton" type="button" data-voice-state="idle"><%= t('collavre.comments.voice_button') %></button>
