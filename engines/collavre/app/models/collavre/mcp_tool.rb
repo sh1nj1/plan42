@@ -15,6 +15,10 @@ module Collavre
       approved_at.present?
     end
 
+    def requires_approval?
+      requires_approval == true
+    end
+
     def approve!
       # Register the tool immediately upon approval
       ::McpService.register_tool_from_source(source_code)

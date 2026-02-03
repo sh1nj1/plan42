@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_02_150002) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_03_002643) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -319,6 +319,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_150002) do
     t.json "definition", default: {}
     t.text "description"
     t.string "name", null: false
+    t.boolean "requires_approval", default: false, null: false
     t.text "source_code"
     t.datetime "updated_at", null: false
     t.index ["creative_id"], name: "index_mcp_tools_on_creative_id"
@@ -681,6 +682,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_02_150002) do
     t.integer "agent_id", null: false
     t.datetime "created_at", null: false
     t.string "name"
+    t.json "pending_tool_call"
     t.string "status", default: "pending"
     t.string "trigger_event_name"
     t.json "trigger_event_payload"

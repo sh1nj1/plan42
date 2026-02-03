@@ -110,8 +110,7 @@ module Collavre
              .chat(model: model).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
         chat.on_tool_call do |tool_call|
-          # You can do on_tool_call, on_tool_result hook by ruby llm provides
-          # Rails.logger.info("Tool call: #{JSON.pretty_generate(tool_call.to_h)}")
+          check_tool_approval!(tool_call)
         end
         if tools.any?
           # Resolve tool names to classes using the gem's helper
@@ -119,6 +118,32 @@ module Collavre
           chat.with_tools(*tool_classes, replace: true)
         end
       end
+    end
+
+    def check_tool_approval!(tool_call)
+      tool_name = tool_call.name
+      task = context&.dig(:task)
+
+      # Check if this tool requires approval
+      mcp_tool = McpTool.find_by(name: tool_name)
+      return unless mcp_tool&.requires_approval?
+
+      # Check if we already have approval for this specific call (resume scenario)
+      if task&.pending_tool_call.present?
+        pending = task.pending_tool_call
+        if pending["tool_name"] == tool_name && pending["approved"]
+          # Already approved, clear the pending state and proceed
+          task.update!(pending_tool_call: nil)
+          return
+        end
+      end
+
+      # Requires approval - raise error to halt execution
+      raise ApprovalPendingError.new(
+        "Tool '#{tool_name}' requires approval before execution",
+        tool_call: tool_call,
+        task: task
+      )
     end
 
     def add_messages(conversation, contents)
