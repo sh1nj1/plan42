@@ -46,6 +46,14 @@ export default class extends Controller {
 
     this.handleTopicChange = this.handleTopicChange.bind(this)
     this.element.addEventListener('comments--topics:change', this.handleTopicChange)
+
+    // Drag and drop handlers for moving comments to topics
+    this.handleDragStart = this.handleDragStart.bind(this)
+    this.handleDragEnd = this.handleDragEnd.bind(this)
+    this.handleMoveToTopic = this.handleMoveToTopic.bind(this)
+    this.listTarget.addEventListener('dragstart', this.handleDragStart)
+    this.listTarget.addEventListener('dragend', this.handleDragEnd)
+    this.element.addEventListener('comments--topics:move-to-topic', this.handleMoveToTopic)
   }
 
   handleTopicChange(event) {
@@ -58,12 +66,15 @@ export default class extends Controller {
     this.listTarget.removeEventListener('change', this.handleChange)
     this.listTarget.removeEventListener('click', this.handleClick)
     this.listTarget.removeEventListener('submit', this.handleSubmit)
+    this.listTarget.removeEventListener('dragstart', this.handleDragStart)
+    this.listTarget.removeEventListener('dragend', this.handleDragEnd)
     document.removeEventListener('turbo:before-stream-render', this.handleStreamRender)
     if (this.listObserver) {
       this.listObserver.disconnect()
       this.listObserver = null
     }
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
+    this.element.removeEventListener('comments--topics:move-to-topic', this.handleMoveToTopic)
   }
 
   isColumnReverse() {
@@ -461,12 +472,95 @@ export default class extends Controller {
     const item = checkbox.closest('.comment-item')
     if (checkbox.checked) {
       this.selection.add(commentId)
-      if (item) item.classList.add('selected-for-move')
+      if (item) {
+        item.classList.add('selected-for-move')
+        item.setAttribute('draggable', 'true')
+      }
     } else {
       this.selection.delete(commentId)
-      if (item) item.classList.remove('selected-for-move')
+      if (item) {
+        item.classList.remove('selected-for-move')
+        // Only remove draggable if no other items selected
+        if (this.selection.size === 0) {
+          item.removeAttribute('draggable')
+        }
+      }
     }
+    this.updateDraggableState()
     this.notifySelectionChange()
+  }
+
+  updateDraggableState() {
+    const hasSelection = this.selection.size > 0
+    this.listTarget.querySelectorAll('.comment-item').forEach((item) => {
+      const checkbox = item.querySelector('.comment-select-checkbox')
+      if (checkbox?.checked) {
+        item.setAttribute('draggable', 'true')
+      } else {
+        item.removeAttribute('draggable')
+      }
+    })
+  }
+
+  handleDragStart(event) {
+    const item = event.target.closest('.comment-item')
+    if (!item || this.selection.size === 0) {
+      event.preventDefault()
+      return
+    }
+
+    // Include all selected comment IDs
+    const commentIds = Array.from(this.selection)
+    event.dataTransfer.setData('application/x-comment-ids', JSON.stringify(commentIds))
+    event.dataTransfer.effectAllowed = 'move'
+
+    // Add visual feedback
+    this.listTarget.classList.add('dragging-comments')
+    
+    // Create custom drag image showing count
+    if (commentIds.length > 1) {
+      const dragImage = document.createElement('div')
+      dragImage.className = 'comment-drag-image'
+      dragImage.textContent = `${commentIds.length} messages`
+      document.body.appendChild(dragImage)
+      event.dataTransfer.setDragImage(dragImage, 0, 0)
+      setTimeout(() => dragImage.remove(), 0)
+    }
+  }
+
+  handleDragEnd(event) {
+    this.listTarget.classList.remove('dragging-comments')
+  }
+
+  async handleMoveToTopic(event) {
+    const { commentIds, targetTopicId } = event.detail
+    if (!commentIds || commentIds.length === 0 || !this.creativeId) return
+
+    try {
+      const response = await fetch(`/creatives/${this.creativeId}/comments/move`, {
+        method: 'POST',
+        headers: {
+          'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        },
+        body: JSON.stringify({ 
+          comment_ids: commentIds, 
+          target_topic_id: targetTopicId 
+        })
+      })
+
+      if (response.ok) {
+        this.clearSelection()
+        this.loadInitialComments()
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Failed to move comments')
+      }
+    } catch (error) {
+      console.error('Error moving comments to topic:', error)
+      alert('Failed to move comments')
+    }
   }
 
   notifySelectionChange() {

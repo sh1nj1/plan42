@@ -387,12 +387,32 @@ module Collavre
         render json: { error: I18n.t("collavre.comments.move_no_selection") }, status: :unprocessable_entity and return
       end
 
-      target_creative = Creative.find_by(id: params[:target_creative_id])
-      if target_creative.nil?
+      # Support moving to topic within same creative (target_topic_id only)
+      # or moving to different creative (target_creative_id)
+      target_topic_id = params[:target_topic_id]
+      target_creative_id = params[:target_creative_id]
+
+      # Determine target creative and topic
+      if target_creative_id.present?
+        # Moving to different creative
+        target_creative = Creative.find_by(id: target_creative_id)
+        if target_creative.nil?
+          render json: { error: I18n.t("collavre.comments.move_invalid_target") }, status: :unprocessable_entity and return
+        end
+        target_origin = target_creative.effective_origin
+        new_topic_id = nil # Reset topic when moving to different creative
+      elsif target_topic_id.present? || target_topic_id == ""
+        # Moving to topic within same creative (empty string means Main/no topic)
+        target_origin = @creative
+        new_topic_id = target_topic_id.presence # nil for Main topic
+
+        # Validate topic exists if specified
+        if new_topic_id.present? && !@creative.topics.exists?(id: new_topic_id)
+          render json: { error: I18n.t("collavre.comments.move_invalid_topic", default: "Invalid topic") }, status: :unprocessable_entity and return
+        end
+      else
         render json: { error: I18n.t("collavre.comments.move_invalid_target") }, status: :unprocessable_entity and return
       end
-
-      target_origin = target_creative.effective_origin
 
       unless @creative.has_permission?(Current.user, :feedback) && target_origin.has_permission?(Current.user, :feedback)
         render json: { error: I18n.t("collavre.comments.move_not_allowed") }, status: :forbidden and return
@@ -411,20 +431,34 @@ module Collavre
         render json: { error: I18n.t("collavre.comments.move_not_allowed") }, status: :forbidden and return
       end
 
+      moved_count = 0
       ActiveRecord::Base.transaction do
         comments.each do |comment|
-          next if comment.creative_id == target_origin.id
+          # Skip if already in target location
+          same_creative = comment.creative_id == target_origin.id
+          same_topic = comment.topic_id.to_s == new_topic_id.to_s
+
+          next if same_creative && same_topic
 
           original_creative = comment.creative
-          comment.update!(creative: target_origin, topic_id: nil)
-          broadcast_move_removal(comment, original_creative)
+          original_topic_id = comment.topic_id
+
+          if same_creative
+            # Just update topic within same creative
+            comment.update!(topic_id: new_topic_id)
+          else
+            # Move to different creative
+            comment.update!(creative: target_origin, topic_id: new_topic_id)
+            broadcast_move_removal(comment, original_creative)
+          end
+          moved_count += 1
         end
       end
 
       Comment.broadcast_badges(@creative)
       Comment.broadcast_badges(target_origin) unless target_origin == @creative
 
-      render json: { success: true }
+      render json: { success: true, moved_count: moved_count }
     rescue ActiveRecord::RecordInvalid => e
       render json: { error: e.record.errors.full_messages.to_sentence.presence || I18n.t("collavre.comments.move_error") }, status: :unprocessable_entity
     end
