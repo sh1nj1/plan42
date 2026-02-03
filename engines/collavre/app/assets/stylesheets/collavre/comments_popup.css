@@ -483,6 +483,7 @@ body.chat-fullscreen main {
 #voice-comments-btn,
 #attach-image-btn,
 #cancel-edit-btn,
+#new-comment-form button[type="submit"],
 .convert-comment-btn,
 .delete-comment-btn,
 .edit-comment-btn,
