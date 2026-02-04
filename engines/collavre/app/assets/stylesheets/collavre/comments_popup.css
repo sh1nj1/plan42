@@ -652,6 +652,12 @@ body.chat-fullscreen main {
     gap: 0.2em;
 }
 
+#comment-participants .avatar-wrapper {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .add-participant-btn {
     display: inline-flex;
     align-items: center;
@@ -689,7 +695,7 @@ body.chat-fullscreen main {
 }
 
 .comment-presence-avatar {
-    margin-right: 0.2em;
+    margin-right: 0;
 }
 
 .comment-presence-avatar.inactive {
