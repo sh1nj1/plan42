@@ -1,0 +1,15 @@
+en:
+  collavre:
+    ai_agent:
+      approval:
+        message: |
+          🔧 **Tool Approval Required**
+
+          **%{tool_name}** wants to execute with the following arguments:
+
+          ```json
+          %{arguments}
+          ```
+
+          Please approve or reject this action.
+        no_arguments: "(no arguments)"
