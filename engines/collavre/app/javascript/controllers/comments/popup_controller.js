@@ -429,8 +429,12 @@ export default class extends Controller {
         const fullscreenPath = `/creatives/${creativeId}/comments/fullscreen`
         window.history.pushState({ fullscreen: true }, '', fullscreenPath)
       }
-    } else if (this._previousUrl) {
-      window.history.pushState({ fullscreen: false }, '', this._previousUrl)
+    } else {
+      const creativeId = this.element.dataset.creativeId
+      const backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
+      if (backUrl) {
+        window.history.pushState({ fullscreen: false }, '', backUrl)
+      }
       this._previousUrl = null
     }
 
