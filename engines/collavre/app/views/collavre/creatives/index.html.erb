@@ -27,7 +27,7 @@
   <% end %>
 
   <% if can_manage_integrations %>
-    <%= render PopupMenuComponent.new(
+    <%= render Collavre::PopupMenuComponent.new(
           button_content: t('collavre.creatives.index.integrations', default: '연동'),
           menu_id: 'creative-integrations-menu',
           align: :left,

@@ -57,8 +57,8 @@
   <div id="comment-topics" data-comments--topics-target="list" class="comment-topics-list"
        data-confirm-delete-text="<%= t('collavre.topics.delete_confirm') %>"
        data-new-topic-placeholder="<%= t('collavre.topics.new_placeholder') %>"></div>
-  <%= render UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
-  <%= render CommandMenuComponent.new(menu_id: 'command-menu') %>
+  <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
+  <%= render Collavre::CommandMenuComponent.new(menu_id: 'command-menu') %>
   <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>
   <div id="typing-indicator" data-comments--presence-target="typingIndicator"></div>
   <form id="new-comment-form" data-comments--popup-target="form" data-comments--form-target="form" style="display:none;">

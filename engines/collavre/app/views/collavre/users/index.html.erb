@@ -23,7 +23,7 @@
       <% last_login_at = user.sessions.max_by(&:updated_at)&.updated_at %>
       <tr>
         <td>
-          <%= render AvatarComponent.new(
+          <%= render Collavre::AvatarComponent.new(
                 user: user,
                 size: 20,
                 classes: "avatar comment-presence-avatar#{' inactive' if user.sessions.empty?}" ) %>

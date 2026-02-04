@@ -40,7 +40,7 @@
                             llm_model_target: "input",
                             action: "input->llm-model#search focus->llm-model#focus blur->llm-model#blur keydown->llm-model#handleKeydown"
                           } %>
-      <%= render UserMentionMenuComponent.new(menu_id: 'llm-model-suggestions') %>
+      <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'llm-model-suggestions') %>
     </div>
   </div>
 

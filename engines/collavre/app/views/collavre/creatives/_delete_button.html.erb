@@ -1,4 +1,4 @@
-<%= render PopupMenuComponent.new(
+<%= render Collavre::PopupMenuComponent.new(
       button_content: t('collavre.creatives.index.delete'),
       button_classes: ["danger-link", local_assigns[:extra_button_classes]].compact.join(" "),
       menu_id: 'delete-options-popup-' + [local_assigns[:extra_button_classes]].compact.join('-')) do %>
