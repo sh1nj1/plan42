@@ -496,69 +496,51 @@ export default class extends Controller {
       const savedStyles = this._savedStyles
       this._savedStyles = null
 
-      // Calculate target position using the same logic as updatePosition()
-      // so cleanup can apply it directly without calling updatePosition() (which would cause a snap)
       const creativeId = el.dataset.creativeId
       const scrollY = window.scrollY || window.pageYOffset
 
-      // Final absolute-position values (what updatePosition would set)
-      let finalTop = ''      // px string with scrollY included
-      let finalRight = ''    // px string
-      let finalWidth = savedStyles?.width || ''
-      let finalHeight = savedStyles?.height || ''
-
-      // Fixed-position animation targets (viewport-relative)
-      let animTop, animLeft, animWidth, animHeight
-
-      // Try to find the comment button for precise positioning
+      // Find the comment button — this is the animation target
       let targetButton = this.currentButton
       if (!targetButton && creativeId) {
         const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
         targetButton = row?.querySelector('.comments-btn')
       }
-
       if (targetButton) {
         this.currentButton = targetButton
+      }
+
+      // Calculate animation target in fixed (viewport) coordinates
+      // using the exact same logic as updatePosition()
+      let animTop, animLeft, animWidth, animHeight
+
+      if (targetButton) {
         const btnRect = targetButton.getBoundingClientRect()
         const rightPx = window.innerWidth - btnRect.right + 24
 
-        animWidth = parseFloat(finalWidth) || 420
-        animHeight = parseFloat(finalHeight) || 640
+        animWidth = (savedStyles?.width && parseFloat(savedStyles.width)) || 420
+        animHeight = (savedStyles?.height && parseFloat(savedStyles.height)) || 640
 
-        // Calculate top in absolute coords (with scrollY) — same as updatePosition
-        let absTop = btnRect.bottom + scrollY + 4
-        const absBottom = absTop + animHeight
-        const viewportBottom = scrollY + window.innerHeight
-        if (absBottom > viewportBottom) {
-          absTop = Math.max(scrollY + 4, viewportBottom - animHeight - 4)
+        // Same calculation as updatePosition, but in viewport coords
+        let viewTop = btnRect.bottom + 4
+        if (viewTop + animHeight > window.innerHeight) {
+          viewTop = Math.max(4, window.innerHeight - animHeight - 4)
         }
-
-        // Store final absolute-position values for cleanup
-        finalTop = `${absTop}px`
-        finalRight = `${rightPx}px`
-
-        // Convert to fixed coordinates for animation
-        animTop = absTop - scrollY
+        animTop = viewTop
         animLeft = window.innerWidth - rightPx - animWidth
       } else if (savedStyles && Object.values(savedStyles).some(v => v)) {
-        // Fallback to saved styles
         const rightVal = parseFloat(savedStyles.right) || 32
         animWidth = parseFloat(savedStyles.width) || 420
         animHeight = parseFloat(savedStyles.height) || 640
         animLeft = savedStyles.left ? parseFloat(savedStyles.left) : (window.innerWidth - rightVal - animWidth)
-        animTop = parseFloat(savedStyles.top) ? (parseFloat(savedStyles.top) - scrollY) : 100
-
-        finalTop = savedStyles.top || ''
-        finalRight = savedStyles.right || ''
+        animTop = savedStyles.top ? (parseFloat(savedStyles.top) - scrollY) : 100
       } else {
-        // No reference at all: use CSS defaults
         animWidth = 420
         animHeight = 640
-        animLeft = window.innerWidth - 32 - animWidth  // right: 2em
+        animLeft = window.innerWidth - 32 - animWidth
         animTop = 100
       }
 
-      // Animated exit: pin at fullscreen position, then shrink to target
+      // Pin at current fullscreen position (fixed)
       const fsRect = el.getBoundingClientRect()
 
       el.style.transition = 'none'
@@ -574,47 +556,35 @@ export default class extends Controller {
       document.body.classList.remove('chat-fullscreen')
       this._syncFullscreenUI(false)
 
-      // Force layout so the pinned position is applied
       el.offsetHeight // eslint-disable-line no-unused-expressions
 
-      // Animate to target position (fixed coordinates)
+      // Animate to target (fixed coordinates)
       el.style.transition = ''
       el.style.top = `${animTop}px`
       el.style.left = `${animLeft}px`
       el.style.width = `${animWidth}px`
       el.style.height = `${animHeight}px`
 
+      let cleanedUp = false
       const cleanup = () => {
+        if (cleanedUp) return
+        cleanedUp = true
         el.removeEventListener('transitionend', cleanup)
-        // Switch from fixed back to default (absolute) positioning
-        // Apply the pre-calculated absolute coords directly — no updatePosition() needed
+
+        // Read the actual rendered position while still fixed
+        const endRect = el.getBoundingClientRect()
+
+        // Switch to absolute positioning using the actual rendered position
+        // This guarantees zero visual jump since we read the real coords
         el.style.transition = 'none'
         el.style.position = ''
+        el.style.top = `${endRect.top + scrollY}px`
+        el.style.right = `${window.innerWidth - endRect.right}px`
+        el.style.left = ''
         el.style.bottom = ''
+        el.style.width = `${endRect.width}px`
+        el.style.height = `${endRect.height}px`
 
-        if (targetButton) {
-          // Set absolute coords matching updatePosition output
-          el.style.top = finalTop
-          el.style.right = finalRight
-          el.style.left = ''
-          el.style.width = finalWidth
-          el.style.height = finalHeight
-        } else if (savedStyles) {
-          el.style.top = ''
-          el.style.left = ''
-          el.style.right = ''
-          el.style.width = ''
-          el.style.height = ''
-          Object.assign(el.style, savedStyles)
-        } else {
-          el.style.top = ''
-          el.style.left = ''
-          el.style.right = ''
-          el.style.width = ''
-          el.style.height = ''
-        }
-
-        // Force layout then restore transitions
         el.offsetHeight // eslint-disable-line no-unused-expressions
         el.style.transition = ''
       }
