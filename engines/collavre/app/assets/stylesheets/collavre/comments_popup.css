@@ -9,7 +9,9 @@
     max-height: 80vh;
     min-width: 200px;
     min-height: 200px;
-    transition: all 0.2s;
+    transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease,
+                right 0.25s ease, bottom 0.25s ease, border-radius 0.25s ease,
+                box-shadow 0.25s ease, padding 0.25s ease;
     max-width: calc(100vw - 0.5em) !important;
 }
 
