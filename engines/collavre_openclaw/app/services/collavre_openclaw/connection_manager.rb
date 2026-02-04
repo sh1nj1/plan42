@@ -30,6 +30,7 @@ module CollavreOpenclaw
         client = @connections[user.id]
         if client.nil?
           client = WebsocketClient.new(user: user)
+          client.on_proactive_message(&@proactive_handler) if @proactive_handler
           @connections[user.id] = client
         end
         client
