@@ -564,6 +564,17 @@ export default class extends Controller {
         el.style.bottom = ''
         el.style.width = ''
         el.style.height = ''
+
+        // Find the comments button for this creative and position next to it
+        const creativeId = el.dataset.creativeId
+        if (creativeId) {
+          const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
+          const btn = row?.querySelector('.comments-btn')
+          if (btn) {
+            this.currentButton = btn
+            this.updatePosition()
+          }
+        }
       }
 
       // Update URL — append open_comments=true so the popup stays open on refresh
