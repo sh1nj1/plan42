@@ -19,4 +19,6 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "rails", ">= 8.0"
   spec.add_dependency "faraday", ">= 2.0"
+  spec.add_dependency "faye-websocket", "~> 0.11"
+  spec.add_dependency "eventmachine", "~> 1.2"
 end

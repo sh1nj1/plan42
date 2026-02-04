@@ -1,5 +1,6 @@
 require "collavre_openclaw/version"
 require "collavre_openclaw/configuration"
+require "collavre_openclaw/errors"
 require "collavre_openclaw/engine"
 
 module CollavreOpenclaw

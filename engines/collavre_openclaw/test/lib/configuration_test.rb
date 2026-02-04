@@ -9,6 +9,11 @@ module CollavreOpenclaw
       assert_equal 2, config.max_retries
       # Legacy accessor
       assert_equal 180, config.request_timeout
+      # WebSocket defaults
+      assert_equal 1800, config.ws_idle_timeout
+      assert_equal 10, config.ws_reconnect_max
+      assert_equal 1.0, config.ws_reconnect_base_delay
+      assert_equal 10, config.ws_connect_timeout
     end
 
     test "allows setting timeouts" do

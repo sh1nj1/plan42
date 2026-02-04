@@ -40,5 +40,15 @@ module CollavreOpenclaw
         end
       end
     end
+
+    # Graceful shutdown: disconnect all WebSocket connections
+    config.after_initialize do
+      at_exit do
+        ConnectionManager.instance.disconnect_all
+        EmReactor.stop! if EmReactor.running?
+      rescue => e
+        Rails.logger.warn("[CollavreOpenclaw] Shutdown cleanup error: #{e.message}")
+      end
+    end
   end
 end

@@ -10,7 +10,9 @@ PATH
   remote: engines/collavre_openclaw
   specs:
     collavre_openclaw (0.2.1)
+      eventmachine (~> 1.2)
       faraday (>= 2.0)
+      faye-websocket (~> 0.11)
       rails (>= 8.0)
 
 PATH
@@ -25,7 +27,7 @@ PATH
 PATH
   remote: engines/collavre
   specs:
-    collavre (0.2.3)
+    collavre (0.2.4)
       bcrypt
       closure_tree
       httparty
@@ -195,6 +197,7 @@ GEM
     et-orbi (1.4.0)
       tzinfo
     event_stream_parser (1.0.0)
+    eventmachine (1.2.7)
     faraday (2.14.0)
       faraday-net_http (>= 2.0, < 3.5)
       json
@@ -214,6 +217,9 @@ GEM
       json (~> 2.0)
       mime-types (~> 3.4)
       rack (>= 2.0, < 4.0)
+    faye-websocket (0.12.0)
+      eventmachine (>= 0.12.0)
+      websocket-driver (>= 0.8.0)
     fcm (2.0.1)
       faraday (>= 1.0.0, < 3.0)
       googleauth (~> 1)
