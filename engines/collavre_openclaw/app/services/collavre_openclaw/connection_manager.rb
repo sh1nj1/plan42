@@ -89,10 +89,15 @@ module CollavreOpenclaw
     private
 
     def start_idle_checker!
+      @idle_checker_stop = false
       @idle_checker = Thread.new do
         Thread.current.name = "openclaw-idle-checker"
         loop do
-          sleep 60 # Check every minute
+          break if @idle_checker_stop
+          sleep 1 # Check stop flag every second
+          @idle_check_counter = (@idle_check_counter || 0) + 1
+          next unless @idle_check_counter >= 60 # Run check every ~60 seconds
+          @idle_check_counter = 0
           check_idle_connections!
         rescue => e
           Rails.logger.error("[CollavreOpenclaw::ConnectionManager] Idle checker error: #{e.message}")
@@ -101,7 +106,8 @@ module CollavreOpenclaw
     end
 
     def stop_idle_checker!
-      @idle_checker&.kill
+      @idle_checker_stop = true
+      @idle_checker&.join(5)
       @idle_checker = nil
     end
 
@@ -109,12 +115,14 @@ module CollavreOpenclaw
       timeout = CollavreOpenclaw.config.ws_idle_timeout
 
       @mutex.synchronize do
-        @connections.each do |user_id, client|
-          if client.connected? && client.idle_seconds > timeout
-            Rails.logger.info("[CollavreOpenclaw::ConnectionManager] Disconnecting idle connection for user #{user_id}")
-            client.disconnect!
-            @connections.delete(user_id)
-          end
+        idle_user_ids = @connections.each_with_object([]) do |(user_id, client), ids|
+          ids << user_id if client.connected? && client.idle_seconds > timeout
+        end
+
+        idle_user_ids.each do |user_id|
+          client = @connections.delete(user_id)
+          Rails.logger.info("[CollavreOpenclaw::ConnectionManager] Disconnecting idle connection for user #{user_id}")
+          client&.disconnect!
         end
       end
     end

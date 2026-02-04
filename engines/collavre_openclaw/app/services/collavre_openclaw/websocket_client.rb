@@ -92,18 +92,28 @@ module CollavreOpenclaw
       touch_activity!
 
       idempotency_key ||= SecureRandom.uuid
+      actual_run_id = nil
       run_queue = Queue.new
       response_text = +""
 
-      # Register event handler for this run
+      # Pre-register with idempotency_key to catch early events
       @mutex.synchronize { @pending_runs[idempotency_key] = run_queue }
 
-      # Send the RPC request
-      _response = send_rpc("chat.send", {
+      # Send the RPC request to get the real runId
+      response = send_rpc("chat.send", {
         sessionKey: session_key,
         message: message,
         idempotencyKey: idempotency_key
       })
+
+      # Re-register with the Gateway-assigned runId
+      actual_run_id = response&.dig(:runId) || idempotency_key
+      if actual_run_id != idempotency_key
+        @mutex.synchronize do
+          @pending_runs.delete(idempotency_key)
+          @pending_runs[actual_run_id] = run_queue
+        end
+      end
 
       # Stream events until final/error/aborted
       loop do
@@ -138,7 +148,7 @@ module CollavreOpenclaw
 
       response_text.presence
     ensure
-      @mutex.synchronize { @pending_runs.delete(idempotency_key) }
+      @mutex.synchronize { @pending_runs.delete(actual_run_id) }
     end
 
     # Fetch chat history for a session
@@ -359,9 +369,13 @@ module CollavreOpenclaw
       cancel_tick_timer!
       interval = @tick_interval_ms / 1000.0
       @tick_timer = EM.add_periodic_timer(interval) do
-        # Gateway expects periodic poll; if the server doesn't send ticks,
-        # we send our own poll to keep the connection alive.
-        # The actual tick handling is in handle_tick when the server pushes.
+        # Send keepalive poll if the server hasn't sent a tick
+        send_frame({
+          type: "req",
+          id: SecureRandom.uuid,
+          method: "poll",
+          params: {}
+        })
       end
     end
 
@@ -432,11 +446,14 @@ module CollavreOpenclaw
           queue = Queue.new
           do_connect!(queue)
 
-          # Wait for handshake in EM thread via a deferred check
+          # Handshake result is handled by handle_response which sets @state.
+          # Add a timeout to retry if handshake doesn't complete.
           EM.add_timer(config.ws_connect_timeout) do
             unless @handshake_done
               @handshake_done = true
-              queue.push({ error: "reconnect handshake timeout" })
+              Rails.logger.warn("[CollavreOpenclaw::WS] Reconnect handshake timed out")
+              @ws&.close
+              schedule_reconnect!
             end
           end
         rescue => e
@@ -467,12 +484,9 @@ module CollavreOpenclaw
     end
 
     def wait_with_timeout(queue, timeout_seconds, operation)
-      result = nil
-      begin
-        Timeout.timeout(timeout_seconds) do
-          result = queue.pop
-        end
-      rescue Timeout::Error
+      # Use Queue#pop(timeout:) instead of Timeout.timeout to avoid Thread.raise corruption
+      result = queue.pop(timeout: timeout_seconds)
+      if result.nil? && queue.empty?
         raise TimeoutError, "#{operation} timed out after #{timeout_seconds}s"
       end
       result
