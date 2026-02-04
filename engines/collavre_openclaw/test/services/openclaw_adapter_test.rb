@@ -447,6 +447,73 @@ module CollavreOpenclaw
 
     private
 
+    test "format_message_for_ws extracts last user message" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      messages = [
+        { role: "user", parts: [ { text: "First question" } ] },
+        { role: "model", parts: [ { text: "Answer" } ] },
+        { role: "user", parts: [ { text: "Follow-up question" } ] }
+      ]
+
+      result = adapter.send(:format_message_for_ws, messages)
+      assert_equal "Follow-up question", result
+    end
+
+    test "format_message_for_ws includes creative context" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      messages = [
+        { role: "user", parts: [ { text: "Creative:\n# My Project" } ] },
+        { role: "user", parts: [ { text: "What do you think?" } ] }
+      ]
+
+      result = adapter.send(:format_message_for_ws, messages)
+      assert_includes result, "Creative:\n# My Project"
+      assert_includes result, "What do you think?"
+    end
+
+    test "format_message_for_ws returns empty string for no user messages" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      messages = [
+        { role: "system", content: "System prompt" }
+      ]
+
+      result = adapter.send(:format_message_for_ws, messages)
+      assert_equal "", result
+    end
+
+    test "websocket_available? returns true when classes are defined" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      assert adapter.send(:websocket_available?)
+    end
+
     def build_test_user(gateway_url: nil, email: "test@example.com", llm_api_key: nil)
       user = Object.new
       user.define_singleton_method(:id) { 1 }
