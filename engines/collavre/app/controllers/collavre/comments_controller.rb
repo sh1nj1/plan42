@@ -11,6 +11,8 @@ module Collavre
       @creatives = []
       @shared_list = @creative.all_shared_users
       @auto_fullscreen = true
+      # Prepend creatives prefix so partials like 'add_button' resolve to collavre/creatives/_add_button
+      lookup_context.prefixes.prepend "collavre/creatives"
       render "collavre/creatives/index"
     end
 
