@@ -26,7 +26,7 @@ module Collavre
     validate :creative_must_be_origin_creative
     validate :images_must_be_images
 
-    after_create_commit :broadcast_create, :notify_write_users, :notify_mentions, :broadcast_badges
+    after_create_commit :broadcast_create, :notify_write_users, :notify_mentions, :notify_approver, :broadcast_badges
     after_update_commit :broadcast_update
     after_destroy_commit :broadcast_destroy, :broadcast_badges
 
@@ -174,6 +174,22 @@ module Collavre
           { user: user.display_name, comment: content, creative: creative_snippet }
         )
       end
+    end
+
+    def notify_approver
+      return unless approver.present? && action.present?
+      return if approver == user
+
+      create_inbox_item(
+        approver,
+        "inbox.approval_requested",
+        { user: user&.display_name, tool_name: parsed_action_tool_name, creative: creative_snippet }
+      )
+    end
+
+    def parsed_action_tool_name
+      parsed = JSON.parse(action) rescue nil
+      parsed&.dig("tool_name") || "unknown"
     end
 
     def assign_default_user
