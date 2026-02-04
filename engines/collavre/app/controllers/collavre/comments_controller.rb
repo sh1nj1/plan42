@@ -11,7 +11,7 @@ module Collavre
       @creatives = []
       @shared_list = @creative.all_shared_users
       @auto_fullscreen = true
-      render "collavre/creatives/index", layout: "collavre/application"
+      render "collavre/creatives/index"
     end
 
     def index
