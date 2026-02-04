@@ -1,17 +1,18 @@
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 export function renderMarkdown(html) {
-  return marked.parse(html)
+  return DOMPurify.sanitize(marked.parse(html))
 }
 
 export function renderMarkdownInline(html) {
-  return marked.parseInline(html)
+  return DOMPurify.sanitize(marked.parseInline(html))
 }
 
 export function renderCommentMarkdown(text) {
   const content = text || ''
   const html = content.includes('\n') ? marked.parse(content) : marked.parseInline(content)
-  return html.trim()
+  return DOMPurify.sanitize(html.trim())
 }
 
 export function renderMarkdownInContainer(container) {
