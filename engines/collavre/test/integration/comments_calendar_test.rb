@@ -159,6 +159,48 @@ class CommentsCalendarTest < ActionDispatch::IntegrationTest
     assert_equal 0, calendar_event.start_time.min
   end
 
+  test "creates all-day event with MM-DD short date format using current year" do
+    travel_to Time.zone.local(2026, 1, 10, 9, 0, 0) do
+      user_without_google = User.create!(email: "user_short_date@example.com", password: TEST_PASSWORD, name: "User Short Date")
+      creative = Creative.create!(user: user_without_google, description: "Short date test")
+      CreativeShare.create!(creative: creative, user: user_without_google, permission: :feedback)
+      sign_in_as(user_without_google)
+
+      command = "/calendar 02-17"
+
+      assert_difference([ "Comment.count", "CalendarEvent.count" ], 1) do
+        post creative_comments_path(creative), params: { comment: { content: command } }
+      end
+
+      assert_response :created
+
+      calendar_event = CalendarEvent.last
+      assert_equal Date.new(2026, 2, 17), calendar_event.start_time.to_date
+    end
+  end
+
+  test "creates timed event with MM-DD@HH:MM short date format" do
+    travel_to Time.zone.local(2026, 3, 1, 9, 0, 0) do
+      user_without_google = User.create!(email: "user_short_time@example.com", password: TEST_PASSWORD, name: "User Short Time")
+      creative = Creative.create!(user: user_without_google, description: "Short date time test")
+      CreativeShare.create!(creative: creative, user: user_without_google, permission: :feedback)
+      sign_in_as(user_without_google)
+
+      command = "/calendar 02-17@14:00"
+
+      assert_difference([ "Comment.count", "CalendarEvent.count" ], 1) do
+        post creative_comments_path(creative), params: { comment: { content: command } }
+      end
+
+      assert_response :created
+
+      calendar_event = CalendarEvent.last
+      assert_equal Date.new(2026, 2, 17), calendar_event.start_time.to_date
+      assert_equal 14, calendar_event.start_time.hour
+      assert_equal 0, calendar_event.start_time.min
+    end
+  end
+
   test "creates local event and shows sync failed message when google sync fails" do
     command = "/calendar tomorrow"
     service = Minitest::Mock.new
