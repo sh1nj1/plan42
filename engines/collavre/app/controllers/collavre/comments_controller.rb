@@ -463,6 +463,28 @@ module Collavre
       render json: { error: e.record.errors.full_messages.to_sentence.presence || I18n.t("collavre.comments.move_error") }, status: :unprocessable_entity
     end
 
+    def stop_streaming
+      task = Task.find_by(id: params[:task_id])
+
+      unless task
+        head :not_found and return
+      end
+
+      # Verify the task belongs to this creative
+      task_creative_id = task.trigger_event_payload&.dig("creative", "id")
+      unless task_creative_id == @creative.id
+        head :forbidden and return
+      end
+
+      # Only cancel running tasks
+      unless task.status == "running"
+        head :unprocessable_entity and return
+      end
+
+      task.update!(status: "cancelled")
+      head :ok
+    end
+
     private
 
     def set_creative

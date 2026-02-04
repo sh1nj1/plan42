@@ -130,6 +130,109 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert_equal 1, reply.activity_logs.count
   end
 
+  test "saves partial response as comment when cancelled" do
+    task_id = @task.id
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |messages, tools: [], &block|
+      block.call("Partial ")
+      block.call("content")
+      # Simulate cancellation by changing task status mid-stream
+      Task.find(task_id).update!(status: "cancelled")
+      # Advance time past CANCEL_CHECK_INTERVAL so check_cancelled! fires
+      sleep(0) # yield control
+      block.call(" more") # This chunk triggers check_cancelled! which raises
+    end
+
+    initial_comment_count = @creative.comments.count
+
+    # Stub CANCEL_CHECK_INTERVAL to 0 so cancellation is detected immediately
+    original_interval = AiAgentService::CANCEL_CHECK_INTERVAL
+    AiAgentService.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    AiAgentService.const_set(:CANCEL_CHECK_INTERVAL, 0)
+
+    assert_raises(Collavre::CancelledError) do
+      AiClient.stub :new, mock_client do
+        AiAgentService.new(@task).call
+      end
+    end
+
+    # Restore original interval
+    AiAgentService.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    AiAgentService.const_set(:CANCEL_CHECK_INTERVAL, original_interval)
+
+    # A partial comment should have been saved
+    assert_equal initial_comment_count + 1, @creative.comments.count
+
+    reply = @creative.comments.where(user: @agent).order(:created_at).last
+    # Content should contain at least the chunks before cancellation
+    assert reply.content.start_with?("Partial content")
+
+    # Verify cancel action was logged
+    assert @task.task_actions.exists?(action_type: "cancelled")
+    assert @task.task_actions.exists?(action_type: "reply_created")
+  end
+
+  test "does not create comment when cancelled with empty response" do
+    task_id = @task.id
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |messages, tools: [], &block|
+      # Cancel immediately before any content
+      Task.find(task_id).update!(status: "cancelled")
+      block.call("") # Empty content, triggers check_cancelled!
+    end
+
+    initial_comment_count = @creative.comments.count
+
+    original_interval = AiAgentService::CANCEL_CHECK_INTERVAL
+    AiAgentService.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    AiAgentService.const_set(:CANCEL_CHECK_INTERVAL, 0)
+
+    assert_raises(Collavre::CancelledError) do
+      AiClient.stub :new, mock_client do
+        AiAgentService.new(@task).call
+      end
+    end
+
+    AiAgentService.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    AiAgentService.const_set(:CANCEL_CHECK_INTERVAL, original_interval)
+
+    # No comment created since response was empty
+    assert_equal initial_comment_count, @creative.comments.count
+  end
+
+  test "broadcasts topic_id in agent status" do
+    topic = Topic.create!(creative: @creative, name: "Test Topic", user: @user)
+    @comment.update!(topic_id: topic.id)
+
+    mock_client = Minitest::Mock.new
+
+    def mock_client.chat(messages, tools: [])
+      yield "Response"
+    end
+
+    broadcasts = []
+    creative_id = @creative.effective_origin.id
+
+    ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
+      AiClient.stub :new, mock_client do
+        AiAgentService.new(@task).call
+      end
+    end
+
+    presence_broadcasts = broadcasts.select { |b| b[:channel] == "comments_presence:#{creative_id}" }
+    agent_statuses = presence_broadcasts.select { |b| b[:data][:agent_status].present? }
+
+    # All broadcasts should include topic_id
+    agent_statuses.each do |b|
+      assert_equal topic.id, b[:data][:agent_status][:topic_id],
+        "Expected topic_id #{topic.id} in agent_status broadcast, got #{b[:data][:agent_status][:topic_id]}"
+    end
+
+    # Reply comment should also be in the correct topic
+    reply = @creative.comments.where(user: @agent).order(:created_at).last
+    assert_equal topic.id, reply.topic_id
+  end
+
   test "does not create comment when response is empty" do
     mock_client = Minitest::Mock.new
 

@@ -69,6 +69,7 @@ Collavre::Engine.routes.draw do
         get :participants
         get :fullscreen
         post :move
+        post :stop_streaming
         get :commands
       end
     end

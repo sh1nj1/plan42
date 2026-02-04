@@ -7,25 +7,31 @@ class CommentsPresenceChannel < ApplicationCable::Channel
       task_creative_id = task.trigger_event_payload&.dig("creative", "id")
       next unless task_creative_id == creative_id
 
+      # Resolve topic_id from the trigger comment
+      comment_id = task.trigger_event_payload&.dig("comment", "id")
+      topic_id = comment_id ? Comment.where(id: comment_id).pick(:topic_id) : nil
+
       broadcast_agent_status(
         creative_id,
         status: "thinking",
         agent_id: task.agent_id,
         agent_name: task.agent.display_name,
-        task_id: task.id
+        task_id: task.id,
+        topic_id: topic_id
       )
     end
   end
 
   # Broadcast agent status (thinking/streaming/idle) to presence channel.
   # This allows the frontend typing indicator to show AI agent activity.
-  def self.broadcast_agent_status(creative_id, status:, agent_id:, agent_name:, task_id: nil, content: nil)
+  def self.broadcast_agent_status(creative_id, status:, agent_id:, agent_name:, task_id: nil, content: nil, topic_id: nil)
     payload = {
       agent_status: {
         id: agent_id,
         name: agent_name,
         status: status,
-        task_id: task_id
+        task_id: task_id,
+        topic_id: topic_id
       }
     }
     payload[:agent_status][:content] = content if content.present?

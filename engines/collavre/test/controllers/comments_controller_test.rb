@@ -821,4 +821,82 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :forbidden
   end
+
+  # ========================================
+  # stop_streaming
+  # ========================================
+
+  test "stop_streaming cancels a running task" do
+    agent = User.create!(
+      email: "stream_agent@ai.local",
+      name: "Stream Agent",
+      password: "password",
+      llm_vendor: "google",
+      llm_model: "gemini-1.5-flash",
+      searchable: true
+    )
+    task = Collavre::Task.create!(
+      name: "test_task",
+      status: "running",
+      agent: agent,
+      trigger_event_name: "comment_created",
+      trigger_event_payload: { "creative" => { "id" => @creative.id }, "comment" => { "id" => 1 } }
+    )
+
+    post stop_streaming_creative_comments_path(@creative), params: { task_id: task.id }
+
+    assert_response :ok
+    assert_equal "cancelled", task.reload.status
+  end
+
+  test "stop_streaming returns not_found for missing task" do
+    post stop_streaming_creative_comments_path(@creative), params: { task_id: 999999 }
+
+    assert_response :not_found
+  end
+
+  test "stop_streaming returns forbidden for task from different creative" do
+    other_creative = Creative.create!(user: @user, description: "Other")
+    agent = User.create!(
+      email: "stream_agent2@ai.local",
+      name: "Stream Agent 2",
+      password: "password",
+      llm_vendor: "google",
+      llm_model: "gemini-1.5-flash",
+      searchable: true
+    )
+    task = Collavre::Task.create!(
+      name: "test_task",
+      status: "running",
+      agent: agent,
+      trigger_event_name: "comment_created",
+      trigger_event_payload: { "creative" => { "id" => other_creative.id }, "comment" => { "id" => 1 } }
+    )
+
+    post stop_streaming_creative_comments_path(@creative), params: { task_id: task.id }
+
+    assert_response :forbidden
+  end
+
+  test "stop_streaming returns unprocessable_entity for non-running task" do
+    agent = User.create!(
+      email: "stream_agent3@ai.local",
+      name: "Stream Agent 3",
+      password: "password",
+      llm_vendor: "google",
+      llm_model: "gemini-1.5-flash",
+      searchable: true
+    )
+    task = Collavre::Task.create!(
+      name: "test_task",
+      status: "completed",
+      agent: agent,
+      trigger_event_name: "comment_created",
+      trigger_event_payload: { "creative" => { "id" => @creative.id }, "comment" => { "id" => 1 } }
+    )
+
+    post stop_streaming_creative_comments_path(@creative), params: { task_id: task.id }
+
+    assert_response :unprocessable_entity
+  end
 end

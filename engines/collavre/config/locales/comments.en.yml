@@ -63,6 +63,7 @@ en:
       search_empty_prompt: Please enter a search term in the chat message field.
       voice_button: Voice
       voice_stop: Stop
+      stop_streaming: Stop
       speech_unavailable: Speech recognition is not supported in this browser.
       move_button: Move
       move_no_selection: Select at least one message to move.

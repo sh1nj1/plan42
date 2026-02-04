@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { createSubscription } from '../../services/cable'
+import { renderCommentMarkdown } from '../../lib/utils/markdown'
 
 const TYPING_TIMEOUT = 3000
 
@@ -150,10 +151,12 @@ export default class extends Controller {
       this.renderTypingIndicator()
     }
     if (data.agent_status) {
-      const { id, name, status, task_id: taskId, content } = data.agent_status
+      const { id, name, status, task_id: taskId, content, topic_id: topicId } = data.agent_status
       if (status === 'thinking' || status === 'streaming') {
         this.typingUsers[id] = name
-        this.updateStreamingElement(id, name, taskId, content)
+        if (this.isCurrentTopic(topicId)) {
+          this.updateStreamingElement(id, name, taskId, content)
+        }
       } else {
         delete this.typingUsers[id]
         this.removeStreamingElement(taskId)
@@ -253,6 +256,15 @@ export default class extends Controller {
     this.typingIndicatorTarget.appendChild(text)
   }
 
+  isCurrentTopic(topicId) {
+    const list = document.getElementById('comments-list')
+    if (!list) return true
+    const currentTopicId = list.dataset.currentTopicId || ''
+    const streamTopicId = (topicId === null || topicId === undefined) ? '' : String(topicId)
+    // Show if no topic filter is set, or if topics match
+    return currentTopicId === '' || currentTopicId === streamTopicId
+  }
+
   updateStreamingElement(agentId, agentName, taskId, content) {
     if (!content && content !== '') return
     const list = document.getElementById('comments-list')
@@ -265,39 +277,79 @@ export default class extends Controller {
       el = document.createElement('div')
       el.id = elementId
       el.className = 'comment-item agent-streaming'
+      el.dataset.taskId = taskId
       list.appendChild(el)
     }
 
-    // Build DOM nodes safely (no innerHTML to avoid XSS)
-    el.textContent = ''
+    // Build header only once, update content efficiently
+    let headerEl = el.querySelector('.agent-streaming-header')
+    if (!headerEl) {
+      el.textContent = ''
 
-    if (this.participantsData) {
-      const user = this.participantsData.find((p) => p.id === agentId)
-      if (user) {
-        const img = document.createElement('img')
-        img.src = user.avatar_url
-        img.alt = ''
-        img.width = 20
-        img.height = 20
-        img.className = 'avatar comment-avatar'
-        img.style.borderRadius = '50%'
-        el.appendChild(img)
+      headerEl = document.createElement('div')
+      headerEl.className = 'agent-streaming-header'
+
+      if (this.participantsData) {
+        const user = this.participantsData.find((p) => p.id === agentId)
+        if (user) {
+          const img = document.createElement('img')
+          img.src = user.avatar_url
+          img.alt = ''
+          img.width = 20
+          img.height = 20
+          img.className = 'avatar comment-avatar'
+          img.style.borderRadius = '50%'
+          headerEl.appendChild(img)
+        }
       }
+
+      const strong = document.createElement('strong')
+      strong.textContent = agentName
+      headerEl.appendChild(strong)
+
+      // Stop button
+      const stopBtn = document.createElement('button')
+      stopBtn.className = 'stop-streaming-btn'
+      stopBtn.type = 'button'
+      stopBtn.textContent = '⏹'
+      stopBtn.title = this.element.dataset.stopStreamingText || 'Stop'
+      stopBtn.addEventListener('click', () => this.stopStreaming(taskId))
+      headerEl.appendChild(stopBtn)
+
+      el.appendChild(headerEl)
+
+      const contentEl = document.createElement('div')
+      contentEl.className = 'comment-content'
+      el.appendChild(contentEl)
     }
 
-    const strong = document.createElement('strong')
-    strong.textContent = agentName
-    el.appendChild(strong)
+    // Update content with markdown rendering
+    const contentEl = el.querySelector('.comment-content')
+    if (contentEl) {
+      contentEl.innerHTML = renderCommentMarkdown(content)
+    }
 
-    el.appendChild(document.createTextNode(' '))
-
-    const span = document.createElement('span')
-    span.className = 'comment-content'
-    span.textContent = content
-    el.appendChild(span)
-
-    // Auto-scroll to bottom (column-reverse layout)
+    // Auto-scroll to bottom
     list.scrollTop = list.scrollHeight
+  }
+
+  stopStreaming(taskId) {
+    if (!taskId || !this.creativeId) return
+
+    const btn = document.querySelector(`#agent-streaming-${taskId} .stop-streaming-btn`)
+    if (btn) btn.disabled = true
+
+    fetch(`/creatives/${this.creativeId}/comments/stop_streaming`, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ task_id: taskId }),
+    }).catch((err) => {
+      console.error('Failed to stop streaming:', err)
+      if (btn) btn.disabled = false
+    })
   }
 
   removeStreamingElement(taskId) {

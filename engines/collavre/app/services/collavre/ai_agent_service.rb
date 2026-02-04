@@ -22,8 +22,8 @@ module Collavre
         # Log prompt generation
         log_action("prompt_generated", { messages: messages })
 
-        # Call AI Client
-        response_content = ""
+        # Use instance variable so handle_cancelled can access accumulated content
+        @response_content = ""
 
         # Enrich context for rendering
         rendering_context = @context.dup
@@ -38,9 +38,10 @@ module Collavre
         ).render
 
         target_comment_id = @context.dig("comment", "id")
-        original_comment = target_comment_id ? Comment.find_by(id: target_comment_id) : nil
+        @original_comment = target_comment_id ? Comment.find_by(id: target_comment_id) : nil
 
         @creative = @context.dig("creative", "id") ? Creative.find_by(id: @context["creative"]["id"]) : nil
+        @topic_id = @original_comment&.topic_id
 
         # Broadcast "thinking" status via presence channel
         broadcast_agent_status("thinking")
@@ -54,7 +55,7 @@ module Collavre
             creative: @creative,
             user: @agent,
             task: @task,
-            comment: original_comment
+            comment: @original_comment
           }
         )
 
@@ -63,36 +64,36 @@ module Collavre
 
         client.chat(messages, tools: @agent.tools || []) do |delta|
           check_cancelled!
-          response_content += delta
+          @response_content += delta
 
           # Broadcast streaming content to client (throttled)
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           if @creative && (now - last_broadcast_at) >= STREAM_THROTTLE_INTERVAL
-            broadcast_agent_status("streaming", content: response_content)
+            broadcast_agent_status("streaming", content: @response_content)
             last_broadcast_at = now
           end
         end
 
         # Final broadcast of streaming content (ensure last chunk is shown)
-        broadcast_agent_status("streaming", content: response_content) if @creative && response_content.present?
+        broadcast_agent_status("streaming", content: @response_content) if @creative && @response_content.present?
 
         # Log completion
-        log_action("completion", { response: response_content })
+        log_action("completion", { response: @response_content })
 
         # Create the actual comment with final content
-        if original_comment && response_content.present?
-          reply = original_comment.creative.comments.create!(
-            content: response_content,
+        if @original_comment && @response_content.present?
+          reply = @original_comment.creative.comments.create!(
+            content: @response_content,
             user: @agent,
-            topic_id: original_comment.topic_id
+            topic_id: @topic_id
           )
-          log_action("reply_created", { comment_id: reply.id, content: response_content })
+          log_action("reply_created", { comment_id: reply.id, content: @response_content })
 
           # Re-associate activity logs from the trigger comment to the reply comment
           # so that LLM interaction logs appear on the AI's answer, not the user's question
-          reassociate_activity_logs(original_comment, reply)
-        elsif target_comment_id && response_content.present?
-          reply_to_comment(target_comment_id, response_content)
+          reassociate_activity_logs(@original_comment, reply)
+        elsif target_comment_id && @response_content.present?
+          reply_to_comment(target_comment_id, @response_content)
         end
 
         # Broadcast "idle" status
@@ -117,8 +118,23 @@ module Collavre
     end
 
     def handle_cancelled
+      # Save accumulated content as a comment before clearing
+      save_partial_response
+
       broadcast_agent_status("idle")
       log_action("cancelled", { message: "Task cancelled by user" })
+    end
+
+    def save_partial_response
+      return unless @response_content.present? && @original_comment
+
+      reply = @original_comment.creative.comments.create!(
+        content: @response_content,
+        user: @agent,
+        topic_id: @topic_id
+      )
+      log_action("reply_created", { comment_id: reply.id, content: @response_content, partial: true })
+      reassociate_activity_logs(@original_comment, reply)
     end
 
     def broadcast_agent_status(status, content: nil)
@@ -130,7 +146,8 @@ module Collavre
         agent_id: @agent.id,
         agent_name: @agent.display_name,
         task_id: @task.id,
-        content: content
+        content: content,
+        topic_id: @topic_id
       )
     end
 
@@ -223,19 +240,6 @@ module Collavre
 
       log_action("reply_created", { comment_id: reply.id, content: content })
       reassociate_activity_logs(original_comment, reply)
-    end
-
-    def check_cancelled!
-      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      return if (now - @last_cancel_check_at) < CANCEL_CHECK_INTERVAL
-
-      @last_cancel_check_at = now
-      raise CancelledError if @task.reload.status == "cancelled"
-    end
-
-    def handle_cancelled
-      broadcast_agent_status("idle")
-      log_action("cancelled", { message: "Task cancelled by user" })
     end
 
     def reassociate_activity_logs(from_comment, to_comment)
