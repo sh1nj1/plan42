@@ -1,6 +1,6 @@
 module Collavre
   class AiAgentService
-    # Minimum interval (in seconds) between streaming broadcasts to avoid excessive updates
+    # Minimum interval (in seconds) between streaming updates to avoid excessive DB writes
     STREAM_THROTTLE_INTERVAL = 0.1
     # Minimum interval (in seconds) between cancellation checks to avoid excessive DB queries
     CANCEL_CHECK_INTERVAL = 1.0
@@ -23,7 +23,7 @@ module Collavre
         log_action("prompt_generated", { messages: messages })
 
         # Call AI Client
-        response_content = ""
+        @response_content = ""
 
         # Enrich context for rendering
         rendering_context = @context.dup
@@ -37,8 +37,18 @@ module Collavre
           context: rendering_context
         ).render
 
+        # Create a placeholder comment to stream into
         target_comment_id = @context.dig("comment", "id")
-        original_comment = target_comment_id ? Comment.find_by(id: target_comment_id) : nil
+        @original_comment = target_comment_id ? Comment.find_by(id: target_comment_id) : nil
+        @reply_comment = nil
+
+        if @original_comment
+          @reply_comment = @original_comment.creative.comments.create!(
+            content: "...", # Placeholder — replaced during streaming
+            user: @agent,
+            topic_id: @original_comment.topic_id
+          )
+        end
 
         @creative = @context.dig("creative", "id") ? Creative.find_by(id: @context["creative"]["id"]) : nil
 
@@ -54,7 +64,7 @@ module Collavre
             creative: @creative,
             user: @agent,
             task: @task,
-            comment: original_comment
+            comment: @reply_comment || @original_comment
           }
         )
 
@@ -63,36 +73,38 @@ module Collavre
 
         client.chat(messages, tools: @agent.tools || []) do |delta|
           check_cancelled!
-          response_content += delta
+          @response_content += delta
 
-          # Broadcast streaming content to client (throttled)
+          # Stream updates to placeholder comment (throttled)
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          if @creative && (now - last_broadcast_at) >= STREAM_THROTTLE_INTERVAL
-            broadcast_agent_status("streaming", content: response_content)
+          if @reply_comment && (now - last_broadcast_at) >= STREAM_THROTTLE_INTERVAL
+            @reply_comment.update_column(:content, @response_content)
+            @reply_comment.broadcast_update_to(
+              [ @reply_comment.creative, :comments ],
+              partial: "collavre/comments/comment"
+            )
             last_broadcast_at = now
           end
         end
 
-        # Final broadcast of streaming content (ensure last chunk is shown)
-        broadcast_agent_status("streaming", content: response_content) if @creative && response_content.present?
-
         # Log completion
-        log_action("completion", { response: response_content })
+        log_action("completion", { response: @response_content })
 
-        # Create the actual comment with final content
-        if original_comment && response_content.present?
-          reply = original_comment.creative.comments.create!(
-            content: response_content,
-            user: @agent,
-            topic_id: original_comment.topic_id
-          )
-          log_action("reply_created", { comment_id: reply.id, content: response_content })
+        # Final save to ensure everything is consistent and trigger final callbacks
+        if @reply_comment
+          if @response_content.present?
+            # Force dirty tracking since update_column bypassed it during streaming
+            @reply_comment.content_will_change!
+            @reply_comment.update!(content: @response_content)
+            log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content })
 
-          # Re-associate activity logs from the trigger comment to the reply comment
-          # so that LLM interaction logs appear on the AI's answer, not the user's question
-          reassociate_activity_logs(original_comment, reply)
-        elsif target_comment_id && response_content.present?
-          reply_to_comment(target_comment_id, response_content)
+            # Re-associate activity logs from the trigger comment to the reply comment
+            reassociate_activity_logs(@original_comment, @reply_comment)
+          else
+            @reply_comment.destroy!
+          end
+        elsif target_comment_id && @response_content.present?
+          reply_to_comment(target_comment_id, @response_content)
         end
 
         # Broadcast "idle" status
@@ -117,6 +129,18 @@ module Collavre
     end
 
     def handle_cancelled
+      # Save accumulated content to the placeholder comment before stopping
+      if @reply_comment
+        if @response_content.present?
+          @reply_comment.content_will_change!
+          @reply_comment.update!(content: @response_content)
+          log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content, partial: true })
+          reassociate_activity_logs(@original_comment, @reply_comment)
+        else
+          @reply_comment.destroy!
+        end
+      end
+
       broadcast_agent_status("idle")
       log_action("cancelled", { message: "Task cancelled by user" })
     end
@@ -144,17 +168,9 @@ module Collavre
     end
 
     def build_messages
-      # This logic mimics the old AiResponder but adapts to the new context structure
-      # We might need to fetch the creative and history based on context
-
       messages = []
 
-      # Add context-specific messages
-      # For comment_created, we want the creative context and chat history
-
       if @context["creative"]
-        # We might need to re-fetch creative to get the full markdown if it's not in context
-        # But for efficiency, let's assume we fetch it if ID is present
         creative_id = @context.dig("creative", "id")
         if creative_id
           creative = Creative.find_by(id: creative_id)
@@ -165,17 +181,9 @@ module Collavre
         end
       end
 
-      # Add chat history
       if @context.dig("creative", "id")
         creative_id = @context["creative"]["id"]
-        # Fetch comments for context, excluding private ones unless owned by the user
-        # We need to be careful about which comments to include.
-        # For now, let's include non-private comments.
 
-        # We need to know who the "user" is to determine roles.
-        # In the new system, the agent is @agent.
-
-        # We need to filter by topic_id to maintain conversation context
         trigger_comment_id = @context.dig("comment", "id")
         trigger_comment = Comment.find_by(id: trigger_comment_id)
         topic_id = trigger_comment&.topic_id
@@ -183,28 +191,26 @@ module Collavre
         Comment.where(creative_id: creative_id, private: false)
                .where(topic_id: topic_id)
                .order(created_at: :desc)
-               .limit(50) # Limit history to avoid context window issues
-               .reverse # Re-order to chronological for the AI
+               .limit(50)
+               .reverse
                .each do |c|
-          next if c.id == @context.dig("comment", "id") # Skip the current trigger comment if it's in the list (it shouldn't be usually if we query right, but good to be safe)
+          next if c.id == @context.dig("comment", "id")
 
           role = (c.user_id == @agent.id) ? "model" : "user"
           content = c.content
 
-          # Strip mentions of the agent from user messages to clean up context
           if role == "user"
-             if content.match?(/\A@#{Regexp.escape(@agent.name)}:/i)
-               content = content.sub(/\A@#{Regexp.escape(@agent.name)}:\s*/i, "")
-             elsif content.match?(/\A@#{Regexp.escape(@agent.name)}\s+/i)
-               content = content.sub(/\A@#{Regexp.escape(@agent.name)}\s+/i, "")
-             end
+            if content.match?(/\A@#{Regexp.escape(@agent.name)}:/i)
+              content = content.sub(/\A@#{Regexp.escape(@agent.name)}:\s*/i, "")
+            elsif content.match?(/\A@#{Regexp.escape(@agent.name)}\s+/i)
+              content = content.sub(/\A@#{Regexp.escape(@agent.name)}\s+/i, "")
+            end
           end
 
           messages << { role: role, parts: [ { text: content } ] }
         end
       end
 
-      # Add the trigger payload
       payload_text = @context.dig("comment", "content") || @context.to_json
       messages << { role: "user", parts: [ { text: payload_text } ] }
 
@@ -225,29 +231,17 @@ module Collavre
       reassociate_activity_logs(original_comment, reply)
     end
 
-    def check_cancelled!
-      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      return if (now - @last_cancel_check_at) < CANCEL_CHECK_INTERVAL
-
-      @last_cancel_check_at = now
-      raise CancelledError if @task.reload.status == "cancelled"
-    end
-
-    def handle_cancelled
-      broadcast_agent_status("idle")
-      log_action("cancelled", { message: "Task cancelled by user" })
-    end
-
     def reassociate_activity_logs(from_comment, to_comment)
       ActivityLog.where(comment: from_comment, user: @agent)
                  .update_all(comment_id: to_comment.id)
     end
 
     def handle_approval_pending(error)
-      # Broadcast idle status to clear typing indicator and streaming element
+      # Clean up placeholder comment if exists
+      @reply_comment&.destroy! if @reply_comment&.content == "..."
+
       broadcast_agent_status("idle")
 
-      # Store pending tool call info in task
       @task.update!(
         status: "pending_approval",
         pending_tool_call: {
@@ -258,21 +252,16 @@ module Collavre
         }
       )
 
-      # Log the pending approval action
       log_action("pending_approval", error.to_h)
-
-      # Create approval request comment
       create_approval_comment(error)
     end
 
     def create_approval_comment(error)
       return unless @creative
 
-      # Determine approver - creative owner or the user who triggered the conversation
       approver = @creative.user || User.find_by(id: @context.dig("comment", "user_id"))
       return unless approver
 
-      # Build approval action payload
       action_payload = {
         action: "execute_tool",
         tool_name: error.tool_name,
@@ -283,7 +272,6 @@ module Collavre
         }
       }
 
-      # Format arguments for display
       args_display = if error.tool_arguments.present?
                        JSON.pretty_generate(error.tool_arguments)
       else
@@ -296,14 +284,13 @@ module Collavre
         arguments: args_display
       )
 
-      # Get topic_id from the original comment if available
       original_comment = Comment.find_by(id: @context.dig("comment", "id"))
       topic_id = original_comment&.topic_id
 
       Comment.create!(
         creative: @creative,
         content: content,
-        user: @agent, # Posted by the agent requesting approval
+        user: @agent,
         approver: approver,
         action: JSON.pretty_generate(action_payload),
         topic_id: topic_id,
