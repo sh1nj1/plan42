@@ -51,9 +51,11 @@
       <button class="<%= ['convert-comment-btn', ('comment-owner-only' unless can_convert_comment)].compact.join(' ') %>" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.convert_to_creative') %>">
         <%= t('collavre.comments.convert_button') %>
       </button>
-      <button class="approve-comment-btn comment-approve-hidden" data-comment-target="approveButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.approve_button') %>">
-        <%= t('collavre.comments.approve_button') %>
-      </button>
+      <% if has_pending_action %>
+        <button class="approve-comment-btn comment-approve-hidden" data-comment-target="approveButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.approve_button') %>">
+          <%= t('collavre.comments.approve_button') %>
+        </button>
+      <% end %>
       <button class="edit-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('collavre.comments.update_comment') %>">
         <%= t('collavre.comments.edit_button') %>
       </button>

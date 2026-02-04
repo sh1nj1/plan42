@@ -33,10 +33,11 @@ export default class extends Controller {
       })
     }
 
-    // Show approve button: user must be the designated approver for this comment
+    // Show approve button: user must be the designated approver or a system admin
     const hasPendingAction = this.element.dataset.hasPendingAction === 'true'
     const approverId = this.element.dataset.approverId
-    const canApprove = hasPendingAction && this.currentUserId && approverId && this.currentUserId === approverId
+    const isApprover = this.currentUserId && approverId && this.currentUserId === approverId
+    const canApprove = hasPendingAction && (isApprover || isAdmin)
 
     if (canApprove) {
       this.approveButtonTargets.forEach((button) => {
