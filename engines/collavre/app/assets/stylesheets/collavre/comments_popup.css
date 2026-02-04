@@ -646,6 +646,38 @@ body.chat-fullscreen main {
 #comment-participants {
     margin-bottom: 0.3em;
     min-height: 20px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.2em;
+}
+
+#comment-participants .avatar-wrapper {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.add-participant-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid var(--color-border);
+    background: transparent;
+    cursor: pointer;
+    color: var(--color-muted);
+    font-size: 1.2em;
+    line-height: 1;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.add-participant-btn:hover {
+    background: var(--color-section-bg);
+    color: var(--color-text);
 }
 
 #typing-indicator {
@@ -663,7 +695,7 @@ body.chat-fullscreen main {
 }
 
 .comment-presence-avatar {
-    margin-right: 0.2em;
+    margin-right: 0;
 }
 
 .comment-presence-avatar.inactive {

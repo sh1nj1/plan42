@@ -69,5 +69,8 @@ document.addEventListener('turbo:load', function() {
         emailInput.dispatchEvent(new Event('blur'))
       }
     }
+    if (params.get('open_share') === 'true') {
+      shareBtn.click()
+    }
   }
 })

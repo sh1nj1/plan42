@@ -67,6 +67,7 @@ en:
       move_button: Move
       move_no_selection: Select at least one message to move.
       move_error: Unable to move messages.
+      add_participant: Add user
       hint_drag_topic: "🎯 Drag → Move to topic"
       hint_move_button: "📤 Move button → Another chat"
       fullscreen: Full screen

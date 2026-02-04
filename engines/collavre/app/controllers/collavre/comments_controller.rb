@@ -360,7 +360,7 @@ module Collavre
     def participants
       users = [ @creative.user ].compact + @creative.all_shared_users(:feedback).map(&:user)
       users = users.uniq
-      data = users.map do |u|
+      user_data = users.map do |u|
         {
           id: u.id,
           email: u.email,
@@ -370,7 +370,10 @@ module Collavre
           initial: u.display_name[0].upcase
         }
       end
-      render json: data
+      render json: {
+        users: user_data,
+        can_share: @creative.has_permission?(Current.user, :admin)
+      }
     end
 
     def commands
