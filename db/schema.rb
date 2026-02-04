@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_22_034848) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -66,7 +66,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_22_034848) do
     t.datetime "created_at", null: false
     t.integer "creative_id"
     t.datetime "end_time", null: false
-    t.string "google_event_id", null: false
+    t.string "google_event_id"
     t.string "html_link"
     t.datetime "start_time", null: false
     t.string "summary"
@@ -292,6 +292,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_22_034848) do
     t.json "definition", default: {}
     t.text "description"
     t.string "name", null: false
+    t.boolean "requires_approval", default: false, null: false
     t.text "source_code"
     t.datetime "updated_at", null: false
     t.index ["creative_id"], name: "index_mcp_tools_on_creative_id"
@@ -396,6 +397,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_22_034848) do
     t.datetime "updated_at", null: false
     t.index ["owner_id", "owner_type"], name: "index_oauth_applications_on_owner_id_and_owner_type"
     t.index ["uid"], name: "index_oauth_applications_on_uid", unique: true
+  end
+
+  create_table "openclaw_pending_callbacks", force: :cascade do |t|
+    t.integer "comment_id"
+    t.text "context"
+    t.datetime "created_at", null: false
+    t.integer "creative_id"
+    t.datetime "expires_at", null: false
+    t.string "nonce", null: false
+    t.integer "thread_id"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["expires_at"], name: "index_openclaw_pending_callbacks_on_expires_at"
+    t.index ["nonce"], name: "index_openclaw_pending_callbacks_on_nonce", unique: true
+    t.index ["user_id"], name: "index_openclaw_pending_callbacks_on_user_id"
   end
 
   create_table "sessions", force: :cascade do |t|
@@ -583,6 +599,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_22_034848) do
     t.integer "agent_id", null: false
     t.datetime "created_at", null: false
     t.string "name"
+    t.json "pending_tool_call"
     t.string "status", default: "pending"
     t.string "trigger_event_name"
     t.json "trigger_event_payload"
@@ -594,9 +611,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_22_034848) do
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
     t.string "name", null: false
+    t.integer "position", default: 0, null: false
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["creative_id", "name"], name: "index_topics_on_creative_id_and_name", unique: true
+    t.index ["creative_id", "position"], name: "index_topics_on_creative_id_and_position"
     t.index ["creative_id"], name: "index_topics_on_creative_id"
     t.index ["user_id"], name: "index_topics_on_user_id"
   end
@@ -620,6 +639,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_22_034848) do
     t.string "email", null: false
     t.datetime "email_verified_at"
     t.integer "failed_login_attempts", default: 0, null: false
+    t.string "gateway_url"
     t.string "google_access_token"
     t.string "google_refresh_token"
     t.datetime "google_token_expires_at"
@@ -704,6 +724,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_22_034848) do
   add_foreign_key "notion_page_links", "notion_accounts"
   add_foreign_key "oauth_access_grants", "oauth_applications", column: "application_id"
   add_foreign_key "oauth_access_tokens", "oauth_applications", column: "application_id"
+  add_foreign_key "openclaw_pending_callbacks", "users"
   add_foreign_key "sessions", "users"
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
