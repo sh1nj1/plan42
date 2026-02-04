@@ -78,6 +78,18 @@ module CollavreOpenclaw
       assert_equal 0, manager.connected_count
     end
 
+    test "on_proactive_message applies handler to new connections" do
+      manager = ConnectionManager.instance
+      handler_called = false
+
+      manager.on_proactive_message { |_msg| handler_called = true }
+
+      # New connection created AFTER handler registration should have it
+      user = mock_user(id: 1)
+      client = manager.connection_for(user)
+      assert client.instance_variable_get(:@proactive_handler), "Handler should be set on new client"
+    end
+
     private
 
     def mock_user(id:)
