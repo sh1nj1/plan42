@@ -1,6 +1,6 @@
 <% comment_topic = comment.topic %>
 <% current_topic_id = local_assigns[:current_topic_id] %>
-<div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>" data-creative-id="<%= comment.creative_id %>">
+<div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>" data-creative-id="<%= comment.creative_id %>" data-creative-owner-id="<%= comment.creative&.user_id %>" data-can-approve="<%= comment.approval_status(Current.user) == :ok rescue false %>">
   <div class="comment-select">
     <input type="checkbox"
            class="comment-select-checkbox"
@@ -49,24 +49,18 @@
       <button class="<%= ['convert-comment-btn', ('comment-owner-only' unless can_convert_comment)].compact.join(' ') %>" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.convert_to_creative') %>">
         <%= t('collavre.comments.convert_button') %>
       </button>
-      <% can_approve = comment.approval_status(Current.user) == :ok %>
-      <% if can_approve %>
-        <button class="approve-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.approve_button') %>">
-          <%= t('collavre.comments.approve_button') %>
-        </button>
-      <% end %>
+      <button class="approve-comment-btn comment-approve-hidden" data-comment-target="approveButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.approve_button') %>">
+        <%= t('collavre.comments.approve_button') %>
+      </button>
       <button class="edit-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('collavre.comments.update_comment') %>">
         <%= t('collavre.comments.edit_button') %>
       </button>
       <button class="copy-comment-link-btn" data-comment-id="<%= comment.id %>" data-comment-url="<%= collavre.creative_comment_url(comment.creative, comment, Rails.application.config.action_mailer.default_url_options) %>" title="<%= t('collavre.comments.copy_link_button') %>">
         <%= t('collavre.comments.copy_link_button') %>
       </button>
-      <% can_delete = comment.user == Current.user || comment.creative.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
-      <% if can_delete %>
-        <button class="delete-comment-btn" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.delete') %>">
-          <%= t('collavre.comments.delete_button') %>
-        </button>
-      <% end %>
+      <button class="delete-comment-btn comment-delete-hidden" data-comment-target="deleteButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.delete') %>">
+        <%= t('collavre.comments.delete_button') %>
+      </button>
     </div>
   <div class="comment-content"><%= comment.content %></div>
 

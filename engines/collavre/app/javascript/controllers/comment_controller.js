@@ -3,7 +3,7 @@ import { renderCommentMarkdown } from '../lib/utils/markdown'
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton"]
+  static targets = ["ownerButton", "deleteButton", "approveButton"]
 
   connect() {
     const contentElement = this.element.querySelector('.comment-content')
@@ -15,10 +15,29 @@ export default class extends Controller {
 
     this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
+    const creativeOwnerId = this.element.dataset.creativeOwnerId
+    const isAdmin = document.body.dataset.systemAdmin === 'true'
+    const isOwner = this.currentUserId && commentAuthorId && this.currentUserId === commentAuthorId
+    const isCreativeOwner = this.currentUserId && creativeOwnerId && this.currentUserId === creativeOwnerId
 
-    if (this.currentUserId && commentAuthorId && this.currentUserId === commentAuthorId) {
+    if (isOwner) {
       this.ownerButtonTargets.forEach((button) => {
         button.classList.remove('comment-owner-only')
+      })
+    }
+
+    // Show delete button if user is comment author, creative owner, or admin
+    if (isOwner || isCreativeOwner || isAdmin) {
+      this.deleteButtonTargets.forEach((button) => {
+        button.classList.remove('comment-delete-hidden')
+      })
+    }
+
+    // Show approve button based on server-side can-approve or client-side check
+    const canApprove = this.element.dataset.canApprove === 'true'
+    if (canApprove) {
+      this.approveButtonTargets.forEach((button) => {
+        button.classList.remove('comment-approve-hidden')
       })
     }
   }
