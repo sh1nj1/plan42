@@ -121,17 +121,17 @@ module Collavre
     end
 
     def check_tool_approval!(tool_call)
-      tool_name = tool_call.name
+      mcp_tool_name = resolve_mcp_tool_name(tool_call.name)
       task = context&.dig(:task)
 
       # Check if this tool requires approval
-      mcp_tool = McpTool.find_by(name: tool_name)
+      mcp_tool = McpTool.find_by(name: mcp_tool_name)
       return unless mcp_tool&.requires_approval?
 
       # Check if we already have approval for this specific call (resume scenario)
       if task&.pending_tool_call.present?
         pending = task.pending_tool_call
-        if pending["tool_name"] == tool_name && pending["approved"]
+        if pending["tool_name"] == mcp_tool_name && pending["approved"]
           # Already approved, clear the pending state and proceed
           task.update!(pending_tool_call: nil)
           return
@@ -140,10 +140,33 @@ module Collavre
 
       # Requires approval - raise error to halt execution
       raise ApprovalPendingError.new(
-        "Tool '#{tool_name}' requires approval before execution",
+        "Tool '#{mcp_tool_name}' requires approval before execution",
         tool_call: tool_call,
-        task: task
+        task: task,
+        mcp_tool_name: mcp_tool_name
       )
+    end
+
+    # RubyLLM generates tool names from class names (e.g. Tools::CreativeUpdate -> "tools--creative_update")
+    # but McpTool stores the original tool_name (e.g. "creative_update_service").
+    # This method resolves RubyLLM's tool name back to the McpTool name via the ToolMeta registry.
+    def resolve_mcp_tool_name(ruby_llm_name)
+      @tool_name_map ||= build_tool_name_map
+      @tool_name_map[ruby_llm_name] || ruby_llm_name
+    end
+
+    def build_tool_name_map
+      map = {}
+      ToolMeta.registry.each do |service_class|
+        schema = ToolSchema::Builder.build(service_class)
+        tool_class_name = ToolSchema::RubyLlmFactory.tool_class_name(service_class)
+        # Instantiate the RubyLLM tool class to get its generated name
+        if Tools.const_defined?(tool_class_name)
+          ruby_llm_tool = Tools.const_get(tool_class_name).new
+          map[ruby_llm_tool.name] = schema[:name]
+        end
+      end
+      map
     end
 
     def add_messages(conversation, contents)

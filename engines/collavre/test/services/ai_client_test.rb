@@ -135,6 +135,55 @@ class AiClientTest < ActiveSupport::TestCase
     assert_equal 20, log_data["output_tokens"]
   end
 
+  test "resolve_mcp_tool_name maps RubyLLM tool name to McpTool name" do
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: "system",
+      llm_api_key: "api-key"
+    )
+
+    # Build a fake registry mapping
+    fake_tool = Object.new
+    fake_tool.define_singleton_method(:name) { "tools--creative_update" }
+
+    fake_map = { "tools--creative_update" => "creative_update_service" }
+    client.stub(:build_tool_name_map, fake_map) do
+      assert_equal "creative_update_service", client.send(:resolve_mcp_tool_name, "tools--creative_update")
+    end
+  end
+
+  test "resolve_mcp_tool_name returns original name when no mapping exists" do
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: "system",
+      llm_api_key: "api-key"
+    )
+
+    client.stub(:build_tool_name_map, {}) do
+      assert_equal "unknown_tool", client.send(:resolve_mcp_tool_name, "unknown_tool")
+    end
+  end
+
+  test "check_tool_approval uses resolved mcp tool name" do
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: "system",
+      llm_api_key: "api-key"
+    )
+
+    # Create a tool call with RubyLLM-style name
+    tool_call = OpenStruct.new(name: "tools--creative_update", arguments: { "id" => 1 }, id: "call_1")
+
+    # Stub resolve to return the mcp name
+    client.stub(:resolve_mcp_tool_name, "creative_update_service") do
+      # No McpTool in DB with requires_approval, so it should return nil (no error)
+      assert_nil client.send(:check_tool_approval!, tool_call)
+    end
+  end
+
   test "logs error details when chat fails" do
     ActivityLog.delete_all
     conversation = FakeConversation.new

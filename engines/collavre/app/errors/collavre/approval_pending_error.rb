@@ -2,15 +2,17 @@
 
 module Collavre
   class ApprovalPendingError < StandardError
-    attr_reader :tool_call, :task
+    attr_reader :tool_call, :task, :mcp_tool_name
 
-    def initialize(message = "Tool execution requires approval", tool_call: nil, task: nil)
+    def initialize(message = "Tool execution requires approval", tool_call: nil, task: nil, mcp_tool_name: nil)
       @tool_call = tool_call
       @task = task
+      @mcp_tool_name = mcp_tool_name
       super(message)
     end
 
     def tool_name
+      return mcp_tool_name if mcp_tool_name.present?
       return nil unless tool_call
 
       if tool_call.respond_to?(:name)
