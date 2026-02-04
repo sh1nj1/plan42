@@ -617,6 +617,9 @@ export default class extends Controller {
         // Force layout then restore transitions
         el.offsetHeight // eslint-disable-line no-unused-expressions
         el.style.transition = ''
+
+        // Scroll active topic into view after popup has settled at final size
+        this.topicsController?.scrollToActiveTopic()
       }
       el.addEventListener('transitionend', cleanup, { once: true })
       setTimeout(cleanup, 300)
@@ -639,10 +642,9 @@ export default class extends Controller {
       }
     }
 
-    // Scroll to bottom after layout change + scroll active topic into view
+    // Scroll to bottom after layout change
     requestAnimationFrame(() => {
       this.listController?.scrollToBottom()
-      this.topicsController?.scrollToActiveTopic()
     })
   }
 
