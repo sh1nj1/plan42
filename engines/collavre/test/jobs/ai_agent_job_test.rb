@@ -171,6 +171,64 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert agent_msg_idx < current_msg_idx
   end
 
+  test "skips execution when task is already cancelled before job runs" do
+    task = Task.create!(
+      name: "Response to test_event",
+      status: "running",
+      trigger_event_name: "test_event",
+      trigger_event_payload: @context,
+      agent: @agent
+    )
+
+    # Pre-cancel the task to simulate comment deletion before job starts
+    task.update!(status: "cancelled")
+
+    AiClient.stub :new, FakeAiClient.new do
+      AiAgentJob.perform_now(task)
+    end
+
+    # Task should remain cancelled — job should not have run
+    assert_equal "cancelled", task.reload.status
+    assert_equal 0, task.task_actions.count
+  end
+
+  test "cancels during streaming when task status changes to cancelled" do
+    task = Task.create!(
+      name: "Response to test_event",
+      status: "running",
+      trigger_event_name: "test_event",
+      trigger_event_payload: @context,
+      agent: @agent
+    )
+
+    # Client that cancels the task mid-stream to simulate user deleting message
+    cancelling_client = Class.new do
+      define_method(:initialize) { |*args, **kwargs| }
+      define_method(:chat) do |contents, tools: [], &block|
+        block.call("chunk 0 ") if block
+        # Simulate user deleting their comment → task gets cancelled
+        task.update!(status: "cancelled")
+        block.call("chunk 1 ") if block
+        "chunk 0 chunk 1 "
+      end
+    end
+
+    # Temporarily set cancel check interval to 0 so it checks on every chunk
+    original_interval = AiAgentService::CANCEL_CHECK_INTERVAL
+    AiAgentService.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    AiAgentService.const_set(:CANCEL_CHECK_INTERVAL, 0)
+
+    AiClient.stub :new, cancelling_client.new do
+      AiAgentJob.perform_now(task)
+    end
+
+    assert_equal "cancelled", task.reload.status
+    assert_includes task.task_actions.pluck(:action_type), "cancelled"
+  ensure
+    AiAgentService.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    AiAgentService.const_set(:CANCEL_CHECK_INTERVAL, original_interval)
+  end
+
   test "fetches latest comments when history exceeds limit" do
     # Create 60 comments
     60.times do |i|

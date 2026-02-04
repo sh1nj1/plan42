@@ -1,5 +1,22 @@
 module Collavre
 class CommentsPresenceChannel < ApplicationCable::Channel
+  # Broadcast status for any currently running AI agent tasks for a creative.
+  # Called when a user subscribes to ensure they see ongoing agent activity.
+  def self.broadcast_running_agents(creative_id)
+    Task.where(status: %w[running pending]).find_each do |task|
+      task_creative_id = task.trigger_event_payload&.dig("creative", "id")
+      next unless task_creative_id == creative_id
+
+      broadcast_agent_status(
+        creative_id,
+        status: "thinking",
+        agent_id: task.agent_id,
+        agent_name: task.agent.display_name,
+        task_id: task.id
+      )
+    end
+  end
+
   # Broadcast agent status (thinking/streaming/idle) to presence channel.
   # This allows the frontend typing indicator to show AI agent activity.
   def self.broadcast_agent_status(creative_id, status:, agent_id:, agent_name:, task_id: nil, content: nil)
@@ -25,6 +42,7 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     CommentPresenceStore.add(@creative_id, current_user.id)
     Comment.broadcast_badge(creative, current_user)
     broadcast_presence
+    CommentsPresenceChannel.broadcast_running_agents(@creative_id)
   end
 
   def unsubscribed

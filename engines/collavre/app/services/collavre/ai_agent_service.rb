@@ -2,6 +2,8 @@ module Collavre
   class AiAgentService
     # Minimum interval (in seconds) between streaming broadcasts to avoid excessive updates
     STREAM_THROTTLE_INTERVAL = 0.1
+    # Minimum interval (in seconds) between cancellation checks to avoid excessive DB queries
+    CANCEL_CHECK_INTERVAL = 1.0
 
     def initialize(task)
       @task = task
@@ -57,8 +59,10 @@ module Collavre
         )
 
         last_broadcast_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        @last_cancel_check_at = last_broadcast_at
 
         client.chat(messages, tools: @agent.tools || []) do |delta|
+          check_cancelled!
           response_content += delta
 
           # Broadcast streaming content to client (throttled)
@@ -97,9 +101,25 @@ module Collavre
     rescue ApprovalPendingError => e
       handle_approval_pending(e)
       raise # Re-raise to signal the job to handle status
+    rescue CancelledError
+      handle_cancelled
+      raise
     end
 
     private
+
+    def check_cancelled!
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      return if (now - @last_cancel_check_at) < CANCEL_CHECK_INTERVAL
+
+      @last_cancel_check_at = now
+      raise CancelledError if @task.reload.status == "cancelled"
+    end
+
+    def handle_cancelled
+      broadcast_agent_status("idle")
+      log_action("cancelled", { message: "Task cancelled by user" })
+    end
 
     def broadcast_agent_status(status, content: nil)
       return unless @creative
@@ -203,6 +223,19 @@ module Collavre
 
       log_action("reply_created", { comment_id: reply.id, content: content })
       reassociate_activity_logs(original_comment, reply)
+    end
+
+    def check_cancelled!
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      return if (now - @last_cancel_check_at) < CANCEL_CHECK_INTERVAL
+
+      @last_cancel_check_at = now
+      raise CancelledError if @task.reload.status == "cancelled"
+    end
+
+    def handle_cancelled
+      broadcast_agent_status("idle")
+      log_action("cancelled", { message: "Task cancelled by user" })
     end
 
     def reassociate_activity_logs(from_comment, to_comment)

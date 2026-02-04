@@ -28,7 +28,7 @@ module Collavre
 
     after_create_commit :broadcast_create, :notify_write_users, :notify_mentions, :notify_approver, :broadcast_badges
     after_update_commit :broadcast_update
-    after_destroy_commit :broadcast_destroy, :broadcast_badges
+    after_destroy_commit :broadcast_destroy, :broadcast_badges, :cancel_pending_tasks
 
     # public for db migration
     def creative_snippet
@@ -74,6 +74,14 @@ module Collavre
     end
 
     private
+
+    def cancel_pending_tasks
+      Task.where(status: %w[pending running]).each do |task|
+        if task.trigger_event_payload&.dig("comment", "id") == id
+          task.update!(status: "cancelled")
+        end
+      end
+    end
 
     def create_inbox_item(owner, key, params = {})
       origin = creative&.effective_origin
