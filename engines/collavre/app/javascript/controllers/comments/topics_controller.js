@@ -86,7 +86,7 @@ export default class extends Controller {
     }
 
     renderTopics(topics, canManage = false) {
-        const dragActions = canManage 
+        const dragActions = canManage
             ? 'dragstart->comments--topics#handleTopicDragStart dragend->comments--topics#handleTopicDragEnd'
             : ''
         const dropActions = 'dragover->comments--topics#handleDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleDrop'
@@ -150,11 +150,11 @@ export default class extends Controller {
         const targetTopicId = event.currentTarget.dataset.id // Empty string for Main
 
         // Dispatch event for list_controller to handle the move
-        this.dispatch('move-to-topic', { 
-            detail: { 
-                commentIds, 
-                targetTopicId 
-            } 
+        this.dispatch('move-to-topic', {
+            detail: {
+                commentIds,
+                targetTopicId
+            }
         })
     }
 
@@ -170,7 +170,7 @@ export default class extends Controller {
         this.draggingTopicId = topicId
         event.dataTransfer.setData('application/x-topic-id', topicId)
         event.dataTransfer.effectAllowed = 'move'
-        
+
         requestAnimationFrame(() => {
             topicEl.classList.add('topic-dragging')
         })
@@ -213,7 +213,7 @@ export default class extends Controller {
 
     async handleTopicReorderDrop(event) {
         event.preventDefault()
-        
+
         const targetEl = event.currentTarget
         targetEl.classList.remove('topic-drag-over-left', 'topic-drag-over-right')
 
@@ -356,13 +356,13 @@ export default class extends Controller {
         if (event.target.closest('.topic-edit-input')) return
 
         const id = event.currentTarget.dataset.id
-        
+
         // If clicking on already active topic (not Main), show edit mode
         if (id && String(this.currentTopicId) === String(id) && this.canManageTopics) {
             this.showEditInput(event.currentTarget, id)
             return
         }
-        
+
         this.selectTopic(id)
     }
 
@@ -380,15 +380,15 @@ export default class extends Controller {
         if (!topic) return
 
         const currentName = topic.name
-        
+
         // Store original HTML for restore
         topicEl.dataset.originalHtml = topicEl.innerHTML
-        
+
         // Replace content with input
         topicEl.innerHTML = `<input type="text" class="topic-edit-input" value="${currentName}"
                               data-action="keydown->comments--topics#handleEditKey blur->comments--topics#cancelEdit"
                               data-topic-id="${topicId}">`
-        
+
         const input = topicEl.querySelector('input')
         requestAnimationFrame(() => {
             input.focus()
@@ -471,6 +471,13 @@ export default class extends Controller {
             }
         })
         // Scroll active topic into view
+        if (activeEl) {
+            activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+        }
+    }
+
+    scrollToActiveTopic() {
+        const activeEl = this.listTarget.querySelector('.topic-tag.active')
         if (activeEl) {
             activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
         }

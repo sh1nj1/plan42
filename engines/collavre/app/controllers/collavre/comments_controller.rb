@@ -1,11 +1,19 @@
 module Collavre
   class CommentsController < ApplicationController
-    layout "collavre/chat", only: [ :fullscreen ]
     before_action :set_creative
     before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action ]
 
     def fullscreen
-      @creative_snippet = @creative.creative_snippet
+      # Render the creative index page with comments popup auto-opened in fullscreen.
+      # This way the creative list loads behind the popup, so exiting fullscreen
+      # doesn't require a page reload.
+      @parent_creative = @creative
+      @creatives = []
+      @shared_list = @creative.all_shared_users
+      @auto_fullscreen = true
+      # Prepend creatives prefix so partials like 'add_button' resolve to collavre/creatives/_add_button
+      lookup_context.prefixes.prepend "collavre/creatives"
+      render "collavre/creatives/index"
     end
 
     def index
