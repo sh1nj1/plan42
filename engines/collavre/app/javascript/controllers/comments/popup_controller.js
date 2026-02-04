@@ -532,7 +532,7 @@ export default class extends Controller {
         // Direct fullscreen entry — creative page was never loaded, so navigate for real
         const creativeId = el.dataset.creativeId
         if (creativeId) {
-          window.location.href = `/creatives/${creativeId}`
+          window.location.href = `/creatives/${creativeId}?open_comments=true`
           return
         }
       }
