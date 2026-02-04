@@ -16,19 +16,7 @@
 }
 
 body.chat-fullscreen {
-    margin: 0;
-    padding: 0;
-    height: 100vh;
     overflow: hidden;
-}
-
-body.chat-fullscreen main {
-    height: 100vh;
-    width: 100vw;
-    max-width: none;
-    padding: 0;
-    margin: 0;
-    box-sizing: border-box;
 }
 
 .comments-fullscreen-page {
