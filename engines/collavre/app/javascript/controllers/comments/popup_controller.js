@@ -639,9 +639,10 @@ export default class extends Controller {
       }
     }
 
-    // Scroll to bottom after layout change
+    // Scroll to bottom after layout change + scroll active topic into view
     requestAnimationFrame(() => {
       this.listController?.scrollToBottom()
+      this.topicsController?.scrollToActiveTopic()
     })
   }
 

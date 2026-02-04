@@ -476,6 +476,13 @@ export default class extends Controller {
         }
     }
 
+    scrollToActiveTopic() {
+        const activeEl = this.listTarget.querySelector('.topic-tag.active')
+        if (activeEl) {
+            activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+        }
+    }
+
     handleNewMessage(event) {
         const topicId = event.detail.topicId
         if (!topicId) return
