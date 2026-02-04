@@ -97,7 +97,11 @@ module CollavreOpenclaw
               yield event[:text] if block_given?
             end
           when "final"
-            # Final event may contain full text; delta already streamed it
+            # If no deltas were streamed, final contains the full text
+            if response_content.blank? && event[:text].present?
+              response_content << event[:text]
+              yield event[:text] if block_given?
+            end
           when "error"
             error_msg = event[:text] || "Unknown error"
             yield "OpenClaw Error: #{error_msg}" if block_given?
