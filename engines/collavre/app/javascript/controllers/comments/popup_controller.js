@@ -496,9 +496,19 @@ export default class extends Controller {
       const savedStyles = this._savedStyles
       this._savedStyles = null
 
-      // Calculate target position: use comment button if available, else saved styles
+      // Calculate target position using the same logic as updatePosition()
+      // so cleanup can apply it directly without calling updatePosition() (which would cause a snap)
       const creativeId = el.dataset.creativeId
-      let targetTop, targetLeft, targetWidth, targetHeight
+      const scrollY = window.scrollY || window.pageYOffset
+
+      // Final absolute-position values (what updatePosition would set)
+      let finalTop = ''      // px string with scrollY included
+      let finalRight = ''    // px string
+      let finalWidth = savedStyles?.width || ''
+      let finalHeight = savedStyles?.height || ''
+
+      // Fixed-position animation targets (viewport-relative)
+      let animTop, animLeft, animWidth, animHeight
 
       // Try to find the comment button for precise positioning
       let targetButton = this.currentButton
@@ -508,40 +518,44 @@ export default class extends Controller {
       }
 
       if (targetButton) {
-        // Position next to the button (same logic as updatePosition)
-        const btnRect = targetButton.getBoundingClientRect()
-        const scrollY = window.scrollY || window.pageYOffset
-        targetWidth = savedStyles?.width ? parseFloat(savedStyles.width) : 420
-        targetHeight = savedStyles?.height ? parseFloat(savedStyles.height) : 640
-        targetTop = btnRect.bottom + scrollY + 4
-        const bottom = targetTop + targetHeight
-        const viewportBottom = scrollY + window.innerHeight
-        if (bottom > viewportBottom) {
-          targetTop = Math.max(scrollY + 4, viewportBottom - targetHeight - 4)
-        }
-        targetLeft = window.innerWidth - (btnRect.right - 24) - targetWidth
-        // Convert to fixed coordinates (subtract scrollY since we use position:fixed for animation)
-        targetTop = targetTop - scrollY
-        targetLeft = btnRect.right - 24 - targetWidth
-        // Actually match updatePosition: right = window.innerWidth - rect.right + 24
-        const rightPx = window.innerWidth - btnRect.right + 24
-        targetLeft = window.innerWidth - rightPx - targetWidth
         this.currentButton = targetButton
+        const btnRect = targetButton.getBoundingClientRect()
+        const rightPx = window.innerWidth - btnRect.right + 24
+
+        animWidth = parseFloat(finalWidth) || 420
+        animHeight = parseFloat(finalHeight) || 640
+
+        // Calculate top in absolute coords (with scrollY) — same as updatePosition
+        let absTop = btnRect.bottom + scrollY + 4
+        const absBottom = absTop + animHeight
+        const viewportBottom = scrollY + window.innerHeight
+        if (absBottom > viewportBottom) {
+          absTop = Math.max(scrollY + 4, viewportBottom - animHeight - 4)
+        }
+
+        // Store final absolute-position values for cleanup
+        finalTop = `${absTop}px`
+        finalRight = `${rightPx}px`
+
+        // Convert to fixed coordinates for animation
+        animTop = absTop - scrollY
+        animLeft = window.innerWidth - rightPx - animWidth
       } else if (savedStyles && Object.values(savedStyles).some(v => v)) {
         // Fallback to saved styles
-        const targetRight = savedStyles.right || '2em'
-        const vw = window.innerWidth
-        const rightVal = parseFloat(targetRight) || 32
-        targetWidth = parseFloat(savedStyles.width) || 420
-        targetHeight = parseFloat(savedStyles.height) || 640
-        targetLeft = savedStyles.left ? parseFloat(savedStyles.left) : (vw - rightVal - targetWidth)
-        targetTop = parseFloat(savedStyles.top) || 100
+        const rightVal = parseFloat(savedStyles.right) || 32
+        animWidth = parseFloat(savedStyles.width) || 420
+        animHeight = parseFloat(savedStyles.height) || 640
+        animLeft = savedStyles.left ? parseFloat(savedStyles.left) : (window.innerWidth - rightVal - animWidth)
+        animTop = parseFloat(savedStyles.top) ? (parseFloat(savedStyles.top) - scrollY) : 100
+
+        finalTop = savedStyles.top || ''
+        finalRight = savedStyles.right || ''
       } else {
         // No reference at all: use CSS defaults
-        targetWidth = 420
-        targetHeight = 640
-        targetLeft = window.innerWidth - 32 - targetWidth  // right: 2em
-        targetTop = 100
+        animWidth = 420
+        animHeight = 640
+        animLeft = window.innerWidth - 32 - animWidth  // right: 2em
+        animTop = 100
       }
 
       // Animated exit: pin at fullscreen position, then shrink to target
@@ -563,30 +577,46 @@ export default class extends Controller {
       // Force layout so the pinned position is applied
       el.offsetHeight // eslint-disable-line no-unused-expressions
 
-      // Animate to target position
+      // Animate to target position (fixed coordinates)
       el.style.transition = ''
-      el.style.top = `${targetTop}px`
-      el.style.left = `${targetLeft}px`
-      el.style.width = `${targetWidth}px`
-      el.style.height = `${targetHeight}px`
+      el.style.top = `${animTop}px`
+      el.style.left = `${animLeft}px`
+      el.style.width = `${animWidth}px`
+      el.style.height = `${animHeight}px`
 
       const cleanup = () => {
         el.removeEventListener('transitionend', cleanup)
-        el.style.transition = ''
+        // Switch from fixed back to default (absolute) positioning
+        // Apply the pre-calculated absolute coords directly — no updatePosition() needed
+        el.style.transition = 'none'
         el.style.position = ''
-        el.style.top = ''
-        el.style.left = ''
-        el.style.right = ''
         el.style.bottom = ''
-        el.style.width = ''
-        el.style.height = ''
-        // Apply saved styles or position via updatePosition
-        if (savedStyles) {
+
+        if (targetButton) {
+          // Set absolute coords matching updatePosition output
+          el.style.top = finalTop
+          el.style.right = finalRight
+          el.style.left = ''
+          el.style.width = finalWidth
+          el.style.height = finalHeight
+        } else if (savedStyles) {
+          el.style.top = ''
+          el.style.left = ''
+          el.style.right = ''
+          el.style.width = ''
+          el.style.height = ''
           Object.assign(el.style, savedStyles)
+        } else {
+          el.style.top = ''
+          el.style.left = ''
+          el.style.right = ''
+          el.style.width = ''
+          el.style.height = ''
         }
-        if (this.currentButton) {
-          this.updatePosition()
-        }
+
+        // Force layout then restore transitions
+        el.offsetHeight // eslint-disable-line no-unused-expressions
+        el.style.transition = ''
       }
       el.addEventListener('transitionend', cleanup, { once: true })
       setTimeout(cleanup, 300)
