@@ -150,7 +150,6 @@ export default class extends Controller {
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.titleTarget.textContent = snippet
 
-
     this.prepareSize()
 
     this.showPopup()
@@ -178,7 +177,6 @@ export default class extends Controller {
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.titleTarget.textContent = snippet
-
 
     this.showPopup()
 
@@ -597,9 +595,30 @@ export default class extends Controller {
   handlePopState(event) {
     const isFs = event.state?.fullscreen === true
     if (isFs !== this.isFullscreen()) {
-      this.element.dataset.fullscreen = isFs ? 'true' : 'false'
+      const el = this.element
+      // Clear any animation inline styles to avoid stale positions
+      el.style.transition = 'none'
+      el.style.position = ''
+      el.style.top = ''
+      el.style.left = ''
+      el.style.right = ''
+      el.style.bottom = ''
+      el.style.width = ''
+      el.style.height = ''
+
+      el.dataset.fullscreen = isFs ? 'true' : 'false'
       document.body.classList.toggle('chat-fullscreen', isFs)
       this._syncFullscreenUI(isFs)
+
+      if (!isFs && this._savedStyles) {
+        Object.assign(el.style, this._savedStyles)
+        this._savedStyles = null
+      }
+
+      // Restore transition
+      el.offsetHeight // eslint-disable-line no-unused-expressions
+      el.style.transition = ''
+
       requestAnimationFrame(() => this.listController?.scrollToBottom())
     }
   }
