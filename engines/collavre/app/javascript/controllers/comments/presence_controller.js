@@ -149,6 +149,17 @@ export default class extends Controller {
       }
       this.renderTypingIndicator()
     }
+    if (data.agent_status) {
+      const { id, name, status, task_id: taskId, content } = data.agent_status
+      if (status === 'thinking' || status === 'streaming') {
+        this.typingUsers[id] = name
+        this.updateStreamingElement(id, name, taskId, content)
+      } else {
+        delete this.typingUsers[id]
+        this.removeStreamingElement(taskId)
+      }
+      this.renderTypingIndicator()
+    }
   }
 
   renderParticipants(presentIds) {
@@ -240,6 +251,59 @@ export default class extends Controller {
     const text = document.createElement('span')
     text.textContent = `${names.join(', ')} ...`
     this.typingIndicatorTarget.appendChild(text)
+  }
+
+  updateStreamingElement(agentId, agentName, taskId, content) {
+    if (!content && content !== '') return
+    const list = document.getElementById('comments-list')
+    if (!list) return
+
+    const elementId = `agent-streaming-${taskId}`
+    let el = document.getElementById(elementId)
+
+    if (!el) {
+      el = document.createElement('div')
+      el.id = elementId
+      el.className = 'comment-item agent-streaming'
+      list.appendChild(el)
+    }
+
+    // Build DOM nodes safely (no innerHTML to avoid XSS)
+    el.textContent = ''
+
+    if (this.participantsData) {
+      const user = this.participantsData.find((p) => p.id === agentId)
+      if (user) {
+        const img = document.createElement('img')
+        img.src = user.avatar_url
+        img.alt = ''
+        img.width = 20
+        img.height = 20
+        img.className = 'avatar comment-avatar'
+        img.style.borderRadius = '50%'
+        el.appendChild(img)
+      }
+    }
+
+    const strong = document.createElement('strong')
+    strong.textContent = agentName
+    el.appendChild(strong)
+
+    el.appendChild(document.createTextNode(' '))
+
+    const span = document.createElement('span')
+    span.className = 'comment-content'
+    span.textContent = content
+    el.appendChild(span)
+
+    // Auto-scroll to bottom (column-reverse layout)
+    list.scrollTop = list.scrollHeight
+  }
+
+  removeStreamingElement(taskId) {
+    if (!taskId) return
+    const el = document.getElementById(`agent-streaming-${taskId}`)
+    if (el) el.remove()
   }
 
   clearTypingTimers() {

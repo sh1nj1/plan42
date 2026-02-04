@@ -1,5 +1,20 @@
 module Collavre
 class CommentsPresenceChannel < ApplicationCable::Channel
+  # Broadcast agent status (thinking/streaming/idle) to presence channel.
+  # This allows the frontend typing indicator to show AI agent activity.
+  def self.broadcast_agent_status(creative_id, status:, agent_id:, agent_name:, task_id: nil, content: nil)
+    payload = {
+      agent_status: {
+        id: agent_id,
+        name: agent_name,
+        status: status,
+        task_id: task_id
+      }
+    }
+    payload[:agent_status][:content] = content if content.present?
+    ActionCable.server.broadcast("comments_presence:#{creative_id}", payload)
+  end
+
   def subscribed
     Rails.logger.info "User #{current_user&.email} subscribed to comments presence for creative #{params[:creative_id]}"
     return unless params[:creative_id].present? && current_user
