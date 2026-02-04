@@ -24,6 +24,12 @@ module CollavreOpenclaw
         return nil
       end
 
+      unless @user&.llm_api_key.present?
+        Rails.logger.error("[CollavreOpenclaw] No API key configured for user #{@user&.id} (may be a decryption failure)")
+        yield "Error: OpenClaw API key not configured or decryption failed. Please re-enter the API key in AI agent settings." if block_given?
+        return nil
+      end
+
       response_content = +""
 
       begin
@@ -297,10 +303,22 @@ module CollavreOpenclaw
 
           req.body = payload.to_json
 
-          req.options.on_data = proc do |chunk, _size, _env|
-            buffer << chunk
-            process_sse_buffer(buffer, &block)
+          req.options.on_data = proc do |chunk, _size, env|
+            # Only process streaming data for successful responses
+            if env&.status.nil? || (env.status >= 200 && env.status < 300)
+              buffer << chunk
+              process_sse_buffer(buffer, &block)
+            else
+              buffer << chunk
+            end
           end
+        end
+
+        # Check HTTP status and raise meaningful errors
+        unless response.status >= 200 && response.status < 300
+          error_body = buffer.presence || response.body
+          error_message = parse_error_message(response.status, error_body)
+          raise error_message
         end
 
         # Process any remaining data in buffer
@@ -328,6 +346,31 @@ module CollavreOpenclaw
           retry
         end
         raise "Failed to connect to OpenClaw after #{max_retries + 1} attempts: #{e.message}"
+      end
+    end
+
+    def parse_error_message(status, body)
+      detail = ""
+      begin
+        json = JSON.parse(body, symbolize_names: true) if body.present?
+        detail = json[:error] || json[:message] || json.to_s if json
+      rescue JSON::ParserError
+        detail = body.to_s.truncate(200)
+      end
+
+      case status
+      when 401
+        "Authentication failed (HTTP 401). Check your API key. #{detail}"
+      when 403
+        "Access forbidden (HTTP 403). #{detail}"
+      when 404
+        "Gateway endpoint not found (HTTP 404). Check your Gateway URL."
+      when 429
+        "Rate limited (HTTP 429). #{detail}"
+      when 500..599
+        "Gateway server error (HTTP #{status}). #{detail}"
+      else
+        "HTTP #{status}: #{detail}"
       end
     end
 
