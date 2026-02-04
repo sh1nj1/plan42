@@ -592,7 +592,6 @@ export default class extends Controller {
       setTimeout(cleanup, 300)
 
       // Update URL — append open_comments=true so the popup stays open on refresh
-      const creativeId = el.dataset.creativeId
       let backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
       if (backUrl) {
         const url = new URL(backUrl, window.location.origin)
