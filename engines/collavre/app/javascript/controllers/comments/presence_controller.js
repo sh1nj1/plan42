@@ -268,20 +268,33 @@ export default class extends Controller {
       list.appendChild(el)
     }
 
-    // Build inner HTML — avatar from participantsData if available
-    let avatarHtml = ''
+    // Build DOM nodes safely (no innerHTML to avoid XSS)
+    el.textContent = ''
+
     if (this.participantsData) {
       const user = this.participantsData.find((p) => p.id === agentId)
       if (user) {
-        avatarHtml = `<img src="${user.avatar_url}" alt="" width="20" height="20" class="avatar comment-avatar" style="border-radius: 50%;" />`
+        const img = document.createElement('img')
+        img.src = user.avatar_url
+        img.alt = ''
+        img.width = 20
+        img.height = 20
+        img.className = 'avatar comment-avatar'
+        img.style.borderRadius = '50%'
+        el.appendChild(img)
       }
     }
 
-    const escaped = content
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-    el.innerHTML = `${avatarHtml}<strong>${agentName.replace(/</g, '&lt;')}</strong> <span class="comment-content">${escaped}</span>`
+    const strong = document.createElement('strong')
+    strong.textContent = agentName
+    el.appendChild(strong)
+
+    el.appendChild(document.createTextNode(' '))
+
+    const span = document.createElement('span')
+    span.className = 'comment-content'
+    span.textContent = content
+    el.appendChild(span)
 
     // Auto-scroll to bottom (column-reverse layout)
     list.scrollTop = list.scrollHeight
