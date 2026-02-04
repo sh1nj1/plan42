@@ -128,7 +128,7 @@ class CommentTest < ActiveSupport::TestCase
     initial_inbox_count = InboxItem.count
 
     perform_enqueued_jobs do
-      creative.comments.create!(content: "...", user: ai_agent)
+      creative.comments.create!(content: Collavre::Comment::STREAMING_PLACEHOLDER_CONTENT, user: ai_agent)
     end
 
     # No inbox items should be created for "..." placeholder from AI agent

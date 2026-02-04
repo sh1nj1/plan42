@@ -123,7 +123,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
 
     # Placeholder created then destroyed → net zero
     assert_equal initial_comment_count, @creative.comments.count
-    assert_not @creative.comments.exists?(content: "...")
+    assert_not @creative.comments.exists?(content: Collavre::Comment::STREAMING_PLACEHOLDER_CONTENT)
   end
 
   test "saves partial content when cancelled" do

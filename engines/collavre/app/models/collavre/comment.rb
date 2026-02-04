@@ -2,6 +2,8 @@ module Collavre
   class Comment < ApplicationRecord
     self.table_name = "comments"
 
+    STREAMING_PLACEHOLDER_CONTENT = "..."
+
     # Use non-namespaced partial path for backward compatibility
     def to_partial_path
       "comments/comment"
@@ -105,7 +107,7 @@ module Collavre
 
     # AI agent streaming placeholder: skip inbox notifications for "..." content
     def streaming_placeholder?
-      user&.ai_user? && content == "..."
+      user&.ai_user? && content == STREAMING_PLACEHOLDER_CONTENT
     end
 
     def mentioned_emails

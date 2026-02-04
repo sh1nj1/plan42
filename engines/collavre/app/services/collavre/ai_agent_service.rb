@@ -44,7 +44,7 @@ module Collavre
 
         if @original_comment
           @reply_comment = @original_comment.creative.comments.create!(
-            content: "...", # Placeholder — replaced during streaming
+            content: Comment::STREAMING_PLACEHOLDER_CONTENT, # Placeholder — replaced during streaming
             user: @agent,
             topic_id: @original_comment.topic_id
           )
@@ -238,7 +238,7 @@ module Collavre
 
     def handle_approval_pending(error)
       # Clean up placeholder comment if exists
-      @reply_comment&.destroy! if @reply_comment&.content == "..."
+      @reply_comment&.destroy! if @reply_comment&.content == Comment::STREAMING_PLACEHOLDER_CONTENT
 
       broadcast_agent_status("idle")
 

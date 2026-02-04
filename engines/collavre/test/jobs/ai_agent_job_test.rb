@@ -47,7 +47,7 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_equal 4, task.task_actions.count
     assert_equal [ "start", "prompt_generated", "completion", "reply_created" ], task.task_actions.pluck(:action_type)
 
-    # Verify final comment is created (not a "..." placeholder)
+    # Verify final comment is created (not a streaming placeholder)
     reply = @creative.comments.order(:created_at).last
     assert_equal "AI Response", reply.content
     assert_equal @agent.id, reply.user_id
@@ -89,7 +89,7 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     # Verify no new comment created (no placeholder, no reply)
     assert_equal 1, @creative.comments.count # Only the initial comment
-    assert_not @creative.comments.exists?(content: "...")
+    assert_not @creative.comments.exists?(content: Collavre::Comment::STREAMING_PLACEHOLDER_CONTENT)
   end
 
   class PromptCaptureClient
