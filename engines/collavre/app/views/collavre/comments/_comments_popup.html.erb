@@ -1,14 +1,17 @@
 
 <% fullscreen = local_assigns.fetch(:fullscreen, false) %>
+<% auto_fullscreen = local_assigns.fetch(:auto_fullscreen, false) %>
 <% creative = local_assigns[:creative] %>
 <div id="comments-popup" data-controller="comments--popup comments--list comments--form comments--presence comments--mention-menu comments--topics" class="popup-box"
      data-fullscreen="<%= fullscreen %>"
+     <% if auto_fullscreen %>data-auto-fullscreen="true"<% end %>
      data-fullscreen-label="<%= t('collavre.comments.fullscreen', default: 'Full screen') %>"
      data-exit-fullscreen-label="<%= t('collavre.comments.exit_fullscreen', default: 'Exit full screen') %>"
-     <% if fullscreen && creative.present? %>
-     data-creative-id="<%= creative.id %>"
-     data-creative-snippet="<%= creative.creative_snippet %>"
-     data-can-comment="<%= creative.has_permission?(Current.user, :feedback) %>"
+     <% popup_creative = creative || (@parent_creative if auto_fullscreen) %>
+     <% if (fullscreen || auto_fullscreen) && popup_creative.present? %>
+     data-creative-id="<%= popup_creative.id %>"
+     data-creative-snippet="<%= popup_creative.creative_snippet %>"
+     data-can-comment="<%= popup_creative.has_permission?(Current.user, :feedback) %>"
      <% end %>
      data-loading-text="<%= t('app.loading') %>"
      data-delete-confirm-text="<%= t("collavre.comments.delete_confirm") %>"

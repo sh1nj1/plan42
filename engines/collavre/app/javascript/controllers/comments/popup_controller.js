@@ -65,8 +65,15 @@ export default class extends Controller {
       form.addEventListener('submit', () => window.localStorage.removeItem(SIZE_STORAGE_KEY))
     })
 
-    if (this.isFullscreen()) {
-      // Sync UI for initial fullscreen state
+    if (this.element.dataset.autoFullscreen === 'true') {
+      // Auto-fullscreen: open popup for creative then enter fullscreen
+      delete this.element.dataset.autoFullscreen
+      requestAnimationFrame(() => {
+        this.openForCreative()
+        this.toggleFullscreen()
+      })
+    } else if (this.isFullscreen()) {
+      // Sync UI for initial fullscreen state (legacy fullscreen page)
       this._syncFullscreenUI(true)
       // Defer to ensure all sibling controllers are connected
       requestAnimationFrame(() => this.openForCreative())
@@ -525,17 +532,12 @@ export default class extends Controller {
       setTimeout(cleanup, 300)
 
       // Update URL
-      if (this._previousUrl) {
-        window.history.pushState({ fullscreen: false }, '', this._previousUrl)
-        this._previousUrl = null
-      } else {
-        // Direct fullscreen entry — creative page was never loaded, so navigate for real
-        const creativeId = el.dataset.creativeId
-        if (creativeId) {
-          window.location.href = `/creatives/${creativeId}?open_comments=true`
-          return
-        }
+      const creativeId = el.dataset.creativeId
+      const backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
+      if (backUrl) {
+        window.history.pushState({ fullscreen: false }, '', backUrl)
       }
+      this._previousUrl = null
     }
 
     // Scroll to bottom after layout change
