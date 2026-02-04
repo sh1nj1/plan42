@@ -3,7 +3,7 @@ import { renderCommentMarkdown } from '../lib/utils/markdown'
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "deleteButton", "approveButton"]
+  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls"]
 
   connect() {
     const contentElement = this.element.querySelector('.comment-content')
@@ -33,11 +33,18 @@ export default class extends Controller {
       })
     }
 
-    // Show approve button based on server-side can-approve or client-side check
-    const canApprove = this.element.dataset.canApprove === 'true'
+    // Show approve button: user must be the designated approver for this comment
+    const hasPendingAction = this.element.dataset.hasPendingAction === 'true'
+    const approverId = this.element.dataset.approverId
+    const canApprove = hasPendingAction && this.currentUserId && approverId && this.currentUserId === approverId
+
     if (canApprove) {
       this.approveButtonTargets.forEach((button) => {
         button.classList.remove('comment-approve-hidden')
+      })
+      // Also show action block approve controls (edit action button, form)
+      this.actionApproveControlsTargets.forEach((el) => {
+        el.classList.remove('comment-approve-hidden')
       })
     }
   }

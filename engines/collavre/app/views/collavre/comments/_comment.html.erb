@@ -1,6 +1,8 @@
 <% comment_topic = comment.topic %>
 <% current_topic_id = local_assigns[:current_topic_id] %>
-<div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>" data-creative-id="<%= comment.creative_id %>" data-creative-owner-id="<%= comment.creative&.user_id %>" data-can-approve="<%= comment.approval_status(Current.user) == :ok rescue false %>">
+<% has_pending_action = comment.action.present? && comment.action_executed_at.blank? %>
+<% approver_id = comment.approver_id %>
+<div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>" data-creative-id="<%= comment.creative_id %>" data-creative-owner-id="<%= comment.creative&.user_id %>" data-has-pending-action="<%= has_pending_action %>" data-approver-id="<%= approver_id %>">
   <div class="comment-select">
     <input type="checkbox"
            class="comment-select-checkbox"
@@ -112,15 +114,17 @@
         <summary class="comment-action-summary"><%= t("collavre.comments.action_summary") %></summary>
         <div class="comment-action-body">
           <pre class="comment-action-json" data-comment-action-json><%= formatted_comment_action(comment) %></pre>
-          <% if can_approve && comment.action_executed_at.blank? %>
-            <button class="edit-comment-action-btn" type="button" data-comment-id="<%= comment.id %>"><%= t("collavre.comments.edit_action_button") %></button>
-            <form class="comment-action-edit-form" data-comment-id="<%= comment.id %>" style="display:none;">
-              <textarea class="comment-action-edit-textarea" name="comment[action]" rows="8"><%= formatted_comment_action(comment) %></textarea>
-              <div class="comment-action-edit-buttons">
-                <button class="cancel-comment-action-edit-btn" type="button"><%= t("app.cancel") %></button>
-                <button class="save-comment-action-btn" type="submit"><%= t("app.save") %></button>
-              </div>
-            </form>
+          <% if has_pending_action %>
+            <div class="comment-action-approve-controls comment-approve-hidden" data-comment-target="actionApproveControls">
+              <button class="edit-comment-action-btn" type="button" data-comment-id="<%= comment.id %>"><%= t("collavre.comments.edit_action_button") %></button>
+              <form class="comment-action-edit-form" data-comment-id="<%= comment.id %>" style="display:none;">
+                <textarea class="comment-action-edit-textarea" name="comment[action]" rows="8"><%= formatted_comment_action(comment) %></textarea>
+                <div class="comment-action-edit-buttons">
+                  <button class="cancel-comment-action-edit-btn" type="button"><%= t("app.cancel") %></button>
+                  <button class="save-comment-action-btn" type="submit"><%= t("app.save") %></button>
+                </div>
+              </form>
+            </div>
           <% end %>
         </div>
       </details>
