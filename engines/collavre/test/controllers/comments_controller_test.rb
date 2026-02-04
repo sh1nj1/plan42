@@ -821,4 +821,28 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :forbidden
   end
+
+  test "participants returns users and can_share for admin" do
+    get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    assert_response :success
+    data = JSON.parse(response.body)
+    assert data.key?("users"), "Response should include users array"
+    assert data.key?("can_share"), "Response should include can_share flag"
+    assert_kind_of Array, data["users"]
+    assert data["users"].any? { |u| u["id"] == @user.id }
+  end
+
+  test "participants returns can_share false for non-admin shared user" do
+    other = users(:two)
+    other.update!(email_verified_at: Time.current)
+    Collavre::CreativeShare.create!(creative: @creative, user: other, permission: :feedback)
+
+    # Login as the shared user
+    post session_path, params: { email: other.email, password: "password" }
+
+    get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    assert_response :success
+    data = JSON.parse(response.body)
+    assert_equal false, data["can_share"]
+  end
 end

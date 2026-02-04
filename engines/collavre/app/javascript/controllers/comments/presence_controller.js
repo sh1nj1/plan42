@@ -91,7 +91,8 @@ export default class extends Controller {
     fetch(`/creatives/${this.creativeId}/comments/participants`)
       .then((response) => response.json())
       .then((data) => {
-        this.participantsData = data
+        this.participantsData = data.users
+        this.canShare = data.can_share
         this.renderParticipants(this.currentPresentIds)
         this.renderTypingIndicator()
       })
@@ -199,7 +200,26 @@ export default class extends Controller {
       this.participantsTarget.appendChild(wrapper)
     })
 
+    if (this.canShare) {
+      const addBtn = document.createElement('button')
+      addBtn.className = 'add-participant-btn'
+      addBtn.textContent = '+'
+      addBtn.title = this.element.dataset.addParticipantText || 'Add user'
+      addBtn.addEventListener('click', () => this.openShareModal())
+      this.participantsTarget.appendChild(addBtn)
+    }
+
     this.updateReadReceiptPresence(presentIds)
+  }
+
+  openShareModal() {
+    const modal = document.getElementById('share-creative-modal')
+    if (modal) {
+      modal.style.display = 'flex'
+      document.body.classList.add('no-scroll')
+    } else if (this.creativeId) {
+      window.location.href = `/creatives/${this.creativeId}?open_comments=true&open_share=true`
+    }
   }
 
   renderTypingIndicator() {
