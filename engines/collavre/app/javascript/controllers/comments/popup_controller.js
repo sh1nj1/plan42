@@ -495,65 +495,83 @@ export default class extends Controller {
     } else {
       const savedStyles = this._savedStyles
       this._savedStyles = null
-      const hasSavedPosition = savedStyles && Object.values(savedStyles).some(v => v)
 
-      if (hasSavedPosition) {
-        // Animated exit: shrink from fullscreen to original position
-        const fsRect = el.getBoundingClientRect()
+      // Calculate target position: use comment button if available, else saved styles
+      const creativeId = el.dataset.creativeId
+      let targetTop, targetLeft, targetWidth, targetHeight
 
-        el.style.transition = 'none'
-        el.style.position = 'fixed'
-        el.style.top = `${fsRect.top}px`
-        el.style.left = `${fsRect.left}px`
-        el.style.right = 'auto'
-        el.style.bottom = 'auto'
-        el.style.width = `${fsRect.width}px`
-        el.style.height = `${fsRect.height}px`
+      // Try to find the comment button for precise positioning
+      let targetButton = this.currentButton
+      if (!targetButton && creativeId) {
+        const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
+        targetButton = row?.querySelector('.comments-btn')
+      }
 
-        el.dataset.fullscreen = 'false'
-        document.body.classList.remove('chat-fullscreen')
-        this._syncFullscreenUI(false)
-
-        el.offsetHeight // eslint-disable-line no-unused-expressions
-
-        // Calculate the target position from saved styles
-        const targetTop = savedStyles.top
-        const targetLeft = savedStyles.left
+      if (targetButton) {
+        // Position next to the button (same logic as updatePosition)
+        const btnRect = targetButton.getBoundingClientRect()
+        const scrollY = window.scrollY || window.pageYOffset
+        targetWidth = savedStyles?.width ? parseFloat(savedStyles.width) : 420
+        targetHeight = savedStyles?.height ? parseFloat(savedStyles.height) : 640
+        targetTop = btnRect.bottom + scrollY + 4
+        const bottom = targetTop + targetHeight
+        const viewportBottom = scrollY + window.innerHeight
+        if (bottom > viewportBottom) {
+          targetTop = Math.max(scrollY + 4, viewportBottom - targetHeight - 4)
+        }
+        targetLeft = window.innerWidth - (btnRect.right - 24) - targetWidth
+        // Convert to fixed coordinates (subtract scrollY since we use position:fixed for animation)
+        targetTop = targetTop - scrollY
+        targetLeft = btnRect.right - 24 - targetWidth
+        // Actually match updatePosition: right = window.innerWidth - rect.right + 24
+        const rightPx = window.innerWidth - btnRect.right + 24
+        targetLeft = window.innerWidth - rightPx - targetWidth
+        this.currentButton = targetButton
+      } else if (savedStyles && Object.values(savedStyles).some(v => v)) {
+        // Fallback to saved styles
         const targetRight = savedStyles.right || '2em'
-        const targetWidth = savedStyles.width || '420px'
-        const targetHeight = savedStyles.height || '640px'
-
         const vw = window.innerWidth
         const rightVal = parseFloat(targetRight) || 32
-        const widthVal = parseFloat(targetWidth) || 420
-        const computedLeft = targetLeft ? parseFloat(targetLeft) : (vw - rightVal - widthVal)
-        const computedTop = parseFloat(targetTop) || el.getBoundingClientRect().top
-
-        el.style.transition = ''
-        el.style.top = `${computedTop}px`
-        el.style.left = `${computedLeft}px`
-        el.style.width = `${widthVal}px`
-        el.style.height = `${parseFloat(targetHeight) || 640}px`
-
-        const cleanup = () => {
-          el.removeEventListener('transitionend', cleanup)
-          el.style.transition = ''
-          el.style.position = ''
-          el.style.top = ''
-          el.style.left = ''
-          el.style.right = ''
-          el.style.bottom = ''
-          el.style.width = ''
-          el.style.height = ''
-          Object.assign(el.style, savedStyles)
-        }
-        el.addEventListener('transitionend', cleanup, { once: true })
-        setTimeout(cleanup, 300)
+        targetWidth = parseFloat(savedStyles.width) || 420
+        targetHeight = parseFloat(savedStyles.height) || 640
+        targetLeft = savedStyles.left ? parseFloat(savedStyles.left) : (vw - rightVal - targetWidth)
+        targetTop = parseFloat(savedStyles.top) || 100
       } else {
-        // No saved position (auto-fullscreen entry): snap directly to default
-        el.dataset.fullscreen = 'false'
-        document.body.classList.remove('chat-fullscreen')
-        this._syncFullscreenUI(false)
+        // No reference at all: use CSS defaults
+        targetWidth = 420
+        targetHeight = 640
+        targetLeft = window.innerWidth - 32 - targetWidth  // right: 2em
+        targetTop = 100
+      }
+
+      // Animated exit: pin at fullscreen position, then shrink to target
+      const fsRect = el.getBoundingClientRect()
+
+      el.style.transition = 'none'
+      el.style.position = 'fixed'
+      el.style.top = `${fsRect.top}px`
+      el.style.left = `${fsRect.left}px`
+      el.style.right = 'auto'
+      el.style.bottom = 'auto'
+      el.style.width = `${fsRect.width}px`
+      el.style.height = `${fsRect.height}px`
+
+      el.dataset.fullscreen = 'false'
+      document.body.classList.remove('chat-fullscreen')
+      this._syncFullscreenUI(false)
+
+      // Force layout so the pinned position is applied
+      el.offsetHeight // eslint-disable-line no-unused-expressions
+
+      // Animate to target position
+      el.style.transition = ''
+      el.style.top = `${targetTop}px`
+      el.style.left = `${targetLeft}px`
+      el.style.width = `${targetWidth}px`
+      el.style.height = `${targetHeight}px`
+
+      const cleanup = () => {
+        el.removeEventListener('transitionend', cleanup)
         el.style.transition = ''
         el.style.position = ''
         el.style.top = ''
@@ -562,18 +580,16 @@ export default class extends Controller {
         el.style.bottom = ''
         el.style.width = ''
         el.style.height = ''
-
-        // Find the comments button for this creative and position next to it
-        const creativeId = el.dataset.creativeId
-        if (creativeId) {
-          const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
-          const btn = row?.querySelector('.comments-btn')
-          if (btn) {
-            this.currentButton = btn
-            this.updatePosition()
-          }
+        // Apply saved styles or position via updatePosition
+        if (savedStyles) {
+          Object.assign(el.style, savedStyles)
+        }
+        if (this.currentButton) {
+          this.updatePosition()
         }
       }
+      el.addEventListener('transitionend', cleanup, { once: true })
+      setTimeout(cleanup, 300)
 
       // Update URL — append open_comments=true so the popup stays open on refresh
       const creativeId = el.dataset.creativeId
