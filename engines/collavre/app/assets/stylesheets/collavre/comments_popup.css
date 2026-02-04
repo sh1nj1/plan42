@@ -649,7 +649,7 @@ body.chat-fullscreen main {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.1em;
+    gap: 0.2em;
 }
 
 .add-participant-btn {
@@ -666,7 +666,7 @@ body.chat-fullscreen main {
     font-size: 1.2em;
     line-height: 1;
     padding: 0;
-    margin-left: 0.2em;
+    flex-shrink: 0;
 }
 
 .add-participant-btn:hover {
