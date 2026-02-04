@@ -566,11 +566,13 @@ export default class extends Controller {
         el.style.height = ''
       }
 
-      // Update URL
+      // Update URL — append open_comments=true so the popup stays open on refresh
       const creativeId = el.dataset.creativeId
-      const backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
+      let backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
       if (backUrl) {
-        window.history.pushState({ fullscreen: false }, '', backUrl)
+        const url = new URL(backUrl, window.location.origin)
+        url.searchParams.set('open_comments', 'true')
+        window.history.pushState({ fullscreen: false }, '', url.pathname + url.search)
       }
       this._previousUrl = null
     }
