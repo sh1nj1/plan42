@@ -96,6 +96,42 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert thinking_idx < idle_idx
   end
 
+  test "reassociates activity logs from trigger comment to reply comment" do
+    mock_client = Minitest::Mock.new
+
+    def mock_client.chat(messages, tools: [])
+      yield "AI Response"
+    end
+
+    # Create an activity log on the trigger comment (simulating what AiClient does via RubyLlmInteractionLogger)
+    activity_log = ActivityLog.create!(
+      activity: "llm_query",
+      creative: @creative,
+      user: @agent,
+      comment: @comment,
+      log: { model: "test", response_content: "AI Response" }
+    )
+
+    assert_equal @comment.id, activity_log.comment_id
+
+    AiClient.stub :new, mock_client do
+      AiAgentService.new(@task).call
+    end
+
+    reply = @creative.comments.where(user: @agent).order(:created_at).last
+    activity_log.reload
+
+    # Activity log should now be on the reply comment, not the trigger comment
+    assert_equal reply.id, activity_log.comment_id
+    assert_not_equal @comment.id, activity_log.comment_id
+
+    # Trigger comment should have no agent activity logs
+    assert_equal 0, ActivityLog.where(comment: @comment, user: @agent).count
+
+    # Reply comment should have the activity log
+    assert_equal 1, reply.activity_logs.count
+  end
+
   test "does not create comment when response is empty" do
     mock_client = Minitest::Mock.new
 

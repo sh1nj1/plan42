@@ -92,6 +92,10 @@ module Collavre
             topic_id: original_comment.topic_id
           )
           log_action("reply_created", { comment_id: reply.id, content: response_content })
+
+          # Re-associate activity logs from the trigger comment to the reply comment
+          # so that LLM interaction logs appear on the AI's answer, not the user's question
+          reassociate_activity_logs(original_comment, reply)
         elsif target_comment_id && response_content.present?
           reply_to_comment(target_comment_id, response_content)
         end
@@ -249,6 +253,12 @@ module Collavre
       )
 
       log_action("reply_created", { comment_id: reply.id, content: content })
+      reassociate_activity_logs(original_comment, reply)
+    end
+
+    def reassociate_activity_logs(from_comment, to_comment)
+      ActivityLog.where(comment: from_comment, user: @agent)
+                 .update_all(comment_id: to_comment.id)
     end
 
     def handle_approval_pending(error)
