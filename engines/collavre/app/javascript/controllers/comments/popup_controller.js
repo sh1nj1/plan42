@@ -395,6 +395,28 @@ export default class extends Controller {
 
   toggleFullscreen() {
     const entering = !this.isFullscreen()
+
+    if (entering) {
+      // Save current inline position styles before clearing
+      this._savedStyles = {
+        top: this.element.style.top,
+        right: this.element.style.right,
+        left: this.element.style.left,
+        width: this.element.style.width,
+        height: this.element.style.height,
+      }
+      // Clear inline position so CSS fullscreen rules take full control
+      this.element.style.top = ''
+      this.element.style.right = ''
+      this.element.style.left = ''
+      this.element.style.width = ''
+      this.element.style.height = ''
+    } else if (this._savedStyles) {
+      // Restore previous inline styles
+      Object.assign(this.element.style, this._savedStyles)
+      this._savedStyles = null
+    }
+
     this.element.dataset.fullscreen = entering ? 'true' : 'false'
     document.body.classList.toggle('chat-fullscreen', entering)
     this._syncFullscreenUI(entering)
