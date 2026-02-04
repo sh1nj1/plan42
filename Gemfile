@@ -107,5 +107,5 @@ end
 
 # Use installed collavre gem when USE_COLLAVRE_GEM=true
 if ENV["USE_COLLAVRE_GEM"] == "true"
-  gem "collavre", "0.1.0"
+  gem "collavre", "0.2.3"
 end

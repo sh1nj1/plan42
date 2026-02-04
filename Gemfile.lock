@@ -9,7 +9,7 @@ PATH
 PATH
   remote: engines/collavre_openclaw
   specs:
-    collavre_openclaw (0.1.0)
+    collavre_openclaw (0.2.1)
       faraday (>= 2.0)
       rails (>= 8.0)
 
@@ -25,7 +25,7 @@ PATH
 PATH
   remote: engines/collavre
   specs:
-    collavre (0.1.1)
+    collavre (0.2.3)
       bcrypt
       closure_tree
       httparty
