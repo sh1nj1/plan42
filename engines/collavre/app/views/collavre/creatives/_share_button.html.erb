@@ -18,7 +18,7 @@
           data-share-user-search-target="input"
           data-action="blur->share-invite#check input->share-user-search#input focus->share-user-search#focus keydown->share-user-search#handleKey"
           autocomplete="off" />
-        <%= render UserMentionMenuComponent.new(menu_id: 'share-user-suggestions') %>
+        <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'share-user-suggestions') %>
       </div>
       <div style="margin-bottom:1em;">
         <select name="permission" id="share-permission" style="width:100%;">
@@ -39,7 +39,7 @@
           <% @shared_list.each do |share| %>
             <li>
               <span>
-                <%= render AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
+                <%= render Collavre::AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
               </span>
               <span><%= share.user&.display_name || (share.user_id.nil? ? t('collavre.creatives.index.public_share') : t('collavre.creatives.index.unknown_user')) %></span>
               <span><%= t("collavre.creatives.index.permission_#{share.permission}") %></span>

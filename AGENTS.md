@@ -202,6 +202,24 @@ CollavreOpenclaw::OpenclawAccount
 CollavreNotion::NotionAccount
 ```
 
+### Namespaced ViewComponents
+**All ViewComponent references in engine views must use the full namespace.**
+
+```erb
+<%# Bad: Missing namespace — breaks when used as a gem in other apps %>
+<%= render AvatarComponent.new(user: user, size: 20) %>
+<%= render PopupMenuComponent.new(button_content: '...', menu_id: 'my-menu') %>
+
+<%# Good: Full namespace %>
+<%= render Collavre::AvatarComponent.new(user: user, size: 20) %>
+<%= render Collavre::PopupMenuComponent.new(button_content: '...', menu_id: 'my-menu') %>
+<%= render Collavre::Inbox::BadgeComponent.new(user: Current.user, badge_id: 'badge') %>
+```
+
+> **Why?** When the engine is mounted as a gem in a host app, Rails resolves
+> unqualified constants from the host app's namespace first. Without `Collavre::`,
+> the host app will raise `uninitialized constant` errors.
+
 ### Permission Checks
 ```ruby
 before_action :ensure_read_permission

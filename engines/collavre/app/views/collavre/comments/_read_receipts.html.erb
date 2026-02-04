@@ -6,7 +6,7 @@
         <% classes = ['avatar', 'comment-presence-avatar'] %>
         <% classes << 'inactive' if present_ids && !present_ids.include?(user.id) %>
         <div class="read-receipt-avatar" title="<%= t('collavre.comments.read_by', name: user.display_name) %>">
-          <%= render AvatarComponent.new(
+          <%= render Collavre::AvatarComponent.new(
                 user: user,
                 size: 16,
                 classes: classes.join(' '),

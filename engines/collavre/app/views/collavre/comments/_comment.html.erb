@@ -8,7 +8,7 @@
            aria-label="<%= t('collavre.comments.select_label') %>" />
   </div>
   <div>
-    <%= render AvatarComponent.new(user: comment.user, size: 20, classes: 'avatar comment-avatar') %>
+    <%= render Collavre::AvatarComponent.new(user: comment.user, size: 20, classes: 'avatar comment-avatar') %>
     <% system_prefix = "#{t('collavre.comments.system_user')}:" %>
     <% display_name =
          if comment.user.present?

@@ -26,7 +26,7 @@
             <% contact_user = contact.contact_user %>
             <tr>
               <td>
-                <%= render AvatarComponent.new(
+                <%= render Collavre::AvatarComponent.new(
                   user: contact_user,
                   size: 32,
                   classes: "avatar"

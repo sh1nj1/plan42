@@ -42,7 +42,7 @@
         <div class="avatar-preview-row">
           <div class="avatar-preview-pane avatar-preview-current">
             <span class="avatar-preview-label"><%= t('collavre.users.current_avatar') %></span>
-            <%= render AvatarComponent.new(user: @user, size: 80, classes: 'avatar') %>
+            <%= render Collavre::AvatarComponent.new(user: @user, size: 80, classes: 'avatar') %>
           </div>
 
           <div class="avatar-preview-pane avatar-preview-container" data-avatar-preview-target="previewContainer">
