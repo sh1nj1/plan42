@@ -113,4 +113,25 @@ class CommentTest < ActiveSupport::TestCase
 
     assert_equal origin, comment.creative
   end
+
+  test "streaming placeholder does not create inbox items" do
+    owner = users(:one)
+    ai_agent = users(:ai_bot)
+
+    perform_enqueued_jobs do
+      creative = Creative.create!(user: owner, description: "Test inbox skip")
+      CreativeShare.create!(creative: creative, user: ai_agent, permission: :feedback, shared_by: owner)
+    end
+
+    creative = Creative.last
+
+    initial_inbox_count = InboxItem.count
+
+    perform_enqueued_jobs do
+      creative.comments.create!(content: Collavre::Comment::STREAMING_PLACEHOLDER_CONTENT, user: ai_agent)
+    end
+
+    # No inbox items should be created for "..." placeholder from AI agent
+    assert_equal initial_inbox_count, InboxItem.count
+  end
 end

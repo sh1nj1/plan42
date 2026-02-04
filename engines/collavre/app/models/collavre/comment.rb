@@ -2,6 +2,8 @@ module Collavre
   class Comment < ApplicationRecord
     self.table_name = "comments"
 
+    STREAMING_PLACEHOLDER_CONTENT = "..."
+
     # Use non-namespaced partial path for backward compatibility
     def to_partial_path
       "comments/comment"
@@ -103,6 +105,11 @@ module Collavre
       )
     end
 
+    # AI agent streaming placeholder: skip inbox notifications for "..." content
+    def streaming_placeholder?
+      user&.ai_user? && content == STREAMING_PLACEHOLDER_CONTENT
+    end
+
     def mentioned_emails
       return [] unless content
       content.scan(/@([\w.\-+]+@[a-zA-Z0-9\-.]+\.[a-zA-Z]{2,})/)
@@ -155,6 +162,7 @@ module Collavre
 
     def notify_write_users
       return if private? || !user
+      return if streaming_placeholder?
       base_creative = creative.effective_origin
       present_ids = CommentPresenceStore.list(base_creative.id)
       recipients = base_creative.all_shared_users(:write).map(&:user)
@@ -175,6 +183,7 @@ module Collavre
 
     def notify_mentions
       return if private?
+      return if streaming_placeholder?
       mentioned_users.each do |mentioned|
         create_inbox_item(
           mentioned,
