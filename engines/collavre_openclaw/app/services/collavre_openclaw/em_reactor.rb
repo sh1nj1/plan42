@@ -30,7 +30,8 @@ module CollavreOpenclaw
         @mutex&.synchronize do
           return unless EM.reactor_running?
 
-          EM.stop
+          # Must stop EM from within the reactor thread
+          EM.next_tick { EM.stop }
           @thread&.join(5)
           @thread = nil
         end
