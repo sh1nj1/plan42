@@ -254,20 +254,14 @@ module Collavre
       args_display = if error.tool_arguments.present?
                        JSON.pretty_generate(error.tool_arguments)
       else
-                       "(no arguments)"
+                       I18n.t("collavre.ai_agent.approval.no_arguments")
       end
 
-      content = <<~CONTENT.strip
-        🔧 **Tool Approval Required**
-
-        **#{error.tool_name}** wants to execute with the following arguments:
-
-        ```json
-        #{args_display}
-        ```
-
-        Please approve or reject this action.
-      CONTENT
+      content = I18n.t(
+        "collavre.ai_agent.approval.message",
+        tool_name: error.tool_name,
+        arguments: args_display
+      )
 
       # Get topic_id from the original comment if available
       original_comment = Comment.find_by(id: @context.dig("comment", "id"))
