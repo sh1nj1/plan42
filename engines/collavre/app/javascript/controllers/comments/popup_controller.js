@@ -68,9 +68,14 @@ export default class extends Controller {
     if (this.element.dataset.autoFullscreen === 'true') {
       // Auto-fullscreen: open popup for creative then enter fullscreen
       delete this.element.dataset.autoFullscreen
+      // Set previous URL to creative page (not the fullscreen URL)
+      const creativeId = this.element.dataset.creativeId
+      if (creativeId) {
+        this._previousUrl = `/creatives/${creativeId}`
+      }
       requestAnimationFrame(() => {
         this.openForCreative()
-        this.toggleFullscreen()
+        this._enterFullscreenImmediate()
       })
     } else if (this.isFullscreen()) {
       // Sync UI for initial fullscreen state (legacy fullscreen page)
@@ -400,6 +405,29 @@ export default class extends Controller {
     }
   }
 
+  // Enter fullscreen immediately without animation (for auto-fullscreen on page load)
+  _enterFullscreenImmediate() {
+    const el = this.element
+    el.style.transition = 'none'
+    el.dataset.fullscreen = 'true'
+    document.body.classList.add('chat-fullscreen')
+    this._syncFullscreenUI(true)
+    // Clear any inline position styles so CSS fullscreen rules apply
+    el.style.top = ''
+    el.style.left = ''
+    el.style.right = ''
+    el.style.bottom = ''
+    el.style.width = ''
+    el.style.height = ''
+    el.style.position = ''
+    // Force layout then restore transition
+    el.offsetHeight // eslint-disable-line no-unused-expressions
+    el.style.transition = ''
+
+    // URL is already /comments/fullscreen, no pushState needed
+    requestAnimationFrame(() => this.listController?.scrollToBottom())
+  }
+
   toggleFullscreen() {
     const entering = !this.isFullscreen()
     const el = this.element
@@ -467,55 +495,67 @@ export default class extends Controller {
       setTimeout(cleanup, 300)
 
     } else {
-      // Capture target rect before removing fullscreen
       const savedStyles = this._savedStyles
       this._savedStyles = null
+      const hasSavedPosition = savedStyles && Object.values(savedStyles).some(v => v)
 
-      // Get current fullscreen rect
-      const fsRect = el.getBoundingClientRect()
+      if (hasSavedPosition) {
+        // Animated exit: shrink from fullscreen to original position
+        const fsRect = el.getBoundingClientRect()
 
-      // Remove fullscreen state but keep element fixed at fullscreen position
-      el.style.transition = 'none'
-      el.style.position = 'fixed'
-      el.style.top = `${fsRect.top}px`
-      el.style.left = `${fsRect.left}px`
-      el.style.right = 'auto'
-      el.style.bottom = 'auto'
-      el.style.width = `${fsRect.width}px`
-      el.style.height = `${fsRect.height}px`
+        el.style.transition = 'none'
+        el.style.position = 'fixed'
+        el.style.top = `${fsRect.top}px`
+        el.style.left = `${fsRect.left}px`
+        el.style.right = 'auto'
+        el.style.bottom = 'auto'
+        el.style.width = `${fsRect.width}px`
+        el.style.height = `${fsRect.height}px`
 
-      el.dataset.fullscreen = 'false'
-      document.body.classList.remove('chat-fullscreen')
-      this._syncFullscreenUI(false)
+        el.dataset.fullscreen = 'false'
+        document.body.classList.remove('chat-fullscreen')
+        this._syncFullscreenUI(false)
 
-      // Force layout
-      el.offsetHeight // eslint-disable-line no-unused-expressions
+        el.offsetHeight // eslint-disable-line no-unused-expressions
 
-      // Calculate the target position (where it will land after restoring styles)
-      // Temporarily apply saved styles to a hidden clone to measure
-      const targetTop = savedStyles?.top || el.style.top
-      const targetLeft = savedStyles?.left || ''
-      const targetRight = savedStyles?.right || '2em'
-      const targetWidth = savedStyles?.width || '420px'
-      const targetHeight = savedStyles?.height || '640px'
+        // Calculate the target position from saved styles
+        const targetTop = savedStyles.top
+        const targetLeft = savedStyles.left
+        const targetRight = savedStyles.right || '2em'
+        const targetWidth = savedStyles.width || '420px'
+        const targetHeight = savedStyles.height || '640px'
 
-      // Calculate approximate target rect
-      const vw = window.innerWidth
-      const rightVal = parseFloat(targetRight) || 32 // 2em ≈ 32px
-      const widthVal = parseFloat(targetWidth) || 420
-      const computedLeft = targetLeft ? parseFloat(targetLeft) : (vw - rightVal - widthVal)
-      const computedTop = parseFloat(targetTop) || el.getBoundingClientRect().top
+        const vw = window.innerWidth
+        const rightVal = parseFloat(targetRight) || 32
+        const widthVal = parseFloat(targetWidth) || 420
+        const computedLeft = targetLeft ? parseFloat(targetLeft) : (vw - rightVal - widthVal)
+        const computedTop = parseFloat(targetTop) || el.getBoundingClientRect().top
 
-      // Animate to target position
-      el.style.transition = ''
-      el.style.top = `${computedTop}px`
-      el.style.left = `${computedLeft}px`
-      el.style.width = `${widthVal}px`
-      el.style.height = `${parseFloat(targetHeight) || 640}px`
+        el.style.transition = ''
+        el.style.top = `${computedTop}px`
+        el.style.left = `${computedLeft}px`
+        el.style.width = `${widthVal}px`
+        el.style.height = `${parseFloat(targetHeight) || 640}px`
 
-      // After transition, restore original styles
-      const cleanup = () => {
-        el.removeEventListener('transitionend', cleanup)
+        const cleanup = () => {
+          el.removeEventListener('transitionend', cleanup)
+          el.style.transition = ''
+          el.style.position = ''
+          el.style.top = ''
+          el.style.left = ''
+          el.style.right = ''
+          el.style.bottom = ''
+          el.style.width = ''
+          el.style.height = ''
+          Object.assign(el.style, savedStyles)
+        }
+        el.addEventListener('transitionend', cleanup, { once: true })
+        setTimeout(cleanup, 300)
+      } else {
+        // No saved position (auto-fullscreen entry): snap directly to default
+        el.dataset.fullscreen = 'false'
+        document.body.classList.remove('chat-fullscreen')
+        this._syncFullscreenUI(false)
         el.style.transition = ''
         el.style.position = ''
         el.style.top = ''
@@ -524,12 +564,7 @@ export default class extends Controller {
         el.style.bottom = ''
         el.style.width = ''
         el.style.height = ''
-        if (savedStyles) {
-          Object.assign(el.style, savedStyles)
-        }
       }
-      el.addEventListener('transitionend', cleanup, { once: true })
-      setTimeout(cleanup, 300)
 
       // Update URL
       const creativeId = el.dataset.creativeId
