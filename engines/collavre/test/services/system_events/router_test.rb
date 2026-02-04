@@ -62,7 +62,7 @@ module SystemEvents
       assert_includes agents, @agent
     end
 
-    test "mention routing: skips mentioned non-AI user" do
+    test "mention routing: non-AI user mentioned excludes all AI agents" do
       # Create a regular user (not an AI agent)
       regular_user = User.create!(
         email: "regular@example.com",
@@ -79,14 +79,51 @@ module SystemEvents
         }
       }
 
-      # Create an agent with "true" routing expression as fallback
+      # Even with "true" routing expression, AI agent should NOT receive the message
       @agent.update!(routing_expression: "true")
 
       router = SystemEvents::Router.new
       agents = router.route("comment_created", context)
 
-      # Should fall back to Liquid routing
-      assert_includes agents, @agent
+      # Mention routing is exclusive — mentioning a non-AI user means no AI agents
+      assert_empty agents
+    end
+
+    test "mention routing: non-AI user mentioned excludes multiple AI agents" do
+      regular_user = User.create!(
+        email: "regular2@example.com",
+        name: "sawyer becky",
+        password: "password",
+        searchable: true
+      )
+
+      other_agent = User.create!(
+        email: "other_agent2@example.com",
+        name: "Other Agent",
+        password: "password",
+        llm_vendor: "google",
+        llm_model: "gemini-1.5-flash",
+        routing_expression: "true",
+        searchable: true
+      )
+
+      @agent.update!(routing_expression: "true")
+
+      context = {
+        "creative" => { "id" => @creative.id },
+        "chat" => {
+          "content" => "@sawyer becky: 아직 계시나 모르겠네요 ㅎㅎ",
+          "mentioned_user" => { "id" => regular_user.id }
+        }
+      }
+
+      router = SystemEvents::Router.new
+      agents = router.route("comment_created", context)
+
+      # Neither AI agent should receive this — it's addressed to a human
+      assert_empty agents
+      assert_not_includes agents, @agent
+      assert_not_includes agents, other_agent
     end
 
     test "mention routing: respects permission for non-searchable mentioned agent" do

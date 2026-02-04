@@ -7,27 +7,37 @@ module Collavre
         liquid_context["event_name"] = event_name
 
         # Priority 1: Mention-based routing (exclusive)
-        # If any AI agent is mentioned, ONLY route to that agent
-        mentioned_agent = find_mentioned_agent(liquid_context, context)
-        return [ mentioned_agent ] if mentioned_agent
+        # If any user is mentioned, mention routing takes over exclusively.
+        # - Mentioned AI agent → route only to that agent
+        # - Mentioned non-AI user → route to nobody (no AI agents)
+        mentioned_result = find_mentioned_routing(liquid_context, context)
+        return mentioned_result unless mentioned_result.nil?
 
-        # Priority 2: Liquid expression routing (fallback)
+        # Priority 2: Liquid expression routing (fallback, only when no mention)
         route_by_liquid_expression(liquid_context, context)
       end
 
       private
 
-      def find_mentioned_agent(liquid_context, context)
+      # Returns Array of agents to route to, or nil if no mention was found.
+      # When a mention IS found, this is exclusive:
+      #   - AI agent mentioned → [agent] (if permitted)
+      #   - Non-AI user mentioned → [] (no AI agents should receive it)
+      def find_mentioned_routing(liquid_context, context)
         mentioned_user_data = liquid_context.dig("chat", "mentioned_user")
         return nil unless mentioned_user_data && mentioned_user_data["id"]
 
-        agent = User.find_by(id: mentioned_user_data["id"])
-        return nil unless agent&.ai_user?
+        mentioned_user = User.find_by(id: mentioned_user_data["id"])
+        return nil unless mentioned_user
 
-        # Permission check for mentioned agent
-        return nil unless has_creative_permission?(agent, context)
+        # Mention found — this is exclusive routing.
+        # If the mentioned user is not an AI agent, no AI agents should receive the message.
+        return [] unless mentioned_user.ai_user?
 
-        agent
+        # Permission check for mentioned AI agent
+        return [] unless has_creative_permission?(mentioned_user, context)
+
+        [ mentioned_user ]
       end
 
       def route_by_liquid_expression(liquid_context, context)
