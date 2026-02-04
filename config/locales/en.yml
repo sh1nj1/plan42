@@ -99,6 +99,7 @@ en:
     user_mentioned: "%{user} mentioned you in \"%{creative}\": \"%{comment}\""
     permission_requested: "%{user} requested access to \"%{short_title}\"."
     comment_deleted_by_admin: "%{admin_name} deleted your comment in \"%{creative_snippet}\": %{comment_content}"
+    approval_requested: '%{user} requested approval to execute tool "%{tool_name}" in "%{creative}".'
     comment_content_unavailable: "(comment unavailable)"
     tool_approval_needed: "Tool '%{tool_name}' has been detected/updated. Please approve it to activate."
 
