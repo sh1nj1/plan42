@@ -3,7 +3,7 @@ import { renderCommentMarkdown } from '../lib/utils/markdown'
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton"]
+  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls"]
 
   connect() {
     const contentElement = this.element.querySelector('.comment-content')
@@ -15,10 +15,37 @@ export default class extends Controller {
 
     this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
+    const creativeOwnerId = this.element.dataset.creativeOwnerId
+    const isAdmin = document.body.dataset.systemAdmin === 'true'
+    const isOwner = this.currentUserId && commentAuthorId && this.currentUserId === commentAuthorId
+    const isCreativeOwner = this.currentUserId && creativeOwnerId && this.currentUserId === creativeOwnerId
 
-    if (this.currentUserId && commentAuthorId && this.currentUserId === commentAuthorId) {
+    if (isOwner) {
       this.ownerButtonTargets.forEach((button) => {
         button.classList.remove('comment-owner-only')
+      })
+    }
+
+    // Show delete button if user is comment author, creative owner, or admin
+    if (isOwner || isCreativeOwner || isAdmin) {
+      this.deleteButtonTargets.forEach((button) => {
+        button.classList.remove('comment-delete-hidden')
+      })
+    }
+
+    // Show approve button: user must be the designated approver or a system admin
+    const hasPendingAction = this.element.dataset.hasPendingAction === 'true'
+    const approverId = this.element.dataset.approverId
+    const isApprover = this.currentUserId && approverId && this.currentUserId === approverId
+    const canApprove = hasPendingAction && (isApprover || isAdmin)
+
+    if (canApprove) {
+      this.approveButtonTargets.forEach((button) => {
+        button.classList.remove('comment-approve-hidden')
+      })
+      // Also show action block approve controls (edit action button, form)
+      this.actionApproveControlsTargets.forEach((el) => {
+        el.classList.remove('comment-approve-hidden')
       })
     }
   }

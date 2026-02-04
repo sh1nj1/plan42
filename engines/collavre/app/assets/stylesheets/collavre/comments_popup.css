@@ -517,7 +517,9 @@ body.chat-fullscreen main {
 }
 }
 
-.comment-owner-only {
+.comment-owner-only,
+.comment-delete-hidden,
+.comment-approve-hidden {
     display: none;
 }
 

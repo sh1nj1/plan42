@@ -36,7 +36,7 @@
       <% end %>
     <% end %>
   </head>
-  <body class="chat-fullscreen<%= ' dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
+  <body class="chat-fullscreen<%= ' dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>" data-system-admin="<%= Current.user&.system_admin? %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
     <main>
       <%= yield %>
     </main>
