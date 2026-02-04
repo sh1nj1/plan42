@@ -27,6 +27,7 @@ module CollavreOpenclaw
       @state = :disconnected
       @ws = nil
       @mutex = Mutex.new
+      @connect_mutex = Mutex.new
       @pending_requests = {}  # id → { queue:, timer: }
       @pending_runs = {}      # runId → Queue (for chat.send streaming)
       @proactive_handler = nil
@@ -41,8 +42,17 @@ module CollavreOpenclaw
     end
 
     # Connect to the Gateway. Blocks until connected or raises on failure.
+    # Thread-safe: concurrent callers wait on the same connection attempt.
     def connect!
       return if connected?
+
+      # Serialize connection attempts — only one thread connects at a time
+      @connect_mutex.synchronize do
+        return if connected?
+        return if @state == :connecting
+
+        @state = :connecting
+      end
 
       queue = Queue.new
 
@@ -56,6 +66,7 @@ module CollavreOpenclaw
 
       result = wait_with_timeout(queue, config.ws_connect_timeout, "connect")
       if result[:error]
+        @state = :disconnected
         raise ConnectionError, result[:error]
       end
 

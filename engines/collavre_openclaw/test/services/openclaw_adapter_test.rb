@@ -445,8 +445,6 @@ module CollavreOpenclaw
       assert_equal "calculate", result.first[:function][:name]
     end
 
-    private
-
     test "format_message_for_ws extracts last user message" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
@@ -513,6 +511,8 @@ module CollavreOpenclaw
 
       assert adapter.send(:websocket_available?)
     end
+
+    private
 
     def build_test_user(gateway_url: nil, email: "test@example.com", llm_api_key: nil)
       user = Object.new

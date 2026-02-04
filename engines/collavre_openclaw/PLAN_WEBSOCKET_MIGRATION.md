@@ -1,33 +1,33 @@
 # Plan: Chat Completion API → WebSocket Migration
 
-## 결정 사항
+## Decisions
 
-- **WebSocket gem**: `faye-websocket` (안정적, 검증됨)
-- **기존 callback 코드**: 유지 (삭제하지 않음, 나중에 정리)
-- **연결 전략**: On-Demand + Keep-Alive
+- **WebSocket gem**: `faye-websocket` (stable, proven)
+- **Existing callback code**: Keep (do not delete, clean up later)
+- **Connection strategy**: On-Demand + Keep-Alive
 
-## 현재 구조 (AS-IS)
+## Current Architecture (AS-IS)
 
 ```
-[채팅 요청]
+[Chat Request]
 AiAgentService → AiClient → AiClientExtension
   ↓ (vendor == "openclaw")
 OpenclawAdapter
   ↓
 POST /v1/chat/completions (HTTP SSE streaming)
   ↓
-OpenClaw Gateway 응답 (SSE stream → 파싱 → yield)
+OpenClaw Gateway response (SSE stream → parse → yield)
 
-[프로액티브 메시지]
-OpenClaw 크론 실행 → callback_url POST → CallbacksController
-  → PendingCallback nonce 검증 → CallbackProcessorJob → Comment 생성
-  (현재 미작동: callback 호출 메커니즘 부재)
+[Proactive Messages]
+OpenClaw cron runs → callback_url POST → CallbacksController
+  → PendingCallback nonce verification → CallbackProcessorJob → Comment creation
+  (Currently non-functional: no callback invocation mechanism)
 ```
 
-## 목표 구조 (TO-BE)
+## Target Architecture (TO-BE)
 
 ```
-[채팅 요청]
+[Chat Request]
 AiAgentService → AiClient → AiClientExtension
   ↓ (vendor == "openclaw")
 OpenclawAdapter
@@ -36,21 +36,21 @@ WebsocketClient (faye-websocket)
   ↓
 chat.send → chat event (delta/final) → yield
 
-[프로액티브 메시지]
-OpenClaw 크론/하트비트 실행
-  → Gateway가 chat event broadcast
-  → WebsocketClient가 수신
-  → CallbackProcessorJob → Comment 생성
+[Proactive Messages]
+OpenClaw cron/heartbeat runs
+  → Gateway broadcasts chat event
+  → WebsocketClient receives
+  → CallbackProcessorJob → Comment creation
 
-[기존 callback 코드]
-CallbacksController, PendingCallback → 유지 (삭제하지 않음)
+[Existing Callback Code]
+CallbacksController, PendingCallback → Kept (not deleted)
 ```
 
 ---
 
-## Phase 1: WebSocket 인프라
+## Phase 1: WebSocket Infrastructure
 
-### 1.1 faye-websocket gem 추가
+### 1.1 Add faye-websocket gem
 
 `collavre_openclaw.gemspec`:
 ```ruby
@@ -60,31 +60,31 @@ spec.add_dependency "eventmachine", "~> 1.2"
 
 ### 1.2 WebsocketClient
 
-**파일**: `app/services/collavre_openclaw/websocket_client.rb`
+**File**: `app/services/collavre_openclaw/websocket_client.rb`
 
-OpenClaw Gateway에 대한 단일 유저 WebSocket 연결을 관리하는 클래스.
+Manages a single user's WebSocket connection to the OpenClaw Gateway.
 
-**책임:**
-- WebSocket 연결 생성 (ws:// 또는 wss://)
+**Responsibilities:**
+- WebSocket connection creation (ws:// or wss://)
 - OpenClaw protocol handshake (`connect` request + auth token)
-- RPC 요청/응답 매핑 (`type: "req"` → `type: "res"`, id 기반)
-- Event 수신 (`type: "event"`, event: "chat")
-- Tick 응답 (keepalive)
-- 자동 재연결 (exponential backoff)
+- RPC request/response mapping (`type: "req"` → `type: "res"`, id-based)
+- Event reception (`type: "event"`, event: "chat")
+- Tick response (keepalive)
+- Auto-reconnect (exponential backoff)
 
-**프로토콜 흐름:**
+**Protocol Flow:**
 ```
-1. WS 연결 수립
+1. Establish WS connection
 2. Gateway → connect.challenge (nonce)
 3. Client → connect request (auth token, role: "operator")
 4. Gateway → hello-ok (protocol version, tick interval)
-5. 이후 양방향 통신:
+5. Bidirectional communication:
    - Client → req (chat.send, chat.history, chat.abort)
-   - Gateway → res (응답)
+   - Gateway → res (response)
    - Gateway → event (chat delta/final, tick)
 ```
 
-**인터페이스:**
+**Interface:**
 ```ruby
 class WebsocketClient
   def initialize(user:)
@@ -92,12 +92,12 @@ class WebsocketClient
   def connect!
   def disconnect!
 
-  # RPC 메서드
+  # RPC methods
   def chat_send(session_key:, message:, idempotency_key:, &on_event)
   def chat_history(session_key:, limit: nil)
   def chat_abort(session_key:, run_id: nil)
 
-  # 프로액티브 메시지 콜백 등록
+  # Register proactive message callback
   def on_proactive_message(&handler)
 
   private
@@ -111,18 +111,18 @@ end
 
 ### 1.3 ConnectionManager
 
-**파일**: `app/services/collavre_openclaw/connection_manager.rb`
+**File**: `app/services/collavre_openclaw/connection_manager.rb`
 
-유저별 WebSocket 연결 풀 관리. Singleton.
+Per-user WebSocket connection pool management. Singleton.
 
-**책임:**
-- 유저별 WebsocketClient 생성/캐싱
-- Lazy connect (첫 요청 시 연결)
-- Idle timeout (30분 미사용 시 해제)
-- 앱 종료 시 전체 연결 해제
+**Responsibilities:**
+- Per-user WebsocketClient creation/caching
+- Lazy connect (connects on first request)
+- Idle timeout (disconnects after 30 minutes of inactivity)
+- Graceful shutdown on app exit
 - Thread-safe access (Mutex)
 
-**인터페이스:**
+**Interface:**
 ```ruby
 class ConnectionManager
   include Singleton
@@ -135,15 +135,14 @@ class ConnectionManager
 end
 ```
 
-### 1.4 스레딩 모델
+### 1.4 Threading Model
 
-faye-websocket은 EventMachine 기반이므로:
-- 별도 EM 스레드에서 WebSocket 연결 관리
-- Rails 요청 스레드에서는 `chat_send` 호출 시 블로킹 대기 (Queue 또는 ConditionVariable)
-- EM reactor가 실행 중이 아니면 자동 시작
+faye-websocket is EventMachine-based:
+- WebSocket connections managed in a separate EM thread
+- Rails request threads block on `chat_send` calls (via Queue or ConditionVariable)
+- EM reactor auto-starts if not running
 
 ```ruby
-# EventMachine reactor 관리
 module CollavreOpenclaw
   class EmReactor
     def self.ensure_running!
@@ -155,23 +154,23 @@ module CollavreOpenclaw
 end
 ```
 
-### 1.5 Configuration 확장
+### 1.5 Configuration Extension
 
 ```ruby
 # configuration.rb
-attr_accessor :websocket_idle_timeout      # 기본: 30분 (1800초)
-attr_accessor :websocket_reconnect_max     # 최대 재연결 시도: 10
-attr_accessor :websocket_reconnect_base    # 재연결 대기 기본값: 1초
-attr_accessor :websocket_connect_timeout   # 연결 타임아웃: 10초
+attr_accessor :ws_idle_timeout        # Default: 30 min (1800s)
+attr_accessor :ws_reconnect_max       # Max reconnect attempts: 10
+attr_accessor :ws_reconnect_base_delay # Reconnect base delay: 1s
+attr_accessor :ws_connect_timeout     # Connect timeout: 10s
 ```
 
 ---
 
-## Phase 2: Chat 전송 전환
+## Phase 2: Chat Transport Switch
 
-### 2.1 OpenclawAdapter 수정
+### 2.1 OpenclawAdapter Modification
 
-`chat()` 메서드를 WebSocket 기반으로 변경:
+Change `chat()` method to WebSocket-based:
 
 ```ruby
 def chat(messages, tools: [], &block)
@@ -191,109 +190,106 @@ def chat(messages, tools: [], &block)
       text = extract_delta_text(event)
       yield text if text.present? && block_given?
     when "final"
-      # final은 전체 텍스트 포함 — delta로 이미 yield했으면 스킵
+      # final contains full text — skip if already yielded via deltas
     when "error"
       yield "Error: #{event[:errorMessage]}" if block_given?
     when "aborted"
-      # 사용자가 abort한 경우
+      # User aborted
     end
   end
 end
 ```
 
-### 2.2 메시지 포맷 변환
+### 2.2 Message Format Conversion
 
-**HTTP (현재):**
-- `messages` 배열 (전체 대화 이력)
-- `model` 필드로 agent 지정
-- `user` 필드에 callback 정보
+**HTTP (current):**
+- `messages` array (full conversation history)
+- `model` field for agent routing
+- `user` field with callback info
 
-**WebSocket (변경):**
-- `message` 단일 문자열 (최신 메시지만)
-- `sessionKey`로 세션 라우팅
-- Gateway가 세션 이력 관리
+**WebSocket (new):**
+- `message` single string (latest message only)
+- `sessionKey` for session routing
+- Gateway manages session history
 
 ```ruby
 def format_message_for_ws(messages)
-  # 마지막 user 메시지만 추출
+  # Extract only the last user message
   last_user = Array(messages).reverse.find { |m|
     role = m[:role] || m["role"]
-    %w[user].include?(role.to_s)
+    role.to_s == "user"
   }
 
-  if last_user
-    parts = last_user[:parts] || last_user["parts"]
-    if parts
-      Array(parts).map { |p| p[:text] || p["text"] }.compact.join("\n")
-    else
-      last_user[:text] || last_user["text"] || last_user[:content] || last_user["content"]
-    end
+  return "" unless last_user
+
+  parts = last_user[:parts] || last_user["parts"]
+  if parts
+    Array(parts).map { |p| p[:text] || p["text"] }.compact.join("\n")
   else
-    ""
+    last_user[:text] || last_user["text"] || last_user[:content] || last_user["content"]
   end.to_s
 end
 ```
 
-### 2.3 Session Key 전략
+### 2.3 Session Key Strategy
 
-변경 없음. 기존 `build_session_key` 로직 그대로 사용:
+No change. Use existing `build_session_key` logic:
 ```
 agent:<agent_id>:collavre:<user_id>:creative:<creative_id>:topic:<topic_id>
 ```
 
-HTTP 헤더 (`x-openclaw-session-key`) → `chat.send` params (`sessionKey`)로 이동만.
+HTTP header (`x-openclaw-session-key`) → `chat.send` params (`sessionKey`).
 
-### 2.4 HTTP fallback
+### 2.4 HTTP Fallback
 
-WebSocket 연결 실패 시 기존 HTTP 방식으로 폴백:
+Fall back to existing HTTP method on WebSocket connection failure:
 
 ```ruby
 def chat(messages, tools: [], &block)
   if websocket_available?
     chat_via_websocket(messages, tools: tools, &block)
   else
-    chat_via_http(messages, tools: tools, &block)  # 기존 코드
+    chat_via_http(messages, tools: tools, &block)  # existing code
   end
 end
 ```
 
 ---
 
-## Phase 3: 프로액티브 메시지 수신
+## Phase 3: Proactive Message Reception
 
-### 3.1 Event Handler 등록
+### 3.1 Event Handler Registration
 
-WebSocket 연결 시 프로액티브 메시지 핸들러 등록:
+Register proactive message handler on WebSocket connection:
 
 ```ruby
-# ConnectionManager에서 연결 생성 시
+# In ConnectionManager on connection creation
 client = WebsocketClient.new(user: user)
 client.on_proactive_message do |event|
   handle_proactive_message(user, event)
 end
 ```
 
-### 3.2 프로액티브 vs 요청 응답 구분
+### 3.2 Distinguishing Request Response vs Proactive
 
 ```ruby
-# WebsocketClient 내부
+# Inside WebsocketClient
 def handle_chat_event(payload)
   run_id = payload[:runId]
-  session_key = payload[:sessionKey]
 
   if @pending_runs.key?(run_id)
-    # 요청에 대한 응답 → 해당 요청의 콜백으로 전달
+    # Response to a request → forward to request callback
     @pending_runs[run_id].call(payload)
   else
-    # 프로액티브 메시지 → 핸들러로 전달
+    # Proactive message → forward to handler
     @proactive_handler&.call(payload)
   end
 end
 ```
 
-### 3.3 CallbackProcessorJob 연동
+### 3.3 CallbackProcessorJob Integration
 
-기존 CallbackProcessorJob을 재사용:
+Reuse existing CallbackProcessorJob:
 
 ```ruby
 def handle_proactive_message(user, event)
@@ -315,7 +311,7 @@ def handle_proactive_message(user, event)
 end
 ```
 
-### 3.4 Session Key 파싱
+### 3.4 Session Key Parsing
 
 ```ruby
 def parse_session_key(session_key)
@@ -336,45 +332,45 @@ end
 
 ---
 
-## Phase 4: 기존 callback 코드 유지
+## Phase 4: Keep Existing Callback Code
 
-> **결정: 현재 구현 그대로 유지. 삭제하지 않음.**
+> **Decision: Keep current implementation as-is. Do not delete.**
 
-유지되는 코드:
-- `CallbacksController` — HTTP callback 엔드포인트
-- `PendingCallback` 모델 — nonce 관리
-- `callback_url` / `callback_nonce` 로직 — OpenclawAdapter 내
+Code that remains:
+- `CallbacksController` — HTTP callback endpoint
+- `PendingCallback` model — nonce management
+- `callback_url` / `callback_nonce` logic — in OpenclawAdapter
 - `config/routes.rb` — callback route
-- DB 테이블 `openclaw_pending_callbacks`
+- DB table `openclaw_pending_callbacks`
 
-이유:
-- WebSocket이 안정화될 때까지 HTTP callback도 병행 가능
-- 나중에 WebSocket이 충분히 검증되면 별도 PR로 정리
+Rationale:
+- HTTP callback can run in parallel until WebSocket is proven stable
+- Clean up in a separate PR once WebSocket is fully validated
 
 ---
 
-## Phase 5: 테스트
+## Phase 5: Tests
 
 ### 5.1 Unit Tests
 
 ```ruby
 # test/services/websocket_client_test.rb
 - connect/disconnect
-- chat.send → chat event 수신 → 텍스트 추출
-- 프로액티브 메시지 감지 (미등록 runId)
-- 재연결 로직 (exponential backoff)
-- tick 응답
+- chat.send → chat event reception → text extraction
+- Proactive message detection (unregistered runId)
+- Reconnect logic (exponential backoff)
+- Tick response
 
 # test/services/connection_manager_test.rb
-- 유저별 연결 생성/재사용
-- idle timeout → disconnect
-- thread-safe access
+- Per-user connection creation/reuse
+- Idle timeout → disconnect
+- Thread-safe access
 - disconnect_all
 
 # test/services/openclaw_adapter_test.rb
-- WebSocket 경로 테스트
-- HTTP fallback 테스트
-- 메시지 포맷 변환
+- WebSocket path tests
+- HTTP fallback tests
+- Message format conversion
 ```
 
 ### 5.2 Mock WebSocket Server
@@ -382,61 +378,61 @@ end
 ```ruby
 # test/support/mock_openclaw_gateway.rb
 class MockOpenclawGateway
-  # EventMachine 기반 mock WS 서버
-  # - connect handshake 응답
-  # - chat.send → chat event 응답
-  # - 프로액티브 메시지 시뮬레이션
+  # EventMachine-based mock WS server
+  # - connect handshake response
+  # - chat.send → chat event response
+  # - Proactive message simulation
 end
 ```
 
 ---
 
-## 구현 순서
+## Implementation Order
 
 ```
-Phase 1: WebSocket 인프라                    [PR #1]
-  ├─ 1.1 faye-websocket gem 추가
-  ├─ 1.2 WebsocketClient 구현
-  ├─ 1.3 ConnectionManager 구현
-  ├─ 1.4 EM reactor 관리
-  └─ 1.5 Configuration 확장 + 테스트
+Phase 1: WebSocket Infrastructure              [PR #1]
+  ├─ 1.1 Add faye-websocket gem
+  ├─ 1.2 Implement WebsocketClient
+  ├─ 1.3 Implement ConnectionManager
+  ├─ 1.4 EM reactor management
+  └─ 1.5 Configuration extension + tests
 
-Phase 2: Chat 전환                           [PR #2]
-  ├─ 2.1 OpenclawAdapter.chat() → WS 전환
-  ├─ 2.2 메시지 포맷 변환
-  ├─ 2.3 HTTP fallback 유지
-  └─ 2.4 테스트
+Phase 2: Chat Transport Switch                 [PR #2]
+  ├─ 2.1 OpenclawAdapter.chat() → WS switch
+  ├─ 2.2 Message format conversion
+  ├─ 2.3 HTTP fallback retained
+  └─ 2.4 Tests
 
-Phase 3: 프로액티브 메시지                    [PR #3]
-  ├─ 3.1 Event handler 등록
-  ├─ 3.2 요청/프로액티브 구분
-  ├─ 3.3 CallbackProcessorJob 연동
-  └─ 3.4 테스트
+Phase 3: Proactive Messages                    [PR #3]
+  ├─ 3.1 Event handler registration
+  ├─ 3.2 Request/proactive distinction
+  ├─ 3.3 CallbackProcessorJob integration
+  └─ 3.4 Tests
 ```
 
 ---
 
-## 리스크 & 완화
+## Risks & Mitigations
 
-| 리스크 | 영향 | 완화 |
-|--------|------|------|
-| WS 연결 끊김 | 프로액티브 메시지 유실 | auto-reconnect + chat.history 복구 |
-| EventMachine 호환성 | Puma와 충돌 가능 | 별도 스레드에서 EM 실행 |
-| 서버 재시작 | 모든 WS 연결 끊김 | 재시작 후 자동 재연결 |
-| Gateway 다운 | 채팅 불가 | HTTP fallback (Phase 2.4) |
-| 동시성 버그 | 메시지 유실/중복 | idempotencyKey + Mutex |
-| 메모리 증가 | 유저 수 × 연결 | idle timeout (30분) |
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| WS connection drops | Proactive message loss | Auto-reconnect + chat.history recovery |
+| EventMachine compatibility | Possible conflict with Puma | Run EM in separate thread |
+| Server restart | All WS connections dropped | Auto-reconnect after restart |
+| Gateway down | Chat unavailable | HTTP fallback (Phase 2.4) |
+| Concurrency bugs | Message loss/duplication | idempotencyKey + Mutex |
+| Memory increase | Users × connections | Idle timeout (30 min) |
 
-## 미해결 사항
+## Open Questions
 
-### chat.send의 message가 단일 문자열인 문제
+### chat.send message is a single string
 
-- 현재 HTTP: 전체 대화 이력 (`messages` 배열) + 시스템 프롬프트 전송
-- WS `chat.send`: `message` 단일 문자열만
+- Current HTTP: sends full conversation history (`messages` array) + system prompt
+- WS `chat.send`: single `message` string only
 
-**해결 방안:**
-1. Gateway가 세션 이력을 관리하므로 최신 메시지만 전송 → 이력은 Gateway가 유지
-2. 시스템 프롬프트 → OpenClaw agent config (SOUL.md 등)에서 관리
-3. Creative 컨텍스트 → 메시지 앞에 prefix로 포함
+**Resolution:**
+1. Gateway manages session history, so send only the latest message → history maintained by Gateway
+2. System prompt → managed in OpenClaw agent config (SOUL.md etc.)
+3. Creative context → included as message prefix
 
-**→ Phase 2 구현 시 상세 결정 필요**
+**→ Detailed decision made during Phase 2 implementation**
