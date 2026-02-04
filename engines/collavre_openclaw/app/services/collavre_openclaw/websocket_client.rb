@@ -303,6 +303,8 @@ module CollavreOpenclaw
         @handshake_done = true
         if ok
           @tick_interval_ms = payload&.dig(:policy, :tickIntervalMs) || 15_000
+          @state = :connected
+          @reconnect_attempts = 0
           start_tick_timer!
           @handshake_queue&.push({ ok: true, payload: payload })
         else
