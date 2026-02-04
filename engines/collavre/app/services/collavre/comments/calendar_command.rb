@@ -90,7 +90,15 @@ module Collavre
           return next_weekday(today, weekday_index(weekday_match[2]), count)
         end
 
-        Date.iso8601(token) if token.match?(/\A\d{4}-\d{2}-\d{2}\z/)
+        # YYYY-MM-DD
+        return Date.iso8601(token) if token.match?(/\A\d{4}-\d{2}-\d{2}\z/)
+
+        # MM-DD (assume current year)
+        if token.match?(/\A\d{2}-\d{2}\z/)
+          return Date.parse("#{today.year}-#{token}")
+        end
+
+        nil
       end
 
       def weekday_index(token)
