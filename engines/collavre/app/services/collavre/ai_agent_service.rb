@@ -1,5 +1,8 @@
 module Collavre
   class AiAgentService
+    # Minimum interval (in seconds) between streaming broadcasts to avoid excessive updates
+    STREAM_THROTTLE_INTERVAL = 0.1
+
     def initialize(task)
       @task = task
       @agent = task.agent
@@ -32,24 +35,18 @@ module Collavre
           context: rendering_context
         ).render
 
-        # Create a placeholder comment to stream into
         target_comment_id = @context.dig("comment", "id")
-        reply_comment = nil
+        original_comment = target_comment_id ? Comment.find_by(id: target_comment_id) : nil
 
-        if target_comment_id
-          original_comment = Comment.find_by(id: target_comment_id)
-          if original_comment
-            reply_comment = original_comment.creative.comments.create!(
-              content: "...", # Placeholder
-              user: @agent,
-              topic_id: original_comment.topic_id
-            )
-          end
-        end
-
-        # we may pass event payload also to the AI client for more context if needed - TODO
         @creative = @context.dig("creative", "id") ? Creative.find_by(id: @context["creative"]["id"]) : nil
-        @reply_comment = reply_comment
+
+        # Broadcast "thinking" status via presence channel
+        broadcast_agent_status("thinking")
+
+        # Append a temporary streaming element to the comments list
+        if @creative
+          append_streaming_element
+        end
 
         client = AiClient.new(
           vendor: @agent.llm_vendor,
@@ -60,47 +57,47 @@ module Collavre
             creative: @creative,
             user: @agent,
             task: @task,
-            comment: reply_comment || (@context.dig("comment", "id") ? Comment.find_by(id: @context["comment"]["id"]) : nil)
+            comment: original_comment
           }
         )
+
+        last_broadcast_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
         client.chat(messages, tools: @agent.tools || []) do |delta|
           response_content += delta
 
-          # Stream updates to the comment
-          if reply_comment
-            # We use update_column to avoid triggering full model callbacks/validations on every chunk
-            # but we *do* want to broadcast the update.
-            # However, calling 'update' trigger callbacks which might be heavy.
-            # Let's try direct broadcast or a lighter update.
-            # For now, let's just update the content.
-            # To avoid being too chatty we could throttle, but let's try direct updates first.
-
-            reply_comment.update_column(:content, response_content)
-
-            # Manually trigger broadcast for the content update
-            # We use broadcast_update_to to immediately stream the update
-            reply_comment.broadcast_update_to([ reply_comment.creative, :comments ], partial: "collavre/comments/comment")
+          # Update the temporary streaming element with accumulated content (throttled)
+          now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          if @creative && (now - last_broadcast_at) >= STREAM_THROTTLE_INTERVAL
+            broadcast_agent_status("streaming")
+            replace_streaming_element(response_content)
+            last_broadcast_at = now
           end
         end
+
+        # Final broadcast of streaming content (ensure last chunk is shown)
+        replace_streaming_element(response_content) if @creative && response_content.present?
 
         # Log completion
         log_action("completion", { response: response_content })
 
-        # Final save to ensure everything is consistent and trigger final callbacks
-        if reply_comment
-          if response_content.present?
-            # Force dirty tracking since update_column bypassed it during streaming
-            reply_comment.content_will_change!
-            reply_comment.update!(content: response_content)
-            log_action("reply_created", { comment_id: reply_comment.id, content: response_content })
-          else
-            reply_comment.destroy!
-          end
+        # Remove the temporary streaming element
+        remove_streaming_element if @creative
+
+        # Create the actual comment with final content
+        if original_comment && response_content.present?
+          reply = original_comment.creative.comments.create!(
+            content: response_content,
+            user: @agent,
+            topic_id: original_comment.topic_id
+          )
+          log_action("reply_created", { comment_id: reply.id, content: response_content })
         elsif target_comment_id && response_content.present?
-          # Fallback if creation failed earlier or logic changed
           reply_to_comment(target_comment_id, response_content)
         end
+
+        # Broadcast "idle" status
+        broadcast_agent_status("idle")
       end
     rescue ApprovalPendingError => e
       handle_approval_pending(e)
@@ -108,6 +105,61 @@ module Collavre
     end
 
     private
+
+    def streaming_element_id
+      "agent-streaming-#{@task.id}"
+    end
+
+    def broadcast_agent_status(status)
+      return unless @creative
+
+      CommentsPresenceChannel.broadcast_agent_status(
+        @creative.effective_origin.id,
+        status: status,
+        agent_id: @agent.id,
+        agent_name: @agent.display_name,
+        task_id: @task.id
+      )
+    end
+
+    def append_streaming_element
+      Turbo::StreamsChannel.broadcast_append_to(
+        [ @creative, :comments ],
+        target: "comments-list",
+        html: streaming_element_html("")
+      )
+    end
+
+    def replace_streaming_element(content)
+      Turbo::StreamsChannel.broadcast_replace_to(
+        [ @creative, :comments ],
+        target: streaming_element_id,
+        html: streaming_element_html(content)
+      )
+    end
+
+    def remove_streaming_element
+      Turbo::StreamsChannel.broadcast_remove_to(
+        [ @creative, :comments ],
+        target: streaming_element_id
+      )
+    end
+
+    def streaming_element_html(content)
+      avatar_html = if @agent.respond_to?(:avatar_url) && @agent.avatar_url.present?
+        "<img src=\"#{@agent.avatar_url}\" alt=\"\" width=\"20\" height=\"20\" " \
+          "class=\"avatar comment-avatar\" style=\"border-radius: 50%;\" />"
+      else
+        ""
+      end
+
+      escaped_content = ERB::Util.html_escape(content)
+      "<div id=\"#{streaming_element_id}\" class=\"comment-item agent-streaming\">" \
+        "#{avatar_html}" \
+        "<strong>#{ERB::Util.html_escape(@agent.display_name)}</strong> " \
+        "<span class=\"comment-content\">#{escaped_content}</span>" \
+        "</div>"
+    end
 
     def log_action(type, payload, result = nil)
       @task.task_actions.create!(
@@ -200,8 +252,11 @@ module Collavre
     end
 
     def handle_approval_pending(error)
-      # Clean up placeholder comment if exists
-      @reply_comment&.destroy! if @reply_comment&.content == "..."
+      # Broadcast idle status to clear typing indicator
+      broadcast_agent_status("idle")
+
+      # Remove temporary streaming element if present
+      remove_streaming_element if @creative
 
       # Store pending tool call info in task
       @task.update!(

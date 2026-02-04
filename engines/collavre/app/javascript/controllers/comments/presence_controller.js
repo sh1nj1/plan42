@@ -149,6 +149,15 @@ export default class extends Controller {
       }
       this.renderTypingIndicator()
     }
+    if (data.agent_status) {
+      const { id, name, status } = data.agent_status
+      if (status === 'thinking' || status === 'streaming') {
+        this.typingUsers[id] = name
+      } else {
+        delete this.typingUsers[id]
+      }
+      this.renderTypingIndicator()
+    }
   }
 
   renderParticipants(presentIds) {
