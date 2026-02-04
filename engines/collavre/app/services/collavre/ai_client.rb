@@ -78,6 +78,8 @@ module Collavre
       end
 
       response_content.presence
+    rescue ApprovalPendingError
+      raise # Re-raise approval errors without catching them
     rescue StandardError => e
       error_message = e.message
       Rails.logger.error "AI Client error: #{e.message}"
