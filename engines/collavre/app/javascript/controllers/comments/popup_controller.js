@@ -11,7 +11,9 @@ export default class extends Controller {
     'closeButton',
     'leftHandle',
     'rightHandle',
-    'fullscreenLink',
+    'fullscreenButton',
+    'fullscreenIcon',
+    'exitFullscreenIcon',
   ]
 
   connect() {
@@ -31,11 +33,13 @@ export default class extends Controller {
     this.handleOnline = this.handleOnline.bind(this)
     this.handleWindowFocus = this.handleWindowFocus.bind(this)
     this.handleVisibilityChange = this.handleVisibilityChange.bind(this)
+    this.handlePopState = this.handlePopState.bind(this)
 
     document.addEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     window.addEventListener('online', this.handleOnline)
     window.addEventListener('focus', this.handleWindowFocus)
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
+    window.addEventListener('popstate', this.handlePopState)
 
     if (this.hasCloseButtonTarget) {
       this.closeButtonTarget.addEventListener('click', () => this.close())
@@ -62,6 +66,8 @@ export default class extends Controller {
     })
 
     if (this.isFullscreen()) {
+      // Sync UI for initial fullscreen state
+      this._syncFullscreenUI(true)
       // Defer to ensure all sibling controllers are connected
       requestAnimationFrame(() => this.openForCreative())
     } else {
@@ -75,6 +81,7 @@ export default class extends Controller {
     window.removeEventListener('online', this.handleOnline)
     window.removeEventListener('focus', this.handleWindowFocus)
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
+    window.removeEventListener('popstate', this.handlePopState)
     window.removeEventListener('mousemove', this.handleResizeMove)
     window.removeEventListener('mouseup', this.handleResizeStop)
     if (this.isMobile()) {
@@ -131,7 +138,6 @@ export default class extends Controller {
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.titleTarget.textContent = snippet
 
-    this.updateFullscreenLink(resolvedCreativeId)
 
     this.prepareSize()
 
@@ -161,7 +167,6 @@ export default class extends Controller {
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.titleTarget.textContent = snippet
 
-    this.updateFullscreenLink(resolvedCreativeId)
 
     this.showPopup()
 
@@ -388,11 +393,63 @@ export default class extends Controller {
     }
   }
 
-  updateFullscreenLink(creativeId) {
-    if (!this.hasFullscreenLinkTarget || !creativeId) return
-    const template = this.element.dataset.fullscreenUrlTemplate
-    if (!template) return
-    this.fullscreenLinkTarget.href = template.replace('__CREATIVE_ID__', creativeId)
+  toggleFullscreen() {
+    const entering = !this.isFullscreen()
+    this.element.dataset.fullscreen = entering ? 'true' : 'false'
+    document.body.classList.toggle('chat-fullscreen', entering)
+    this._syncFullscreenUI(entering)
+
+    // Update URL without page navigation
+    if (entering) {
+      const creativeId = this.element.dataset.creativeId
+      if (creativeId) {
+        this._previousUrl = window.location.href
+        const fullscreenPath = `/creatives/${creativeId}/comments/fullscreen`
+        window.history.pushState({ fullscreen: true }, '', fullscreenPath)
+      }
+    } else if (this._previousUrl) {
+      window.history.pushState({ fullscreen: false }, '', this._previousUrl)
+      this._previousUrl = null
+    }
+
+    // Scroll to bottom after layout change
+    requestAnimationFrame(() => {
+      this.listController?.scrollToBottom()
+    })
+  }
+
+  handlePopState(event) {
+    const isFs = event.state?.fullscreen === true
+    if (isFs !== this.isFullscreen()) {
+      this.element.dataset.fullscreen = isFs ? 'true' : 'false'
+      document.body.classList.toggle('chat-fullscreen', isFs)
+      this._syncFullscreenUI(isFs)
+      requestAnimationFrame(() => this.listController?.scrollToBottom())
+    }
+  }
+
+  _syncFullscreenUI(entering) {
+    if (this.hasFullscreenIconTarget) {
+      this.fullscreenIconTarget.style.display = entering ? 'none' : ''
+    }
+    if (this.hasExitFullscreenIconTarget) {
+      this.exitFullscreenIconTarget.style.display = entering ? '' : 'none'
+    }
+    if (this.hasLeftHandleTarget) {
+      this.leftHandleTarget.style.display = entering ? 'none' : ''
+    }
+    if (this.hasRightHandleTarget) {
+      this.rightHandleTarget.style.display = entering ? 'none' : ''
+    }
+    if (this.hasCloseButtonTarget) {
+      this.closeButtonTarget.style.display = entering ? 'none' : ''
+    }
+    if (this.hasFullscreenButtonTarget) {
+      const label = entering
+        ? (this.element.dataset.exitFullscreenLabel || 'Exit full screen')
+        : (this.element.dataset.fullscreenLabel || 'Full screen')
+      this.fullscreenButtonTarget.setAttribute('aria-label', label)
+    }
   }
 
   openFromUrl() {
