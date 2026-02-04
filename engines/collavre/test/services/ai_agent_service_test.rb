@@ -58,7 +58,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert @task.task_actions.exists?(action_type: "reply_created")
   end
 
-  test "broadcasts agent status during execution" do
+  test "broadcasts agent status with content during execution" do
     mock_client = Minitest::Mock.new
 
     def mock_client.chat(messages, tools: [])
@@ -68,24 +68,17 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     broadcasts = []
     creative_id = @creative.effective_origin.id
 
-    # Capture ActionCable broadcasts
+    # Capture ActionCable broadcasts (streaming content is now sent via agent_status, no Turbo Streams)
     ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
-      # Also stub Turbo broadcasts to avoid errors
-      Turbo::StreamsChannel.stub :broadcast_append_to, nil do
-        Turbo::StreamsChannel.stub :broadcast_replace_to, nil do
-          Turbo::StreamsChannel.stub :broadcast_remove_to, nil do
-            AiClient.stub :new, mock_client do
-              AiAgentService.new(@task).call
-            end
-          end
-        end
+      AiClient.stub :new, mock_client do
+        AiAgentService.new(@task).call
       end
     end
 
     presence_broadcasts = broadcasts.select { |b| b[:channel] == "comments_presence:#{creative_id}" }
     agent_statuses = presence_broadcasts.select { |b| b[:data][:agent_status].present? }
 
-    # Should have thinking and idle broadcasts at minimum
+    # Should have thinking, streaming (with content), and idle broadcasts
     statuses = agent_statuses.map { |b| b[:data][:agent_status][:status] }
     assert_includes statuses, "thinking"
     assert_includes statuses, "idle"
@@ -94,6 +87,11 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     thinking_idx = statuses.index("thinking")
     idle_idx = statuses.rindex("idle")
     assert thinking_idx < idle_idx
+
+    # Streaming broadcasts should include content
+    streaming_with_content = agent_statuses.select { |b| b[:data][:agent_status][:content].present? }
+    assert streaming_with_content.any?, "Expected at least one broadcast with content"
+    assert_equal "Response", streaming_with_content.last[:data][:agent_status][:content]
   end
 
   test "reassociates activity logs from trigger comment to reply comment" do

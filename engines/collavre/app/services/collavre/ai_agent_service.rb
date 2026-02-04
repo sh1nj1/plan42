@@ -43,11 +43,6 @@ module Collavre
         # Broadcast "thinking" status via presence channel
         broadcast_agent_status("thinking")
 
-        # Append a temporary streaming element to the comments list
-        if @creative
-          append_streaming_element
-        end
-
         client = AiClient.new(
           vendor: @agent.llm_vendor,
           model: @agent.llm_model,
@@ -66,23 +61,19 @@ module Collavre
         client.chat(messages, tools: @agent.tools || []) do |delta|
           response_content += delta
 
-          # Update the temporary streaming element with accumulated content (throttled)
+          # Broadcast streaming content to client (throttled)
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           if @creative && (now - last_broadcast_at) >= STREAM_THROTTLE_INTERVAL
-            broadcast_agent_status("streaming")
-            replace_streaming_element(response_content)
+            broadcast_agent_status("streaming", content: response_content)
             last_broadcast_at = now
           end
         end
 
         # Final broadcast of streaming content (ensure last chunk is shown)
-        replace_streaming_element(response_content) if @creative && response_content.present?
+        broadcast_agent_status("streaming", content: response_content) if @creative && response_content.present?
 
         # Log completion
         log_action("completion", { response: response_content })
-
-        # Remove the temporary streaming element
-        remove_streaming_element if @creative
 
         # Create the actual comment with final content
         if original_comment && response_content.present?
@@ -110,11 +101,7 @@ module Collavre
 
     private
 
-    def streaming_element_id
-      "agent-streaming-#{@task.id}"
-    end
-
-    def broadcast_agent_status(status)
+    def broadcast_agent_status(status, content: nil)
       return unless @creative
 
       CommentsPresenceChannel.broadcast_agent_status(
@@ -122,47 +109,9 @@ module Collavre
         status: status,
         agent_id: @agent.id,
         agent_name: @agent.display_name,
-        task_id: @task.id
+        task_id: @task.id,
+        content: content
       )
-    end
-
-    def append_streaming_element
-      Turbo::StreamsChannel.broadcast_append_to(
-        [ @creative, :comments ],
-        target: "comments-list",
-        html: streaming_element_html("")
-      )
-    end
-
-    def replace_streaming_element(content)
-      Turbo::StreamsChannel.broadcast_replace_to(
-        [ @creative, :comments ],
-        target: streaming_element_id,
-        html: streaming_element_html(content)
-      )
-    end
-
-    def remove_streaming_element
-      Turbo::StreamsChannel.broadcast_remove_to(
-        [ @creative, :comments ],
-        target: streaming_element_id
-      )
-    end
-
-    def streaming_element_html(content)
-      avatar_html = if @agent.respond_to?(:avatar_url) && @agent.avatar_url.present?
-        "<img src=\"#{@agent.avatar_url}\" alt=\"\" width=\"20\" height=\"20\" " \
-          "class=\"avatar comment-avatar\" style=\"border-radius: 50%;\" />"
-      else
-        ""
-      end
-
-      escaped_content = ERB::Util.html_escape(content)
-      "<div id=\"#{streaming_element_id}\" class=\"comment-item agent-streaming\">" \
-        "#{avatar_html}" \
-        "<strong>#{ERB::Util.html_escape(@agent.display_name)}</strong> " \
-        "<span class=\"comment-content\">#{escaped_content}</span>" \
-        "</div>"
     end
 
     def log_action(type, payload, result = nil)
@@ -262,11 +211,8 @@ module Collavre
     end
 
     def handle_approval_pending(error)
-      # Broadcast idle status to clear typing indicator
+      # Broadcast idle status to clear typing indicator and streaming element
       broadcast_agent_status("idle")
-
-      # Remove temporary streaming element if present
-      remove_streaming_element if @creative
 
       # Store pending tool call info in task
       @task.update!(

@@ -150,11 +150,13 @@ export default class extends Controller {
       this.renderTypingIndicator()
     }
     if (data.agent_status) {
-      const { id, name, status } = data.agent_status
+      const { id, name, status, task_id: taskId, content } = data.agent_status
       if (status === 'thinking' || status === 'streaming') {
         this.typingUsers[id] = name
+        this.updateStreamingElement(id, name, taskId, content)
       } else {
         delete this.typingUsers[id]
+        this.removeStreamingElement(taskId)
       }
       this.renderTypingIndicator()
     }
@@ -249,6 +251,46 @@ export default class extends Controller {
     const text = document.createElement('span')
     text.textContent = `${names.join(', ')} ...`
     this.typingIndicatorTarget.appendChild(text)
+  }
+
+  updateStreamingElement(agentId, agentName, taskId, content) {
+    if (!content && content !== '') return
+    const list = document.getElementById('comments-list')
+    if (!list) return
+
+    const elementId = `agent-streaming-${taskId}`
+    let el = document.getElementById(elementId)
+
+    if (!el) {
+      el = document.createElement('div')
+      el.id = elementId
+      el.className = 'comment-item agent-streaming'
+      list.appendChild(el)
+    }
+
+    // Build inner HTML — avatar from participantsData if available
+    let avatarHtml = ''
+    if (this.participantsData) {
+      const user = this.participantsData.find((p) => p.id === agentId)
+      if (user) {
+        avatarHtml = `<img src="${user.avatar_url}" alt="" width="20" height="20" class="avatar comment-avatar" style="border-radius: 50%;" />`
+      }
+    }
+
+    const escaped = content
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+    el.innerHTML = `${avatarHtml}<strong>${agentName.replace(/</g, '&lt;')}</strong> <span class="comment-content">${escaped}</span>`
+
+    // Auto-scroll to bottom (column-reverse layout)
+    list.scrollTop = list.scrollHeight
+  }
+
+  removeStreamingElement(taskId) {
+    if (!taskId) return
+    const el = document.getElementById(`agent-streaming-${taskId}`)
+    if (el) el.remove()
   }
 
   clearTypingTimers() {
