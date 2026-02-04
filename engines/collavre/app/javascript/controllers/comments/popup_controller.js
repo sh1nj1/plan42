@@ -629,6 +629,14 @@ export default class extends Controller {
         window.history.pushState({ fullscreen: false }, '', url.pathname + url.search)
       }
       this._previousUrl = null
+
+      // Scroll the selected creative row into view after exiting fullscreen
+      if (creativeId) {
+        requestAnimationFrame(() => {
+          const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
+          row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        })
+      }
     }
 
     // Scroll to bottom after layout change
