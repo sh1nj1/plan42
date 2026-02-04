@@ -265,6 +265,8 @@ export default class extends Controller {
     return currentTopicId === '' || currentTopicId === streamTopicId
   }
 
+  // Build a streaming element using the same structure as _comment.html.erb
+  // so it inherits identical styling (theme, layout, typography).
   updateStreamingElement(agentId, agentName, taskId, content) {
     if (!content && content !== '') return
     const list = document.getElementById('comments-list')
@@ -276,54 +278,73 @@ export default class extends Controller {
     if (!el) {
       el = document.createElement('div')
       el.id = elementId
+      // Reuse .comment-item class for identical base styling
       el.className = 'comment-item agent-streaming'
       el.dataset.taskId = taskId
-      list.appendChild(el)
-    }
 
-    // Build header only once, update content efficiently
-    let headerEl = el.querySelector('.agent-streaming-header')
-    if (!headerEl) {
-      el.textContent = ''
+      // --- Same structure as _comment.html.erb ---
 
-      headerEl = document.createElement('div')
-      headerEl.className = 'agent-streaming-header'
+      // Avatar + name row (mirrors the <div> wrapping avatar, name, timestamp)
+      const headerDiv = document.createElement('div')
 
-      if (this.participantsData) {
-        const user = this.participantsData.find((p) => p.id === agentId)
-        if (user) {
-          const img = document.createElement('img')
-          img.src = user.avatar_url
-          img.alt = ''
-          img.width = 20
-          img.height = 20
-          img.className = 'avatar comment-avatar'
-          img.style.borderRadius = '50%'
-          headerEl.appendChild(img)
+      const user = this.participantsData?.find((p) => p.id === agentId)
+      if (user) {
+        const avatarWrapper = document.createElement('span')
+        avatarWrapper.className = 'avatar-wrapper'
+        avatarWrapper.style.width = '20px'
+        avatarWrapper.style.height = '20px'
+        avatarWrapper.style.display = 'inline-block'
+        avatarWrapper.style.verticalAlign = 'middle'
+
+        const img = document.createElement('img')
+        img.src = user.avatar_url
+        img.alt = ''
+        img.width = 20
+        img.height = 20
+        img.className = 'avatar comment-avatar'
+        img.style.borderRadius = '50%'
+        avatarWrapper.appendChild(img)
+
+        if (user.default_avatar) {
+          const initial = document.createElement('span')
+          initial.className = 'avatar-initial'
+          initial.textContent = user.initial
+          initial.style.fontSize = '10px'
+          avatarWrapper.appendChild(initial)
         }
+        headerDiv.appendChild(avatarWrapper)
+        headerDiv.appendChild(document.createTextNode(' '))
       }
 
       const strong = document.createElement('strong')
       strong.textContent = agentName
-      headerEl.appendChild(strong)
+      headerDiv.appendChild(strong)
 
-      // Stop button
+      el.appendChild(headerDiv)
+
+      // Action container with stop button (mirrors .comment-action-container)
+      const actionContainer = document.createElement('div')
+      actionContainer.className = 'comment-action-container'
+
       const stopBtn = document.createElement('button')
       stopBtn.className = 'stop-streaming-btn'
       stopBtn.type = 'button'
-      stopBtn.textContent = '⏹'
-      stopBtn.title = this.element.dataset.stopStreamingText || 'Stop'
+      stopBtn.textContent = '⏹ ' + (this.element.dataset.stopStreamingText || 'Stop')
       stopBtn.addEventListener('click', () => this.stopStreaming(taskId))
-      headerEl.appendChild(stopBtn)
+      actionContainer.appendChild(stopBtn)
 
-      el.appendChild(headerEl)
+      el.appendChild(actionContainer)
 
+      // Content area (mirrors .comment-content)
       const contentEl = document.createElement('div')
       contentEl.className = 'comment-content'
+      contentEl.dataset.rendered = 'true' // Mark as rendered to prevent double-processing
       el.appendChild(contentEl)
+
+      list.appendChild(el)
     }
 
-    // Update content with markdown rendering
+    // Update content with markdown rendering (same function as comment_controller.js)
     const contentEl = el.querySelector('.comment-content')
     if (contentEl) {
       contentEl.innerHTML = renderCommentMarkdown(content)
