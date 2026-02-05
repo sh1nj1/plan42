@@ -49,3 +49,6 @@ vendor/bundle
 # Ignore key files for decrypting credentials and more.
 /config/*.key
 
+
+# Release build artifacts
+/build/
