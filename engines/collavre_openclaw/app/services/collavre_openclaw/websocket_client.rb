@@ -228,7 +228,8 @@ module CollavreOpenclaw
       send_rpc("chat.abort", params)
     end
 
-    # Register a handler for proactive messages (unsolicited chat events)
+    # Register a handler for proactive messages (unsolicited chat events).
+    # The handler receives (user, payload) where user is the connection owner.
     def on_proactive_message(&handler)
       @proactive_handler = handler
     end
@@ -407,7 +408,7 @@ module CollavreOpenclaw
       elsif @proactive_handler
         # Unknown run — proactive message from Gateway (cron/heartbeat)
         Rails.logger.info("[CollavreOpenclaw::WS] Proactive message received (runId=#{run_id})")
-        @proactive_handler.call(payload)
+        @proactive_handler.call(@user, payload)
       else
         Rails.logger.debug("[CollavreOpenclaw::WS] Ignoring chat event for unknown runId=#{run_id}")
       end

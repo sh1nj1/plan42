@@ -41,10 +41,14 @@ module CollavreOpenclaw
       end
     end
 
-    # Graceful shutdown: disconnect all WebSocket connections
+    # Graceful shutdown: disconnect all WebSocket connections.
+    # Only clean up if the singleton was already instantiated to avoid
+    # starting EM/threads during shutdown or test teardown.
     config.after_initialize do
       at_exit do
-        ConnectionManager.instance.disconnect_all
+        if ConnectionManager.instance_variable_get(:@singleton__instance__)
+          ConnectionManager.instance.disconnect_all
+        end
         EmReactor.stop! if EmReactor.running?
       rescue => e
         Rails.logger.warn("[CollavreOpenclaw] Shutdown cleanup error: #{e.message}")

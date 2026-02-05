@@ -16,6 +16,9 @@ module CollavreOpenclaw
       @connections = {} # user_id → WebsocketClient
       @mutex = Mutex.new
       @idle_checker = nil
+      @proactive_handler = nil
+      @proactive_message_handler = ProactiveMessageHandler.new
+      setup_default_proactive_handler!
       start_idle_checker!
     end
 
@@ -87,6 +90,15 @@ module CollavreOpenclaw
     end
 
     private
+
+    # Set up the default proactive message handler that dispatches
+    # unsolicited chat events to CallbackProcessorJob.
+    def setup_default_proactive_handler!
+      handler = @proactive_message_handler
+      on_proactive_message do |user, payload|
+        handler.handle(user, payload)
+      end
+    end
 
     def start_idle_checker!
       @idle_checker_stop = false
