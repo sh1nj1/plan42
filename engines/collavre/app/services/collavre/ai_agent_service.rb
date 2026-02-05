@@ -154,7 +154,8 @@ module Collavre
         agent_id: @agent.id,
         agent_name: @agent.display_name,
         task_id: @task.id,
-        content: content
+        content: content,
+        source_creative_id: @creative.id
       )
     end
 
