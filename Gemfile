@@ -106,6 +106,6 @@ Dir.glob(File.expand_path("engines/*", __dir__)).each do |engine_path|
   end
 end
 
-gem "collavre", "0.2.3"
+gem "collavre", "0.2.4"
 gem "collavre_openclaw", "0.2.1"
 gem "collavre_notion", "0.1.0"
