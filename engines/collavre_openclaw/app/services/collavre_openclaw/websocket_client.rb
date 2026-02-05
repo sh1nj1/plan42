@@ -83,7 +83,18 @@ module CollavreOpenclaw
         end
       end
 
-      result = wait_with_timeout(queue, config.ws_connect_timeout, "connect")
+      begin
+        result = wait_with_timeout(queue, config.ws_connect_timeout, "connect")
+      rescue TimeoutError, StandardError => e
+        # Timeout or unexpected error — reset state and wake all waiters
+        error_result = { error: e.message }
+        @connect_mutex.synchronize do
+          @state = :disconnected
+          @connect_waiters.each { |q| q.push(error_result) }
+          @connect_waiters.clear
+        end
+        raise ConnectionError, e.message
+      end
 
       # Notify all waiting threads
       @connect_mutex.synchronize do
