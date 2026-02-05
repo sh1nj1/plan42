@@ -34,7 +34,10 @@ module CollavreOpenclaw
     # @return [WebsocketClient]
     def connection_for(user)
       gateway_url = user.gateway_url.to_s.strip
-      return nil if gateway_url.blank?
+      if gateway_url.blank?
+        Rails.logger.warn("[CollavreOpenclaw::ConnectionManager] User #{user.id} has blank gateway_url, cannot create connection")
+        return nil
+      end
 
       @mutex.synchronize do
         client = @connections[gateway_url]
