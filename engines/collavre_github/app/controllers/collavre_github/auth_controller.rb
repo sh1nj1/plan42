@@ -9,7 +9,7 @@ module CollavreGithub
 
       if account.new_record?
         unless Current.user
-          redirect_to main_app.new_session_path, alert: I18n.t("collavre_github.auth.login_first")
+          redirect_to collavre.new_session_path, alert: I18n.t("collavre_github.auth.login_first")
           return
         end
         account.user_id = Current.user.id
@@ -21,7 +21,7 @@ module CollavreGithub
       account.avatar_url = auth.info.image
       account.save!
 
-      redirect_to main_app.creatives_path, notice: I18n.t("collavre_github.auth.connected")
+      redirect_to collavre.creatives_path, notice: I18n.t("collavre_github.auth.connected")
     end
   end
 end

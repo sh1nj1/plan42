@@ -25,7 +25,7 @@ class OauthAuthControllersTest < ActionDispatch::IntegrationTest
     post "/auth/github/callback"
 
     assert_redirected_to collavre.creatives_path
-    assert_equal I18n.t("collavre.github_auth.connected"), flash[:notice]
+    assert_equal I18n.t("collavre_github.auth.connected"), flash[:notice]
   end
 
   test "github auth callback redirects to login when not authenticated for new account" do
@@ -39,7 +39,7 @@ class OauthAuthControllersTest < ActionDispatch::IntegrationTest
     post "/auth/github/callback"
 
     assert_redirected_to collavre.new_session_path
-    assert_equal I18n.t("collavre.github_auth.login_first"), flash[:alert]
+    assert_equal I18n.t("collavre_github.auth.login_first"), flash[:alert]
   end
 
   test "notion auth callback redirects to creatives_path for logged in user" do
