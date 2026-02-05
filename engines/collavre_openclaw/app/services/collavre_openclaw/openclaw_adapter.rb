@@ -162,8 +162,9 @@ module CollavreOpenclaw
     # (no prior assistant messages in the conversation history).
     def first_message_in_session?(messages)
       messages.none? do |m|
-        role = m[:role] || m["role"]
-        role.to_s == "assistant"
+        role = (m[:role] || m["role"]).to_s
+        # "model" is used by some providers (e.g. Gemini) as an alias for "assistant"
+        role == "assistant" || role == "model"
       end
     end
 

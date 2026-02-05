@@ -364,6 +364,28 @@ module CollavreOpenclaw
       assert_not_includes result, "Creative:"
     end
 
+    test "format_message_for_ws treats model role as assistant for follow-up detection" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      # "model" role (used by Gemini/some providers) should be treated as assistant
+      messages = [
+        { role: "user", parts: [ { text: "Creative:\n# My Project" } ] },
+        { role: "user", parts: [ { text: "First question" } ] },
+        { role: "model", parts: [ { text: "Here's my answer" } ] },
+        { role: "user", parts: [ { text: "Follow-up question" } ] }
+      ]
+
+      result = adapter.send(:format_message_for_ws, messages)
+      assert_equal "Follow-up question", result
+      assert_not_includes result, "Creative:"
+    end
+
     test "format_message_for_ws returns empty string for no user messages" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
