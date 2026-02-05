@@ -23,7 +23,7 @@ module CollavreGithub
         type: "User"
       }
 
-      render json: { organizations: [user_org] + orgs }
+      render json: { organizations: [ user_org ] + orgs }
     rescue Octokit::Unauthorized
       render json: { error: "unauthorized" }, status: :unauthorized
     end

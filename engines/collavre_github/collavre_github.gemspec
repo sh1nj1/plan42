@@ -3,8 +3,8 @@ require_relative "lib/collavre_github/version"
 Gem::Specification.new do |spec|
   spec.name        = "collavre_github"
   spec.version     = CollavreGithub::VERSION
-  spec.authors     = ["Collavre"]
-  spec.email       = ["support@collavre.com"]
+  spec.authors     = [ "Collavre" ]
+  spec.email       = [ "support@collavre.com" ]
   spec.homepage    = "https://collavre.com"
   spec.summary     = "GitHub integration for Collavre"
   spec.description = "Plugin engine to connect Collavre creatives with GitHub repositories and receive webhook events."

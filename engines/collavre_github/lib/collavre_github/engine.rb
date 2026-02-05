@@ -15,7 +15,7 @@ module CollavreGithub
     initializer "collavre_github.routes", before: :add_routing_paths do |app|
       app.routes.append do
         mount CollavreGithub::Engine => "/github", as: :github_engine
-        match "/auth/github/callback", to: "collavre_github/auth#callback", via: [:get, :post]
+        match "/auth/github/callback", to: "collavre_github/auth#callback", via: [ :get, :post ]
       end
     end
 

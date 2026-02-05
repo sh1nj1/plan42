@@ -3,7 +3,7 @@ module CollavreGithub
     class IntegrationsController < ApplicationController
       before_action :set_creative
       before_action :ensure_read_permission
-      before_action :ensure_admin_permission, only: [:show, :update]
+      before_action :ensure_admin_permission, only: [ :show, :update ]
 
       def show
         account = Current.user.github_account
@@ -109,7 +109,7 @@ module CollavreGithub
           end
 
           CollavreGithub::RepositoryLink.transaction do
-            removed_repositories = [link.repository_full_name]
+            removed_repositories = [ link.repository_full_name ]
             link.destroy!
           end
         else

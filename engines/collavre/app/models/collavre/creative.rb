@@ -59,7 +59,7 @@ module Collavre
     has_many :tags, class_name: "Collavre::Tag", dependent: :destroy
     has_many :creative_expanded_states, class_name: "Collavre::CreativeExpandedState", dependent: :delete_all
     has_many :invitations, class_name: "Collavre::Invitation", dependent: :delete_all
-    has_many :github_repository_links, dependent: :destroy
+    # github_repository_links association added by CollavreGithub engine
     has_many :topics, class_name: "Collavre::Topic", dependent: :destroy
     has_many :mcp_tools, dependent: :destroy
     has_many :activity_logs, class_name: "Collavre::ActivityLog", dependent: :destroy
