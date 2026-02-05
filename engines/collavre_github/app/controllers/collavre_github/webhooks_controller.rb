@@ -23,7 +23,9 @@ module CollavreGithub
     private
 
     def create_system_comment(event, payload)
-      creative = @repository_link.creative.effective_origin
+      creative = @repository_link.creative&.effective_origin
+      return unless creative
+
       content = format_github_event(event, payload)
 
       comment = creative.comments.create!(
@@ -73,18 +75,19 @@ module CollavreGithub
       user = pr.dig("user", "login")
       merged = pr["merged"]
       repo = payload.dig("repository", "full_name")
+      t = method(:t_webhook)
 
       lines = []
-      lines << "### GitHub: Pull Request #{action_label(action, merged)}"
+      lines << "### #{t.call('pull_request.title', action: action_label(action, merged))}"
       lines << ""
-      lines << "**Repository:** #{repo}"
-      lines << "**PR:** [##{number} #{title}](#{url})"
-      lines << "**Author:** #{user}"
-      lines << "**Action:** #{action}#{merged ? ' (merged)' : ''}"
+      lines << "**#{t.call('pull_request.repository')}:** #{repo}"
+      lines << "**#{t.call('pull_request.pr')}:** [##{number} #{title}](#{url})"
+      lines << "**#{t.call('pull_request.author')}:** #{user}"
+      lines << "**#{t.call('pull_request.action')}:** #{action}#{merged ? " #{t.call('pull_request.merged')}" : ''}"
 
       if pr["body"].present?
         lines << ""
-        lines << "**Description:**"
+        lines << "**#{t.call('pull_request.description')}:**"
         lines << pr["body"].to_s.truncate(500)
       end
 
@@ -97,24 +100,25 @@ module CollavreGithub
       branch = ref&.sub("refs/heads/", "")
       pusher = payload.dig("pusher", "name")
       commits = payload["commits"] || []
+      t = method(:t_webhook)
 
       lines = []
-      lines << "### GitHub: Push to #{branch}"
+      lines << "### #{t.call('push.title', branch: branch)}"
       lines << ""
-      lines << "**Repository:** #{repo}"
-      lines << "**Branch:** #{branch}"
-      lines << "**Pusher:** #{pusher}"
-      lines << "**Commits:** #{commits.size}"
+      lines << "**#{t.call('push.repository')}:** #{repo}"
+      lines << "**#{t.call('push.branch')}:** #{branch}"
+      lines << "**#{t.call('push.pusher')}:** #{pusher}"
+      lines << "**#{t.call('push.commits')}:** #{commits.size}"
 
       if commits.any?
         lines << ""
-        lines << "**Recent commits:**"
+        lines << "**#{t.call('push.recent_commits')}:**"
         commits.first(5).each do |commit|
-          message = commit["message"].to_s.lines.first&.strip || "(no message)"
+          message = commit["message"].to_s.lines.first&.strip || t.call("push.no_message")
           sha = commit["id"].to_s[0, 7]
           lines << "- `#{sha}` #{message.truncate(80)}"
         end
-        lines << "- ..." if commits.size > 5
+        lines << "- #{t.call('push.more')}" if commits.size > 5
       end
 
       lines.join("\n")
@@ -128,18 +132,19 @@ module CollavreGithub
       url = issue["html_url"]
       user = issue.dig("user", "login")
       repo = payload.dig("repository", "full_name")
+      t = method(:t_webhook)
 
       lines = []
-      lines << "### GitHub: Issue #{action}"
+      lines << "### #{t.call('issue.title', action: action)}"
       lines << ""
-      lines << "**Repository:** #{repo}"
-      lines << "**Issue:** [##{number} #{title}](#{url})"
-      lines << "**Author:** #{user}"
-      lines << "**Action:** #{action}"
+      lines << "**#{t.call('issue.repository')}:** #{repo}"
+      lines << "**#{t.call('issue.issue')}:** [##{number} #{title}](#{url})"
+      lines << "**#{t.call('issue.author')}:** #{user}"
+      lines << "**#{t.call('issue.action')}:** #{action}"
 
       if action == "opened" && issue["body"].present?
         lines << ""
-        lines << "**Description:**"
+        lines << "**#{t.call('issue.description')}:**"
         lines << issue["body"].to_s.truncate(500)
       end
 
@@ -155,18 +160,19 @@ module CollavreGithub
       url = comment["html_url"]
       user = comment.dig("user", "login")
       repo = payload.dig("repository", "full_name")
+      t = method(:t_webhook)
 
       lines = []
-      lines << "### GitHub: Comment #{action} on Issue ##{number}"
+      lines << "### #{t.call('issue_comment.title', action: action, number: number)}"
       lines << ""
-      lines << "**Repository:** #{repo}"
-      lines << "**Issue:** ##{number} #{title}"
-      lines << "**Comment by:** #{user}"
-      lines << "**Link:** [View comment](#{url})"
+      lines << "**#{t.call('issue_comment.repository')}:** #{repo}"
+      lines << "**#{t.call('issue_comment.issue')}:** ##{number} #{title}"
+      lines << "**#{t.call('issue_comment.comment_by')}:** #{user}"
+      lines << "**#{t.call('issue_comment.link')}:** [#{t.call('issue_comment.view_comment')}](#{url})"
 
       if comment["body"].present?
         lines << ""
-        lines << "**Comment:**"
+        lines << "**#{t.call('issue_comment.comment')}:**"
         lines << comment["body"].to_s.truncate(500)
       end
 
@@ -177,32 +183,38 @@ module CollavreGithub
       repo = payload.dig("repository", "full_name")
       action = payload["action"]
       sender = payload.dig("sender", "login")
+      t = method(:t_webhook)
 
       lines = []
-      lines << "### GitHub: #{event.titleize}"
+      lines << "### #{t.call('generic.title', event: event.titleize)}"
       lines << ""
-      lines << "**Repository:** #{repo}"
-      lines << "**Action:** #{action}" if action
-      lines << "**Sender:** #{sender}" if sender
+      lines << "**#{t.call('generic.repository')}:** #{repo}"
+      lines << "**#{t.call('generic.action')}:** #{action}" if action
+      lines << "**#{t.call('generic.sender')}:** #{sender}" if sender
 
       lines.join("\n")
     end
 
     def action_label(action, merged)
+      t = method(:t_webhook)
       case action
       when "opened"
-        "Opened"
+        t.call("actions.opened")
       when "closed"
-        merged ? "Merged" : "Closed"
+        merged ? t.call("actions.merged") : t.call("actions.closed")
       when "reopened"
-        "Reopened"
+        t.call("actions.reopened")
       when "synchronize"
-        "Updated"
+        t.call("actions.updated")
       when "ready_for_review"
-        "Ready for Review"
+        t.call("actions.ready_for_review")
       else
-        action&.titleize || "Event"
+        action&.titleize || t.call("actions.event")
       end
+    end
+
+    def t_webhook(key, **options)
+      I18n.t("collavre_github.webhooks.#{key}", **options)
     end
 
     def find_repository_link(payload)
