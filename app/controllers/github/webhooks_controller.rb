@@ -47,13 +47,22 @@ module Github
     end
 
     def find_repository_link(payload)
-      return if payload.blank?
+      if payload.blank?
+        Rails.logger.warn("[GitHub Webhook] Payload is blank")
+        return
+      end
 
       repo = payload["repository"] || payload[:repository]
-      return if repo.blank?
+      if repo.blank?
+        Rails.logger.warn("[GitHub Webhook] Repository missing in payload")
+        return
+      end
 
       full_name = repo["full_name"] || repo[:full_name]
-      return if full_name.blank?
+      if full_name.blank?
+        Rails.logger.warn("[GitHub Webhook] Repository full_name missing in payload")
+        return
+      end
 
       GithubRepositoryLink.find_by(repository_full_name: full_name)
     end

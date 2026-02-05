@@ -82,6 +82,66 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     dispatcher.verify
   end
 
+  test "dispatches system event with creative context from repository link" do
+    body = @payload.to_json
+    signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
+
+    processor = Minitest::Mock.new
+    processor.expect(:call, true)
+
+    captured_context = nil
+    dispatcher = ->(event_name, context) { captured_context = context }
+
+    Github::PullRequestProcessor.stub :new, ->(*) { processor } do
+      SystemEvents::Dispatcher.stub :dispatch, dispatcher do
+        post github_webhook_path,
+             params: body,
+             headers: {
+               "CONTENT_TYPE" => "application/json",
+               "HTTP_X_GITHUB_EVENT" => "pull_request",
+               "HTTP_X_HUB_SIGNATURE_256" => signature
+             }
+      end
+    end
+
+    assert_response :success
+    processor.verify
+
+    # Verify creative context is included
+    assert_not_nil captured_context[:creative], "Creative context should be present"
+    assert_equal @link.creative.id, captured_context[:creative][:id]
+  end
+
+  test "dispatches system event without creative when repository link not found" do
+    # Use a different repository that doesn't have a link
+    payload = @payload.merge("repository" => { "full_name" => "unknown/repo" })
+    body = payload.to_json
+
+    # Use fallback secret
+    fallback_secret = "fallback-test-secret"
+    signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', fallback_secret, body)}"
+
+    captured_context = nil
+    dispatcher = ->(event_name, context) { captured_context = context }
+
+    Rails.application.stub :credentials, OpenStruct.new(github: { webhook_secret: fallback_secret }) do
+      SystemEvents::Dispatcher.stub :dispatch, dispatcher do
+        post github_webhook_path,
+             params: body,
+             headers: {
+               "CONTENT_TYPE" => "application/json",
+               "HTTP_X_GITHUB_EVENT" => "push",
+               "HTTP_X_HUB_SIGNATURE_256" => signature
+             }
+      end
+    end
+
+    assert_response :success
+
+    # Creative context should not be present when no repository link
+    assert_nil captured_context[:creative], "Creative context should not be present for unknown repo"
+  end
+
   test "rejects webhook when signature does not match secret" do
     body = @payload.to_json
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', 'wrong-secret', body)}"
