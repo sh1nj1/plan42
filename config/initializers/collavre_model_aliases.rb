@@ -96,15 +96,6 @@ Rails.application.config.to_prepare do
   set_alias(Comments, :McpCommand, Collavre::Comments::McpCommand)
   set_alias(Comments, :CalendarCommand, Collavre::Comments::CalendarCommand)
 
-  # Github module (from CollavreGithub engine)
-  if defined?(CollavreGithub)
-    Object.const_set(:Github, Module.new) unless Object.const_defined?(:Github, false)
-    set_alias(Github, :PullRequestProcessor, CollavreGithub::PullRequestProcessor)
-    set_alias(Github, :WebhookProvisioner, CollavreGithub::WebhookProvisioner)
-    set_alias(Github, :Client, CollavreGithub::Client)
-    set_alias(Github, :PullRequestAnalyzer, CollavreGithub::PullRequestAnalyzer)
-  end
-
   # SystemEvents module
   Object.const_set(:SystemEvents, Module.new) unless Object.const_defined?(:SystemEvents, false)
   set_alias(SystemEvents, :Router, Collavre::SystemEvents::Router)
