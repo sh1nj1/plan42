@@ -11,8 +11,9 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
       name: "Webhook User",
       token: "webhook-token"
     )
+    @creative = creatives(:tshirt)
     @link = CollavreGithub::RepositoryLink.create!(
-      creative: creatives(:tshirt),
+      creative: @creative,
       github_account: @account,
       repository_full_name: "webhook-user/example",
       webhook_secret: "existing-secret"
@@ -20,17 +21,22 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
     @payload = {
       "action" => "opened",
       "repository" => { "full_name" => @link.repository_full_name },
-      "pull_request" => { "merged" => false, "title" => "Test", "number" => 1, "html_url" => "https://example.com" }
+      "pull_request" => {
+        "merged" => false,
+        "title" => "Test PR",
+        "number" => 1,
+        "html_url" => "https://github.com/example/test/pull/1",
+        "body" => "This is a test PR",
+        "user" => { "login" => "testuser" }
+      }
     }
   end
 
-  test "accepts webhook when signature matches repository secret" do
+  test "accepts webhook and creates system comment" do
     body = @payload.to_json
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
-    processor = Minitest::Mock.new
-    processor.expect(:call, true)
 
-    CollavreGithub::PullRequestProcessor.stub :new, ->(*) { processor } do
+    assert_difference "Comment.count", 1 do
       post "/github/webhook",
            params: body,
            headers: {
@@ -38,94 +44,55 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
              "HTTP_X_GITHUB_EVENT" => "pull_request",
              "HTTP_X_HUB_SIGNATURE_256" => signature
            }
-
-      assert_response :success
-    end
-
-    processor.verify
-  end
-
-  test "dispatches system event with webhook details" do
-    body = @payload.to_json
-    signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
-
-    processor = Minitest::Mock.new
-    processor.expect(:call, true)
-
-    dispatcher = Minitest::Mock.new
-    dispatcher.expect :call, nil do |event_name, context|
-      payload = context[:payload]
-
-      event_name == "github_webhook" &&
-        context[:event] == "pull_request" &&
-        context[:action] == "opened" &&
-        context[:repository] == @link.repository_full_name &&
-        payload["action"] == "opened" &&
-        payload.dig("repository", "full_name") == @link.repository_full_name
-    end
-
-    CollavreGithub::PullRequestProcessor.stub :new, ->(*) { processor } do
-      Collavre::SystemEvents::Dispatcher.stub :dispatch, dispatcher do
-        post "/github/webhook",
-             params: body,
-             headers: {
-               "CONTENT_TYPE" => "application/json",
-               "HTTP_X_GITHUB_EVENT" => "pull_request",
-               "HTTP_X_HUB_SIGNATURE_256" => signature
-             }
-      end
     end
 
     assert_response :success
 
-    processor.verify
-    dispatcher.verify
+    comment = @creative.effective_origin.comments.last
+    assert_nil comment.user, "System comment should have no user"
+    assert_includes comment.content, "Pull Request Opened"
+    assert_includes comment.content, "Test PR"
+    assert_includes comment.content, "webhook-user/example"
   end
 
-  test "dispatches system event with creative context from repository link" do
+  test "dispatches comment_created event for AI agent routing" do
     body = @payload.to_json
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
 
-    processor = Minitest::Mock.new
-    processor.expect(:call, true)
-
+    captured_event = nil
     captured_context = nil
-    dispatcher = ->(event_name, context) { captured_context = context }
 
-    CollavreGithub::PullRequestProcessor.stub :new, ->(*) { processor } do
-      Collavre::SystemEvents::Dispatcher.stub :dispatch, dispatcher do
-        post "/github/webhook",
-             params: body,
-             headers: {
-               "CONTENT_TYPE" => "application/json",
-               "HTTP_X_GITHUB_EVENT" => "pull_request",
-               "HTTP_X_HUB_SIGNATURE_256" => signature
-             }
-      end
+    dispatcher = ->(event_name, context) {
+      captured_event = event_name
+      captured_context = context
+    }
+
+    Collavre::SystemEvents::Dispatcher.stub :dispatch, dispatcher do
+      post "/github/webhook",
+           params: body,
+           headers: {
+             "CONTENT_TYPE" => "application/json",
+             "HTTP_X_GITHUB_EVENT" => "pull_request",
+             "HTTP_X_HUB_SIGNATURE_256" => signature
+           }
     end
 
     assert_response :success
-    processor.verify
-
-    # Verify creative context is included
-    assert_not_nil captured_context[:creative], "Creative context should be present"
-    assert_equal @link.creative.id, captured_context[:creative][:id]
+    assert_equal "comment_created", captured_event
+    assert_not_nil captured_context[:comment]
+    assert_not_nil captured_context[:creative]
+    assert_equal @creative.effective_origin.id, captured_context[:creative][:id]
   end
 
-  test "dispatches system event without creative when repository link not found" do
-    # Use a different repository that doesn't have a link
+  test "does not create comment when repository link not found" do
     payload = @payload.merge("repository" => { "full_name" => "unknown/repo" })
     body = payload.to_json
 
-    # Use fallback secret
     fallback_secret = "fallback-test-secret"
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', fallback_secret, body)}"
 
-    captured_context = nil
-    dispatcher = ->(event_name, context) { captured_context = context }
-
     Rails.application.stub :credentials, OpenStruct.new(github: { webhook_secret: fallback_secret }) do
-      Collavre::SystemEvents::Dispatcher.stub :dispatch, dispatcher do
+      assert_no_difference "Comment.count" do
         post "/github/webhook",
              params: body,
              headers: {
@@ -137,22 +104,50 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
+  end
 
-    # Creative context should not be present when no repository link
-    assert_nil captured_context[:creative], "Creative context should not be present for unknown repo"
+  test "formats push event correctly" do
+    push_payload = {
+      "ref" => "refs/heads/main",
+      "repository" => { "full_name" => @link.repository_full_name },
+      "pusher" => { "name" => "testuser" },
+      "commits" => [
+        { "id" => "abc123def", "message" => "First commit" },
+        { "id" => "def456ghi", "message" => "Second commit" }
+      ]
+    }
+    body = push_payload.to_json
+    signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
+
+    post "/github/webhook",
+         params: body,
+         headers: {
+           "CONTENT_TYPE" => "application/json",
+           "HTTP_X_GITHUB_EVENT" => "push",
+           "HTTP_X_HUB_SIGNATURE_256" => signature
+         }
+
+    assert_response :success
+
+    comment = @creative.effective_origin.comments.last
+    assert_includes comment.content, "Push to main"
+    assert_includes comment.content, "2"
+    assert_includes comment.content, "First commit"
   end
 
   test "rejects webhook when signature does not match secret" do
     body = @payload.to_json
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', 'wrong-secret', body)}"
 
-    post "/github/webhook",
-         params: body,
-         headers: {
-           "CONTENT_TYPE" => "application/json",
-           "HTTP_X_GITHUB_EVENT" => "pull_request",
-           "HTTP_X_HUB_SIGNATURE_256" => signature
-         }
+    assert_no_difference "Comment.count" do
+      post "/github/webhook",
+           params: body,
+           headers: {
+             "CONTENT_TYPE" => "application/json",
+             "HTTP_X_GITHUB_EVENT" => "pull_request",
+             "HTTP_X_HUB_SIGNATURE_256" => signature
+           }
+    end
 
     assert_response :unauthorized
   end
@@ -161,10 +156,8 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
     payload_json = @payload.to_json
     form_body = URI.encode_www_form(payload: payload_json)
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, form_body)}"
-    processor = Minitest::Mock.new
-    processor.expect(:call, true)
 
-    CollavreGithub::PullRequestProcessor.stub :new, ->(*) { processor } do
+    assert_difference "Comment.count", 1 do
       post "/github/webhook",
            params: { payload: payload_json },
            headers: {
@@ -172,11 +165,9 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
              "HTTP_X_GITHUB_EVENT" => "pull_request",
              "HTTP_X_HUB_SIGNATURE_256" => signature
            }
-
-      assert_response :success
     end
 
-    processor.verify
+    assert_response :success
   end
 
   test "rejects webhook when event header missing" do

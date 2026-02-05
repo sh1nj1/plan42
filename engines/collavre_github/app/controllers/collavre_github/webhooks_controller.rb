@@ -6,20 +6,14 @@ module CollavreGithub
         Rails.logger.warn("GitHub event header missing; rejecting request")
         return head :bad_request
       end
+
       raw_body = request.raw_post.presence || request.body.read
       payload = parse_payload(raw_body)
       @repository_link = find_repository_link(payload)
       return head :unauthorized unless valid_signature?(raw_body)
+
       payload = payload.presence || {}
-
-      dispatch_github_event(event, payload)
-
-      case event
-      when "pull_request"
-        CollavreGithub::PullRequestProcessor.new(payload: payload).call
-      else
-        Rails.logger.debug("Unhandled GitHub event: #{event}")
-      end
+      create_system_comment(event, payload) if @repository_link&.creative
 
       head :ok
     rescue JSON::ParserError
@@ -28,22 +22,187 @@ module CollavreGithub
 
     private
 
-    def dispatch_github_event(event, payload)
-      context = {
-        event: event,
-        action: payload["action"],
-        repository: payload.dig("repository", "full_name"),
-        payload: payload
-      }
+    def create_system_comment(event, payload)
+      creative = @repository_link.creative.effective_origin
+      content = format_github_event(event, payload)
 
-      # Include creative context for AI Agent routing permission check
-      if @repository_link&.creative
-        context[:creative] = {
-          id: @repository_link.creative.id
+      comment = creative.comments.create!(
+        user: nil,
+        content: content,
+        private: false
+      )
+
+      # Dispatch event for AI Agent routing
+      Collavre::SystemEvents::Dispatcher.dispatch("comment_created", {
+        comment: {
+          id: comment.id,
+          content: comment.content,
+          user_id: nil
+        },
+        creative: {
+          id: creative.id,
+          description: creative.description
+        },
+        chat: {
+          content: comment.content
         }
+      })
+    end
+
+    def format_github_event(event, payload)
+      case event
+      when "pull_request"
+        format_pull_request(payload)
+      when "push"
+        format_push(payload)
+      when "issues"
+        format_issue(payload)
+      when "issue_comment"
+        format_issue_comment(payload)
+      else
+        format_generic_event(event, payload)
+      end
+    end
+
+    def format_pull_request(payload)
+      pr = payload["pull_request"] || {}
+      action = payload["action"]
+      number = pr["number"]
+      title = pr["title"]
+      url = pr["html_url"]
+      user = pr.dig("user", "login")
+      merged = pr["merged"]
+      repo = payload.dig("repository", "full_name")
+
+      lines = []
+      lines << "### GitHub: Pull Request #{action_label(action, merged)}"
+      lines << ""
+      lines << "**Repository:** #{repo}"
+      lines << "**PR:** [##{number} #{title}](#{url})"
+      lines << "**Author:** #{user}"
+      lines << "**Action:** #{action}#{merged ? ' (merged)' : ''}"
+
+      if pr["body"].present?
+        lines << ""
+        lines << "**Description:**"
+        lines << pr["body"].to_s.truncate(500)
       end
 
-      Collavre::SystemEvents::Dispatcher.dispatch("github_webhook", context)
+      lines.join("\n")
+    end
+
+    def format_push(payload)
+      repo = payload.dig("repository", "full_name")
+      ref = payload["ref"]
+      branch = ref&.sub("refs/heads/", "")
+      pusher = payload.dig("pusher", "name")
+      commits = payload["commits"] || []
+
+      lines = []
+      lines << "### GitHub: Push to #{branch}"
+      lines << ""
+      lines << "**Repository:** #{repo}"
+      lines << "**Branch:** #{branch}"
+      lines << "**Pusher:** #{pusher}"
+      lines << "**Commits:** #{commits.size}"
+
+      if commits.any?
+        lines << ""
+        lines << "**Recent commits:**"
+        commits.first(5).each do |commit|
+          message = commit["message"].to_s.lines.first&.strip || "(no message)"
+          sha = commit["id"].to_s[0, 7]
+          lines << "- `#{sha}` #{message.truncate(80)}"
+        end
+        lines << "- ..." if commits.size > 5
+      end
+
+      lines.join("\n")
+    end
+
+    def format_issue(payload)
+      issue = payload["issue"] || {}
+      action = payload["action"]
+      number = issue["number"]
+      title = issue["title"]
+      url = issue["html_url"]
+      user = issue.dig("user", "login")
+      repo = payload.dig("repository", "full_name")
+
+      lines = []
+      lines << "### GitHub: Issue #{action}"
+      lines << ""
+      lines << "**Repository:** #{repo}"
+      lines << "**Issue:** [##{number} #{title}](#{url})"
+      lines << "**Author:** #{user}"
+      lines << "**Action:** #{action}"
+
+      if action == "opened" && issue["body"].present?
+        lines << ""
+        lines << "**Description:**"
+        lines << issue["body"].to_s.truncate(500)
+      end
+
+      lines.join("\n")
+    end
+
+    def format_issue_comment(payload)
+      issue = payload["issue"] || {}
+      comment = payload["comment"] || {}
+      action = payload["action"]
+      number = issue["number"]
+      title = issue["title"]
+      url = comment["html_url"]
+      user = comment.dig("user", "login")
+      repo = payload.dig("repository", "full_name")
+
+      lines = []
+      lines << "### GitHub: Comment #{action} on Issue ##{number}"
+      lines << ""
+      lines << "**Repository:** #{repo}"
+      lines << "**Issue:** ##{number} #{title}"
+      lines << "**Comment by:** #{user}"
+      lines << "**Link:** [View comment](#{url})"
+
+      if comment["body"].present?
+        lines << ""
+        lines << "**Comment:**"
+        lines << comment["body"].to_s.truncate(500)
+      end
+
+      lines.join("\n")
+    end
+
+    def format_generic_event(event, payload)
+      repo = payload.dig("repository", "full_name")
+      action = payload["action"]
+      sender = payload.dig("sender", "login")
+
+      lines = []
+      lines << "### GitHub: #{event.titleize}"
+      lines << ""
+      lines << "**Repository:** #{repo}"
+      lines << "**Action:** #{action}" if action
+      lines << "**Sender:** #{sender}" if sender
+
+      lines.join("\n")
+    end
+
+    def action_label(action, merged)
+      case action
+      when "opened"
+        "Opened"
+      when "closed"
+        merged ? "Merged" : "Closed"
+      when "reopened"
+        "Reopened"
+      when "synchronize"
+        "Updated"
+      when "ready_for_review"
+        "Ready for Review"
+      else
+        action&.titleize || "Event"
+      end
     end
 
     def find_repository_link(payload)
