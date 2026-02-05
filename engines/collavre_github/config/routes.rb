@@ -1,5 +1,7 @@
 CollavreGithub::Engine.routes.draw do
   # Webhook endpoint (public, no auth)
+  # Both singular and plural for backward compatibility
+  post "webhook", to: "webhooks#create", as: :webhook
   post "webhooks", to: "webhooks#create"
 
   # Account endpoints
