@@ -16,7 +16,7 @@ module CollavreOpenclaw
   class ProactiveMessageHandler
     # Maximum age (seconds) for a buffer before it's considered stale and purged.
     # AI responses rarely exceed 5 minutes; 10 minutes gives ample headroom.
-    BUFFER_TTL = 10.minutes.to_i
+    BUFFER_TTL = 30.minutes.to_i
 
     # How often (seconds) to check for stale buffers.
     SWEEP_INTERVAL = 60
