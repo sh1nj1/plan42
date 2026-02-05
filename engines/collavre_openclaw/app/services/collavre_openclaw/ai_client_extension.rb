@@ -19,7 +19,7 @@ module CollavreOpenclaw
       adapter_class = self.class.adapter_registry[normalized_vendor]
 
       if adapter_class
-        # Use the custom adapter
+        # Use the custom adapter (tools not supported for OpenClaw)
         user = context&.dig(:user)
         adapter = adapter_class.new(
           user: user,
@@ -31,15 +31,14 @@ module CollavreOpenclaw
         error_message = nil
 
         begin
-          response_content = adapter.chat(contents, tools: tools, &block)
+          response_content = adapter.chat(contents, &block)
         rescue StandardError => e
           error_message = e.message
           raise
         ensure
-          # Log the interaction just like AiClient does
           log_interaction(
             messages: Array(contents),
-            tools: tools,
+            tools: [],
             response_content: response_content,
             error_message: error_message,
             input_tokens: nil,

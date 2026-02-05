@@ -33,7 +33,7 @@ module CollavreOpenclaw
         { role: "model", parts: [ { text: "Hi there!" } ] }
       ]
 
-      payload = adapter.send(:build_payload, messages, [])
+      payload = adapter.send(:build_payload, messages)
 
       # System prompt is added as first message
       assert_equal 3, payload[:messages].length
@@ -59,7 +59,7 @@ module CollavreOpenclaw
 
       messages = [ { role: "user", content: "Hello" } ]
 
-      payload = adapter.send(:build_payload, messages, [])
+      payload = adapter.send(:build_payload, messages)
 
       assert_equal "openclaw:ai-bot", payload[:model]
     end
@@ -75,7 +75,7 @@ module CollavreOpenclaw
 
       messages = [ { role: "user", content: "Hello" } ]
 
-      payload = adapter.send(:build_payload, messages, [])
+      payload = adapter.send(:build_payload, messages)
 
       assert_equal "openclaw", payload[:model]
     end
@@ -287,7 +287,7 @@ module CollavreOpenclaw
       assert_nil headers["Authorization"]
     end
 
-    test "includes tools in payload when provided" do
+    test "build_payload does not include tools key" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
@@ -297,152 +297,144 @@ module CollavreOpenclaw
       )
 
       messages = [ { role: "user", content: "Hello" } ]
-      tools = [
-        {
-          type: "function",
-          function: {
-            name: "search_documents",
-            description: "Search for documents",
-            parameters: {
-              type: "object",
-              properties: {
-                query: { type: "string", description: "Search query" }
-              },
-              required: [ "query" ]
-            }
-          }
-        },
-        {
-          type: "function",
-          function: {
-            name: "get_weather",
-            description: "Get weather information",
-            parameters: {
-              type: "object",
-              properties: {
-                location: { type: "string" }
-              }
-            }
-          }
-        }
+
+      payload = adapter.send(:build_payload, messages)
+
+      assert_not payload.key?(:tools), "Tools key should not be present"
+    end
+
+    test "format_message_for_ws extracts last user message" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      messages = [
+        { role: "user", parts: [ { text: "First question" } ] },
+        { role: "model", parts: [ { text: "Answer" } ] },
+        { role: "user", parts: [ { text: "Follow-up question" } ] }
       ]
 
-      payload = adapter.send(:build_payload, messages, tools)
-
-      assert payload[:tools].present?, "Tools should be included in payload"
-      assert_equal 2, payload[:tools].length
-      assert_equal "search_documents", payload[:tools][0][:function][:name]
-      assert_equal "get_weather", payload[:tools][1][:function][:name]
+      result = adapter.send(:format_message_for_ws, messages)
+      assert_equal "Follow-up question", result
     end
 
-    test "does not include tools key when tools array is empty" do
+    test "format_message_for_ws includes creative context on first message" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
-        system_prompt: "Test prompt",
+        system_prompt: "Test",
         context: {}
       )
 
-      messages = [ { role: "user", content: "Hello" } ]
+      # First message in session — no assistant replies yet
+      messages = [
+        { role: "user", parts: [ { text: "Creative:\n# My Project" } ] },
+        { role: "user", parts: [ { text: "What do you think?" } ] }
+      ]
 
-      payload = adapter.send(:build_payload, messages, [])
-
-      assert_not payload.key?(:tools), "Tools key should not be present when empty"
+      result = adapter.send(:format_message_for_ws, messages)
+      assert_includes result, "Creative:\n# My Project"
+      assert_includes result, "What do you think?"
     end
 
-    test "does not include tools key when tools is nil" do
+    test "format_message_for_ws does NOT repeat creative context on follow-up messages" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
-        system_prompt: "Test prompt",
+        system_prompt: "Test",
         context: {}
       )
 
-      messages = [ { role: "user", content: "Hello" } ]
+      # Follow-up — assistant has already replied, so context was sent before
+      messages = [
+        { role: "user", parts: [ { text: "Creative:\n# My Project" } ] },
+        { role: "user", parts: [ { text: "First question" } ] },
+        { role: "assistant", parts: [ { text: "Here's my answer" } ] },
+        { role: "user", parts: [ { text: "Follow-up question" } ] }
+      ]
 
-      payload = adapter.send(:build_payload, messages, nil)
-
-      assert_not payload.key?(:tools), "Tools key should not be present when nil"
+      result = adapter.send(:format_message_for_ws, messages)
+      assert_equal "Follow-up question", result
+      assert_not_includes result, "Creative:"
     end
 
-    test "converts MCP tool format to OpenAI format" do
+    test "format_message_for_ws treats model role as assistant for follow-up detection" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
-        system_prompt: "Test prompt",
+        system_prompt: "Test",
         context: {}
       )
 
-      mcp_tool = {
-        name: "search_documents",
-        description: "Search for documents",
-        params: [
-          { name: "query", type: "string", description: "Search query", required: true },
-          { name: "limit", type: "integer", description: "Max results", required: false }
-        ]
-      }
+      # "model" role (used by Gemini/some providers) should be treated as assistant
+      messages = [
+        { role: "user", parts: [ { text: "Creative:\n# My Project" } ] },
+        { role: "user", parts: [ { text: "First question" } ] },
+        { role: "model", parts: [ { text: "Here's my answer" } ] },
+        { role: "user", parts: [ { text: "Follow-up question" } ] }
+      ]
 
-      result = adapter.send(:convert_mcp_tool_to_openai_format, mcp_tool)
-
-      assert_equal "function", result[:type]
-      assert_equal "search_documents", result[:function][:name]
-      assert_equal "Search for documents", result[:function][:description]
-      assert_equal "object", result[:function][:parameters][:type]
-      assert_equal "string", result[:function][:parameters][:properties]["query"][:type]
-      assert_equal "integer", result[:function][:parameters][:properties]["limit"][:type]
-      assert_includes result[:function][:parameters][:required], "query"
-      assert_not_includes result[:function][:parameters][:required], "limit"
+      result = adapter.send(:format_message_for_ws, messages)
+      assert_equal "Follow-up question", result
+      assert_not_includes result, "Creative:"
     end
 
-    test "format_tools passes through OpenAI format tools unchanged" do
+    test "format_message_for_ws returns empty string for no user messages" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
-        system_prompt: "Test prompt",
+        system_prompt: "Test",
         context: {}
       )
 
-      openai_tool = {
-        type: "function",
-        function: {
-          name: "get_weather",
-          description: "Get weather",
-          parameters: { type: "object", properties: {}, required: [] }
-        }
-      }
+      messages = [
+        { role: "system", content: "System prompt" }
+      ]
 
-      result = adapter.send(:format_tools, [ openai_tool ])
-
-      assert_equal 1, result.length
-      assert_equal openai_tool, result.first
+      result = adapter.send(:format_message_for_ws, messages)
+      assert_equal "", result
     end
 
-    test "format_tools converts MCP format tools to OpenAI format" do
+    test "websocket_available? returns true when classes are defined" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
-        system_prompt: "Test prompt",
+        system_prompt: "Test",
         context: {}
       )
 
-      mcp_tool = {
-        name: "calculate",
-        description: "Perform calculation",
-        params: [
-          { name: "expression", type: "string", required: true }
-        ]
-      }
+      assert adapter.send(:websocket_available?)
+    end
 
-      result = adapter.send(:format_tools, [ mcp_tool ])
+    test "chat uses websocket when available" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com",
+                             llm_api_key: "test-key")
 
-      assert_equal 1, result.length
-      assert_equal "function", result.first[:type]
-      assert_equal "calculate", result.first[:function][:name]
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      assert adapter.send(:websocket_available?)
+
+      ws_called = false
+      adapter.define_singleton_method(:chat_via_websocket) do |_msgs, &_blk|
+        ws_called = true
+        nil
+      end
+
+      adapter.chat([ { role: "user", content: "Hello" } ])
+      assert ws_called, "Should use WebSocket when available"
     end
 
     private
