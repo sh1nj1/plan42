@@ -26,18 +26,43 @@ module CollavreOpenclaw
       assert_same client1, client2
     end
 
-    test "connection_for creates separate clients for different users" do
-      user1 = mock_user(id: 1)
-      user2 = mock_user(id: 2)
+    test "connection_for shares client for users with same gateway_url" do
+      user1 = mock_user(id: 1, gateway_url: "http://gateway1.local")
+      user2 = mock_user(id: 2, gateway_url: "http://gateway1.local")
       manager = ConnectionManager.instance
 
       client1 = manager.connection_for(user1)
       client2 = manager.connection_for(user2)
-      refute_same client1, client2
+      assert_same client1, client2, "Users with same gateway should share connection"
     end
 
-    test "disconnect removes user connection" do
-      user = mock_user(id: 1)
+    test "connection_for creates separate clients for users with different gateway_urls" do
+      user1 = mock_user(id: 1, gateway_url: "http://gateway1.local")
+      user2 = mock_user(id: 2, gateway_url: "http://gateway2.local")
+      manager = ConnectionManager.instance
+
+      client1 = manager.connection_for(user1)
+      client2 = manager.connection_for(user2)
+      refute_same client1, client2, "Users with different gateways should have separate connections"
+    end
+
+    test "disconnect removes user from shared connection" do
+      user1 = mock_user(id: 1, gateway_url: "http://gateway1.local")
+      user2 = mock_user(id: 2, gateway_url: "http://gateway1.local")
+      manager = ConnectionManager.instance
+
+      client = manager.connection_for(user1)
+      manager.connection_for(user2)
+
+      # Disconnect user1 - connection should stay because user2 is still using it
+      manager.disconnect(user1)
+
+      # user2 should still get the same client
+      assert_same client, manager.connection_for(user2)
+    end
+
+    test "disconnect closes connection when last user disconnects" do
+      user = mock_user(id: 1, gateway_url: "http://gateway1.local")
       manager = ConnectionManager.instance
 
       manager.connection_for(user)
@@ -49,8 +74,8 @@ module CollavreOpenclaw
     end
 
     test "disconnect_all clears all connections" do
-      user1 = mock_user(id: 1)
-      user2 = mock_user(id: 2)
+      user1 = mock_user(id: 1, gateway_url: "http://gateway1.local")
+      user2 = mock_user(id: 2, gateway_url: "http://gateway2.local")
       manager = ConnectionManager.instance
 
       manager.connection_for(user1)
@@ -58,19 +83,25 @@ module CollavreOpenclaw
       manager.disconnect_all
 
       status = manager.status
-      assert_equal 0, status[:total]
+      assert_equal 0, status[:total_connections]
+      assert_equal 0, status[:total_users]
     end
 
-    test "status returns connection counts" do
-      user = mock_user(id: 1)
+    test "status returns connection and user counts" do
+      user1 = mock_user(id: 1, gateway_url: "http://gateway1.local")
+      user2 = mock_user(id: 2, gateway_url: "http://gateway1.local")
+      user3 = mock_user(id: 3, gateway_url: "http://gateway2.local")
       manager = ConnectionManager.instance
 
-      manager.connection_for(user)
+      manager.connection_for(user1)
+      manager.connection_for(user2)
+      manager.connection_for(user3)
       status = manager.status
 
       assert_equal 0, status[:connected]
-      assert_equal 1, status[:disconnected]
-      assert_equal 1, status[:total]
+      assert_equal 2, status[:disconnected]
+      assert_equal 2, status[:total_connections], "2 gateways = 2 connections"
+      assert_equal 3, status[:total_users], "3 users total"
     end
 
     test "connected_count returns zero when no connections" do
@@ -103,12 +134,44 @@ module CollavreOpenclaw
       assert client.instance_variable_get(:@proactive_handler), "Default handler should be set on new client"
     end
 
+    test "users_for_gateway returns correct count" do
+      user1 = mock_user(id: 1, gateway_url: "http://gateway1.local")
+      user2 = mock_user(id: 2, gateway_url: "http://gateway1.local")
+      user3 = mock_user(id: 3, gateway_url: "http://gateway2.local")
+      manager = ConnectionManager.instance
+
+      manager.connection_for(user1)
+      manager.connection_for(user2)
+      manager.connection_for(user3)
+
+      assert_equal 2, manager.users_for_gateway("http://gateway1.local")
+      assert_equal 1, manager.users_for_gateway("http://gateway2.local")
+      assert_equal 0, manager.users_for_gateway("http://unknown.local")
+    end
+
+    test "user_connected? returns false for disconnected state" do
+      user = mock_user(id: 1)
+      manager = ConnectionManager.instance
+
+      manager.connection_for(user)
+      # Client is in :disconnected state (not actually connected)
+      refute manager.user_connected?(user)
+    end
+
+    test "connection_for returns nil for blank gateway_url" do
+      user = mock_user(id: 1, gateway_url: "")
+      manager = ConnectionManager.instance
+
+      client = manager.connection_for(user)
+      assert_nil client
+    end
+
     private
 
-    def mock_user(id:)
+    def mock_user(id:, gateway_url: "http://localhost:18789")
       OpenStruct.new(
         id: id,
-        gateway_url: "http://localhost:18789",
+        gateway_url: gateway_url,
         llm_api_key: "test-token",
         email: "agent-#{id}@collavre.com"
       )

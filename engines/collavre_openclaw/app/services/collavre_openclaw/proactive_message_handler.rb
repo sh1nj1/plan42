@@ -22,7 +22,7 @@ module CollavreOpenclaw
     SWEEP_INTERVAL = 60
 
     def initialize
-      @buffers = {}   # runId → { text:, session_key:, user_id:, created_at: }
+      @buffers = {}   # runId → { text:, session_key:, connection_owner_id:, created_at: }
       @mutex = Mutex.new
       @last_sweep_at = monotonic_now
     end
@@ -104,7 +104,9 @@ module CollavreOpenclaw
         buffer = @buffers[run_id] ||= {
           text: +"",
           session_key: session_key,
-          user_id: user.id,
+          # Note: connection_owner_id is for debugging only.
+          # The actual agent user_id comes from session_key parsing.
+          connection_owner_id: user.id,
           created_at: monotonic_now
         }
         buffer[:text] << text
@@ -192,13 +194,17 @@ module CollavreOpenclaw
         return
       end
 
+      # Use user_id from session_key (the actual agent) rather than
+      # the connection owner (which may be a different agent sharing the gateway)
+      agent_user_id = context[:user_id] || user.id
+
       Rails.logger.info(
         "[CollavreOpenclaw::Proactive] Dispatching proactive message " \
-        "(user=#{user.id}, creative=#{creative_id}, topic=#{context[:topic_id]})"
+        "(user=#{agent_user_id}, creative=#{creative_id}, topic=#{context[:topic_id]})"
       )
 
       CallbackProcessorJob.perform_later(
-        user.id,
+        agent_user_id,
         {
           "type" => "proactive",
           "content" => content,
