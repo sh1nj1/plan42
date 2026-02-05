@@ -12,20 +12,23 @@ class CommentsPresenceChannel < ApplicationCable::Channel
         status: "thinking",
         agent_id: task.agent_id,
         agent_name: task.agent.display_name,
-        task_id: task.id
+        task_id: task.id,
+        source_creative_id: task_creative_id
       )
     end
   end
 
   # Broadcast agent status (thinking/streaming/idle) to presence channel.
   # This allows the frontend typing indicator to show AI agent activity.
-  def self.broadcast_agent_status(creative_id, status:, agent_id:, agent_name:, task_id: nil, content: nil)
+  # source_creative_id: the actual creative where agent is working (for filtering on frontend)
+  def self.broadcast_agent_status(creative_id, status:, agent_id:, agent_name:, task_id: nil, content: nil, source_creative_id: nil)
     payload = {
       agent_status: {
         id: agent_id,
         name: agent_name,
         status: status,
-        task_id: task_id
+        task_id: task_id,
+        creative_id: source_creative_id || creative_id
       }
     }
     payload[:agent_status][:content] = content if content.present?

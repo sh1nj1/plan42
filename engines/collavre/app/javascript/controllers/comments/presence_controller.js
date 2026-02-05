@@ -151,7 +151,11 @@ export default class extends Controller {
       this.renderTypingIndicator()
     }
     if (data.agent_status) {
-      const { id, name, status } = data.agent_status
+      const { id, name, status, creative_id: agentCreativeId } = data.agent_status
+      // Only show typing indicator if agent is working on this specific creative
+      if (agentCreativeId && agentCreativeId !== this.creativeId) {
+        return
+      }
       if (status === 'thinking' || status === 'streaming') {
         this.typingUsers[id] = name
       } else {
