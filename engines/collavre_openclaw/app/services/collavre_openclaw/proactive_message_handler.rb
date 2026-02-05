@@ -15,7 +15,7 @@ module CollavreOpenclaw
   # to prevent memory leaks when the Gateway never sends a final/error event.
   class ProactiveMessageHandler
     # Maximum age (seconds) for a buffer before it's considered stale and purged.
-    # AI responses rarely exceed 5 minutes; 10 minutes gives ample headroom.
+    # Generous timeout for long-running AI responses.
     BUFFER_TTL = 30.minutes.to_i
 
     # How often (seconds) to check for stale buffers.
@@ -116,11 +116,12 @@ module CollavreOpenclaw
 
       buffer = @mutex.synchronize { @buffers.delete(run_id) }
 
-      # Combine buffered deltas with final text
-      content = if buffer
-                  buffer[:text].presence || final_text
-      else
+      # Prefer final text (complete message) over buffered deltas (fragments).
+      # Fall back to buffered deltas only when final text is empty.
+      content = if final_text.present?
                   final_text
+      elsif buffer
+                  buffer[:text]
       end
 
       return unless content.present?

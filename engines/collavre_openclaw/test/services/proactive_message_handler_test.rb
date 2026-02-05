@@ -134,6 +134,63 @@ module CollavreOpenclaw
       assert_equal "Direct final message", dispatched.first[:payload]["content"]
     end
 
+    test "final text takes priority over buffered deltas" do
+      dispatched = capture_job_dispatch do
+        # Buffer partial deltas
+        @handler.handle(@user, {
+          runId: "run-priority",
+          sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+          state: "delta",
+          message: { content: "partial " }
+        })
+        @handler.handle(@user, {
+          runId: "run-priority",
+          sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+          state: "delta",
+          message: { content: "fragments" }
+        })
+        # Final event with complete text — should take priority
+        @handler.handle(@user, {
+          runId: "run-priority",
+          sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+          state: "final",
+          message: { content: "Complete final message" }
+        })
+      end
+
+      assert_equal 1, dispatched.size
+      assert_equal "Complete final message", dispatched.first[:payload]["content"],
+                   "Final text should take priority over buffered delta fragments"
+    end
+
+    test "falls back to buffered deltas when final text is empty" do
+      dispatched = capture_job_dispatch do
+        @handler.handle(@user, {
+          runId: "run-fallback",
+          sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+          state: "delta",
+          message: { content: "Buffered " }
+        })
+        @handler.handle(@user, {
+          runId: "run-fallback",
+          sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+          state: "delta",
+          message: { content: "content" }
+        })
+        # Final event with empty text — should fall back to buffer
+        @handler.handle(@user, {
+          runId: "run-fallback",
+          sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+          state: "final",
+          message: { content: "" }
+        })
+      end
+
+      assert_equal 1, dispatched.size
+      assert_equal "Buffered content", dispatched.first[:payload]["content"],
+                   "Should fall back to buffered deltas when final text is empty"
+    end
+
     test "does not dispatch job without creative_id in session key" do
       dispatched = capture_job_dispatch do
         @handler.handle(@user, {
