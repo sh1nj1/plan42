@@ -70,10 +70,12 @@ module CollavreOpenclaw
     # ─────────────────────────────────────────────
 
     def websocket_available?
-      # WebSocket is available when ConnectionManager and WebsocketClient are loaded
-      defined?(ConnectionManager) && defined?(WebsocketClient)
-    rescue => e
-      Rails.logger.debug("[CollavreOpenclaw] WebSocket not available: #{e.message}")
+      # Resolve via the module namespace to trigger Rails autoloading.
+      # `defined?` alone does not autoload in dev/test (lazy mode).
+      CollavreOpenclaw::ConnectionManager &&
+        CollavreOpenclaw::WebsocketClient &&
+        true
+    rescue NameError
       false
     end
 
@@ -130,7 +132,7 @@ module CollavreOpenclaw
 
     # Format messages for WebSocket chat.send (single message string).
     # Gateway manages session history, so we only send the latest user message
-    # with optional context prefix.
+    # with optional context prefix on the FIRST message only.
     def format_message_for_ws(messages)
       formatted = Array(messages)
 
@@ -144,14 +146,24 @@ module CollavreOpenclaw
 
       text = extract_message_text(last_user)
 
-      # If there's a system prompt and this is the first message in a new session,
-      # prepend context. The Gateway may already have agent config with system prompt,
-      # but we include creative context here for completeness.
-      context_prefix = build_context_prefix(formatted)
-      if context_prefix.present?
-        "#{context_prefix}\n\n#{text}"
-      else
-        text.to_s
+      # Only prepend creative context on the first message in a session.
+      # If there are prior assistant replies, the Gateway already has context.
+      if first_message_in_session?(formatted)
+        context_prefix = build_context_prefix(formatted)
+        if context_prefix.present?
+          return "#{context_prefix}\n\n#{text}"
+        end
+      end
+
+      text.to_s
+    end
+
+    # Returns true when this looks like the first exchange in a session
+    # (no prior assistant messages in the conversation history).
+    def first_message_in_session?(messages)
+      messages.none? do |m|
+        role = m[:role] || m["role"]
+        role.to_s == "assistant"
       end
     end
 

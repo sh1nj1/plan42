@@ -464,7 +464,7 @@ module CollavreOpenclaw
       assert_equal "Follow-up question", result
     end
 
-    test "format_message_for_ws includes creative context" do
+    test "format_message_for_ws includes creative context on first message" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
@@ -473,6 +473,7 @@ module CollavreOpenclaw
         context: {}
       )
 
+      # First message in session — no assistant replies yet
       messages = [
         { role: "user", parts: [ { text: "Creative:\n# My Project" } ] },
         { role: "user", parts: [ { text: "What do you think?" } ] }
@@ -481,6 +482,28 @@ module CollavreOpenclaw
       result = adapter.send(:format_message_for_ws, messages)
       assert_includes result, "Creative:\n# My Project"
       assert_includes result, "What do you think?"
+    end
+
+    test "format_message_for_ws does NOT repeat creative context on follow-up messages" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      # Follow-up — assistant has already replied, so context was sent before
+      messages = [
+        { role: "user", parts: [ { text: "Creative:\n# My Project" } ] },
+        { role: "user", parts: [ { text: "First question" } ] },
+        { role: "assistant", parts: [ { text: "Here's my answer" } ] },
+        { role: "user", parts: [ { text: "Follow-up question" } ] }
+      ]
+
+      result = adapter.send(:format_message_for_ws, messages)
+      assert_equal "Follow-up question", result
+      assert_not_includes result, "Creative:"
     end
 
     test "format_message_for_ws returns empty string for no user messages" do
