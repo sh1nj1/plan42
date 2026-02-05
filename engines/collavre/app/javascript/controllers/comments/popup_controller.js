@@ -495,10 +495,48 @@ export default class extends Controller {
     } else {
       const savedStyles = this._savedStyles
       this._savedStyles = null
+      const creativeId = el.dataset.creativeId
 
+      // Mobile: skip animation, just clear inline styles and let CSS handle positioning
+      if (this.isMobile()) {
+        el.style.transition = 'none'
+        el.dataset.fullscreen = 'false'
+        document.body.classList.remove('chat-fullscreen')
+        this._syncFullscreenUI(false)
+
+        // Clear all inline styles so CSS media query rules apply
+        el.style.position = ''
+        el.style.top = ''
+        el.style.left = ''
+        el.style.right = ''
+        el.style.bottom = ''
+        el.style.width = ''
+        el.style.height = ''
+        el.style.transform = ''
+
+        // Force layout then restore transitions
+        el.offsetHeight // eslint-disable-line no-unused-expressions
+        el.style.transition = ''
+
+        // Update URL
+        let backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
+        if (backUrl) {
+          const url = new URL(backUrl, window.location.origin)
+          url.searchParams.set('open_comments', 'true')
+          window.history.pushState({ fullscreen: false }, '', url.pathname + url.search)
+        }
+        this._previousUrl = null
+
+        // Scroll to bottom after layout change
+        requestAnimationFrame(() => {
+          this.listController?.scrollToBottom()
+        })
+        return
+      }
+
+      // Desktop: animated exit to target position
       // Calculate target position using the same logic as updatePosition()
       // so cleanup can apply it directly without calling updatePosition() (which would cause a snap)
-      const creativeId = el.dataset.creativeId
       const scrollY = window.scrollY || window.pageYOffset
 
       // Final absolute-position values (what updatePosition would set)
