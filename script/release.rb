@@ -30,10 +30,25 @@ class Release
 
     print_header
     check_prerequisites
-    create_release_branch
-    run_tests
+    
+    # Step 1: Analyze changes first (before creating branch)
     collect_changes_and_prompt_versions
+    
+    # Exit early if no changes
+    if @changed_engines.empty?
+      puts
+      warn "✨ No engines have changes to release. Nothing to do!"
+      exit 0
+    end
+    
+    # Step 2: Create release branch and update files
+    create_release_branch
     update_files_and_gemfile_lock
+    
+    # Step 3: Run tests (after version updates)
+    run_tests
+    
+    # Step 4-6: Commit, build, push, finalize
     commit_changes
     build_and_push_gems
     finalize_release
@@ -77,39 +92,12 @@ class Release
     system("git pull origin main") || exit(1)
   end
 
-  def create_release_branch
-    puts
-    success "[Step 0] Creating release branch: #{@release_branch}"
-    system("git checkout -b #{@release_branch}") || exit(1)
-  end
-
-  def run_tests
-    puts
-    success "[Step 1] Running tests..."
-
-    warn "Running npm test..."
-    system("npm test") || exit(1)
-
-    warn "Running rake test..."
-    system("bundle exec rake test") || exit(1)
-
-    warn "Running rake test:system..."
-    system("bundle exec rake test:system") || exit(1)
-
-    success "All tests passed!"
-  end
-
   def collect_changes_and_prompt_versions
     puts
-    success "[Step 2] Analyzing changes and collecting version input..."
+    success "[Step 1] Analyzing changes and collecting version input..."
 
     @engines.each do |engine|
       collect_engine_changes(engine)
-    end
-
-    if @changed_engines.empty?
-      warn "No engines have changes to release"
-      cleanup_and_exit
     end
   end
 
@@ -159,9 +147,15 @@ class Release
     end
   end
 
+  def create_release_branch
+    puts
+    success "[Step 2] Creating release branch: #{@release_branch}"
+    system("git checkout -b #{@release_branch}") || exit(1)
+  end
+
   def update_files_and_gemfile_lock
     puts
-    success "[Step 3] Updating version files and Gemfile.lock..."
+    success "[Step 2] Updating version files and Gemfile.lock..."
 
     @changed_engines.each do |engine|
       engine_dir = File.join(@engines_dir, engine)
@@ -178,6 +172,38 @@ class Release
     warn "Updating Gemfile.lock..."
     system("bundle install") || exit(1)
     success "Gemfile.lock updated"
+  end
+
+  def run_tests
+    puts
+    success "[Step 3] Running tests..."
+
+    warn "Running npm test..."
+    unless system("npm test")
+      rollback_on_failure("npm test failed")
+    end
+
+    warn "Running rake test..."
+    unless system("bundle exec rake test")
+      rollback_on_failure("rake test failed")
+    end
+
+    warn "Running rake test:system..."
+    unless system("bundle exec rake test:system")
+      rollback_on_failure("rake test:system failed")
+    end
+
+    success "All tests passed!"
+  end
+
+  def rollback_on_failure(reason)
+    puts
+    error reason
+    warn "Rolling back to main branch..."
+    system("git checkout main")
+    system("git branch -D #{@release_branch} 2>/dev/null")
+    error "Release aborted. Please fix the issues and try again."
+    exit 1
   end
 
   def extract_version(version_file)
@@ -310,12 +336,6 @@ class Release
       puts colorize(:cyan, "#{engine} v#{@engine_versions[engine]}:")
       @engine_commits[engine].each { |c| puts "  - #{c}" }
     end
-  end
-
-  def cleanup_and_exit
-    system("git checkout main")
-    system("git branch -d #{@release_branch} 2>/dev/null")
-    exit 0
   end
 
   def colorize(color, text)
