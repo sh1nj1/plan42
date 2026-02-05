@@ -310,6 +310,48 @@ module CollavreOpenclaw
     end
 
     # ─────────────────────────────────────────────
+    # Shared connection support
+    # ─────────────────────────────────────────────
+
+    test "uses user_id from session_key, not connection owner" do
+      # Simulate shared connection: connection_owner is different from session agent
+      connection_owner = OpenStruct.new(id: 999, email: "connection-owner@test.com")
+      actual_agent_id = 42
+
+      dispatched = capture_job_dispatch do
+        @handler.handle(connection_owner, {
+          runId: "run-shared",
+          sessionKey: "agent:bot:collavre:#{actual_agent_id}:creative:100:topic:200",
+          state: "final",
+          message: { content: "Message for agent 42" }
+        })
+      end
+
+      assert_equal 1, dispatched.size
+      job = dispatched.first
+      # Should use agent's user_id from session_key, not connection_owner's id
+      assert_equal actual_agent_id, job[:user_id], "Should use user_id from session_key"
+      refute_equal connection_owner.id, job[:user_id], "Should NOT use connection owner's id"
+    end
+
+    test "falls back to connection owner when session_key has no user_id" do
+      connection_owner = OpenStruct.new(id: 999, email: "owner@test.com")
+
+      dispatched = capture_job_dispatch do
+        # Session key without collavre:user_id part
+        @handler.handle(connection_owner, {
+          runId: "run-fallback",
+          sessionKey: "agent:bot:creative:100",
+          state: "final",
+          message: { content: "Fallback message" }
+        })
+      end
+
+      assert_equal 1, dispatched.size
+      assert_equal connection_owner.id, dispatched.first[:user_id], "Should fall back to connection owner"
+    end
+
+    # ─────────────────────────────────────────────
     # Multiple concurrent runs
     # ─────────────────────────────────────────────
 
@@ -454,8 +496,11 @@ module CollavreOpenclaw
         creative_id = context[:creative_id]
         return unless creative_id.present? # preserve original guard
 
+        # Use user_id from session_key, falling back to connection owner
+        agent_user_id = context[:user_id] || user.id
+
         dispatched << {
-          user_id: user.id,
+          user_id: agent_user_id,
           payload: {
             "type" => "proactive",
             "content" => content,
