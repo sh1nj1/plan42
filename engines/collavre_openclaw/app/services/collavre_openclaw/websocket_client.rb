@@ -28,6 +28,7 @@ module CollavreOpenclaw
       @ws = nil
       @mutex = Mutex.new
       @connect_mutex = Mutex.new
+      @connect_waiters = []   # Queues for threads waiting on in-progress connect
       @pending_requests = {}  # id → { queue:, timer: }
       @pending_runs = {}      # runId → Queue (for chat.send streaming)
       @proactive_handler = nil
@@ -42,18 +43,36 @@ module CollavreOpenclaw
     end
 
     # Connect to the Gateway. Blocks until connected or raises on failure.
-    # Thread-safe: concurrent callers wait on the same connection attempt.
+    # Thread-safe: concurrent callers all wait on the same handshake attempt.
     def connect!
       return if connected?
 
-      # Serialize connection attempts — only one thread connects at a time
+      initiator = false
+      waiter_queue = nil
+
       @connect_mutex.synchronize do
         return if connected?
-        return if @state == :connecting
 
-        @state = :connecting
+        if @state == :connecting
+          # Another thread is already connecting — wait on the same handshake
+          waiter_queue = Queue.new
+          @connect_waiters << waiter_queue
+        else
+          @state = :connecting
+          initiator = true
+        end
       end
 
+      if waiter_queue
+        # Wait for the initiating thread to finish handshake
+        result = wait_with_timeout(waiter_queue, config.ws_connect_timeout, "connect (waiting)")
+        if result[:error]
+          raise ConnectionError, result[:error]
+        end
+        return result
+      end
+
+      # This thread initiates the connection
       queue = Queue.new
 
       EmReactor.next_tick do
@@ -65,14 +84,25 @@ module CollavreOpenclaw
       end
 
       result = wait_with_timeout(queue, config.ws_connect_timeout, "connect")
+
+      # Notify all waiting threads
+      @connect_mutex.synchronize do
+        if result[:error]
+          @state = :disconnected
+        else
+          @state = :connected
+          @reconnect_attempts = 0
+          touch_activity!
+        end
+
+        @connect_waiters.each { |q| q.push(result) }
+        @connect_waiters.clear
+      end
+
       if result[:error]
-        @state = :disconnected
         raise ConnectionError, result[:error]
       end
 
-      @state = :connected
-      @reconnect_attempts = 0
-      touch_activity!
       result
     end
 
@@ -159,7 +189,11 @@ module CollavreOpenclaw
 
       response_text.presence
     ensure
-      @mutex.synchronize { @pending_runs.delete(actual_run_id) }
+      @mutex.synchronize do
+        @pending_runs.delete(actual_run_id) if actual_run_id
+        # Also clean up idempotency_key if send_rpc failed before we got a runId
+        @pending_runs.delete(idempotency_key) if idempotency_key
+      end
     end
 
     # Fetch chat history for a session
