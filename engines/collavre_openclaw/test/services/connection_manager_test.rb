@@ -82,12 +82,25 @@ module CollavreOpenclaw
       manager = ConnectionManager.instance
       handler_called = false
 
-      manager.on_proactive_message { |_msg| handler_called = true }
+      manager.on_proactive_message { |_user, _msg| handler_called = true }
 
       # New connection created AFTER handler registration should have it
       user = mock_user(id: 1)
       client = manager.connection_for(user)
       assert client.instance_variable_get(:@proactive_handler), "Handler should be set on new client"
+    end
+
+    test "has default proactive handler on initialization" do
+      manager = ConnectionManager.instance
+      assert manager.instance_variable_get(:@proactive_handler), "Default proactive handler should be set"
+      assert_instance_of ProactiveMessageHandler, manager.instance_variable_get(:@proactive_message_handler)
+    end
+
+    test "default handler is applied to new connections" do
+      manager = ConnectionManager.instance
+      user = mock_user(id: 10)
+      client = manager.connection_for(user)
+      assert client.instance_variable_get(:@proactive_handler), "Default handler should be set on new client"
     end
 
     private
