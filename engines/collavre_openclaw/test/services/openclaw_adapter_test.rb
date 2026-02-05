@@ -535,6 +535,63 @@ module CollavreOpenclaw
       assert adapter.send(:websocket_available?)
     end
 
+    test "chat falls back to HTTP when tools are provided even if websocket is available" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com",
+                             llm_api_key: "test-key")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      tools = [
+        {
+          type: "function",
+          function: {
+            name: "search",
+            description: "Search",
+            parameters: { type: "object", properties: {}, required: [] }
+          }
+        }
+      ]
+
+      # websocket_available? is true, but tools are present → should use HTTP
+      assert adapter.send(:websocket_available?)
+
+      # Stub chat_via_http to verify it's called instead of chat_via_websocket
+      http_called = false
+      adapter.define_singleton_method(:chat_via_http) do |_msgs, **_opts, &_blk|
+        http_called = true
+        nil
+      end
+
+      adapter.chat([ { role: "user", content: "Hello" } ], tools: tools)
+      assert http_called, "Should fall back to HTTP when tools are provided"
+    end
+
+    test "chat uses websocket when no tools are provided" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com",
+                             llm_api_key: "test-key")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      assert adapter.send(:websocket_available?)
+
+      ws_called = false
+      adapter.define_singleton_method(:chat_via_websocket) do |_msgs, &_blk|
+        ws_called = true
+        nil
+      end
+
+      adapter.chat([ { role: "user", content: "Hello" } ], tools: [])
+      assert ws_called, "Should use WebSocket when no tools are provided"
+    end
+
     private
 
     def build_test_user(gateway_url: nil, email: "test@example.com", llm_api_key: nil)

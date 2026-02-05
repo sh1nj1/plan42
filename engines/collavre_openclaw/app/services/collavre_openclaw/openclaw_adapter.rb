@@ -34,9 +34,11 @@ module CollavreOpenclaw
         return nil
       end
 
-      # Try WebSocket first, fall back to HTTP
-      if websocket_available?
-        chat_via_websocket(messages, tools: tools, &block)
+      # Try WebSocket first, fall back to HTTP.
+      # When tools are provided, always use HTTP because the WS protocol
+      # does not support passing tool/function schemas to the Gateway.
+      if websocket_available? && Array(tools).empty?
+        chat_via_websocket(messages, &block)
       else
         chat_via_http(messages, tools: tools, &block)
       end
