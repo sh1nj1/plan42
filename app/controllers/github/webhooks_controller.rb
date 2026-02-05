@@ -8,15 +8,11 @@ module Github
       end
       raw_body = request.raw_post.presence || request.body.read
       payload = parse_payload(raw_body)
-      return head :unauthorized unless valid_signature?(raw_body, payload)
+      @repository_link = find_repository_link(payload)
+      return head :unauthorized unless valid_signature?(raw_body)
       payload = payload.presence || {}
 
-      SystemEvents::Dispatcher.dispatch("github_webhook", {
-        event: event,
-        action: payload["action"],
-        repository: payload.dig("repository", "full_name"),
-        payload: payload
-      })
+      dispatch_github_event(event, payload)
 
       case event
       when "pull_request"
@@ -32,8 +28,47 @@ module Github
 
     private
 
-    def valid_signature?(raw_body, payload)
-      secret = webhook_secret(payload)
+    def dispatch_github_event(event, payload)
+      context = {
+        event: event,
+        action: payload["action"],
+        repository: payload.dig("repository", "full_name"),
+        payload: payload
+      }
+
+      # Include creative context for AI Agent routing permission check
+      if @repository_link&.creative
+        context[:creative] = {
+          id: @repository_link.creative.id
+        }
+      end
+
+      SystemEvents::Dispatcher.dispatch("github_webhook", context)
+    end
+
+    def find_repository_link(payload)
+      if payload.blank?
+        Rails.logger.warn("[GitHub Webhook] Payload is blank")
+        return
+      end
+
+      repo = payload["repository"] || payload[:repository]
+      if repo.blank?
+        Rails.logger.warn("[GitHub Webhook] Repository missing in payload")
+        return
+      end
+
+      full_name = repo["full_name"] || repo[:full_name]
+      if full_name.blank?
+        Rails.logger.warn("[GitHub Webhook] Repository full_name missing in payload")
+        return
+      end
+
+      GithubRepositoryLink.find_by(repository_full_name: full_name)
+    end
+
+    def valid_signature?(raw_body)
+      secret = webhook_secret
       signature_header = request.headers["X-Hub-Signature-256"] || request.headers["X-Hub-Signature"]
 
       if secret.blank?
@@ -58,26 +93,8 @@ module Github
       ActiveSupport::SecurityUtils.secure_compare(expected_signature, signature_header)
     end
 
-    def webhook_secret(payload)
-      repository_secret(payload) || fallback_webhook_secret
-    end
-
-    def repository_secret(payload)
-      return if payload.blank?
-
-      repo = payload["repository"] || payload[:repository]
-      if repo.blank?
-        Rails.logger.warn("GitHub webhook repository missing; rejecting request. payload=#{payload}")
-        return
-      end
-
-      full_name = repo["full_name"] || repo[:full_name]
-      if full_name.blank?
-        Rails.logger.warn("GitHub webhook repository full name missing; rejecting request. payload=#{payload}")
-        return
-      end
-
-      GithubRepositoryLink.find_by(repository_full_name: full_name)&.webhook_secret
+    def webhook_secret
+      @repository_link&.webhook_secret || fallback_webhook_secret
     end
 
     def fallback_webhook_secret
