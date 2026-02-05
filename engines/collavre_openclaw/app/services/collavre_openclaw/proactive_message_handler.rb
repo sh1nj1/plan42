@@ -10,10 +10,21 @@ module CollavreOpenclaw
   #
   # Thread safety: called from the EventMachine reactor thread. All operations
   # should be non-blocking. Job enqueueing is safe from any thread.
+  #
+  # Stale buffer cleanup: buffers older than BUFFER_TTL are periodically purged
+  # to prevent memory leaks when the Gateway never sends a final/error event.
   class ProactiveMessageHandler
+    # Maximum age (seconds) for a buffer before it's considered stale and purged.
+    # AI responses rarely exceed 5 minutes; 10 minutes gives ample headroom.
+    BUFFER_TTL = 10.minutes.to_i
+
+    # How often (seconds) to check for stale buffers.
+    SWEEP_INTERVAL = 60
+
     def initialize
-      @buffers = {}   # runId → { text: String, session_key: String, user_id: Integer }
+      @buffers = {}   # runId → { text:, session_key:, user_id:, created_at: }
       @mutex = Mutex.new
+      @last_sweep_at = monotonic_now
     end
 
     # Process a single chat event payload from the WebSocket client.
@@ -24,6 +35,8 @@ module CollavreOpenclaw
     def handle(user, payload)
       run_id = payload[:runId]
       return unless run_id
+
+      sweep_stale_buffers_if_needed!
 
       state = payload[:state]&.to_s
       session_key = payload[:sessionKey]
@@ -91,7 +104,8 @@ module CollavreOpenclaw
         buffer = @buffers[run_id] ||= {
           text: +"",
           session_key: session_key,
-          user_id: user.id
+          user_id: user.id,
+          created_at: monotonic_now
         }
         buffer[:text] << text
       end
@@ -139,6 +153,34 @@ module CollavreOpenclaw
       when Array
         content.filter_map { |c| c[:text] if c[:type] == "text" }.join
       end
+    end
+
+    # Purge buffers older than BUFFER_TTL. Runs at most once per SWEEP_INTERVAL
+    # to avoid scanning on every event.
+    def sweep_stale_buffers_if_needed!
+      now = monotonic_now
+      return if (now - @last_sweep_at) < SWEEP_INTERVAL
+
+      @last_sweep_at = now
+      cutoff = now - BUFFER_TTL
+
+      @mutex.synchronize do
+        stale_ids = @buffers.each_with_object([]) do |(run_id, buf), ids|
+          ids << run_id if buf[:created_at] && buf[:created_at] < cutoff
+        end
+
+        stale_ids.each do |run_id|
+          @buffers.delete(run_id)
+          Rails.logger.warn(
+            "[CollavreOpenclaw::Proactive] Purged stale buffer for runId=#{run_id} " \
+            "(older than #{BUFFER_TTL}s)"
+          )
+        end
+      end
+    end
+
+    def monotonic_now
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
     def dispatch_to_job(user, content, context)

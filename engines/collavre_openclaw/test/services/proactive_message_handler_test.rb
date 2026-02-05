@@ -295,6 +295,96 @@ module CollavreOpenclaw
       assert_empty @handler.instance_variable_get(:@buffers)
     end
 
+    # ─────────────────────────────────────────────
+    # Stale buffer TTL cleanup
+    # ─────────────────────────────────────────────
+
+    test "purges stale buffers older than BUFFER_TTL" do
+      # Create a buffer with an old timestamp
+      @handler.handle(@user, {
+        runId: "run-stale",
+        sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+        state: "delta",
+        message: { content: "old data" }
+      })
+
+      buffers = @handler.instance_variable_get(:@buffers)
+      assert buffers.key?("run-stale")
+
+      # Simulate aging: set created_at to past BUFFER_TTL
+      buffers["run-stale"][:created_at] = Process.clock_gettime(Process::CLOCK_MONOTONIC) -
+                                          ProactiveMessageHandler::BUFFER_TTL - 1
+
+      # Force sweep by setting last_sweep_at far in the past
+      @handler.instance_variable_set(:@last_sweep_at,
+                                     Process.clock_gettime(Process::CLOCK_MONOTONIC) -
+                                     ProactiveMessageHandler::SWEEP_INTERVAL - 1)
+
+      # Trigger sweep via a new event
+      @handler.handle(@user, {
+        runId: "run-trigger",
+        sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+        state: "delta",
+        message: { content: "new data" }
+      })
+
+      # Stale buffer should be purged, new one should remain
+      assert_nil buffers["run-stale"], "Stale buffer should be purged"
+      assert buffers.key?("run-trigger"), "Fresh buffer should remain"
+    end
+
+    test "does not purge buffers within BUFFER_TTL" do
+      @handler.handle(@user, {
+        runId: "run-fresh",
+        sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+        state: "delta",
+        message: { content: "fresh data" }
+      })
+
+      # Force sweep timing
+      @handler.instance_variable_set(:@last_sweep_at,
+                                     Process.clock_gettime(Process::CLOCK_MONOTONIC) -
+                                     ProactiveMessageHandler::SWEEP_INTERVAL - 1)
+
+      # Trigger sweep
+      @handler.handle(@user, {
+        runId: "run-trigger2",
+        sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+        state: "delta",
+        message: { content: "trigger" }
+      })
+
+      buffers = @handler.instance_variable_get(:@buffers)
+      assert buffers.key?("run-fresh"), "Fresh buffer should not be purged"
+      assert buffers.key?("run-trigger2")
+    end
+
+    test "sweep does not run more often than SWEEP_INTERVAL" do
+      @handler.handle(@user, {
+        runId: "run-old",
+        sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+        state: "delta",
+        message: { content: "data" }
+      })
+
+      buffers = @handler.instance_variable_get(:@buffers)
+      # Make buffer stale
+      buffers["run-old"][:created_at] = Process.clock_gettime(Process::CLOCK_MONOTONIC) -
+                                        ProactiveMessageHandler::BUFFER_TTL - 1
+
+      # But last_sweep_at is recent (default from initialization)
+      # → sweep should NOT run
+      @handler.handle(@user, {
+        runId: "run-trigger3",
+        sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+        state: "delta",
+        message: { content: "trigger" }
+      })
+
+      # Stale buffer should still be there because sweep interval hasn't elapsed
+      assert buffers.key?("run-old"), "Buffer should remain when sweep interval hasn't elapsed"
+    end
+
     private
 
     # Capture dispatch_to_job calls by stubbing the handler's private method.
