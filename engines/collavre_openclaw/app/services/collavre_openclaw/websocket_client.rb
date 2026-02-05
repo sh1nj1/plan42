@@ -1,3 +1,4 @@
+require "digest"
 require "faye/websocket"
 require "json"
 require "securerandom"
@@ -301,6 +302,7 @@ module CollavreOpenclaw
     end
 
     def handle_raw_message(data)
+      touch_activity! # Refresh idle timer on any inbound traffic
       frame = JSON.parse(data, symbolize_names: true)
 
       case frame[:type]
