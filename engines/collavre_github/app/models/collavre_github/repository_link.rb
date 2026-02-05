@@ -1,9 +1,9 @@
-module Collavre
-  class GithubRepositoryLink < ApplicationRecord
+module CollavreGithub
+  class RepositoryLink < ApplicationRecord
     self.table_name = "github_repository_links"
 
     belongs_to :creative, class_name: "Collavre::Creative"
-    belongs_to :github_account, class_name: "Collavre::GithubAccount"
+    belongs_to :github_account, class_name: "CollavreGithub::Account"
 
     validates :repository_full_name, presence: true
     validates :webhook_secret, presence: true

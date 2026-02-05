@@ -1,4 +1,4 @@
-module Github
+module CollavreGithub
   class WebhooksController < ActionController::API
     def create
       event = github_event_header
@@ -16,7 +16,7 @@ module Github
 
       case event
       when "pull_request"
-        Github::PullRequestProcessor.new(payload: payload).call
+        CollavreGithub::PullRequestProcessor.new(payload: payload).call
       else
         Rails.logger.debug("Unhandled GitHub event: #{event}")
       end
@@ -43,7 +43,7 @@ module Github
         }
       end
 
-      SystemEvents::Dispatcher.dispatch("github_webhook", context)
+      Collavre::SystemEvents::Dispatcher.dispatch("github_webhook", context)
     end
 
     def find_repository_link(payload)
@@ -64,7 +64,7 @@ module Github
         return
       end
 
-      GithubRepositoryLink.find_by(repository_full_name: full_name)
+      CollavreGithub::RepositoryLink.find_by(repository_full_name: full_name)
     end
 
     def valid_signature?(raw_body)
