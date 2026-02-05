@@ -25,7 +25,7 @@ DEMO: [https://collavre.com](https://collavre.com)
 * `./bin/rails db:prepare`
 * `./bin/rails db:seed`
 * `brew install vips` # for image processing (macOS)
-* `./scripts/install-hooks.sh` # install git hooks (pre-push checks)
+* `./script/install-hooks.sh` # install git hooks (pre-push checks)
 * `bin/rails server` - Start the Rails server. When `SOLID_QUEUE_IN_PUMA` is set, the background job processor and scheduler run alongside the server. The `bin/dev` script sets this variable automatically in development.
 
 ### Git Hooks
@@ -36,7 +36,7 @@ The pre-push hook automatically runs before each push:
 - Dead code check - Detect debug statements (`binding.pry`, `debugger`, etc.)
 - i18n check - Ensure all keys exist in both `en.yml` and `ko.yml`
 
-To install hooks manually: `./scripts/install-hooks.sh`
+To install hooks manually: `./script/install-hooks.sh`
 
 ### Test
 

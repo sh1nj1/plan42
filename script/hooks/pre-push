@@ -50,7 +50,7 @@ fi
 
 # 5. Check i18n keys (en and ko must both have all keys)
 echo -e "${YELLOW}▶ Checking i18n keys...${NC}"
-ruby scripts/check-i18n.rb
+ruby script/check-i18n.rb
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ i18n check failed. Please add missing translations.${NC}"
     exit 1
