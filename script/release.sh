@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 set -e
 
 # Colors
@@ -8,7 +8,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 BUILD_DIR="$PROJECT_ROOT/build/gems"
@@ -72,15 +72,15 @@ echo -e "${GREEN}All tests passed!${NC}"
 # Step 2: Determine versions and generate release notes
 echo -e "\n${GREEN}[Step 2] Analyzing changes and determining versions...${NC}"
 
-declare -A ENGINE_NEW_VERSIONS
-declare -A ENGINE_HAS_CHANGES
+typeset -A ENGINE_NEW_VERSIONS
+typeset -A ENGINE_HAS_CHANGES
 
 for ENGINE in "${ENGINES[@]}"; do
   ENGINE_DIR="$ENGINES_DIR/$ENGINE"
   VERSION_FILE="$ENGINE_DIR/lib/${ENGINE}/version.rb"
   
-  # Get current version
-  CURRENT_VERSION=$(grep -oP 'VERSION\s*=\s*"\K[^"]+' "$VERSION_FILE")
+  # Get current version (macOS compatible)
+  CURRENT_VERSION=$(grep 'VERSION' "$VERSION_FILE" | sed -E 's/.*VERSION\s*=\s*"([^"]+)".*/\1/')
   
   # Get last commit that modified version.rb
   LAST_VERSION_COMMIT=$(git log -1 --format="%H" -- "$VERSION_FILE" 2>/dev/null || echo "")
@@ -96,10 +96,9 @@ for ENGINE in "${ENGINES[@]}"; do
     ENGINE_HAS_CHANGES[$ENGINE]=1
     
     # Bump patch version
-    IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
-    MAJOR=${VERSION_PARTS[0]}
-    MINOR=${VERSION_PARTS[1]}
-    PATCH=${VERSION_PARTS[2]}
+    MAJOR=$(echo "$CURRENT_VERSION" | cut -d. -f1)
+    MINOR=$(echo "$CURRENT_VERSION" | cut -d. -f2)
+    PATCH=$(echo "$CURRENT_VERSION" | cut -d. -f3)
     NEW_PATCH=$((PATCH + 1))
     NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
     ENGINE_NEW_VERSIONS[$ENGINE]=$NEW_VERSION
@@ -129,12 +128,8 @@ $(echo "$COMMITS" | while read -r line; do echo "- $line"; done)
     echo -e "$NEW_RELEASE_CONTENT$EXISTING_CONTENT" > "$RELEASE_NOTE_FILE"
     
     # Update version.rb
-    if [[ "$ENGINE" == "collavre" ]]; then
-      MODULE_NAME="Collavre"
-    else
-      # Convert collavre_slack -> CollavreSlack
-      MODULE_NAME=$(echo "$ENGINE" | sed -r 's/(^|_)([a-z])/\U\2/g')
-    fi
+    # Convert collavre_slack -> CollavreSlack (macOS compatible - use Ruby)
+    MODULE_NAME=$(ruby -e "puts '$ENGINE'.split('_').map(&:capitalize).join")
     
     cat > "$VERSION_FILE" << EOF
 module $MODULE_NAME
@@ -153,7 +148,7 @@ echo -e "\n${GREEN}[Step 3] Committing version updates...${NC}"
 
 CHANGED_ENGINES=""
 for ENGINE in "${ENGINES[@]}"; do
-  if [ "${ENGINE_HAS_CHANGES[$ENGINE]}" == "1" ]; then
+  if [ "${ENGINE_HAS_CHANGES[$ENGINE]}" = "1" ]; then
     CHANGED_ENGINES="$CHANGED_ENGINES $ENGINE@${ENGINE_NEW_VERSIONS[$ENGINE]}"
   fi
 done
@@ -173,7 +168,7 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
 for ENGINE in "${ENGINES[@]}"; do
-  if [ "${ENGINE_HAS_CHANGES[$ENGINE]}" == "1" ]; then
+  if [ "${ENGINE_HAS_CHANGES[$ENGINE]}" = "1" ]; then
     ENGINE_DIR="$ENGINES_DIR/$ENGINE"
     echo -e "${BLUE}Building $ENGINE...${NC}"
     
@@ -209,7 +204,7 @@ echo "     git branch -d $RELEASE_BRANCH"
 echo ""
 echo "  4. Create git tags (optional):"
 for ENGINE in "${ENGINES[@]}"; do
-  if [ "${ENGINE_HAS_CHANGES[$ENGINE]}" == "1" ]; then
+  if [ "${ENGINE_HAS_CHANGES[$ENGINE]}" = "1" ]; then
     echo "     git tag ${ENGINE}-v${ENGINE_NEW_VERSIONS[$ENGINE]}"
   fi
 done
