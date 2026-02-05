@@ -20,7 +20,7 @@ module CollavreOpenclaw
       @context = context
     end
 
-    def chat(messages, tools: [], &block)
+    def chat(messages, &block)
       unless @user&.gateway_url.present?
         Rails.logger.error("[CollavreOpenclaw] No Gateway URL configured for user #{@user&.id}")
         yield "Error: OpenClaw Gateway URL not configured" if block_given?
@@ -34,13 +34,11 @@ module CollavreOpenclaw
         return nil
       end
 
-      # Try WebSocket first, fall back to HTTP.
-      # When tools are provided, always use HTTP because the WS protocol
-      # does not support passing tool/function schemas to the Gateway.
-      if websocket_available? && Array(tools).empty?
+      # Try WebSocket first, fall back to HTTP
+      if websocket_available?
         chat_via_websocket(messages, &block)
       else
-        chat_via_http(messages, tools: tools, &block)
+        chat_via_http(messages, &block)
       end
     end
 
@@ -81,7 +79,7 @@ module CollavreOpenclaw
       false
     end
 
-    def chat_via_websocket(messages, tools: [], &block)
+    def chat_via_websocket(messages, &block)
       response_content = +""
 
       begin
@@ -118,7 +116,7 @@ module CollavreOpenclaw
       rescue CollavreOpenclaw::ConnectionError,
              CollavreOpenclaw::TimeoutError => e
         Rails.logger.warn("[CollavreOpenclaw] WebSocket failed, falling back to HTTP: #{e.message}")
-        chat_via_http(messages, tools: tools, &block)
+        chat_via_http(messages, &block)
       rescue CollavreOpenclaw::ChatError, CollavreOpenclaw::RpcError => e
         Rails.logger.error("[CollavreOpenclaw] WebSocket chat error: #{e.message}")
         error_msg = "OpenClaw Error: #{e.message}"
@@ -128,7 +126,7 @@ module CollavreOpenclaw
         Rails.logger.error("[CollavreOpenclaw] WebSocket unexpected error: #{e.message}\n" \
                            "#{e.backtrace.first(5).join("\n")}")
         Rails.logger.info("[CollavreOpenclaw] Falling back to HTTP")
-        chat_via_http(messages, tools: tools, &block)
+        chat_via_http(messages, &block)
       end
     end
 
@@ -199,11 +197,11 @@ module CollavreOpenclaw
     # HTTP transport (fallback)
     # ─────────────────────────────────────────────
 
-    def chat_via_http(messages, tools: [], &block)
+    def chat_via_http(messages, &block)
       response_content = +""
 
       begin
-        payload = build_payload(messages, tools)
+        payload = build_payload(messages)
 
         Rails.logger.info("[CollavreOpenclaw] Sending via HTTP to #{api_endpoint} (session: #{session_key})")
 
@@ -251,7 +249,7 @@ module CollavreOpenclaw
     # HTTP payload building
     # ─────────────────────────────────────────────
 
-    def build_payload(messages, tools)
+    def build_payload(messages)
       agent_id = extract_agent_id_from_email
       model_value = agent_id.present? ? "openclaw:#{agent_id}" : "openclaw"
 
@@ -265,76 +263,8 @@ module CollavreOpenclaw
         payload[:messages].unshift({ role: "system", content: @system_prompt })
       end
 
-      payload[:tools] = format_tools(tools) if tools.present?
       payload[:user] = build_user_context
       payload
-    end
-
-    def format_tools(tools)
-      Array(tools).filter_map do |tool|
-        if tool.is_a?(String)
-          convert_tool_name_to_openai_format(tool)
-        elsif tool.is_a?(Hash)
-          if tool[:type] == "function" || tool["type"] == "function"
-            tool
-          else
-            convert_mcp_tool_to_openai_format(tool)
-          end
-        end
-      end.compact
-    end
-
-    def convert_tool_name_to_openai_format(tool_name)
-      return nil unless defined?(::Tools::MetaToolService)
-
-      result = ::Tools::MetaToolService.new.call(
-        action: "get", tool_name: tool_name, query: nil, arguments: nil
-      )
-      return nil if result[:error] || result[:tool].nil?
-
-      convert_mcp_tool_to_openai_format(result[:tool])
-    rescue StandardError => e
-      Rails.logger.warn("[CollavreOpenclaw] Failed to fetch tool #{tool_name}: #{e.message}")
-      nil
-    end
-
-    def convert_mcp_tool_to_openai_format(mcp_tool)
-      name = mcp_tool[:name] || mcp_tool["name"]
-      description = mcp_tool[:description] || mcp_tool["description"]
-      params = mcp_tool[:params] || mcp_tool["params"] ||
-               mcp_tool[:parameters] || mcp_tool["parameters"] || []
-
-      properties = {}
-      required = []
-
-      Array(params).each do |param|
-        param_name = (param[:name] || param["name"]).to_s
-        param_type = param[:type] || param["type"] || "string"
-        param_desc = param[:description] || param["description"]
-        param_required = param[:required] || param["required"]
-
-        json_type = case param_type.to_s.downcase
-        when "integer", "int" then "integer"
-        when "number", "float", "decimal" then "number"
-        when "boolean", "bool" then "boolean"
-        when "array" then "array"
-        when "object", "hash" then "object"
-        else "string"
-        end
-
-        properties[param_name] = { type: json_type }
-        properties[param_name][:description] = param_desc if param_desc.present?
-        required << param_name if param_required
-      end
-
-      {
-        type: "function",
-        function: {
-          name: name,
-          description: description || "",
-          parameters: { type: "object", properties: properties, required: required }
-        }
-      }
     end
 
     def build_user_context

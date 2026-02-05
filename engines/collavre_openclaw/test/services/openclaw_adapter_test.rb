@@ -33,7 +33,7 @@ module CollavreOpenclaw
         { role: "model", parts: [ { text: "Hi there!" } ] }
       ]
 
-      payload = adapter.send(:build_payload, messages, [])
+      payload = adapter.send(:build_payload, messages)
 
       # System prompt is added as first message
       assert_equal 3, payload[:messages].length
@@ -59,7 +59,7 @@ module CollavreOpenclaw
 
       messages = [ { role: "user", content: "Hello" } ]
 
-      payload = adapter.send(:build_payload, messages, [])
+      payload = adapter.send(:build_payload, messages)
 
       assert_equal "openclaw:ai-bot", payload[:model]
     end
@@ -75,7 +75,7 @@ module CollavreOpenclaw
 
       messages = [ { role: "user", content: "Hello" } ]
 
-      payload = adapter.send(:build_payload, messages, [])
+      payload = adapter.send(:build_payload, messages)
 
       assert_equal "openclaw", payload[:model]
     end
@@ -287,55 +287,7 @@ module CollavreOpenclaw
       assert_nil headers["Authorization"]
     end
 
-    test "includes tools in payload when provided" do
-      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "Test prompt",
-        context: {}
-      )
-
-      messages = [ { role: "user", content: "Hello" } ]
-      tools = [
-        {
-          type: "function",
-          function: {
-            name: "search_documents",
-            description: "Search for documents",
-            parameters: {
-              type: "object",
-              properties: {
-                query: { type: "string", description: "Search query" }
-              },
-              required: [ "query" ]
-            }
-          }
-        },
-        {
-          type: "function",
-          function: {
-            name: "get_weather",
-            description: "Get weather information",
-            parameters: {
-              type: "object",
-              properties: {
-                location: { type: "string" }
-              }
-            }
-          }
-        }
-      ]
-
-      payload = adapter.send(:build_payload, messages, tools)
-
-      assert payload[:tools].present?, "Tools should be included in payload"
-      assert_equal 2, payload[:tools].length
-      assert_equal "search_documents", payload[:tools][0][:function][:name]
-      assert_equal "get_weather", payload[:tools][1][:function][:name]
-    end
-
-    test "does not include tools key when tools array is empty" do
+    test "build_payload does not include tools key" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
@@ -346,103 +298,9 @@ module CollavreOpenclaw
 
       messages = [ { role: "user", content: "Hello" } ]
 
-      payload = adapter.send(:build_payload, messages, [])
+      payload = adapter.send(:build_payload, messages)
 
-      assert_not payload.key?(:tools), "Tools key should not be present when empty"
-    end
-
-    test "does not include tools key when tools is nil" do
-      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "Test prompt",
-        context: {}
-      )
-
-      messages = [ { role: "user", content: "Hello" } ]
-
-      payload = adapter.send(:build_payload, messages, nil)
-
-      assert_not payload.key?(:tools), "Tools key should not be present when nil"
-    end
-
-    test "converts MCP tool format to OpenAI format" do
-      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "Test prompt",
-        context: {}
-      )
-
-      mcp_tool = {
-        name: "search_documents",
-        description: "Search for documents",
-        params: [
-          { name: "query", type: "string", description: "Search query", required: true },
-          { name: "limit", type: "integer", description: "Max results", required: false }
-        ]
-      }
-
-      result = adapter.send(:convert_mcp_tool_to_openai_format, mcp_tool)
-
-      assert_equal "function", result[:type]
-      assert_equal "search_documents", result[:function][:name]
-      assert_equal "Search for documents", result[:function][:description]
-      assert_equal "object", result[:function][:parameters][:type]
-      assert_equal "string", result[:function][:parameters][:properties]["query"][:type]
-      assert_equal "integer", result[:function][:parameters][:properties]["limit"][:type]
-      assert_includes result[:function][:parameters][:required], "query"
-      assert_not_includes result[:function][:parameters][:required], "limit"
-    end
-
-    test "format_tools passes through OpenAI format tools unchanged" do
-      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "Test prompt",
-        context: {}
-      )
-
-      openai_tool = {
-        type: "function",
-        function: {
-          name: "get_weather",
-          description: "Get weather",
-          parameters: { type: "object", properties: {}, required: [] }
-        }
-      }
-
-      result = adapter.send(:format_tools, [ openai_tool ])
-
-      assert_equal 1, result.length
-      assert_equal openai_tool, result.first
-    end
-
-    test "format_tools converts MCP format tools to OpenAI format" do
-      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "Test prompt",
-        context: {}
-      )
-
-      mcp_tool = {
-        name: "calculate",
-        description: "Perform calculation",
-        params: [
-          { name: "expression", type: "string", required: true }
-        ]
-      }
-
-      result = adapter.send(:format_tools, [ mcp_tool ])
-
-      assert_equal 1, result.length
-      assert_equal "function", result.first[:type]
-      assert_equal "calculate", result.first[:function][:name]
+      assert_not payload.key?(:tools), "Tools key should not be present"
     end
 
     test "format_message_for_ws extracts last user message" do
@@ -535,42 +393,7 @@ module CollavreOpenclaw
       assert adapter.send(:websocket_available?)
     end
 
-    test "chat falls back to HTTP when tools are provided even if websocket is available" do
-      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com",
-                             llm_api_key: "test-key")
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "Test",
-        context: {}
-      )
-
-      tools = [
-        {
-          type: "function",
-          function: {
-            name: "search",
-            description: "Search",
-            parameters: { type: "object", properties: {}, required: [] }
-          }
-        }
-      ]
-
-      # websocket_available? is true, but tools are present → should use HTTP
-      assert adapter.send(:websocket_available?)
-
-      # Stub chat_via_http to verify it's called instead of chat_via_websocket
-      http_called = false
-      adapter.define_singleton_method(:chat_via_http) do |_msgs, **_opts, &_blk|
-        http_called = true
-        nil
-      end
-
-      adapter.chat([ { role: "user", content: "Hello" } ], tools: tools)
-      assert http_called, "Should fall back to HTTP when tools are provided"
-    end
-
-    test "chat uses websocket when no tools are provided" do
+    test "chat uses websocket when available" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com",
                              llm_api_key: "test-key")
 
@@ -588,8 +411,8 @@ module CollavreOpenclaw
         nil
       end
 
-      adapter.chat([ { role: "user", content: "Hello" } ], tools: [])
-      assert ws_called, "Should use WebSocket when no tools are provided"
+      adapter.chat([ { role: "user", content: "Hello" } ])
+      assert ws_called, "Should use WebSocket when available"
     end
 
     private
