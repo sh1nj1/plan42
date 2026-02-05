@@ -12,6 +12,12 @@ module Collavre
           flash[:notice] = t("collavre.invites.invite_sent")
           redirect_back(fallback_location: creatives_path) and return
         end
+
+        # Restrict sharing non-searchable AI agents to their owners only
+        if user.ai_user? && !user.searchable? && user.created_by_id != Current.user.id
+          flash[:alert] = t("collavre.creatives.share.cannot_share_private_ai_agent")
+          redirect_back(fallback_location: creatives_path) and return
+        end
       end
 
       permission = params[:permission]
