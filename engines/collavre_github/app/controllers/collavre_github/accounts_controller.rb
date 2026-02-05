@@ -1,4 +1,4 @@
-module Github
+module CollavreGithub
   class AccountsController < ApplicationController
     before_action :require_account
 
@@ -30,7 +30,7 @@ module Github
 
     def repositories
       organization = params[:organization]
-      creative = params[:creative_id].present? ? Creative.find_by(id: params[:creative_id]) : nil
+      creative = params[:creative_id].present? ? Collavre::Creative.find_by(id: params[:creative_id]) : nil
       selected = if creative
         creative.github_repository_links.where(github_account: Current.user.github_account)
                 .pluck(:repository_full_name)
@@ -70,7 +70,7 @@ module Github
     end
 
     def github_client
-      @github_client ||= Github::Client.new(Current.user.github_account)
+      @github_client ||= CollavreGithub::Client.new(Current.user.github_account)
     end
 
     def fetch_repositories(organization)

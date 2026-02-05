@@ -30,24 +30,24 @@ class Release
 
     print_header
     check_prerequisites
-    
+
     # Step 1: Analyze changes first (before creating branch)
     collect_changes_and_prompt_versions
-    
+
     # Exit early if no changes
     if @changed_engines.empty?
       puts
       warn "✨ No engines have changes to release. Nothing to do!"
       exit 0
     end
-    
+
     # Step 2: Create release branch and update files
     create_release_branch
     update_files_and_gemfile_lock
-    
+
     # Step 3: Run tests (after version updates)
     run_tests
-    
+
     # Step 4-6: Commit, build, push, finalize
     commit_changes
     build_and_push_gems

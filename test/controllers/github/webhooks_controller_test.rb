@@ -1,17 +1,17 @@
 require "test_helper"
 require "uri"
 
-class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
+class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
   setup do
     @user = users(:one)
-    @account = GithubAccount.create!(
+    @account = CollavreGithub::Account.create!(
       user: @user,
       github_uid: "456",
       login: "webhook-user",
       name: "Webhook User",
       token: "webhook-token"
     )
-    @link = GithubRepositoryLink.create!(
+    @link = CollavreGithub::RepositoryLink.create!(
       creative: creatives(:tshirt),
       github_account: @account,
       repository_full_name: "webhook-user/example",
@@ -30,8 +30,8 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     processor = Minitest::Mock.new
     processor.expect(:call, true)
 
-    Github::PullRequestProcessor.stub :new, ->(*) { processor } do
-      post github_webhook_path,
+    CollavreGithub::PullRequestProcessor.stub :new, ->(*) { processor } do
+      post "/github/webhook",
            params: body,
            headers: {
              "CONTENT_TYPE" => "application/json",
@@ -64,9 +64,9 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
         payload.dig("repository", "full_name") == @link.repository_full_name
     end
 
-    Github::PullRequestProcessor.stub :new, ->(*) { processor } do
-      SystemEvents::Dispatcher.stub :dispatch, dispatcher do
-        post github_webhook_path,
+    CollavreGithub::PullRequestProcessor.stub :new, ->(*) { processor } do
+      Collavre::SystemEvents::Dispatcher.stub :dispatch, dispatcher do
+        post "/github/webhook",
              params: body,
              headers: {
                "CONTENT_TYPE" => "application/json",
@@ -92,9 +92,9 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     captured_context = nil
     dispatcher = ->(event_name, context) { captured_context = context }
 
-    Github::PullRequestProcessor.stub :new, ->(*) { processor } do
-      SystemEvents::Dispatcher.stub :dispatch, dispatcher do
-        post github_webhook_path,
+    CollavreGithub::PullRequestProcessor.stub :new, ->(*) { processor } do
+      Collavre::SystemEvents::Dispatcher.stub :dispatch, dispatcher do
+        post "/github/webhook",
              params: body,
              headers: {
                "CONTENT_TYPE" => "application/json",
@@ -125,8 +125,8 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     dispatcher = ->(event_name, context) { captured_context = context }
 
     Rails.application.stub :credentials, OpenStruct.new(github: { webhook_secret: fallback_secret }) do
-      SystemEvents::Dispatcher.stub :dispatch, dispatcher do
-        post github_webhook_path,
+      Collavre::SystemEvents::Dispatcher.stub :dispatch, dispatcher do
+        post "/github/webhook",
              params: body,
              headers: {
                "CONTENT_TYPE" => "application/json",
@@ -146,7 +146,7 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     body = @payload.to_json
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', 'wrong-secret', body)}"
 
-    post github_webhook_path,
+    post "/github/webhook",
          params: body,
          headers: {
            "CONTENT_TYPE" => "application/json",
@@ -164,8 +164,8 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     processor = Minitest::Mock.new
     processor.expect(:call, true)
 
-    Github::PullRequestProcessor.stub :new, ->(*) { processor } do
-      post github_webhook_path,
+    CollavreGithub::PullRequestProcessor.stub :new, ->(*) { processor } do
+      post "/github/webhook",
            params: { payload: payload_json },
            headers: {
              "CONTENT_TYPE" => "application/x-www-form-urlencoded",
@@ -183,7 +183,7 @@ class Github::WebhooksControllerTest < ActionDispatch::IntegrationTest
     body = @payload.to_json
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
 
-    post github_webhook_path,
+    post "/github/webhook",
          params: body,
          headers: {
            "CONTENT_TYPE" => "application/json",
