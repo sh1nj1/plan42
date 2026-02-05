@@ -6,20 +6,14 @@ module CollavreGithub
         Rails.logger.warn("GitHub event header missing; rejecting request")
         return head :bad_request
       end
+
       raw_body = request.raw_post.presence || request.body.read
       payload = parse_payload(raw_body)
       @repository_link = find_repository_link(payload)
       return head :unauthorized unless valid_signature?(raw_body)
+
       payload = payload.presence || {}
-
-      dispatch_github_event(event, payload)
-
-      case event
-      when "pull_request"
-        CollavreGithub::PullRequestProcessor.new(payload: payload).call
-      else
-        Rails.logger.debug("Unhandled GitHub event: #{event}")
-      end
+      create_system_comment(event, payload) if @repository_link&.creative
 
       head :ok
     rescue JSON::ParserError
@@ -28,22 +22,199 @@ module CollavreGithub
 
     private
 
-    def dispatch_github_event(event, payload)
-      context = {
-        event: event,
-        action: payload["action"],
-        repository: payload.dig("repository", "full_name"),
-        payload: payload
-      }
+    def create_system_comment(event, payload)
+      creative = @repository_link.creative&.effective_origin
+      return unless creative
 
-      # Include creative context for AI Agent routing permission check
-      if @repository_link&.creative
-        context[:creative] = {
-          id: @repository_link.creative.id
+      content = format_github_event(event, payload)
+
+      comment = creative.comments.create!(
+        user: nil,
+        content: content,
+        private: false
+      )
+
+      # Dispatch event for AI Agent routing
+      Collavre::SystemEvents::Dispatcher.dispatch("comment_created", {
+        comment: {
+          id: comment.id,
+          content: comment.content,
+          user_id: nil
+        },
+        creative: {
+          id: creative.id,
+          description: creative.description
+        },
+        chat: {
+          content: comment.content
         }
+      })
+    end
+
+    def format_github_event(event, payload)
+      case event
+      when "pull_request"
+        format_pull_request(payload)
+      when "push"
+        format_push(payload)
+      when "issues"
+        format_issue(payload)
+      when "issue_comment"
+        format_issue_comment(payload)
+      else
+        format_generic_event(event, payload)
+      end
+    end
+
+    def format_pull_request(payload)
+      pr = payload["pull_request"] || {}
+      action = payload["action"]
+      number = pr["number"]
+      title = pr["title"]
+      url = pr["html_url"]
+      user = pr.dig("user", "login")
+      merged = pr["merged"]
+      repo = payload.dig("repository", "full_name")
+      t = method(:t_webhook)
+
+      lines = []
+      lines << "### #{t.call('pull_request.title', action: action_label(action, merged))}"
+      lines << ""
+      lines << "**#{t.call('pull_request.repository')}:** #{repo}"
+      lines << "**#{t.call('pull_request.pr')}:** [##{number} #{title}](#{url})"
+      lines << "**#{t.call('pull_request.author')}:** #{user}"
+      lines << "**#{t.call('pull_request.action')}:** #{action}#{merged ? " #{t.call('pull_request.merged')}" : ''}"
+
+      if pr["body"].present?
+        lines << ""
+        lines << "**#{t.call('pull_request.description')}:**"
+        lines << pr["body"].to_s.truncate(500)
       end
 
-      Collavre::SystemEvents::Dispatcher.dispatch("github_webhook", context)
+      lines.join("\n")
+    end
+
+    def format_push(payload)
+      repo = payload.dig("repository", "full_name")
+      ref = payload["ref"]
+      branch = ref&.sub("refs/heads/", "")
+      pusher = payload.dig("pusher", "name")
+      commits = payload["commits"] || []
+      t = method(:t_webhook)
+
+      lines = []
+      lines << "### #{t.call('push.title', branch: branch)}"
+      lines << ""
+      lines << "**#{t.call('push.repository')}:** #{repo}"
+      lines << "**#{t.call('push.branch')}:** #{branch}"
+      lines << "**#{t.call('push.pusher')}:** #{pusher}"
+      lines << "**#{t.call('push.commits')}:** #{commits.size}"
+
+      if commits.any?
+        lines << ""
+        lines << "**#{t.call('push.recent_commits')}:**"
+        commits.first(5).each do |commit|
+          message = commit["message"].to_s.lines.first&.strip || t.call("push.no_message")
+          sha = commit["id"].to_s[0, 7]
+          lines << "- `#{sha}` #{message.truncate(80)}"
+        end
+        lines << "- #{t.call('push.more')}" if commits.size > 5
+      end
+
+      lines.join("\n")
+    end
+
+    def format_issue(payload)
+      issue = payload["issue"] || {}
+      action = payload["action"]
+      number = issue["number"]
+      title = issue["title"]
+      url = issue["html_url"]
+      user = issue.dig("user", "login")
+      repo = payload.dig("repository", "full_name")
+      t = method(:t_webhook)
+
+      lines = []
+      lines << "### #{t.call('issue.title', action: action)}"
+      lines << ""
+      lines << "**#{t.call('issue.repository')}:** #{repo}"
+      lines << "**#{t.call('issue.issue')}:** [##{number} #{title}](#{url})"
+      lines << "**#{t.call('issue.author')}:** #{user}"
+      lines << "**#{t.call('issue.action')}:** #{action}"
+
+      if action == "opened" && issue["body"].present?
+        lines << ""
+        lines << "**#{t.call('issue.description')}:**"
+        lines << issue["body"].to_s.truncate(500)
+      end
+
+      lines.join("\n")
+    end
+
+    def format_issue_comment(payload)
+      issue = payload["issue"] || {}
+      comment = payload["comment"] || {}
+      action = payload["action"]
+      number = issue["number"]
+      title = issue["title"]
+      url = comment["html_url"]
+      user = comment.dig("user", "login")
+      repo = payload.dig("repository", "full_name")
+      t = method(:t_webhook)
+
+      lines = []
+      lines << "### #{t.call('issue_comment.title', action: action, number: number)}"
+      lines << ""
+      lines << "**#{t.call('issue_comment.repository')}:** #{repo}"
+      lines << "**#{t.call('issue_comment.issue')}:** ##{number} #{title}"
+      lines << "**#{t.call('issue_comment.comment_by')}:** #{user}"
+      lines << "**#{t.call('issue_comment.link')}:** [#{t.call('issue_comment.view_comment')}](#{url})"
+
+      if comment["body"].present?
+        lines << ""
+        lines << "**#{t.call('issue_comment.comment')}:**"
+        lines << comment["body"].to_s.truncate(500)
+      end
+
+      lines.join("\n")
+    end
+
+    def format_generic_event(event, payload)
+      repo = payload.dig("repository", "full_name")
+      action = payload["action"]
+      sender = payload.dig("sender", "login")
+      t = method(:t_webhook)
+
+      lines = []
+      lines << "### #{t.call('generic.title', event: event.titleize)}"
+      lines << ""
+      lines << "**#{t.call('generic.repository')}:** #{repo}"
+      lines << "**#{t.call('generic.action')}:** #{action}" if action
+      lines << "**#{t.call('generic.sender')}:** #{sender}" if sender
+
+      lines.join("\n")
+    end
+
+    def action_label(action, merged)
+      t = method(:t_webhook)
+      case action
+      when "opened"
+        t.call("actions.opened")
+      when "closed"
+        merged ? t.call("actions.merged") : t.call("actions.closed")
+      when "reopened"
+        t.call("actions.reopened")
+      when "synchronize"
+        t.call("actions.updated")
+      when "ready_for_review"
+        t.call("actions.ready_for_review")
+      else
+        action&.titleize || t.call("actions.event")
+      end
+    end
+
+    def t_webhook(key, **options)
+      I18n.t("collavre_github.webhooks.#{key}", **options)
     end
 
     def find_repository_link(payload)
