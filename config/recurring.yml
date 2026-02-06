@@ -3,9 +3,17 @@ production:
     class: InboxSummaryJob
     queue: default
     schedule: at 9am every day
+  stuck_detector:
+    class: Collavre::StuckDetectorJob
+    queue: default
+    schedule: every 10 minutes
 
 development:
   daily_inbox_summary:
     class: InboxSummaryJob
     queue: default
     schedule: every minute
+  stuck_detector:
+    class: Collavre::StuckDetectorJob
+    queue: default
+    schedule: every 5 minutes
