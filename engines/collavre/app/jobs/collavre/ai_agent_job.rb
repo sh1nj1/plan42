@@ -22,6 +22,12 @@ module Collavre
           agent: agent,
           topic_id: context&.dig("topic", "id")
         )
+
+        # Record task for loop breaker tracking
+        creative_id = context&.dig("creative", "id")
+        if creative_id
+          Orchestration::LoopBreaker.new(context).record_task(creative_id, agent.id)
+        end
       end
 
       # Reserve resources before starting work

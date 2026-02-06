@@ -46,6 +46,14 @@ module Collavre
         tracker = ResourceTracker.for(agent)
         config = @policy_resolver.scheduling_config_for(agent)
 
+        # Check 0: Loop breaker
+        if @policy_resolver.loop_breaker_enabled?
+          loop_result = LoopBreaker.new(@context, policy_resolver: @policy_resolver).check
+          if loop_result.should_break?
+            return loop_broken_decision(agent, loop_result)
+          end
+        end
+
         # Check 1: Concurrency limit
         max_concurrent = config["max_concurrent_jobs"] || 5
         if tracker.active_jobs >= max_concurrent
@@ -103,6 +111,16 @@ module Collavre
           agent: agent,
           timing: :rejected,
           reason: reason
+        }
+      end
+
+      def loop_broken_decision(agent, loop_result)
+        {
+          agent: agent,
+          timing: :rejected,
+          reason: :loop_detected,
+          loop_break_reason: loop_result.reason,
+          loop_break_details: loop_result.details
         }
       end
 

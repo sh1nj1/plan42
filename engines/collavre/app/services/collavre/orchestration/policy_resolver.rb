@@ -32,7 +32,15 @@ module Collavre
           "self_reflection_enabled" => false,
           "confidence_threshold" => 70,
           "max_retries" => 3,
-          "retry_delay_seconds" => 5
+          "retry_delay_seconds" => 5,
+          # Loop breaker settings
+          "loop_breaker_enabled" => false,
+          "ping_pong_threshold" => 5,           # Max back-and-forth between same agents
+          "creative_retry_threshold" => 10,     # Max tasks on same creative in time window
+          "creative_retry_window_minutes" => 30,
+          "task_timeout_minutes" => 60,         # Max time for a single task
+          "token_spike_threshold" => 50_000,    # Token usage spike in window
+          "token_spike_window_minutes" => 10
         }
       }.freeze
 
@@ -101,6 +109,23 @@ module Collavre
           "confidence_threshold" => scheduling_config["confidence_threshold"],
           "max_retries" => scheduling_config["max_retries"],
           "retry_delay_seconds" => scheduling_config["retry_delay_seconds"]
+        }
+      end
+
+      # Loop breaker settings
+      def loop_breaker_enabled?
+        scheduling_config["loop_breaker_enabled"] == true
+      end
+
+      def loop_breaker_config
+        {
+          "enabled" => scheduling_config["loop_breaker_enabled"],
+          "ping_pong_threshold" => scheduling_config["ping_pong_threshold"],
+          "creative_retry_threshold" => scheduling_config["creative_retry_threshold"],
+          "creative_retry_window_minutes" => scheduling_config["creative_retry_window_minutes"],
+          "task_timeout_minutes" => scheduling_config["task_timeout_minutes"],
+          "token_spike_threshold" => scheduling_config["token_spike_threshold"],
+          "token_spike_window_minutes" => scheduling_config["token_spike_window_minutes"]
         }
       end
 
