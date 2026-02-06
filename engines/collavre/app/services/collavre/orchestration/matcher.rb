@@ -47,12 +47,12 @@ module Collavre
         # Permission check for mentioned AI agent
         return [] unless has_creative_permission?(mentioned_user)
 
-        [mentioned_user]
+        [ mentioned_user ]
       end
 
       def match_by_expression
         # Find all AI agents with routing expressions
-        agents = User.where.not(llm_vendor: nil).where.not(routing_expression: [nil, ""])
+        agents = User.where.not(llm_vendor: nil).where.not(routing_expression: [ nil, "" ])
 
         agents.select do |agent|
           next false unless has_creative_permission?(agent)
@@ -70,7 +70,7 @@ module Collavre
         end
 
         # Add agent to context for self-reference
-        agent_context = @context.merge("agent" => agent.as_json(only: [:id, :name, :email]))
+        agent_context = @context.merge("agent" => agent.as_json(only: [ :id, :name, :email ]))
 
         template = Liquid::Template.parse(expression)
         result = template.render(agent_context)

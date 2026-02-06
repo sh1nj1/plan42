@@ -29,7 +29,7 @@ module Collavre
         }
 
         result = Matcher.new(context).match
-        assert_equal [@ai_agent], result
+        assert_equal [ @ai_agent ], result
       end
 
       test "returns empty array when human is mentioned" do
@@ -185,7 +185,7 @@ module Collavre
         result = Matcher.new(context).match
 
         # Only mentioned agent, not the one matching by expression
-        assert_equal [@ai_agent], result
+        assert_equal [ @ai_agent ], result
       ensure
         other_agent&.destroy
       end
