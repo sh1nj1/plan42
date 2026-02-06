@@ -186,6 +186,8 @@ module Collavre
           searchable: true,
           routing_expression: 'event_name == "comment_created"'
         )
+        # Give other_agent permission on creative
+        CreativeShare.create!(creative: @creative, user: other_agent, permission: "feedback")
 
         context = {
           "event_name" => "comment_created",

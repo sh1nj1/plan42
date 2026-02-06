@@ -38,7 +38,7 @@ module Collavre
     SCOPE_TYPES = %w[Creative Topic User].freeze
 
     # Policy types
-    POLICY_TYPES = %w[matching arbitration scheduling].freeze
+    POLICY_TYPES = %w[matching arbitration scheduling stuck_detection].freeze
 
     # Arbitration strategies
     ARBITRATION_STRATEGIES = %w[all primary_first round_robin bid].freeze
