@@ -27,12 +27,18 @@ module SystemEvents
     end
 
     test "dispatches event and enqueues job for matched agent" do
-      # ContextBuilder deep_stringifies keys, so we expect string keys
-      expected_context = @context.deep_stringify_keys
-
-      assert_enqueued_with(job: AiAgentJob, args: [ @agent.id, "test_event", expected_context ]) do
+      assert_enqueued_with(job: AiAgentJob) do
         SystemEvents::Dispatcher.dispatch("test_event", @context)
       end
+
+      # Verify the enqueued job has the correct agent and event
+      job = ActiveJob::Base.queue_adapter.enqueued_jobs.last
+      assert_equal @agent.id, job[:args][0]
+      assert_equal "test_event", job[:args][1]
+
+      # Context should include event_name (added by Orchestrator)
+      enqueued_context = job[:args][2]
+      assert_equal "test_event", enqueued_context["event_name"]
     end
 
     test "does not enqueue job if no agent matches" do

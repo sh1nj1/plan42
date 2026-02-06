@@ -6,13 +6,8 @@ module Collavre
       end
 
       def dispatch(event_name, context)
-        # Build context once to ensure consistency between Router and Job
-        enriched_context = Collavre::SystemEvents::ContextBuilder.new(context).build
-        agents = Router.new.route(event_name, enriched_context)
-
-        agents.each do |agent|
-          AiAgentJob.perform_later(agent.id, event_name, enriched_context)
-        end
+        # Delegate to AgentOrchestrator for unified routing/scheduling
+        Orchestration::AgentOrchestrator.dispatch(event_name, context)
       end
     end
   end
