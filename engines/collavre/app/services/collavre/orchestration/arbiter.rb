@@ -68,12 +68,15 @@ module Collavre
         primary ? [ primary ] : candidates.take(1)
       end
 
-      # Rotate between agents using Redis for state
+      # Rotate between agents using Rails cache for state
       def strategy_round_robin(candidates)
         return candidates.take(1) if candidates.size <= 1
 
         topic_id = @context.dig("topic", "id")
         return candidates.take(1) if topic_id.blank?
+
+        # Sort candidates by id for consistent ordering
+        sorted_candidates = candidates.sort_by(&:id)
 
         # Get last responder from cache
         cache_key = "orchestrator:round_robin:topic:#{topic_id}"
@@ -81,9 +84,9 @@ module Collavre
 
         # Find next agent in rotation
         selected = if last_responder_id.present?
-                     find_next_in_rotation(candidates, last_responder_id)
+                     find_next_in_rotation(sorted_candidates, last_responder_id)
         else
-                     candidates.first
+                     sorted_candidates.first
         end
 
         # Store current responder for next rotation

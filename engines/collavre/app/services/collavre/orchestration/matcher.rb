@@ -52,7 +52,8 @@ module Collavre
 
       def match_by_expression
         # Find all AI agents with routing expressions
-        agents = User.where.not(llm_vendor: nil).where.not(routing_expression: [ nil, "" ])
+        # Order by id for consistent ordering (important for round_robin strategy)
+        agents = User.where.not(llm_vendor: nil).where.not(routing_expression: [ nil, "" ]).order(:id)
 
         agents.select do |agent|
           next false unless has_creative_permission?(agent)
