@@ -36,6 +36,7 @@ Rails.application.routes.draw do
   get "/admin", to: "admin/settings#index"
   namespace :admin do
     resource :settings, only: [ :update ]
+    resource :orchestration, only: [ :show, :update ], controller: "orchestration"
   end
 
   # MCP OAuth Discovery

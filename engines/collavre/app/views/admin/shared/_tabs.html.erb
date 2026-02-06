@@ -1,4 +1,5 @@
 <div class="tab-list">
   <%= link_to t('admin.tabs.system'), main_app.admin_path, class: "tab-button #{'active' if controller_name == 'settings'}" %>
   <%= link_to t('admin.tabs.users'), collavre.users_path, class: "tab-button #{'active' if controller_name == 'users'}" %>
+  <%= link_to t('admin.tabs.orchestration'), main_app.admin_orchestration_path, class: "tab-button #{'active' if controller_name == 'orchestration'}" %>
 </div>
