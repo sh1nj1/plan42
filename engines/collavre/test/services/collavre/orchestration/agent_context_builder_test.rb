@@ -273,6 +273,117 @@ module Collavre
         assert_equal @ai_agent.id, result["agent"]["id"]
         assert_empty result["collaborators"]
       end
+
+      # A2A (Agent-to-Agent) communication tests
+      test "detects A2A request when sender is AI" do
+        sender = {
+          "id" => @qa_agent.id,
+          "name" => @qa_agent.name,
+          "is_ai" => true,
+          "type" => "qa"
+        }
+
+        builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative, sender: sender)
+
+        assert builder.a2a_request?
+        assert builder.build["is_a2a"]
+      end
+
+      test "does not detect A2A when sender is human" do
+        sender = {
+          "id" => @human_user.id,
+          "name" => @human_user.name,
+          "is_ai" => false,
+          "type" => "human"
+        }
+
+        builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative, sender: sender)
+
+        assert_not builder.a2a_request?
+        assert_not builder.build["is_a2a"]
+      end
+
+      test "does not detect A2A when sender is nil" do
+        builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative, sender: nil)
+
+        assert_not builder.a2a_request?
+        assert_not builder.build["is_a2a"]
+      end
+
+      test "includes sender in build result when provided" do
+        sender = {
+          "id" => @qa_agent.id,
+          "name" => @qa_agent.name,
+          "is_ai" => true,
+          "type" => "qa"
+        }
+
+        builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative, sender: sender)
+        result = builder.build
+
+        assert_equal sender, result["sender"]
+      end
+
+      test "collaboration prompt includes A2A context when sender is AI" do
+        Collavre::CreativeShare.create!(
+          creative: @creative,
+          user: @pm_agent,
+          permission: :admin
+        )
+
+        sender = {
+          "id" => @qa_agent.id,
+          "name" => "qa-agent",
+          "is_ai" => true,
+          "type" => "qa"
+        }
+
+        builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative, sender: sender)
+        prompt = builder.to_collaboration_prompt
+
+        assert_includes prompt, "## ⚡ Agent 요청"
+        assert_includes prompt, "@qa-agent"
+        assert_includes prompt, "다른 AI Agent"
+        assert_includes prompt, "## 협업 가능한 Agent"
+      end
+
+      test "collaboration prompt excludes A2A context when sender is human" do
+        Collavre::CreativeShare.create!(
+          creative: @creative,
+          user: @pm_agent,
+          permission: :admin
+        )
+
+        sender = {
+          "id" => @human_user.id,
+          "name" => @human_user.name,
+          "is_ai" => false,
+          "type" => "human"
+        }
+
+        builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative, sender: sender)
+        prompt = builder.to_collaboration_prompt
+
+        assert_not_includes prompt, "## ⚡ Agent 요청"
+        assert_includes prompt, "## 협업 가능한 Agent"
+      end
+
+      test "A2A context appears even without collaborators" do
+        sender = {
+          "id" => @qa_agent.id,
+          "name" => "qa-agent",
+          "is_ai" => true,
+          "type" => "qa"
+        }
+
+        builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative, sender: sender)
+        prompt = builder.to_collaboration_prompt
+
+        assert_includes prompt, "## ⚡ Agent 요청"
+        assert_includes prompt, "@qa-agent"
+        # No collaborators section since none shared
+        assert_not_includes prompt, "## 협업 가능한 Agent"
+      end
     end
   end
 end

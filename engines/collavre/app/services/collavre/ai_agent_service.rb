@@ -248,13 +248,21 @@ module Collavre
     def build_agent_context(creative)
       return {} unless creative
 
-      Orchestration::AgentContextBuilder.new(agent: @agent, creative: creative).build
+      Orchestration::AgentContextBuilder.new(
+        agent: @agent,
+        creative: creative,
+        sender: @context["sender"]
+      ).build
     end
 
     def build_collaboration_prompt(creative)
       return nil unless creative
 
-      Orchestration::AgentContextBuilder.new(agent: @agent, creative: creative).to_collaboration_prompt
+      Orchestration::AgentContextBuilder.new(
+        agent: @agent,
+        creative: creative,
+        sender: @context["sender"]
+      ).to_collaboration_prompt
     end
 
     def handle_approval_pending(error)
