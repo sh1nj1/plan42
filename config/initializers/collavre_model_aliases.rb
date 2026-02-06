@@ -98,7 +98,6 @@ Rails.application.config.to_prepare do
 
   # SystemEvents module
   Object.const_set(:SystemEvents, Module.new) unless Object.const_defined?(:SystemEvents, false)
-  set_alias(SystemEvents, :Router, Collavre::SystemEvents::Router)
   set_alias(SystemEvents, :ContextBuilder, Collavre::SystemEvents::ContextBuilder)
   set_alias(SystemEvents, :Dispatcher, Collavre::SystemEvents::Dispatcher)
 
