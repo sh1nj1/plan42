@@ -234,7 +234,7 @@ module Collavre
           # Count as exchange if direction reversed (A→B then B→A)
           if prev[:from] == curr[:to] && prev[:to] == curr[:from]
             # Normalize pair key (smaller id first)
-            pair = [prev[:from], prev[:to]].sort
+            pair = [ prev[:from], prev[:to] ].sort
             pair_counts[pair] += 1
           end
         end
@@ -249,7 +249,7 @@ module Collavre
       # Cache keys
       def ping_pong_key(agent1_id, agent2_id, creative_id)
         # Normalize key so A-B and B-A use same key
-        sorted = [agent1_id, agent2_id].sort
+        sorted = [ agent1_id, agent2_id ].sort
         "#{CACHE_PREFIX}:ping_pong:#{sorted[0]}-#{sorted[1]}:#{creative_id}"
       end
 
