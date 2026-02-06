@@ -30,11 +30,28 @@ module Collavre
 
       begin
         AiAgentService.new(task).call
-        task.update!(status: "done")
 
-        # Release resources on success
-        # TODO: Track actual token usage from AiAgentService
-        tracker.release!(job_id || task.id, tokens_used: 0)
+        # Evaluate self-reflection if enabled
+        reflection_result = evaluate_self_reflection(task)
+
+        case reflection_result.action
+        when :retry
+          # Schedule retry with delay - don't release resources yet
+          schedule_self_reflection_retry(task, reflection_result)
+          Rails.logger.info(
+            "[AiAgentJob] Task #{task.id} scheduled for retry " \
+            "(attempt #{task.retry_count + 1}, confidence: #{reflection_result.confidence})"
+          )
+          nil # Exit without releasing resources or dequeuing
+        when :escalate
+          # Escalate to admins
+          Orchestration::SelfReflectionEvaluator.new(task).escalate!
+          tracker.release!(job_id || task.id, tokens_used: 0)
+          Rails.logger.info("[AiAgentJob] Task #{task.id} escalated after max retries")
+        else # :done
+          task.update!(status: "done")
+          tracker.release!(job_id || task.id, tokens_used: 0)
+        end
       rescue ApprovalPendingError
         # Task status already set to pending_approval by AiAgentService
         # Don't release resources yet - task will resume
@@ -49,10 +66,21 @@ module Collavre
         Rails.logger.error("AiAgentJob failed for task #{task.id}: #{e.message}")
         raise e
       ensure
-        if task&.topic_id && %w[done failed cancelled].include?(task.reload.status)
+        if task&.topic_id && %w[done failed cancelled escalated].include?(task.reload.status)
           Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id)
         end
       end
+    end
+
+    private
+
+    def evaluate_self_reflection(task)
+      Orchestration::SelfReflectionEvaluator.new(task).evaluate
+    end
+
+    def schedule_self_reflection_retry(task, result)
+      evaluator = Orchestration::SelfReflectionEvaluator.new(task)
+      evaluator.schedule_retry!
     end
   end
 end
