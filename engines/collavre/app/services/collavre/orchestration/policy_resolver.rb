@@ -27,7 +27,12 @@ module Collavre
           "daily_token_limit" => 100_000,
           "rate_limit_per_minute" => 20,
           "backoff_strategy" => "exponential",
-          "topic_max_concurrent_jobs" => 1
+          "topic_max_concurrent_jobs" => 1,
+          # Self-reflection settings
+          "self_reflection_enabled" => false,
+          "confidence_threshold" => 70,
+          "max_retries" => 3,
+          "retry_delay_seconds" => 5
         }
       }.freeze
 
@@ -83,6 +88,20 @@ module Collavre
 
       def bid_fallback_enabled?
         arbitration_config["bid_fallback_enabled"] != false
+      end
+
+      # Self-reflection settings
+      def self_reflection_enabled?
+        scheduling_config["self_reflection_enabled"] == true
+      end
+
+      def self_reflection_config
+        {
+          "enabled" => scheduling_config["self_reflection_enabled"],
+          "confidence_threshold" => scheduling_config["confidence_threshold"],
+          "max_retries" => scheduling_config["max_retries"],
+          "retry_delay_seconds" => scheduling_config["retry_delay_seconds"]
+        }
       end
 
       private
