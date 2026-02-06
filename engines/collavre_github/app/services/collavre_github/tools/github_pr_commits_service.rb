@@ -1,7 +1,9 @@
-module CollavreGithub
-  require "sorbet-runtime"
-  require "rails_mcp_engine"
+# frozen_string_literal: true
 
+require "sorbet-runtime"
+require "rails_mcp_engine"
+
+module CollavreGithub
   module Tools
     class GithubPrCommitsService
       extend T::Sig
