@@ -25,8 +25,8 @@ class CreateOrchestratorPolicies < ActiveRecord::Migration[8.0]
       t.timestamps
     end
 
-    add_index :orchestrator_policies, [:scope_type, :scope_id]
-    add_index :orchestrator_policies, [:policy_type, :enabled]
+    add_index :orchestrator_policies, [ :scope_type, :scope_id ]
+    add_index :orchestrator_policies, [ :policy_type, :enabled ]
     add_index :orchestrator_policies, :priority
   end
 end

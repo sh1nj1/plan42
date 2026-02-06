@@ -55,7 +55,7 @@ module Collavre
       end
 
       def scheduler
-        @scheduler ||= Scheduler.new(@context)
+        @scheduler ||= Scheduler.new(@context, policy_resolver: policy_resolver)
       end
 
       def enqueue_jobs(decisions)

@@ -35,7 +35,7 @@ module Collavre
           searchable: true
         )
 
-        @candidates = [@agent1, @agent2, @agent3]
+        @candidates = [ @agent1, @agent2, @agent3 ]
       end
 
       # Strategy: all
@@ -61,7 +61,7 @@ module Collavre
         selected = arbiter.select(@candidates)
 
         assert_equal 2, selected.size
-        assert_equal [@agent1, @agent2], selected
+        assert_equal [ @agent1, @agent2 ], selected
       end
 
       # Strategy: primary_first
@@ -74,7 +74,7 @@ module Collavre
         arbiter = Arbiter.new(@context)
         selected = arbiter.select(@candidates)
 
-        assert_equal [@agent2], selected
+        assert_equal [ @agent2 ], selected
       end
 
       test "primary_first returns first candidate when primary not in candidates" do
@@ -86,7 +86,7 @@ module Collavre
         arbiter = Arbiter.new(@context)
         selected = arbiter.select(@candidates)
 
-        assert_equal [@agent1], selected
+        assert_equal [ @agent1 ], selected
       end
 
       test "primary_first returns first candidate when no primary configured" do
@@ -98,7 +98,7 @@ module Collavre
         arbiter = Arbiter.new(@context)
         selected = arbiter.select(@candidates)
 
-        assert_equal [@agent1], selected
+        assert_equal [ @agent1 ], selected
       end
 
       # Strategy: round_robin
@@ -115,19 +115,19 @@ module Collavre
 
         # First call should return first agent
         selected1 = arbiter.select(@candidates)
-        assert_equal [@agent1], selected1
+        assert_equal [ @agent1 ], selected1
 
         # Second call should return second agent
         selected2 = arbiter.select(@candidates)
-        assert_equal [@agent2], selected2
+        assert_equal [ @agent2 ], selected2
 
         # Third call should return third agent
         selected3 = arbiter.select(@candidates)
-        assert_equal [@agent3], selected3
+        assert_equal [ @agent3 ], selected3
 
         # Fourth call should wrap around to first agent
         selected4 = arbiter.select(@candidates)
-        assert_equal [@agent1], selected4
+        assert_equal [ @agent1 ], selected4
       end
 
       test "round_robin handles removed agents gracefully" do
@@ -144,13 +144,13 @@ module Collavre
         )
 
         # Now candidates don't include agent2
-        candidates_without_agent2 = [@agent1, @agent3]
+        candidates_without_agent2 = [ @agent1, @agent3 ]
 
         arbiter = Arbiter.new(@context)
         selected = arbiter.select(candidates_without_agent2)
 
         # Should start from beginning since agent2 is not in candidates
-        assert_equal [@agent1], selected
+        assert_equal [ @agent1 ], selected
       end
 
       # Edge cases
@@ -168,9 +168,9 @@ module Collavre
         )
 
         arbiter = Arbiter.new(@context)
-        selected = arbiter.select([@agent1])
+        selected = arbiter.select([ @agent1 ])
 
-        assert_equal [@agent1], selected
+        assert_equal [ @agent1 ], selected
       end
 
       test "falls back to all strategy for unknown strategy" do
