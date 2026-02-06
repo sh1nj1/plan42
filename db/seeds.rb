@@ -16,3 +16,9 @@ unless User.exists?(email: default_email)
   )
   puts "Created default user with email: #{default_email}"
 end
+
+# Load engine seeds
+Dir[Rails.root.join("engines", "*", "db", "seeds.rb")].each do |seed_file|
+  puts "Loading seeds from: #{seed_file}"
+  load seed_file
+end
