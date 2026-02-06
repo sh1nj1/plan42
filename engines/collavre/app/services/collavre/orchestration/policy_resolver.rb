@@ -41,6 +41,12 @@ module Collavre
           "task_timeout_minutes" => 60,         # Max time for a single task
           "token_spike_threshold" => 50_000,    # Token usage spike in window
           "token_spike_window_minutes" => 10
+        },
+        "stuck_detection" => {
+          "enabled" => false,
+          "task_stuck_threshold_minutes" => 30,       # Task running for > N minutes
+          "creative_stall_threshold_minutes" => 120,  # Creative no progress for > N minutes
+          "create_system_comment" => true             # Create system comment on escalation
         }
       }.freeze
 
@@ -127,6 +133,20 @@ module Collavre
           "token_spike_threshold" => scheduling_config["token_spike_threshold"],
           "token_spike_window_minutes" => scheduling_config["token_spike_window_minutes"]
         }
+      end
+
+      # Stuck detection settings
+      def stuck_detection_enabled?
+        stuck_detection_config["enabled"] == true
+      end
+
+      def stuck_detection_config
+        @stuck_detection_config ||= resolve("stuck_detection")
+      end
+
+      # Generic resolve method for any policy type
+      def resolve(policy_type)
+        merge_policies(policy_type)
       end
 
       private
