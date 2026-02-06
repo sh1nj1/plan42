@@ -81,10 +81,17 @@ en:
       command_menu:
         calendar_description: "Create a Google Calendar event."
         calendar_args: "YYYY-MM-DD@HH:MM memo (today/tomorrow, +3days, +2weeks, +1months, +1years, +mon)"
+        topic_description: "Create a new topic with optional primary agent."
+        topic_args: '"topic name" @agent_name'
       calendar_command:
         event_created: 'event created: [Google Calendar event](%{url})'
         event_created_local: 'event created (local only - connect Google Calendar to sync)'
         event_created_sync_failed: 'event created (Google Calendar sync failed - please reconnect your Google account)'
+      topic_command:
+        missing_name: 'Please specify a topic name in quotes: /topic "topic name"'
+        created: 'Topic "%{name}" created.'
+        created_with_agent: 'Topic "%{name}" created with @%{agent} as primary agent.'
+        created_agent_not_found: 'Topic "%{name}" created. Note: Agent @%{agent_name} not found.'
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
     calendar_events:
