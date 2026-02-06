@@ -13,6 +13,17 @@ module Collavre
         # Ensure AI agent has permission (searchable) for tests
         @ai_agent.update!(searchable: true)
 
+        # Grant feedback permission on the creative for AI agent
+        # (searchable only affects discoverability, not response permission)
+        share = CreativeShare.find_or_create_by!(creative: @creative, user: @ai_agent)
+        share.update!(permission: "feedback")
+        # Manually create cache entry (after_commit doesn't run in test transaction)
+        CreativeSharesCache.find_or_create_by!(
+          creative_id: @creative.id,
+          user_id: @ai_agent.id,
+          permission: :feedback
+        )
+
         # Clear any existing routing expressions
         User.where.not(llm_vendor: nil).update_all(routing_expression: nil)
       end

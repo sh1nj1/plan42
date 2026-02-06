@@ -9,6 +9,9 @@ module SystemEvents
       @original_adapter = ActiveJob::Base.queue_adapter
       ActiveJob::Base.queue_adapter = :test
 
+      @user = users(:one)
+      @creative = creatives(:tshirt)
+
       @agent = User.create!(
         email: "dispatcher_test_agent@example.com",
         name: "Dispatcher Agent",
@@ -19,7 +22,17 @@ module SystemEvents
         searchable: true
       )
 
-      @context = { "some" => "context" }
+      # Grant feedback permission on the creative for AI agent
+      share = Collavre::CreativeShare.find_or_create_by!(creative: @creative, user: @agent)
+      share.update!(permission: "feedback")
+      # Manually create cache entry (after_commit doesn't run in test transaction)
+      Collavre::CreativeSharesCache.find_or_create_by!(
+        creative_id: @creative.id,
+        user_id: @agent.id,
+        permission: :feedback
+      )
+
+      @context = { "creative" => { "id" => @creative.id }, "some" => "context" }
     end
 
     teardown do
@@ -50,7 +63,10 @@ module SystemEvents
     end
 
     test "preserves mentioned_user in context" do
-      chat_context = { "chat" => { "content" => "@Dispatcher Agent: Hello" } }
+      chat_context = {
+        "creative" => { "id" => @creative.id },
+        "chat" => { "content" => "@Dispatcher Agent: Hello" }
+      }
 
       assert_enqueued_with(job: AiAgentJob) do
         SystemEvents::Dispatcher.dispatch("test_event", chat_context)
