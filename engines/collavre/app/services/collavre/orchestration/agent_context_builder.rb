@@ -4,6 +4,7 @@ module Collavre
     # - Agent identity
     # - Available collaborators from Creative permissions
     # - Organization hierarchy derived from permission levels
+    # - Sender context for A2A communication
     #
     # Permission → Role mapping:
     # - admin:    escalation targets (supervisors)
@@ -18,26 +19,46 @@ module Collavre
         "read" => "reference"       # Can request information from
       }.freeze
 
-      def initialize(agent:, creative:)
+      def initialize(agent:, creative:, sender: nil)
         @agent = agent
         @creative = creative
+        @sender = sender
+      end
+
+      def a2a_request?
+        @sender && @sender["is_ai"] == true
       end
 
       # Returns hash suitable for Liquid template rendering
       def build
-        {
+        result = {
           "agent" => build_agent_identity,
           "collaborators" => build_collaborators,
-          "collaboration_guide" => build_collaboration_guide
+          "collaboration_guide" => build_collaboration_guide,
+          "is_a2a" => a2a_request?
         }
+
+        result["sender"] = @sender if @sender
+        result
       end
 
       # Generates markdown-formatted collaboration section for system prompt
       def to_collaboration_prompt
-        collaborators = build_collaborators
-        return "" if collaborators.empty?
-
         sections = []
+
+        # Add A2A request context if this is an agent-to-agent call
+        if a2a_request?
+          sections << "## ⚡ Agent 요청"
+          sections << ""
+          sections << "이 메시지는 다른 AI Agent(@#{@sender['name']}, #{@sender['type']})가 보낸 요청입니다."
+          sections << "- 요청에 집중해서 답변하세요"
+          sections << "- 완료되면 결과를 명확히 전달하세요"
+          sections << "- 추가 정보가 필요하면 요청자에게 @멘션으로 물어보세요"
+          sections << ""
+        end
+
+        collaborators = build_collaborators
+        return sections.join("\n") if collaborators.empty?
 
         sections << "## 협업 가능한 Agent"
         sections << ""
