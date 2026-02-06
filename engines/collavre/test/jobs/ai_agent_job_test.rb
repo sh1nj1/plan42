@@ -229,6 +229,48 @@ class AiAgentJobTest < ActiveJob::TestCase
     AiAgentService.const_set(:CANCEL_CHECK_INTERVAL, original_interval)
   end
 
+  test "triggers dequeue_next_for_topic on completion" do
+    topic = Topic.create!(name: "Test Topic", creative: @creative, user: @owner)
+    context_with_topic = @context.merge("topic" => { "id" => topic.id })
+
+    # Create a queued task waiting in line
+    queued_task = Task.create!(
+      name: "Queued task", status: "queued",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: context_with_topic,
+      agent: @agent, topic_id: topic.id
+    )
+
+    AiClient.stub :new, FakeAiClient.new do
+      AiAgentJob.perform_now(@agent.id, "test_event", context_with_topic)
+    end
+
+    # The completed task should have triggered dequeue — queued task is no longer queued
+    # (inline adapter runs it immediately so it progresses past "pending")
+    assert_not_equal "queued", queued_task.reload.status
+  end
+
+  test "triggers dequeue_next_for_topic on failure" do
+    topic = Topic.create!(name: "Test Topic", creative: @creative, user: @owner)
+    context_with_topic = @context.merge("topic" => { "id" => topic.id })
+
+    queued_task = Task.create!(
+      name: "Queued task", status: "queued",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: context_with_topic,
+      agent: @agent, topic_id: topic.id
+    )
+
+    AiClient.stub :new, ->(*args) { raise StandardError, "AI Error" } do
+      assert_raises(StandardError) do
+        AiAgentJob.perform_now(@agent.id, "test_event", context_with_topic)
+      end
+    end
+
+    # Dequeue should have been triggered despite failure
+    assert_not_equal "queued", queued_task.reload.status
+  end
+
   test "fetches latest comments when history exceeds limit" do
     # Create 60 comments
     60.times do |i|

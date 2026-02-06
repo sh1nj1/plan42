@@ -1,0 +1,66 @@
+<h1 class="no-top-margin"><%= t('admin.title') %></h1>
+
+<%= render "admin/shared/tabs" %>
+
+<div class="tab-panels">
+  <section class="tab-panel active">
+    <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
+    <%= tag.div(flash[:notice], class: "flash-notice") if flash[:notice] %>
+
+    <div style="margin-bottom: 1.5em;">
+      <h2 style="font-size: 1.2em; margin-bottom: 0.5em;"><%= t('admin.orchestration.title') %></h2>
+      <p style="color: var(--color-text-muted); font-size: 0.9em;">
+        <%= t('admin.orchestration.description') %>
+      </p>
+    </div>
+
+    <%= form_with url: admin_orchestration_path, method: :patch, local: true, html: { class: 'profile-form' } do |f| %>
+      <div>
+        <label for="policies_yaml" style="font-weight: 600; display: block; margin-bottom: 0.5em;">
+          <%= t('admin.orchestration.policies_yaml') %>
+        </label>
+        <%= f.text_area :policies_yaml,
+                        value: @policies_yaml,
+                        rows: 30,
+                        style: "width: 100%; font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace; font-size: 0.9em; padding: 1em; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface); line-height: 1.5;" %>
+        <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.5em;">
+          <%= t('admin.orchestration.yaml_hint') %>
+        </div>
+      </div>
+
+      <div style="margin-top: 1.5em; padding-top: 1.5em; border-top: 1px solid var(--color-border);">
+        <h3 style="font-size: 1em; margin-bottom: 0.75em;"><%= t('admin.orchestration.reference') %></h3>
+        
+        <div style="background: var(--color-surface-alt); padding: 1em; border-radius: 4px; font-size: 0.85em;">
+          <p style="margin-bottom: 0.75em;"><strong><%= t('admin.orchestration.arbitration_strategies') %></strong></p>
+          <ul style="margin-left: 1.5em; margin-bottom: 1em;">
+            <li><code>all</code> — <%= t('admin.orchestration.strategy_all') %></li>
+            <li><code>primary_first</code> — <%= t('admin.orchestration.strategy_primary_first') %></li>
+            <li><code>round_robin</code> — <%= t('admin.orchestration.strategy_round_robin') %></li>
+            <li><code>bid</code> — <%= t('admin.orchestration.strategy_bid') %></li>
+          </ul>
+
+          <p style="margin-bottom: 0.75em;"><strong><%= t('admin.orchestration.scheduling_options') %></strong></p>
+          <ul style="margin-left: 1.5em; margin-bottom: 1em;">
+            <li><code>max_concurrent_jobs</code> — <%= t('admin.orchestration.opt_max_concurrent') %></li>
+            <li><code>daily_token_limit</code> — <%= t('admin.orchestration.opt_daily_token') %></li>
+            <li><code>rate_limit_per_minute</code> — <%= t('admin.orchestration.opt_rate_limit') %></li>
+            <li><code>backoff_strategy</code> — <%= t('admin.orchestration.opt_backoff') %></li>
+            <li><code>topic_max_concurrent_jobs</code> — <%= t('admin.orchestration.opt_topic_max_concurrent') %></li>
+          </ul>
+
+          <p style="margin-bottom: 0.75em;"><strong><%= t('admin.orchestration.scope_types') %></strong></p>
+          <ul style="margin-left: 1.5em;">
+            <li><code>Creative</code> — <%= t('admin.orchestration.scope_creative') %></li>
+            <li><code>Topic</code> — <%= t('admin.orchestration.scope_topic') %></li>
+            <li><code>User</code> — <%= t('admin.orchestration.scope_user') %></li>
+          </ul>
+        </div>
+      </div>
+
+      <div style="margin-top: 2em;">
+        <%= f.submit t('admin.orchestration.save'), class: 'btn-primary' %>
+      </div>
+    <% end %>
+  </section>
+</div>

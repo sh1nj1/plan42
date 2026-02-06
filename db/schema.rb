@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_06_100000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -60,33 +60,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
     t.index ["created_at"], name: "index_activity_logs_on_created_at"
     t.index ["creative_id"], name: "index_activity_logs_on_creative_id"
     t.index ["user_id"], name: "index_activity_logs_on_user_id"
-  end
-
-  create_table "agent_actions", force: :cascade do |t|
-    t.integer "agent_run_id", null: false
-    t.json "arguments", default: {}
-    t.datetime "created_at", null: false
-    t.text "result"
-    t.string "status", default: "pending"
-    t.string "tool_name"
-    t.datetime "updated_at", null: false
-    t.index ["agent_run_id"], name: "index_agent_actions_on_agent_run_id"
-  end
-
-  create_table "agent_runs", force: :cascade do |t|
-    t.integer "ai_user_id", null: false
-    t.json "context", default: {}
-    t.datetime "created_at", null: false
-    t.integer "creative_id", null: false
-    t.text "goal"
-    t.integer "iteration_count", default: 0
-    t.datetime "next_run_at"
-    t.string "state", default: "planning"
-    t.string "status", default: "pending"
-    t.json "transcript", default: []
-    t.datetime "updated_at", null: false
-    t.index ["ai_user_id"], name: "index_agent_runs_on_ai_user_id"
-    t.index ["creative_id"], name: "index_agent_runs_on_creative_id"
   end
 
   create_table "calendar_events", force: :cascade do |t|
@@ -428,6 +401,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
     t.index ["user_id"], name: "index_openclaw_pending_callbacks_on_user_id"
   end
 
+  create_table "orchestrator_policies", force: :cascade do |t|
+    t.json "config", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.string "policy_type", null: false
+    t.integer "priority", default: 100, null: false
+    t.bigint "scope_id"
+    t.string "scope_type"
+    t.datetime "updated_at", null: false
+    t.index ["policy_type", "enabled"], name: "index_orchestrator_policies_on_policy_type_and_enabled"
+    t.index ["priority"], name: "index_orchestrator_policies_on_priority"
+    t.index ["scope_type", "scope_id"], name: "index_orchestrator_policies_on_scope_type_and_scope_id"
+  end
+
   create_table "sessions", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "ip_address"
@@ -684,10 +671,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
     t.string "name"
     t.json "pending_tool_call"
     t.string "status", default: "pending"
+    t.integer "topic_id"
     t.string "trigger_event_name"
     t.json "trigger_event_payload"
     t.datetime "updated_at", null: false
     t.index ["agent_id"], name: "index_tasks_on_agent_id"
+    t.index ["topic_id", "status"], name: "index_tasks_on_topic_id_and_status"
   end
 
   create_table "topics", force: :cascade do |t|
@@ -783,7 +772,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
   add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
-  add_foreign_key "creative_shares", "users", column: "shared_by_id"
+  add_foreign_key "creative_shares", "users", column: "shared_by_id", on_delete: :nullify
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
