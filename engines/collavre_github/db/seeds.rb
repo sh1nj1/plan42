@@ -113,5 +113,5 @@ module CollavreGithub
   end
 end
 
-# Run seeds when this file is loaded directly
-CollavreGithub::Seeds.call if $PROGRAM_NAME == __FILE__
+# Run seeds when this file is loaded
+CollavreGithub::Seeds.call

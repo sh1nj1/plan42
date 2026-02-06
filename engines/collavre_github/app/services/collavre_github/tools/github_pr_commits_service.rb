@@ -6,6 +6,7 @@ module CollavreGithub
     class GithubPrCommitsService
       extend T::Sig
       extend ToolMeta
+      include Concerns::GithubClientFinder
 
       tool_name "github_pr_commits"
       tool_description <<~DESC.strip
@@ -31,24 +32,6 @@ module CollavreGithub
         }
       rescue StandardError => e
         { error: "Failed to fetch PR commits: #{e.message}" }
-      end
-
-      private
-
-      def find_github_client(creative_id, repo)
-        creative = Collavre::Creative.find_by(id: creative_id)
-        return nil unless creative
-
-        origin = creative.effective_origin
-        link = CollavreGithub::RepositoryLink
-          .joins(:creative)
-          .where(repository_full_name: repo)
-          .where(creative: origin.self_and_descendants)
-          .first
-
-        return nil unless link&.github_account
-
-        CollavreGithub::Client.new(link.github_account)
       end
     end
   end
