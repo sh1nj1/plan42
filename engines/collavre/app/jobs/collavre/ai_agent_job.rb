@@ -72,7 +72,7 @@ module Collavre
         Rails.logger.error("AiAgentJob failed for task #{task.id}: #{e.message}")
         raise e
       ensure
-        if task&.topic_id && %w[done failed cancelled escalated].include?(task.reload.status)
+        if task&.trigger_event_payload&.key?("topic") && %w[done failed cancelled escalated].include?(task.reload.status)
           Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id)
         end
       end

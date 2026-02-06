@@ -185,12 +185,25 @@ module Collavre
         assert_equal task_count_before, Task.count
       end
 
-      test "dequeue_next_for_topic does nothing with nil topic_id" do
+      test "dequeue_next_for_topic does nothing with nil topic_id when no queued tasks" do
         task_count_before = Task.count
 
         AgentOrchestrator.dequeue_next_for_topic(nil)
 
         assert_equal task_count_before, Task.count
+      end
+
+      test "dequeue_next_for_topic processes queued main-topic tasks with nil topic_id" do
+        queued_task = Task.create!(
+          name: "Queued main-topic task", status: "queued",
+          trigger_event_name: "comment_created",
+          trigger_event_payload: { "creative" => { "id" => @creative.id }, "topic" => { "id" => nil } },
+          agent: @ai_agent, topic_id: nil
+        )
+
+        AgentOrchestrator.dequeue_next_for_topic(nil)
+
+        assert_not_equal "queued", queued_task.reload.status
       end
     end
   end

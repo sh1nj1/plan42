@@ -17,8 +17,6 @@ module Collavre
       end
 
       def self.dequeue_next_for_topic(topic_id)
-        return unless topic_id
-
         task = Task.queued_for_topic(topic_id).first
         return unless task
 
@@ -34,10 +32,10 @@ module Collavre
       # conversation state instead of the stale snapshot from enqueue time.
       def self.refresh_deferred_context!(task)
         context = task.trigger_event_payload
-        topic_id = context&.dig("topic", "id")
         creative_id = context&.dig("creative", "id")
-        return unless topic_id && creative_id
+        return unless creative_id && context&.key?("topic")
 
+        topic_id = context.dig("topic", "id")
         latest_comment = Comment
           .where(creative_id: creative_id, topic_id: topic_id, private: false)
           .order(created_at: :desc)

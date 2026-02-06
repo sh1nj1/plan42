@@ -72,11 +72,13 @@ module Collavre
           return delayed_decision(agent, :rate_limited, config)
         end
 
-        # Check 4: Topic concurrency limit
-        topic_id = @context.dig("topic", "id")
+        # Check 4: Topic concurrency limit (applies to Main topic with nil topic_id too)
         topic_max = @policy_resolver.topic_max_concurrent_jobs
-        if topic_max && topic_id && (Task.running_for_topic(topic_id).count + topic_immediate_count) >= topic_max
-          return deferred_decision(agent)
+        if topic_max && @context.key?("topic")
+          topic_id = @context.dig("topic", "id")
+          if (Task.running_for_topic(topic_id).count + topic_immediate_count) >= topic_max
+            return deferred_decision(agent)
+          end
         end
 
         # All checks passed - immediate execution

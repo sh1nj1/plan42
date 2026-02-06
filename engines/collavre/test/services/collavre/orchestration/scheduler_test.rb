@@ -255,10 +255,43 @@ module Collavre
         assert_equal :deferred, decisions.first[:timing]
       end
 
-      test "does not defer when topic is absent from context" do
+      test "does not defer when topic key is absent from context" do
         context_without_topic = { "creative" => { "id" => @creative.id } }
 
         scheduler = Scheduler.new(context_without_topic)
+        decisions = scheduler.schedule([ @agent ])
+
+        assert_equal :immediate, decisions.first[:timing]
+      end
+
+      test "defers on main topic when topic_id is nil and running task exists" do
+        main_topic_context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => nil }
+        }
+
+        Task.create!(
+          name: "Running main-topic task",
+          status: "running",
+          trigger_event_name: "comment_created",
+          agent: @agent,
+          topic_id: nil
+        )
+
+        scheduler = Scheduler.new(main_topic_context)
+        decisions = scheduler.schedule([ @agent ])
+
+        assert_equal 1, decisions.size
+        assert_equal :deferred, decisions.first[:timing]
+      end
+
+      test "schedules immediately on main topic when no running task" do
+        main_topic_context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => nil }
+        }
+
+        scheduler = Scheduler.new(main_topic_context)
         decisions = scheduler.schedule([ @agent ])
 
         assert_equal :immediate, decisions.first[:timing]
