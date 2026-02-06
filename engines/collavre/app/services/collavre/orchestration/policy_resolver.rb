@@ -65,6 +65,15 @@ module Collavre
         arbitration_config["primary_agent_id"]
       end
 
+      # Bid strategy specific
+      def confidence_threshold
+        arbitration_config["confidence_threshold"]
+      end
+
+      def bid_fallback_enabled?
+        arbitration_config["bid_fallback_enabled"] != false
+      end
+
       private
 
       def merge_policies(policy_type)

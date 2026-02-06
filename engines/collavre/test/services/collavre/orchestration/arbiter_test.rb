@@ -191,6 +191,146 @@ module Collavre
 
         assert_equal @candidates, selected
       end
+
+      # Strategy: bid
+      test "bid strategy selects agent with highest relevance score" do
+        # Create agents with different expertise
+        agent_ruby = User.create!(
+          name: "Ruby Expert",
+          email: "ruby_#{SecureRandom.hex(4)}@example.com",
+          password: "password",
+          llm_vendor: "openai",
+          searchable: true,
+          system_prompt: "Expert in Ruby, Rails, and backend development"
+        )
+        agent_js = User.create!(
+          name: "JS Expert",
+          email: "js_#{SecureRandom.hex(4)}@example.com",
+          password: "password",
+          llm_vendor: "openai",
+          searchable: true,
+          system_prompt: "Expert in JavaScript, React, and frontend development"
+        )
+
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration",
+          config: { "strategy" => "bid", "confidence_threshold" => 0.1 }
+        )
+
+        context_with_ruby_question = @context.merge(
+          "comment" => { "content" => "How do I write a Ruby Rails migration?" }
+        )
+
+        arbiter = Arbiter.new(context_with_ruby_question)
+        selected = arbiter.select([ agent_ruby, agent_js ])
+
+        # Ruby expert should be selected for Ruby question
+        assert_equal 1, selected.size
+        assert_equal agent_ruby, selected.first
+      end
+
+      test "bid strategy returns empty when no agent meets threshold" do
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration",
+          config: {
+            "strategy" => "bid",
+            "confidence_threshold" => 0.99,
+            "bid_fallback_enabled" => false
+          }
+        )
+
+        context_with_obscure_question = @context.merge(
+          "comment" => { "content" => "xyz123 gibberish" }
+        )
+
+        arbiter = Arbiter.new(context_with_obscure_question)
+        selected = arbiter.select(@candidates)
+
+        assert_equal [], selected
+      end
+
+      test "bid strategy returns first candidate as fallback when enabled" do
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration",
+          config: {
+            "strategy" => "bid",
+            "confidence_threshold" => 0.99,
+            "bid_fallback_enabled" => true
+          }
+        )
+
+        context_with_obscure_question = @context.merge(
+          "comment" => { "content" => "xyz123 gibberish" }
+        )
+
+        arbiter = Arbiter.new(context_with_obscure_question)
+        selected = arbiter.select(@candidates)
+
+        assert_equal [ @agent1 ], selected
+      end
+
+      test "bid strategy considers recent participation" do
+        agent_active = User.create!(
+          name: "Active Agent",
+          email: "active_#{SecureRandom.hex(4)}@example.com",
+          password: "password",
+          llm_vendor: "openai",
+          searchable: true
+        )
+        agent_inactive = User.create!(
+          name: "Inactive Agent",
+          email: "inactive_#{SecureRandom.hex(4)}@example.com",
+          password: "password",
+          llm_vendor: "openai",
+          searchable: true
+        )
+
+        # Create recent comments for active agent
+        5.times do
+          Comment.create!(
+            topic: @topic,
+            creative: @creative,
+            user: agent_active,
+            content: "Recent activity",
+            created_at: 1.hour.ago
+          )
+        end
+
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration",
+          config: { "strategy" => "bid", "confidence_threshold" => 0.1 }
+        )
+
+        context_generic = @context.merge(
+          "comment" => { "content" => "Hello, can someone help?" }
+        )
+
+        # Clear participation cache
+        Rails.cache.delete("orchestrator:participation:topic:#{@topic.id}:agent:#{agent_active.id}")
+        Rails.cache.delete("orchestrator:participation:topic:#{@topic.id}:agent:#{agent_inactive.id}")
+
+        arbiter = Arbiter.new(context_generic)
+        selected = arbiter.select([ agent_active, agent_inactive ])
+
+        # Active agent should be preferred due to participation
+        assert_equal [ agent_active ], selected
+      end
+
+      test "bid strategy handles missing comment content gracefully" do
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration",
+          config: { "strategy" => "bid", "bid_fallback_enabled" => true }
+        )
+
+        context_no_comment = @context.dup
+        context_no_comment.delete("comment")
+
+        arbiter = Arbiter.new(context_no_comment)
+        selected = arbiter.select(@candidates)
+
+        # Should fallback since no message to analyze
+        assert_equal [ @agent1 ], selected
+      end
     end
   end
 end
