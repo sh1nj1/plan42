@@ -32,10 +32,18 @@ module Collavre
           rendering_context["creative"] = creative.as_json if creative
         end
 
+        # Add agent collaboration context
+        agent_context = build_agent_context(creative)
+        rendering_context.merge!(agent_context)
+
         rendered_system_prompt = AiSystemPromptRenderer.new(
           template: @agent.system_prompt,
           context: rendering_context
         ).render
+
+        # Append collaboration guide to system prompt
+        collaboration_prompt = build_collaboration_prompt(creative)
+        rendered_system_prompt = "#{rendered_system_prompt}\n\n#{collaboration_prompt}" if collaboration_prompt.present?
 
         # Create a placeholder comment to stream into
         target_comment_id = @context.dig("comment", "id")
@@ -235,6 +243,18 @@ module Collavre
     def reassociate_activity_logs(from_comment, to_comment)
       ActivityLog.where(comment: from_comment, user: @agent)
                  .update_all(comment_id: to_comment.id)
+    end
+
+    def build_agent_context(creative)
+      return {} unless creative
+
+      Orchestration::AgentContextBuilder.new(agent: @agent, creative: creative).build
+    end
+
+    def build_collaboration_prompt(creative)
+      return nil unless creative
+
+      Orchestration::AgentContextBuilder.new(agent: @agent, creative: creative).to_collaboration_prompt
     end
 
     def handle_approval_pending(error)
