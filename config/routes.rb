@@ -36,7 +36,10 @@ Rails.application.routes.draw do
   get "/admin", to: "admin/settings#index"
   namespace :admin do
     resource :settings, only: [ :update ]
-    resource :orchestration, only: [ :show, :update ], controller: "orchestration"
+  end
+  # Orchestration uses Collavre engine controller
+  scope "/admin", as: :admin do
+    resource :orchestration, only: [ :show, :update ], controller: "collavre/admin/orchestration"
   end
 
   # MCP OAuth Discovery
