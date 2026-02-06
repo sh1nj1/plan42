@@ -117,6 +117,8 @@ module Collavre
 
         # Broadcast "idle" status
         broadcast_agent_status("idle")
+
+        @response_content
       end
     rescue ApprovalPendingError => e
       handle_approval_pending(e)

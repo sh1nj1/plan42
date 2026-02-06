@@ -35,15 +35,15 @@ module Collavre
       tracker.reserve!(job_id || task.id)
 
       begin
-        AiAgentService.new(task).call
+        response_content = AiAgentService.new(task).call
 
         # Evaluate self-reflection if enabled
-        reflection_result = evaluate_self_reflection(task)
+        reflection_result = evaluate_self_reflection(task, response_content)
 
         case reflection_result.action
         when :retry
           # Schedule retry with delay - don't release resources yet
-          schedule_self_reflection_retry(task, reflection_result)
+          schedule_self_reflection_retry(task, reflection_result, response_content)
           Rails.logger.info(
             "[AiAgentJob] Task #{task.id} scheduled for retry " \
             "(attempt #{task.retry_count + 1}, confidence: #{reflection_result.confidence})"
@@ -51,7 +51,7 @@ module Collavre
           nil # Exit without releasing resources or dequeuing
         when :escalate
           # Escalate to admins
-          Orchestration::SelfReflectionEvaluator.new(task).escalate!
+          Orchestration::SelfReflectionEvaluator.new(task, response_content: response_content).escalate!(reflection_result)
           tracker.release!(job_id || task.id, tokens_used: 0)
           Rails.logger.info("[AiAgentJob] Task #{task.id} escalated after max retries")
         else # :done
@@ -80,13 +80,13 @@ module Collavre
 
     private
 
-    def evaluate_self_reflection(task)
-      Orchestration::SelfReflectionEvaluator.new(task).evaluate
+    def evaluate_self_reflection(task, response_content)
+      Orchestration::SelfReflectionEvaluator.new(task, response_content: response_content).evaluate
     end
 
-    def schedule_self_reflection_retry(task, result)
-      evaluator = Orchestration::SelfReflectionEvaluator.new(task)
-      evaluator.schedule_retry!
+    def schedule_self_reflection_retry(task, result, response_content)
+      evaluator = Orchestration::SelfReflectionEvaluator.new(task, response_content: response_content)
+      evaluator.schedule_retry!(result)
     end
   end
 end

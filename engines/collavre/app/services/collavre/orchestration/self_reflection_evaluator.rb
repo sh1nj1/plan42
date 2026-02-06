@@ -40,8 +40,9 @@ module Collavre
         /cannot\s*(proceed|continue)/i
       ].freeze
 
-      def initialize(task, policy_resolver: nil)
+      def initialize(task, response_content: nil, policy_resolver: nil)
         @task = task
+        @response_content = response_content || ""
         @policy_resolver = policy_resolver ||
           PolicyResolver.new(task.trigger_event_payload || {})
       end
@@ -79,8 +80,8 @@ module Collavre
       end
 
       # Schedule a retry by creating a system message and re-triggering
-      def schedule_retry!
-        result = evaluate
+      # @param result [Result] pre-computed result from evaluate
+      def schedule_retry!(result)
         return result unless result.action == :retry
 
         # Increment retry count
@@ -100,8 +101,8 @@ module Collavre
       end
 
       # Escalate to admin users
-      def escalate!
-        result = evaluate
+      # @param result [Result] pre-computed result from evaluate
+      def escalate!(result)
         return result unless result.action == :escalate
 
         @task.update!(status: "escalated")
@@ -134,18 +135,7 @@ module Collavre
       end
 
       def response_content
-        @response_content ||= fetch_latest_response
-      end
-
-      def fetch_latest_response
-        # Get the latest comment from the agent for this task's topic
-        return "" unless @task.topic_id
-
-        Comment
-          .where(topic_id: @task.topic_id, user_id: @task.agent_id)
-          .order(created_at: :desc)
-          .first
-          &.content || ""
+        @response_content
       end
 
       def parse_confidence
