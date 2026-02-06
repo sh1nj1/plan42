@@ -48,26 +48,27 @@ module Collavre
 
         # Add A2A request context if this is an agent-to-agent call
         if a2a_request?
-          sections << "## ⚡ Agent 요청"
+          sections << I18n.t("collavre.ai_agent.a2a.request_header")
           sections << ""
-          sections << "이 메시지는 다른 AI Agent(@#{@sender['name']}, #{@sender['type']})가 보낸 요청입니다."
-          sections << "- 요청에 집중해서 답변하세요"
-          sections << "- 완료되면 결과를 명확히 전달하세요"
-          sections << "- 추가 정보가 필요하면 요청자에게 @멘션으로 물어보세요"
+          sections << I18n.t("collavre.ai_agent.a2a.request_description",
+                             sender_name: @sender["name"], sender_type: @sender["type"])
+          sections << I18n.t("collavre.ai_agent.a2a.focus_instruction")
+          sections << I18n.t("collavre.ai_agent.a2a.completion_instruction")
+          sections << I18n.t("collavre.ai_agent.a2a.followup_instruction")
           sections << ""
         end
 
         collaborators = build_collaborators
         return sections.join("\n") if collaborators.empty?
 
-        sections << "## 협업 가능한 Agent"
+        sections << I18n.t("collavre.ai_agent.collaboration.header")
         sections << ""
 
         # Group by role
         by_role = collaborators.group_by { |c| c["role"] }
 
         if by_role["escalation"]&.any?
-          sections << "### 에스컬레이션 대상 (문제 해결 불가 시)"
+          sections << I18n.t("collavre.ai_agent.collaboration.escalation_header")
           by_role["escalation"].each do |c|
             sections << "- @#{c['name']}: #{c['description']}"
           end
@@ -75,7 +76,7 @@ module Collavre
         end
 
         if by_role["collaborator"]&.any?
-          sections << "### 협업 가능 (함께 작업)"
+          sections << I18n.t("collavre.ai_agent.collaboration.collaborator_header")
           by_role["collaborator"].each do |c|
             sections << "- @#{c['name']}: #{c['description']}"
           end
@@ -83,7 +84,7 @@ module Collavre
         end
 
         if by_role["reviewer"]&.any?
-          sections << "### 리뷰어 (검토 요청)"
+          sections << I18n.t("collavre.ai_agent.collaboration.reviewer_header")
           by_role["reviewer"].each do |c|
             sections << "- @#{c['name']}: #{c['description']}"
           end
@@ -91,18 +92,18 @@ module Collavre
         end
 
         if by_role["reference"]&.any?
-          sections << "### 참조 (정보 요청만)"
+          sections << I18n.t("collavre.ai_agent.collaboration.reference_header")
           by_role["reference"].each do |c|
             sections << "- @#{c['name']}: #{c['description']}"
           end
           sections << ""
         end
 
-        sections << "## 협업 규칙"
-        sections << "- 다른 Agent 호출: @이름 요청내용"
-        sections << "- 확신이 낮으면 재검토 후 발화"
-        sections << "- 막히면 에스컬레이션 대상에게 도움 요청"
-        sections << "- 코드 리뷰가 필요하면 리뷰어에게 요청"
+        sections << I18n.t("collavre.ai_agent.collaboration.rules_header")
+        sections << I18n.t("collavre.ai_agent.collaboration.mention_rule")
+        sections << I18n.t("collavre.ai_agent.collaboration.confidence_rule")
+        sections << I18n.t("collavre.ai_agent.collaboration.escalation_rule")
+        sections << I18n.t("collavre.ai_agent.collaboration.review_rule")
         sections << ""
 
         sections.join("\n")
@@ -190,9 +191,9 @@ module Collavre
 
       def build_collaboration_guide
         {
-          "mention_format" => "@이름 요청내용",
-          "escalation_hint" => "확신이 낮거나 막히면 에스컬레이션 대상에게 도움 요청",
-          "review_hint" => "코드 리뷰나 검토가 필요하면 리뷰어에게 요청"
+          "mention_format" => I18n.t("collavre.ai_agent.collaboration.mention_rule"),
+          "escalation_hint" => I18n.t("collavre.ai_agent.collaboration.escalation_rule"),
+          "review_hint" => I18n.t("collavre.ai_agent.collaboration.review_rule")
         }
       end
     end

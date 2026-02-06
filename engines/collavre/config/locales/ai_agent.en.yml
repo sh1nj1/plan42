@@ -13,3 +13,20 @@ en:
 
           Please approve or reject this action.
         no_arguments: "(no arguments)"
+      a2a:
+        request_header: "## ⚡ Agent Request"
+        request_description: "This message is a request from another AI Agent (@%{sender_name}, %{sender_type})."
+        focus_instruction: "- Focus on answering the request"
+        completion_instruction: "- Clearly communicate results when done"
+        followup_instruction: "- If you need more information, ask the requester via @mention"
+      collaboration:
+        header: "## Available Agents for Collaboration"
+        escalation_header: "### Escalation Targets (when stuck)"
+        collaborator_header: "### Collaborators (work together)"
+        reviewer_header: "### Reviewers (request review)"
+        reference_header: "### References (information only)"
+        rules_header: "## Collaboration Rules"
+        mention_rule: "- Call other agents: @name request"
+        confidence_rule: "- Re-evaluate before responding if uncertain"
+        escalation_rule: "- Ask escalation targets for help when stuck"
+        review_rule: "- Request review from reviewers when code review is needed"

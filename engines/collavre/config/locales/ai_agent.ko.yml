@@ -13,3 +13,20 @@ ko:
 
           승인 또는 거부해 주세요.
         no_arguments: "(인자 없음)"
+      a2a:
+        request_header: "## ⚡ Agent 요청"
+        request_description: "이 메시지는 다른 AI Agent(@%{sender_name}, %{sender_type})가 보낸 요청입니다."
+        focus_instruction: "- 요청에 집중해서 답변하세요"
+        completion_instruction: "- 완료되면 결과를 명확히 전달하세요"
+        followup_instruction: "- 추가 정보가 필요하면 요청자에게 @멘션으로 물어보세요"
+      collaboration:
+        header: "## 협업 가능한 Agent"
+        escalation_header: "### 에스컬레이션 대상 (문제 해결 불가 시)"
+        collaborator_header: "### 협업 가능 (함께 작업)"
+        reviewer_header: "### 리뷰어 (검토 요청)"
+        reference_header: "### 참조 (정보 요청만)"
+        rules_header: "## 협업 규칙"
+        mention_rule: "- 다른 Agent 호출: @이름 요청내용"
+        confidence_rule: "- 확신이 낮으면 재검토 후 발화"
+        escalation_rule: "- 막히면 에스컬레이션 대상에게 도움 요청"
+        review_rule: "- 코드 리뷰가 필요하면 리뷰어에게 요청"

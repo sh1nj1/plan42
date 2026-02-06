@@ -251,12 +251,12 @@ module Collavre
         builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative)
         prompt = builder.to_collaboration_prompt
 
-        assert_includes prompt, "## 협업 가능한 Agent"
-        assert_includes prompt, "### 에스컬레이션 대상"
+        assert_includes prompt, I18n.t("collavre.ai_agent.collaboration.header")
+        assert_includes prompt, I18n.t("collavre.ai_agent.collaboration.escalation_header")
         assert_includes prompt, "@pm-agent"
-        assert_includes prompt, "### 리뷰어"
+        assert_includes prompt, I18n.t("collavre.ai_agent.collaboration.reviewer_header")
         assert_includes prompt, "@qa-agent"
-        assert_includes prompt, "## 협업 규칙"
+        assert_includes prompt, I18n.t("collavre.ai_agent.collaboration.rules_header")
       end
 
       test "returns empty string when no collaborators" do
@@ -341,10 +341,11 @@ module Collavre
         builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative, sender: sender)
         prompt = builder.to_collaboration_prompt
 
-        assert_includes prompt, "## ⚡ Agent 요청"
+        assert_includes prompt, I18n.t("collavre.ai_agent.a2a.request_header")
         assert_includes prompt, "@qa-agent"
-        assert_includes prompt, "다른 AI Agent"
-        assert_includes prompt, "## 협업 가능한 Agent"
+        assert_includes prompt, I18n.t("collavre.ai_agent.a2a.request_description",
+                                       sender_name: "qa-agent", sender_type: "qa")
+        assert_includes prompt, I18n.t("collavre.ai_agent.collaboration.header")
       end
 
       test "collaboration prompt excludes A2A context when sender is human" do
@@ -364,8 +365,8 @@ module Collavre
         builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative, sender: sender)
         prompt = builder.to_collaboration_prompt
 
-        assert_not_includes prompt, "## ⚡ Agent 요청"
-        assert_includes prompt, "## 협업 가능한 Agent"
+        assert_not_includes prompt, I18n.t("collavre.ai_agent.a2a.request_header")
+        assert_includes prompt, I18n.t("collavre.ai_agent.collaboration.header")
       end
 
       test "A2A context appears even without collaborators" do
@@ -379,10 +380,10 @@ module Collavre
         builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative, sender: sender)
         prompt = builder.to_collaboration_prompt
 
-        assert_includes prompt, "## ⚡ Agent 요청"
+        assert_includes prompt, I18n.t("collavre.ai_agent.a2a.request_header")
         assert_includes prompt, "@qa-agent"
         # No collaborators section since none shared
-        assert_not_includes prompt, "## 협업 가능한 Agent"
+        assert_not_includes prompt, I18n.t("collavre.ai_agent.collaboration.header")
       end
     end
   end
