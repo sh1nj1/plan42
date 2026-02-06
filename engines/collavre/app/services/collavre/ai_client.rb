@@ -82,9 +82,16 @@ module Collavre
       raise # Re-raise approval errors without catching them
     rescue CancelledError
       raise # Re-raise cancellation errors without catching them
+    rescue Faraday::ConnectionFailed, Faraday::TimeoutError, Net::OpenTimeout, Net::ReadTimeout => e
+      error_message = "Network error: #{e.class.name} - #{e.message}"
+      Rails.logger.error "AI Client network error: #{error_message}"
+      Rails.logger.error "Partial response length: #{response_content.length} chars"
+      yield "AI Error: #{error_message}" if block_given?
+      nil
     rescue StandardError => e
       error_message = e.message
-      Rails.logger.error "AI Client error: #{e.message}"
+      Rails.logger.error "AI Client error: #{e.class.name} - #{e.message}"
+      Rails.logger.error "Partial response length: #{response_content.length} chars"
       Rails.logger.debug e.backtrace.join("\n")
       yield "AI Error: #{e.message}" if block_given?
       nil

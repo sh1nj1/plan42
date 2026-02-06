@@ -71,8 +71,16 @@ module Collavre
         last_broadcast_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @last_cancel_check_at = last_broadcast_at
 
-        client.chat(messages, tools: @agent.tools || []) do |delta|
+        @streaming_error = nil
+        result = client.chat(messages, tools: @agent.tools || []) do |delta|
           check_cancelled!
+
+          # Detect error messages from AiClient
+          if delta.start_with?("AI Error:")
+            @streaming_error = delta
+            next
+          end
+
           @response_content += delta
 
           # Stream updates to placeholder comment (throttled)
@@ -87,8 +95,17 @@ module Collavre
           end
         end
 
+        # Check for streaming errors or incomplete responses
+        if result.nil? && @streaming_error.present?
+          log_action("error", { message: @streaming_error, partial_response: @response_content })
+          Rails.logger.error "AiAgentService streaming error: #{@streaming_error}"
+        elsif result.nil? && @response_content.blank?
+          log_action("error", { message: "No response received from AI" })
+          Rails.logger.error "AiAgentService: No response received from AI for task #{@task.id}"
+        end
+
         # Log completion
-        log_action("completion", { response: @response_content })
+        log_action("completion", { response: @response_content, had_error: @streaming_error.present? })
 
         # Final save to ensure everything is consistent and trigger final callbacks
         if @reply_comment
