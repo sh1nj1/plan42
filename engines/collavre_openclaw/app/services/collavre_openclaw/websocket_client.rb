@@ -329,17 +329,18 @@ module CollavreOpenclaw
     end
 
     def send_connect_request(challenge_payload)
-      agent_id = extract_agent_id
-      device_id = "collavre-#{@user.id}-#{Digest::SHA256.hexdigest(@user.id.to_s)[0..7]}"
+      # Use valid client constants from OpenClaw protocol schema.
+      # "gateway-client" and "backend" are appropriate for server-side integrations.
+      # Do NOT include partial `device` — it requires full attestation (publicKey, signature, signedAt).
 
       params = {
         minProtocol: PROTOCOL_VERSION,
         maxProtocol: PROTOCOL_VERSION,
         client: {
-          id: "collavre",
+          id: "gateway-client",
           version: CollavreOpenclaw::VERSION,
           platform: "ruby",
-          mode: "operator"
+          mode: "backend"
         },
         role: "operator",
         scopes: [ "operator.read", "operator.write" ],
@@ -348,10 +349,7 @@ module CollavreOpenclaw
         permissions: {},
         auth: { token: @user.llm_api_key },
         locale: "en-US",
-        userAgent: "collavre-openclaw/#{CollavreOpenclaw::VERSION}",
-        device: {
-          id: device_id
-        }
+        userAgent: "collavre-openclaw/#{CollavreOpenclaw::VERSION}"
       }
 
       request_id = SecureRandom.uuid
