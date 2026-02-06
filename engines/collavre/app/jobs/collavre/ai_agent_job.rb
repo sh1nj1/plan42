@@ -19,7 +19,8 @@ module Collavre
           status: "running",
           trigger_event_name: event_name,
           trigger_event_payload: context,
-          agent: agent
+          agent: agent,
+          topic_id: context&.dig("topic", "id")
         )
       end
 
@@ -47,6 +48,10 @@ module Collavre
         tracker.release!(job_id || task.id, tokens_used: 0)
         Rails.logger.error("AiAgentJob failed for task #{task.id}: #{e.message}")
         raise e
+      ensure
+        if task&.topic_id && %w[done failed cancelled].include?(task.reload.status)
+          Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id)
+        end
       end
     end
   end

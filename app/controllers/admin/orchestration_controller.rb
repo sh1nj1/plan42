@@ -85,7 +85,8 @@ module Admin
             "max_concurrent_jobs" => 5,
             "daily_token_limit" => 100_000,
             "rate_limit_per_minute" => 20,
-            "backoff_strategy" => "exponential"
+            "backoff_strategy" => "exponential",
+            "topic_max_concurrent_jobs" => 1
           }
         }
       }

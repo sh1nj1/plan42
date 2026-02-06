@@ -32,14 +32,17 @@ module Collavre
       # @return [Array<Hash>] Scheduling decisions
       #   Each decision: { agent:, timing:, delay: (optional), reason: (optional) }
       def schedule(agents)
+        topic_immediate_count = 0
         agents.map do |agent|
-          evaluate(agent)
+          decision = evaluate(agent, topic_immediate_count: topic_immediate_count)
+          topic_immediate_count += 1 if decision[:timing] == :immediate
+          decision
         end
       end
 
       private
 
-      def evaluate(agent)
+      def evaluate(agent, topic_immediate_count: 0)
         tracker = ResourceTracker.for(agent)
         config = @policy_resolver.scheduling_config_for(agent)
 
@@ -61,6 +64,13 @@ module Collavre
           return delayed_decision(agent, :rate_limited, config)
         end
 
+        # Check 4: Topic concurrency limit
+        topic_id = @context.dig("topic", "id")
+        topic_max = @policy_resolver.topic_max_concurrent_jobs
+        if topic_max && topic_id && (Task.running_for_topic(topic_id).count + topic_immediate_count) >= topic_max
+          return deferred_decision(agent)
+        end
+
         # All checks passed - immediate execution
         immediate_decision(agent)
       end
@@ -78,6 +88,13 @@ module Collavre
           timing: :delayed,
           delay: calculate_delay(config, reason),
           reason: reason
+        }
+      end
+
+      def deferred_decision(agent)
+        {
+          agent: agent,
+          timing: :deferred
         }
       end
 

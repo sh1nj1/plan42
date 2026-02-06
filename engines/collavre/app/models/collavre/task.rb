@@ -6,5 +6,8 @@ module Collavre
     has_many :task_actions, class_name: "Collavre::TaskAction", dependent: :destroy
 
     validates :name, presence: true
+
+    scope :running_for_topic, ->(topic_id) { where(topic_id: topic_id, status: "running") }
+    scope :queued_for_topic, ->(topic_id) { where(topic_id: topic_id, status: "queued").order(:created_at) }
   end
 end

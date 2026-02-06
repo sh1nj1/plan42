@@ -26,7 +26,8 @@ module Collavre
           "max_concurrent_jobs" => 5,
           "daily_token_limit" => 100_000,
           "rate_limit_per_minute" => 20,
-          "backoff_strategy" => "exponential"
+          "backoff_strategy" => "exponential",
+          "topic_max_concurrent_jobs" => 1
         }
       }.freeze
 
@@ -50,6 +51,16 @@ module Collavre
         end
 
         base
+      end
+
+      # Get merged scheduling config (without agent-specific overrides)
+      def scheduling_config
+        @scheduling_config ||= merge_policies("scheduling")
+      end
+
+      # Topic-level concurrency limit
+      def topic_max_concurrent_jobs
+        scheduling_config["topic_max_concurrent_jobs"]
       end
 
       # Convenience methods

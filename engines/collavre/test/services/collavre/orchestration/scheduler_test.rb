@@ -214,6 +214,76 @@ module Collavre
         assert_equal 0, decisions.first[:delay]
       end
 
+      # Topic concurrency
+      test "defers when topic running count meets limit" do
+        Task.create!(
+          name: "Running task",
+          status: "running",
+          trigger_event_name: "comment_created",
+          agent: @agent,
+          topic_id: @topic.id
+        )
+
+        scheduler = Scheduler.new(@context)
+        decisions = scheduler.schedule([ @agent ])
+
+        assert_equal 1, decisions.size
+        assert_equal :deferred, decisions.first[:timing]
+        assert_equal @agent, decisions.first[:agent]
+      end
+
+      test "schedules immediately when topic running count is under limit" do
+        # No running tasks for this topic → 0 < 1 → immediate
+        scheduler = Scheduler.new(@context)
+        decisions = scheduler.schedule([ @agent ])
+
+        assert_equal :immediate, decisions.first[:timing]
+      end
+
+      test "defers based on configured topic_max_concurrent_jobs" do
+        OrchestratorPolicy.create!(
+          policy_type: "scheduling",
+          config: { "topic_max_concurrent_jobs" => 2 }
+        )
+
+        Task.create!(name: "t1", status: "running", trigger_event_name: "e", agent: @agent, topic_id: @topic.id)
+        Task.create!(name: "t2", status: "running", trigger_event_name: "e", agent: @agent, topic_id: @topic.id)
+
+        scheduler = Scheduler.new(@context)
+        decisions = scheduler.schedule([ @agent ])
+
+        assert_equal :deferred, decisions.first[:timing]
+      end
+
+      test "does not defer when topic is absent from context" do
+        context_without_topic = { "creative" => { "id" => @creative.id } }
+
+        scheduler = Scheduler.new(context_without_topic)
+        decisions = scheduler.schedule([ @agent ])
+
+        assert_equal :immediate, decisions.first[:timing]
+      end
+
+      test "defers second agent in same batch when topic limit is 1" do
+        agent2 = User.create!(
+          name: "Agent Batch2",
+          email: "agent_batch2_#{SecureRandom.hex(4)}@example.com",
+          password: "password",
+          llm_vendor: "openai",
+          searchable: true
+        )
+
+        # No running tasks — but scheduling two agents in one batch
+        scheduler = Scheduler.new(@context)
+        decisions = scheduler.schedule([ @agent, agent2 ])
+
+        assert_equal 2, decisions.size
+        assert_equal :immediate, decisions.first[:timing]
+        assert_equal :deferred, decisions.last[:timing]
+      ensure
+        ResourceTracker.for(agent2).reset! if agent2
+      end
+
       # Default policy values
       test "uses default limits when no policy exists" do
         scheduler = Scheduler.new(@context)

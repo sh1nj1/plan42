@@ -53,6 +53,7 @@ en:
       opt_daily_token: "Daily token usage limit"
       opt_rate_limit: "Requests allowed per minute"
       opt_backoff: "Delay strategy when busy (immediate/linear/exponential)"
+      opt_topic_max_concurrent: "Maximum simultaneous jobs per topic (default: 1)"
       scope_types: "Override Scopes"
       scope_creative: "Apply to a specific workspace"
       scope_topic: "Apply to a specific conversation"

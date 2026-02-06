@@ -53,6 +53,7 @@ ko:
       opt_daily_token: "일일 토큰 사용량 한도"
       opt_rate_limit: "분당 허용 요청 수"
       opt_backoff: "바쁠 때 지연 전략 (immediate/linear/exponential)"
+      opt_topic_max_concurrent: "토픽당 최대 동시 작업 수 (기본값: 1)"
       scope_types: "오버라이드 범위"
       scope_creative: "특정 워크스페이스에 적용"
       scope_topic: "특정 대화에 적용"

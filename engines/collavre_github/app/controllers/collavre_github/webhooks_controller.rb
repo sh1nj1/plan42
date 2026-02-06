@@ -45,6 +45,9 @@ module CollavreGithub
           id: creative.id,
           description: creative.description
         },
+        topic: {
+          id: comment.topic_id
+        },
         chat: {
           content: comment.content
         }

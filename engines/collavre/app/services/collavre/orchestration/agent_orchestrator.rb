@@ -16,6 +16,44 @@ module Collavre
         new(event_name: event_name, context: context).dispatch
       end
 
+      def self.dequeue_next_for_topic(topic_id)
+        return unless topic_id
+
+        task = Task.queued_for_topic(topic_id).first
+        return unless task
+
+        updated = Task.where(id: task.id, status: "queued").update_all(status: "pending")
+        if updated > 0
+          task.reload
+          refresh_deferred_context!(task)
+          AiAgentJob.perform_later(task)
+        end
+      end
+
+      # Refresh trigger_event_payload so the deferred agent sees the latest
+      # conversation state instead of the stale snapshot from enqueue time.
+      def self.refresh_deferred_context!(task)
+        context = task.trigger_event_payload
+        topic_id = context&.dig("topic", "id")
+        creative_id = context&.dig("creative", "id")
+        return unless topic_id && creative_id
+
+        latest_comment = Comment
+          .where(creative_id: creative_id, topic_id: topic_id, private: false)
+          .order(created_at: :desc)
+          .first
+        return unless latest_comment
+
+        context["comment"] = {
+          "id" => latest_comment.id,
+          "content" => latest_comment.content,
+          "user_id" => latest_comment.user_id
+        }
+        context["chat"] = { "content" => latest_comment.content }
+        task.update!(trigger_event_payload: context)
+      end
+      private_class_method :refresh_deferred_context!
+
       def initialize(event_name:, context:)
         @event_name = event_name
         # Build context ONCE here - no more duplicate builds
@@ -63,6 +101,16 @@ module Collavre
           case decision[:timing]
           when :immediate
             AiAgentJob.perform_later(decision[:agent].id, @event_name, @context)
+            decision[:agent]
+          when :deferred
+            Task.create!(
+              name: "Response to #{@event_name}",
+              status: "queued",
+              trigger_event_name: @event_name,
+              trigger_event_payload: @context,
+              agent: decision[:agent],
+              topic_id: @context.dig("topic", "id")
+            )
             decision[:agent]
           when :delayed
             AiAgentJob.set(wait: decision[:delay]).perform_later(
