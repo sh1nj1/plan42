@@ -157,7 +157,7 @@ class AiClientTest < ActiveSupport::TestCase
 
     log_entry = ActivityLog.last
     assert_equal 1, ActivityLog.count
-    assert_equal "boom", log_entry.log["error_message"]
+    assert_equal "[StandardError] boom", log_entry.log["error_message"]
     assert_nil log_entry.log["response_content"]
   end
 end

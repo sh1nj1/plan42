@@ -83,10 +83,11 @@ module Collavre
     rescue CancelledError
       raise # Re-raise cancellation errors without catching them
     rescue StandardError => e
-      error_message = e.message
-      Rails.logger.error "AI Client error: #{e.message}"
+      error_message = "[#{e.class.name}] #{e.message}"
+      Rails.logger.error "AI Client error: #{error_message}"
+      Rails.logger.error "Partial response length: #{response_content.length} chars" if response_content.present?
       Rails.logger.debug e.backtrace.join("\n")
-      yield "AI Error: #{e.message}" if block_given?
+      yield "\n\n⚠️ AI Error: #{error_message}" if block_given?
       nil
     ensure
       log_interaction(
