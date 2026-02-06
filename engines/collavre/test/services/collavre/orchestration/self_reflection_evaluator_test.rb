@@ -105,10 +105,10 @@ module Collavre
 
       test "parses various confidence formats" do
         test_cases = [
-          ["확신도: 75", 75],
-          ["confidence: 80", 80],
-          ["[confidence: 90]", 90],
-          ["확신 65%", 65]
+          [ "확신도: 75", 75 ],
+          [ "confidence: 80", 80 ],
+          [ "[confidence: 90]", 90 ],
+          [ "확신 65%", 65 ]
         ]
 
         test_cases.each do |content, expected_confidence|
