@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_06_005035) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -426,6 +426,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
     t.index ["expires_at"], name: "index_openclaw_pending_callbacks_on_expires_at"
     t.index ["nonce"], name: "index_openclaw_pending_callbacks_on_nonce", unique: true
     t.index ["user_id"], name: "index_openclaw_pending_callbacks_on_user_id"
+  end
+
+  create_table "orchestrator_policies", force: :cascade do |t|
+    t.json "config", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.string "policy_type", null: false
+    t.integer "priority", default: 100, null: false
+    t.bigint "scope_id"
+    t.string "scope_type"
+    t.datetime "updated_at", null: false
+    t.index ["policy_type", "enabled"], name: "index_orchestrator_policies_on_policy_type_and_enabled"
+    t.index ["priority"], name: "index_orchestrator_policies_on_priority"
+    t.index ["scope_type", "scope_id"], name: "index_orchestrator_policies_on_scope_type_and_scope_id"
   end
 
   create_table "sessions", force: :cascade do |t|

@@ -28,8 +28,7 @@ module Collavre
         candidates = matcher.match
         return [] if candidates.empty?
 
-        # Step 2: Select responders (Arbiter) - Phase 2
-        # For now, all candidates respond
+        # Step 2: Select responders (Arbiter) - with policy-based floor control
         selected = arbiter.select(candidates)
         return [] if selected.empty?
 
@@ -43,12 +42,16 @@ module Collavre
 
       private
 
+      def policy_resolver
+        @policy_resolver ||= PolicyResolver.new(@context)
+      end
+
       def matcher
         @matcher ||= Matcher.new(@context)
       end
 
       def arbiter
-        @arbiter ||= Arbiter.new(@context)
+        @arbiter ||= Arbiter.new(@context, policy_resolver: policy_resolver)
       end
 
       def scheduler
