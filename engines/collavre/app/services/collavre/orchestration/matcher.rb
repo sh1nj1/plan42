@@ -11,8 +11,8 @@ module Collavre
     # 2. Expression-based: Evaluate each agent's routing_expression (Liquid)
     #
     # Permission checks:
-    # - Searchable agents can respond to any message
-    # - Non-searchable agents need feedback permission on the creative
+    # - All agents need feedback permission on the creative to respond
+    # - searchable only affects discoverability, not response permission
     #
     class Matcher
       def initialize(context)
@@ -83,10 +83,8 @@ module Collavre
       end
 
       def has_creative_permission?(agent)
-        # Searchable agents can receive any routed message
-        return true if agent.searchable?
-
-        # Non-searchable agents need feedback permission on the creative
+        # All agents need feedback permission on the creative to respond
+        # searchable only affects discoverability, not response permission
         creative_id = @context.dig("creative", "id") || @context.dig(:creative, :id)
         return false unless creative_id
 

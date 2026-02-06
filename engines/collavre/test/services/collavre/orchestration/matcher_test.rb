@@ -13,6 +13,17 @@ module Collavre
         # Default to searchable for most tests (permission tests override this)
         @ai_agent.update!(searchable: true)
 
+        # Grant feedback permission on the creative for AI agent
+        # (searchable only affects discoverability, not response permission)
+        share = CreativeShare.find_or_create_by!(creative: @creative, user: @ai_agent)
+        share.update!(permission: "feedback")
+        # Manually create cache entry (after_commit doesn't run in test transaction)
+        CreativeSharesCache.find_or_create_by!(
+          creative_id: @creative.id,
+          user_id: @ai_agent.id,
+          permission: :feedback
+        )
+
         # Clear any existing routing expressions
         User.where.not(llm_vendor: nil).update_all(routing_expression: nil)
       end
@@ -133,9 +144,10 @@ module Collavre
 
       # --- Permission checks ---
 
-      test "searchable agent matches without creative permission" do
+      test "searchable agent does NOT match without creative permission" do
         @ai_agent.update!(searchable: true, routing_expression: 'event_name == "comment_created"')
         other_creative = Creative.create!(user: @user, description: "Other")
+        # No permission granted on other_creative
 
         context = {
           "event_name" => "comment_created",
@@ -144,7 +156,8 @@ module Collavre
         }
 
         result = Matcher.new(context).match
-        assert_includes result, @ai_agent
+        # searchable only affects discoverability, not response permission
+        assert_not_includes result, @ai_agent
       end
 
       test "non-searchable agent requires creative permission" do
