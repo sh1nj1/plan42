@@ -160,6 +160,71 @@ module CollavreOpenclaw
       assert_equal "AB", result
     end
 
+    # --- Completed-run cooldown tests ---
+
+    test "completed run events are suppressed during cooldown" do
+      client = WebsocketClient.new(user: @user)
+      proactive_calls = []
+      client.on_proactive_message { |user, payload| proactive_calls << payload }
+
+      # Simulate a completed chat_send that records the run in @completed_runs
+      run_id = "run-123"
+      client.instance_variable_get(:@mutex).synchronize do
+        client.instance_variable_get(:@completed_runs)[run_id] =
+          Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      end
+
+      # A late-arriving event with the same runId should be suppressed
+      client.send(:handle_chat_event, { runId: run_id, state: "final", message: { content: "late" } })
+
+      assert_empty proactive_calls, "Late event for completed run should be suppressed"
+    end
+
+    test "events with different runId still dispatch to proactive handler" do
+      client = WebsocketClient.new(user: @user)
+      proactive_calls = []
+      client.on_proactive_message { |user, payload| proactive_calls << payload }
+
+      # Record one completed run
+      client.instance_variable_get(:@mutex).synchronize do
+        client.instance_variable_get(:@completed_runs)["run-123"] =
+          Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      end
+
+      # A different runId should still dispatch normally
+      client.send(:handle_chat_event, { runId: "run-456", state: "final", message: { content: "new" } })
+
+      assert_equal 1, proactive_calls.size
+      assert_equal "run-456", proactive_calls.first[:runId]
+    end
+
+    test "expired cooldown entries are cleaned up" do
+      client = WebsocketClient.new(user: @user)
+
+      # Insert an entry with a timestamp well beyond the cooldown window
+      expired_time = Process.clock_gettime(Process::CLOCK_MONOTONIC) - WebsocketClient::COMPLETED_RUN_COOLDOWN - 1
+      client.instance_variable_get(:@mutex).synchronize do
+        client.instance_variable_get(:@completed_runs)["old-run"] = expired_time
+      end
+
+      # The check should sweep the expired entry and return false
+      refute client.send(:recently_completed_run?, "old-run")
+      assert_empty client.instance_variable_get(:@completed_runs)
+    end
+
+    test "chat_send records completed runs in cooldown set" do
+      client = WebsocketClient.new(user: @user)
+
+      events = [
+        { state: "final", message: { content: "done" } }
+      ]
+
+      run_chat_send_with_events(client, events)
+
+      completed_runs = client.instance_variable_get(:@completed_runs)
+      assert completed_runs.key?("test-key"), "idempotency_key should be in completed_runs"
+    end
+
     private
 
     # Exercises chat_send by stubbing send_rpc / ensure_connected! and

@@ -141,5 +141,60 @@ module CollavreOpenclaw
       assert_includes comment.content, "OpenClaw Error"
       assert_includes comment.content, "API limit exceeded"
     end
+
+    # --- Dedup tests ---
+
+    test "duplicate proactive message within DEDUP_WINDOW is skipped" do
+      # Create first comment
+      assert_difference "Collavre::Comment.count", 1 do
+        CallbackProcessorJob.perform_now(@user.id, {
+          "type" => "proactive",
+          "creative_id" => @creative.id,
+          "content" => "Duplicate test message"
+        })
+      end
+
+      # Second identical message within the dedup window should be skipped
+      assert_no_difference "Collavre::Comment.count" do
+        CallbackProcessorJob.perform_now(@user.id, {
+          "type" => "proactive",
+          "creative_id" => @creative.id,
+          "content" => "Duplicate test message"
+        })
+      end
+    end
+
+    test "same user different content still creates comment" do
+      assert_difference "Collavre::Comment.count", 1 do
+        CallbackProcessorJob.perform_now(@user.id, {
+          "type" => "proactive",
+          "creative_id" => @creative.id,
+          "content" => "First message"
+        })
+      end
+
+      assert_difference "Collavre::Comment.count", 1 do
+        CallbackProcessorJob.perform_now(@user.id, {
+          "type" => "proactive",
+          "creative_id" => @creative.id,
+          "content" => "Different message"
+        })
+      end
+    end
+
+    test "non-duplicate response messages create comments normally" do
+      assert_difference "Collavre::Comment.count", 2 do
+        CallbackProcessorJob.perform_now(@user.id, {
+          "type" => "response",
+          "content" => "Response A",
+          "context" => { "creative_id" => @creative.id }
+        })
+        CallbackProcessorJob.perform_now(@user.id, {
+          "type" => "response",
+          "content" => "Response B",
+          "context" => { "creative_id" => @creative.id }
+        })
+      end
+    end
   end
 end

@@ -2,6 +2,8 @@ module CollavreOpenclaw
   class CallbackProcessorJob < ApplicationJob
     queue_as :default
 
+    DEDUP_WINDOW = 5.seconds
+
     def perform(user_id, payload)
       @user = User.find_by(id: user_id)
       return unless @user
@@ -98,9 +100,22 @@ module CollavreOpenclaw
         return
       end
 
+      effective_creative = creative.effective_origin
+
+      # Dedup: skip if an identical comment was recently created
+      existing = Collavre::Comment
+        .where(user: @user, creative: effective_creative, content: content)
+        .where("created_at > ?", DEDUP_WINDOW.ago)
+        .first
+
+      if existing
+        Rails.logger.warn("[CollavreOpenclaw] Duplicate comment suppressed for creative #{creative_id} (existing comment #{existing.id})")
+        return existing
+      end
+
       # Build comment attributes
       comment_attrs = {
-        creative: creative.effective_origin,
+        creative: effective_creative,
         user: @user,
         content: content,
         private: false

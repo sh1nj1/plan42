@@ -19,6 +19,7 @@ module CollavreOpenclaw
   # - Rails threads call public methods which bridge via EM.next_tick + Queue
   class WebsocketClient
     PROTOCOL_VERSION = 3
+    COMPLETED_RUN_COOLDOWN = 5 # seconds to suppress late-arriving events for completed runs
 
     attr_reader :user, :state
 
@@ -32,6 +33,7 @@ module CollavreOpenclaw
       @connect_waiters = []   # Queues for threads waiting on in-progress connect
       @pending_requests = {}  # id → { queue:, timer: }
       @pending_runs = {}      # runId → Queue (for chat.send streaming)
+      @completed_runs = {}    # runId → monotonic timestamp (cooldown for late events)
       @proactive_handler = nil
       @reconnect_attempts = 0
       @last_activity_at = nil
@@ -222,6 +224,11 @@ module CollavreOpenclaw
         @pending_runs.delete(actual_run_id) if actual_run_id
         # Also clean up idempotency_key if send_rpc failed before we got a runId
         @pending_runs.delete(idempotency_key) if idempotency_key
+
+        # Record completed runs so late-arriving events are suppressed
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        @completed_runs[actual_run_id] = now if actual_run_id
+        @completed_runs[idempotency_key] = now if idempotency_key && idempotency_key != actual_run_id
       end
     end
 
@@ -420,12 +427,28 @@ module CollavreOpenclaw
       if run_queue
         # Known run — forward to the waiting thread
         run_queue.push(payload)
+      elsif recently_completed_run?(run_id)
+        # Late-arriving event for a run we already finished — suppress it
+        Rails.logger.info("[CollavreOpenclaw::WS] Suppressing late event for completed runId=#{run_id}")
       elsif @proactive_handler
         # Unknown run — proactive message from Gateway (cron/heartbeat)
         Rails.logger.info("[CollavreOpenclaw::WS] Proactive message received (runId=#{run_id})")
         @proactive_handler.call(@user, payload)
       else
         Rails.logger.debug("[CollavreOpenclaw::WS] Ignoring chat event for unknown runId=#{run_id}")
+      end
+    end
+
+    # Check if a runId was recently completed (within cooldown window).
+    # Also sweeps expired entries to prevent unbounded growth.
+    def recently_completed_run?(run_id)
+      @mutex.synchronize do
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+        # Sweep expired entries
+        @completed_runs.delete_if { |_id, ts| now - ts > COMPLETED_RUN_COOLDOWN }
+
+        @completed_runs.key?(run_id)
       end
     end
 
