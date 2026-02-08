@@ -33,7 +33,7 @@ module CollavreOpenclaw
       @ws_reconnect_max = ENV.fetch("OPENCLAW_WS_RECONNECT_MAX", 10).to_i
       @ws_reconnect_base_delay = ENV.fetch("OPENCLAW_WS_RECONNECT_BASE", 1).to_f
       @ws_connect_timeout = ENV.fetch("OPENCLAW_WS_CONNECT_TIMEOUT", 10).to_i
-      @transport = ENV.fetch("OPENCLAW_TRANSPORT", "auto")
+      @transport = ENV.fetch("OPENCLAW_TRANSPORT", "http")
     end
 
     # Legacy accessor for backward compatibility
