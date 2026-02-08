@@ -484,6 +484,69 @@ module CollavreOpenclaw
       assert buffers.key?("run-old"), "Buffer should remain when sweep interval hasn't elapsed"
     end
 
+    # ─────────────────────────────────────────────
+    # Duplicate final event suppression (broadcast+nodeSend)
+    # ─────────────────────────────────────────────
+
+    test "suppresses duplicate final event with same runId" do
+      dispatched = capture_job_dispatch do
+        final_payload = {
+          runId: "run-dup",
+          sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+          state: "final",
+          message: { content: "Hello" }
+        }
+
+        @handler.handle(@user, final_payload)  # 1st — dispatched
+        @handler.handle(@user, final_payload)  # 2nd — suppressed
+      end
+
+      assert_equal 1, dispatched.size, "Only one job should be dispatched for duplicate finals"
+    end
+
+    test "different runIds are dispatched independently" do
+      dispatched = capture_job_dispatch do
+        @handler.handle(@user, {
+          runId: "run-x",
+          sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+          state: "final",
+          message: { content: "Message X" }
+        })
+        @handler.handle(@user, {
+          runId: "run-y",
+          sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+          state: "final",
+          message: { content: "Message Y" }
+        })
+      end
+
+      assert_equal 2, dispatched.size
+    end
+
+    test "expired dispatched_runs entries are cleaned up by sweep" do
+      handler = ProactiveMessageHandler.new
+      dispatched_runs = handler.instance_variable_get(:@dispatched_runs)
+
+      # Insert an expired entry
+      expired_time = Process.clock_gettime(Process::CLOCK_MONOTONIC) -
+                     ProactiveMessageHandler::DISPATCHED_RUN_TTL - 1
+      dispatched_runs["old-run"] = expired_time
+
+      # Force sweep
+      handler.instance_variable_set(:@last_sweep_at,
+                                    Process.clock_gettime(Process::CLOCK_MONOTONIC) -
+                                    ProactiveMessageHandler::SWEEP_INTERVAL - 1)
+
+      handler.handle(@user, {
+        runId: "trigger-sweep",
+        sessionKey: "agent:bot:collavre:#{@user.id}:creative:100",
+        state: "delta",
+        message: { content: "trigger" }
+      })
+
+      assert_not dispatched_runs.key?("old-run"), "Expired dispatched run should be swept"
+    end
+
     private
 
     # Capture dispatch_to_job calls by stubbing the handler's private method.

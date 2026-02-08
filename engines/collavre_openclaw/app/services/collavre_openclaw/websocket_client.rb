@@ -19,7 +19,8 @@ module CollavreOpenclaw
   # - Rails threads call public methods which bridge via EM.next_tick + Queue
   class WebsocketClient
     PROTOCOL_VERSION = 3
-    COMPLETED_RUN_COOLDOWN = 5 # seconds to suppress late-arriving events for completed runs
+    COMPLETED_RUN_COOLDOWN = 5  # seconds to suppress late-arriving events for completed runs
+    SEEN_EVENT_TTL = 30         # seconds to remember (runId, seq) pairs for dedup
 
     attr_reader :user, :state
 
@@ -34,6 +35,7 @@ module CollavreOpenclaw
       @pending_requests = {}  # id → { queue:, timer: }
       @pending_runs = {}      # runId → Queue (for chat.send streaming)
       @completed_runs = {}    # runId → monotonic timestamp (cooldown for late events)
+      @seen_chat_events = {}  # "runId:seq" → monotonic timestamp (broadcast+nodeSend dedup)
       @proactive_handler = nil
       @reconnect_attempts = 0
       @last_activity_at = nil
@@ -420,6 +422,14 @@ module CollavreOpenclaw
 
     def handle_chat_event(payload)
       run_id = payload[:runId]
+      seq = payload[:seq]
+
+      # Dedup: Gateway sends identical events via broadcast() + nodeSendToSession().
+      # Skip if we've already seen this (runId, seq) pair.
+      if run_id && seq && duplicate_chat_event?(run_id, seq)
+        Rails.logger.debug("[CollavreOpenclaw::WS] Skipping duplicate chat event (runId=#{run_id}, seq=#{seq})")
+        return
+      end
 
       # Check if this is a response to a pending chat.send
       run_queue = @mutex.synchronize { @pending_runs[run_id] }
@@ -436,6 +446,28 @@ module CollavreOpenclaw
         @proactive_handler.call(@user, payload)
       else
         Rails.logger.debug("[CollavreOpenclaw::WS] Ignoring chat event for unknown runId=#{run_id}")
+      end
+    end
+
+    # Check if this (runId, seq) pair was already seen. Records it if new.
+    # Gateway emits each event via broadcast() AND nodeSendToSession(),
+    # delivering the identical payload (same runId + seq) twice.
+    def duplicate_chat_event?(run_id, seq)
+      key = "#{run_id}:#{seq}"
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      @mutex.synchronize do
+        # Sweep expired entries periodically
+        if @seen_chat_events.size > 100
+          @seen_chat_events.delete_if { |_k, ts| now - ts > SEEN_EVENT_TTL }
+        end
+
+        if @seen_chat_events.key?(key)
+          true
+        else
+          @seen_chat_events[key] = now
+          false
+        end
       end
     end
 

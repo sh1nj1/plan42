@@ -160,6 +160,46 @@ module CollavreOpenclaw
       assert_equal "AB", result
     end
 
+    # --- broadcast+nodeSend (runId, seq) dedup tests ---
+
+    test "duplicate chat event with same runId and seq is suppressed" do
+      client = WebsocketClient.new(user: @user)
+      proactive_calls = []
+      client.on_proactive_message { |user, payload| proactive_calls << payload }
+
+      payload = { runId: "run-dup", seq: 5, state: "final", message: { content: "hello" } }
+
+      client.send(:handle_chat_event, payload)  # 1st — processed
+      client.send(:handle_chat_event, payload)  # 2nd — suppressed (same runId+seq)
+
+      assert_equal 1, proactive_calls.size, "Duplicate (runId, seq) should be suppressed"
+    end
+
+    test "same runId with different seq values are both processed" do
+      client = WebsocketClient.new(user: @user)
+      proactive_calls = []
+      client.on_proactive_message { |user, payload| proactive_calls << payload }
+
+      client.send(:handle_chat_event, { runId: "run-x", seq: 1, state: "delta", message: { content: "a" } })
+      client.send(:handle_chat_event, { runId: "run-x", seq: 2, state: "final", message: { content: "ab" } })
+
+      assert_equal 2, proactive_calls.size
+    end
+
+    test "events without seq are not deduped by seq check" do
+      client = WebsocketClient.new(user: @user)
+      proactive_calls = []
+      client.on_proactive_message { |user, payload| proactive_calls << payload }
+
+      payload = { runId: "run-no-seq", state: "final", message: { content: "hello" } }
+
+      client.send(:handle_chat_event, payload)
+      client.send(:handle_chat_event, payload)
+
+      # Without seq, both pass the seq check (other layers may catch it)
+      assert_equal 2, proactive_calls.size
+    end
+
     # --- Completed-run cooldown tests ---
 
     test "completed run events are suppressed during cooldown" do

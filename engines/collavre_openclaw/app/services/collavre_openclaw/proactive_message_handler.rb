@@ -21,8 +21,12 @@ module CollavreOpenclaw
     # How often (seconds) to check for stale buffers.
     SWEEP_INTERVAL = 60
 
+    # Cooldown (seconds) to remember dispatched runIds and suppress duplicates.
+    DISPATCHED_RUN_TTL = 60
+
     def initialize
-      @buffers = {}   # runId → { text:, session_key:, connection_owner_id:, created_at: }
+      @buffers = {}           # runId → { text:, session_key:, connection_owner_id:, created_at: }
+      @dispatched_runs = {}   # runId → monotonic timestamp (dedup for broadcast+nodeSend duplicates)
       @mutex = Mutex.new
       @last_sweep_at = monotonic_now
     end
@@ -116,7 +120,18 @@ module CollavreOpenclaw
     def handle_final(run_id, user, session_key, payload)
       final_text = extract_text(payload)
 
-      buffer = @mutex.synchronize { @buffers.delete(run_id) }
+      buffer = @mutex.synchronize do
+        # Check if we already dispatched this runId (broadcast+nodeSend duplicate)
+        if @dispatched_runs.key?(run_id)
+          Rails.logger.info(
+            "[CollavreOpenclaw::Proactive] Suppressing duplicate final for runId=#{run_id}"
+          )
+          @buffers.delete(run_id)
+          return
+        end
+
+        @buffers.delete(run_id)
+      end
 
       # Prefer final text (complete message) over buffered deltas (fragments).
       # Fall back to buffered deltas only when final text is empty.
@@ -127,6 +142,9 @@ module CollavreOpenclaw
       end
 
       return unless content.present?
+
+      # Mark as dispatched before enqueuing to prevent duplicates
+      @mutex.synchronize { @dispatched_runs[run_id] = monotonic_now }
 
       # Use session_key from final event, falling back to buffered
       effective_session_key = session_key || buffer&.dig(:session_key)
@@ -166,6 +184,7 @@ module CollavreOpenclaw
 
       @last_sweep_at = now
       cutoff = now - BUFFER_TTL
+      dispatched_cutoff = now - DISPATCHED_RUN_TTL
 
       @mutex.synchronize do
         stale_ids = @buffers.each_with_object([]) do |(run_id, buf), ids|
@@ -179,6 +198,9 @@ module CollavreOpenclaw
             "(older than #{BUFFER_TTL}s)"
           )
         end
+
+        # Sweep expired dispatched run entries
+        @dispatched_runs.delete_if { |_id, ts| ts < dispatched_cutoff }
       end
     end
 
