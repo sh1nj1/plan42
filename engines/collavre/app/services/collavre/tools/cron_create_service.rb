@@ -51,12 +51,12 @@ module Tools
         queue_name: "default",
         static: false,
         description: description || "Cron job for creative #{creative_id}",
-        arguments: [{
+        arguments: [ {
           creative_id: creative_id,
           topic_id: topic_id,
           agent_id: Current.user.id,
           message: message
-        }]
+        } ]
       )
 
       {

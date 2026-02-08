@@ -15,11 +15,11 @@ module Collavre
           class_name: "Collavre::CronActionJob",
           schedule: "0 9 * * *",
           static: false,
-          arguments: [{
+          arguments: [ {
             creative_id: @creative.id,
             agent_id: @user.id,
             message: "to cancel"
-          }]
+          } ]
         )
       end
 

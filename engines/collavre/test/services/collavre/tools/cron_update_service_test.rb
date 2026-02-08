@@ -16,11 +16,11 @@ module Collavre
           schedule: "0 9 * * *",
           static: false,
           description: "Original description",
-          arguments: [{
+          arguments: [ {
             creative_id: @creative.id,
             agent_id: @user.id,
             message: "original message"
-          }]
+          } ]
         )
       end
 

@@ -21,12 +21,12 @@ module Collavre
           schedule: "0 9 * * *",
           static: false,
           description: "Test cron",
-          arguments: [{
+          arguments: [ {
             creative_id: @creative.id,
             topic_id: @topic.id,
             agent_id: @user.id,
             message: "Hello"
-          }]
+          } ]
         )
       end
 

@@ -46,7 +46,7 @@ module Tools
 
       if message.present?
         new_args = args.merge("message" => message)
-        task.arguments = [new_args.symbolize_keys]
+        task.arguments = [ new_args.symbolize_keys ]
       end
 
       task.description = description if description.present?
