@@ -22,6 +22,9 @@ module CollavreOpenclaw
     # WebSocket connect timeout (seconds)
     attr_accessor :ws_connect_timeout
 
+    # Transport mode: "auto" (WebSocket first, HTTP fallback), "http" (HTTP only)
+    attr_accessor :transport
+
     def initialize
       @open_timeout = ENV.fetch("OPENCLAW_OPEN_TIMEOUT", 10).to_i
       @read_timeout = ENV.fetch("OPENCLAW_READ_TIMEOUT", 180).to_i  # 3 minutes for AI responses
@@ -30,6 +33,7 @@ module CollavreOpenclaw
       @ws_reconnect_max = ENV.fetch("OPENCLAW_WS_RECONNECT_MAX", 10).to_i
       @ws_reconnect_base_delay = ENV.fetch("OPENCLAW_WS_RECONNECT_BASE", 1).to_f
       @ws_connect_timeout = ENV.fetch("OPENCLAW_WS_CONNECT_TIMEOUT", 10).to_i
+      @transport = ENV.fetch("OPENCLAW_TRANSPORT", "auto")
     end
 
     # Legacy accessor for backward compatibility

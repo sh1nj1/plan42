@@ -97,16 +97,105 @@ module CollavreOpenclaw
       assert_equal :disconnected, client.state
     end
 
+    # Gateway sends accumulated content (full text so far) in each delta.
+    # chat_send must compute the incremental delta for callers.
+    test "chat_send converts accumulated deltas to incremental fragments" do
+      client = WebsocketClient.new(user: @user)
+      yielded_deltas = []
+
+      events = [
+        { state: "delta", message: { content: "Hello" } },
+        { state: "delta", message: { content: "Hello world" } },
+        { state: "delta", message: { content: "Hello world! How" } },
+        { state: "delta", message: { content: "Hello world! How are you?" } },
+        { state: "final", message: { content: "Hello world! How are you?" } }
+      ]
+
+      result = run_chat_send_with_events(client, events) do |ev|
+        yielded_deltas << ev[:text] if ev[:state] == "delta"
+      end
+
+      assert_equal [ "Hello", " world", "! How", " are you?" ], yielded_deltas
+      assert_equal "Hello world! How are you?", result
+    end
+
+    # Duplicate events (same seq) from broadcast + nodeSend are skipped.
+    test "chat_send skips duplicate events with same seq" do
+      client = WebsocketClient.new(user: @user)
+      yielded_deltas = []
+
+      events = [
+        { seq: 0, state: "delta", message: { content: "Hello" } },
+        { seq: 0, state: "delta", message: { content: "Hello" } },        # duplicate
+        { seq: 1, state: "delta", message: { content: "Hello world" } },
+        { seq: 1, state: "delta", message: { content: "Hello world" } },  # duplicate
+        { seq: 2, state: "delta", message: { content: "Hello world!" } },
+        { seq: 3, state: "final", message: { content: "Hello world!" } }
+      ]
+
+      result = run_chat_send_with_events(client, events) do |ev|
+        yielded_deltas << ev[:text] if ev[:state] == "delta"
+      end
+
+      assert_equal [ "Hello", " world", "!" ], yielded_deltas
+      assert_equal "Hello world!", result
+    end
+
+    # Events without seq (e.g. older gateway) should all be processed.
+    test "chat_send processes events without seq field" do
+      client = WebsocketClient.new(user: @user)
+      yielded_deltas = []
+
+      events = [
+        { state: "delta", message: { content: "A" } },
+        { state: "delta", message: { content: "AB" } },
+        { state: "final", message: { content: "AB" } }
+      ]
+
+      result = run_chat_send_with_events(client, events) do |ev|
+        yielded_deltas << ev[:text] if ev[:state] == "delta"
+      end
+
+      assert_equal [ "A", "B" ], yielded_deltas
+      assert_equal "AB", result
+    end
+
     private
 
+    # Exercises chat_send by stubbing send_rpc / ensure_connected! and
+    # feeding events directly into the pending_runs queue.
+    def run_chat_send_with_events(client, events, &block)
+      session_key = "test-session"
+      idempotency_key = "test-key"
+
+      # Bypass connection requirement
+      client.define_singleton_method(:ensure_connected!) { nil }
+      client.define_singleton_method(:touch_activity!) { nil }
+
+      # Stub send_rpc to push pre-built events into the run queue
+      client.define_singleton_method(:send_rpc) do |_method, params|
+        run_queue = instance_variable_get(:@mutex).synchronize do
+          instance_variable_get(:@pending_runs)[params[:idempotencyKey]]
+        end
+        events.each { |e| run_queue.push(e) }
+        { runId: params[:idempotencyKey] }
+      end
+
+      client.chat_send(
+        session_key: session_key,
+        message: "Hello",
+        idempotency_key: idempotency_key,
+        &block
+      )
+    end
+
     def mock_user(id:, gateway_url:, llm_api_key:, email:)
-      user = OpenStruct.new(
+      OpenStruct.new(
         id: id,
         gateway_url: gateway_url,
         llm_api_key: llm_api_key,
         email: email
       )
-      user
     end
   end
 end

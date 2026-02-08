@@ -35,7 +35,11 @@ module CollavreOpenclaw
       end
 
       # Try WebSocket first, fall back to HTTP
-      if websocket_available?
+      # Set OPENCLAW_TRANSPORT=http to force HTTP-only mode
+      if CollavreOpenclaw.config.transport == "http"
+        Rails.logger.info("[CollavreOpenclaw] Using HTTP transport (forced by config)")
+        chat_via_http(messages, &block)
+      elsif websocket_available?
         chat_via_websocket(messages, &block)
       else
         chat_via_http(messages, &block)
