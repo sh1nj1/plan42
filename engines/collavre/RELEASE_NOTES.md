@@ -1,3 +1,25 @@
+## v0.3.0 (2026-02-09)
+
+### Changes
+- 4ab307e3 fix: formatting
+- a0c83f65 fix: enforce topic_max_concurrent_jobs on Main topic (nil topic_id)
+- 3f8327c8 feat: add cron CRUD tools for AI agent scheduled tasks
+- 6a5d6d43 fix: pass response_content explicitly to self-reflection evaluator
+- 3f98980c feat: add stuck detection and auto-escalation
+- b8992267 fix: require creative permission for all agents regardless of searchable
+- e5aadaa4 refactor: use i18n for A2A collaboration prompts
+- 8e90a8ec feat: add A2A sender context for agent-to-agent communication (#759)
+- 6d236492 style: fix array literal bracket spacing in loop_breaker
+- cba8b192 feat: add loop breaker for infinite loop prevention (#758)
+- 4d7dec2f feat: add agent context builder for A2A collaboration (#757)
+- f5b53165 feat: add self-reflection evaluator for AI agents (#756)
+- 15b7191b refactor: move orchestration controller and view to collavre engine (#755)
+- 7b0e517b feat: add /topic command to create topic with primary agent (#754)
+- 470aec55 fix: show AI errors in chat message with exception class name (#753)
+- 885e3c31 feat: add AgentOrchestrator with Matcher component (#751)
+- e76baf5c refactor: extract GitHub integration into collavre_github engine (#746)
+- 2ce8b567 fix: show AI typing indicator only on the correct creative (#745)
+
 ## v0.2.5 (2026-02-06)
 
 ### Changes
