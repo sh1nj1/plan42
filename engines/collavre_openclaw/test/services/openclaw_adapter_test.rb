@@ -415,7 +415,10 @@ module CollavreOpenclaw
       assert adapter.send(:websocket_available?)
     end
 
-    test "chat uses websocket when available" do
+    test "chat uses websocket when transport is auto" do
+      original_transport = CollavreOpenclaw.config.transport
+      CollavreOpenclaw.config.transport = "auto"
+
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com",
                              llm_api_key: "test-key")
 
@@ -434,7 +437,36 @@ module CollavreOpenclaw
       end
 
       adapter.chat([ { role: "user", content: "Hello" } ])
-      assert ws_called, "Should use WebSocket when available"
+      assert ws_called, "Should use WebSocket when transport is auto"
+    ensure
+      CollavreOpenclaw.config.transport = original_transport
+    end
+
+    test "chat uses http when transport is http even if websocket available" do
+      original_transport = CollavreOpenclaw.config.transport
+      CollavreOpenclaw.config.transport = "http"
+
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com",
+                             llm_api_key: "test-key")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test",
+        context: {}
+      )
+
+      assert adapter.send(:websocket_available?)
+
+      http_called = false
+      adapter.define_singleton_method(:chat_via_http) do |_msgs, &_blk|
+        http_called = true
+        nil
+      end
+
+      adapter.chat([ { role: "user", content: "Hello" } ])
+      assert http_called, "Should use HTTP when transport is http"
+    ensure
+      CollavreOpenclaw.config.transport = original_transport
     end
 
     private

@@ -169,6 +169,8 @@ module CollavreOpenclaw
       end
 
       # Stream events until final/error/aborted
+      last_seq = nil
+
       loop do
         event = wait_with_timeout(run_queue, config.read_timeout, "chat response")
 
@@ -178,12 +180,27 @@ module CollavreOpenclaw
           raise ChatError, event[:error]
         end
 
+        # Gateway may broadcast + nodeSend the same event, causing
+        # duplicates on the same WebSocket.  Skip already-seen seqs.
+        seq = event[:seq]
+        if seq && last_seq && seq <= last_seq
+          next
+        end
+        last_seq = seq if seq
+
         case event[:state]
         when "delta"
           text = extract_event_text(event)
           if text.present?
-            response_text << text
-            yield({ state: "delta", text: text }) if block_given?
+            # Gateway sends accumulated content (full text so far) in
+            # each delta event.  Compute the incremental delta for callers.
+            delta = if response_text.present? && text.start_with?(response_text)
+                      text[response_text.length..]
+            else
+                      text
+            end
+            response_text.replace(text)
+            yield({ state: "delta", text: delta }) if delta.present? && block_given?
           end
         when "final"
           text = extract_event_text(event)
