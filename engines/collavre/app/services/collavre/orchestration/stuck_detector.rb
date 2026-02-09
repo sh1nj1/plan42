@@ -24,7 +24,7 @@ module Collavre
         @policy_resolver = policy_resolver || PolicyResolver.new({})
       end
 
-      # Run detection and escalation
+      # Run detection, auto-recovery, and escalation
       # Returns Result with stuck items and escalation count
       def detect_and_escalate
         config = stuck_detection_config
@@ -34,6 +34,7 @@ module Collavre
         stuck_items.concat(detect_stuck_tasks(config))
         stuck_items.concat(detect_stalled_creatives(config))
 
+        auto_recover_stuck_tasks(stuck_items)
         escalated_count = escalate_stuck_items(stuck_items, config)
 
         Result.new(stuck_items: stuck_items, escalated_count: escalated_count)
@@ -51,6 +52,33 @@ module Collavre
       end
 
       private
+
+      # Auto-recover stuck tasks by marking them as failed and draining the queue.
+      def auto_recover_stuck_tasks(stuck_items)
+        stuck_items.each do |stuck_item|
+          next unless stuck_item.type == :task
+
+          task = stuck_item.item
+          next unless task.status == "running"
+
+          task.update!(status: "failed")
+          Rails.logger.info(
+            "[StuckDetector] Auto-recovered task #{task.id} (agent=#{task.agent_id}): " \
+            "marked as failed after #{((Time.current - stuck_item.stuck_since) / 60).round} minutes"
+          )
+
+          # Release resources held by the stuck task
+          if task.agent
+            tracker = ResourceTracker.for(task.agent)
+            tracker.release!(task.id)
+          end
+
+          # Drain the queue for the topic so waiting tasks can execute
+          AgentOrchestrator.dequeue_next_for_topic(task.topic_id)
+        rescue StandardError => e
+          Rails.logger.error("[StuckDetector] Auto-recovery failed for task #{task.id}: #{e.message}")
+        end
+      end
 
       def stuck_detection_config
         @policy_resolver.resolve("stuck_detection")
