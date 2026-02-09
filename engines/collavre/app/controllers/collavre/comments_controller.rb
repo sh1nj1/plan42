@@ -179,7 +179,7 @@ module Collavre
           chat: {
             content: @comment.content
           }
-        }) unless @comment.private?
+        }) unless @comment.private? || response.present?
         @comment = Comment.with_attached_images.includes(:comment_reactions).find(@comment.id)
         render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }, status: :created
       else

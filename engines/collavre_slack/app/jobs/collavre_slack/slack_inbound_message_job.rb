@@ -50,7 +50,8 @@ module CollavreSlack
       comment.save!
 
       # Dispatch system event to trigger AI agents (same as CommentsController#create)
-      unless comment.private?
+      # Skip dispatch for slash command messages (e.g. /topic, /calendar)
+      unless comment.private? || response.present?
         Collavre::SystemEvents::Dispatcher.dispatch("comment_created", {
           comment: {
             id: comment.id,
