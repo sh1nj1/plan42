@@ -30,7 +30,7 @@ en:
         reviewer_header: "### Reviewers (request review)"
         reference_header: "### References (information only)"
         rules_header: "## Collaboration Rules"
-        mention_rule: "- Call other agents: @name request"
+        mention_rule: "- Call other agents: @name: request"
         confidence_rule: "- Re-evaluate before responding if uncertain"
         escalation_rule: "- Ask escalation targets for help when stuck"
         review_rule: "- Request review from reviewers when code review is needed"

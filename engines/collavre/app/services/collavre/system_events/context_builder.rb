@@ -52,16 +52,11 @@ module Collavre
       end
 
       def mentioned_user(chat_context)
-        # This mimics the chat.mentioned_user function requested
-        # It assumes chat_context has 'content' or similar, or we might need to look up the comment
-        # For now, let's assume the context passed in already has the necessary info or we extract it.
-        # If the event is comment_created, the payload usually has the comment content.
-
         content = chat_context["content"]
         return nil unless content
 
-        # Simple regex to find the first mention
-        match = content.match(/\A@([^:]+?):\s*/) || content.match(/\A@(\S+)\s+/)
+        # Canonical mention format: @name: (with colon)
+        match = content.match(/\A@([^:]+?):\s*/)
         return nil unless match
 
         name = match[1].strip

@@ -47,31 +47,47 @@ module Collavre
         data = parsed_args
         return I18n.t("collavre.comments.topic_command.missing_name") if data.blank?
 
-        # Create new topic
-        topic = Topic.create!(
-          creative: creative,
-          user: user,
-          name: data[:name]
-        )
-
         # Find primary agent from @mentions using the same parsing as chat
         primary_agent = comment.mentioned_users.find(&:ai_user?)
 
-        if primary_agent
-          set_primary_agent(topic, primary_agent)
-          I18n.t("collavre.comments.topic_command.created_with_agent",
-                 name: topic.name,
-                 agent: primary_agent.name)
+        # Find existing topic or create new one
+        existing_topic = Topic.find_by(creative: creative, name: data[:name])
+
+        if existing_topic
+          if primary_agent
+            set_primary_agent(existing_topic, primary_agent)
+            I18n.t("collavre.comments.topic_command.updated_agent",
+                   name: existing_topic.name,
+                   agent: primary_agent.name)
+          else
+            I18n.t("collavre.comments.topic_command.already_exists",
+                   name: existing_topic.name)
+          end
         else
-          I18n.t("collavre.comments.topic_command.created", name: topic.name)
+          topic = Topic.create!(
+            creative: creative,
+            user: user,
+            name: data[:name]
+          )
+
+          if primary_agent
+            set_primary_agent(topic, primary_agent)
+            I18n.t("collavre.comments.topic_command.created_with_agent",
+                   name: topic.name,
+                   agent: primary_agent.name)
+          else
+            I18n.t("collavre.comments.topic_command.created", name: topic.name)
+          end
         end
       end
 
       def set_primary_agent(topic, agent)
-        OrchestratorPolicy.create!(
+        policy = OrchestratorPolicy.find_or_initialize_by(
           policy_type: "arbitration",
           scope_type: "Topic",
-          scope_id: topic.id,
+          scope_id: topic.id
+        )
+        policy.update!(
           config: {
             "strategy" => "primary_first",
             "primary_agent_id" => agent.id

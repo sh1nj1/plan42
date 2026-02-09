@@ -92,6 +92,57 @@ module Collavre
         assert Topic.exists?(creative: @creative, name: "Uppercase Command")
       end
 
+      test "updates primary agent on existing topic" do
+        existing = Topic.create!(creative: @creative, user: @user, name: "Existing Topic")
+        comment = create_comment('/topic "Existing Topic" @TestAgent: ')
+
+        topic_count_before = Topic.where(creative: @creative, name: "Existing Topic").count
+        result = TopicCommand.new(comment: comment, user: @user).call
+
+        # No new topic created
+        assert_equal topic_count_before, Topic.where(creative: @creative, name: "Existing Topic").count
+
+        # Policy created for existing topic
+        policy = OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: existing.id)
+        assert policy.present?
+        assert_equal @ai_agent.id, policy.config["primary_agent_id"]
+        assert_match(/TestAgent/, result)
+      end
+
+      test "replaces primary agent on existing topic" do
+        existing = Topic.create!(creative: @creative, user: @user, name: "Agent Swap Topic")
+
+        # Set initial primary agent
+        other_agent = User.create!(
+          email: "other@test.local", password: "password123", name: "OtherAgent",
+          llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+        )
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration", scope_type: "Topic", scope_id: existing.id,
+          config: { "strategy" => "primary_first", "primary_agent_id" => other_agent.id },
+          priority: 10, enabled: true
+        )
+
+        # Update to new agent
+        comment = create_comment('/topic "Agent Swap Topic" @TestAgent: ')
+        TopicCommand.new(comment: comment, user: @user).call
+
+        policy = OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: existing.id)
+        assert_equal @ai_agent.id, policy.config["primary_agent_id"]
+        # Should be only one policy, not two
+        assert_equal 1, OrchestratorPolicy.where(scope_type: "Topic", scope_id: existing.id, policy_type: "arbitration").count
+      end
+
+      test "reports already exists when topic exists without agent mention" do
+        Topic.create!(creative: @creative, user: @user, name: "Duplicate Topic")
+        comment = create_comment('/topic "Duplicate Topic"')
+
+        result = TopicCommand.new(comment: comment, user: @user).call
+
+        assert_match(/Duplicate Topic/, result)
+        assert_match(/already exists/i, result)
+      end
+
       private
 
       def create_comment(content)

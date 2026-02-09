@@ -91,7 +91,8 @@ en:
         missing_name: 'Please specify a topic name in quotes: /topic "topic name"'
         created: 'Topic "%{name}" created.'
         created_with_agent: 'Topic "%{name}" created with @%{agent} as primary agent.'
-        created_agent_not_found: 'Topic "%{name}" created. Note: Agent @%{agent_name} not found.'
+        updated_agent: 'Topic "%{name}" primary agent updated to @%{agent}.'
+        already_exists: 'Topic "%{name}" already exists.'
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
     calendar_events:
