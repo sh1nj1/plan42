@@ -12,7 +12,8 @@ module Collavre
           password: "password123",
           name: "TestAgent",
           llm_vendor: "openai",
-          llm_model: "gpt-4"
+          llm_model: "gpt-4",
+          searchable: true
         )
         @topic = Topic.create!(creative: @creative, user: @user, name: "Test Topic")
       end
@@ -35,8 +36,8 @@ module Collavre
         assert Topic.exists?(creative: @creative, name: "Smart Quotes Topic")
       end
 
-      test "creates topic with primary agent" do
-        comment = create_comment('/topic "Agent Topic" @TestAgent')
+      test "creates topic with primary agent via mention" do
+        comment = create_comment('/topic "Agent Topic" @TestAgent: ')
 
         result = TopicCommand.new(comment: comment, user: @user).call
 
@@ -53,17 +54,17 @@ module Collavre
         assert_equal @ai_agent.id, policy.config["primary_agent_id"]
       end
 
-      test "returns error when agent not found" do
-        comment = create_comment('/topic "Agent Not Found Topic" @nonexistent_agent')
+      test "creates topic without agent when mention not found" do
+        comment = create_comment('/topic "No Agent Topic" @nonexistent_agent: ')
 
         result = TopicCommand.new(comment: comment, user: @user).call
 
-        assert_match(/Agent Not Found Topic/, result)
-        assert_match(/nonexistent_agent/, result)
-        assert_match(/not found/i, result)
+        assert_match(/No Agent Topic/, result)
+        assert Topic.exists?(creative: @creative, name: "No Agent Topic")
 
-        # Topic should still be created
-        assert Topic.exists?(creative: @creative, name: "Agent Not Found Topic")
+        # No policy should be created
+        topic = Topic.find_by(creative: @creative, name: "No Agent Topic")
+        assert_nil OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: topic.id)
       end
 
       test "returns error when topic name is missing" do

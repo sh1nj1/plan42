@@ -75,6 +75,20 @@ module Collavre
       :ok
     end
 
+    def mentioned_users
+      return Collavre.user_class.none unless user
+      emails = mentioned_emails - [ user.email.downcase ]
+      names = mentioned_names - [ user.name.downcase ]
+
+      origin = creative.effective_origin
+      mentionable_users = Collavre.user_class.mentionable_for(origin)
+
+      scope = Collavre.user_class.none
+      scope = scope.or(mentionable_users.where(email: emails)) if emails.any?
+      scope = scope.or(mentionable_users.where("LOWER(name) IN (?)", names)) if names.any?
+      scope
+    end
+
     private
 
     def cancel_pending_tasks
@@ -124,20 +138,6 @@ module Collavre
              .flatten
              .map(&:downcase)
              .uniq
-    end
-
-    def mentioned_users
-      return Collavre.user_class.none unless user
-      emails = mentioned_emails - [ user.email.downcase ]
-      names = mentioned_names - [ user.name.downcase ]
-
-      origin = creative.effective_origin
-      mentionable_users = Collavre.user_class.mentionable_for(origin)
-
-      scope = Collavre.user_class.none
-      scope = scope.or(mentionable_users.where(email: emails)) if emails.any?
-      scope = scope.or(mentionable_users.where("LOWER(name) IN (?)", names)) if names.any?
-      scope
     end
 
     def broadcast_create

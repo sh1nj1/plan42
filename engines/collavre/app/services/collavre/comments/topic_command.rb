@@ -34,19 +34,12 @@ module Collavre
           content = comment.content.to_s.strip
 
           # Extract topic name in quotes
-          name_match = content.match(/[""]([^""]+)[""]|"([^"]+)"/)
+          name_match = content.match(/[\u201c\u201d""]([^"\u201c\u201d""]+)[\u201c\u201d""]|"([^"]+)"/)
           topic_name = name_match ? (name_match[1] || name_match[2]) : nil
 
           return if topic_name.blank?
 
-          # Extract @mentions for primary agent
-          agent_match = content.match(/@(\w+)/)
-          agent_name = agent_match ? agent_match[1] : nil
-
-          {
-            name: topic_name,
-            agent_name: agent_name
-          }
+          { name: topic_name }
         end
       end
 
@@ -61,8 +54,8 @@ module Collavre
           name: data[:name]
         )
 
-        # Set primary agent if specified
-        primary_agent = find_agent(data[:agent_name]) if data[:agent_name].present?
+        # Find primary agent from @mentions using the same parsing as chat
+        primary_agent = comment.mentioned_users.find(&:ai_user?)
 
         if primary_agent
           set_primary_agent(topic, primary_agent)
@@ -70,22 +63,8 @@ module Collavre
                  name: topic.name,
                  agent: primary_agent.name)
         else
-          if data[:agent_name].present?
-            I18n.t("collavre.comments.topic_command.created_agent_not_found",
-                   name: topic.name,
-                   agent_name: data[:agent_name])
-          else
-            I18n.t("collavre.comments.topic_command.created", name: topic.name)
-          end
+          I18n.t("collavre.comments.topic_command.created", name: topic.name)
         end
-      end
-
-      def find_agent(name)
-        # Find AI agent by name (case-insensitive)
-        user_class = Collavre.configuration.user_class_name.constantize
-        user_class.where.not(llm_vendor: [ nil, "" ])
-                  .where("LOWER(name) = ?", name.downcase)
-                  .first
       end
 
       def set_primary_agent(topic, agent)
