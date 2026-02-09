@@ -249,6 +249,66 @@ module Collavre
         policy&.destroy
       end
 
+      test "auto-recovers stuck tasks by marking them as failed" do
+        policy = create_policy_with_stuck_detection(enabled: true, task_threshold: 30)
+
+        task = Collavre::Task.create!(
+          name: "Stuck task",
+          agent: @ai_agent,
+          status: "running",
+          trigger_event_payload: { "creative" => { "id" => @creative.id } },
+          topic_id: @topic.id
+        )
+        task.update_columns(created_at: 1.hour.ago, updated_at: 1.hour.ago)
+
+        detector = StuckDetector.new
+        detector.detect_and_escalate
+
+        assert_equal "failed", task.reload.status
+      ensure
+        policy&.destroy
+      end
+
+      test "auto-recovery dequeues next task for the topic" do
+        policy = create_policy_with_stuck_detection(enabled: true, task_threshold: 30)
+
+        stuck_task = Collavre::Task.create!(
+          name: "Stuck task",
+          agent: @ai_agent,
+          status: "running",
+          trigger_event_name: "comment_created",
+          trigger_event_payload: {
+            "creative" => { "id" => @creative.id },
+            "comment" => { "id" => 999, "content" => "test" },
+            "topic" => { "id" => @topic.id }
+          },
+          topic_id: @topic.id
+        )
+        stuck_task.update_columns(created_at: 1.hour.ago, updated_at: 1.hour.ago)
+
+        queued_task = Collavre::Task.create!(
+          name: "Queued task",
+          agent: @ai_agent,
+          status: "queued",
+          trigger_event_name: "comment_created",
+          trigger_event_payload: {
+            "creative" => { "id" => @creative.id },
+            "comment" => { "id" => 1000, "content" => "queued" },
+            "topic" => { "id" => @topic.id }
+          },
+          topic_id: @topic.id
+        )
+
+        detector = StuckDetector.new
+        detector.detect_and_escalate
+
+        assert_equal "failed", stuck_task.reload.status
+        # Queued task should have been dequeued (no longer "queued")
+        assert_not_equal "queued", queued_task.reload.status
+      ensure
+        policy&.destroy
+      end
+
       test "excludes AI agents from escalation targets" do
         policy = create_policy_with_stuck_detection(enabled: true, task_threshold: 30)
 
