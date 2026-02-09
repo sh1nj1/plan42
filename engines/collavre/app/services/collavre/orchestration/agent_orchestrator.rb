@@ -24,23 +24,37 @@ module Collavre
         if updated > 0
           task.reload
           refresh_deferred_context!(task)
-          AiAgentJob.perform_later(task)
+
+          if task.status == "cancelled"
+            # refresh_deferred_context! cancelled this task (no eligible comment),
+            # try the next queued task for this topic.
+            dequeue_next_for_topic(topic_id)
+          else
+            AiAgentJob.perform_later(task)
+          end
         end
       end
 
       # Refresh trigger_event_payload so the deferred agent sees the latest
       # conversation state instead of the stale snapshot from enqueue time.
+      # Skips AI agent's own comments to prevent self-response loops.
+      # Cancels the task if no eligible comment remains.
       def self.refresh_deferred_context!(task)
         context = task.trigger_event_payload
         creative_id = context&.dig("creative", "id")
         return unless creative_id && context&.key?("topic")
 
         topic_id = context.dig("topic", "id")
-        latest_comment = Comment
+        scope = Comment
           .where(creative_id: creative_id, topic_id: topic_id, private: false)
+          .where.not(user_id: task.agent_id)
           .order(created_at: :desc)
-          .first
-        return unless latest_comment
+        latest_comment = scope.first
+
+        unless latest_comment
+          task.update!(status: "cancelled")
+          return
+        end
 
         context["comment"] = {
           "id" => latest_comment.id,
