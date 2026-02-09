@@ -141,7 +141,7 @@ module Collavre
         assert_not_equal "queued", queued_task.reload.status
       end
 
-      test "dequeue_next_for_topic refreshes context with latest comment" do
+      test "dequeue_next_for_topic refreshes context with latest human comment" do
         topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
 
         # Original trigger comment
@@ -162,18 +162,75 @@ module Collavre
           agent: @ai_agent, topic_id: topic.id
         )
 
-        # Agent1 replied "2" after the task was queued
+        # Another human replied "2" after the task was queued
         latest_comment = Comment.create!(
-          creative: @creative, user: @ai_agent, content: "2", topic: topic
+          creative: @creative, user: @user, content: "2", topic: topic
         )
 
         AgentOrchestrator.dequeue_next_for_topic(topic.id)
 
-        # Context should now point to the latest comment
+        # Context should now point to the latest human comment
         refreshed = queued_task.reload.trigger_event_payload
         assert_equal latest_comment.id, refreshed.dig("comment", "id")
         assert_equal "2", refreshed.dig("comment", "content")
         assert_equal "2", refreshed.dig("chat", "content")
+      end
+
+      test "refresh_deferred_context skips agent's own comments" do
+        topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
+
+        human_comment = Comment.create!(
+          creative: @creative, user: @user, content: "human msg", topic: topic
+        )
+
+        # AI agent replied after the human
+        Comment.create!(
+          creative: @creative, user: @ai_agent, content: "ai reply", topic: topic
+        )
+
+        queued_task = Task.create!(
+          name: "Queued task", status: "queued",
+          trigger_event_name: "comment_created",
+          trigger_event_payload: {
+            "creative" => { "id" => @creative.id },
+            "topic" => { "id" => topic.id },
+            "comment" => { "id" => 0, "content" => "stale" },
+            "chat" => { "content" => "stale" }
+          },
+          agent: @ai_agent, topic_id: topic.id
+        )
+
+        AgentOrchestrator.dequeue_next_for_topic(topic.id)
+
+        # Should pick the human comment, not the AI's own reply
+        refreshed = queued_task.reload.trigger_event_payload
+        assert_equal human_comment.id, refreshed.dig("comment", "id")
+        assert_equal "human msg", refreshed.dig("comment", "content")
+      end
+
+      test "refresh_deferred_context cancels task when no eligible comments remain" do
+        topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
+
+        # Only AI agent's own comment exists
+        Comment.create!(
+          creative: @creative, user: @ai_agent, content: "ai only", topic: topic
+        )
+
+        queued_task = Task.create!(
+          name: "Queued task", status: "queued",
+          trigger_event_name: "comment_created",
+          trigger_event_payload: {
+            "creative" => { "id" => @creative.id },
+            "topic" => { "id" => topic.id },
+            "comment" => { "id" => 0, "content" => "stale" },
+            "chat" => { "content" => "stale" }
+          },
+          agent: @ai_agent, topic_id: topic.id
+        )
+
+        AgentOrchestrator.dequeue_next_for_topic(topic.id)
+
+        assert_equal "cancelled", queued_task.reload.status
       end
 
       test "dequeue_next_for_topic does nothing when no queued tasks" do
