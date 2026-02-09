@@ -78,7 +78,7 @@ module Collavre
     private
 
     def cancel_pending_tasks
-      Task.where(status: %w[pending running]).each do |task|
+      Task.where(status: %w[pending running queued]).each do |task|
         if task.trigger_event_payload&.dig("comment", "id") == id
           task.update!(status: "cancelled")
         end

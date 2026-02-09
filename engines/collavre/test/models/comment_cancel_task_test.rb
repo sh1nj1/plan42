@@ -51,6 +51,23 @@ module Collavre
       assert_equal "cancelled", task.reload.status
     end
 
+    test "destroying comment cancels queued tasks triggered by that comment" do
+      task = Task.create!(
+        name: "Response to comment_created",
+        status: "queued",
+        trigger_event_name: "comment_created",
+        trigger_event_payload: {
+          "comment" => { "id" => @comment.id, "content" => "Hello AI" },
+          "creative" => { "id" => @creative.id }
+        },
+        agent: @agent
+      )
+
+      @comment.destroy!
+
+      assert_equal "cancelled", task.reload.status
+    end
+
     test "destroying comment does not affect done tasks" do
       task = Task.create!(
         name: "Response to comment_created",
