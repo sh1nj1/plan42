@@ -491,6 +491,12 @@ module Collavre
           aliases: [ "/cal" ],
           description: I18n.t("collavre.comments.command_menu.calendar_description"),
           args: I18n.t("collavre.comments.command_menu.calendar_args")
+        },
+        {
+          name: "topic",
+          label: "/topic",
+          description: I18n.t("collavre.comments.command_menu.topic_description"),
+          args: I18n.t("collavre.comments.command_menu.topic_args")
         }
       ] + mcp_command_items
     end
