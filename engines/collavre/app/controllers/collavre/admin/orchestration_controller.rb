@@ -39,7 +39,8 @@ module Collavre
         # Group by type for readable YAML structure
         structure = {
           "arbitration" => { "global" => nil, "overrides" => [] },
-          "scheduling" => { "global" => nil, "overrides" => [] }
+          "scheduling" => { "global" => nil, "overrides" => [] },
+          "collaboration" => { "global" => nil, "overrides" => [] }
         }
 
         policies.each do |policy|
@@ -89,6 +90,12 @@ module Collavre
               "backoff_strategy" => "exponential",
               "topic_max_concurrent_jobs" => 1
             }
+          },
+          "collaboration" => {
+            "global" => {
+              "a2a_completion_instruction" => nil,
+              "mention_rule" => nil
+            }
           }
         }
       end
@@ -97,7 +104,7 @@ module Collavre
         raise PolicyValidationError, t("admin.orchestration.invalid_format") unless parsed.is_a?(Hash)
 
         parsed.each do |type, data|
-          unless %w[arbitration scheduling].include?(type)
+          unless %w[arbitration scheduling collaboration].include?(type)
             raise PolicyValidationError, t("admin.orchestration.unknown_policy_type", type: type)
           end
 

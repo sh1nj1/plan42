@@ -21,7 +21,7 @@ ko:
         request_header: "## ⚡ Agent 요청"
         request_description: "이 메시지는 다른 AI Agent(@%{sender_name}, %{sender_type})가 보낸 요청입니다."
         focus_instruction: "- 요청에 집중해서 답변하세요"
-        completion_instruction: "- 완료되면 결과를 명확히 전달하세요"
+        completion_instruction: "- 완료되면 요청자에게 @이름: 멘션으로 결과를 보고하세요"
         followup_instruction: "- 추가 정보가 필요하면 요청자에게 @멘션으로 물어보세요"
       review:
         context: "사용자가 당신의 이전 메시지를 리뷰하고 변경을 요청하고 있습니다. 당신의 응답이 원본 메시지를 대체합니다. 전체 내용을 다시 작성해주세요."

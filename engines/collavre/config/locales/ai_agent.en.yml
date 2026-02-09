@@ -21,7 +21,7 @@ en:
         request_header: "## ⚡ Agent Request"
         request_description: "This message is a request from another AI Agent (@%{sender_name}, %{sender_type})."
         focus_instruction: "- Focus on answering the request"
-        completion_instruction: "- Clearly communicate results when done"
+        completion_instruction: "- When done, report results to the requester via @name: mention"
         followup_instruction: "- If you need more information, ask the requester via @mention"
       review:
         context: "The user is reviewing your previous message and requesting changes. Your response will replace the original message. Provide a complete rewrite."

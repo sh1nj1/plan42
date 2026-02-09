@@ -385,6 +385,93 @@ module Collavre
         # No collaborators section since none shared
         assert_not_includes prompt, I18n.t("collavre.ai_agent.collaboration.header")
       end
+
+      # Policy config override tests
+      test "policy config overrides A2A instructions" do
+        sender = {
+          "id" => @qa_agent.id,
+          "name" => "qa-agent",
+          "is_ai" => true,
+          "type" => "qa"
+        }
+
+        resolver = mock_policy_resolver(
+          "a2a_completion_instruction" => "- Custom: report via @name: mention with summary",
+          "a2a_focus_instruction" => "- Custom: focus on the task at hand"
+        )
+
+        builder = AgentContextBuilder.new(
+          agent: @ai_agent, creative: @creative,
+          sender: sender, policy_resolver: resolver
+        )
+        prompt = builder.to_collaboration_prompt
+
+        assert_includes prompt, "- Custom: report via @name: mention with summary"
+        assert_includes prompt, "- Custom: focus on the task at hand"
+        assert_not_includes prompt, I18n.t("collavre.ai_agent.a2a.completion_instruction")
+        assert_not_includes prompt, I18n.t("collavre.ai_agent.a2a.focus_instruction")
+        # followup not overridden, should use locale default
+        assert_includes prompt, I18n.t("collavre.ai_agent.a2a.followup_instruction")
+      end
+
+      test "policy config overrides collaboration rules" do
+        Collavre::CreativeShare.create!(
+          creative: @creative,
+          user: @pm_agent,
+          permission: :admin
+        )
+
+        resolver = mock_policy_resolver(
+          "mention_rule" => "- Custom mention: @name: your request",
+          "escalation_rule" => "- Custom escalation: ask supervisor"
+        )
+
+        builder = AgentContextBuilder.new(
+          agent: @ai_agent, creative: @creative,
+          policy_resolver: resolver
+        )
+        prompt = builder.to_collaboration_prompt
+
+        assert_includes prompt, "- Custom mention: @name: your request"
+        assert_includes prompt, "- Custom escalation: ask supervisor"
+        assert_not_includes prompt, I18n.t("collavre.ai_agent.collaboration.mention_rule")
+        assert_not_includes prompt, I18n.t("collavre.ai_agent.collaboration.escalation_rule")
+        # confidence_rule and review_rule not overridden
+        assert_includes prompt, I18n.t("collavre.ai_agent.collaboration.confidence_rule")
+        assert_includes prompt, I18n.t("collavre.ai_agent.collaboration.review_rule")
+      end
+
+      test "nil policy resolver falls back to locale defaults" do
+        Collavre::CreativeShare.create!(
+          creative: @creative,
+          user: @pm_agent,
+          permission: :admin
+        )
+
+        sender = {
+          "id" => @qa_agent.id,
+          "name" => "qa-agent",
+          "is_ai" => true,
+          "type" => "qa"
+        }
+
+        builder = AgentContextBuilder.new(
+          agent: @ai_agent, creative: @creative,
+          sender: sender, policy_resolver: nil
+        )
+        prompt = builder.to_collaboration_prompt
+
+        assert_includes prompt, I18n.t("collavre.ai_agent.a2a.completion_instruction")
+        assert_includes prompt, I18n.t("collavre.ai_agent.collaboration.mention_rule")
+      end
+
+      private
+
+      def mock_policy_resolver(overrides = {})
+        resolver = Minitest::Mock.new
+        resolver.expect(:collaboration_config, overrides)
+        resolver
+      end
     end
   end
 end

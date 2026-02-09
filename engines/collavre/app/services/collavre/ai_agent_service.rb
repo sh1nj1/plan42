@@ -331,8 +331,13 @@ module Collavre
       Orchestration::AgentContextBuilder.new(
         agent: @agent,
         creative: creative,
-        sender: @context["sender"]
+        sender: @context["sender"],
+        policy_resolver: build_policy_resolver
       ).to_collaboration_prompt
+    end
+
+    def build_policy_resolver
+      Orchestration::PolicyResolver.new(@context)
     end
 
     def handle_approval_pending(error)
