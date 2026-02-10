@@ -212,6 +212,7 @@ module Collavre
 
         Comment.where(creative_id: creative_id, private: false)
                .where(topic_id: topic_id)
+               .includes(:user)
                .order(created_at: :desc)
                .limit(50)
                .reverse
@@ -227,6 +228,9 @@ module Collavre
             elsif content.match?(/\A@#{Regexp.escape(@agent.name)}\s+/i)
               content = content.sub(/\A@#{Regexp.escape(@agent.name)}\s+/i, "")
             end
+
+            speaker = c.user&.name || "unknown"
+            content = "[#{speaker}]: #{content}"
           end
 
           messages << { role: role, parts: [ { text: content } ] }
@@ -245,6 +249,16 @@ module Collavre
         payload_text = "#{review_parts.join("\n\n")}\n\n#{payload_text}"
       end
 
+      sender_name = @context.dig("sender", "name")
+      if sender_name
+        # Strip self-mention prefix before adding speaker label
+        if payload_text.match?(/\A@#{Regexp.escape(@agent.name)}:/i)
+          payload_text = payload_text.sub(/\A@#{Regexp.escape(@agent.name)}:\s*/i, "")
+        elsif payload_text.match?(/\A@#{Regexp.escape(@agent.name)}\s+/i)
+          payload_text = payload_text.sub(/\A@#{Regexp.escape(@agent.name)}\s+/i, "")
+        end
+        payload_text = "[#{sender_name}]: #{payload_text}"
+      end
       messages << { role: "user", parts: [ { text: payload_text } ] }
 
       messages
