@@ -12,7 +12,6 @@ import "./modules/plans_menu"
 import "./modules/inbox_panel"
 import "./modules/creative_guide"
 import "./modules/share_modal"
-import "./modules/share_user_popup"
 import "./modules/creative_row_editor"
 import "./modules/slide_view"
 
