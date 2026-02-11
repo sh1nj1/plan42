@@ -105,6 +105,8 @@ module Collavre
           if @response_content.present?
             # Review message handling: update the quoted comment if agent has edit permission
             if @original_comment&.review_message? && handle_review_message(@response_content)
+              # React to the review message with a completion emoji
+              add_review_completion_reaction(@original_comment)
               # Preserve activity logs by moving them to the quoted comment before destroying placeholder
               reassociate_activity_logs(@reply_comment, @original_comment.quoted_comment)
               @reply_comment.destroy!
@@ -274,6 +276,32 @@ module Collavre
         content: response_content
       })
       true
+    end
+
+    def add_review_completion_reaction(comment)
+      CommentReaction.find_or_create_by!(
+        comment: comment,
+        user: @agent,
+        emoji: "✅"
+      )
+      broadcast_reaction_update(comment)
+    rescue ActiveRecord::RecordNotUnique
+      # Already reacted, ignore
+    end
+
+    def broadcast_reaction_update(comment)
+      creative = comment.creative
+      reactions = comment.comment_reactions.reload.to_a
+      payload = reactions.group_by(&:emoji).map do |emoji, grouped|
+        { emoji: emoji, count: grouped.size, user_ids: grouped.map(&:user_id) }
+      end
+
+      Turbo::StreamsChannel.broadcast_action_to(
+        [ creative, :comments ],
+        action: "update_reactions",
+        target: "comment_#{comment.id}",
+        attributes: { data: payload.to_json }
+      )
     end
 
     def reply_to_comment(comment_id, content)
