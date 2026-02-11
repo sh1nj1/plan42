@@ -279,29 +279,21 @@ module Collavre
     end
 
     def add_review_completion_reaction(comment)
-      CommentReaction.find_or_create_by!(
-        comment: comment,
-        user: @agent,
-        emoji: "✅"
-      )
-      broadcast_reaction_update(comment)
-    rescue ActiveRecord::RecordNotUnique
-      # Already reacted, ignore
-    end
-
-    def broadcast_reaction_update(comment)
-      creative = comment.creative
-      reactions = comment.comment_reactions.reload.to_a
-      payload = reactions.group_by(&:emoji).map do |emoji, grouped|
-        { emoji: emoji, count: grouped.size, user_ids: grouped.map(&:user_id) }
+      reaction = begin
+        CommentReaction.find_or_create_by!(
+          comment: comment,
+          user: @agent,
+          emoji: "✅"
+        )
+      rescue ActiveRecord::RecordNotUnique
+        # Already reacted via race condition, fetch existing
+        CommentReaction.find_by(comment: comment, user: @agent, emoji: "✅")
       end
 
-      Turbo::StreamsChannel.broadcast_action_to(
-        [ creative, :comments ],
-        action: "update_reactions",
-        target: "comment_#{comment.id}",
-        attributes: { data: payload.to_json }
-      )
+      CommentReaction.broadcast_reaction_update(comment) if reaction
+    rescue StandardError => e
+      # Reaction is supplementary; log but don't fail the review update
+      Rails.logger.warn("[AiAgentService] Failed to add review reaction: #{e.message}")
     end
 
     def reply_to_comment(comment_id, content)
