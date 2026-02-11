@@ -1,3 +1,8 @@
+## v0.3.2 (2026-02-12)
+
+### Changes
+- 4097fbbd fix: move ai orchestration i18n text to engine
+
 ## v0.3.1 (2026-02-11)
 
 ### Changes
