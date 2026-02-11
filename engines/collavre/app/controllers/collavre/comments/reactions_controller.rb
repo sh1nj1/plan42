@@ -45,15 +45,7 @@ module Collavre
       end
 
       def broadcast_reaction_update
-        payload = build_reaction_payload
-        Turbo::StreamsChannel.broadcast_action_to(
-          [ @creative, :comments ],
-          action: "update_reactions",
-          target: view_context.dom_id(@comment),
-          attributes: {
-            data: payload.to_json
-          }
-        )
+        CommentReaction.broadcast_reaction_update(@comment)
       end
 
       def set_creative

@@ -105,6 +105,8 @@ module Collavre
           if @response_content.present?
             # Review message handling: update the quoted comment if agent has edit permission
             if @original_comment&.review_message? && handle_review_message(@response_content)
+              # React to the review message with a completion emoji
+              add_review_completion_reaction(@original_comment)
               # Preserve activity logs by moving them to the quoted comment before destroying placeholder
               reassociate_activity_logs(@reply_comment, @original_comment.quoted_comment)
               @reply_comment.destroy!
@@ -274,6 +276,24 @@ module Collavre
         content: response_content
       })
       true
+    end
+
+    def add_review_completion_reaction(comment)
+      reaction = begin
+        CommentReaction.find_or_create_by!(
+          comment: comment,
+          user: @agent,
+          emoji: "✅"
+        )
+      rescue ActiveRecord::RecordNotUnique
+        # Already reacted via race condition, fetch existing
+        CommentReaction.find_by(comment: comment, user: @agent, emoji: "✅")
+      end
+
+      CommentReaction.broadcast_reaction_update(comment) if reaction
+    rescue StandardError => e
+      # Reaction is supplementary; log but don't fail the review update
+      Rails.logger.warn("[AiAgentService] Failed to add review reaction: #{e.message}")
     end
 
     def reply_to_comment(comment_id, content)
