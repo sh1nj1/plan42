@@ -16,6 +16,10 @@ module Collavre
         # Log start action
         log_action("start", { message: "Starting agent execution" })
 
+        # Set original comment early so build_messages can check review_eligible?
+        target_comment_id = @context.dig("comment", "id")
+        @original_comment = target_comment_id ? Comment.find_by(id: target_comment_id) : nil
+
         # Prepare messages for AI
         messages = build_messages
 
@@ -46,8 +50,6 @@ module Collavre
         rendered_system_prompt = "#{rendered_system_prompt}\n\n#{collaboration_prompt}" if collaboration_prompt.present?
 
         # Create a placeholder comment to stream into
-        target_comment_id = @context.dig("comment", "id")
-        @original_comment = target_comment_id ? Comment.find_by(id: target_comment_id) : nil
         @reply_comment = nil
 
         if @original_comment
@@ -101,13 +103,20 @@ module Collavre
         # Final save to ensure everything is consistent and trigger final callbacks
         if @reply_comment
           if @response_content.present?
-            # Force dirty tracking since update_column bypassed it during streaming
-            @reply_comment.content_will_change!
-            @reply_comment.update!(content: @response_content)
-            log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content })
+            # Review message handling: update the quoted comment if agent has edit permission
+            if @original_comment&.review_message? && handle_review_message(@response_content)
+              # Preserve activity logs by moving them to the quoted comment before destroying placeholder
+              reassociate_activity_logs(@reply_comment, @original_comment.quoted_comment)
+              @reply_comment.destroy!
+            else
+              # Force dirty tracking since update_column bypassed it during streaming
+              @reply_comment.content_will_change!
+              @reply_comment.update!(content: @response_content)
+              log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content })
 
-            # Re-associate activity logs from the trigger comment to the reply comment
-            reassociate_activity_logs(@original_comment, @reply_comment)
+              # Re-associate activity logs from the trigger comment to the reply comment
+              reassociate_activity_logs(@original_comment, @reply_comment)
+            end
           else
             @reply_comment.destroy!
           end
@@ -223,9 +232,48 @@ module Collavre
       end
 
       payload_text = @context.dig("comment", "content") || @context.to_json
+
+      # Add review context only when the review will actually result in an in-place update.
+      # This prevents misleading the AI when quoting non-agent or ineligible comments.
+      if review_eligible?
+        quoted_body = @original_comment.quoted_comment&.content
+        review_context = I18n.t("collavre.ai_agent.review.context")
+        review_parts = [ review_context ]
+        review_parts << "---\nOriginal message:\n#{quoted_body}\n---" if quoted_body.present?
+        payload_text = "#{review_parts.join("\n\n")}\n\n#{payload_text}"
+      end
+
       messages << { role: "user", parts: [ { text: payload_text } ] }
 
       messages
+    end
+
+    def review_eligible?
+      return false unless @original_comment&.review_message?
+
+      quoted_comment = @original_comment.quoted_comment
+      return false unless quoted_comment
+      return false unless quoted_comment.user_id == @agent.id
+      return false unless quoted_comment.creative_id == @original_comment.creative_id
+      # Ensure the quoted comment is not private (prevent privilege bypass via client-supplied IDs)
+      return false if quoted_comment.private?
+      # Ensure both comments are in the same topic to prevent cross-topic overwrites
+      return false unless quoted_comment.topic_id == @original_comment.topic_id
+
+      true
+    end
+
+    def handle_review_message(response_content)
+      return false unless review_eligible?
+
+      quoted_comment = @original_comment.quoted_comment
+      quoted_comment.update!(content: response_content)
+      log_action("review_updated", {
+        quoted_comment_id: quoted_comment.id,
+        original_comment_id: @original_comment.id,
+        content: response_content
+      })
+      true
     end
 
     def reply_to_comment(comment_id, content)

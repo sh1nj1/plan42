@@ -1,5 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 import { renderCommentMarkdown } from '../lib/utils/markdown'
+import CommonPopup from '../lib/common_popup'
 
 // Connects to data-controller="comment"
 export default class extends Controller {
@@ -12,6 +13,10 @@ export default class extends Controller {
       contentElement.innerHTML = renderCommentMarkdown(text)
       contentElement.dataset.rendered = 'true'
     }
+
+    // Text selection quote support
+    this.handleMouseUp = this.handleMouseUp.bind(this)
+    this.element.addEventListener('mouseup', this.handleMouseUp)
 
     this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
@@ -106,6 +111,103 @@ export default class extends Controller {
     } catch (error) {
       alert(error?.message || 'Failed to update reaction')
     }
+  }
+
+  disconnect() {
+    this.element.removeEventListener('mouseup', this.handleMouseUp)
+    this.hideReviewPopup()
+    if (this._reviewPopupEl) {
+      this._reviewPopupEl.remove()
+      this._reviewPopupEl = null
+      this._reviewPopup = null
+    }
+  }
+
+  handleMouseUp() {
+    // Small delay to let selection finalize
+    requestAnimationFrame(() => {
+      this.hideReviewPopup()
+
+      const selection = window.getSelection()
+      if (!selection || selection.isCollapsed) return
+
+      const selectedText = selection.toString().trim()
+      if (!selectedText) return
+
+      // Ensure selection is within this comment's content
+      const contentEl = this.element.querySelector('.comment-content')
+      if (!contentEl) return
+
+      const range = selection.getRangeAt(0)
+      if (!contentEl.contains(range.commonAncestorContainer)) return
+
+      // Show review popup below the selection using CommonPopup
+      const rect = range.getBoundingClientRect()
+      this.showReviewPopup(rect, selectedText)
+    })
+  }
+
+  showReviewPopup(anchorRect, selectedText) {
+    // Create or reuse popup element
+    if (!this._reviewPopupEl) {
+      const el = document.createElement('div')
+      el.className = 'common-popup comment-review-popup'
+      el.style.display = 'none'
+      el.style.padding = '0.3em'
+
+      const list = document.createElement('ul')
+      list.style.listStyle = 'none'
+      list.style.margin = '0'
+      list.style.padding = '0'
+      el.appendChild(list)
+
+      const commentsPopup = this.element.closest('#comments-popup')
+      if (commentsPopup) {
+        commentsPopup.appendChild(el)
+      } else {
+        document.body.appendChild(el)
+      }
+      this._reviewPopupEl = el
+    }
+
+    const reviewLabel = this.element.closest('#comments-popup')?.dataset?.reviewButtonText || 'Review'
+
+    this._reviewPopup = new CommonPopup(this._reviewPopupEl, {
+      onSelect: () => {
+        const commentId = this.element.dataset.commentId
+        const formController = this.findFormController()
+        if (formController) {
+          formController.quoteComment(commentId, selectedText)
+        }
+        window.getSelection().removeAllRanges()
+        this.hideReviewPopup()
+      },
+      renderItem: () => reviewLabel,
+    })
+
+    // Position below the selection end
+    const belowRect = {
+      left: anchorRect.left,
+      right: anchorRect.right,
+      top: anchorRect.bottom,
+      bottom: anchorRect.bottom + 4,
+      width: anchorRect.width,
+    }
+
+    this._reviewPopup.setItems([{ label: reviewLabel }])
+    this._reviewPopup.showAt(belowRect)
+  }
+
+  hideReviewPopup() {
+    if (this._reviewPopup) {
+      this._reviewPopup.hide()
+    }
+  }
+
+  findFormController() {
+    const popup = this.element.closest('#comments-popup')
+    if (!popup) return null
+    return this.application.getControllerForElementAndIdentifier(popup, 'comments--form')
   }
 
   updateReactionsUI(reactionsData) {

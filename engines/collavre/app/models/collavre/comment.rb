@@ -14,6 +14,7 @@ module Collavre
     belongs_to :approver, class_name: Collavre.configuration.user_class_name, optional: true
     belongs_to :action_executed_by, class_name: Collavre.configuration.user_class_name, optional: true
     belongs_to :topic, class_name: "Collavre::Topic", optional: true
+    belongs_to :quoted_comment, class_name: "Collavre::Comment", optional: true
     has_many :activity_logs, class_name: "Collavre::ActivityLog", dependent: :destroy
     has_many :comment_reactions, class_name: "Collavre::CommentReaction", dependent: :destroy
 
@@ -31,6 +32,10 @@ module Collavre
     after_create_commit :broadcast_create, :notify_write_users, :notify_mentions, :notify_approver, :broadcast_badges
     after_update_commit :broadcast_update
     after_destroy_commit :broadcast_destroy, :broadcast_badges, :cancel_pending_tasks
+
+    def review_message?
+      quoted_comment_id.present?
+    end
 
     # public for db migration
     def creative_snippet

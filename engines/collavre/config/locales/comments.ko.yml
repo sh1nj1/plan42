@@ -62,6 +62,7 @@ ko:
       voice_stop: 중지
       speech_unavailable: 이 브라우저는 음성 인식을 지원하지 않습니다.
       move_button: 이동
+      review_button: 리뷰
       move_no_selection: 이동할 메시지를 선택해주세요.
       move_error: 메시지를 이동할 수 없습니다.
       add_participant: 사용자 추가
