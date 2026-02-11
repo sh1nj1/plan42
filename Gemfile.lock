@@ -111,7 +111,7 @@ GEM
       activerecord (>= 7.2.0)
       with_advisory_lock (>= 7.0.0)
       zeitwerk (~> 2.7)
-    collavre (0.3.1)
+    collavre (0.3.2)
       bcrypt
       closure_tree
       httparty
@@ -646,7 +646,7 @@ DEPENDENCIES
   brakeman
   capybara
   closure_tree
-  collavre (= 0.3.1)
+  collavre (= 0.3.2)
   collavre_github (= 0.2.0)
   collavre_notion (= 0.1.0)
   collavre_openclaw (= 0.3.1)

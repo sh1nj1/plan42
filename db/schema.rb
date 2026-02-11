@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_06_100000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -414,6 +414,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
     t.index ["user_id"], name: "index_openclaw_pending_callbacks_on_user_id"
   end
 
+  create_table "orchestrator_policies", force: :cascade do |t|
+    t.json "config", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.string "policy_type", null: false
+    t.integer "priority", default: 100, null: false
+    t.bigint "scope_id"
+    t.string "scope_type"
+    t.datetime "updated_at", null: false
+    t.index ["policy_type", "enabled"], name: "index_orchestrator_policies_on_policy_type_and_enabled"
+    t.index ["priority"], name: "index_orchestrator_policies_on_priority"
+    t.index ["scope_type", "scope_id"], name: "index_orchestrator_policies_on_scope_type_and_scope_id"
+  end
+
   create_table "sessions", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "ip_address"
@@ -423,6 +437,75 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
     t.integer "user_id", null: false
     t.index ["last_active_at"], name: "index_sessions_on_last_active_at"
     t.index ["user_id"], name: "index_sessions_on_user_id"
+  end
+
+  create_table "slack_accounts", force: :cascade do |t|
+    t.string "access_token", null: false
+    t.string "authed_user_id"
+    t.datetime "created_at", null: false
+    t.string "scopes"
+    t.string "team_id", null: false
+    t.string "team_name", null: false
+    t.datetime "token_expires_at"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["team_id"], name: "index_slack_accounts_on_team_id", unique: true
+    t.index ["user_id"], name: "index_slack_accounts_on_user_id"
+  end
+
+  create_table "slack_channel_links", force: :cascade do |t|
+    t.string "channel_id", null: false
+    t.string "channel_name", null: false
+    t.datetime "created_at", null: false
+    t.integer "created_by_id", null: false
+    t.integer "creative_id", null: false
+    t.datetime "last_synced_at"
+    t.integer "slack_account_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["channel_id"], name: "index_slack_channel_links_on_channel_id"
+    t.index ["created_by_id"], name: "index_slack_channel_links_on_created_by_id"
+    t.index ["creative_id", "channel_id"], name: "index_slack_channel_links_on_creative_id_and_channel_id", unique: true
+    t.index ["creative_id"], name: "index_slack_channel_links_on_creative_id"
+    t.index ["slack_account_id"], name: "index_slack_channel_links_on_slack_account_id"
+  end
+
+  create_table "slack_comment_links", force: :cascade do |t|
+    t.integer "comment_id", null: false
+    t.datetime "created_at", null: false
+    t.string "message_ts", null: false
+    t.integer "slack_channel_link_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["comment_id"], name: "index_slack_comment_links_on_comment_id"
+    t.index ["slack_channel_link_id", "message_ts"], name: "idx_slack_comment_links_on_channel_and_ts", unique: true
+    t.index ["slack_channel_link_id"], name: "index_slack_comment_links_on_slack_channel_link_id"
+  end
+
+  create_table "slack_message_logs", force: :cascade do |t|
+    t.integer "comment_id"
+    t.datetime "created_at", null: false
+    t.text "error_message"
+    t.text "message", null: false
+    t.string "message_ts"
+    t.integer "sender_id"
+    t.integer "slack_channel_link_id", null: false
+    t.string "status", default: "queued", null: false
+    t.datetime "updated_at", null: false
+    t.index ["comment_id"], name: "index_slack_message_logs_on_comment_id"
+    t.index ["sender_id"], name: "index_slack_message_logs_on_sender_id"
+    t.index ["slack_channel_link_id"], name: "index_slack_message_logs_on_slack_channel_link_id"
+  end
+
+  create_table "slack_user_mappings", force: :cascade do |t|
+    t.integer "collavre_user_id", null: false
+    t.datetime "created_at", null: false
+    t.string "display_name"
+    t.string "email"
+    t.integer "slack_account_id", null: false
+    t.string "slack_user_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["collavre_user_id"], name: "index_slack_user_mappings_on_collavre_user_id"
+    t.index ["slack_account_id", "slack_user_id"], name: "idx_on_slack_account_id_slack_user_id_61fd29dc59", unique: true
+    t.index ["slack_account_id"], name: "index_slack_user_mappings_on_slack_account_id"
   end
 
   create_table "solid_cable_messages", force: :cascade do |t|
@@ -600,11 +683,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
     t.datetime "created_at", null: false
     t.string "name"
     t.json "pending_tool_call"
+    t.integer "retry_count", default: 0, null: false
     t.string "status", default: "pending"
+    t.integer "topic_id"
     t.string "trigger_event_name"
     t.json "trigger_event_payload"
     t.datetime "updated_at", null: false
     t.index ["agent_id"], name: "index_tasks_on_agent_id"
+    t.index ["topic_id", "status"], name: "index_tasks_on_topic_id_and_status"
   end
 
   create_table "topics", force: :cascade do |t|
@@ -726,6 +812,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_03_083302) do
   add_foreign_key "oauth_access_tokens", "oauth_applications", column: "application_id"
   add_foreign_key "openclaw_pending_callbacks", "users"
   add_foreign_key "sessions", "users"
+  add_foreign_key "slack_accounts", "users"
+  add_foreign_key "slack_channel_links", "creatives"
+  add_foreign_key "slack_channel_links", "slack_accounts"
+  add_foreign_key "slack_channel_links", "users", column: "created_by_id"
+  add_foreign_key "slack_comment_links", "comments", on_delete: :cascade
+  add_foreign_key "slack_comment_links", "slack_channel_links"
+  add_foreign_key "slack_message_logs", "comments", on_delete: :cascade
+  add_foreign_key "slack_message_logs", "slack_channel_links"
+  add_foreign_key "slack_message_logs", "users", column: "sender_id"
+  add_foreign_key "slack_user_mappings", "slack_accounts"
+  add_foreign_key "slack_user_mappings", "users", column: "collavre_user_id"
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_failed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
