@@ -46,27 +46,25 @@ class CollavreGithub::SeedsTest < ActiveSupport::TestCase
     # Should match PR merged event
     context = {
       "event_name" => "comment_created",
-      "chat" => {
-        "comment" => {
-          "user_id" => nil,
-          "content" => "### GitHub: Pull Request merged\n**Repository:** owner/repo"
-        }
+      "comment" => {
+        "user_id" => nil,
+        "content" => "### GitHub: Pull Request Merged\n**Repository:** owner/repo"
       }
     }
     assert_equal "true", template.render(context)
 
     # Should not match non-merged PR
-    context["chat"]["comment"]["content"] = "### GitHub: Pull Request opened"
+    context["comment"]["content"] = "### GitHub: Pull Request opened"
     assert_equal "", template.render(context)
 
     # Should not match user comments
-    context["chat"]["comment"]["user_id"] = 123
-    context["chat"]["comment"]["content"] = "### GitHub: Pull Request merged"
+    context["comment"]["user_id"] = 123
+    context["comment"]["content"] = "### GitHub: Pull Request Merged"
     assert_equal "", template.render(context)
 
     # Should not match other events
     context["event_name"] = "other_event"
-    context["chat"]["comment"]["user_id"] = nil
+    context["comment"]["user_id"] = nil
     assert_equal "", template.render(context)
   end
 end
