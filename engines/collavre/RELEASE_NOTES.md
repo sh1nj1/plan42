@@ -1,3 +1,13 @@
+## v0.4.0 (2026-02-12)
+
+### Changes
+- cea0b37b fix: remove duplicate GitHub integration modal render (#770)
+- 709153ae feat: add completion emoji reaction on review message update (#768)
+- 7e8df962 fix: disable stuck detection by default
+- b16a97db fix: strip HTML from creative title in stuck detector notifications (#767)
+- cfed92c9 feat: add review message (quote + reply) feature (#765)
+- f09c59c5 fix: share user search showing results briefly then disappearing (#766)
+
 ## v0.3.2 (2026-02-12)
 
 ### Changes

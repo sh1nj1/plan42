@@ -1,3 +1,8 @@
+## v0.2.1 (2026-02-12)
+
+### Changes
+- 1d36f7da fix: correct GitHub PR Analyzer routing expression (#769)
+
 ## v0.2.0 (2026-02-09)
 
 ### Changes
