@@ -53,9 +53,9 @@ module CollavreGithub
     PROMPT
 
     # Matches GitHub PR merged events
-    # The comment content will contain "### GitHub: Pull Request merged"
+    # The comment content will contain "### GitHub: Pull Request Merged"
     ROUTING_EXPRESSION = <<~EXPR.strip
-      event_name == "comment_created" and chat.comment.user_id == nil and chat.comment.content contains "GitHub: Pull Request merged"
+      event_name == "comment_created" and comment.user_id == nil and comment.content contains "GitHub: Pull Request Merged"
     EXPR
 
     TOOLS = %w[
