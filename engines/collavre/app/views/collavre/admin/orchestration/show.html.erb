@@ -14,7 +14,7 @@
       </p>
     </div>
 
-    <%= form_with url: main_app.admin_orchestration_path, method: :patch, local: true, html: { class: 'profile-form' } do |f| %>
+    <%= form_with url: admin_orchestration_path, method: :patch, local: true, html: { class: 'profile-form' } do |f| %>
       <div>
         <label for="policies_yaml" style="font-weight: 600; display: block; margin-bottom: 0.5em;">
           <%= t('admin.orchestration.policies_yaml') %>

@@ -93,4 +93,9 @@ Collavre::Engine.routes.draw do
 
   post "/creative_expanded_states/toggle", to: "creative_expanded_states#toggle"
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
+
+  # Admin orchestration
+  scope "/admin", as: :admin do
+    resource :orchestration, only: [ :show, :update ], controller: "admin/orchestration"
+  end
 end

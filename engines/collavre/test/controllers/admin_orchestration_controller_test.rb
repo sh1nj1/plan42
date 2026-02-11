@@ -10,7 +10,7 @@ class AdminOrchestrationControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "should get show as admin" do
-    get admin_orchestration_path
+    get collavre.admin_orchestration_path
     assert_response :success
     assert_select "h2", I18n.t("admin.orchestration.title")
     assert_select "textarea[name='policies_yaml']"
@@ -19,13 +19,13 @@ class AdminOrchestrationControllerTest < ActionDispatch::IntegrationTest
   test "should return 404 for non-admin users" do
     delete collavre.session_path
     sign_in_as(@user, password: "password")
-    get admin_orchestration_path
+    get collavre.admin_orchestration_path
     assert_response :not_found
   end
 
   test "should redirect unauthenticated users" do
     delete collavre.session_path
-    get admin_orchestration_path
+    get collavre.admin_orchestration_path
     assert_response :redirect
   end
 
@@ -42,10 +42,10 @@ class AdminOrchestrationControllerTest < ActionDispatch::IntegrationTest
     YAML
 
     assert_changes -> { Collavre::OrchestratorPolicy.count }, from: 0, to: 2 do
-      patch admin_orchestration_path, params: { policies_yaml: valid_yaml }
+      patch collavre.admin_orchestration_path, params: { policies_yaml: valid_yaml }
     end
 
-    assert_redirected_to admin_orchestration_path
+    assert_redirected_to collavre.admin_orchestration_path
     assert_equal I18n.t("admin.orchestration.updated"), flash[:notice]
 
     # Verify policies were created correctly
@@ -73,9 +73,9 @@ class AdminOrchestrationControllerTest < ActionDispatch::IntegrationTest
             priority: 10
     YAML
 
-    patch admin_orchestration_path, params: { policies_yaml: valid_yaml }
+    patch collavre.admin_orchestration_path, params: { policies_yaml: valid_yaml }
 
-    assert_redirected_to admin_orchestration_path
+    assert_redirected_to collavre.admin_orchestration_path
     assert_equal 2, Collavre::OrchestratorPolicy.count
 
     override = Collavre::OrchestratorPolicy.find_by(scope_type: "Topic")
@@ -87,7 +87,7 @@ class AdminOrchestrationControllerTest < ActionDispatch::IntegrationTest
   test "should reject invalid yaml syntax" do
     invalid_yaml = "arbitration:\n  global: [invalid yaml"
 
-    patch admin_orchestration_path, params: { policies_yaml: invalid_yaml }
+    patch collavre.admin_orchestration_path, params: { policies_yaml: invalid_yaml }
 
     assert_response :unprocessable_entity
     assert_match(/syntax error/i, flash[:alert])
@@ -100,7 +100,7 @@ class AdminOrchestrationControllerTest < ActionDispatch::IntegrationTest
           strategy: all
     YAML
 
-    patch admin_orchestration_path, params: { policies_yaml: invalid_yaml }
+    patch collavre.admin_orchestration_path, params: { policies_yaml: invalid_yaml }
 
     assert_response :unprocessable_entity
     assert_includes flash[:alert], "unknown_type"
@@ -116,7 +116,7 @@ class AdminOrchestrationControllerTest < ActionDispatch::IntegrationTest
               strategy: all
     YAML
 
-    patch admin_orchestration_path, params: { policies_yaml: invalid_yaml }
+    patch collavre.admin_orchestration_path, params: { policies_yaml: invalid_yaml }
 
     assert_response :unprocessable_entity
     assert_includes flash[:alert], "InvalidScope"
@@ -132,7 +132,7 @@ class AdminOrchestrationControllerTest < ActionDispatch::IntegrationTest
               strategy: all
     YAML
 
-    patch admin_orchestration_path, params: { policies_yaml: invalid_yaml }
+    patch collavre.admin_orchestration_path, params: { policies_yaml: invalid_yaml }
 
     assert_response :unprocessable_entity
     assert_includes flash[:alert], "scope_id"
@@ -157,9 +157,9 @@ class AdminOrchestrationControllerTest < ActionDispatch::IntegrationTest
           max_concurrent_jobs: 10
     YAML
 
-    patch admin_orchestration_path, params: { policies_yaml: new_yaml }
+    patch collavre.admin_orchestration_path, params: { policies_yaml: new_yaml }
 
-    assert_redirected_to admin_orchestration_path
+    assert_redirected_to collavre.admin_orchestration_path
     assert_equal 1, Collavre::OrchestratorPolicy.count
 
     policy = Collavre::OrchestratorPolicy.first

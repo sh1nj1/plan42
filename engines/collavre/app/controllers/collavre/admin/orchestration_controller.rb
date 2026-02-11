@@ -17,7 +17,7 @@ module Collavre
           validate_policies!(parsed)
           apply_policies!(parsed)
 
-          redirect_to main_app.admin_orchestration_path, notice: t("admin.orchestration.updated")
+          redirect_to admin_orchestration_path, notice: t("admin.orchestration.updated")
         rescue Psych::SyntaxError => e
           flash.now[:alert] = t("admin.orchestration.yaml_syntax_error", message: e.message)
           @policies_yaml = yaml_content

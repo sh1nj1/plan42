@@ -37,11 +37,6 @@ Rails.application.routes.draw do
   namespace :admin do
     resource :settings, only: [ :update ]
   end
-  # Orchestration uses Collavre engine controller
-  scope "/admin", as: :admin do
-    resource :orchestration, only: [ :show, :update ], controller: "collavre/admin/orchestration"
-  end
-
   # MCP OAuth Discovery
   get "/.well-known/oauth-protected-resource", to: "mcp/discovery#oauth_protected_resource"
   get "/.well-known/oauth-authorization-server", to: "mcp/discovery#oauth_authorization_server"
