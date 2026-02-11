@@ -202,8 +202,6 @@
 
 <%= render 'set_plan_modal' %>
 <% if can_manage_integrations %>
-  <%# Legacy hardcoded integration modals %>
-  <%= render 'collavre_github/integrations/modal', creative: current_creative %>
   <%# Dynamically registered integration modals %>
   <%= render 'integration_modals', creative: current_creative %>
 <% end %>
