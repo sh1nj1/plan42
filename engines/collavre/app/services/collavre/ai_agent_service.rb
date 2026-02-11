@@ -105,7 +105,8 @@ module Collavre
           if @response_content.present?
             # Review message handling: update the quoted comment if agent has edit permission
             if @original_comment&.review_message? && handle_review_message(@response_content)
-              # Successfully updated quoted comment; destroy the placeholder reply
+              # Preserve activity logs by moving them to the quoted comment before destroying placeholder
+              reassociate_activity_logs(@reply_comment, @original_comment.quoted_comment)
               @reply_comment.destroy!
             else
               # Force dirty tracking since update_column bypassed it during streaming
@@ -235,8 +236,11 @@ module Collavre
       # Add review context only when the review will actually result in an in-place update.
       # This prevents misleading the AI when quoting non-agent or ineligible comments.
       if review_eligible?
+        quoted_body = @original_comment.quoted_comment&.content
         review_context = I18n.t("collavre.ai_agent.review.context")
-        payload_text = "#{review_context}\n\n#{payload_text}"
+        review_parts = [ review_context ]
+        review_parts << "---\nOriginal message:\n#{quoted_body}\n---" if quoted_body.present?
+        payload_text = "#{review_parts.join("\n\n")}\n\n#{payload_text}"
       end
 
       messages << { role: "user", parts: [ { text: payload_text } ] }
