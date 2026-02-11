@@ -66,6 +66,11 @@
         <%= t('collavre.comments.delete_button') %>
       </button>
     </div>
+  <% if comment.quoted_text.present? %>
+    <div class="comment-quoted-block">
+      <blockquote class="comment-quoted-text"><%= comment.quoted_text %></blockquote>
+    </div>
+  <% end %>
   <div class="comment-content"><%= comment.content %></div>
 
 

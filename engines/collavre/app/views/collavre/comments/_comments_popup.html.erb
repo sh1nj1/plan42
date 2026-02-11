@@ -62,6 +62,12 @@
   <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>
   <div id="typing-indicator" data-comments--presence-target="typingIndicator"></div>
   <form id="new-comment-form" data-comments--popup-target="form" data-comments--form-target="form" style="display:none;">
+    <input type="hidden" name="comment[quoted_comment_id]" data-comments--form-target="quotedCommentId" value="" />
+    <input type="hidden" name="comment[quoted_text]" data-comments--form-target="quotedText" value="" />
+    <div class="comment-quote-indicator" data-comments--form-target="quoteIndicator" style="display:none;">
+      <span class="comment-quote-indicator-text" data-comments--form-target="quoteIndicatorText"></span>
+      <button type="button" class="comment-quote-cancel" data-action="click->comments--form#cancelQuote" title="<%= t('app.cancel') %>">&times;</button>
+    </div>
     <textarea class="shared-input-surface" name="comment[content]" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" enterkeyhint="send"></textarea>
     <div class="comment-bottom">
     <input type="file" id="comment-images" name="comment[images][]" accept="image/*" multiple data-comments--form-target="imageInput" style="display:none;" />

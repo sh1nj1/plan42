@@ -180,6 +180,81 @@ body.chat-fullscreen {
     margin-top: 0.2em;
 }
 
+.comment-quoted-block {
+    margin-top: 0.3em;
+    margin-bottom: 0.2em;
+}
+
+.comment-quoted-text {
+    border-left: 3px solid var(--color-border);
+    padding: 0.3em 0.6em;
+    margin: 0;
+    color: var(--color-muted);
+    font-size: 0.9em;
+    background: color-mix(in srgb, var(--color-section-bg) 50%, transparent);
+    border-radius: 0 4px 4px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Quote indicator in form */
+.comment-quote-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.3em 0.6em;
+    margin-bottom: 0.3em;
+    background: color-mix(in srgb, var(--color-section-bg) 50%, transparent);
+    border-left: 3px solid var(--color-accent, #007bff);
+    border-radius: 0 4px 4px 0;
+    font-size: 0.85em;
+    color: var(--color-muted);
+}
+
+.comment-quote-indicator-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.comment-quote-cancel {
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--color-muted);
+    font-size: 1.1em;
+    padding: 0 0.2em;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.comment-quote-cancel:hover {
+    color: var(--color-text);
+}
+
+/* Floating quote button on text selection */
+.comment-quote-button {
+    position: fixed;
+    background: var(--color-section-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 0.8em;
+    cursor: pointer;
+    color: var(--color-text);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 10001;
+    animation: hint-fade-in 0.15s ease-out;
+}
+
+.comment-quote-button:hover {
+    background: var(--color-accent, #007bff);
+    color: white;
+    border-color: var(--color-accent, #007bff);
+}
+
 .comment-reactions {
     margin-top: 0.4em;
     display: flex;

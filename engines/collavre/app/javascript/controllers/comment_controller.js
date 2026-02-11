@@ -13,6 +13,10 @@ export default class extends Controller {
       contentElement.dataset.rendered = 'true'
     }
 
+    // Text selection quote support
+    this.handleMouseUp = this.handleMouseUp.bind(this)
+    this.element.addEventListener('mouseup', this.handleMouseUp)
+
     this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
     const creativeOwnerId = this.element.dataset.creativeOwnerId
@@ -106,6 +110,75 @@ export default class extends Controller {
     } catch (error) {
       alert(error?.message || 'Failed to update reaction')
     }
+  }
+
+  disconnect() {
+    this.element.removeEventListener('mouseup', this.handleMouseUp)
+    this.removeQuoteButton()
+  }
+
+  handleMouseUp() {
+    // Small delay to let selection finalize
+    requestAnimationFrame(() => {
+      this.removeQuoteButton()
+
+      const selection = window.getSelection()
+      if (!selection || selection.isCollapsed) return
+
+      const selectedText = selection.toString().trim()
+      if (!selectedText) return
+
+      // Ensure selection is within this comment's content
+      const contentEl = this.element.querySelector('.comment-content')
+      if (!contentEl) return
+
+      const range = selection.getRangeAt(0)
+      if (!contentEl.contains(range.commonAncestorContainer)) return
+
+      // Show floating quote button
+      const rect = range.getBoundingClientRect()
+      const button = document.createElement('button')
+      button.className = 'comment-quote-button'
+      button.textContent = 'Quote'
+      button.style.top = `${rect.top - 32}px`
+      button.style.left = `${rect.left + rect.width / 2 - 25}px`
+
+      button.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        const commentId = this.element.dataset.commentId
+        const formController = this.findFormController()
+        if (formController) {
+          formController.quoteComment(commentId, selectedText)
+        }
+        window.getSelection().removeAllRanges()
+        this.removeQuoteButton()
+      })
+
+      document.body.appendChild(button)
+      this._quoteButton = button
+
+      // Remove on next click elsewhere
+      const removeOnClick = (e) => {
+        if (e.target === button) return
+        this.removeQuoteButton()
+        document.removeEventListener('mousedown', removeOnClick)
+      }
+      document.addEventListener('mousedown', removeOnClick)
+    })
+  }
+
+  removeQuoteButton() {
+    if (this._quoteButton) {
+      this._quoteButton.remove()
+      this._quoteButton = null
+    }
+  }
+
+  findFormController() {
+    const popup = this.element.closest('#comments-popup')
+    if (!popup) return null
+    return this.application.getControllerForElementAndIdentifier(popup, 'comments--form')
   }
 
   updateReactionsUI(reactionsData) {

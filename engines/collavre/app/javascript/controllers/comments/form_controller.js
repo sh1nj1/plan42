@@ -14,6 +14,10 @@ export default class extends Controller {
     'imageInput',
     'imageButton',
     'attachmentList',
+    'quotedCommentId',
+    'quotedText',
+    'quoteIndicator',
+    'quoteIndicatorText',
   ]
 
   connect() {
@@ -154,6 +158,7 @@ export default class extends Controller {
     if (this.cancelTarget) this.cancelTarget.style.display = 'none'
     this.presenceController?.clearManualTypingMessage()
     this.clearImageAttachments()
+    this.cancelQuote()
   }
 
   setSendingState(isSending) {
@@ -497,6 +502,24 @@ export default class extends Controller {
       item.appendChild(removeButton)
       this.attachmentListTarget.appendChild(item)
     })
+  }
+
+  quoteComment(commentId, selectedText) {
+    if (!commentId || !selectedText) return
+    this.quotedCommentIdTarget.value = commentId
+    this.quotedTextTarget.value = selectedText
+    this.quoteIndicatorTarget.style.display = ''
+    this.quoteIndicatorTextTarget.textContent = selectedText.length > 80
+      ? selectedText.substring(0, 80) + '…'
+      : selectedText
+    this.focusTextarea()
+  }
+
+  cancelQuote() {
+    this.quotedCommentIdTarget.value = ''
+    this.quotedTextTarget.value = ''
+    this.quoteIndicatorTarget.style.display = 'none'
+    this.quoteIndicatorTextTarget.textContent = ''
   }
 
   renderCommentHtml(html, { replaceExisting = false } = {}) {

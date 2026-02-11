@@ -167,8 +167,9 @@ module Collavre
           comment: {
             id: @comment.id,
             content: @comment.content,
-            user_id: @comment.user_id
-          },
+            user_id: @comment.user_id,
+            quoted_comment_id: @comment.quoted_comment_id
+          }.compact,
           creative: {
             id: @creative.id,
             description: @creative.description
@@ -552,7 +553,7 @@ module Collavre
     end
 
     def comment_params
-      params.require(:comment).permit(:content, :private, :topic_id, images: [])
+      params.require(:comment).permit(:content, :private, :topic_id, :quoted_comment_id, :quoted_text, images: [])
     end
 
     def can_convert_comment?

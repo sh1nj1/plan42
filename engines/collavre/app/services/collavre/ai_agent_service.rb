@@ -101,13 +101,19 @@ module Collavre
         # Final save to ensure everything is consistent and trigger final callbacks
         if @reply_comment
           if @response_content.present?
-            # Force dirty tracking since update_column bypassed it during streaming
-            @reply_comment.content_will_change!
-            @reply_comment.update!(content: @response_content)
-            log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content })
+            # Review message handling: update the quoted comment if agent has edit permission
+            if @original_comment&.review_message? && handle_review_message(@response_content)
+              # Successfully updated quoted comment; destroy the placeholder reply
+              @reply_comment.destroy!
+            else
+              # Force dirty tracking since update_column bypassed it during streaming
+              @reply_comment.content_will_change!
+              @reply_comment.update!(content: @response_content)
+              log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content })
 
-            # Re-associate activity logs from the trigger comment to the reply comment
-            reassociate_activity_logs(@original_comment, @reply_comment)
+              # Re-associate activity logs from the trigger comment to the reply comment
+              reassociate_activity_logs(@original_comment, @reply_comment)
+            end
           else
             @reply_comment.destroy!
           end
@@ -223,9 +229,32 @@ module Collavre
       end
 
       payload_text = @context.dig("comment", "content") || @context.to_json
+
+      # Add review context if this is a review message
+      trigger_comment_id = @context.dig("comment", "id")
+      trigger_comment = trigger_comment_id ? Comment.find_by(id: trigger_comment_id) : nil
+      if trigger_comment&.review_message?
+        review_context = I18n.t("collavre.ai_agent.review.context")
+        payload_text = "#{review_context}\n\n#{payload_text}"
+      end
+
       messages << { role: "user", parts: [ { text: payload_text } ] }
 
       messages
+    end
+
+    def handle_review_message(response_content)
+      quoted_comment = @original_comment.quoted_comment
+      return false unless quoted_comment
+      return false unless quoted_comment.user_id == @agent.id
+
+      quoted_comment.update!(content: response_content)
+      log_action("review_updated", {
+        quoted_comment_id: quoted_comment.id,
+        original_comment_id: @original_comment.id,
+        content: response_content
+      })
+      true
     end
 
     def reply_to_comment(comment_id, content)
