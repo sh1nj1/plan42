@@ -257,6 +257,8 @@ module Collavre
       return false unless quoted_comment.creative_id == @original_comment.creative_id
       # Ensure the quoted comment is not private (prevent privilege bypass via client-supplied IDs)
       return false if quoted_comment.private?
+      # Ensure both comments are in the same topic to prevent cross-topic overwrites
+      return false unless quoted_comment.topic_id == @original_comment.topic_id
 
       true
     end
