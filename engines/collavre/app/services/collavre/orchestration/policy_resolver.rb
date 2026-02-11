@@ -43,7 +43,7 @@ module Collavre
           "token_spike_window_minutes" => 10
         },
         "stuck_detection" => {
-          "enabled" => true,
+          "enabled" => false,
           "task_stuck_threshold_minutes" => 30,       # Task running for > N minutes
           "creative_stall_threshold_minutes" => 120,  # Creative no progress for > N minutes
           "create_system_comment" => true             # Create system comment on escalation
