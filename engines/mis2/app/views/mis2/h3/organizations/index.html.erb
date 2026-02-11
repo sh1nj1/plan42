@@ -1,0 +1,95 @@
+<div class="contact-management">
+  <div class="flex-row-center-between">
+    <h1 class="no-top-margin"><%= t("mis2.h3.organizations.index.title") %></h1>
+    <%= link_to t("mis2.h3.organizations.index.back_home"), mis2.root_path, class: "btn btn-sm btn-secondary" %>
+  </div>
+
+  <%# Search form %>
+  <%= form_with url: mis2.h3_organizations_path, method: :get, local: true, data: { controller: "h3-status-filter", h3_status_filter_target: "form" } do |f| %>
+    <div style="display: flex; gap: 0.5em; align-items: center; margin-bottom: 1em; flex-wrap: wrap;">
+      <%= f.text_field :query, value: params[:query], placeholder: t("mis2.h3.organizations.index.search_placeholder"), id: "search", style: "flex: 1; min-width: 200px;" %>
+      <%= f.submit t("mis2.h3.organizations.index.search_button"), class: "primary-action-button" %>
+    </div>
+
+    <%# Status filter chips %>
+    <div class="status-filter-chips" style="margin-bottom: 1em;">
+      <% current_statuses = Array(params[:statuses]) %>
+      <% Mis2::H3::OrganizationAdmin::STATUSES.each do |status| %>
+        <button type="button"
+                class="status-filter-chip status-chip--h3-<%= status.downcase %> <%= 'active' if current_statuses.include?(status) %>"
+                data-h3-status-filter-target="chip"
+                data-action="click->h3-status-filter#toggle"
+                data-status="<%= status %>">
+          <%= t("mis2.h3.organizations.statuses.#{status.downcase}") %>
+        </button>
+      <% end %>
+    </div>
+
+    <%# Hidden fields for statuses %>
+    <div data-h3-status-filter-target="hiddenFields">
+      <% current_statuses.each do |status| %>
+        <input type="hidden" name="statuses[]" value="<%= status %>">
+      <% end %>
+    </div>
+  <% end %>
+
+  <%# Table %>
+  <div class="table-scroll">
+    <table class="contacts-table">
+      <thead>
+        <tr>
+          <th><%= t("mis2.h3.organizations.table.code") %></th>
+          <th><%= t("mis2.h3.organizations.table.name") %></th>
+          <th><%= t("mis2.h3.organizations.table.type") %></th>
+          <th><%= t("mis2.h3.organizations.table.department") %></th>
+          <th><%= t("mis2.h3.organizations.table.admin_name") %></th>
+          <th><%= t("mis2.h3.organizations.table.status") %></th>
+          <th><%= t("mis2.h3.organizations.table.created_at") %></th>
+          <th><%= t("mis2.h3.organizations.table.actions") %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @admins.each do |admin| %>
+          <tr>
+            <td style="white-space: nowrap;"><%= admin.org_code %></td>
+            <td><%= admin.org_name %></td>
+            <td style="white-space: nowrap;"><%= Mis2::H3::Organization.type_label(admin.org_type) %></td>
+            <td><%= admin.medical_specialty %></td>
+            <td><%= admin.name %></td>
+            <td>
+              <% if admin.status.present? %>
+                <span class="status-chip status-chip--h3-<%= admin.status.downcase %>">
+                  <%= t("mis2.h3.organizations.statuses.#{admin.status.downcase}", default: admin.status) %>
+                </span>
+              <% end %>
+            </td>
+            <td style="white-space: nowrap;"><%= admin.created_at&.strftime('%Y-%m-%d %H:%M') %></td>
+            <td>
+              <% if admin.status == "WAIT" %>
+                <%= button_to t("mis2.h3.organizations.index.approve_button"),
+                      mis2.approve_h3_organization_path(admin.id, **filter_params_for_link),
+                      method: :patch,
+                      class: "primary-action-button",
+                      data: { turbo_confirm: t("mis2.h3.organizations.index.approve_confirm") } %>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+        <% if @admins.empty? %>
+          <tr>
+            <td colspan="8" style="text-align: center; color: #6b7280;"><%= t("mis2.h3.organizations.index.no_results") %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+
+  <%# Pagination %>
+  <%= render "mis2/shared/pagination",
+        extra_params: filter_params_for_link,
+        wrapper_class: "contact-pagination",
+        wrapper_style: "",
+        button_class: "pagination-button",
+        info_class: "pagination-status" %>
+</div>
+

@@ -1,0 +1,21 @@
+<% if @total_pages > 1 %>
+  <div class="<%= local_assigns[:wrapper_class] || 'pagination flex-row-center-center' %>" style="<%= local_assigns[:wrapper_style] || 'margin-top: 20px; gap: 10px;' %>">
+    <% if @page > 1 %>
+      <%= link_to t("mis2.common.pagination.prev"),
+            url_for(**extra_params, page: @page - 1),
+            class: local_assigns[:button_class] || "btn btn-sm btn-secondary" %>
+    <% else %>
+      <span class="<%= local_assigns[:button_class] || 'btn btn-sm btn-secondary' %> disabled" style="opacity: 0.5;"><%= t("mis2.common.pagination.prev") %></span>
+    <% end %>
+
+    <span class="<%= local_assigns[:info_class] %>"><%= t("mis2.common.pagination.page_info", page: @page, total: @total_pages) %></span>
+
+    <% if @page < @total_pages %>
+      <%= link_to t("mis2.common.pagination.next"),
+            url_for(**extra_params, page: @page + 1),
+            class: local_assigns[:button_class] || "btn btn-sm btn-secondary" %>
+    <% else %>
+      <span class="<%= local_assigns[:button_class] || 'btn btn-sm btn-secondary' %> disabled" style="opacity: 0.5;"><%= t("mis2.common.pagination.next") %></span>
+    <% end %>
+  </div>
+<% end %>

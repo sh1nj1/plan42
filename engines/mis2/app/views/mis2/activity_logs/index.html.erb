@@ -35,21 +35,5 @@
     </table>
   </div>
 
-  <% if @total_pages > 1 %>
-    <div class="pagination flex-row-center-center" style="margin-top: 20px; gap: 10px;">
-      <% if @page > 1 %>
-        <%= link_to t("mis2.activity_logs.pagination.prev"), mis2.activity_logs_path(page: @page - 1), class: "btn btn-sm btn-secondary" %>
-      <% else %>
-        <span class="btn btn-sm btn-secondary disabled" style="opacity: 0.5;"><%= t("mis2.activity_logs.pagination.prev") %></span>
-      <% end %>
-
-      <span><%= t("mis2.activity_logs.pagination.page_info", page: @page, total: @total_pages) %></span>
-
-      <% if @page < @total_pages %>
-        <%= link_to t("mis2.activity_logs.pagination.next"), mis2.activity_logs_path(page: @page + 1), class: "btn btn-sm btn-secondary" %>
-      <% else %>
-        <span class="btn btn-sm btn-secondary disabled" style="opacity: 0.5;"><%= t("mis2.activity_logs.pagination.next") %></span>
-      <% end %>
-    </div>
-  <% end %>
+  <%= render "mis2/shared/pagination", extra_params: {} %>
 </div>

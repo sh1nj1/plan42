@@ -1,11 +1,18 @@
 ko:
   mis2:
+    common:
+      pagination:
+        prev: "이전"
+        next: "다음"
+        page_info: "%{page} / %{total} 페이지"
     activity_log:
       messages:
         h2_training_update: "'%{assignment_name}' 훈련(회차: %{round}) 업데이트 (대상: %{user_name}, ID: %{user_id}). 날짜 변경: %{old_start} ~ %{old_end} -> %{new_start} ~ %{new_end}."
         h2_organization_update: "'%{user_name}' (ID: %{user_id}) 소속 변경: '%{old_organization}' -> '%{new_organization}'."
+        h3_organization_approve: "H3 병원 가입 승인: '%{org_name}' (코드: %{org_code}), 관리자: '%{admin_name}' (ID: %{admin_id})"
     home:
       h2_assignment_link: "H2 사용자 리스트"
+      h3_organizations_link: "H3 병원 관리"
       activity_logs_link: "작업 로그"
     activity_logs:
       index:
@@ -17,10 +24,6 @@ ko:
           timestamp: "일시"
           user: "작업자"
           details: "내용"
-      pagination:
-        prev: "이전"
-        next: "다음"
-        page_info: "%{page} / %{total} 페이지"
     h2:
       assignments:
         index:
@@ -74,3 +77,38 @@ ko:
         update_organization_error: "소속 변경에 실패했습니다: %{message}"
         user_not_found: "사용자를 찾을 수 없습니다."
         organization_not_found: "조직을 찾을 수 없습니다."
+    h3:
+      organizations:
+        index:
+          title: "H3 병원 관리"
+          back_home: "홈으로 돌아가기"
+          search_placeholder: "병원 이름 또는 코드로 검색..."
+          search_button: "검색"
+          approve_button: "가입 승인"
+          approve_confirm: "이 병원의 가입을 승인하시겠습니까?"
+          no_results: "해당하는 병원이 없습니다."
+        table:
+          code: "코드"
+          name: "이름"
+          type: "유형"
+          department: "진료과"
+          admin_name: "관리자"
+          status: "상태"
+          created_at: "등록 일시"
+          actions: "관리"
+        statuses:
+          wait: "대기"
+          active: "활성"
+          inactive: "비활성"
+          deleted: "삭제"
+        types:
+          superior_general: "상급종합병원"
+          general: "종합병원"
+          hospital: "병원"
+          clinic: "의원"
+          nursing: "요양병원"
+          public_health: "보건기관"
+        approve_success: "병원 가입이 승인되었습니다."
+        approve_not_wait: "대기 상태인 경우에만 승인할 수 있습니다."
+        approve_error: "병원 승인에 실패했습니다."
+        not_found: "해당 관리자를 찾을 수 없습니다."

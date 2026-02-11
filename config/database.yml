@@ -26,6 +26,11 @@ development:
     pool: 2
     url: <%= ENV['H2_DATABASE_URL'] %>
     database_tasks: false
+  h3:
+    adapter: postgresql
+    pool: 2
+    url: <%= ENV['H3_DATABASE_URL'] %>
+    database_tasks: false
 
 # Warning: The database defined as "test" will be erased and
 # re-generated from your development database when you run "rake".
@@ -39,6 +44,11 @@ test:
     adapter: sqlite3
     pool: 5
     database: storage/test-h2.sqlite3
+    database_tasks: false
+  h3:
+    adapter: sqlite3
+    pool: 5
+    database: storage/test-h3.sqlite3
     database_tasks: false
 
 production:
@@ -79,4 +89,9 @@ production:
     encoding: utf8mb4
     pool: 2
     url: <%= ENV['H2_DATABASE_URL'] %>
+    database_tasks: false
+  h3:
+    adapter: postgresql
+    pool: 2
+    url: <%= ENV['H3_DATABASE_URL'] %>
     database_tasks: false

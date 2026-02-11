@@ -8,6 +8,7 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     screen_size: [ 1400, 1400 ]
 
   include IntegrationAuthHelper
+  include H3TestHelper
   include Collavre::Engine.routes.url_helpers
 
   def sign_in_system(user, password: "password")

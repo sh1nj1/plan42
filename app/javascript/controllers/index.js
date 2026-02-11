@@ -19,3 +19,6 @@ application.register("assignment-row", AssignmentRowController)
 
 import OrganizationEditController from "./organization_edit_controller"
 application.register("organization-edit", OrganizationEditController)
+
+import H3StatusFilterController from "./h3_status_filter_controller"
+application.register("h3-status-filter", H3StatusFilterController)

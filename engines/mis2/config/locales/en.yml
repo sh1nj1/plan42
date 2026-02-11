@@ -1,11 +1,18 @@
 en:
   mis2:
+    common:
+      pagination:
+        prev: "Prev"
+        next: "Next"
+        page_info: "Page %{page} of %{total}"
     activity_log:
       messages:
         h2_training_update: "Updated H2 Training '%{assignment_name}' (Round %{round}) for user '%{user_name}' (ID: %{user_id}). Dates changed: %{old_start} ~ %{old_end} -> %{new_start} ~ %{new_end}."
         h2_organization_update: "Updated organization for '%{user_name}' (ID: %{user_id}): '%{old_organization}' -> '%{new_organization}'."
+        h3_organization_approve: "H3 Hospital Approved: '%{org_name}' (Code: %{org_code}), Admin: '%{admin_name}' (ID: %{admin_id})"
     home:
       h2_assignment_link: "H2 User List"
+      h3_organizations_link: "H3 Hospital Management"
       activity_logs_link: "Activity Logs"
     activity_logs:
       index:
@@ -17,10 +24,6 @@ en:
           timestamp: "Timestamp"
           user: "Operator"
           details: "Details"
-      pagination:
-        prev: "Prev"
-        next: "Next"
-        page_info: "Page %{page} of %{total}"
     h2:
       assignments:
         index:
@@ -74,3 +77,38 @@ en:
         update_organization_error: "Failed to update organization: %{message}"
         user_not_found: "User not found."
         organization_not_found: "Organization not found."
+    h3:
+      organizations:
+        index:
+          title: "H3 Hospital Management"
+          back_home: "Back to Home"
+          search_placeholder: "Search by hospital name or code..."
+          search_button: "Search"
+          approve_button: "Approve"
+          approve_confirm: "Are you sure you want to approve this hospital?"
+          no_results: "No hospitals found."
+        table:
+          code: "Code"
+          name: "Name"
+          type: "Type"
+          department: "Department"
+          admin_name: "Admin"
+          status: "Status"
+          created_at: "Registered"
+          actions: "Actions"
+        statuses:
+          wait: "Wait"
+          active: "Active"
+          inactive: "Inactive"
+          deleted: "Deleted"
+        types:
+          superior_general: "Superior General Hospital"
+          general: "General Hospital"
+          hospital: "Hospital"
+          clinic: "Clinic"
+          nursing: "Nursing Hospital"
+          public_health: "Public Health Center"
+        approve_success: "Hospital has been approved."
+        approve_not_wait: "Only hospitals with WAIT status can be approved."
+        approve_error: "Failed to approve hospital."
+        not_found: "Admin not found."
