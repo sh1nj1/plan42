@@ -111,7 +111,7 @@ GEM
       activerecord (>= 7.2.0)
       with_advisory_lock (>= 7.0.0)
       zeitwerk (~> 2.7)
-    collavre (0.3.0)
+    collavre (0.3.1)
       bcrypt
       closure_tree
       httparty
@@ -122,6 +122,10 @@ GEM
       stimulus-rails
       turbo-rails
       view_component
+    collavre_github (0.2.0)
+      collavre
+      octokit
+      rails (>= 8.0)
     collavre_notion (0.1.0)
       collavre
       httparty
@@ -130,6 +134,11 @@ GEM
       eventmachine (~> 1.2)
       faraday (>= 2.0)
       faye-websocket (~> 0.11)
+      rails (>= 8.0)
+    collavre_slack (0.2.1)
+      collavre
+      faraday
+      faraday-retry
       rails (>= 8.0)
     concurrent-ruby (1.3.6)
     connection_pool (3.0.2)
@@ -637,9 +646,11 @@ DEPENDENCIES
   brakeman
   capybara
   closure_tree
-  collavre (= 0.3.0)
+  collavre (= 0.3.1)
+  collavre_github (= 0.2.0)
   collavre_notion (= 0.1.0)
   collavre_openclaw (= 0.3.1)
+  collavre_slack (= 0.2.1)
   debug
   doorkeeper (~> 5.8)
   dotenv

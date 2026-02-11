@@ -94,16 +94,8 @@ Rails.application.config.to_prepare do
   set_alias(Comments, :McpCommand, Collavre::Comments::McpCommand)
   set_alias(Comments, :CalendarCommand, Collavre::Comments::CalendarCommand)
 
-  # Github module
-  Object.const_set(:Github, Module.new) unless Object.const_defined?(:Github, false)
-  set_alias(Github, :PullRequestProcessor, Collavre::Github::PullRequestProcessor)
-  set_alias(Github, :WebhookProvisioner, Collavre::Github::WebhookProvisioner)
-  set_alias(Github, :Client, Collavre::Github::Client)
-  set_alias(Github, :PullRequestAnalyzer, Collavre::Github::PullRequestAnalyzer)
-
   # SystemEvents module
   Object.const_set(:SystemEvents, Module.new) unless Object.const_defined?(:SystemEvents, false)
-  set_alias(SystemEvents, :Router, Collavre::SystemEvents::Router)
   set_alias(SystemEvents, :ContextBuilder, Collavre::SystemEvents::ContextBuilder)
   set_alias(SystemEvents, :Dispatcher, Collavre::SystemEvents::Dispatcher)
 
@@ -140,8 +132,10 @@ Rails.application.config.to_prepare do
   set_alias(Object, :Task, Collavre::Task)
   set_alias(Object, :TaskAction, Collavre::TaskAction)
   set_alias(Object, :McpTool, Collavre::McpTool)
-  set_alias(Object, :GithubAccount, Collavre::GithubAccount)
-  set_alias(Object, :GithubRepositoryLink, Collavre::GithubRepositoryLink)
+  if defined?(CollavreGithub)
+    set_alias(Object, :GithubAccount, CollavreGithub::Account)
+    set_alias(Object, :GithubRepositoryLink, CollavreGithub::RepositoryLink)
+  end
   set_alias(Object, :NotionAccount, CollavreNotion::NotionAccount)
   set_alias(Object, :NotionPageLink, CollavreNotion::NotionPageLink)
   set_alias(Object, :NotionBlockLink, CollavreNotion::NotionBlockLink)
