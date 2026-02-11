@@ -137,7 +137,10 @@ module Collavre
       end
 
       scope = if params[:scope] == "contacts" && Current.user
-        Current.user.contact_users
+        # Include both contacts and searchable users (e.g., AI agents with searchable=true)
+        contact_ids = Current.user.contact_users.select(:id)
+        searchable_ids = Collavre::User.where(searchable: true).select(:id)
+        Collavre::User.where(id: contact_ids).or(Collavre::User.where(id: searchable_ids))
       else
         Collavre::User.mentionable_for(creative)
       end
