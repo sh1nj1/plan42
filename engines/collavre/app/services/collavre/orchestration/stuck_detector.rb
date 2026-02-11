@@ -267,7 +267,7 @@ module Collavre
           [
             "collavre.stuck_detection.creative_stalled",
             {
-              creative_title: creative.description&.truncate(50) || "Untitled",
+              creative_title: creative.creative_snippet,
               hours: hours_stuck,
               progress: ((creative.progress || 0) * 100).round
             }
