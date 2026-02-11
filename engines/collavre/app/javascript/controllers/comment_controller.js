@@ -116,6 +116,11 @@ export default class extends Controller {
   disconnect() {
     this.element.removeEventListener('mouseup', this.handleMouseUp)
     this.hideReviewPopup()
+    if (this._reviewPopupEl) {
+      this._reviewPopupEl.remove()
+      this._reviewPopupEl = null
+      this._reviewPopup = null
+    }
   }
 
   handleMouseUp() {
