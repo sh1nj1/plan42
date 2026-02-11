@@ -234,25 +234,17 @@ body.chat-fullscreen {
     color: var(--color-text);
 }
 
-/* Floating quote button on text selection */
-.comment-quote-button {
-    position: fixed;
-    background: var(--color-section-bg);
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 0.8em;
-    cursor: pointer;
-    color: var(--color-text);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    z-index: 10001;
-    animation: hint-fade-in 0.15s ease-out;
+/* Review popup (uses common-popup) */
+.comment-review-popup {
+    min-width: auto;
 }
 
-.comment-quote-button:hover {
-    background: var(--color-accent, #007bff);
-    color: white;
-    border-color: var(--color-accent, #007bff);
+.comment-review-popup .common-popup-item {
+    padding: 0.3em 0.8em;
+    font-size: 0.85em;
+    cursor: pointer;
+    border-radius: 4px;
+    white-space: nowrap;
 }
 
 .comment-reactions {

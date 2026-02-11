@@ -1,5 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 import { renderCommentMarkdown } from '../lib/utils/markdown'
+import CommonPopup from '../lib/common_popup'
 
 // Connects to data-controller="comment"
 export default class extends Controller {
@@ -114,13 +115,13 @@ export default class extends Controller {
 
   disconnect() {
     this.element.removeEventListener('mouseup', this.handleMouseUp)
-    this.removeQuoteButton()
+    this.hideReviewPopup()
   }
 
   handleMouseUp() {
     // Small delay to let selection finalize
     requestAnimationFrame(() => {
-      this.removeQuoteButton()
+      this.hideReviewPopup()
 
       const selection = window.getSelection()
       if (!selection || selection.isCollapsed) return
@@ -135,43 +136,66 @@ export default class extends Controller {
       const range = selection.getRangeAt(0)
       if (!contentEl.contains(range.commonAncestorContainer)) return
 
-      // Show floating quote button
+      // Show review popup below the selection using CommonPopup
       const rect = range.getBoundingClientRect()
-      const button = document.createElement('button')
-      button.className = 'comment-quote-button'
-      button.textContent = 'Quote'
-      button.style.top = `${rect.top - 32}px`
-      button.style.left = `${rect.left + rect.width / 2 - 25}px`
+      this.showReviewPopup(rect, selectedText)
+    })
+  }
 
-      button.addEventListener('click', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
+  showReviewPopup(anchorRect, selectedText) {
+    // Create or reuse popup element
+    if (!this._reviewPopupEl) {
+      const el = document.createElement('div')
+      el.className = 'common-popup comment-review-popup'
+      el.style.display = 'none'
+      el.style.padding = '0.3em'
+
+      const list = document.createElement('ul')
+      list.style.listStyle = 'none'
+      list.style.margin = '0'
+      list.style.padding = '0'
+      el.appendChild(list)
+
+      const commentsPopup = this.element.closest('#comments-popup')
+      if (commentsPopup) {
+        commentsPopup.appendChild(el)
+      } else {
+        document.body.appendChild(el)
+      }
+      this._reviewPopupEl = el
+    }
+
+    const reviewLabel = this.element.closest('#comments-popup')?.dataset?.reviewButtonText || 'Review'
+
+    this._reviewPopup = new CommonPopup(this._reviewPopupEl, {
+      onSelect: () => {
         const commentId = this.element.dataset.commentId
         const formController = this.findFormController()
         if (formController) {
           formController.quoteComment(commentId, selectedText)
         }
         window.getSelection().removeAllRanges()
-        this.removeQuoteButton()
-      })
-
-      document.body.appendChild(button)
-      this._quoteButton = button
-
-      // Remove on next click elsewhere
-      const removeOnClick = (e) => {
-        if (e.target === button) return
-        this.removeQuoteButton()
-        document.removeEventListener('mousedown', removeOnClick)
-      }
-      document.addEventListener('mousedown', removeOnClick)
+        this.hideReviewPopup()
+      },
+      renderItem: () => reviewLabel,
     })
+
+    // Position below the selection end
+    const belowRect = {
+      left: anchorRect.left,
+      right: anchorRect.right,
+      top: anchorRect.bottom,
+      bottom: anchorRect.bottom + 4,
+      width: anchorRect.width,
+    }
+
+    this._reviewPopup.setItems([{ label: reviewLabel }])
+    this._reviewPopup.showAt(belowRect)
   }
 
-  removeQuoteButton() {
-    if (this._quoteButton) {
-      this._quoteButton.remove()
-      this._quoteButton = null
+  hideReviewPopup() {
+    if (this._reviewPopup) {
+      this._reviewPopup.hide()
     }
   }
 
