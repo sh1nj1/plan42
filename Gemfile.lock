@@ -26,7 +26,7 @@ PATH
 PATH
   remote: engines/collavre_slack
   specs:
-    collavre_slack (0.2.0)
+    collavre_slack (0.2.1)
       collavre
       faraday
       faraday-retry
@@ -35,7 +35,7 @@ PATH
 PATH
   remote: engines/collavre
   specs:
-    collavre (0.3.0)
+    collavre (0.3.1)
       bcrypt
       closure_tree
       httparty

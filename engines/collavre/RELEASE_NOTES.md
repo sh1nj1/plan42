@@ -1,3 +1,16 @@
+## v0.3.1 (2026-02-11)
+
+### Changes
+- d9ff72c6 fix: move ai orchestration settings test to engine
+- 86957f10 fix: skip AI agent dispatch for slash command messages
+- 53b76d10 fix: standardize mention format to @name: and handle existing topics in /topic command
+- e34a64da fix: set topic's primary agent
+- 5f7b20d4 fix: show /topic command
+- f23cc936 fix: prevent AI agent self-response loop in deferred task dequeue
+- 23892190 fix: enable stuck_detection by default in PolicyResolver
+- 861be479 fix: add auto-recovery to StuckDetector for stuck running tasks
+- 3157027f fix: include queued status in cancel_pending_tasks on comment deletion
+
 ## v0.3.0 (2026-02-09)
 
 ### Changes
