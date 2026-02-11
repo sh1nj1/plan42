@@ -247,6 +247,8 @@ module Collavre
       quoted_comment = @original_comment.quoted_comment
       return false unless quoted_comment
       return false unless quoted_comment.user_id == @agent.id
+      # Ensure quoted comment belongs to the same creative to prevent cross-creative overwrites
+      return false unless quoted_comment.creative_id == @original_comment.creative_id
 
       quoted_comment.update!(content: response_content)
       log_action("review_updated", {
