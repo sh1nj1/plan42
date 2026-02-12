@@ -1751,7 +1751,11 @@ export function initializeCreativeRowEditor() {
           }
         }
         updateProgressInputAvailability(readProgressValue());
-        scheduleSave();
+        // Save immediately on checkbox change to prevent losing the last toggle
+        // when the user navigates away before the debounce timer fires.
+        pendingSave = true;
+        clearTimeout(saveTimer);
+        saveForm();
       });
     }
 
