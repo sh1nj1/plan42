@@ -1,6 +1,7 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
-<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--set-plan-modal"
+<div class="creatives-workspace"
+     data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--set-plan-modal"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"
      data-creatives--import-uploading-value="<%= t('collavre.creatives.index.import_uploading') %>"
      data-creatives--import-success-value="<%= t('collavre.creatives.index.import_success') %>"
