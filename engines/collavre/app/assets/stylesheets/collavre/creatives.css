@@ -1,11 +1,33 @@
 #creatives {
     background:
-        radial-gradient(ellipse 45% 30% at 8% 15%, color-mix(in srgb, var(--color-brand) 5%, transparent) 0%, transparent 100%),
-        radial-gradient(ellipse 35% 50% at 92% 10%, color-mix(in srgb, var(--color-accent-border) 4%, transparent) 0%, transparent 100%),
-        radial-gradient(ellipse 50% 35% at 70% 50%, color-mix(in srgb, var(--color-success) 3%, transparent) 0%, transparent 100%),
-        radial-gradient(ellipse 40% 45% at 25% 70%, color-mix(in srgb, var(--color-brand) 4%, transparent) 0%, transparent 100%),
-        radial-gradient(ellipse 55% 30% at 85% 80%, color-mix(in srgb, var(--color-accent-border) 3%, transparent) 0%, transparent 100%),
-        radial-gradient(ellipse 30% 40% at 50% 30%, color-mix(in srgb, var(--color-active) 3%, transparent) 0%, transparent 100%);
+        /* marble veins — thin diagonal streaks */
+        linear-gradient(
+            37deg,
+            transparent 30%,
+            color-mix(in srgb, var(--color-brand) 6%, transparent) 32%,
+            color-mix(in srgb, var(--color-brand) 3%, transparent) 34%,
+            transparent 36%,
+            transparent 62%,
+            color-mix(in srgb, var(--color-accent-border) 5%, transparent) 64%,
+            transparent 66%
+        ),
+        linear-gradient(
+            143deg,
+            transparent 20%,
+            color-mix(in srgb, var(--color-active) 4%, transparent) 22%,
+            transparent 24%,
+            transparent 48%,
+            color-mix(in srgb, var(--color-brand) 5%, transparent) 50%,
+            color-mix(in srgb, var(--color-brand) 2%, transparent) 53%,
+            transparent 55%,
+            transparent 78%,
+            color-mix(in srgb, var(--color-accent-border) 4%, transparent) 80%,
+            transparent 82%
+        ),
+        /* soft cloud patches */
+        radial-gradient(ellipse 60% 40% at 15% 20%, color-mix(in srgb, var(--color-brand) 4%, transparent) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 50% at 80% 65%, color-mix(in srgb, var(--color-accent-border) 3%, transparent) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 35% at 55% 10%, color-mix(in srgb, var(--color-success) 3%, transparent) 0%, transparent 70%);
     border-radius: var(--radius-2);
     padding: 0.5rem;
 }
