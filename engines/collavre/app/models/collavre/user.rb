@@ -69,6 +69,36 @@ module Collavre
     attribute :llm_api_key, :string
     attribute :gateway_url, :string
     attribute :tools, :json, default: -> { [] }
+    attribute :agent_conf, :string
+
+    # Default context settings for AI agents
+    AGENT_CONF_DEFAULTS = {
+      "context" => {
+        "chat_history" => 50,
+        "chat_history_size" => 100_000
+      }
+    }.freeze
+
+    # Returns parsed agent_conf merged with defaults
+    def parsed_agent_conf
+      defaults = AGENT_CONF_DEFAULTS.deep_dup
+      return defaults if agent_conf.blank?
+
+      user_conf = YAML.safe_load(agent_conf, permitted_classes: [ Symbol ]) || {}
+      defaults.deep_merge(user_conf)
+    rescue Psych::SyntaxError => e
+      Rails.logger.warn("[User#parsed_agent_conf] Invalid YAML for user #{id}: #{e.message}")
+      AGENT_CONF_DEFAULTS.deep_dup
+    end
+
+    # Convenience accessors for context settings
+    def chat_history_limit
+      parsed_agent_conf.dig("context", "chat_history") || 50
+    end
+
+    def chat_history_size_limit
+      parsed_agent_conf.dig("context", "chat_history_size") || 100_000
+    end
 
     encrypts :llm_api_key, deterministic: false
     encrypts :google_access_token, deterministic: false

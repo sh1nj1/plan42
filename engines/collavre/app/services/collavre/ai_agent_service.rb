@@ -211,17 +211,21 @@ module Collavre
         trigger_comment = Comment.find_by(id: trigger_comment_id)
         topic_id = trigger_comment&.topic_id
 
+        history_limit = @agent.chat_history_limit
+        history_size_limit = @agent.chat_history_size_limit
+        history_chars = 0
+
         Comment.where(creative_id: creative_id, private: false)
                .where(topic_id: topic_id)
                .includes(:user)
                .order(created_at: :desc)
-               .limit(50)
+               .limit(history_limit)
                .reverse
                .each do |c|
           next if c.id == @context.dig("comment", "id")
 
           role = (c.user_id == @agent.id) ? "model" : "user"
-          content = c.content
+          content = c.content.to_s
 
           if role == "user"
             content = MentionParser.strip_self_mention(content, @agent.name)
@@ -229,6 +233,10 @@ module Collavre
             speaker = c.user&.name || "unknown"
             content = "[#{speaker}]: #{content}"
           end
+
+          # Enforce chat_history_size limit
+          history_chars += content.length
+          break if history_chars > history_size_limit
 
           messages << { role: role, parts: [ { text: content } ] }
         end
