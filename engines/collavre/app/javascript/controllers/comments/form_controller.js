@@ -57,6 +57,8 @@ export default class extends Controller {
     this.imageInputTarget?.addEventListener('change', this.handleImageChange)
     this.textareaTarget.addEventListener('dragover', this.handleDragOver)
     this.textareaTarget.addEventListener('drop', this.handleDrop)
+    this.handlePaste = this.handlePaste.bind(this)
+    this.textareaTarget.addEventListener('paste', this.handlePaste)
 
 
     this.recognition = null
@@ -101,6 +103,7 @@ export default class extends Controller {
     this.imageInputTarget?.removeEventListener('change', this.handleImageChange)
     this.textareaTarget.removeEventListener('dragover', this.handleDragOver)
     this.textareaTarget.removeEventListener('drop', this.handleDrop)
+    this.textareaTarget.removeEventListener('paste', this.handlePaste)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
   }
 
@@ -423,6 +426,33 @@ export default class extends Controller {
     this.setImageFiles([...existingFiles, ...newFiles])
     this.cachedImageFiles = null
     this.updateAttachmentList()
+  }
+
+  handlePaste(event) {
+    const clipboardData = event.clipboardData
+    if (!clipboardData) return
+
+    const text = clipboardData.getData('text/plain')
+    if (!text) return
+
+    // Detect HTML content: must contain at least one HTML tag pair or self-closing tag
+    const htmlTagPattern = /<[a-zA-Z][^>]*>[\s\S]*<\/[a-zA-Z]+>|<[a-zA-Z][^>]*\/>/
+    if (!htmlTagPattern.test(text)) return
+
+    // Already wrapped in code block — don't double-wrap
+    if (text.trimStart().startsWith('```')) return
+
+    event.preventDefault()
+    const wrapped = '```html\n' + text + '\n```'
+    const textarea = this.textareaTarget
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const before = textarea.value.substring(0, start)
+    const after = textarea.value.substring(end)
+    textarea.value = before + wrapped + after
+    const cursorPos = start + wrapped.length
+    textarea.setSelectionRange(cursorPos, cursorPos)
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
   handleDragOver(event) {
