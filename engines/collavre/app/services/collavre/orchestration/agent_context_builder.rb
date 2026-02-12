@@ -19,10 +19,11 @@ module Collavre
         "read" => "reference"       # Can request information from
       }.freeze
 
-      def initialize(agent:, creative:, sender: nil)
+      def initialize(agent:, creative:, sender: nil, policy_resolver: nil)
         @agent = agent
         @creative = creative
         @sender = sender
+        @policy_resolver = policy_resolver
       end
 
       def a2a_request?
@@ -45,6 +46,7 @@ module Collavre
       # Generates markdown-formatted collaboration section for system prompt
       def to_collaboration_prompt
         sections = []
+        collab = collaboration_policy_config
 
         # Add A2A request context if this is an agent-to-agent call
         if a2a_request?
@@ -52,9 +54,9 @@ module Collavre
           sections << ""
           sections << I18n.t("collavre.ai_agent.a2a.request_description",
                              sender_name: @sender["name"], sender_type: @sender["type"])
-          sections << I18n.t("collavre.ai_agent.a2a.focus_instruction")
-          sections << I18n.t("collavre.ai_agent.a2a.completion_instruction")
-          sections << I18n.t("collavre.ai_agent.a2a.followup_instruction")
+          sections << (collab["a2a_focus_instruction"] || I18n.t("collavre.ai_agent.a2a.focus_instruction"))
+          sections << (collab["a2a_completion_instruction"] || I18n.t("collavre.ai_agent.a2a.completion_instruction"))
+          sections << (collab["a2a_followup_instruction"] || I18n.t("collavre.ai_agent.a2a.followup_instruction"))
           sections << ""
         end
 
@@ -100,10 +102,10 @@ module Collavre
         end
 
         sections << I18n.t("collavre.ai_agent.collaboration.rules_header")
-        sections << I18n.t("collavre.ai_agent.collaboration.mention_rule")
-        sections << I18n.t("collavre.ai_agent.collaboration.confidence_rule")
-        sections << I18n.t("collavre.ai_agent.collaboration.escalation_rule")
-        sections << I18n.t("collavre.ai_agent.collaboration.review_rule")
+        sections << (collab["mention_rule"] || I18n.t("collavre.ai_agent.collaboration.mention_rule"))
+        sections << (collab["confidence_rule"] || I18n.t("collavre.ai_agent.collaboration.confidence_rule"))
+        sections << (collab["escalation_rule"] || I18n.t("collavre.ai_agent.collaboration.escalation_rule"))
+        sections << (collab["review_rule"] || I18n.t("collavre.ai_agent.collaboration.review_rule"))
         sections << ""
 
         sections.join("\n")
@@ -195,6 +197,10 @@ module Collavre
           "escalation_hint" => I18n.t("collavre.ai_agent.collaboration.escalation_rule"),
           "review_hint" => I18n.t("collavre.ai_agent.collaboration.review_rule")
         }
+      end
+
+      def collaboration_policy_config
+        @policy_resolver&.collaboration_config || {}
       end
     end
   end

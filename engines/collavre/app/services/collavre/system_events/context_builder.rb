@@ -55,12 +55,7 @@ module Collavre
         content = chat_context["content"]
         return nil unless content
 
-        # Canonical mention format: @name: (with colon)
-        match = content.match(/\A@([^:]+?):\s*/)
-        return nil unless match
-
-        name = match[1].strip
-        user = User.where("LOWER(name) = ?", name.downcase).first
+        user = MentionParser.resolve_user(content)
         user&.as_json(only: [ :id, :name, :email ])
       end
     end

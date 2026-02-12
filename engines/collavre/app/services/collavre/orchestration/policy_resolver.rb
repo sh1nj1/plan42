@@ -34,7 +34,7 @@ module Collavre
           "max_retries" => 3,
           "retry_delay_seconds" => 5,
           # Loop breaker settings
-          "loop_breaker_enabled" => false,
+          "loop_breaker_enabled" => true,
           "ping_pong_threshold" => 5,           # Max back-and-forth between same agents
           "creative_retry_threshold" => 10,     # Max tasks on same creative in time window
           "creative_retry_window_minutes" => 30,
@@ -47,6 +47,15 @@ module Collavre
           "task_stuck_threshold_minutes" => 30,       # Task running for > N minutes
           "creative_stall_threshold_minutes" => 120,  # Creative no progress for > N minutes
           "create_system_comment" => true             # Create system comment on escalation
+        },
+        "collaboration" => {
+          "a2a_focus_instruction" => nil,         # nil = locale default
+          "a2a_completion_instruction" => nil,
+          "a2a_followup_instruction" => nil,
+          "mention_rule" => nil,
+          "confidence_rule" => nil,
+          "escalation_rule" => nil,
+          "review_rule" => nil
         }
       }.freeze
 
@@ -133,6 +142,11 @@ module Collavre
           "token_spike_threshold" => scheduling_config["token_spike_threshold"],
           "token_spike_window_minutes" => scheduling_config["token_spike_window_minutes"]
         }
+      end
+
+      # Collaboration config
+      def collaboration_config
+        @collaboration_config ||= merge_policies("collaboration")
       end
 
       # Stuck detection settings

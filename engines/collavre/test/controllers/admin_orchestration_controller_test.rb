@@ -138,6 +138,47 @@ class AdminOrchestrationControllerTest < ActionDispatch::IntegrationTest
     assert_includes flash[:alert], "scope_id"
   end
 
+  test "should accept collaboration policy type" do
+    valid_yaml = <<~YAML
+      collaboration:
+        global:
+          a2a_completion_instruction: "- When done, report results to the requester via @name: mention"
+          mention_rule: "- Call other agents: @name: request"
+    YAML
+
+    assert_changes -> { Collavre::OrchestratorPolicy.count }, from: 0, to: 1 do
+      patch admin_orchestration_path, params: { policies_yaml: valid_yaml }
+    end
+
+    assert_redirected_to admin_orchestration_path
+
+    policy = Collavre::OrchestratorPolicy.find_by(policy_type: "collaboration")
+    assert policy.global?
+    assert_equal "- When done, report results to the requester via @name: mention",
+                 policy.config["a2a_completion_instruction"]
+    assert_equal "- Call other agents: @name: request",
+                 policy.config["mention_rule"]
+  end
+
+  test "should save and load collaboration alongside other policies" do
+    valid_yaml = <<~YAML
+      arbitration:
+        global:
+          strategy: all
+      collaboration:
+        global:
+          a2a_completion_instruction: "- Custom completion"
+    YAML
+
+    patch admin_orchestration_path, params: { policies_yaml: valid_yaml }
+
+    assert_redirected_to admin_orchestration_path
+    assert_equal 2, Collavre::OrchestratorPolicy.count
+
+    collab = Collavre::OrchestratorPolicy.find_by(policy_type: "collaboration")
+    assert_equal "- Custom completion", collab.config["a2a_completion_instruction"]
+  end
+
   test "should clear existing policies and replace with new ones" do
     # Create existing policy
     Collavre::OrchestratorPolicy.create!(

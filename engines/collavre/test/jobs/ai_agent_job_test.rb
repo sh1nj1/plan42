@@ -159,9 +159,9 @@ class AiAgentJobTest < ActiveJob::TestCase
     # Note: The exact index depends on implementation details (e.g. creative context might be first)
     # Let's check for existence and order
 
-    user_msg_idx = messages.index { |m| m[:role] == "user" && m[:parts][0][:text] == "Previous user message" }
-    agent_msg_idx = messages.index { |m| m[:role] == "model" && m[:parts][0][:text] == "Previous agent message" }
-    current_msg_idx = messages.index { |m| m[:role] == "user" && m[:parts][0][:text] == "Hello" }
+    user_msg_idx = messages.index { |m| m[:role] == "user" && m[:parts][0][:text].include?("Previous user message") }
+    agent_msg_idx = messages.index { |m| m[:role] == "model" && m[:parts][0][:text].include?("Previous agent message") }
+    current_msg_idx = messages.index { |m| m[:role] == "user" && m[:parts][0][:text].include?("Hello") }
 
     assert user_msg_idx, "Previous user message not found"
     assert agent_msg_idx, "Previous agent message not found"
@@ -288,11 +288,11 @@ class AiAgentJobTest < ActiveJob::TestCase
     messages = capture_client.captured_messages
     message_texts = messages.map { |m| m[:parts][0][:text] }
 
-    # Should include "Message 59" (most recent)
-    assert_includes message_texts, "Message 59"
+    # Should include "Message 59" (most recent, with speaker label)
+    assert message_texts.any? { |t| t.include?("Message 59") }, "Expected message_texts to include 'Message 59'"
 
     # Should NOT include "Message 0" (oldest)
-    assert_not_includes message_texts, "Message 0"
+    assert_not message_texts.any? { |t| t.include?("Message 0") }, "Expected message_texts NOT to include 'Message 0'"
 
     # Verify we have roughly 50 history items + creative context + trigger payload
     # Exact count depends on implementation details, but should be around 52-53
