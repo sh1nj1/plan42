@@ -277,9 +277,9 @@ creative-tree-row.show-edit .creative-row {
     pointer-events: none;
 }
 
-.voice-input-active {
-    background-color: #2ecc71;
-    color: #ffffff;
+#voice-comments-btn.voice-input-active {
+    background-color: var(--color-complete);
+    color: var(--color-bg);
     border-radius: 6px;
     padding: 4px 8px;
 }
