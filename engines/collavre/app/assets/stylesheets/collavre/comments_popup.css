@@ -180,6 +180,17 @@ body.chat-fullscreen {
     margin-top: 0.2em;
 }
 
+.comment-content pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+}
+
+.comment-content pre code {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .comment-quoted-block {
     margin-top: 0.3em;
     margin-bottom: 0.2em;

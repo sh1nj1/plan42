@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
+import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
 
 export default class extends Controller {
   static targets = [
@@ -57,6 +58,8 @@ export default class extends Controller {
     this.imageInputTarget?.addEventListener('change', this.handleImageChange)
     this.textareaTarget.addEventListener('dragover', this.handleDragOver)
     this.textareaTarget.addEventListener('drop', this.handleDrop)
+    this.handlePaste = this.handlePaste.bind(this)
+    this.textareaTarget.addEventListener('paste', this.handlePaste)
 
 
     this.recognition = null
@@ -101,6 +104,7 @@ export default class extends Controller {
     this.imageInputTarget?.removeEventListener('change', this.handleImageChange)
     this.textareaTarget.removeEventListener('dragover', this.handleDragOver)
     this.textareaTarget.removeEventListener('drop', this.handleDrop)
+    this.textareaTarget.removeEventListener('paste', this.handlePaste)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
   }
 
@@ -423,6 +427,31 @@ export default class extends Controller {
     this.setImageFiles([...existingFiles, ...newFiles])
     this.cachedImageFiles = null
     this.updateAttachmentList()
+  }
+
+  handlePaste(event) {
+    const clipboardData = event.clipboardData
+    if (!clipboardData) return
+
+    const text = clipboardData.getData('text/plain') || clipboardData.getData('text')
+    if (!text) return
+
+    const { changed, result } = wrapHtmlInCodeBlocks(text)
+    if (!changed) return
+
+    event.preventDefault()
+
+    const textarea = this.textareaTarget
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const before = textarea.value.substring(0, start)
+    const after = textarea.value.substring(end)
+    // Ensure blank line before code fence if there's preceding text
+    const separator = before.length > 0 && !before.endsWith('\n') ? '\n' : ''
+    textarea.value = before + separator + result + after
+    const cursorPos = start + separator.length + result.length
+    textarea.setSelectionRange(cursorPos, cursorPos)
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
   handleDragOver(event) {
