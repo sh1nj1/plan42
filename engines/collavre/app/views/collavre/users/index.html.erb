@@ -65,7 +65,7 @@
               <%= button_to t('collavre.users.make_system_admin'),
                             collavre.grant_system_admin_user_path(user),
                             method: :patch,
-                            class: 'btn btn-xs btn-primary',
+                            class: 'btn btn-xs btn-success',
                             form: { data: { turbo_confirm: t('collavre.users.confirm_grant_system_admin') } } %>
             <% end %>
             <%= button_to t('collavre.users.delete'),
