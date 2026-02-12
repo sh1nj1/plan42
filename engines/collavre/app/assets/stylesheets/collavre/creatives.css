@@ -33,10 +33,10 @@ html.creative-alignment-ready .page-title {
     display: none;
     position: absolute;
     z-index: 10;
-    background: var(--color-section-bg);
-    border: 1px solid var(--color-border);
+    background: var(--surface-section);
+    border: 1px solid var(--border-color);
     padding: 0.5em;
-    box-shadow: 0 2px 8px var(--color-border);
+    box-shadow: 0 2px 8px var(--border-color);
     min-width: 220px;
 }
 
@@ -65,7 +65,7 @@ creative-tree-row.show-edit .creative-row {
     position: absolute;
     top: 50%;
     margin-left: 12px;
-    color: #2196f3;
+    color: var(--color-active);
     font-size: 1.3em;
     transform: translateY(-50%);
     pointer-events: none;
@@ -77,13 +77,13 @@ creative-tree-row.show-edit .creative-row {
     display: none;
     pointer-events: none;
     background: rgba(33, 150, 243, 0.9);
-    color: #fff;
-    font-size: 12px;
+    color: var(--text-on-badge);
+    font-size: var(--text-0);
     padding: 2px 8px;
     border-radius: 4px;
     transform: translate(-50%, -170%);
     z-index: 9999;
-    font-weight: 600;
+    font-weight: var(--weight-6);
     letter-spacing: 1px;
 }
 
@@ -113,7 +113,7 @@ creative-tree-row.show-edit .creative-row {
     bottom: 0;
     left: 50%;
     width: 1px;
-    background-color: var(--color-border);
+    background-color: var(--border-color);
     /* Thin guide line */
     opacity: 0.5;
 }
@@ -132,7 +132,7 @@ creative-tree-row.show-edit .creative-row {
 .creative-content img {
     pointer-events: auto;
     position: relative;
-    z-index: 1;
+    z-index: var(--layer-1);
 }
 
 .creative-row:hover .creative-content {
@@ -158,7 +158,7 @@ creative-tree-row.show-edit .creative-row {
     max-width: 5px;
     max-height: 5px;
     border-radius: 50%;
-    background: var(--color-text);
+    background: var(--text-primary);
     margin-left: 4px;
     margin-right: 8px;
     flex: 0 0 5px;
@@ -168,7 +168,7 @@ creative-tree-row.show-edit .creative-row {
 
 .creative-row-end {
     margin-left: 10px;
-    color: var(--color-muted);
+    color: var(--text-muted);
     font-size: 0.9em;
     white-space: nowrap;
     display: flex;
@@ -189,13 +189,13 @@ creative-tree-row.show-edit .creative-row {
 
 .creative-progress-complete,
 .creative-progress-incomplete {
-    color: var(--color-complete);
+    color: var(--color-brand);
     padding-top: 4px;
     /* Restore baseline alignment */
 }
 
 .creative-progress-incomplete {
-    color: var(--color-muted);
+    color: var(--text-muted);
 }
 
 /* .creative-progress-incomplete {} - removed empty rule */
@@ -211,12 +211,12 @@ creative-tree-row.show-edit .creative-row {
     display: inline-flex;
     align-items: baseline;
     margin-left: 0.5em;
-    color: var(--color-muted);
+    color: var(--text-muted);
     min-width: 1.5em;
 }
 
 .creative-loading-dot {
-    font-weight: bold;
+    font-weight: var(--weight-7);
     display: inline-block;
     width: 1.05em;
     text-align: center;
@@ -228,7 +228,7 @@ creative-tree-row.show-edit .creative-row {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--color-muted);
+    color: var(--text-muted);
     font-size: 1.2em;
     letter-spacing: 2px;
 }
@@ -240,7 +240,7 @@ creative-tree-row.show-edit .creative-row {
 
 .creative-action-btn {
     margin-left: 0px;
-    font-size: 16px;
+    font-size: var(--text-1);
     cursor: pointer;
     background: none;
     border: none;
@@ -255,14 +255,14 @@ creative-tree-row.show-edit .creative-row {
 
 /* Ensure inline editor actions use the correct text color */
 #actions-inline-editor .creative-action-btn {
-    color: var(--color-text);
+    color: var(--text-primary);
 }
 
 .creative-action-btn:disabled,
 .popup-menu-toggle:disabled,
 .popup-menu .popup-menu-item:disabled {
     opacity: 0.4;
-    color: var(--color-muted);
+    color: var(--text-muted);
     cursor: not-allowed;
     filter: grayscale(100%);
 }
@@ -278,8 +278,8 @@ creative-tree-row.show-edit .creative-row {
 }
 
 #voice-comments-btn.voice-input-active {
-    background-color: var(--color-complete);
-    color: var(--color-bg);
+    background-color: var(--color-brand);
+    color: var(--surface-bg);
     border-radius: 6px;
     padding: 4px 8px;
 }
@@ -308,7 +308,7 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 
 .add-creative-btn {
     font-size: 18px;
-    font-weight: bold;
+    font-weight: var(--weight-7);
     text-decoration: none;
 }
 
@@ -317,14 +317,14 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 .edit-inline-btn {
     visibility: hidden;
     opacity: 0;
-    color: var(--color-text);
+    color: var(--text-primary);
     transition: opacity 0.2s ease;
     width: 20px;
     /* Fixed width for alignment */
 }
 
 .creative-row:hover .edit-inline-btn {
-    color: var(--color-text);
+    color: var(--text-primary);
     visibility: visible;
     opacity: 1;
 }
@@ -356,7 +356,7 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     position: relative;
     /* width: 6px; */
     margin-right: 2px;
-    background-color: var(--color-border);
+    background-color: var(--border-color);
     display: flex;
     align-items: center;
     align-self: stretch;
@@ -373,7 +373,7 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
         width: 100%;
         height: 6px;
         /* border thickness */
-        background: var(--color-bg);
+        background: var(--surface-bg);
     }
 
     .creative-divider::before {
@@ -405,15 +405,15 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 }
 
 .creative-row.selected {
-    background-color: var(--color-drag-over);
+    background-color: var(--border-drag-over);
 }
 
 .creative-row:hover {
-    background-color: var(--color-border);
+    background-color: var(--border-color);
 }
 
 .creative-progress {
-    color: var(--color-muted);
+    color: var(--text-muted);
     font-size: 0.9em;
     margin-left: 10px;
     padding-top: 4px;
@@ -438,13 +438,13 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     align-items: center;
     justify-content: center;
     padding: 4px;
-    border-radius: 999px;
+    border-radius: var(--radius-round);
     transition: background-color 0.2s ease;
 }
 
 .creative-origin-link:hover,
 .creative-origin-link:focus {
-    background-color: var(--color-border);
+    background-color: var(--border-color);
 }
 
 .creative-origin-link-icon {
@@ -506,7 +506,7 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     width: 28px;
     height: 28px;
     position: relative;
-    color: var(--color-text);
+    color: var(--text-primary);
     margin-top: -2px;
     /* Move higher as requested */
 }
@@ -529,7 +529,7 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 .comment-icon {
     width: 100%;
     height: 100%;
-    color: var(--color-text);
+    color: var(--text-primary);
 }
 
 .comments-btn.no-comments {
@@ -555,5 +555,5 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 }
 
 .comments-btn .badge[data-count="0"] {
-    background: var(--color-complete);
+    background: var(--color-brand);
 }
