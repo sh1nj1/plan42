@@ -256,6 +256,7 @@ body.dark-mode {
  * ============================================================================ */
 @media (prefers-color-scheme: dark) {
   body:not(.light-mode):not(.dark-mode) {
+    color-scheme: dark;
     --shadow-color: 220 40% 2%;
     --shadow-strength: 25%;
 

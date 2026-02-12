@@ -51,7 +51,12 @@
 body {
   background: var(--surface-bg);
   color: var(--text-primary);
+  color-scheme: light;
   transition: background 0.3s, color 0.3s;
+}
+
+body.dark-mode {
+  color-scheme: dark;
 }
 
 nav {
