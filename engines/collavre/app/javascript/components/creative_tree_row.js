@@ -1,6 +1,7 @@
 import { LitElement, html, nothing } from "lit";
 import DOMPurify from "dompurify";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { parseEmojis } from "../utils/emoji_parser";
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -361,19 +362,7 @@ class CreativeTreeRow extends LitElement {
       emojiString = rootStyle.getPropertyValue('--creative-loading-emojis').replace(/"/g, '').trim();
     }
 
-    // Support both comma-separated ("🔵, 🔴, 🟡") and concatenated ("🍅🔴🌶️") formats
-    let emojis;
-    if (emojiString) {
-      if (emojiString.includes(',')) {
-        emojis = emojiString.split(',').map(e => e.trim()).filter(e => e);
-      } else {
-        // Split by emoji characters using Unicode segmenter or regex
-        emojis = [...emojiString.matchAll(/\p{Extended_Pictographic}(?:\u{FE0F}|\u{200D}\p{Extended_Pictographic})*/gu)].map(m => m[0]);
-      }
-      if (emojis.length === 0) emojis = ['🎨', '💡', '🚀', '✨', '🧩', '🎲'];
-    } else {
-      emojis = ['🎨', '💡', '🚀', '✨', '🧩', '🎲'];
-    }
+    const emojis = parseEmojis(emojiString);
 
     let emojiIndex = 0;
     let frame = 0;
