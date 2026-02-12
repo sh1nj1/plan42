@@ -152,13 +152,12 @@
   /* --bp-md: 768px;  */
   /* --bp-lg: 1024px; */
   /* --bp-xl: 1440px; */
-}
 
-/* ============================================================================
- * SEMANTIC COLOR TOKENS
- * These map Open Props primitives → meaningful roles.
- * Every token here MUST also be defined in body.dark-mode below.
- * ============================================================================ */
+  /* ============================================================================
+   * SEMANTIC COLOR TOKENS
+   * These map Open Props primitives → meaningful roles.
+   * Every token here MUST also be defined in body.dark-mode below.
+   * ============================================================================ */
 
   /* -- Surfaces (backgrounds) -- */
   --surface-bg: #f7f7f8;              /* page background */

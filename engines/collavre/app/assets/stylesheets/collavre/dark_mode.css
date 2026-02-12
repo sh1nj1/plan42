@@ -71,7 +71,7 @@ button,
 input[type="button"],
 input[type="submit"] {
   border: none;
-  border-radius: var(--radius-1);
-  padding: var(--space-1) var(--space-2);
+  border-radius: 1px;
+  padding: 2px 4px;
   transition: background 0.3s, color 0.3s;
 }
