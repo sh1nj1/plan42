@@ -1,29 +1,36 @@
 module Collavre
   class AutoThemeGenerator
     REQUIRED_VARIABLES = %w[
-      --color-bg
-      --color-text
+      --surface-bg
+      --surface-nav
+      --surface-section
+      --surface-input
+      --surface-btn
+      --surface-secondary
+      --text-primary
+      --text-muted
+      --text-on-btn
+      --text-nav
+      --text-nav-btn
+      --text-chat-btn
+      --text-on-badge
+      --text-input
       --color-link
-      --color-nav-bg
-      --color-section-bg
-      --color-btn-bg
-      --color-btn-text
-      --color-border
-      --color-muted
-      --color-complete
-      --color-chip-bg
-      --color-drag-over
-      --color-drag-over-edge
-      --hover-brightness
+      --color-brand
+      --color-active
+      --color-danger
+      --color-success
+      --color-warning
+      --color-highlight
       --color-badge-bg
-      --color-badge-text
-      --color-secondary-active
-      --color-secondary-background
-      --color-nav-btn-text
-      --color-chat-btn-text
-      --color-input-bg
-      --color-input-text
-      --color-nav-text
+      --color-accent-border
+      --color-accent-text
+      --color-code-bg
+      --color-code-text
+      --border-color
+      --border-drag-over
+      --border-drag-edge
+      --hover-brightness
       --creative-loading-emojis
     ].freeze
 
@@ -34,34 +41,48 @@ module Collavre
     def generate(prompt)
       system_prompt = <<~PROMPT
         You are an expert UI/UX designer specialized in creating color themes for web applications.
-        Your task is to generate a JSON object containing CSS variables.
         Generate a CSS theme as a JSON object based on the prompt: "#{prompt}".
         The JSON must strictly contain ONLY these keys: #{REQUIRED_VARIABLES.join(', ')}.
 
         CRITICAL DESIGN RULES:
-        1. Use **only 'oklch()' color format** for all colors. Do not use hex, rgb, or hsl.
-        2. Ensure "--color-nav-btn-text" has High Contrast (WCAG AA/AAA) against "--color-bg" (which is used as the button background in the nav).
-        3. Ensure "--color-chat-btn-text" has High Contrast against "--color-section-bg" (where chat messages reside).
-        4. Ensure "--color-nav-text" has High Contrast against "--color-nav-bg".
-        5. Names of these text colors should be visually distinct from their background colors to ensure readability.
-        6. For "--creative-loading-emojis", provide a comma-separated string of exactly 6 emojis that match the theme mood (e.g., "🌵,🏜️,☀️,🦎,🌾,🐪").
-        7. Do not include any other keys or newlines.
-        8. Return valid JSON only.
+        1. Use **only 'oklch()' color format** for all colors except --hover-brightness (use percentage like "90%") and --creative-loading-emojis (use comma-separated emojis).
+        2. Ensure "--text-nav-btn" has High Contrast (WCAG AA/AAA) against "--surface-bg".
+        3. Ensure "--text-chat-btn" has High Contrast against "--surface-section".
+        4. Ensure "--text-nav" has High Contrast against "--surface-nav".
+        5. Ensure "--text-primary" has High Contrast against "--surface-bg".
+        6. Ensure "--text-on-btn" has High Contrast against "--surface-btn".
+        7. Ensure "--text-input" has High Contrast against "--surface-input".
+        8. For "--creative-loading-emojis", provide a comma-separated string of exactly 6 emojis that match the theme mood.
+        9. Return valid JSON only. No markdown formatting, no explanations.
 
-        The JSON object must strictly follow this structure:
+        TOKEN ROLES:
+        - --surface-*: Background colors (page, nav, cards, inputs, buttons)
+        - --text-*: Text colors for various contexts
+        - --color-link: Hyperlink color
+        - --color-brand: Brand / accent color
+        - --color-active: Active / selected state
+        - --color-danger: Error / destructive actions
+        - --color-success: Success state
+        - --color-warning: Warning state
+        - --color-highlight: Text highlight flash
+        - --color-badge-bg: Notification badge background
+        - --color-accent-border: Active element border
+        - --color-accent-text: Active element text
+        - --color-code-bg: Code block background
+        - --color-code-text: Code block text
+        - --border-*: Border and divider colors
+        - --hover-brightness: CSS filter brightness on hover (e.g. "90%")
+
+        Example structure:
         {
-          "--color-bg": "oklch(95% 0.01 200)",
-          "--color-text": "oklch(20% 0.02 200)",
+          "--surface-bg": "oklch(95% 0.01 200)",
+          "--text-primary": "oklch(20% 0.02 200)",
           ...
         }
 
-        REQUIRED VARIABLES:
-        #{REQUIRED_VARIABLES.join("\n")}
-
         GUIDELINES:
-        - Ensure high contrast between text and background.
+        - Ensure high contrast between all text and their respective backgrounds.
         - Maintain a consistent aesthetic suitable for the description.
-        - Return ONLY the JSON object. No markdown formatting, no explanations.
       PROMPT
 
       response = @client.chat([

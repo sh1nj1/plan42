@@ -1,7 +1,7 @@
 <div style="max-width: 960px; margin: 0 auto; padding: 1rem;">
   <h1><%= t('collavre.themes.manage_themes') %></h1>
 
-  <div class="card" style="margin-bottom: 2rem; padding: 1.5rem; background: var(--color-section-bg); border: 1px solid var(--color-border); border-radius: 8px;">
+  <div class="card" style="margin-bottom: 2rem; padding: 1.5rem; background: var(--surface-section); border: 1px solid var(--border-color); border-radius: 8px;">
     <h3><%= t('collavre.themes.create_new') %></h3>
     <%= form_with url: collavre.user_themes_path, method: :post, local: true do |f| %>
       <div class="stacked-form-control">
@@ -38,10 +38,10 @@
             <td>
               <div style="display: flex; gap: 4px;">
                 <% 
-                   preview_vars = theme.variables.slice("--color-bg", "--color-text", "--color-btn-bg", "--color-link")
+                   preview_vars = theme.variables.slice("--surface-bg", "--text-primary", "--surface-btn", "--color-link")
                 %>
                 <% preview_vars.each do |k, v| %>
-                  <div title="<%= k %>: <%= v %>" style="width: 20px; height: 20px; background-color: <%= v %>; border: 1px solid var(--color-border); border-radius: 4px;"></div>
+                  <div title="<%= k %>: <%= v %>" style="width: 20px; height: 20px; background-color: <%= v %>; border: 1px solid var(--border-color); border-radius: 4px;"></div>
                 <% end %>
               </div>
             </td>
@@ -60,7 +60,7 @@
         <% end %>
         <% if @themes.empty? %>
           <tr>
-            <td colspan="4" style="text-align: center; color: var(--color-muted); padding: 2rem;">
+            <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 2rem;">
               <p><%= t('collavre.themes.no_themes') %></p>
             </td>
           </tr>
