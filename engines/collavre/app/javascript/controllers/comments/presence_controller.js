@@ -2,6 +2,7 @@ import { Controller } from '@hotwired/stimulus'
 import { createSubscription } from '../../services/cable'
 
 const TYPING_TIMEOUT = 3000
+const AGENT_STATUS_TIMEOUT = 10000 // Safety timeout for agent_status (heartbeat expected every 3s)
 
 export default class extends Controller {
   static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox']
@@ -158,8 +159,20 @@ export default class extends Controller {
       }
       if (status === 'thinking' || status === 'streaming') {
         this.typingUsers[id] = name
+        // Safety timeout: auto-remove if no heartbeat within AGENT_STATUS_TIMEOUT
+        if (!this.agentStatusTimers) this.agentStatusTimers = {}
+        if (this.agentStatusTimers[id]) clearTimeout(this.agentStatusTimers[id])
+        this.agentStatusTimers[id] = setTimeout(() => {
+          delete this.typingUsers[id]
+          delete this.agentStatusTimers[id]
+          this.renderTypingIndicator()
+        }, AGENT_STATUS_TIMEOUT)
       } else {
         delete this.typingUsers[id]
+        if (this.agentStatusTimers?.[id]) {
+          clearTimeout(this.agentStatusTimers[id])
+          delete this.agentStatusTimers[id]
+        }
       }
       this.renderTypingIndicator()
     }
