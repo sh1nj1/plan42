@@ -561,6 +561,7 @@ body.chat-fullscreen {
 .delete-comment-btn,
 .edit-comment-btn,
 .review-comment-btn,
+.replace-comment-btn,
 .copy-comment-link-btn {
     border: none;
     background: none;
@@ -574,6 +575,11 @@ body.chat-fullscreen {
 .comment-delete-hidden,
 .comment-approve-hidden {
     display: none;
+}
+
+.replace-comment-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
 }
 
 .comment-copy-notice {

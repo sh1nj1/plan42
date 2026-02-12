@@ -66,6 +66,7 @@ en:
       speech_unavailable: Speech recognition is not supported in this browser.
       move_button: Move
       review_button: Review
+      replace_button: Replace
       move_no_selection: Select at least one message to move.
       move_error: Unable to move messages.
       add_participant: Add user

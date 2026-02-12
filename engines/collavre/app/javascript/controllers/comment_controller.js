@@ -4,7 +4,7 @@ import CommonPopup from '../lib/common_popup'
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "reviewButton"]
+  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "reviewButton", "replaceButton"]
 
   connect() {
     const contentElement = this.element.querySelector('.comment-content')
@@ -17,6 +17,10 @@ export default class extends Controller {
     // Text selection quote support
     this.handleMouseUp = this.handleMouseUp.bind(this)
     this.element.addEventListener('mouseup', this.handleMouseUp)
+
+    // Track selection changes to enable/disable replace button
+    this._handleSelectionChange = this._handleSelectionChange.bind(this)
+    document.addEventListener('selectionchange', this._handleSelectionChange)
 
     this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
@@ -115,6 +119,7 @@ export default class extends Controller {
 
   disconnect() {
     this.element.removeEventListener('mouseup', this.handleMouseUp)
+    document.removeEventListener('selectionchange', this._handleSelectionChange)
     this.hideReviewPopup()
     if (this._reviewPopupEl) {
       this._reviewPopupEl.remove()
@@ -221,6 +226,51 @@ export default class extends Controller {
       if (formController && fullText) {
         formController.quoteComment(commentId, fullText)
       }
+    })
+  }
+
+  replaceButtonTargetConnected(button) {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const selectedText = this._getSelectedTextInContent()
+      if (!selectedText) return
+
+      const commentId = this.element.dataset.commentId
+      const formController = this.findFormController()
+      if (formController) {
+        formController.quoteComment(commentId, selectedText)
+      }
+      window.getSelection().removeAllRanges()
+      this._updateReplaceButton()
+    })
+  }
+
+  _getSelectedTextInContent() {
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed) return null
+
+    const text = selection.toString().trim()
+    if (!text) return null
+
+    const contentEl = this.element.querySelector('.comment-content')
+    if (!contentEl) return null
+
+    const range = selection.getRangeAt(0)
+    if (!contentEl.contains(range.commonAncestorContainer)) return null
+
+    return text
+  }
+
+  _handleSelectionChange() {
+    this._updateReplaceButton()
+  }
+
+  _updateReplaceButton() {
+    if (!this.hasReplaceButtonTarget) return
+    const hasSelection = !!this._getSelectedTextInContent()
+    this.replaceButtonTargets.forEach((btn) => {
+      btn.disabled = !hasSelection
     })
   }
 
