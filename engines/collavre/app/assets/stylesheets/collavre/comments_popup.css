@@ -492,8 +492,34 @@ body.chat-fullscreen {
     gap: 0.5em;
 }
 
-.edit-comment-action-btn {
+.edit-comment-action-btn,
+.approve-comment-btn {
     margin-top: 0.6em;
+    padding: 0.15em 0.4em;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2);
+    background: var(--surface-btn);
+    color: var(--text-on-btn);
+    font-size: 0.75rem;
+    line-height: 1.3;
+    cursor: pointer;
+}
+
+.edit-comment-action-btn:hover,
+.approve-comment-btn:hover {
+    filter: brightness(var(--hover-brightness, 0.95));
+}
+
+.approve-comment-btn {
+    background: color-mix(in srgb, var(--color-success) 15%, transparent);
+    color: var(--color-success);
+    border-color: var(--color-success);
+}
+
+.approve-comment-btn:hover {
+    background: var(--color-success);
+    color: var(--text-on-badge);
+    filter: none;
 }
 
 .comment-status-label {
