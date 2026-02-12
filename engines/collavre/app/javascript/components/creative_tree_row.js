@@ -361,7 +361,19 @@ class CreativeTreeRow extends LitElement {
       emojiString = rootStyle.getPropertyValue('--creative-loading-emojis').replace(/"/g, '').trim();
     }
 
-    const emojis = emojiString ? emojiString.split(',').map(e => e.trim()) : ['🎨', '💡', '🚀', '✨', '🧩', '🎲'];
+    // Support both comma-separated ("🔵, 🔴, 🟡") and concatenated ("🍅🔴🌶️") formats
+    let emojis;
+    if (emojiString) {
+      if (emojiString.includes(',')) {
+        emojis = emojiString.split(',').map(e => e.trim()).filter(e => e);
+      } else {
+        // Split by emoji characters using Unicode segmenter or regex
+        emojis = [...emojiString.matchAll(/\p{Extended_Pictographic}(?:\u{FE0F}|\u{200D}\p{Extended_Pictographic})*/gu)].map(m => m[0]);
+      }
+      if (emojis.length === 0) emojis = ['🎨', '💡', '🚀', '✨', '🧩', '🎲'];
+    } else {
+      emojis = ['🎨', '💡', '🚀', '✨', '🧩', '🎲'];
+    }
 
     let emojiIndex = 0;
     let frame = 0;
