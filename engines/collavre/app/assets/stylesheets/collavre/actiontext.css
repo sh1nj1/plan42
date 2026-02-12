@@ -3,49 +3,49 @@
  */
 
 .lexical-inline-editor {
-  background: var(--color-section-bg, var(--color-bg));
+  background: var(--surface-section, var(--surface-bg));
   border-radius: 8px;
-  padding: 0.5rem;
+  padding: var(--space-2);
 }
 
 .inline-edit-form-shell {
-  background: var(--color-section-bg, var(--color-bg));
-  border: 1px solid var(--color-border);
+  background: var(--surface-section, var(--surface-bg));
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 0 0 1rem 0;
+  padding: 0 0 var(--space-3) 0;
 }
 
 .lexical-editor-shell {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .lexical-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .lexical-toolbar-color {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .lexical-toolbar-color__trigger {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .lexical-toolbar-color__swatch {
   width: 0.9rem;
   height: 0.9rem;
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-1);
   box-sizing: border-box;
   display: inline-block;
 }
@@ -59,18 +59,18 @@
   align-items: center;
   gap: 0.35rem;
   padding: 0.4rem 0.5rem;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  background: var(--surface-bg);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  box-shadow: 0 6px 16px rgba(20, 24, 43, 0.14);
+  box-shadow: var(--shadow-3);
 }
 
 .lexical-toolbar-color__popover input[type="color"] {
   appearance: none;
   cursor: pointer;
   border: none;
-  width: 2rem;
-  height: 2rem;
+  width: var(--space-7);
+  height: var(--space-7);
   padding: 0;
   background: transparent;
 }
@@ -78,21 +78,21 @@
 .lexical-toolbar-btn--small {
   min-width: auto;
   padding: 0.2rem 0.4rem;
-  font-size: 0.75rem;
+  font-size: var(--text-0);
 }
 
 .lexical-toolbar-btn {
   appearance: none;
-  background: var(--color-btn-bg);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  color: var(--color-btn-text);
+  background: var(--surface-btn);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-1);
+  color: var(--text-on-btn);
   cursor: pointer;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: var(--weight-6);
   line-height: 1.2;
-  min-width: 2rem;
-  padding: 0.25rem 0.4rem;
+  min-width: var(--space-7);
+  padding: var(--space-1) 0.4rem;
   text-align: center;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
@@ -104,15 +104,15 @@
 }
 
 .lexical-toolbar-btn.active {
-  background: var(--color-accent, #cbeefa);
+  background: var(--color-active, #cbeefa);
   border-color: var(--color-accent-border, #7bc4e4);
   color: var(--color-accent-text, #03425f);
 }
 
 .lexical-toolbar-separator {
   align-self: stretch;
-  border-left: 1px solid var(--color-border);
-  margin-inline: 0.25rem;
+  border-left: 1px solid var(--border-color);
+  margin-inline: var(--space-1);
 }
 
 .lexical-editor-inner {
@@ -127,7 +127,7 @@
 }
 
 .lexical-placeholder {
-  color: var(--color-muted, #8c93a3);
+  color: var(--text-muted, #8c93a3);
   left: 0.75rem;
   pointer-events: none;
   position: absolute;
@@ -141,8 +141,8 @@
 .lexical-heading-h1,
 .lexical-heading-h2,
 .lexical-heading-h3 {
-  font-weight: 600;
-  margin: 0 0 0.5rem 0;
+  font-weight: var(--weight-6);
+  margin: 0 0 var(--space-2) 0;
 }
 
 .lexical-heading-h1 {
@@ -158,8 +158,8 @@
 }
 
 .lexical-quote {
-  border-left: 0.25rem solid var(--color-border);
-  color: var(--color-muted, #656c7b);
+  border-left: var(--space-1) solid var(--border-color);
+  color: var(--text-muted, #656c7b);
   margin: 0 0 0.75rem 0;
   padding-left: 0.75rem;
 }
@@ -181,7 +181,7 @@
 }
 
 .lexical-text-bold {
-  font-weight: 600;
+  font-weight: var(--weight-6);
 }
 
 .lexical-text-italic {
@@ -198,7 +198,7 @@
 
 .lexical-text-code {
   background: rgba(135, 143, 161, 0.15);
-  border-radius: 4px;
+  border-radius: var(--radius-1);
   font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.9em;
   padding: 0.1em 0.3em;
@@ -207,7 +207,7 @@
 .lexical-code-block {
   display: block;
   background: var(--color-code-bg, #f6f8fa);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   color: var(--color-code-text, #1f2328);
   font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -286,24 +286,24 @@
 .lexical-token-tag,
 .lexical-token-selector,
 .lexical-token-keyword {
-  font-weight: 600;
+  font-weight: var(--weight-6);
 }
 
 .lexical-attachment {
   position: relative;
   margin: 0.75rem 0;
   padding: 0.75rem;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
-  background: var(--color-surface, #fff);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  background: var(--surface-section, #fff);
+  box-shadow: var(--shadow-1);
 }
 
 .lexical-attachment figure {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .lexical-attachment figure img {
@@ -313,7 +313,7 @@
 }
 
 .lexical-attachment.is-selected {
-  border-color: var(--color-accent, #4f46e5);
+  border-color: var(--color-active, #4f46e5);
   box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
 }
 
@@ -326,7 +326,7 @@
   color: #fff;
   width: 1.6rem;
   height: 1.6rem;
-  border-radius: 999px;
+  border-radius: var(--radius-round);
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.2s ease;
@@ -351,7 +351,7 @@
   background: rgba(15, 23, 42, 0.6);
   color: #fff;
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: var(--weight-5);
 }
 
 .lexical-attachment__overlay--error {
@@ -363,10 +363,10 @@
   position: absolute;
   right: 0.55rem;
   bottom: 0.55rem;
-  width: 16px;
-  height: 16px;
-  border-right: 2px solid var(--color-accent, #4f46e5);
-  border-bottom: 2px solid var(--color-accent, #4f46e5);
+  width: var(--space-3);
+  height: var(--space-3);
+  border-right: 2px solid var(--color-active, #4f46e5);
+  border-bottom: 2px solid var(--color-active, #4f46e5);
   cursor: nwse-resize;
   opacity: 0.6;
 }
@@ -395,30 +395,30 @@
   content: "";
   position: absolute;
   inset: 20%;
-  border-radius: 999px;
+  border-radius: var(--radius-round);
   border: 2px dashed rgba(100, 116, 139, 0.45);
 }
 
 .lexical-attachment__caption-input {
   width: 100%;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  padding: 0.5rem 0.6rem;
+  padding: var(--space-2) 0.6rem;
   font-size: 0.9rem;
-  background: var(--color-surface, #fff);
+  background: var(--surface-section, #fff);
   color: inherit;
 }
 
 .lexical-attachment__caption-input:focus {
   outline: none;
-  border-color: var(--color-accent, #4f46e5);
+  border-color: var(--color-active, #4f46e5);
   box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
 }
 
 .lexical-attachment__caption-size {
-  margin-left: 0.5rem;
+  margin-left: var(--space-2);
   font-size: 0.8rem;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--text-muted, #6b7280);
 }
 
 .lexical-attachment__file {
@@ -438,7 +438,7 @@
 }
 
 .lexical-attachment__file-name {
-  font-weight: 600;
+  font-weight: var(--weight-6);
   color: inherit;
   text-decoration: none;
 }
@@ -450,7 +450,7 @@
 
 .lexical-attachment__file-size {
   font-size: 0.85rem;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--text-muted, #6b7280);
 }
 
 /*
@@ -474,7 +474,7 @@
 }
 
 .trix-content blockquote {
-  border: 0 solid var(--color-border);
+  border: 0 solid var(--border-color);
   border-left-width: 0.3em;
   margin-left: 0.3em;
   padding-left: 0.6em;
@@ -504,8 +504,8 @@
   font-size: 0.9em;
   padding: 0.5em;
   white-space: pre;
-  background-color: var(--color-btn-bg);
-  color: var(--color-text);
+  background-color: var(--surface-btn);
+  color: var(--text-primary);
   overflow-x: auto;
 }
 
@@ -544,18 +544,18 @@
 }
 
 .trix-content .attachment--preview .attachment__caption {
-  color: #666;
+  color: var(--text-muted);
   font-size: 0.9em;
   line-height: 1.2;
 }
 
 .trix-content .attachment--file {
-  color: var(--color-text);
+  color: var(--text-primary);
   line-height: 1;
   margin: 0 2px 2px 2px;
   padding: 0.4em 1em;
-  border: 1px solid var(--color-border);
-  border-radius: 5px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2);
 }
 
 .trix-content .attachment-gallery {
