@@ -43,84 +43,81 @@ module Collavre
         You are a color theme designer for a workspace app.
         Generate a JSON with ONLY these keys: #{REQUIRED_VARIABLES.join(', ')}.
 
-        FORMAT: oklch() for colors. --hover-brightness: "90%" (light) or "110%" (dark).
-        --creative-loading-emojis: 6 emojis. Return valid JSON only, no markdown.
+        FORMAT: hex colors (#rrggbb). --hover-brightness: "90%" (light) or "110%" (dark).
+        --creative-loading-emojis: 6 emojis. Return ONLY valid JSON, no markdown.
 
-        === UI LAYOUT (know what each token controls) ===
-        ┌─────────────────────────────────────────┐
-        │ NAV BAR (--surface-nav)        ~8% area │
-        │ [brand logo] [nav buttons]              │
-        ├─────────────────────────────────────────┤
-        │ MAIN CONTENT (--surface-bg)    ~60% area│
-        │                                         │
-        │  ┌─ SECTION ──────────────────────────┐ │
-        │  │ (--surface-section)        ~15%    │ │
-        │  │  ┌─INPUT──┐  ┌──BTN──┐            │ │
-        │  │  │ input   │  │ Save  │   ~2% each│ │
-        │  │  └─────────┘  └───────┘            │ │
-        │  └────────────────────────────────────┘ │
-        │                                         │
-        │  ┌─ SECONDARY ────┐ ┌─ CODE ────────┐  │
-        │  │ sidebar ~10%   │ │ code-bg  ~3%  │  │
-        │  └────────────────┘ └────────────────┘  │
-        └─────────────────────────────────────────┘
-        Think of it like interior design:
-        - surface-bg = WALLS (60%) — tinted with theme color, light/pastel
-        - surface-section = FLOOR (15%) — slightly deeper shade
-        - surface-nav = CEILING/TRIM (8%) — noticeably deeper
-        - surface-btn = FURNITURE (2%) — can be vivid or deep
-        - Accents (brand, active, badge) = DECORATIONS — small pops of color
+        === REFERENCE THEMES (these are GOOD — match this quality) ===
 
-        === PROCESS ===
+        "바나나" (yellow, light):
+        {"--surface-bg":"#fdf7d0","--surface-nav":"#e8d36b","--surface-section":"#feeec1",
+         "--surface-input":"#ffffff","--surface-btn":"#e3b831","--surface-secondary":"#f4d9bb",
+         "--text-primary":"#1a1200","--text-muted":"#5a4e00","--text-on-btn":"#241100",
+         "--text-nav":"#1a1200","--text-nav-btn":"#1a1200","--text-chat-btn":"#1a1200",
+         "--text-on-badge":"#fff8e0","--text-input":"#1a1200",
+         "--color-link":"#c69900","--color-brand":"#c69900","--color-active":"#c08500",
+         "--color-danger":"#cc3300","--color-success":"#4a8c00","--color-warning":"#cc8800",
+         "--color-highlight":"#fff3a0","--color-badge-bg":"#ca9600",
+         "--color-accent-border":"#a67a00","--color-accent-text":"#c69900",
+         "--color-code-bg":"#f5efc0","--color-code-text":"#1a1200",
+         "--border-color":"#c4b060","--border-drag-over":"#d4a800","--border-drag-edge":"#c69900",
+         "--hover-brightness":"90%","--creative-loading-emojis":"🍌🌻💛🍋✨🌼"}
 
-        Step 1) INTERPRET THE PROMPT → extract a HUE:
-           "토마토" → warm red hue (25°). "숲" → green hue (145°).
-           "바나나" → yellow hue (90°). "바다" → blue hue (230°).
-           Multi-color (e.g. "Google logo"=blue+red+yellow+green):
-             Pick the DOMINANT color's hue for surfaces.
-             Distribute ALL distinct colors across accent tokens:
-             brand=color1, active=color2, badge-bg=color3, accent-border=color4.
-             The user must SEE each named color clearly. Do NOT blend into gray.
+        "숲속" (green, light):
+        {"--surface-bg":"#ecf4ef","--surface-nav":"#d5e2d7","--surface-section":"#e2f4e7",
+         "--surface-input":"#f6f9f7","--surface-btn":"#357153","--surface-secondary":"#dbe8e3",
+         "--text-primary":"#0a1f10","--text-muted":"#3a5040","--text-on-btn":"#f3fbf6",
+         "--text-nav":"#0a1f10","--text-nav-btn":"#0a1f10","--text-chat-btn":"#0a1f10",
+         "--text-on-badge":"#f3fbf6","--text-input":"#0a1f10",
+         "--color-link":"#25984d","--color-brand":"#25984d","--color-active":"#008a39",
+         "--color-danger":"#cc3300","--color-success":"#00880a","--color-warning":"#cc8800",
+         "--color-highlight":"#c8f0d0","--color-badge-bg":"#005734",
+         "--color-accent-border":"#337344","--color-accent-text":"#1a3520",
+         "--color-code-bg":"#e0ede4","--color-code-text":"#0a1f10",
+         "--border-color":"#a0bca6","--border-drag-over":"#40905a","--border-drag-edge":"#25984d",
+         "--hover-brightness":"90%","--creative-loading-emojis":"🌲🍃🌿🌱✨🦎"}
 
-        Step 2) BUILD SURFACES — TINTED, not gray!
-           ALL surfaces must carry the theme's hue. Use the SAME hue with varying lightness AND chroma.
-           GOOD examples (surfaces carry color):
-             바나나: bg=#fdf7d0 (yellow tint), section=#feeec1, nav=#e8d36b, btn=#e3b831
-             숲속:   bg=#ecf4ef (green tint), section=#e2f4e7, nav=#d5e2d7, btn=#357153
-             토마토: bg=#fbefea (warm pink),   section=#f5e8e4, nav=#f7ded6, btn=#cc0000
-           BAD examples (color stripped out):
-             바나나: bg=#f1eee7 (gray beige) ← WRONG, no yellow
-             숲속:   bg=#eaeff5 (gray blue)  ← WRONG, no green
+        "토마토" (red/warm, light):
+        {"--surface-bg":"#fbefea","--surface-nav":"#f7ded6","--surface-section":"#f5e8e4",
+         "--surface-input":"#fff6f3","--surface-btn":"#cc0000","--surface-secondary":"#f0cfc4",
+         "--text-primary":"#1f0800","--text-muted":"#5a3020","--text-on-btn":"#fff0e8",
+         "--text-nav":"#1f0800","--text-nav-btn":"#1f0800","--text-chat-btn":"#1f0800",
+         "--text-on-badge":"#fff0e8","--text-input":"#1f0800",
+         "--color-link":"#d40924","--color-brand":"#d40924","--color-active":"#ff4040",
+         "--color-danger":"#cc0000","--color-success":"#4a8c00","--color-warning":"#cc8800",
+         "--color-highlight":"#ffe0d0","--color-badge-bg":"#ba0d01",
+         "--color-accent-border":"#c85b32","--color-accent-text":"#b22800",
+         "--color-code-bg":"#f0e4de","--color-code-text":"#1f0800",
+         "--border-color":"#d0a898","--border-drag-over":"#e04020","--border-drag-edge":"#cc0000",
+         "--hover-brightness":"90%","--creative-loading-emojis":"🍅🔴🌶️🫕✨🍝"}
 
-           Lightness staircase (light theme):
-             bg=93-97%, input=91-95%, section=87-91%, secondary=85-89%, nav=80-86%, btn=40-80%
-           Lightness staircase (dark theme):
-             bg=8-15%, input=14-20%, section=18-24%, secondary=18-22%, nav=6-12%, btn=22-32%
+        "사이버펑크" (neon, dark):
+        {"--surface-bg":"#070b14","--surface-nav":"#0f101f","--surface-section":"#12161f",
+         "--surface-input":"#02060d","--surface-btn":"#2f1d4a","--surface-secondary":"#181b1f",
+         "--text-primary":"#dcdde5","--text-muted":"#8a8c99","--text-on-btn":"#e0d0ff",
+         "--text-nav":"#dcdde5","--text-nav-btn":"#dcdde5","--text-chat-btn":"#dcdde5",
+         "--text-on-badge":"#dcdde5","--text-input":"#dcdde5",
+         "--color-link":"#0099f0","--color-brand":"#e749df","--color-active":"#0089e9",
+         "--color-danger":"#ff3050","--color-success":"#00cc66","--color-warning":"#ffaa00",
+         "--color-highlight":"#2a1848","--color-badge-bg":"#692278",
+         "--color-accent-border":"#0094c9","--color-accent-text":"#eb63c5",
+         "--color-code-bg":"#0e1220","--color-code-text":"#c0c4d0",
+         "--border-color":"#2a2e3a","--border-drag-over":"#6030a0","--border-drag-edge":"#e749df",
+         "--hover-brightness":"110%","--creative-loading-emojis":"🌃💜⚡🤖✨🎮"}
 
-           Chroma guidance:
-             bg/input: LOW chroma (C=0.02-0.06) — tinted but soft
-             section/secondary: MEDIUM (C=0.03-0.08)
-             nav: MEDIUM-HIGH (C=0.05-0.12)
-             btn: HIGH is OK (C=0.05-0.20) — can be vivid or deep
+        === RULES ===
 
-        Step 3) TEXT — must contrast against its background:
-           LIGHT themes: text-primary/on-btn/nav/input = L≤25% (near black). text-muted = L≤40%.
-           DARK themes: text-primary/on-btn/nav/input = L≥80% (near white). text-muted = L≥60%.
-           Exception: if btn is very dark (L<40%), text-on-btn should be LIGHT (L≥85%).
-           Exception: if nav is very dark (L<40%), text-nav should be LIGHT (L≥85%).
-           CRITICAL: ≥4.5:1 contrast ratio for all text/surface pairs.
-
-        Step 4) ACCENTS — vivid mood color:
-           brand/link = mood color at full saturation. active = brighter variant.
-           danger=red, success=green, warning=amber (standard, always).
-           code-bg = SAME hue as surface-bg, just 3-5% darker.
-           border-color = between surface-bg and text-primary in lightness.
-
-        === CRITICAL MISTAKES TO AVOID ===
-        - NEVER make surfaces gray/neutral when the prompt has a clear color (the #1 mistake)
-        - NEVER make text-on-btn similar lightness to surface-btn
-        - NEVER make all surfaces the same lightness (need clear staircase)
-        - For multi-color prompts: NEVER blend all colors into one muddy tone
+        1) SURFACES must be TINTED with the theme color — never gray or neutral.
+           bg is lightest (pastel), then input, section, secondary, nav (deeper), btn (deepest or vivid).
+        2) ALL text must be DARK (#0a-#2f range) on light themes, LIGHT (#cc-#ff range) on dark themes.
+           Exception: text-on-btn must contrast with surface-btn. If btn is dark, text-on-btn is light.
+        3) brand/link = vivid theme color. danger=red, success=green, warning=amber ALWAYS.
+        4) code-bg = same hue as surface-bg, slightly darker. NEVER a different hue family.
+        5) Multi-color prompts (e.g. "Google logo", "rainbow", "Italian flag"):
+           - Surfaces: use the DOMINANT color's hue (tinted, not gray)
+           - Distribute each distinct color to: brand, active, badge-bg, accent-border, accent-text
+           - Each color must be RECOGNIZABLE — never blend into one muddy tone
+        6) Match the vibe: "토마토" = warm reds/oranges, "바나나" = bright yellows, "숲" = rich greens.
+           The user should IMMEDIATELY recognize the theme from its colors.
       PROMPT
 
       response = @client.chat([
