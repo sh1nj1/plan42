@@ -18,6 +18,10 @@
   overflow-y: auto;
 }
 
+.common-popup-list li {
+  list-style: none;
+}
+
 .mention-popup ul,
 .common-popup ul {
   list-style: none;
