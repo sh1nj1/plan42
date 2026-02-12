@@ -40,49 +40,67 @@ module Collavre
 
     def generate(prompt)
       system_prompt = <<~PROMPT
-        You are an expert UI/UX designer specialized in creating color themes for web applications.
-        Generate a CSS theme as a JSON object based on the prompt: "#{prompt}".
-        The JSON must strictly contain ONLY these keys: #{REQUIRED_VARIABLES.join(', ')}.
+        You are an expert UI/UX designer creating a color theme for a collaborative workspace app.
+        Generate a CSS theme as a JSON object for: "#{prompt}".
+        The JSON must contain ONLY these keys: #{REQUIRED_VARIABLES.join(', ')}.
 
-        CRITICAL DESIGN RULES:
-        1. Use **only 'oklch()' color format** for all colors except --hover-brightness (use percentage like "90%") and --creative-loading-emojis (use comma-separated emojis).
-        2. Ensure "--text-nav-btn" has High Contrast (WCAG AA/AAA) against "--surface-bg".
-        3. Ensure "--text-chat-btn" has High Contrast against "--surface-section".
-        4. Ensure "--text-nav" has High Contrast against "--surface-nav".
-        5. Ensure "--text-primary" has High Contrast against "--surface-bg".
-        6. Ensure "--text-on-btn" has High Contrast against "--surface-btn".
-        7. Ensure "--text-input" has High Contrast against "--surface-input".
-        8. For "--creative-loading-emojis", provide a comma-separated string of exactly 6 emojis that match the theme mood.
-        9. Return valid JSON only. No markdown formatting, no explanations.
+        FORMAT RULES:
+        - Use **oklch()** for ALL colors (except --hover-brightness and --creative-loading-emojis).
+        - --hover-brightness: a CSS filter percentage (e.g. "90%" for light themes, "110%" for dark themes).
+        - --creative-loading-emojis: exactly 6 emojis matching the theme mood, comma-separated.
+        - Return valid JSON only. No markdown, no explanation.
 
-        TOKEN ROLES:
-        - --surface-*: Background colors (page, nav, cards, inputs, buttons)
-        - --text-*: Text colors for various contexts
-        - --color-link: Hyperlink color
-        - --color-brand: Brand / accent color
-        - --color-active: Active / selected state
-        - --color-danger: Error / destructive actions
-        - --color-success: Success state
-        - --color-warning: Warning state
-        - --color-highlight: Text highlight flash
-        - --color-badge-bg: Notification badge background
-        - --color-accent-border: Active element border
-        - --color-accent-text: Active element text
-        - --color-code-bg: Code block background
-        - --color-code-text: Code block text
-        - --border-*: Border and divider colors
-        - --hover-brightness: CSS filter brightness on hover (e.g. "90%")
+        COLOR HARMONY — THIS IS CRITICAL:
+        First, decide the theme's overall tone (light or dark) based on the prompt.
+        Then derive ALL colors from a single cohesive palette:
 
-        Example structure:
-        {
-          "--surface-bg": "oklch(95% 0.01 200)",
-          "--text-primary": "oklch(20% 0.02 200)",
-          ...
-        }
+        Step 1 — Pick a BASE HUE (H) that matches the mood. Most surfaces should share this hue.
+        Step 2 — Build surfaces as a GRADIENT of lightness on that hue:
+          Light theme example (L from high to low):
+            --surface-bg:        L=96%  (lightest, page background)
+            --surface-section:   L=98%  (cards, slightly lighter or same)
+            --surface-nav:       L=94%  (nav bar, slightly darker)
+            --surface-input:     L=96%  (input fields, same as bg)
+            --surface-btn:       L=90%  (buttons, noticeably darker)
+            --surface-secondary: L=98%  (secondary areas)
+          Dark theme: invert — L ranges from 15% to 30%.
+          Keep chroma (C) LOW for surfaces (0.01–0.04). Surfaces should feel neutral-tinted.
 
-        GUIDELINES:
-        - Ensure high contrast between all text and their respective backgrounds.
-        - Maintain a consistent aesthetic suitable for the description.
+        Step 3 — Text colors must have WCAG AA contrast (≥4.5:1) against their paired surface:
+          --text-primary   vs --surface-bg       (main content text)
+          --text-on-btn    vs --surface-btn      (button labels)
+          --text-input     vs --surface-input    (form text)
+          --text-nav       vs --surface-nav      (nav links)
+          --text-nav-btn   vs --surface-bg       (toolbar buttons over page)
+          --text-chat-btn  vs --surface-section  (chat area buttons)
+          --text-muted     — lower contrast but still readable (≥3:1)
+          --text-on-badge  — white or dark, contrasting --color-badge-bg
+
+        Step 4 — Accent colors share the base hue family or a complementary hue:
+          --color-brand:   Saturated version of the theme hue (C=0.15–0.25)
+          --color-link:    Same as brand or slightly shifted
+          --color-active:  Brighter/lighter variant of brand
+          --color-accent-border / --color-accent-text: Derived from brand
+
+        Step 5 — Semantic colors (keep standard associations but tint toward theme):
+          --color-danger:  Red family (H≈25–30)
+          --color-success: Green family (H≈145–155)
+          --color-warning: Yellow/amber family (H≈85–95)
+          --color-badge-bg: Red or brand color
+
+        Step 6 — Utility tokens:
+          --color-highlight: Low-opacity warm highlight (L≈85%, C≈0.1, H≈90)
+          --color-code-bg:  Slightly darker/lighter than --surface-bg
+          --color-code-text: High contrast against code-bg
+          --border-color:   Subtle, low chroma, between surface-bg and text lightness
+          --border-drag-over / --border-drag-edge: Slightly stronger borders
+
+        COMMON MISTAKES TO AVOID:
+        - Do NOT pick random colors for each token. They must look like ONE theme.
+        - Do NOT make surfaces too saturated (C > 0.05). Surfaces should be subtle.
+        - Do NOT make buttons the same lightness as the background — they must be distinguishable.
+        - Do NOT forget that --surface-btn and --surface-input are interactive elements users click/type in — they need to stand out slightly from --surface-bg.
+        - Borders should be visible but subtle — not the same as surface-bg.
       PROMPT
 
       response = @client.chat([
