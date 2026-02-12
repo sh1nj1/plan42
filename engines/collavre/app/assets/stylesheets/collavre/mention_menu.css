@@ -14,12 +14,12 @@
   list-style: none;
   margin: 0;
   padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .common-popup-list li {
   list-style: none;
-  max-height: 260px;
-  overflow-y: auto;
 }
 
 .mention-popup ul,
