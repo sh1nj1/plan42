@@ -1,9 +1,9 @@
 .popup-box {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  background: var(--surface-bg);
+  border: 1px solid var(--border-color);
   padding: 1em;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  border-radius: 10px;
+  box-shadow: var(--shadow-2);
+  border-radius: var(--radius-3);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -43,12 +43,12 @@
 
 .common-popup {
   position: absolute;
-  z-index: 1000;
-  background: var(--color-section-bg);
-  border: 1px solid var(--color-border);
+  z-index: var(--layer-modal);
+  background: var(--surface-section);
+  border: 1px solid var(--border-color);
   padding: 1em;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  border-radius: 10px;
+  box-shadow: var(--shadow-3);
+  border-radius: var(--radius-3);
   display: flex;
   flex-direction: column;
   max-width: 90vw;
@@ -60,9 +60,9 @@
   margin-bottom: 0.75em;
   padding: 0.5em;
   border-radius: 6px;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-text);
+  border: 1px solid var(--border-color);
+  background: var(--surface-bg);
+  color: var(--text-primary);
 }
 
 .common-popup h3 {
@@ -80,16 +80,16 @@
   font-size: 1.2em;
   line-height: 1;
   cursor: pointer;
-  color: var(--color-text);
+  color: var(--text-primary);
 }
 
 #github-integration-modal .github-modal-status {
-  color: var(--color-muted);
+  color: var(--text-muted);
   margin-bottom: 1em;
 }
 
 #github-integration-modal .github-modal-subtext {
-  color: var(--color-muted);
+  color: var(--text-muted);
 }
 
 #github-integration-modal .github-existing-connections {
@@ -99,19 +99,19 @@
 #github-integration-modal .github-modal-list {
   padding-left: 1.2em;
   margin-bottom: 0.75em;
-  color: var(--color-text);
+  color: var(--text-primary);
 }
 
 #github-integration-modal .github-modal-list-box {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-color);
   padding: 0.5em;
-  border-radius: 4px;
-  background: var(--color-section-bg);
-  color: var(--color-text);
+  border-radius: var(--radius-1);
+  background: var(--surface-section);
+  color: var(--text-primary);
 }
 
 #github-integration-modal .github-modal-empty {
-  color: var(--color-muted);
+  color: var(--text-muted);
 }
 
 .popup-menu-wrapper {
@@ -122,11 +122,11 @@
 .popup-menu {
   display: none;
   position: absolute;
-  z-index: 1000;
-  background: var(--color-section-bg);
-  border: 1px solid var(--color-border);
+  z-index: var(--layer-modal);
+  background: var(--surface-section);
+  border: 1px solid var(--border-color);
   padding: 0.5em;
-  box-shadow: 0 2px 8px var(--color-border);
+  box-shadow: 0 2px 8px var(--border-color);
   min-width: 220px;
   top: calc(100% + 4px);
   left: 0;
