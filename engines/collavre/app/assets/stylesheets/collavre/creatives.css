@@ -9,34 +9,13 @@
     z-index: 0;
     pointer-events: none;
     background:
-        /* marble veins — thin diagonal streaks */
-        linear-gradient(
-            37deg,
-            transparent 30%,
-            color-mix(in srgb, var(--color-brand) 6%, transparent) 32%,
-            color-mix(in srgb, var(--color-brand) 3%, transparent) 34%,
-            transparent 36%,
-            transparent 62%,
-            color-mix(in srgb, var(--color-accent-border) 5%, transparent) 64%,
-            transparent 66%
-        ),
-        linear-gradient(
-            143deg,
-            transparent 20%,
-            color-mix(in srgb, var(--color-active) 4%, transparent) 22%,
-            transparent 24%,
-            transparent 48%,
-            color-mix(in srgb, var(--color-brand) 5%, transparent) 50%,
-            color-mix(in srgb, var(--color-brand) 2%, transparent) 53%,
-            transparent 55%,
-            transparent 78%,
-            color-mix(in srgb, var(--color-accent-border) 4%, transparent) 80%,
-            transparent 82%
-        ),
-        /* soft cloud patches */
-        radial-gradient(ellipse 60% 40% at 15% 20%, color-mix(in srgb, var(--color-brand) 4%, transparent) 0%, transparent 70%),
-        radial-gradient(ellipse 40% 50% at 80% 65%, color-mix(in srgb, var(--color-accent-border) 3%, transparent) 0%, transparent 70%),
-        radial-gradient(ellipse 50% 35% at 55% 10%, color-mix(in srgb, var(--color-success) 3%, transparent) 0%, transparent 70%);
+        /* aurora — large soft flowing blobs */
+        radial-gradient(ellipse 80% 50% at 10% 10%, color-mix(in srgb, var(--color-brand) 7%, transparent) 0%, transparent 80%),
+        radial-gradient(ellipse 60% 70% at 90% 15%, color-mix(in srgb, var(--color-accent-border) 5%, transparent) 0%, transparent 80%),
+        radial-gradient(ellipse 70% 40% at 65% 60%, color-mix(in srgb, var(--color-success) 4%, transparent) 0%, transparent 80%),
+        radial-gradient(ellipse 90% 50% at 20% 80%, color-mix(in srgb, var(--color-active) 5%, transparent) 0%, transparent 80%),
+        radial-gradient(ellipse 50% 60% at 80% 75%, color-mix(in srgb, var(--color-brand) 4%, transparent) 0%, transparent 80%),
+        radial-gradient(ellipse 40% 80% at 45% 30%, color-mix(in srgb, var(--color-accent-border) 3%, transparent) 0%, transparent 80%);
     -webkit-mask-image: radial-gradient(ellipse 90% 85% at 50% 50%, black 40%, transparent 100%);
     mask-image: radial-gradient(ellipse 90% 85% at 50% 50%, black 40%, transparent 100%);
 }
