@@ -40,6 +40,8 @@ ko:
         tools_title: 사용 가능한 도구
         tools_description: 에이전트가 사용할 수 있는 도구 목록입니다.
         no_tools_found: 사용 가능한 도구가 없습니다.
+        agent_conf_label: "에이전트 설정 (YAML)"
+        agent_conf_help: "에이전트 동작을 위한 YAML 설정. chat_history: 최대 이전 메시지 수 (기본 50), chat_history_size: 최대 총 문자 수 (기본 100000)."
         chat_title: 에이전트와 대화하기
         chat_placeholder: 에이전트를 테스트하려면 메시지를 입력하세요...
       update_ai:

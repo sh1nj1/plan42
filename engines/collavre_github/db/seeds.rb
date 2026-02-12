@@ -58,6 +58,12 @@ module CollavreGithub
       event_name == "comment_created" and comment.user_id == nil and comment.content contains "GitHub: Pull Request Merged"
     EXPR
 
+    AGENT_CONF = <<~YAML
+      context:
+        chat_history: 1
+        chat_history_size: 1000
+    YAML
+
     TOOLS = %w[
       github_pr_details
       github_pr_diff
@@ -94,6 +100,7 @@ module CollavreGithub
         llm_model: default_llm_model,
         system_prompt: SYSTEM_PROMPT,
         routing_expression: ROUTING_EXPRESSION,
+        agent_conf: AGENT_CONF,
         tools: TOOLS,
         searchable: true # Can analyze PRs for any Creative with GitHub integration
       )
