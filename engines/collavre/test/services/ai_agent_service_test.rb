@@ -126,6 +126,71 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert_not @creative.comments.exists?(content: Collavre::Comment::STREAMING_PLACEHOLDER_CONTENT)
   end
 
+  test "dispatches A2A when AI response mentions another AI agent" do
+    # Create a second AI agent
+    agent_b = User.create!(
+      email: "agentb@ai.local",
+      password: "password",
+      name: "AgentB",
+      llm_vendor: "google",
+      llm_model: "gemini-1.5-flash",
+      system_prompt: "You are agent B.",
+      routing_expression: "true"
+    )
+
+    mock_client = Minitest::Mock.new
+    def mock_client.chat(messages, tools: [])
+      yield "@AgentB: 이 주제에 대해 어떻게 생각해?"
+    end
+
+    dispatched = false
+    original_dispatch = Collavre::SystemEvents::Dispatcher.method(:dispatch)
+
+    Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(event_name, context) {
+      dispatched = true
+      assert_equal "comment_created", event_name
+      assert_equal "@AgentB: 이 주제에 대해 어떻게 생각해?", context[:comment][:content]
+    } do
+      AiClient.stub :new, mock_client do
+        AiAgentService.new(@task).call
+      end
+    end
+
+    assert dispatched, "Expected A2A dispatch to be called for AI agent mention"
+  end
+
+  test "does not dispatch A2A when AI response mentions a human user" do
+    mock_client = Minitest::Mock.new
+    def mock_client.chat(messages, tools: [])
+      yield "@One: 확인해 주세요"
+    end
+
+    dispatched = false
+    Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(*) { dispatched = true } do
+      AiClient.stub :new, mock_client do
+        AiAgentService.new(@task).call
+      end
+    end
+
+    assert_not dispatched, "Should not dispatch A2A for human user mention"
+  end
+
+  test "does not dispatch A2A when AI response has no mention" do
+    mock_client = Minitest::Mock.new
+    def mock_client.chat(messages, tools: [])
+      yield "Just a normal response without mentions"
+    end
+
+    dispatched = false
+    Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(*) { dispatched = true } do
+      AiClient.stub :new, mock_client do
+        AiAgentService.new(@task).call
+      end
+    end
+
+    assert_not dispatched, "Should not dispatch A2A when no mention present"
+  end
+
   test "saves partial content when cancelled" do
     task_id = @task.id
     mock_client = Object.new

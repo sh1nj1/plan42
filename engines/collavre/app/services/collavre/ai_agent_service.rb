@@ -118,6 +118,7 @@ module Collavre
 
               # Re-associate activity logs from the trigger comment to the reply comment
               reassociate_activity_logs(@original_comment, @reply_comment)
+              dispatch_a2a_if_needed
             end
           else
             @reply_comment.destroy!
@@ -314,14 +315,42 @@ module Collavre
       original_comment = Comment.find_by(id: comment_id)
       return unless original_comment
 
-      reply = original_comment.creative.comments.create!(
+      @reply_comment = original_comment.creative.comments.create!(
         content: content,
         user: @agent,
         topic_id: original_comment.topic_id
       )
 
-      log_action("reply_created", { comment_id: reply.id, content: content })
-      reassociate_activity_logs(original_comment, reply)
+      log_action("reply_created", { comment_id: @reply_comment.id, content: content })
+      reassociate_activity_logs(original_comment, @reply_comment)
+      dispatch_a2a_if_needed
+    end
+
+    def dispatch_a2a_if_needed
+      return unless @reply_comment&.content.present?
+
+      match = @reply_comment.content.match(/\A@([^:]+?):\s*/)
+      return unless match
+
+      mentioned_name = match[1].strip
+      mentioned_user = User.where("LOWER(name) = ?", mentioned_name.downcase).first
+      return unless mentioned_user&.ai_user?
+
+      creative = @reply_comment.creative
+
+      if creative
+        context = { "creative" => { "id" => creative.id }, "topic" => { "id" => @reply_comment.topic_id } }
+        Orchestration::LoopBreaker.new(context).record_interaction(@agent.id, mentioned_user.id, creative.id)
+      end
+
+      SystemEvents::Dispatcher.dispatch("comment_created", {
+        comment: { id: @reply_comment.id, content: @reply_comment.content, user_id: @reply_comment.user_id },
+        creative: { id: creative&.id, description: creative&.description },
+        topic: { id: @reply_comment.topic_id },
+        chat: { content: @reply_comment.content }
+      })
+    rescue StandardError => e
+      Rails.logger.error("[AiAgentService] A2A dispatch failed: #{e.message}")
     end
 
     def reassociate_activity_logs(from_comment, to_comment)
