@@ -1,100 +1,61 @@
-/* 다크모드 변수 및 스타일 */
+/*
+ * Theme Application
+ *
+ * Maps semantic tokens from design_tokens.css to legacy variable names
+ * (for backward compatibility) and applies base element styles.
+ *
+ * NEW CODE should use semantic tokens directly (e.g. var(--surface-bg)).
+ * Legacy aliases below will be removed once all CSS files are migrated.
+ */
+
+/* ============================================================================
+ * LEGACY ALIASES → Semantic Tokens
+ * These keep existing CSS working while we migrate file-by-file.
+ * ============================================================================ */
 :root {
-  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Helvetica, Arial,
-    sans-serif;
-  --color-bg: #f7f7f8;
-  --color-text: #202123;
-  --color-link: #185ABC;
-  --color-nav-bg: #ffffff;
-  --color-section-bg: #ffffff;
-  --color-btn-bg: #f1f2f4;
-  --color-btn-text: #202123;
-  --color-border: #e0e0e0;
-  --color-muted: #666;
-  --color-complete: oklch(60% 0.4 145);
-  --color-chip-bg: var(--color-complete);
-  --color-drag-over: #e0e0e0;
-  --color-drag-over-edge: #bbb;
-  --hover-brightness: 90%;
-  --color-badge-bg: red;
-  --color-badge-bg: red;
-  --color-badge-text: white;
-  --color-secondary-active: #007bff;
-  --color-secondary-background: #ffffff;
-  --color-nav-btn-text: #202123;
-  --color-chat-btn-text: #666;
-  --color-input-bg: #f7f7f8;
-  --color-input-bg: #f7f7f8;
-  --color-input-text: #202123;
-  --color-nav-text: #202123;
-  --max-width: 960px;
-  --paragraph-space-1: 0.75rem;
+  /* Surface aliases */
+  --color-bg: var(--surface-bg);
+  --color-nav-bg: var(--surface-nav);
+  --color-section-bg: var(--surface-section);
+  --color-input-bg: var(--surface-input);
+  --color-btn-bg: var(--surface-btn);
+  --color-secondary-background: var(--surface-secondary);
+
+  /* Text aliases */
+  --color-text: var(--text-primary);
+  --color-muted: var(--text-muted);
+  --color-btn-text: var(--text-on-btn);
+  --color-nav-text: var(--text-nav);
+  --color-nav-btn-text: var(--text-nav-btn);
+  --color-chat-btn-text: var(--text-chat-btn);
+  --color-badge-text: var(--text-on-badge);
+  --color-input-text: var(--text-input);
+
+  /* Interactive aliases */
+  --color-complete: var(--color-brand);
+  --color-chip-bg: var(--color-brand);
+  --color-secondary-active: var(--color-active);
+
+  /* Border aliases */
+  --color-border: var(--border-color);
+  --color-drag-over: var(--border-drag-over);
+  --color-drag-over-edge: var(--border-drag-edge);
+
+  /* Layout aliases */
+  --paragraph-space-1: var(--paragraph-space);
 }
 
-body.dark-mode {
-  --color-bg: #212121;
-  --color-text: #eaeaea;
-  --color-link: #185ABC;
-  --color-nav-bg: #181818;
-  --color-section-bg: #181818;
-  --color-btn-bg: #333543;
-  --color-btn-text: #eaeaea;
-  --color-border: #333333;
-  --color-muted: #aaaaaa;
-  --color-complete: oklch(50% 0.4 145);
-  --color-chip-bg: var(--color-complete);
-  --color-drag-over: #383a40;
-  --color-drag-over-edge: #777;
-  --hover-brightness: 110%;
-  --color-badge-bg: red;
-  --color-badge-text: white;
-  --color-secondary-active: #6a9eff;
-  --color-secondary-background: #181818;
-  --color-nav-btn-text: #eaeaea;
-  --color-chat-btn-text: #aaaaaa;
-  --color-input-bg: #212121;
-  --color-input-bg: #212121;
-  --color-input-text: #eaeaea;
-  --color-nav-text: #eaeaea;
-}
-
-@media (prefers-color-scheme: dark) {
-  body:not(.light-mode):not(.dark-mode) {
-    --color-bg: #212121;
-    --color-text: #eaeaea;
-    --color-link: #185ABC;
-    --color-nav-bg: #181818;
-    --color-section-bg: #181818;
-    --color-btn-bg: #333543;
-    --color-btn-text: #eaeaea;
-    --color-border: #333333;
-    --color-muted: #aaaaaa;
-    --color-complete: oklch(50% 0.4 145);
-    --color-chip-bg: var(--color-complete);
-    --color-drag-over: #383a40;
-    --color-drag-over-edge: #777;
-    --hover-brightness: 110%;
-    --color-badge-bg: red;
-    --color-badge-text: white;
-    --color-secondary-active: #6a9eff;
-    --color-secondary-background: #181818;
-    --color-nav-btn-text: #eaeaea;
-    --color-chat-btn-text: #aaaaaa;
-    --color-input-bg: #212121;
-    --color-input-bg: #212121;
-    --color-input-text: #eaeaea;
-    --color-nav-text: #eaeaea;
-  }
-}
-
+/* ============================================================================
+ * BASE ELEMENT STYLES
+ * ============================================================================ */
 body {
-  background: var(--color-bg);
-  color: var(--color-text);
+  background: var(--surface-bg);
+  color: var(--text-primary);
   transition: background 0.3s, color 0.3s;
 }
 
 nav {
-  background: var(--color-nav-bg);
+  background: var(--surface-nav);
 }
 
 a {
@@ -103,7 +64,7 @@ a {
 
 main,
 section.creative {
-  background: var(--color-section-bg);
+  background: var(--surface-section);
 }
 
 button,
@@ -114,5 +75,3 @@ input[type="submit"] {
   padding: 2px 4px;
   transition: background 0.3s, color 0.3s;
 }
-
-/* 기타 요소도 필요에 따라 추가 가능 */

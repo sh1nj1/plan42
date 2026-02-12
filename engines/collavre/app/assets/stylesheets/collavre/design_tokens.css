@@ -152,12 +152,128 @@
   /* --bp-md: 768px;  */
   /* --bp-lg: 1024px; */
   /* --bp-xl: 1440px; */
+
+  /* ============================================================================
+   * SEMANTIC COLOR TOKENS
+   * These map Open Props primitives → meaningful roles.
+   * Every token here MUST also be defined in body.dark-mode below.
+   * ============================================================================ */
+
+  /* -- Surfaces (backgrounds) -- */
+  --surface-bg: #f7f7f8;              /* page background */
+  --surface-nav: #ffffff;             /* navigation bar */
+  --surface-section: #ffffff;         /* cards, panels */
+  --surface-input: #f7f7f8;          /* form inputs */
+  --surface-btn: #f1f2f4;            /* default button */
+  --surface-secondary: #ffffff;       /* secondary panels */
+
+  /* -- Text -- */
+  --text-primary: #202123;           /* main body text */
+  --text-muted: #666666;             /* secondary / helper text */
+  --text-on-btn: #202123;            /* text on default buttons */
+  --text-nav: #202123;               /* navigation text */
+  --text-nav-btn: #202123;           /* navigation button text */
+  --text-chat-btn: #666666;          /* chat action buttons */
+  --text-on-badge: white;            /* text on badges */
+  --text-input: #202123;             /* input field text */
+
+  /* -- Interactive -- */
+  --color-link: #185ABC;             /* hyperlinks */
+  --color-brand: oklch(60% 0.4 145); /* brand / accent / complete */
+  --color-active: #007bff;           /* active / selected state */
+  --color-danger: #dc3545;           /* errors, destructive */
+  --color-success: oklch(60% 0.4 145); /* success (= brand for now) */
+  --color-warning: #f59e0b;          /* warnings */
+  --color-badge-bg: red;             /* notification badge */
+
+  /* -- Borders & Dividers -- */
+  --border-color: #e0e0e0;           /* default borders */
+  --border-drag-over: #e0e0e0;       /* drag target highlight */
+  --border-drag-edge: #bbbbbb;       /* drag edge indicator */
+
+  /* -- Effects -- */
+  --hover-brightness: 90%;           /* filter: brightness() on hover */
+
+  /* -- Layout -- */
+  --max-width: 960px;                /* content max width */
+  --paragraph-space: 0.75rem;        /* gap between paragraphs */
 }
 
 /* ============================================================================
- * DARK MODE SHADOW OVERRIDES
+ * DARK MODE OVERRIDES
+ * Every semantic token that changes in dark mode MUST be listed here.
  * ============================================================================ */
 body.dark-mode {
   --shadow-color: 220 40% 2%;
   --shadow-strength: 25%;
+
+  /* -- Surfaces -- */
+  --surface-bg: #212121;
+  --surface-nav: #181818;
+  --surface-section: #181818;
+  --surface-input: #212121;
+  --surface-btn: #333543;
+  --surface-secondary: #181818;
+
+  /* -- Text -- */
+  --text-primary: #eaeaea;
+  --text-muted: #aaaaaa;
+  --text-on-btn: #eaeaea;
+  --text-nav: #eaeaea;
+  --text-nav-btn: #eaeaea;
+  --text-chat-btn: #aaaaaa;
+  --text-on-badge: white;
+  --text-input: #eaeaea;
+
+  /* -- Interactive -- */
+  --color-link: #185ABC;
+  --color-brand: oklch(50% 0.4 145);
+  --color-active: #6a9eff;
+  --color-badge-bg: red;
+
+  /* -- Borders & Dividers -- */
+  --border-color: #333333;
+  --border-drag-over: #383a40;
+  --border-drag-edge: #777777;
+
+  /* -- Effects -- */
+  --hover-brightness: 110%;
+}
+
+/* ============================================================================
+ * SYSTEM DARK MODE (prefers-color-scheme)
+ * Mirror of body.dark-mode for users without explicit toggle.
+ * ============================================================================ */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light-mode):not(.dark-mode) {
+    --shadow-color: 220 40% 2%;
+    --shadow-strength: 25%;
+
+    --surface-bg: #212121;
+    --surface-nav: #181818;
+    --surface-section: #181818;
+    --surface-input: #212121;
+    --surface-btn: #333543;
+    --surface-secondary: #181818;
+
+    --text-primary: #eaeaea;
+    --text-muted: #aaaaaa;
+    --text-on-btn: #eaeaea;
+    --text-nav: #eaeaea;
+    --text-nav-btn: #eaeaea;
+    --text-chat-btn: #aaaaaa;
+    --text-on-badge: white;
+    --text-input: #eaeaea;
+
+    --color-link: #185ABC;
+    --color-brand: oklch(50% 0.4 145);
+    --color-active: #6a9eff;
+    --color-badge-bg: red;
+
+    --border-color: #333333;
+    --border-drag-over: #383a40;
+    --border-drag-edge: #777777;
+
+    --hover-brightness: 110%;
+  }
 }
