@@ -153,8 +153,34 @@ module Collavre
           BAD:  surface-bg=#fff7ee (warm), code-bg=#e3edf4 (cool blue) — jarring mismatch
           GOOD: surface-bg=#fff7ee (warm), code-bg=#f0ead8 (warm, slightly darker) — harmonious
         - Do NOT make buttons invisible against the background. --surface-btn must differ from --surface-bg by ≥15 L-points.
-        - For multi-color prompts (e.g. "Google logo", "rainbow"): use the dominant color for surfaces, distribute other colors across accent tokens (brand, active, badge-bg, accent-border).
         - Borders must be visible but not distracting.
+
+        MULTI-COLOR / BRAND PROMPTS:
+        When the prompt implies multiple distinct colors (e.g. "Google logo" = blue+red+yellow+green,
+        "Italian flag" = green+white+red, "rainbow", "sunset" = orange+pink+purple):
+        1. Do NOT blend them into one monotone. The user expects to SEE those distinct colors.
+        2. Pick the most neutral/lightest color for surfaces (or a neutral tint of the dominant one).
+        3. DISTRIBUTE the other colors across accent tokens so each is visible:
+           - --color-brand: primary brand color (Google → blue)
+           - --color-active: secondary color (Google → green)
+           - --color-badge-bg: tertiary color (Google → red)
+           - --color-accent-border: quaternary color (Google → yellow/amber)
+           - --color-accent-text: same as brand or another distinct color
+        4. The user should look at the themed UI and immediately think "oh, Google colors!"
+           If all they see is one blue tint, the theme has FAILED.
+        Example — "Google logo":
+           surfaces: light warm gray (neutral)
+           --color-brand: #4285F4 (Google blue)
+           --color-active: #34A853 (Google green)
+           --color-badge-bg: #EA4335 (Google red)
+           --color-accent-border: #FBBC05 (Google yellow)
+           --color-link: #4285F4 (blue)
+        Example — "sunset":
+           surfaces: warm cream/peach tint
+           --color-brand: #FF6B35 (deep orange)
+           --color-active: #E91E8C (magenta-pink)
+           --color-badge-bg: #9B59B6 (purple)
+           --color-accent-border: #FF8C42 (lighter orange)
       PROMPT
 
       response = @client.chat([
