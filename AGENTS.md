@@ -240,3 +240,17 @@ notion_engine.creative_notion_integration_path(@creative)
 - Use shared ActionCable consumer from `app/javascript/services/cable.js`
 - Use `createSubscription(identifier, callbacks)` for new subscriptions
 - Turbo Streams rely on global `window.ActionCable.createConsumer`
+
+---
+
+## Environment Variables
+
+When adding a new environment variable, it MUST be added to ALL of the following files:
+
+| File | Format | Notes |
+|------|--------|-------|
+| `.env.*` | `KEY=value` | All env files |
+| `.kamal/secrets` | `KEY=${KEY}` | Kamal deployment secrets |
+| `config/deploy.yml` | `- KEY` (under `env.secret`) | Kamal deploy config |
+
+If the variable is used in database connections, also update `config/database.yml`.
