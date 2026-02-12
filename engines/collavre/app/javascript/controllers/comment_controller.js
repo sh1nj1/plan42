@@ -10,8 +10,46 @@ export default class extends Controller {
     const contentElement = this.element.querySelector('.comment-content')
     if (contentElement && contentElement.dataset.rendered !== 'true') {
       const text = contentElement.textContent || ''
-      contentElement.innerHTML = renderCommentMarkdown(text)
+      if (this.element.dataset.aiUser === 'true' && text.trim() === '...') {
+        // Streaming placeholder — show animated dots
+        contentElement.innerHTML = '<span class="streaming-dots"><span>.</span><span>.</span><span>.</span></span>'
+        contentElement.classList.add('streaming')
+      } else {
+        contentElement.innerHTML = renderCommentMarkdown(text)
+        contentElement.classList.remove('streaming')
+      }
       contentElement.dataset.rendered = 'true'
+    }
+
+    // Observe Turbo replacements to re-render markdown and maintain streaming state
+    if (this.element.dataset.aiUser === 'true') {
+      this._streamingTimeout = null
+      this._contentObserver = new MutationObserver(() => {
+        const el = this.element.querySelector('.comment-content')
+        if (!el) return
+        if (el.dataset.rendering === 'true') return
+        el.dataset.rendering = 'true'
+        try {
+          const text = el.textContent || ''
+          if (text.trim() === '...') {
+            el.innerHTML = '<span class="streaming-dots"><span>.</span><span>.</span><span>.</span></span>'
+            el.classList.add('streaming')
+          } else if (text.trim()) {
+            el.innerHTML = renderCommentMarkdown(text)
+            // Mark as streaming — will be cleared when updates stop
+            el.classList.add('streaming')
+            // Reset timeout: remove streaming class if no update for 3s
+            if (this._streamingTimeout) clearTimeout(this._streamingTimeout)
+            this._streamingTimeout = setTimeout(() => {
+              el.classList.remove('streaming')
+            }, 3000)
+          }
+          el.dataset.rendered = 'true'
+        } finally {
+          requestAnimationFrame(() => { el.dataset.rendering = 'false' })
+        }
+      })
+      this._contentObserver.observe(this.element, { childList: true, subtree: true, characterData: true })
     }
 
     // Text selection quote support
@@ -118,6 +156,14 @@ export default class extends Controller {
   }
 
   disconnect() {
+    if (this._contentObserver) {
+      this._contentObserver.disconnect()
+      this._contentObserver = null
+    }
+    if (this._streamingTimeout) {
+      clearTimeout(this._streamingTimeout)
+      this._streamingTimeout = null
+    }
     this.element.removeEventListener('mouseup', this.handleMouseUp)
     this._removeSelectionChangeListener()
     this.hideReviewPopup()
