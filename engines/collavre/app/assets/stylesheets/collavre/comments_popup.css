@@ -494,7 +494,6 @@ body.chat-fullscreen {
 
 .edit-comment-action-btn,
 .approve-comment-btn {
-    margin-top: 0.6em;
     padding: 0.15em 0.4em;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2);
