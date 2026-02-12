@@ -24,6 +24,7 @@ export default class extends Controller {
     // Observe Turbo replacements to re-render markdown and maintain streaming state
     if (this.element.dataset.aiUser === 'true') {
       this._streamingTimeout = null
+      this._isStreaming = false  // Only set true when we see '...' placeholder
       this._contentObserver = new MutationObserver(() => {
         const el = this.element.querySelector('.comment-content')
         if (!el) return
@@ -32,17 +33,33 @@ export default class extends Controller {
         try {
           const text = el.textContent || ''
           if (text.trim() === '...') {
+            // Placeholder detected — this comment is streaming
+            this._isStreaming = true
             el.innerHTML = '<span class="streaming-dots"><span>.</span><span>.</span><span>.</span></span>'
             el.classList.add('streaming')
           } else if (text.trim()) {
             el.innerHTML = renderCommentMarkdown(text)
-            // Mark as streaming — will be cleared when updates stop
-            el.classList.add('streaming')
-            // Reset timeout: remove streaming class if no update for 3s
-            if (this._streamingTimeout) clearTimeout(this._streamingTimeout)
-            this._streamingTimeout = setTimeout(() => {
-              el.classList.remove('streaming')
-            }, 3000)
+            if (this._isStreaming) {
+              // Append blinking cursor inline at the end of content
+              const cursor = document.createElement('span')
+              cursor.className = 'streaming-cursor'
+              cursor.textContent = '▍'
+              // Find the deepest last element to append cursor inline
+              let target = el
+              while (target.lastElementChild && target.lastElementChild.tagName !== 'BR') {
+                target = target.lastElementChild
+              }
+              target.appendChild(cursor)
+              el.classList.add('streaming')
+              // Reset timeout: remove streaming class if no update for 3s
+              if (this._streamingTimeout) clearTimeout(this._streamingTimeout)
+              this._streamingTimeout = setTimeout(() => {
+                el.classList.remove('streaming')
+                const c = el.querySelector('.streaming-cursor')
+                if (c) c.remove()
+                this._isStreaming = false
+              }, 3000)
+            }
           }
           el.dataset.rendered = 'true'
         } finally {

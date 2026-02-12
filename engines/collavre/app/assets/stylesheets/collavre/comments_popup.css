@@ -1110,12 +1110,12 @@ body.chat-fullscreen {
     }
 }
 
-/* Blinking cursor at the end of streaming content (not on placeholder dots) */
-.comment-content.streaming:not(:has(.streaming-dots))::after {
-    content: '▍';
+/* Blinking cursor inline at the end of streaming content */
+.streaming-cursor {
     animation: streaming-blink 1s infinite;
     color: var(--color-text, #333);
     margin-left: 1px;
+    font-weight: normal;
 }
 
 @keyframes streaming-blink {
