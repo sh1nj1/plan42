@@ -1,3 +1,34 @@
+.creatives-workspace {
+    position: relative;
+    overflow: visible;
+}
+
+.creatives-workspace::before {
+    content: "";
+    position: absolute;
+    /* extend beyond padding boundaries */
+    top: -1rem;
+    left: -2rem;
+    right: -2rem;
+    bottom: -4rem;
+    z-index: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse 80% 50% at 10% 10%, color-mix(in srgb, var(--color-brand) 7%, transparent) 0%, transparent 80%),
+        radial-gradient(ellipse 60% 70% at 90% 15%, color-mix(in srgb, var(--color-accent-border) 5%, transparent) 0%, transparent 80%),
+        radial-gradient(ellipse 70% 40% at 65% 60%, color-mix(in srgb, var(--color-success) 4%, transparent) 0%, transparent 80%),
+        radial-gradient(ellipse 90% 50% at 20% 80%, color-mix(in srgb, var(--color-active) 5%, transparent) 0%, transparent 80%),
+        radial-gradient(ellipse 50% 60% at 80% 75%, color-mix(in srgb, var(--color-brand) 4%, transparent) 0%, transparent 80%),
+        radial-gradient(ellipse 40% 80% at 45% 30%, color-mix(in srgb, var(--color-accent-border) 3%, transparent) 0%, transparent 80%);
+    -webkit-mask-image: radial-gradient(ellipse 95% 90% at 50% 45%, black 30%, transparent 100%);
+    mask-image: radial-gradient(ellipse 95% 90% at 50% 45%, black 30%, transparent 100%);
+}
+
+.creatives-workspace > * {
+    position: relative;
+    z-index: 1;
+}
+
 :root {
     --creative-row-text-offset: 1.8em;
     --creative-loading-emojis: "🚀,🧠,🧩,🤝,🗂️,⚡";
