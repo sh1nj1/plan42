@@ -57,10 +57,10 @@ html.creative-alignment-ready .page-title {
     background:
         linear-gradient(
             160deg,
-            color-mix(in srgb, var(--color-accent-border) 12%, transparent) 0%,
-            color-mix(in srgb, var(--color-brand) 4%, transparent) 40%,
-            color-mix(in srgb, var(--color-accent-border) 8%, transparent) 70%,
-            color-mix(in srgb, var(--color-brand) 10%, transparent) 100%
+            color-mix(in srgb, var(--color-accent-border) 8%, transparent) 0%,
+            color-mix(in srgb, var(--color-brand) 3%, transparent) 40%,
+            color-mix(in srgb, var(--color-accent-border) 6%, transparent) 70%,
+            color-mix(in srgb, var(--color-brand) 8%, transparent) 100%
         );
     border-radius: var(--radius-2);
     padding: 0.5rem;
