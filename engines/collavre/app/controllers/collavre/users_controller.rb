@@ -53,6 +53,14 @@ module Collavre
 
     def new_ai
       @available_tools = load_available_tools
+
+      if params[:copy_from].present?
+        source = Collavre::User.find_by(id: params[:copy_from])
+        if source&.ai_user? && source.created_by_id == Current.user.id
+          @copy_source = source
+          @copy_name = "#{source.name} (copy)"
+        end
+      end
     end
 
     def create_ai
