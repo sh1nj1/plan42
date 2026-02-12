@@ -22,6 +22,9 @@
             <% legacy_alias_declarations(custom_theme.variables).each do |key, value| %>
               <%= key %>: <%= value %> !important;
             <% end %>
+            <% if custom_theme.dark? %>
+              --date-icon-filter: invert(0.8) !important;
+            <% end %>
           }
         </style>
       <% end %>

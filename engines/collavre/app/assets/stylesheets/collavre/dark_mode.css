@@ -173,15 +173,24 @@ input[type="submit"] {
   color: var(--text-on-badge);
 }
 
-/* --- Date input calendar icon & placeholder --- */
-input[type="date"]::-webkit-calendar-picker-indicator {
+/* --- Date/time input calendar icon & placeholder --- */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  opacity: 0.6;
   filter: var(--date-icon-filter, none);
+  cursor: pointer;
 }
 
 input[type="date"]::-webkit-datetime-edit-text,
 input[type="date"]::-webkit-datetime-edit-month-field,
 input[type="date"]::-webkit-datetime-edit-day-field,
-input[type="date"]::-webkit-datetime-edit-year-field {
+input[type="date"]::-webkit-datetime-edit-year-field,
+input[type="datetime-local"]::-webkit-datetime-edit-text,
+input[type="datetime-local"]::-webkit-datetime-edit-month-field,
+input[type="datetime-local"]::-webkit-datetime-edit-day-field,
+input[type="datetime-local"]::-webkit-datetime-edit-year-field,
+input[type="datetime-local"]::-webkit-datetime-edit-hour-field,
+input[type="datetime-local"]::-webkit-datetime-edit-minute-field {
   color: var(--text-muted);
 }
 
