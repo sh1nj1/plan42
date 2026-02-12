@@ -53,6 +53,14 @@ module Collavre
 
     def new_ai
       @available_tools = load_available_tools
+
+      if params[:copy_from].present?
+        source = Collavre::User.find_by(id: params[:copy_from])
+        if source&.ai_user? && source.created_by_id == Current.user.id
+          @copy_source = source
+          @copy_name = "#{source.name} (copy)"
+        end
+      end
     end
 
     def create_ai
@@ -75,6 +83,7 @@ module Collavre
         created_by_id: Current.user.id,
         routing_expression: params[:routing_expression]
       )
+      @user.agent_conf = params[:agent_conf] if @user.respond_to?(:agent_conf=) && params[:agent_conf].present?
 
       if @user.save
         Collavre::Contact.ensure(user: Current.user, contact_user: @user)

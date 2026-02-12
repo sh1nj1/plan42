@@ -35,6 +35,8 @@ en:
         tools_note: You can check and test available tools after creating the agent.
       create_ai:
         success: AI User created successfully.
+      copy_ai:
+        link: Copy
       edit_ai:
         title: Edit AI Agent
         link: Edit

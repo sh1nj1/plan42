@@ -44,6 +44,7 @@
                 <td class="text-right">
                   <% if contact_user.ai_user? && contact_user.created_by_id == Current.user.id %>
                     <%= link_to t('collavre.users.edit_ai.link'), collavre.edit_ai_user_path(contact_user), class: "btn btn-sm btn-secondary mr-1" %>
+                    <%= link_to t('collavre.users.copy_ai.link'), collavre.new_ai_users_path(copy_from: contact_user.id), class: "btn btn-sm btn-secondary mr-1" %>
                     <%= button_to t('collavre.users.destroy.delete_ai_user'),
                                   collavre.user_path(contact_user),
                                   method: :delete,

@@ -4,22 +4,22 @@
 <%= form_with url: collavre.create_ai_users_path, class: "stacked-form" do |form| %>
   <div class="form-group">
     <%= form.label :ai_id, t('collavre.users.new_ai.id_label') %>
-    <%= form.text_field :ai_id, required: true, class: "stacked-form-control", placeholder: "e.g. my_bot" %>
+    <%= form.text_field :ai_id, required: true, class: "stacked-form-control", placeholder: "e.g. my_bot", value: @copy_source ? "#{@copy_source.email.split('@').first}_copy" : nil %>
   </div>
 
   <div class="form-group">
     <%= form.label :name, t('collavre.users.new_ai.name_label') %>
-    <%= form.text_field :name, required: true, class: "stacked-form-control", placeholder: "e.g. My Bot" %>
+    <%= form.text_field :name, required: true, class: "stacked-form-control", placeholder: "e.g. My Bot", value: @copy_name %>
   </div>
 
   <div class="form-group">
     <%= form.label :system_prompt, t('collavre.users.new_ai.system_prompt_label') %>
-    <%= form.text_area :system_prompt, required: true, class: "stacked-form-control", rows: 5, value: AiClient::SYSTEM_INSTRUCTIONS %>
+    <%= form.text_area :system_prompt, required: true, class: "stacked-form-control", rows: 5, value: @copy_source&.system_prompt || AiClient::SYSTEM_INSTRUCTIONS %>
   </div>
 
   <div class="form-group">
     <%= form.label :routing_expression, "Routing Expression (Liquid)" %>
-    <%= form.text_area :routing_expression, class: "stacked-form-control", rows: 2, placeholder: "chat.mentioned_user.id == agent.id" %>
+    <%= form.text_area :routing_expression, class: "stacked-form-control", rows: 2, placeholder: "chat.mentioned_user.id == agent.id", value: @copy_source&.routing_expression %>
     <small class="form-text text-muted">Liquid expression to determine if this agent should handle an event. Example: <code>chat.mentioned_user.id == agent.id</code></small>
   </div>
 
@@ -28,7 +28,7 @@
     <%= form.select :llm_vendor, options_for_select([
       ["Google (Gemini)", "google"],
       ["OpenClaw", "openclaw"]
-    ], "google"), {}, class: "stacked-form-control" %>
+    ], @copy_source&.llm_vendor || "google"), {}, class: "stacked-form-control" %>
     <small class="form-text text-muted"><%= t('collavre.users.new_ai.vendor_help', default: 'Select the AI provider for this agent') %></small>
   </div>
 
@@ -42,6 +42,7 @@
                           required: true,
                           class: "stacked-form-control",
                           autocomplete: "off",
+                          value: @copy_source&.llm_model,
                           data: {
                             llm_model_target: "input",
                             action: "input->llm-model#search focus->llm-model#focus blur->llm-model#blur keydown->llm-model#handleKeydown"
@@ -58,7 +59,7 @@
 
   <div class="form-group">
     <%= form.label :gateway_url, t('collavre.users.new_ai.gateway_url_label', default: 'Gateway URL') %>
-    <%= form.text_field :gateway_url, class: "stacked-form-control", placeholder: "http://localhost:18789" %>
+    <%= form.text_field :gateway_url, class: "stacked-form-control", placeholder: "http://localhost:18789", value: @copy_source&.gateway_url %>
     <small class="form-text text-muted"><%= t('collavre.users.new_ai.gateway_url_help', default: 'Required for OpenClaw. The URL of your OpenClaw gateway.') %></small>
   </div>
 
@@ -70,7 +71,7 @@
       <div class="tools-selection">
         <% @available_tools.each do |tool| %>
           <div class="form-check mb-2">
-            <%= check_box_tag "tools[]", tool[:name], false, id: "tool_#{tool[:name]}", class: "form-check-input" %>
+            <%= check_box_tag "tools[]", tool[:name], @copy_source&.tools&.include?(tool[:name]) || false, id: "tool_#{tool[:name]}", class: "form-check-input" %>
             <label class="form-check-label" for="tool_<%= tool[:name] %>">
               <strong><%= tool[:name] %></strong>
               <br>
@@ -88,9 +89,17 @@
     <% end %>
   </div>
 
+  <% if Collavre::User.column_names.include?("agent_conf") %>
+    <div class="form-group">
+      <%= form.label :agent_conf, t('collavre.users.edit_ai.agent_conf_label', default: 'Agent Configuration (YAML)') %>
+      <%= form.text_area :agent_conf, class: "stacked-form-control", rows: 6, placeholder: "context:\n  chat_history: 50\n  chat_history_size: 100000", style: "font-family: monospace; font-size: 0.85em;", value: @copy_source&.agent_conf %>
+      <small class="form-text text-muted"><%= t('collavre.users.edit_ai.agent_conf_help', default: 'YAML configuration for agent behavior.') %></small>
+    </div>
+  <% end %>
+
   <div class="form-group">
     <div class="form-check">
-      <%= form.check_box :searchable, { class: "form-check-input" }, true, false %>
+      <%= form.check_box :searchable, { class: "form-check-input", checked: @copy_source&.searchable }, true, false %>
       <%= form.label :searchable, t('collavre.users.new_ai.searchable_label'), class: "form-check-label" %>
     </div>
     <small class="form-text text-muted"><%= t('collavre.users.new_ai.searchable_help') %></small>
