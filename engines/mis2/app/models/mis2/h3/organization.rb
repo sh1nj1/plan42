@@ -4,7 +4,7 @@ module Mis2
       self.table_name = "organization"
       self.inheritance_column = nil
 
-      TYPES = %w[SUPERIOR_GENERAL GENERAL HOSPITAL CLINIC NURSING PUBLIC_HEALTH].freeze
+      TYPES = %w[SUPERIOR_GENERAL_HOSPITAL GENERAL_HOSPITAL HOSPITAL CLINIC NURSING_HOSPITAL HEALTH_AGENCY].freeze
 
       has_many :departments,
         class_name: "Mis2::H3::OrganizationDepartment",

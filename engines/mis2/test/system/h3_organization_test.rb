@@ -8,7 +8,7 @@ module Mis2
       @user = users(:one)
 
       @wait = create_h3_org_admin(
-        org_attrs: { name: "대기병원", code: "W0001", type: "GENERAL" },
+        org_attrs: { name: "대기병원", code: "W0001", type: "GENERAL_HOSPITAL" },
         dept_attrs: { medical_specialty: "내과" },
         admin_attrs: { login_id: "wait_admin", name: "대기관리자", phone: "01011111111", status: "WAIT" }
       )

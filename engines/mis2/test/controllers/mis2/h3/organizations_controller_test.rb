@@ -13,7 +13,7 @@ module Mis2
         sign_in_as(@user)
 
         @wait = create_h3_org_admin(
-          org_attrs: { name: "서울병원", code: "12345", type: "GENERAL" },
+          org_attrs: { name: "서울병원", code: "12345", type: "GENERAL_HOSPITAL" },
           dept_attrs: { medical_specialty: "내과" },
           admin_attrs: { login_id: "admin1", name: "김관리자", phone: "01012345678", status: "WAIT" }
         )
@@ -81,7 +81,7 @@ module Mis2
 
         21.times do |i|
           extras << create_h3_org_admin(
-            org_attrs: { name: "Hospital #{i}", code: "P#{i}", type: "CLINIC" },
+            org_attrs: { name: "Hospital #{i}", code: "P#{i}", type: "HOSPITAL" },
             dept_attrs: { medical_specialty: "과#{i}" },
             admin_attrs: { login_id: "p#{i}", name: "Admin #{i}", status: "WAIT" }
           )

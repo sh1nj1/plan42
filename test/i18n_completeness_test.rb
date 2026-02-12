@@ -12,7 +12,7 @@ class I18nCompletenessTest < ActiveSupport::TestCase
   # Directories to scan for translation keys
   SCAN_DIRECTORIES = [
     Rails.root.join("app"),
-    Rails.root.join("engines/collavre/app"),
+    Rails.root.join("engines/mis2/app"),
     Rails.root.join("config/initializers")
   ].freeze
 
@@ -49,6 +49,25 @@ class I18nCompletenessTest < ActiveSupport::TestCase
       flunk message
     else
       assert true, "All translation keys are defined"
+    end
+  end
+
+  test "H3 organization type dynamic i18n keys are defined" do
+    missing = []
+
+    Mis2::H3::Organization::TYPES.each do |type|
+      key = "mis2.h3.organizations.types.#{type.downcase}"
+      LOCALES.each do |locale|
+        unless I18n.exists?(key, locale)
+          missing << "#{key} (#{locale})"
+        end
+      end
+    end
+
+    if missing.any?
+      flunk "Missing H3 organization type translations:\n  - #{missing.join("\n  - ")}"
+    else
+      assert true, "All H3 organization type translations are defined"
     end
   end
 
