@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
+import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
 
 export default class extends Controller {
   static targets = [
@@ -435,21 +436,10 @@ export default class extends Controller {
     const text = clipboardData.getData('text/plain')
     if (!text) return
 
-    // Detect HTML tags in pasted text
-    // Match outermost HTML tag blocks (opening tag ... closing tag) or self-closing tags
-    const htmlBlockPattern = /<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>[\s\S]*?<\/\1>|<[a-zA-Z][^>]*\/>/g
-    if (!htmlBlockPattern.test(text)) return
-
-    // Already wrapped in code block — don't double-wrap
-    if (text.trimStart().startsWith('```')) return
+    const { changed, result } = wrapHtmlInCodeBlocks(text)
+    if (!changed) return
 
     event.preventDefault()
-
-    // Replace only the HTML portions with code blocks, keeping surrounding text intact
-    htmlBlockPattern.lastIndex = 0
-    const result = text.replace(htmlBlockPattern, (match) => {
-      return '\n```html\n' + match + '\n```\n'
-    }).replace(/^\n/, '').replace(/\n$/, '')
 
     const textarea = this.textareaTarget
     const start = textarea.selectionStart
