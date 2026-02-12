@@ -457,12 +457,13 @@ button {
 
 .inbox-item .actions button {
     margin-right: 0.5em;
-    padding: var(--space-1) var(--space-2);
+    padding: 2px var(--space-2);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2);
     background: var(--color-btn-bg);
     color: var(--color-btn-text);
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
+    line-height: 1.4;
     cursor: pointer;
 }
 
