@@ -24,7 +24,7 @@
       <% end %>
     <% end %>
   </head>
-  <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>">
+  <body class="<%= body_theme_class %>">
     <%= yield %>
   </body>
 </html>

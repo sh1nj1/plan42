@@ -53,7 +53,7 @@
       <% end %>
     <% end %>
   </head>
-  <body class="<%= 'dark-mode' if Current.user&.theme == 'dark' %><%= ' light-mode' if Current.user&.theme == 'light' %>" data-current-user-id="<%= Current.user&.id %>" data-system-admin="<%= Current.user&.system_admin? %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
+  <body class="<%= body_theme_class %>" data-current-user-id="<%= Current.user&.id %>" data-system-admin="<%= Current.user&.system_admin? %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
     <%= render 'collavre/shared/link_creative_modal' %>
     <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
     <div class="notice"><%= notice %></div>
