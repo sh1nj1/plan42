@@ -224,11 +224,7 @@ module Collavre
           content = c.content
 
           if role == "user"
-            if content.match?(/\A@#{Regexp.escape(@agent.name)}:/i)
-              content = content.sub(/\A@#{Regexp.escape(@agent.name)}:\s*/i, "")
-            elsif content.match?(/\A@#{Regexp.escape(@agent.name)}\s+/i)
-              content = content.sub(/\A@#{Regexp.escape(@agent.name)}\s+/i, "")
-            end
+            content = MentionParser.strip_self_mention(content, @agent.name)
 
             speaker = c.user&.name || "unknown"
             content = "[#{speaker}]: #{content}"
@@ -252,12 +248,7 @@ module Collavre
 
       sender_name = @context.dig("sender", "name")
       if sender_name
-        # Strip self-mention prefix before adding speaker label
-        if payload_text.match?(/\A@#{Regexp.escape(@agent.name)}:/i)
-          payload_text = payload_text.sub(/\A@#{Regexp.escape(@agent.name)}:\s*/i, "")
-        elsif payload_text.match?(/\A@#{Regexp.escape(@agent.name)}\s+/i)
-          payload_text = payload_text.sub(/\A@#{Regexp.escape(@agent.name)}\s+/i, "")
-        end
+        payload_text = MentionParser.strip_self_mention(payload_text, @agent.name)
         payload_text = "[#{sender_name}]: #{payload_text}"
       end
       messages << { role: "user", parts: [ { text: payload_text } ] }
@@ -329,11 +320,7 @@ module Collavre
     def dispatch_a2a_if_needed
       return unless @reply_comment&.content.present?
 
-      match = @reply_comment.content.match(/\A@([^:]+?):\s*/)
-      return unless match
-
-      mentioned_name = match[1].strip
-      mentioned_user = User.where("LOWER(name) = ?", mentioned_name.downcase).first
+      mentioned_user = MentionParser.resolve_user(@reply_comment.content)
       return unless mentioned_user&.ai_user?
 
       creative = @reply_comment.creative
