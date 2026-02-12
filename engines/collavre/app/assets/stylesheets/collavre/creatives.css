@@ -54,6 +54,16 @@ html.creative-alignment-ready .page-title {
 
 .creative-tree {
     position: relative;
+    background:
+        linear-gradient(
+            160deg,
+            color-mix(in srgb, var(--color-accent-border) 5%, transparent) 0%,
+            transparent 35%,
+            color-mix(in srgb, var(--color-brand) 4%, transparent) 65%,
+            transparent 100%
+        );
+    border-radius: var(--radius-2);
+    padding: 0.5rem;
 }
 
 creative-tree-row.show-edit .creative-row {
