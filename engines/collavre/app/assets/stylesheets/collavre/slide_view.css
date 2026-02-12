@@ -2,7 +2,7 @@
   height: 100vh;
   display: flex;
   overflow: auto;
-  padding: 2rem;
+  padding: var(--space-7);
   box-sizing: border-box;
 }
 
@@ -17,12 +17,12 @@
 
 #slide-controls {
   position: fixed;
-  bottom: 0.5rem;
+  bottom: var(--space-2);
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
@@ -58,7 +58,7 @@
     left: 0;
     right: 0;
     height: 20vh;
-    background: var(--color-border);
+    background: var(--border-color);
     align-items: center;
     justify-content: center;
   }
@@ -66,14 +66,14 @@
   #slide-caption {
     display: block;
     pointer-events: none;
-    padding: 0.5rem;
+    padding: var(--space-2);
     text-align: center;
     white-space: pre-wrap;
   }
 
   #slide-timer {
     display: block;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
     font-variant-numeric: tabular-nums;
   }
 }
