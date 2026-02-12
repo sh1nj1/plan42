@@ -9,7 +9,7 @@ export default {
     // Disallow hardcoded colors (hex, rgb, hsl) in most properties
     // Exceptions: design_tokens.css, dark_mode.css where tokens are defined
     'color-no-hex': [true, {
-      severity: 'warning',
+      severity: 'error',
       message: 'Use a design token (e.g. var(--color-*)) instead of hardcoded hex color',
     }],
 
@@ -28,7 +28,7 @@ export default {
     'shorthand-property-no-redundant-values': null,
     'alpha-value-notation': null,
     'color-function-notation': null,
-    'color-function-alias-notation': [true, { severity: 'warning' }],
+    'color-function-alias-notation': null,
     'declaration-property-value-keyword-no-deprecated': [true, { severity: 'warning' }],
     'comment-empty-line-before': null,
     'media-feature-range-notation': null,

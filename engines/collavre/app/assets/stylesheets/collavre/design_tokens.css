@@ -186,6 +186,10 @@
   --color-warning: #f59e0b;          /* warnings */
   --color-highlight: #ffff99;         /* highlight flash */
   --color-badge-bg: red;             /* notification badge */
+  --color-accent-border: #7bc4e4;    /* active element border */
+  --color-accent-text: #03425f;      /* active element text */
+  --color-code-bg: #f6f8fa;          /* code block background */
+  --color-code-text: #1f2328;        /* code block text */
 
   /* -- Borders & Dividers -- */
   --border-color: #e0e0e0;           /* default borders */
@@ -232,6 +236,10 @@ body.dark-mode {
   --color-active: #6a9eff;
   --color-badge-bg: red;
   --color-highlight: #665500;
+  --color-accent-border: #4a8aaa;
+  --color-accent-text: #8ecfef;
+  --color-code-bg: #2d2d2d;
+  --color-code-text: #e0e0e0;
 
   /* -- Borders & Dividers -- */
   --border-color: #333333;
@@ -272,6 +280,10 @@ body.dark-mode {
     --color-active: #6a9eff;
     --color-badge-bg: red;
     --color-highlight: #665500;
+    --color-accent-border: #4a8aaa;
+    --color-accent-text: #8ecfef;
+    --color-code-bg: #2d2d2d;
+    --color-code-text: #e0e0e0;
 
     --border-color: #333333;
     --border-drag-over: #383a40;
