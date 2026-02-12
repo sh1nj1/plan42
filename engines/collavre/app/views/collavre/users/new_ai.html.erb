@@ -89,6 +89,14 @@
     <% end %>
   </div>
 
+  <% if Collavre::User.column_names.include?("agent_conf") %>
+    <div class="form-group">
+      <%= form.label :agent_conf, t('collavre.users.edit_ai.agent_conf_label', default: 'Agent Configuration (YAML)') %>
+      <%= form.text_area :agent_conf, class: "stacked-form-control", rows: 6, placeholder: "context:\n  chat_history: 50\n  chat_history_size: 100000", style: "font-family: monospace; font-size: 0.85em;", value: @copy_source&.agent_conf %>
+      <small class="form-text text-muted"><%= t('collavre.users.edit_ai.agent_conf_help', default: 'YAML configuration for agent behavior.') %></small>
+    </div>
+  <% end %>
+
   <div class="form-group">
     <div class="form-check">
       <%= form.check_box :searchable, { class: "form-check-input", checked: @copy_source&.searchable }, true, false %>

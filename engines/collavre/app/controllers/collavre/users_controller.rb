@@ -83,6 +83,7 @@ module Collavre
         created_by_id: Current.user.id,
         routing_expression: params[:routing_expression]
       )
+      @user.agent_conf = params[:agent_conf] if @user.respond_to?(:agent_conf=) && params[:agent_conf].present?
 
       if @user.save
         Collavre::Contact.ensure(user: Current.user, contact_user: @user)
