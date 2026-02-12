@@ -104,9 +104,9 @@
 }
 
 .lexical-toolbar-btn.active {
-  background: var(--color-active, #cbeefa);
-  border-color: var(--color-accent-border, #7bc4e4);
-  color: var(--color-accent-text, #03425f);
+  background: var(--color-active);
+  border-color: var(--color-accent-border);
+  color: var(--color-accent-text);
 }
 
 .lexical-toolbar-separator {
@@ -127,7 +127,7 @@
 }
 
 .lexical-placeholder {
-  color: var(--text-muted, #8c93a3);
+  color: var(--text-muted);
   left: 0.75rem;
   pointer-events: none;
   position: absolute;
@@ -159,7 +159,7 @@
 
 .lexical-quote {
   border-left: var(--space-1) solid var(--border-color);
-  color: var(--text-muted, #656c7b);
+  color: var(--text-muted);
   margin: 0 0 0.75rem 0;
   padding-left: 0.75rem;
 }
@@ -175,7 +175,7 @@
 }
 
 .lexical-link {
-  color: var(--color-link, #0366d6);
+  color: var(--color-link);
   text-decoration: underline;
   text-decoration-thickness: 1px;
 }
@@ -206,10 +206,10 @@
 
 .lexical-code-block {
   display: block;
-  background: var(--color-code-bg, #f6f8fa);
+  background: var(--color-code-bg);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  color: var(--color-code-text, #1f2328);
+  color: var(--color-code-text);
   font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.9em;
   line-height: 1.5;
@@ -229,6 +229,7 @@
   white-space: inherit;
 }
 
+/* stylelint-disable color-no-hex -- syntax highlight theme colors are intentionally hardcoded */
 .lexical-token-comment,
 .lexical-token-prolog,
 .lexical-token-doctype,
@@ -288,6 +289,7 @@
 .lexical-token-keyword {
   font-weight: var(--weight-6);
 }
+/* stylelint-enable color-no-hex */
 
 .lexical-attachment {
   position: relative;
@@ -295,7 +297,7 @@
   padding: 0.75rem;
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  background: var(--surface-section, #fff);
+  background: var(--surface-section);
   box-shadow: var(--shadow-1);
 }
 
@@ -313,7 +315,7 @@
 }
 
 .lexical-attachment.is-selected {
-  border-color: var(--color-active, #4f46e5);
+  border-color: var(--color-active);
   box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
 }
 
@@ -323,7 +325,7 @@
   right: 0.45rem;
   border: 0;
   background: rgba(15, 23, 42, 0.75);
-  color: #fff;
+  color: #fff; /* stylelint-disable-line color-no-hex -- white on dark overlay */
   width: 1.6rem;
   height: 1.6rem;
   border-radius: var(--radius-round);
@@ -349,7 +351,7 @@
   padding: 0.75rem;
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.6);
-  color: #fff;
+  color: #fff; /* stylelint-disable-line color-no-hex -- white on dark overlay */
   font-size: 0.9rem;
   font-weight: var(--weight-5);
 }
@@ -365,8 +367,8 @@
   bottom: 0.55rem;
   width: var(--space-3);
   height: var(--space-3);
-  border-right: 2px solid var(--color-active, #4f46e5);
-  border-bottom: 2px solid var(--color-active, #4f46e5);
+  border-right: 2px solid var(--color-active);
+  border-bottom: 2px solid var(--color-active);
   cursor: nwse-resize;
   opacity: 0.6;
 }
@@ -405,20 +407,20 @@
   border-radius: 6px;
   padding: var(--space-2) 0.6rem;
   font-size: 0.9rem;
-  background: var(--surface-section, #fff);
+  background: var(--surface-section);
   color: inherit;
 }
 
 .lexical-attachment__caption-input:focus {
   outline: none;
-  border-color: var(--color-active, #4f46e5);
+  border-color: var(--color-active);
   box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
 }
 
 .lexical-attachment__caption-size {
   margin-left: var(--space-2);
   font-size: 0.8rem;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 
 .lexical-attachment__file {
@@ -450,7 +452,7 @@
 
 .lexical-attachment__file-size {
   font-size: 0.85rem;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 
 /*
