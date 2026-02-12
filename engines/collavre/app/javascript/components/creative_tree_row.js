@@ -1,6 +1,7 @@
 import { LitElement, html, nothing } from "lit";
 import DOMPurify from "dompurify";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { parseEmojis } from "../utils/emoji_parser";
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -361,7 +362,7 @@ class CreativeTreeRow extends LitElement {
       emojiString = rootStyle.getPropertyValue('--creative-loading-emojis').replace(/"/g, '').trim();
     }
 
-    const emojis = emojiString ? emojiString.split(',').map(e => e.trim()) : ['🎨', '💡', '🚀', '✨', '🧩', '🎲'];
+    const emojis = parseEmojis(emojiString);
 
     let emojiIndex = 0;
     let frame = 0;

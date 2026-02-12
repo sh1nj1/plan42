@@ -40,49 +40,84 @@ module Collavre
 
     def generate(prompt)
       system_prompt = <<~PROMPT
-        You are an expert UI/UX designer specialized in creating color themes for web applications.
-        Generate a CSS theme as a JSON object based on the prompt: "#{prompt}".
-        The JSON must strictly contain ONLY these keys: #{REQUIRED_VARIABLES.join(', ')}.
+        You are a color theme designer for a workspace app.
+        Generate a JSON with ONLY these keys: #{REQUIRED_VARIABLES.join(', ')}.
 
-        CRITICAL DESIGN RULES:
-        1. Use **only 'oklch()' color format** for all colors except --hover-brightness (use percentage like "90%") and --creative-loading-emojis (use comma-separated emojis).
-        2. Ensure "--text-nav-btn" has High Contrast (WCAG AA/AAA) against "--surface-bg".
-        3. Ensure "--text-chat-btn" has High Contrast against "--surface-section".
-        4. Ensure "--text-nav" has High Contrast against "--surface-nav".
-        5. Ensure "--text-primary" has High Contrast against "--surface-bg".
-        6. Ensure "--text-on-btn" has High Contrast against "--surface-btn".
-        7. Ensure "--text-input" has High Contrast against "--surface-input".
-        8. For "--creative-loading-emojis", provide a comma-separated string of exactly 6 emojis that match the theme mood.
-        9. Return valid JSON only. No markdown formatting, no explanations.
+        FORMAT: hex colors (#rrggbb). --hover-brightness: "90%" (light) or "110%" (dark).
+        --creative-loading-emojis: 6 emojis. Return ONLY valid JSON, no markdown.
 
-        TOKEN ROLES:
-        - --surface-*: Background colors (page, nav, cards, inputs, buttons)
-        - --text-*: Text colors for various contexts
-        - --color-link: Hyperlink color
-        - --color-brand: Brand / accent color
-        - --color-active: Active / selected state
-        - --color-danger: Error / destructive actions
-        - --color-success: Success state
-        - --color-warning: Warning state
-        - --color-highlight: Text highlight flash
-        - --color-badge-bg: Notification badge background
-        - --color-accent-border: Active element border
-        - --color-accent-text: Active element text
-        - --color-code-bg: Code block background
-        - --color-code-text: Code block text
-        - --border-*: Border and divider colors
-        - --hover-brightness: CSS filter brightness on hover (e.g. "90%")
+        === REFERENCE THEMES (these are GOOD — match this quality) ===
 
-        Example structure:
-        {
-          "--surface-bg": "oklch(95% 0.01 200)",
-          "--text-primary": "oklch(20% 0.02 200)",
-          ...
-        }
+        "바나나" (yellow, light):
+        {"--surface-bg":"#fdf7d0","--surface-nav":"#e8d36b","--surface-section":"#feeec1",
+         "--surface-input":"#ffffff","--surface-btn":"#e3b831","--surface-secondary":"#f4d9bb",
+         "--text-primary":"#1a1200","--text-muted":"#5a4e00","--text-on-btn":"#241100",
+         "--text-nav":"#1a1200","--text-nav-btn":"#1a1200","--text-chat-btn":"#1a1200",
+         "--text-on-badge":"#fff8e0","--text-input":"#1a1200",
+         "--color-link":"#c69900","--color-brand":"#c69900","--color-active":"#c08500",
+         "--color-danger":"#cc3300","--color-success":"#4a8c00","--color-warning":"#cc8800",
+         "--color-highlight":"#fff3a0","--color-badge-bg":"#ca9600",
+         "--color-accent-border":"#a67a00","--color-accent-text":"#c69900",
+         "--color-code-bg":"#f5efc0","--color-code-text":"#1a1200",
+         "--border-color":"#c4b060","--border-drag-over":"#d4a800","--border-drag-edge":"#c69900",
+         "--hover-brightness":"90%","--creative-loading-emojis":"🍌🌻💛🍋✨🌼"}
 
-        GUIDELINES:
-        - Ensure high contrast between all text and their respective backgrounds.
-        - Maintain a consistent aesthetic suitable for the description.
+        "숲속" (green, light):
+        {"--surface-bg":"#ecf4ef","--surface-nav":"#d5e2d7","--surface-section":"#e2f4e7",
+         "--surface-input":"#f6f9f7","--surface-btn":"#357153","--surface-secondary":"#dbe8e3",
+         "--text-primary":"#0a1f10","--text-muted":"#3a5040","--text-on-btn":"#f3fbf6",
+         "--text-nav":"#0a1f10","--text-nav-btn":"#0a1f10","--text-chat-btn":"#0a1f10",
+         "--text-on-badge":"#f3fbf6","--text-input":"#0a1f10",
+         "--color-link":"#25984d","--color-brand":"#25984d","--color-active":"#008a39",
+         "--color-danger":"#cc3300","--color-success":"#00880a","--color-warning":"#cc8800",
+         "--color-highlight":"#c8f0d0","--color-badge-bg":"#005734",
+         "--color-accent-border":"#337344","--color-accent-text":"#1a3520",
+         "--color-code-bg":"#e0ede4","--color-code-text":"#0a1f10",
+         "--border-color":"#a0bca6","--border-drag-over":"#40905a","--border-drag-edge":"#25984d",
+         "--hover-brightness":"90%","--creative-loading-emojis":"🌲🍃🌿🌱✨🦎"}
+
+        "토마토" (red/warm, light):
+        {"--surface-bg":"#fbefea","--surface-nav":"#f7ded6","--surface-section":"#f5e8e4",
+         "--surface-input":"#fff6f3","--surface-btn":"#cc0000","--surface-secondary":"#f0cfc4",
+         "--text-primary":"#1f0800","--text-muted":"#5a3020","--text-on-btn":"#fff0e8",
+         "--text-nav":"#1f0800","--text-nav-btn":"#1f0800","--text-chat-btn":"#1f0800",
+         "--text-on-badge":"#fff0e8","--text-input":"#1f0800",
+         "--color-link":"#d40924","--color-brand":"#d40924","--color-active":"#ff4040",
+         "--color-danger":"#cc0000","--color-success":"#4a8c00","--color-warning":"#cc8800",
+         "--color-highlight":"#ffe0d0","--color-badge-bg":"#ba0d01",
+         "--color-accent-border":"#c85b32","--color-accent-text":"#b22800",
+         "--color-code-bg":"#f0e4de","--color-code-text":"#1f0800",
+         "--border-color":"#d0a898","--border-drag-over":"#e04020","--border-drag-edge":"#cc0000",
+         "--hover-brightness":"90%","--creative-loading-emojis":"🍅🔴🌶️🫕✨🍝"}
+
+        "사이버펑크" (neon, dark):
+        {"--surface-bg":"#070b14","--surface-nav":"#0f101f","--surface-section":"#12161f",
+         "--surface-input":"#02060d","--surface-btn":"#2f1d4a","--surface-secondary":"#181b1f",
+         "--text-primary":"#dcdde5","--text-muted":"#8a8c99","--text-on-btn":"#e0d0ff",
+         "--text-nav":"#dcdde5","--text-nav-btn":"#dcdde5","--text-chat-btn":"#dcdde5",
+         "--text-on-badge":"#dcdde5","--text-input":"#dcdde5",
+         "--color-link":"#0099f0","--color-brand":"#e749df","--color-active":"#0089e9",
+         "--color-danger":"#ff3050","--color-success":"#00cc66","--color-warning":"#ffaa00",
+         "--color-highlight":"#2a1848","--color-badge-bg":"#692278",
+         "--color-accent-border":"#0094c9","--color-accent-text":"#eb63c5",
+         "--color-code-bg":"#0e1220","--color-code-text":"#c0c4d0",
+         "--border-color":"#2a2e3a","--border-drag-over":"#6030a0","--border-drag-edge":"#e749df",
+         "--hover-brightness":"110%","--creative-loading-emojis":"🌃💜⚡🤖✨🎮"}
+
+        === RULES ===
+
+        1) SURFACES must be TINTED with the theme color — never gray or neutral.
+           bg is lightest (pastel), then input, section, secondary, nav (deeper), btn (deepest or vivid).
+        2) ALL text must be DARK (#0a-#2f range) on light themes, LIGHT (#cc-#ff range) on dark themes.
+           Exception: text-on-btn must contrast with surface-btn. If btn is dark, text-on-btn is light.
+        3) brand/link = vivid theme color. danger=red, success=green, warning=amber ALWAYS.
+        4) code-bg = same hue as surface-bg, slightly darker. NEVER a different hue family.
+        5) Multi-color prompts (e.g. "Google logo", "rainbow", "Italian flag"):
+           - Surfaces: use the DOMINANT color's hue (tinted, not gray)
+           - Distribute each distinct color to: brand, active, badge-bg, accent-border, accent-text
+           - Each color must be RECOGNIZABLE — never blend into one muddy tone
+        6) Match the vibe: "토마토" = warm reds/oranges, "바나나" = bright yellows, "숲" = rich greens.
+           The user should IMMEDIATELY recognize the theme from its colors.
       PROMPT
 
       response = @client.chat([

@@ -11,6 +11,12 @@
 /* ============================================================================
  * LEGACY ALIASES → Semantic Tokens
  * These keep existing CSS working while we migrate file-by-file.
+ *
+ * NOTE: Legacy aliases use var() to reference semantic tokens. Because CSS
+ * custom properties resolve var() at computed-value time on the element where
+ * they are defined, aliases on :root resolve against :root's own token values
+ * (light). To make them pick up dark-mode overrides, we must ALSO redefine
+ * them inside body.dark-mode and the prefers-color-scheme media query.
  * ============================================================================ */
 :root {
   /* Surface aliases */
@@ -45,13 +51,43 @@
   --paragraph-space-1: var(--paragraph-space);
 }
 
+/* Dark-mode legacy aliases — must mirror :root aliases so var() resolves
+   against body.dark-mode's semantic token values, not :root's. */
+body.dark-mode {
+  --color-bg: var(--surface-bg);
+  --color-nav-bg: var(--surface-nav);
+  --color-section-bg: var(--surface-section);
+  --color-input-bg: var(--surface-input);
+  --color-btn-bg: var(--surface-btn);
+  --color-secondary-background: var(--surface-secondary);
+  --color-text: var(--text-primary);
+  --color-muted: var(--text-muted);
+  --color-btn-text: var(--text-on-btn);
+  --color-nav-text: var(--text-nav);
+  --color-nav-btn-text: var(--text-nav-btn);
+  --color-chat-btn-text: var(--text-chat-btn);
+  --color-badge-text: var(--text-on-badge);
+  --color-input-text: var(--text-input);
+  --color-complete: var(--color-brand);
+  --color-chip-bg: var(--color-brand);
+  --color-secondary-active: var(--color-active);
+  --color-border: var(--border-color);
+  --color-drag-over: var(--border-drag-over);
+  --color-drag-over-edge: var(--border-drag-edge);
+}
+
 /* ============================================================================
  * BASE ELEMENT STYLES
  * ============================================================================ */
 body {
   background: var(--surface-bg);
   color: var(--text-primary);
+  color-scheme: light;
   transition: background 0.3s, color 0.3s;
+}
+
+body.dark-mode {
+  color-scheme: dark;
 }
 
 nav {
@@ -74,4 +110,148 @@ input[type="submit"] {
   border-radius: 1px;
   padding: 2px 4px;
   transition: background 0.3s, color 0.3s;
+}
+
+/* ============================================================================
+ * UI COMPONENT CLASSES
+ * Reusable button, badge, and chip styles built on design tokens.
+ * ============================================================================ */
+
+/* --- Buttons --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.45em 0.9em;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2, 4px);
+  background: var(--surface-btn);
+  color: var(--text-on-btn);
+  cursor: pointer;
+  text-decoration: none;
+  transition: filter 0.15s, background 0.15s;
+}
+
+.btn:hover {
+  filter: brightness(var(--hover-brightness, 0.95));
+}
+
+.btn-primary {
+  background: var(--color-brand);
+  color: var(--text-on-badge);
+  border-color: var(--color-brand);
+}
+
+.btn-secondary {
+  background: var(--surface-secondary);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+.btn-success {
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+}
+
+.btn-success:hover {
+  background: var(--color-success);
+  color: var(--text-on-badge);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.btn-danger:hover {
+  background: var(--color-danger);
+  color: var(--text-on-badge);
+}
+
+/* --- Date/time input calendar icon & placeholder --- */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  opacity: 0.6;
+  filter: var(--date-icon-filter, none);
+  cursor: pointer;
+}
+
+input[type="date"]::-webkit-datetime-edit-text,
+input[type="date"]::-webkit-datetime-edit-month-field,
+input[type="date"]::-webkit-datetime-edit-day-field,
+input[type="date"]::-webkit-datetime-edit-year-field,
+input[type="datetime-local"]::-webkit-datetime-edit-text,
+input[type="datetime-local"]::-webkit-datetime-edit-month-field,
+input[type="datetime-local"]::-webkit-datetime-edit-day-field,
+input[type="datetime-local"]::-webkit-datetime-edit-year-field,
+input[type="datetime-local"]::-webkit-datetime-edit-hour-field,
+input[type="datetime-local"]::-webkit-datetime-edit-minute-field {
+  color: var(--text-muted);
+}
+
+.btn-sm {
+  padding: 0.25em 0.55em;
+  font-size: 0.8rem;
+}
+
+.btn-xs {
+  padding: 0.15em 0.4em;
+  font-size: 0.75rem;
+}
+
+/* --- Badges --- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.2em;
+  padding: 0.05em 0.35em;
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: var(--radius-round, 9999px);
+  background: var(--color-badge-bg);
+  color: var(--text-on-badge);
+}
+
+.badge-success {
+  background: var(--color-success);
+}
+
+.badge-danger {
+  background: var(--color-danger);
+}
+
+.badge-warning {
+  background: var(--color-warning);
+}
+
+/* --- Chips (contact tags, etc.) --- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.2em 0.6em;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  border-radius: var(--radius-round, 9999px);
+  background: var(--surface-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.chip-active {
+  background: var(--color-brand);
+  color: var(--text-on-badge);
+  border-color: var(--color-brand);
+}
+
+/* --- Inline utility --- */
+.inline-block {
+  display: inline-block;
 }

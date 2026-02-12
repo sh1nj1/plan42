@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
+import { parseEmojis } from '../../utils/emoji_parser'
 
 export default class extends Controller {
   static values = {
@@ -121,7 +122,7 @@ export default class extends Controller {
       emojiString = rootStyle.getPropertyValue('--creative-loading-emojis').replace(/"/g, '').trim()
     }
 
-    const emojis = emojiString ? emojiString.split(',').map(e => e.trim()) : ['🎨', '💡', '🚀', '✨', '🧩', '🎲']
+    const emojis = parseEmojis(emojiString)
 
     let emojiIndex = 0
     let frame = 0 // 0: ..., 1: ..E, 2: .E., 3: E..

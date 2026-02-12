@@ -1,11 +1,39 @@
 require "test_helper"
 
-class ApplicationHelperTest < ActionView::TestCase
-  include ApplicationHelper
+class Collavre::ApplicationHelperTest < ActionView::TestCase
+  include Collavre::ApplicationHelper
 
-  test "linkify_urls converts URLs to links" do
-    text = "Visit http://example.com"
-    expected = 'Visit <a target="_blank" rel="noopener" href="http://example.com">http://example.com</a>'
-    assert_equal expected, linkify_urls(text)
+  setup do
+    @user = users(:one)
+  end
+
+  test "body_theme_class returns dark-mode for dark theme" do
+    @user.update!(theme: "dark")
+    Current.user = @user
+    assert_equal "dark-mode", body_theme_class
+  end
+
+  test "body_theme_class returns light-mode for light theme" do
+    @user.update!(theme: "light")
+    Current.user = @user
+    assert_equal "light-mode", body_theme_class
+  end
+
+  test "body_theme_class returns light-mode for custom theme" do
+    custom = @user.user_themes.create!(name: "Forest", variables: { "--surface-bg" => "#f0f0f0" })
+    @user.update!(theme: custom.id.to_s)
+    Current.user = @user
+    assert_equal "light-mode", body_theme_class
+  end
+
+  test "body_theme_class returns empty string when no theme" do
+    @user.update!(theme: nil)
+    Current.user = @user
+    assert_equal "", body_theme_class
+  end
+
+  test "body_theme_class returns empty string when no user" do
+    Current.user = nil
+    assert_equal "", body_theme_class
   end
 end
