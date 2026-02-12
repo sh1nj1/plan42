@@ -248,6 +248,9 @@ body.dark-mode {
 
   /* -- Effects -- */
   --hover-brightness: 110%;
+
+  /* -- Date input -- */
+  --date-icon-filter: invert(0.8);
 }
 
 /* ============================================================================
@@ -291,6 +294,8 @@ body.dark-mode {
     --border-drag-edge: #777777;
 
     --hover-brightness: 110%;
+
+    --date-icon-filter: invert(0.8);
 
     /* Legacy aliases — must be redefined here so var() resolves against
        the dark semantic tokens above, not :root's light values. */

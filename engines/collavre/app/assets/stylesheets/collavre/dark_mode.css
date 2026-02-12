@@ -173,6 +173,18 @@ input[type="submit"] {
   color: var(--text-on-badge);
 }
 
+/* --- Date input calendar icon & placeholder --- */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: var(--date-icon-filter, none);
+}
+
+input[type="date"]::-webkit-datetime-edit-text,
+input[type="date"]::-webkit-datetime-edit-month-field,
+input[type="date"]::-webkit-datetime-edit-day-field,
+input[type="date"]::-webkit-datetime-edit-year-field {
+  color: var(--text-muted);
+}
+
 .btn-sm {
   padding: 0.25em 0.55em;
   font-size: 0.8rem;
