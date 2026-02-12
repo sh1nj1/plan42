@@ -84,7 +84,7 @@ module Collavre
       defaults = AGENT_CONF_DEFAULTS.deep_dup
       return defaults if agent_conf.blank?
 
-      user_conf = YAML.safe_load(agent_conf, permitted_classes: [Symbol]) || {}
+      user_conf = YAML.safe_load(agent_conf, permitted_classes: [ Symbol ]) || {}
       defaults.deep_merge(user_conf)
     rescue Psych::SyntaxError => e
       Rails.logger.warn("[User#parsed_agent_conf] Invalid YAML for user #{id}: #{e.message}")
