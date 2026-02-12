@@ -291,5 +291,28 @@ body.dark-mode {
     --border-drag-edge: #777777;
 
     --hover-brightness: 110%;
+
+    /* Legacy aliases — must be redefined here so var() resolves against
+       the dark semantic tokens above, not :root's light values. */
+    --color-bg: var(--surface-bg);
+    --color-nav-bg: var(--surface-nav);
+    --color-section-bg: var(--surface-section);
+    --color-input-bg: var(--surface-input);
+    --color-btn-bg: var(--surface-btn);
+    --color-secondary-background: var(--surface-secondary);
+    --color-text: var(--text-primary);
+    --color-muted: var(--text-muted);
+    --color-btn-text: var(--text-on-btn);
+    --color-nav-text: var(--text-nav);
+    --color-nav-btn-text: var(--text-nav-btn);
+    --color-chat-btn-text: var(--text-chat-btn);
+    --color-badge-text: var(--text-on-badge);
+    --color-input-text: var(--text-input);
+    --color-complete: var(--color-brand);
+    --color-chip-bg: var(--color-brand);
+    --color-secondary-active: var(--color-active);
+    --color-border: var(--border-color);
+    --color-drag-over: var(--border-drag-over);
+    --color-drag-over-edge: var(--border-drag-edge);
   }
 }
