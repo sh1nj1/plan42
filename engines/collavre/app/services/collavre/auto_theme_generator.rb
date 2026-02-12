@@ -91,11 +91,33 @@ module Collavre
           - For "grape": cool lavender-gray backgrounds, not purple surfaces
           - For "banana": warm ivory backgrounds, not yellow surfaces
           Surface chroma should be LOW (C=0.01–0.03). The tint is felt, not seen.
-        Step 4 — Nav bar can be slightly MORE saturated than bg (C=0.03–0.06) as an anchor.
-        Step 5 — Buttons (--surface-btn) should be clearly distinguishable from bg:
-          Light themes: L difference of ≥6% from bg
-          Dark themes: L difference of ≥5% from bg
-        Step 6 — Text must have WCAG AA contrast (≥4.5:1) against its paired surface:
+          ALL surfaces must share the SAME hue family. Do NOT mix warm and cool surfaces.
+
+        Step 4 — LIGHTNESS STAIRCASE (critical for visual separation):
+          Light themes (surface-bg L≈95%):
+            --surface-bg:        L=93–97%  (brightest, the "white wall")
+            --surface-input:     L=91–95%  (almost same as bg, slightly warmer)
+            --surface-section:   L=87–91%  (noticeably darker than bg)
+            --surface-secondary: L=85–89%  (similar to section)
+            --surface-nav:       L=80–86%  (clearly darker, the "header bar")
+            --surface-btn:       L=75–82%  (darkest surface, clearly a "button")
+          Dark themes (surface-bg L≈10–15%):
+            --surface-bg:        L=8–15%
+            --surface-input:     L=12–18%
+            --surface-section:   L=15–22%
+            --surface-secondary: L=15–22%
+            --surface-nav:       L=5–12%   (darker than bg, like a dark header)
+            --surface-btn:       L=20–30%  (lighter than bg, clearly tappable)
+          The KEY is that each surface is visually distinguishable from its neighbors.
+          If you squint, you should see 3-4 distinct zones, not a flat monotone.
+
+        Step 5 — Nav bar should be the MOST distinctly colored surface:
+          It's the persistent top bar. It can have slightly more chroma (C=0.03–0.06) than other surfaces.
+        Step 6 — Buttons (--surface-btn) must STAND OUT from the background:
+          They're interactive elements. Users must immediately see them as clickable.
+          In light themes: btn should be noticeably darker than bg (≥15 L-points difference)
+          In dark themes: btn should be noticeably lighter than bg (≥10 L-points difference)
+        Step 7 — Text must have WCAG AA contrast (≥4.5:1) against its paired surface:
           --text-primary   vs --surface-bg
           --text-on-btn    vs --surface-btn
           --text-input     vs --surface-input
@@ -104,29 +126,34 @@ module Collavre
           --text-chat-btn  vs --surface-section
           --text-muted     ≥3:1 against --surface-bg
           --text-on-badge  vs --color-badge-bg
-        Step 7 — Accent colors:
+        Step 8 — Accent colors:
           --color-brand: The mood color at full saturation (C=0.15–0.25)
           --color-link: Same as or near brand
           --color-active: Lighter/brighter variant of brand
           --color-accent-border / --color-accent-text: Brand family
-        Step 8 — Semantic colors (standard associations, slightly tinted):
+        Step 9 — Semantic colors (standard associations, slightly tinted):
           --color-danger:  Red (H≈25–30)
           --color-success: Green (H≈145–155)
           --color-warning: Amber (H≈85–95)
           --color-badge-bg: Red or brand
-        Step 9 — Utility:
+        Step 10 — Utility:
           --color-highlight: Warm translucent (L≈85%, C≈0.08, H≈90)
-          --color-code-bg: Slightly offset from --surface-bg
-          --color-code-text: High contrast against code-bg
+          --color-code-bg: SAME hue as surface-bg, just 3-5% darker. Do NOT use a different color family.
+          --color-code-text: High contrast against code-bg, same hue family as text-primary
           --border-color: Between surface-bg and text lightness, very low chroma
           --border-drag-over/edge: Slightly stronger
 
         CRITICAL MISTAKES TO AVOID:
         - Do NOT make --surface-bg highly saturated. It covers 60% of the screen. Keep it nearly neutral.
         - Do NOT use the mood color directly as a surface. "Tomato" theme ≠ red background. It means warm-tinted neutrals with red accents.
-        - Do NOT make all colors the same lightness. There must be a clear hierarchy: bg > section ≈ secondary > nav > btn.
-        - Do NOT pick unrelated colors. Every color should feel like part of the same family.
-        - Do NOT make buttons invisible against the background. --surface-btn must differ from --surface-bg.
+        - Do NOT make surfaces all the same lightness. You MUST follow the lightness staircase in Step 4.
+          BAD:  bg=#edf7fe, section=#ddeefb, nav=#c7e2f6 (only 5-10% apart)
+          GOOD: bg=#f5f8fa, section=#e8ecef, nav=#c5cdd5, btn=#a0abb5 (15-20% apart)
+        - Do NOT pick unrelated colors for code-bg. It must match the surface hue family.
+          BAD:  surface-bg=#fff7ee (warm), code-bg=#e3edf4 (cool blue) — jarring mismatch
+          GOOD: surface-bg=#fff7ee (warm), code-bg=#f0ead8 (warm, slightly darker) — harmonious
+        - Do NOT make buttons invisible against the background. --surface-btn must differ from --surface-bg by ≥15 L-points.
+        - For multi-color prompts (e.g. "Google logo", "rainbow"): use the dominant color for surfaces, distribute other colors across accent tokens (brand, active, badge-bg, accent-border).
         - Borders must be visible but not distracting.
       PROMPT
 
