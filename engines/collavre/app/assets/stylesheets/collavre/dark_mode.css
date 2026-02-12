@@ -152,9 +152,14 @@ input[type="submit"] {
 }
 
 .btn-danger {
-  background: var(--color-danger);
-  color: #fff; /* stylelint-disable-line collavre/color-no-hex */
+  background: transparent;
+  color: var(--color-danger);
   border-color: var(--color-danger);
+}
+
+.btn-danger:hover {
+  background: var(--color-danger);
+  color: var(--text-on-badge);
 }
 
 .btn-sm {

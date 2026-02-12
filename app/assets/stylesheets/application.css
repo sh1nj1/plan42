@@ -482,6 +482,9 @@ button {
     color: var(--text-on-badge);
 }
 
+/* NOTE: delete-item styles above mirror .btn-danger from dark_mode.css
+   Kept here for specificity since inbox buttons use element selectors */
+
 .inbox-empty {
     padding: var(--inbox-spacing);
 }
