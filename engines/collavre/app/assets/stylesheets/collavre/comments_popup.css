@@ -580,7 +580,6 @@ body.chat-fullscreen {
     cursor: pointer;
     color: var(--color-chat-btn-text);
 }
-}
 
 .comment-owner-only,
 .comment-delete-hidden,

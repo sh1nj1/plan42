@@ -1,0 +1,163 @@
+/*
+ * Collavre Design Tokens
+ *
+ * Based on Open Props (https://open-props.style) scale system.
+ * This file defines all design tokens used across Collavre.
+ * DO NOT hardcode raw values in component CSS — use these tokens instead.
+ *
+ * Enforced by Stylelint (stylelint.config.mjs)
+ */
+
+/* ============================================================================
+ * SPACING (from Open Props --size-*)
+ * Usage: padding, margin, gap
+ * ============================================================================ */
+:root {
+  --space-000: -0.5rem;   /* -8px */
+  --space-00: -0.25rem;   /* -4px */
+  --space-1: 0.25rem;     /* 4px */
+  --space-2: 0.5rem;      /* 8px */
+  --space-3: 1rem;        /* 16px */
+  --space-4: 1.25rem;     /* 20px */
+  --space-5: 1.5rem;      /* 24px */
+  --space-6: 1.75rem;     /* 28px */
+  --space-7: 2rem;        /* 32px */
+  --space-8: 3rem;        /* 48px */
+  --space-9: 4rem;        /* 64px */
+  --space-10: 5rem;       /* 80px */
+  --space-11: 7.5rem;     /* 120px */
+  --space-12: 10rem;      /* 160px */
+
+  /* Pixel variants (for when rem isn't appropriate) */
+  --space-px-1: 4px;
+  --space-px-2: 8px;
+  --space-px-3: 16px;
+  --space-px-4: 20px;
+  --space-px-5: 24px;
+  --space-px-6: 28px;
+  --space-px-7: 32px;
+  --space-px-8: 48px;
+
+  /* ============================================================================
+   * TYPOGRAPHY (from Open Props --font-size-*, --font-weight-*, --font-lineheight-*)
+   * ============================================================================ */
+
+  /* Font families */
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: "Dank Mono", "Operator Mono", "Inconsolata", "Fira Mono",
+    ui-monospace, "SF Mono", Monaco, "Droid Sans Mono", "Source Code Pro",
+    "Cascadia Code", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+
+  /* Font sizes */
+  --text-00: 0.5rem;      /* 8px — tiny labels */
+  --text-0: 0.75rem;      /* 12px — small/caption */
+  --text-1: 1rem;         /* 16px — body (base) */
+  --text-2: 1.1rem;       /* 17.6px — slightly larger body */
+  --text-3: 1.25rem;      /* 20px — subheading */
+  --text-4: 1.5rem;       /* 24px — heading */
+  --text-5: 2rem;         /* 32px — large heading */
+  --text-6: 2.5rem;       /* 40px — display */
+  --text-7: 3rem;         /* 48px — hero */
+  --text-8: 3.5rem;       /* 56px — jumbo */
+
+  /* Font weights */
+  --weight-1: 100;        /* thin */
+  --weight-2: 200;        /* extra-light */
+  --weight-3: 300;        /* light */
+  --weight-4: 400;        /* regular */
+  --weight-5: 500;        /* medium */
+  --weight-6: 600;        /* semi-bold */
+  --weight-7: 700;        /* bold */
+  --weight-8: 800;        /* extra-bold */
+  --weight-9: 900;        /* black */
+
+  /* Line heights */
+  --leading-00: 0.95;     /* tight — headings */
+  --leading-0: 1.1;       /* compact */
+  --leading-1: 1.25;      /* snug */
+  --leading-2: 1.375;     /* normal */
+  --leading-3: 1.5;       /* relaxed (default body) */
+  --leading-4: 1.75;      /* loose */
+  --leading-5: 2;         /* extra loose */
+
+  /* ============================================================================
+   * BORDERS & RADIUS (from Open Props)
+   * ============================================================================ */
+  --border-1: 1px;
+  --border-2: 2px;
+  --border-3: 5px;
+  --border-4: 10px;
+
+  --radius-1: 2px;        /* subtle */
+  --radius-2: 5px;        /* default */
+  --radius-3: 1rem;       /* medium */
+  --radius-4: 2rem;       /* large */
+  --radius-5: 4rem;       /* pill-like */
+  --radius-round: 1e5px;  /* circle */
+
+  /* ============================================================================
+   * SHADOWS (from Open Props)
+   * ============================================================================ */
+  --shadow-color: 220 3% 15%;
+  --shadow-strength: 1%;
+
+  --shadow-1: 0 1px 2px -1px hsl(var(--shadow-color) / calc(var(--shadow-strength) + 9%));
+  --shadow-2:
+    0 3px 5px -2px hsl(var(--shadow-color) / calc(var(--shadow-strength) + 3%)),
+    0 7px 14px -5px hsl(var(--shadow-color) / calc(var(--shadow-strength) + 5%));
+  --shadow-3:
+    0 -1px 3px 0 hsl(var(--shadow-color) / calc(var(--shadow-strength) + 2%)),
+    0 1px 2px -5px hsl(var(--shadow-color) / calc(var(--shadow-strength) + 2%)),
+    0 2px 5px -5px hsl(var(--shadow-color) / calc(var(--shadow-strength) + 4%)),
+    0 4px 12px -5px hsl(var(--shadow-color) / calc(var(--shadow-strength) + 5%)),
+    0 12px 15px -5px hsl(var(--shadow-color) / calc(var(--shadow-strength) + 7%));
+  --shadow-4:
+    0 -2px 5px 0 hsl(var(--shadow-color) / calc(var(--shadow-strength) + 2%)),
+    0 1px 1px -2px hsl(var(--shadow-color) / calc(var(--shadow-strength) + 3%)),
+    0 2px 2px -2px hsl(var(--shadow-color) / calc(var(--shadow-strength) + 3%)),
+    0 5px 5px -2px hsl(var(--shadow-color) / calc(var(--shadow-strength) + 4%)),
+    0 9px 9px -2px hsl(var(--shadow-color) / calc(var(--shadow-strength) + 5%)),
+    0 16px 16px -2px hsl(var(--shadow-color) / calc(var(--shadow-strength) + 6%));
+
+  /* ============================================================================
+   * EASING & ANIMATION (from Open Props)
+   * ============================================================================ */
+  --ease-1: cubic-bezier(0.25, 0, 0.5, 1);
+  --ease-2: cubic-bezier(0.25, 0, 0.4, 1);
+  --ease-3: cubic-bezier(0.25, 0, 0.3, 1);
+  --ease-in-1: cubic-bezier(0.25, 0, 1, 1);
+  --ease-in-2: cubic-bezier(0.50, 0, 1, 1);
+  --ease-out-1: cubic-bezier(0, 0, 0.75, 1);
+  --ease-out-2: cubic-bezier(0, 0, 0.50, 1);
+  --ease-out-3: cubic-bezier(0, 0, 0.3, 1);
+
+  /* ============================================================================
+   * Z-INDEX LAYERS
+   * ============================================================================ */
+  --layer-1: 1;
+  --layer-2: 2;
+  --layer-3: 3;
+  --layer-4: 4;
+  --layer-5: 5;
+  --layer-popup: 100;
+  --layer-modal: 1000;
+  --layer-toast: 2000;
+  --layer-important: 2147483647;
+
+  /* ============================================================================
+   * BREAKPOINTS (reference only — use in @media queries)
+   * ============================================================================ */
+  /* --bp-xs: 360px;  */
+  /* --bp-sm: 480px;  */
+  /* --bp-md: 768px;  */
+  /* --bp-lg: 1024px; */
+  /* --bp-xl: 1440px; */
+}
+
+/* ============================================================================
+ * DARK MODE SHADOW OVERRIDES
+ * ============================================================================ */
+body.dark-mode {
+  --shadow-color: 220 40% 2%;
+  --shadow-strength: 25%;
+}

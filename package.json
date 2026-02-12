@@ -8,11 +8,15 @@
     "glob": "^13.0.0",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.2.0",
-    "jsdom": "^27.1.0"
+    "jsdom": "^27.1.0",
+    "stylelint": "^17.2.0",
+    "stylelint-config-standard": "^40.0.0"
   },
   "scripts": {
     "build": "node script/build.cjs",
-    "test": "node --experimental-vm-modules ./node_modules/.bin/jest"
+    "test": "node --experimental-vm-modules ./node_modules/.bin/jest",
+    "lint:css": "stylelint 'engines/**/stylesheets/**/*.css'",
+    "lint:css:fix": "stylelint 'engines/**/stylesheets/**/*.css' --fix"
   },
   "workspaces": [
     "engines/*"
@@ -36,6 +40,7 @@
     "lexical": "^0.38.2",
     "lit": "^3.1.2",
     "marked": "^16.4.1",
+    "open-props": "^1.7.23",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   }
