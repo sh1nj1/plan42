@@ -18,9 +18,9 @@ export default class extends Controller {
     this.handleMouseUp = this.handleMouseUp.bind(this)
     this.element.addEventListener('mouseup', this.handleMouseUp)
 
-    // Track selection changes to enable/disable replace button
-    this._handleSelectionChange = this._handleSelectionChange.bind(this)
-    document.addEventListener('selectionchange', this._handleSelectionChange)
+    // Bound handlers for review/replace buttons (stored for cleanup)
+    this._boundReviewClick = this._onReviewClick.bind(this)
+    this._boundReplaceClick = this._onReplaceClick.bind(this)
 
     this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
@@ -119,7 +119,7 @@ export default class extends Controller {
 
   disconnect() {
     this.element.removeEventListener('mouseup', this.handleMouseUp)
-    document.removeEventListener('selectionchange', this._handleSelectionChange)
+    this._removeSelectionChangeListener()
     this.hideReviewPopup()
     if (this._reviewPopupEl) {
       this._reviewPopupEl.remove()
@@ -216,34 +216,51 @@ export default class extends Controller {
   }
 
   reviewButtonTargetConnected(button) {
-    button.addEventListener('click', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      const commentId = this.element.dataset.commentId
-      const contentEl = this.element.querySelector('.comment-content')
-      const fullText = contentEl ? contentEl.textContent.trim() : ''
-      const formController = this.findFormController()
-      if (formController && fullText) {
-        formController.quoteComment(commentId, fullText)
-      }
-    })
+    button.addEventListener('click', this._boundReviewClick)
+  }
+
+  reviewButtonTargetDisconnected(button) {
+    button.removeEventListener('click', this._boundReviewClick)
   }
 
   replaceButtonTargetConnected(button) {
-    button.addEventListener('click', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      const selectedText = this._getSelectedTextInContent()
-      if (!selectedText) return
+    button.addEventListener('click', this._boundReplaceClick)
+    // Only listen for selectionchange when a replace button exists
+    this._addSelectionChangeListener()
+  }
 
-      const commentId = this.element.dataset.commentId
-      const formController = this.findFormController()
-      if (formController) {
-        formController.quoteComment(commentId, selectedText)
-      }
-      window.getSelection().removeAllRanges()
-      this._updateReplaceButton()
-    })
+  replaceButtonTargetDisconnected(button) {
+    button.removeEventListener('click', this._boundReplaceClick)
+    if (!this.hasReplaceButtonTarget) {
+      this._removeSelectionChangeListener()
+    }
+  }
+
+  _onReviewClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    const commentId = this.element.dataset.commentId
+    const contentEl = this.element.querySelector('.comment-content')
+    const fullText = contentEl ? contentEl.textContent.trim() : ''
+    const formController = this.findFormController()
+    if (formController && fullText) {
+      formController.quoteComment(commentId, fullText)
+    }
+  }
+
+  _onReplaceClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    const selectedText = this._getSelectedTextInContent()
+    if (!selectedText) return
+
+    const commentId = this.element.dataset.commentId
+    const formController = this.findFormController()
+    if (formController) {
+      formController.quoteComment(commentId, selectedText)
+    }
+    window.getSelection().removeAllRanges()
+    this._updateReplaceButton()
   }
 
   _getSelectedTextInContent() {
@@ -260,6 +277,19 @@ export default class extends Controller {
     if (!contentEl.contains(range.commonAncestorContainer)) return null
 
     return text
+  }
+
+  _addSelectionChangeListener() {
+    if (this._selectionChangeActive) return
+    this._handleSelectionChange = this._handleSelectionChange.bind(this)
+    document.addEventListener('selectionchange', this._handleSelectionChange)
+    this._selectionChangeActive = true
+  }
+
+  _removeSelectionChangeListener() {
+    if (!this._selectionChangeActive) return
+    document.removeEventListener('selectionchange', this._handleSelectionChange)
+    this._selectionChangeActive = false
   }
 
   _handleSelectionChange() {
