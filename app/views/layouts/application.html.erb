@@ -48,6 +48,9 @@
             <% custom_theme.variables.each do |key, value| %>
               <%= key %>: <%= value %> !important;
             <% end %>
+            <% legacy_alias_declarations(custom_theme.variables).each do |key, value| %>
+              <%= key %>: <%= value %> !important;
+            <% end %>
           }
         </style>
       <% end %>
