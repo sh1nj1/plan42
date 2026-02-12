@@ -121,7 +121,17 @@ export default class extends Controller {
       emojiString = rootStyle.getPropertyValue('--creative-loading-emojis').replace(/"/g, '').trim()
     }
 
-    const emojis = emojiString ? emojiString.split(',').map(e => e.trim()) : ['🎨', '💡', '🚀', '✨', '🧩', '🎲']
+    let emojis
+    if (emojiString) {
+      if (emojiString.includes(',')) {
+        emojis = emojiString.split(',').map(e => e.trim()).filter(e => e)
+      } else {
+        emojis = [...emojiString.matchAll(/\p{Extended_Pictographic}(?:\u{FE0F}|\u{200D}\p{Extended_Pictographic})*/gu)].map(m => m[0])
+      }
+      if (emojis.length === 0) emojis = ['🎨', '💡', '🚀', '✨', '🧩', '🎲']
+    } else {
+      emojis = ['🎨', '💡', '🚀', '✨', '🧩', '🎲']
+    }
 
     let emojiIndex = 0
     let frame = 0 // 0: ..., 1: ..E, 2: .E., 3: E..
