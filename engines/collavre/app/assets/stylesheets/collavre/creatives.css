@@ -55,13 +55,12 @@ html.creative-alignment-ready .page-title {
 .creative-tree {
     position: relative;
     background:
-        linear-gradient(
-            160deg,
-            color-mix(in srgb, var(--color-accent-border) 8%, transparent) 0%,
-            color-mix(in srgb, var(--color-brand) 3%, transparent) 40%,
-            color-mix(in srgb, var(--color-accent-border) 6%, transparent) 70%,
-            color-mix(in srgb, var(--color-brand) 8%, transparent) 100%
-        );
+        radial-gradient(ellipse 40% 35% at 12% 18%, color-mix(in srgb, var(--color-brand) 6%, transparent) 0%, transparent 100%),
+        radial-gradient(ellipse 55% 40% at 85% 8%, color-mix(in srgb, var(--color-accent-border) 5%, transparent) 0%, transparent 100%),
+        radial-gradient(ellipse 35% 50% at 65% 55%, color-mix(in srgb, var(--color-success) 4%, transparent) 0%, transparent 100%),
+        radial-gradient(ellipse 50% 30% at 30% 75%, color-mix(in srgb, var(--color-brand) 5%, transparent) 0%, transparent 100%),
+        radial-gradient(ellipse 45% 45% at 90% 85%, color-mix(in srgb, var(--color-accent-border) 4%, transparent) 0%, transparent 100%),
+        radial-gradient(ellipse 30% 25% at 50% 35%, color-mix(in srgb, var(--color-active) 3%, transparent) 0%, transparent 100%);
     border-radius: var(--radius-2);
     padding: 0.5rem;
 }
