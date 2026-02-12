@@ -446,8 +446,10 @@ export default class extends Controller {
     const end = textarea.selectionEnd
     const before = textarea.value.substring(0, start)
     const after = textarea.value.substring(end)
-    textarea.value = before + result + after
-    const cursorPos = start + result.length
+    // Ensure blank line before code fence if there's preceding text
+    const separator = before.length > 0 && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : ''
+    textarea.value = before + separator + result + after
+    const cursorPos = start + separator.length + result.length
     textarea.setSelectionRange(cursorPos, cursorPos)
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
   }
