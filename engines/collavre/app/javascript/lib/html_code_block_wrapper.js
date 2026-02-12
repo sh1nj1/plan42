@@ -19,13 +19,13 @@ export function wrapHtmlInCodeBlocks(text) {
 
   for (const seg of segments) {
     result += text.slice(lastIndex, seg.start)
-    result += '\n```html\n' + seg.html + '\n```\n'
+    result += '\n\n```html\n' + seg.html + '\n```\n\n'
     lastIndex = seg.end
   }
   result += text.slice(lastIndex)
 
   // Trim leading/trailing newlines added by wrapping
-  result = result.replace(/^\n/, '').replace(/\n$/, '')
+  result = result.replace(/^\n+/, '').replace(/\n+$/, '')
 
   return { changed: true, result }
 }

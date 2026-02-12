@@ -69,19 +69,19 @@ describe('wrapHtmlInCodeBlocks', () => {
   test('wraps HTML with text before', () => {
     const { changed, result } = wrapHtmlInCodeBlocks('여기 봐봐 <div>hello</div>')
     expect(changed).toBe(true)
-    expect(result).toBe('여기 봐봐 \n```html\n<div>hello</div>\n```')
+    expect(result).toBe('여기 봐봐 \n\n```html\n<div>hello</div>\n```')
   })
 
   test('wraps HTML with text after', () => {
     const { changed, result } = wrapHtmlInCodeBlocks('<div>hello</div> 이거 뭐야?')
     expect(changed).toBe(true)
-    expect(result).toBe('```html\n<div>hello</div>\n```\n 이거 뭐야?')
+    expect(result).toBe('```html\n<div>hello</div>\n```\n\n 이거 뭐야?')
   })
 
   test('wraps HTML with text before and after', () => {
     const { changed, result } = wrapHtmlInCodeBlocks('여기 봐봐 <div>hello</div> 이거 뭐야?')
     expect(changed).toBe(true)
-    expect(result).toBe('여기 봐봐 \n```html\n<div>hello</div>\n```\n 이거 뭐야?')
+    expect(result).toBe('여기 봐봐 \n\n```html\n<div>hello</div>\n```\n\n 이거 뭐야?')
   })
 
   // --- Multiple HTML blocks ---
@@ -89,7 +89,7 @@ describe('wrapHtmlInCodeBlocks', () => {
   test('wraps multiple separate HTML blocks', () => {
     const { changed, result } = wrapHtmlInCodeBlocks('<div>first</div> text <span>second</span>')
     expect(changed).toBe(true)
-    expect(result).toBe('```html\n<div>first</div>\n```\n text \n```html\n<span>second</span>\n```')
+    expect(result).toBe('```html\n<div>first</div>\n```\n\n text \n\n```html\n<span>second</span>\n```')
   })
 
   // --- Complex real-world HTML ---
@@ -106,7 +106,7 @@ describe('wrapHtmlInCodeBlocks', () => {
     const input = '이 코드를 봐줘 ' + html + ' 이게 맞아?'
     const { changed, result } = wrapHtmlInCodeBlocks(input)
     expect(changed).toBe(true)
-    expect(result).toBe('이 코드를 봐줘 \n```html\n' + html + '\n```\n 이게 맞아?')
+    expect(result).toBe('이 코드를 봐줘 \n\n```html\n' + html + '\n```\n\n 이게 맞아?')
   })
 
   // --- Multiline HTML ---
@@ -131,7 +131,6 @@ describe('wrapHtmlInCodeBlocks', () => {
   })
 
   test('handles HTML-like content in markdown', () => {
-    // Bold tags should match
     const { changed, result } = wrapHtmlInCodeBlocks('<b>bold text</b>')
     expect(changed).toBe(true)
     expect(result).toBe('```html\n<b>bold text</b>\n```')
@@ -158,5 +157,15 @@ describe('wrapHtmlInCodeBlocks', () => {
   test('does not wrap template literals with angle brackets', () => {
     const text = 'array.filter(x => x > 0)'
     expect(wrapHtmlInCodeBlocks(text)).toEqual({ changed: false, result: text })
+  })
+
+  // --- Failure scenario: typing text then pasting HTML ---
+
+  test('text followed by HTML renders as proper markdown code block', () => {
+    const { changed, result } = wrapHtmlInCodeBlocks('test <html><h1>hello</h1></html>')
+    expect(changed).toBe(true)
+    // Must have blank line before code fence for marked to parse correctly
+    expect(result).toBe('test \n\n```html\n<html><h1>hello</h1></html>\n```')
+    expect(result).toContain('\n\n```html')
   })
 })
