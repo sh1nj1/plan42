@@ -2,7 +2,7 @@
 <% current_topic_id = local_assigns[:current_topic_id] %>
 <% has_pending_action = comment.action.present? && comment.action_executed_at.blank? %>
 <% approver_id = comment.approver_id %>
-<div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>" data-creative-id="<%= comment.creative_id %>" data-creative-owner-id="<%= comment.creative&.user_id %>" data-has-pending-action="<%= has_pending_action %>" data-approver-id="<%= approver_id %>">
+<div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>" data-creative-id="<%= comment.creative_id %>" data-creative-owner-id="<%= comment.creative&.user_id %>" data-has-pending-action="<%= has_pending_action %>" data-approver-id="<%= approver_id %>" data-ai-user="<%= comment.user&.ai_user? %>">
   <div class="comment-select">
     <input type="checkbox"
            class="comment-select-checkbox"
@@ -59,6 +59,11 @@
       <button class="edit-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('collavre.comments.update_comment') %>">
         <%= t('collavre.comments.edit_button') %>
       </button>
+      <% if comment.user&.ai_user? %>
+        <button class="review-comment-btn" data-comment-target="reviewButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.review_button') %>">
+          <%= t('collavre.comments.review_button') %>
+        </button>
+      <% end %>
       <button class="copy-comment-link-btn" data-comment-id="<%= comment.id %>" data-comment-url="<%= collavre.creative_comment_url(comment.creative, comment, Rails.application.config.action_mailer.default_url_options) %>" title="<%= t('collavre.comments.copy_link_button') %>">
         <%= t('collavre.comments.copy_link_button') %>
       </button>

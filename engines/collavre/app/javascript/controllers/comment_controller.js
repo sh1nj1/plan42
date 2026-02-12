@@ -4,7 +4,7 @@ import CommonPopup from '../lib/common_popup'
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls"]
+  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "reviewButton"]
 
   connect() {
     const contentElement = this.element.querySelector('.comment-content')
@@ -208,6 +208,20 @@ export default class extends Controller {
     const popup = this.element.closest('#comments-popup')
     if (!popup) return null
     return this.application.getControllerForElementAndIdentifier(popup, 'comments--form')
+  }
+
+  reviewButtonTargetConnected(button) {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const commentId = this.element.dataset.commentId
+      const contentEl = this.element.querySelector('.comment-content')
+      const fullText = contentEl ? contentEl.textContent.trim() : ''
+      const formController = this.findFormController()
+      if (formController && fullText) {
+        formController.quoteComment(commentId, fullText)
+      }
+    })
   }
 
   updateReactionsUI(reactionsData) {

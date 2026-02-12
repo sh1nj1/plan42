@@ -560,6 +560,7 @@ body.chat-fullscreen {
 .convert-comment-btn,
 .delete-comment-btn,
 .edit-comment-btn,
+.review-comment-btn,
 .copy-comment-link-btn {
     border: none;
     background: none;
