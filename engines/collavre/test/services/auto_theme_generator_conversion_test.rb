@@ -26,13 +26,13 @@ class AutoThemeGeneratorConversionTest < ActiveSupport::TestCase
 
   test "process_variables converts values in hash" do
     input = {
-      "--color-bg" => "oklch(100% 0 0)",
-      "--color-text" => "#123456"
+      "--surface-bg" => "oklch(100% 0 0)",
+      "--text-primary" => "#123456"
     }
     output = @generator.send(:process_variables, input)
 
-    assert_equal "#ffffff", output["--color-bg"]
-    assert_equal "#123456", output["--color-text"] # Should remain unchanged
+    assert_equal "#ffffff", output["--surface-bg"]
+    assert_equal "#123456", output["--text-primary"] # Should remain unchanged
   end
 
   test "parse_response handles non-hash JSON gracefully" do
@@ -51,15 +51,15 @@ class AutoThemeGeneratorConversionTest < ActiveSupport::TestCase
 
   test "process_variables handles non-string values gracefully" do
     input = {
-      "--color-bg" => "oklch(100% 0 0)",
+      "--surface-bg" => "oklch(100% 0 0)",
       "--hover-brightness" => 0.95,
-      "--color-muted" => nil
+      "--text-muted" => nil
     }
     output = @generator.send(:process_variables, input)
 
-    assert_equal "#ffffff", output["--color-bg"]
+    assert_equal "#ffffff", output["--surface-bg"]
     assert_equal 0.95, output["--hover-brightness"]
-    assert_nil output["--color-muted"]
+    assert_nil output["--text-muted"]
   end
 
   test "converts complex oklch formats (degrees, alpha)" do
