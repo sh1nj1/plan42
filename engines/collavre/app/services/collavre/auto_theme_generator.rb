@@ -40,147 +40,42 @@ module Collavre
 
     def generate(prompt)
       system_prompt = <<~PROMPT
-        You are an expert UI/UX designer creating a color theme for a collaborative workspace app.
-        Generate a CSS theme as a JSON object for: "#{prompt}".
-        The JSON must contain ONLY these keys: #{REQUIRED_VARIABLES.join(', ')}.
+        You are a color theme designer for a workspace app.
+        Generate a JSON with ONLY these keys: #{REQUIRED_VARIABLES.join(', ')}.
 
-        FORMAT RULES:
-        - Use **oklch()** for ALL colors (except --hover-brightness and --creative-loading-emojis).
-        - --hover-brightness: a CSS filter percentage (e.g. "90%" for light themes, "110%" for dark themes).
-        - --creative-loading-emojis: exactly 6 emojis matching the theme mood, comma-separated.
-        - Return valid JSON only. No markdown, no explanation.
+        FORMAT: oklch() for colors. --hover-brightness: "90%" (light) or "110%" (dark).
+        --creative-loading-emojis: 6 emojis. Return valid JSON only, no markdown.
 
-        UI LAYOUT — UNDERSTAND WHERE EACH TOKEN APPEARS:
-        The app has this visual structure (top to bottom):
-        ┌──────────────────────────────────────────────┐
-        │  NAV BAR (--surface-nav)  LARGE, full width  │
-        │  [search input] [홈][계획][완료] [avatar]      │
-        │  Text: --text-nav  Buttons: --text-nav-btn   │
-        ├──────────────────────────────────────────────┤
-        │  TOOLBAR (--surface-bg background)           │
-        │  [+][선택][▼][마크다운 가져오기] ← small btns │
-        │  Buttons use: --surface-btn + --text-on-btn  │
-        ├──────────────────────────────────────────────┤
-        │  MAIN CONTENT (--surface-bg) LARGEST area    │
-        │  Text: --text-primary                        │
-        │  Cards/sections: --surface-section           │
-        │  Links: --color-link                         │
-        │  Muted text: --text-muted                    │
-        ├──────────────────────────────────────────────┤
-        │  CHAT POPUP (--surface-section)              │
-        │  Chat buttons: --text-chat-btn               │
-        │  Input fields: --surface-input + --text-input│
-        └──────────────────────────────────────────────┘
+        === PROCESS ===
 
-        AREA SIZES (critical for visual balance):
-        - --surface-bg: ~60% of screen — THE dominant color, must be the most neutral
-        - --surface-nav: ~8% — top bar, can be slightly more saturated/darker
-        - --surface-section: ~20% — cards and panels
-        - --surface-btn: ~2% — small interactive elements (buttons)
-        - --surface-input: ~5% — form fields
-        - --color-brand/link/active: <1% — tiny accent points, can be vivid
-        - --text-primary: covers lots of area as text — must contrast well with bg
+        1) INTERPRET THE PROMPT:
+           - Single mood (e.g. "tomato", "ocean"): extract one mood color → use as brand/accent.
+           - Multi-color (e.g. "Google logo"=blue+red+yellow+green, "rainbow", "Italian flag"):
+             Surfaces stay NEUTRAL. Distribute the distinct colors across accents:
+             brand=color1, active=color2, badge-bg=color3, accent-border=color4.
+             The user must SEE each color separately — do NOT blend into monotone.
 
-        COLOR STRATEGY:
-        Think of it like interior design: walls (surfaces) are neutral, furniture (buttons) has subtle contrast, and decorations (accents) provide pops of color.
+        2) BUILD SURFACES — lightness staircase, same hue, LOW chroma (C≤0.03):
+           Light theme:  bg=95%, input=93%, section=88%, secondary=86%, nav=82%, btn=76%
+           Dark theme:   bg=12%, input=16%, section=20%, secondary=20%, nav=8%, btn=26%
+           "Tomato" → warm cream surfaces, NOT red. "Grape" → cool gray, NOT purple.
 
-        Step 1 — Extract a MOOD COLOR from the prompt (e.g. "tomato" → warm red, "grape" → deep purple, "forest" → muted green).
-        Step 2 — The mood color should appear as the BRAND/ACCENT color (vivid, small areas).
-        Step 3 — Surfaces should be TINTED NEUTRALS of the mood:
-          - For "tomato": warm cream/beige backgrounds, not bright red surfaces
-          - For "grape": cool lavender-gray backgrounds, not purple surfaces
-          - For "banana": warm ivory backgrounds, not yellow surfaces
-          Surface chroma should be LOW (C=0.01–0.03). The tint is felt, not seen.
-          ALL surfaces must share the SAME hue family. Do NOT mix warm and cool surfaces.
+        3) TEXT — must be DARK on light surfaces, LIGHT on dark surfaces:
+           For LIGHT themes: text-primary/on-btn/nav/input = L≤25% (near black). text-muted = L≤40%.
+           For DARK themes: text-primary/on-btn/nav/input = L≥80% (near white). text-muted = L≥60%.
+           CRITICAL: --text-on-btn MUST contrast against --surface-btn (≥4.5:1).
+           CRITICAL: --text-nav MUST contrast against --surface-nav (≥4.5:1).
 
-        Step 4 — LIGHTNESS STAIRCASE (critical for visual separation):
-          Light themes (surface-bg L≈95%):
-            --surface-bg:        L=93–97%  (brightest, the "white wall")
-            --surface-input:     L=91–95%  (almost same as bg, slightly warmer)
-            --surface-section:   L=87–91%  (noticeably darker than bg)
-            --surface-secondary: L=85–89%  (similar to section)
-            --surface-nav:       L=80–86%  (clearly darker, the "header bar")
-            --surface-btn:       L=75–82%  (darkest surface, clearly a "button")
-          Dark themes (surface-bg L≈10–15%):
-            --surface-bg:        L=8–15%
-            --surface-input:     L=12–18%
-            --surface-section:   L=15–22%
-            --surface-secondary: L=15–22%
-            --surface-nav:       L=5–12%   (darker than bg, like a dark header)
-            --surface-btn:       L=20–30%  (lighter than bg, clearly tappable)
-          The KEY is that each surface is visually distinguishable from its neighbors.
-          If you squint, you should see 3-4 distinct zones, not a flat monotone.
+        4) ACCENTS — vivid mood color:
+           brand/link = mood at full saturation. active = brighter variant.
+           danger=red, success=green, warning=amber (standard).
+           code-bg = same hue as bg, 5% darker. border-color = between bg and text.
 
-        Step 5 — Nav bar should be the MOST distinctly colored surface:
-          It's the persistent top bar. It can have slightly more chroma (C=0.03–0.06) than other surfaces.
-        Step 6 — Buttons (--surface-btn) must STAND OUT from the background:
-          They're interactive elements. Users must immediately see them as clickable.
-          In light themes: btn should be noticeably darker than bg (≥15 L-points difference)
-          In dark themes: btn should be noticeably lighter than bg (≥10 L-points difference)
-        Step 7 — Text must have WCAG AA contrast (≥4.5:1) against its paired surface:
-          --text-primary   vs --surface-bg
-          --text-on-btn    vs --surface-btn
-          --text-input     vs --surface-input
-          --text-nav       vs --surface-nav
-          --text-nav-btn   vs --surface-bg
-          --text-chat-btn  vs --surface-section
-          --text-muted     ≥3:1 against --surface-bg
-          --text-on-badge  vs --color-badge-bg
-        Step 8 — Accent colors:
-          --color-brand: The mood color at full saturation (C=0.15–0.25)
-          --color-link: Same as or near brand
-          --color-active: Lighter/brighter variant of brand
-          --color-accent-border / --color-accent-text: Brand family
-        Step 9 — Semantic colors (standard associations, slightly tinted):
-          --color-danger:  Red (H≈25–30)
-          --color-success: Green (H≈145–155)
-          --color-warning: Amber (H≈85–95)
-          --color-badge-bg: Red or brand
-        Step 10 — Utility:
-          --color-highlight: Warm translucent (L≈85%, C≈0.08, H≈90)
-          --color-code-bg: SAME hue as surface-bg, just 3-5% darker. Do NOT use a different color family.
-          --color-code-text: High contrast against code-bg, same hue family as text-primary
-          --border-color: Between surface-bg and text lightness, very low chroma
-          --border-drag-over/edge: Slightly stronger
-
-        CRITICAL MISTAKES TO AVOID:
-        - Do NOT make --surface-bg highly saturated. It covers 60% of the screen. Keep it nearly neutral.
-        - Do NOT use the mood color directly as a surface. "Tomato" theme ≠ red background. It means warm-tinted neutrals with red accents.
-        - Do NOT make surfaces all the same lightness. You MUST follow the lightness staircase in Step 4.
-          BAD:  bg=#edf7fe, section=#ddeefb, nav=#c7e2f6 (only 5-10% apart)
-          GOOD: bg=#f5f8fa, section=#e8ecef, nav=#c5cdd5, btn=#a0abb5 (15-20% apart)
-        - Do NOT pick unrelated colors for code-bg. It must match the surface hue family.
-          BAD:  surface-bg=#fff7ee (warm), code-bg=#e3edf4 (cool blue) — jarring mismatch
-          GOOD: surface-bg=#fff7ee (warm), code-bg=#f0ead8 (warm, slightly darker) — harmonious
-        - Do NOT make buttons invisible against the background. --surface-btn must differ from --surface-bg by ≥15 L-points.
-        - Borders must be visible but not distracting.
-
-        MULTI-COLOR / BRAND PROMPTS:
-        When the prompt implies multiple distinct colors (e.g. "Google logo" = blue+red+yellow+green,
-        "Italian flag" = green+white+red, "rainbow", "sunset" = orange+pink+purple):
-        1. Do NOT blend them into one monotone. The user expects to SEE those distinct colors.
-        2. Pick the most neutral/lightest color for surfaces (or a neutral tint of the dominant one).
-        3. DISTRIBUTE the other colors across accent tokens so each is visible:
-           - --color-brand: primary brand color (Google → blue)
-           - --color-active: secondary color (Google → green)
-           - --color-badge-bg: tertiary color (Google → red)
-           - --color-accent-border: quaternary color (Google → yellow/amber)
-           - --color-accent-text: same as brand or another distinct color
-        4. The user should look at the themed UI and immediately think "oh, Google colors!"
-           If all they see is one blue tint, the theme has FAILED.
-        Example — "Google logo":
-           surfaces: light warm gray (neutral)
-           --color-brand: #4285F4 (Google blue)
-           --color-active: #34A853 (Google green)
-           --color-badge-bg: #EA4335 (Google red)
-           --color-accent-border: #FBBC05 (Google yellow)
-           --color-link: #4285F4 (blue)
-        Example — "sunset":
-           surfaces: warm cream/peach tint
-           --color-brand: #FF6B35 (deep orange)
-           --color-active: #E91E8C (magenta-pink)
-           --color-badge-bg: #9B59B6 (purple)
-           --color-accent-border: #FF8C42 (lighter orange)
+        === HARD RULES ===
+        - bg covers 60% of screen. Keep it NEARLY WHITE or NEARLY BLACK.
+        - btn L must differ from bg L by ≥15 points.
+        - ALL text tokens on light surfaces must be DARK (L≤25%). No light-on-light.
+        - ALL surfaces share the same hue. code-bg too.
       PROMPT
 
       response = @client.chat([
