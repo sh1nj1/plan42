@@ -28,8 +28,9 @@
         radial-gradient(ellipse 60% 40% at 15% 20%, color-mix(in srgb, var(--color-brand) 4%, transparent) 0%, transparent 70%),
         radial-gradient(ellipse 40% 50% at 80% 65%, color-mix(in srgb, var(--color-accent-border) 3%, transparent) 0%, transparent 70%),
         radial-gradient(ellipse 50% 35% at 55% 10%, color-mix(in srgb, var(--color-success) 3%, transparent) 0%, transparent 70%);
-    border-radius: var(--radius-2);
     padding: 0.5rem;
+    -webkit-mask-image: radial-gradient(ellipse 90% 85% at 50% 50%, black 40%, transparent 100%);
+    mask-image: radial-gradient(ellipse 90% 85% at 50% 50%, black 40%, transparent 100%);
 }
 
 :root {
