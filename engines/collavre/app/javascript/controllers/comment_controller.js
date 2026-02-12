@@ -4,7 +4,7 @@ import CommonPopup from '../lib/common_popup'
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls"]
+  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "reviewButton", "replaceButton"]
 
   connect() {
     const contentElement = this.element.querySelector('.comment-content')
@@ -17,6 +17,10 @@ export default class extends Controller {
     // Text selection quote support
     this.handleMouseUp = this.handleMouseUp.bind(this)
     this.element.addEventListener('mouseup', this.handleMouseUp)
+
+    // Bound handlers for review/replace buttons (stored for cleanup)
+    this._boundReviewClick = this._onReviewClick.bind(this)
+    this._boundReplaceClick = this._onReplaceClick.bind(this)
 
     this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
@@ -115,6 +119,7 @@ export default class extends Controller {
 
   disconnect() {
     this.element.removeEventListener('mouseup', this.handleMouseUp)
+    this._removeSelectionChangeListener()
     this.hideReviewPopup()
     if (this._reviewPopupEl) {
       this._reviewPopupEl.remove()
@@ -208,6 +213,95 @@ export default class extends Controller {
     const popup = this.element.closest('#comments-popup')
     if (!popup) return null
     return this.application.getControllerForElementAndIdentifier(popup, 'comments--form')
+  }
+
+  reviewButtonTargetConnected(button) {
+    button.addEventListener('click', this._boundReviewClick)
+  }
+
+  reviewButtonTargetDisconnected(button) {
+    button.removeEventListener('click', this._boundReviewClick)
+  }
+
+  replaceButtonTargetConnected(button) {
+    button.addEventListener('click', this._boundReplaceClick)
+    // Only listen for selectionchange when a replace button exists
+    this._addSelectionChangeListener()
+  }
+
+  replaceButtonTargetDisconnected(button) {
+    button.removeEventListener('click', this._boundReplaceClick)
+    if (!this.hasReplaceButtonTarget) {
+      this._removeSelectionChangeListener()
+    }
+  }
+
+  _onReviewClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    const commentId = this.element.dataset.commentId
+    const contentEl = this.element.querySelector('.comment-content')
+    const fullText = contentEl ? contentEl.textContent.trim() : ''
+    const formController = this.findFormController()
+    if (formController && fullText) {
+      formController.quoteComment(commentId, fullText)
+    }
+  }
+
+  _onReplaceClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    const selectedText = this._getSelectedTextInContent()
+    if (!selectedText) return
+
+    const commentId = this.element.dataset.commentId
+    const formController = this.findFormController()
+    if (formController) {
+      formController.quoteComment(commentId, selectedText)
+    }
+    window.getSelection().removeAllRanges()
+    this._updateReplaceButton()
+  }
+
+  _getSelectedTextInContent() {
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed) return null
+
+    const text = selection.toString().trim()
+    if (!text) return null
+
+    const contentEl = this.element.querySelector('.comment-content')
+    if (!contentEl) return null
+
+    const range = selection.getRangeAt(0)
+    if (!contentEl.contains(range.commonAncestorContainer)) return null
+
+    return text
+  }
+
+  _addSelectionChangeListener() {
+    if (this._selectionChangeActive) return
+    this._handleSelectionChange = this._handleSelectionChange.bind(this)
+    document.addEventListener('selectionchange', this._handleSelectionChange)
+    this._selectionChangeActive = true
+  }
+
+  _removeSelectionChangeListener() {
+    if (!this._selectionChangeActive) return
+    document.removeEventListener('selectionchange', this._handleSelectionChange)
+    this._selectionChangeActive = false
+  }
+
+  _handleSelectionChange() {
+    this._updateReplaceButton()
+  }
+
+  _updateReplaceButton() {
+    if (!this.hasReplaceButtonTarget) return
+    const hasSelection = !!this._getSelectedTextInContent()
+    this.replaceButtonTargets.forEach((btn) => {
+      btn.disabled = !hasSelection
+    })
   }
 
   updateReactionsUI(reactionsData) {
