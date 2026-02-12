@@ -50,57 +50,84 @@ module Collavre
         - --creative-loading-emojis: exactly 6 emojis matching the theme mood, comma-separated.
         - Return valid JSON only. No markdown, no explanation.
 
-        COLOR HARMONY — THIS IS CRITICAL:
-        First, decide the theme's overall tone (light or dark) based on the prompt.
-        Then derive ALL colors from a single cohesive palette:
+        UI LAYOUT — UNDERSTAND WHERE EACH TOKEN APPEARS:
+        The app has this visual structure (top to bottom):
+        ┌──────────────────────────────────────────────┐
+        │  NAV BAR (--surface-nav)  LARGE, full width  │
+        │  [search input] [홈][계획][완료] [avatar]      │
+        │  Text: --text-nav  Buttons: --text-nav-btn   │
+        ├──────────────────────────────────────────────┤
+        │  TOOLBAR (--surface-bg background)           │
+        │  [+][선택][▼][마크다운 가져오기] ← small btns │
+        │  Buttons use: --surface-btn + --text-on-btn  │
+        ├──────────────────────────────────────────────┤
+        │  MAIN CONTENT (--surface-bg) LARGEST area    │
+        │  Text: --text-primary                        │
+        │  Cards/sections: --surface-section           │
+        │  Links: --color-link                         │
+        │  Muted text: --text-muted                    │
+        ├──────────────────────────────────────────────┤
+        │  CHAT POPUP (--surface-section)              │
+        │  Chat buttons: --text-chat-btn               │
+        │  Input fields: --surface-input + --text-input│
+        └──────────────────────────────────────────────┘
 
-        Step 1 — Pick a BASE HUE (H) that matches the mood. Most surfaces should share this hue.
-        Step 2 — Build surfaces as a GRADIENT of lightness on that hue:
-          Light theme example (L from high to low):
-            --surface-bg:        L=96%  (lightest, page background)
-            --surface-section:   L=98%  (cards, slightly lighter or same)
-            --surface-nav:       L=94%  (nav bar, slightly darker)
-            --surface-input:     L=96%  (input fields, same as bg)
-            --surface-btn:       L=90%  (buttons, noticeably darker)
-            --surface-secondary: L=98%  (secondary areas)
-          Dark theme: invert — L ranges from 15% to 30%.
-          Keep chroma (C) LOW for surfaces (0.01–0.04). Surfaces should feel neutral-tinted.
+        AREA SIZES (critical for visual balance):
+        - --surface-bg: ~60% of screen — THE dominant color, must be the most neutral
+        - --surface-nav: ~8% — top bar, can be slightly more saturated/darker
+        - --surface-section: ~20% — cards and panels
+        - --surface-btn: ~2% — small interactive elements (buttons)
+        - --surface-input: ~5% — form fields
+        - --color-brand/link/active: <1% — tiny accent points, can be vivid
+        - --text-primary: covers lots of area as text — must contrast well with bg
 
-        Step 3 — Text colors must have WCAG AA contrast (≥4.5:1) against their paired surface:
-          --text-primary   vs --surface-bg       (main content text)
-          --text-on-btn    vs --surface-btn      (button labels)
-          --text-input     vs --surface-input    (form text)
-          --text-nav       vs --surface-nav      (nav links)
-          --text-nav-btn   vs --surface-bg       (toolbar buttons over page)
-          --text-chat-btn  vs --surface-section  (chat area buttons)
-          --text-muted     — lower contrast but still readable (≥3:1)
-          --text-on-badge  — white or dark, contrasting --color-badge-bg
+        COLOR STRATEGY:
+        Think of it like interior design: walls (surfaces) are neutral, furniture (buttons) has subtle contrast, and decorations (accents) provide pops of color.
 
-        Step 4 — Accent colors share the base hue family or a complementary hue:
-          --color-brand:   Saturated version of the theme hue (C=0.15–0.25)
-          --color-link:    Same as brand or slightly shifted
-          --color-active:  Brighter/lighter variant of brand
-          --color-accent-border / --color-accent-text: Derived from brand
-
-        Step 5 — Semantic colors (keep standard associations but tint toward theme):
-          --color-danger:  Red family (H≈25–30)
-          --color-success: Green family (H≈145–155)
-          --color-warning: Yellow/amber family (H≈85–95)
-          --color-badge-bg: Red or brand color
-
-        Step 6 — Utility tokens:
-          --color-highlight: Low-opacity warm highlight (L≈85%, C≈0.1, H≈90)
-          --color-code-bg:  Slightly darker/lighter than --surface-bg
+        Step 1 — Extract a MOOD COLOR from the prompt (e.g. "tomato" → warm red, "grape" → deep purple, "forest" → muted green).
+        Step 2 — The mood color should appear as the BRAND/ACCENT color (vivid, small areas).
+        Step 3 — Surfaces should be TINTED NEUTRALS of the mood:
+          - For "tomato": warm cream/beige backgrounds, not bright red surfaces
+          - For "grape": cool lavender-gray backgrounds, not purple surfaces
+          - For "banana": warm ivory backgrounds, not yellow surfaces
+          Surface chroma should be LOW (C=0.01–0.03). The tint is felt, not seen.
+        Step 4 — Nav bar can be slightly MORE saturated than bg (C=0.03–0.06) as an anchor.
+        Step 5 — Buttons (--surface-btn) should be clearly distinguishable from bg:
+          Light themes: L difference of ≥6% from bg
+          Dark themes: L difference of ≥5% from bg
+        Step 6 — Text must have WCAG AA contrast (≥4.5:1) against its paired surface:
+          --text-primary   vs --surface-bg
+          --text-on-btn    vs --surface-btn
+          --text-input     vs --surface-input
+          --text-nav       vs --surface-nav
+          --text-nav-btn   vs --surface-bg
+          --text-chat-btn  vs --surface-section
+          --text-muted     ≥3:1 against --surface-bg
+          --text-on-badge  vs --color-badge-bg
+        Step 7 — Accent colors:
+          --color-brand: The mood color at full saturation (C=0.15–0.25)
+          --color-link: Same as or near brand
+          --color-active: Lighter/brighter variant of brand
+          --color-accent-border / --color-accent-text: Brand family
+        Step 8 — Semantic colors (standard associations, slightly tinted):
+          --color-danger:  Red (H≈25–30)
+          --color-success: Green (H≈145–155)
+          --color-warning: Amber (H≈85–95)
+          --color-badge-bg: Red or brand
+        Step 9 — Utility:
+          --color-highlight: Warm translucent (L≈85%, C≈0.08, H≈90)
+          --color-code-bg: Slightly offset from --surface-bg
           --color-code-text: High contrast against code-bg
-          --border-color:   Subtle, low chroma, between surface-bg and text lightness
-          --border-drag-over / --border-drag-edge: Slightly stronger borders
+          --border-color: Between surface-bg and text lightness, very low chroma
+          --border-drag-over/edge: Slightly stronger
 
-        COMMON MISTAKES TO AVOID:
-        - Do NOT pick random colors for each token. They must look like ONE theme.
-        - Do NOT make surfaces too saturated (C > 0.05). Surfaces should be subtle.
-        - Do NOT make buttons the same lightness as the background — they must be distinguishable.
-        - Do NOT forget that --surface-btn and --surface-input are interactive elements users click/type in — they need to stand out slightly from --surface-bg.
-        - Borders should be visible but subtle — not the same as surface-bg.
+        CRITICAL MISTAKES TO AVOID:
+        - Do NOT make --surface-bg highly saturated. It covers 60% of the screen. Keep it nearly neutral.
+        - Do NOT use the mood color directly as a surface. "Tomato" theme ≠ red background. It means warm-tinted neutrals with red accents.
+        - Do NOT make all colors the same lightness. There must be a clear hierarchy: bg > section ≈ secondary > nav > btn.
+        - Do NOT pick unrelated colors. Every color should feel like part of the same family.
+        - Do NOT make buttons invisible against the background. --surface-btn must differ from --surface-bg.
+        - Borders must be visible but not distracting.
       PROMPT
 
       response = @client.chat([
