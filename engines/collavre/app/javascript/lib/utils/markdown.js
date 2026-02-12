@@ -11,7 +11,8 @@ export function renderMarkdownInline(html) {
 
 export function renderCommentMarkdown(text) {
   const content = text || ''
-  const html = content.includes('\n') ? marked.parse(content) : marked.parseInline(content)
+  const useBlock = content.includes('\n') || content.includes('```')
+  const html = useBlock ? marked.parse(content) : marked.parseInline(content)
   return DOMPurify.sanitize(html.trim())
 }
 
