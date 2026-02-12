@@ -34,7 +34,7 @@ module Collavre
           "max_retries" => 3,
           "retry_delay_seconds" => 5,
           # Loop breaker settings
-          "loop_breaker_enabled" => false,
+          "loop_breaker_enabled" => true,
           "ping_pong_threshold" => 5,           # Max back-and-forth between same agents
           "creative_retry_threshold" => 10,     # Max tasks on same creative in time window
           "creative_retry_window_minutes" => 30,
