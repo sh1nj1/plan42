@@ -1,4 +1,5 @@
 module ApplicationHelper
+  include Collavre::ApplicationHelper
   include Collavre::NavigationHelper
   include Collavre::CreativesHelper
   include Collavre::CommentsHelper

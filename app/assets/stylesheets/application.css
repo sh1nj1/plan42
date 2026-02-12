@@ -457,6 +457,28 @@ button {
 
 .inbox-item .actions button {
     margin-right: 0.5em;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2);
+    background: var(--color-btn-bg);
+    color: var(--color-btn-text);
+    font-size: var(--text-sm);
+    cursor: pointer;
+}
+
+.inbox-item .actions button:hover {
+    filter: brightness(var(--hover-brightness, 0.95));
+}
+
+.inbox-item .actions .delete-item {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+    background: transparent;
+}
+
+.inbox-item .actions .delete-item:hover {
+    background: var(--color-danger);
+    color: var(--text-on-badge);
 }
 
 .inbox-empty {
