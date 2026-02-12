@@ -255,7 +255,7 @@ body.dark-mode {
  * Mirror of body.dark-mode for users without explicit toggle.
  * ============================================================================ */
 @media (prefers-color-scheme: dark) {
-  body:not(.light-mode):not(.dark-mode) {
+  :root:not(.light-mode):not(.dark-mode) {
     --shadow-color: 220 40% 2%;
     --shadow-strength: 25%;
 

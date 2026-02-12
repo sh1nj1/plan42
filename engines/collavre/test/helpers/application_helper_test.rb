@@ -4,7 +4,7 @@ class Collavre::ApplicationHelperTest < ActionView::TestCase
   include Collavre::ApplicationHelper
 
   setup do
-    @user = collavre_users(:admin)
+    @user = users(:one)
   end
 
   test "body_theme_class returns dark-mode for dark theme" do
@@ -20,7 +20,8 @@ class Collavre::ApplicationHelperTest < ActionView::TestCase
   end
 
   test "body_theme_class returns light-mode for custom theme" do
-    @user.update!(theme: "42")
+    custom = @user.user_themes.create!(name: "Forest", variables: { "--surface-bg" => "#f0f0f0" })
+    @user.update!(theme: custom.id.to_s)
     Current.user = @user
     assert_equal "light-mode", body_theme_class
   end
