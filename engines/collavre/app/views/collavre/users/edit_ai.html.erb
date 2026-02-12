@@ -1,3 +1,4 @@
+<%= stylesheet_link_tag 'collavre/mention_menu', media: 'all' %>
 <h1 class="text-center" style="margin-top: 0;"><%= t('collavre.users.edit_ai.title') %></h1>
 
 <%= form_with model: @user, url: collavre.update_ai_user_path(@user), method: :patch, class: "stacked-form" do |form| %>
