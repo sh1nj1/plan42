@@ -48,10 +48,8 @@
             <td><%= l theme.created_at, format: :short %></td>
             <td>
               <div style="display: flex; gap: 0.5rem;">
-                <% if Current.user.theme == theme.id.to_s %>
-                <span class="badge badge-success"><%= t('collavre.themes.active') %></span>
-              <% else %>
-                <%= button_to t('collavre.themes.apply'), collavre.apply_user_theme_path(theme), method: :post, class: "btn-sm" %>
+                <% unless Current.user.theme == theme.id.to_s %>
+                <%= button_to t('collavre.themes.apply'), collavre.apply_user_theme_path(theme), method: :post, class: "btn btn-xs" %>
               <% end %>
               <%= button_to t('collavre.themes.delete'), collavre.user_theme_path(theme), method: :delete, class: "btn-sm btn-danger", form_class: "inline-block", onclick: "return confirm('#{t('collavre.themes.confirm_delete')}')" %>
               </div>
