@@ -3,7 +3,7 @@
     position: absolute;
     right: 2em;
     /* top: 10em; */
-    z-index: 1000;
+    z-index: var(--layer-modal);
     width: 420px;
     height: 640px;
     max-height: 80vh;
@@ -139,7 +139,7 @@ body.chat-fullscreen {
 #new-comment-form textarea {
     width: 96%;
     resize: vertical;
-    font-size: 16px;
+    font-size: var(--text-1);
     /* Prevent iOS zoom on focus */
 }
 
@@ -216,7 +216,7 @@ body.chat-fullscreen {
     padding: 0.3em 0.6em;
     margin-bottom: 0.3em;
     background: color-mix(in srgb, var(--color-section-bg) 50%, transparent);
-    border-left: 3px solid var(--color-accent, #007bff);
+    border-left: 3px solid var(--color-active);
     border-radius: 0 4px 4px 0;
     font-size: 0.85em;
     color: var(--color-muted);
@@ -308,7 +308,7 @@ body.chat-fullscreen {
     background: var(--color-section-bg);
     border: 1px solid var(--color-border);
     border-radius: 10px;
-    padding: 0 4px;
+    padding: 0 var(--space-1);
     font-size: 0.7em;
     color: var(--color-muted);
     min-width: 14px;
@@ -316,7 +316,7 @@ body.chat-fullscreen {
     line-height: 1.4;
     visibility: hidden;
     z-index: 2;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--shadow-1);
 }
 
 .comment-reaction-count.is-visible {
@@ -360,7 +360,7 @@ body.chat-fullscreen {
     background: var(--color-section-bg);
     border: 1px solid var(--color-border);
     border-radius: 8px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--shadow-3);
     z-index: 9999;
 }
 
@@ -393,7 +393,7 @@ body.chat-fullscreen {
 }
 
 .comment-topic-switch {
-    color: var(--color-accent, #007bff);
+    color: var(--color-active);
     text-decoration: none;
     font-weight: 600;
 }
@@ -704,7 +704,7 @@ body.chat-fullscreen {
 
 @keyframes comment-flash {
     from {
-        background: #ffff99;
+        background: var(--color-highlight);
     }
 
     to {
@@ -799,7 +799,7 @@ body.chat-fullscreen {
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
-    gap: 4px;
+    gap: var(--space-1);
     padding: 0.2em 0.6em;
     border-radius: 12px;
     background: var(--color-secondary-background);
@@ -825,7 +825,7 @@ body.chat-fullscreen {
 
 .topic-tag.has-new-messages {
     position: relative;
-    border-color: var(--color-accent, #007bff);
+    border-color: var(--color-active);
 }
 
 .topic-tag.has-new-messages::after {
@@ -833,7 +833,7 @@ body.chat-fullscreen {
     position: absolute;
     top: -8px;
     right: -10px;
-    background-color: #ff3b30;
+    background-color: var(--color-danger);
     color: white;
     font-size: 0.6em;
     padding: 0.1em 0.4em;
@@ -843,9 +843,9 @@ body.chat-fullscreen {
 
 /* Drag and drop styles for moving comments to topics */
 .topic-tag.drag-over {
-    background-color: var(--color-accent, #007bff);
+    background-color: var(--color-active);
     color: white;
-    border-color: var(--color-accent, #007bff);
+    border-color: var(--color-active);
     transform: scale(1.05);
     transition: all 0.15s ease;
 }
@@ -868,12 +868,12 @@ body.chat-fullscreen {
 }
 
 .topic-tag.topic-drag-over-left {
-    border-left: 3px solid var(--color-accent, #007bff);
+    border-left: 3px solid var(--color-active);
     margin-left: -1px;
 }
 
 .topic-tag.topic-drag-over-right {
-    border-right: 3px solid var(--color-accent, #007bff);
+    border-right: 3px solid var(--color-active);
     margin-right: -1px;
 }
 
@@ -893,8 +893,8 @@ body.chat-fullscreen {
     position: fixed;
     top: -1000px;
     left: -1000px;
-    padding: 8px 16px;
-    background-color: var(--color-accent, #007bff);
+    padding: var(--space-2) var(--space-3);
+    background-color: var(--color-active);
     color: white;
     border-radius: 4px;
     font-size: 0.9em;
@@ -982,7 +982,7 @@ body.chat-fullscreen {
     padding: 0.2em 0.6em;
     border-radius: 12px;
     background: var(--color-bg);
-    border: 1px solid var(--color-accent, #007bff);
+    border: 1px solid var(--color-active);
     color: var(--color-text);
     font-size: 0.85em;
     width: 100px;
@@ -994,7 +994,7 @@ body.chat-fullscreen {
     padding: 0.1em 0.4em;
     border-radius: 8px;
     background: var(--color-bg);
-    border: 1px solid var(--color-accent, #007bff);
+    border: 1px solid var(--color-active);
     color: var(--color-text);
     font-size: 0.85em;
     width: 80px;
@@ -1004,11 +1004,11 @@ body.chat-fullscreen {
 /* Selection hint popup */
 .selection-hint-popup {
     position: fixed;
-    background: var(--color-bg-secondary, #f8f9fa);
-    border: 1px solid var(--color-border, #dee2e6);
+    background: var(--surface-section);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 8px 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    padding: var(--space-2) 12px;
+    box-shadow: var(--shadow-2);
     white-space: nowrap;
     z-index: 10000;
     animation: hint-fade-in 0.2s ease-out;
@@ -1017,9 +1017,9 @@ body.chat-fullscreen {
 .selection-hint-popup .hint-content {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
     font-size: 0.8em;
-    color: var(--color-text-secondary, #6c757d);
+    color: var(--text-muted);
 }
 
 .selection-hint-popup .hint-content span {
@@ -1040,7 +1040,7 @@ body.chat-fullscreen {
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
     .selection-hint-popup {
-        background: var(--color-bg-secondary, #2d2d2d);
-        border-color: var(--color-border, #444);
+        background: var(--surface-section);
+        border-color: var(--border-color);
     }
 }

@@ -184,6 +184,7 @@
   --color-danger: #dc3545;           /* errors, destructive */
   --color-success: oklch(60% 0.4 145); /* success (= brand for now) */
   --color-warning: #f59e0b;          /* warnings */
+  --color-highlight: #ffff99;         /* highlight flash */
   --color-badge-bg: red;             /* notification badge */
 
   /* -- Borders & Dividers -- */
@@ -230,6 +231,7 @@ body.dark-mode {
   --color-brand: oklch(50% 0.4 145);
   --color-active: #6a9eff;
   --color-badge-bg: red;
+  --color-highlight: #665500;
 
   /* -- Borders & Dividers -- */
   --border-color: #333333;
@@ -269,6 +271,7 @@ body.dark-mode {
     --color-brand: oklch(50% 0.4 145);
     --color-active: #6a9eff;
     --color-badge-bg: red;
+    --color-highlight: #665500;
 
     --border-color: #333333;
     --border-drag-over: #383a40;
