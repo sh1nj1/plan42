@@ -25,7 +25,7 @@
                 <td><%= credential.nickname %></td>
                 <td><%= l(credential.created_at.to_date) %></td>
                 <td>
-                  <%= button_to t('collavre.users.webauthn.delete'), main_app.webauthn_credential_path(credential), method: :delete, class: "btn-danger btn-sm", data: { action: "click->webauthn#delete" } %>
+                  <%= button_to t('collavre.users.webauthn.delete'), main_app.webauthn_credential_path(credential), method: :delete, class: "btn btn-xs btn-danger", data: { action: "click->webauthn#delete" } %>
                 </td>
               </tr>
             <% end %>

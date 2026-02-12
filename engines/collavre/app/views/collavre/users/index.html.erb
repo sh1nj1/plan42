@@ -59,16 +59,19 @@
             <% if user.system_admin? %>
               <%= button_to t('collavre.users.make_normal_user'),
                             collavre.revoke_system_admin_user_path(user),
-                            method: :patch %>
+                            method: :patch,
+                            class: 'btn btn-xs btn-secondary' %>
             <% else %>
               <%= button_to t('collavre.users.make_system_admin'),
                             collavre.grant_system_admin_user_path(user),
                             method: :patch,
+                            class: 'btn btn-xs btn-primary',
                             form: { data: { turbo_confirm: t('collavre.users.confirm_grant_system_admin') } } %>
             <% end %>
             <%= button_to t('collavre.users.delete'),
                           collavre.user_path(user),
                           method: :delete,
+                          class: 'btn btn-xs btn-danger',
                           form: { data: { turbo_confirm: t('collavre.users.confirm_destroy') } } %>
           <% else %>
             <span class="text-muted"><%= t('collavre.users.table.current_user') %></span>
