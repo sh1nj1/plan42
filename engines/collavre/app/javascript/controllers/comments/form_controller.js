@@ -434,11 +434,9 @@ export default class extends Controller {
     if (!clipboardData) return
 
     const text = clipboardData.getData('text/plain') || clipboardData.getData('text')
-    console.log('[paste] text:', JSON.stringify(text), 'types:', [...clipboardData.types])
     if (!text) return
 
     const { changed, result } = wrapHtmlInCodeBlocks(text)
-    console.log('[paste] changed:', changed, 'result:', JSON.stringify(result))
     if (!changed) return
 
     event.preventDefault()
