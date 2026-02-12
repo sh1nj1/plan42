@@ -46,36 +46,81 @@ module Collavre
         FORMAT: oklch() for colors. --hover-brightness: "90%" (light) or "110%" (dark).
         --creative-loading-emojis: 6 emojis. Return valid JSON only, no markdown.
 
+        === UI LAYOUT (know what each token controls) ===
+        ┌─────────────────────────────────────────┐
+        │ NAV BAR (--surface-nav)        ~8% area │
+        │ [brand logo] [nav buttons]              │
+        ├─────────────────────────────────────────┤
+        │ MAIN CONTENT (--surface-bg)    ~60% area│
+        │                                         │
+        │  ┌─ SECTION ──────────────────────────┐ │
+        │  │ (--surface-section)        ~15%    │ │
+        │  │  ┌─INPUT──┐  ┌──BTN──┐            │ │
+        │  │  │ input   │  │ Save  │   ~2% each│ │
+        │  │  └─────────┘  └───────┘            │ │
+        │  └────────────────────────────────────┘ │
+        │                                         │
+        │  ┌─ SECONDARY ────┐ ┌─ CODE ────────┐  │
+        │  │ sidebar ~10%   │ │ code-bg  ~3%  │  │
+        │  └────────────────┘ └────────────────┘  │
+        └─────────────────────────────────────────┘
+        Think of it like interior design:
+        - surface-bg = WALLS (60%) — tinted with theme color, light/pastel
+        - surface-section = FLOOR (15%) — slightly deeper shade
+        - surface-nav = CEILING/TRIM (8%) — noticeably deeper
+        - surface-btn = FURNITURE (2%) — can be vivid or deep
+        - Accents (brand, active, badge) = DECORATIONS — small pops of color
+
         === PROCESS ===
 
-        1) INTERPRET THE PROMPT:
-           - Single mood (e.g. "tomato", "ocean"): extract one mood color → use as brand/accent.
-           - Multi-color (e.g. "Google logo"=blue+red+yellow+green, "rainbow", "Italian flag"):
-             Surfaces stay NEUTRAL. Distribute the distinct colors across accents:
+        Step 1) INTERPRET THE PROMPT → extract a HUE:
+           "토마토" → warm red hue (25°). "숲" → green hue (145°).
+           "바나나" → yellow hue (90°). "바다" → blue hue (230°).
+           Multi-color (e.g. "Google logo"=blue+red+yellow+green):
+             Pick the DOMINANT color's hue for surfaces.
+             Distribute ALL distinct colors across accent tokens:
              brand=color1, active=color2, badge-bg=color3, accent-border=color4.
-             The user must SEE each color separately — do NOT blend into monotone.
+             The user must SEE each named color clearly. Do NOT blend into gray.
 
-        2) BUILD SURFACES — lightness staircase, same hue, LOW chroma (C≤0.03):
-           Light theme:  bg=95%, input=93%, section=88%, secondary=86%, nav=82%, btn=76%
-           Dark theme:   bg=12%, input=16%, section=20%, secondary=20%, nav=8%, btn=26%
-           "Tomato" → warm cream surfaces, NOT red. "Grape" → cool gray, NOT purple.
+        Step 2) BUILD SURFACES — TINTED, not gray!
+           ALL surfaces must carry the theme's hue. Use the SAME hue with varying lightness AND chroma.
+           GOOD examples (surfaces carry color):
+             바나나: bg=#fdf7d0 (yellow tint), section=#feeec1, nav=#e8d36b, btn=#e3b831
+             숲속:   bg=#ecf4ef (green tint), section=#e2f4e7, nav=#d5e2d7, btn=#357153
+             토마토: bg=#fbefea (warm pink),   section=#f5e8e4, nav=#f7ded6, btn=#cc0000
+           BAD examples (color stripped out):
+             바나나: bg=#f1eee7 (gray beige) ← WRONG, no yellow
+             숲속:   bg=#eaeff5 (gray blue)  ← WRONG, no green
 
-        3) TEXT — must be DARK on light surfaces, LIGHT on dark surfaces:
-           For LIGHT themes: text-primary/on-btn/nav/input = L≤25% (near black). text-muted = L≤40%.
-           For DARK themes: text-primary/on-btn/nav/input = L≥80% (near white). text-muted = L≥60%.
-           CRITICAL: --text-on-btn MUST contrast against --surface-btn (≥4.5:1).
-           CRITICAL: --text-nav MUST contrast against --surface-nav (≥4.5:1).
+           Lightness staircase (light theme):
+             bg=93-97%, input=91-95%, section=87-91%, secondary=85-89%, nav=80-86%, btn=40-80%
+           Lightness staircase (dark theme):
+             bg=8-15%, input=14-20%, section=18-24%, secondary=18-22%, nav=6-12%, btn=22-32%
 
-        4) ACCENTS — vivid mood color:
-           brand/link = mood at full saturation. active = brighter variant.
-           danger=red, success=green, warning=amber (standard).
-           code-bg = same hue as bg, 5% darker. border-color = between bg and text.
+           Chroma guidance:
+             bg/input: LOW chroma (C=0.02-0.06) — tinted but soft
+             section/secondary: MEDIUM (C=0.03-0.08)
+             nav: MEDIUM-HIGH (C=0.05-0.12)
+             btn: HIGH is OK (C=0.05-0.20) — can be vivid or deep
 
-        === HARD RULES ===
-        - bg covers 60% of screen. Keep it NEARLY WHITE or NEARLY BLACK.
-        - btn L must differ from bg L by ≥15 points.
-        - ALL text tokens on light surfaces must be DARK (L≤25%). No light-on-light.
-        - ALL surfaces share the same hue. code-bg too.
+        Step 3) TEXT — must contrast against its background:
+           LIGHT themes: text-primary/on-btn/nav/input = L≤25% (near black). text-muted = L≤40%.
+           DARK themes: text-primary/on-btn/nav/input = L≥80% (near white). text-muted = L≥60%.
+           Exception: if btn is very dark (L<40%), text-on-btn should be LIGHT (L≥85%).
+           Exception: if nav is very dark (L<40%), text-nav should be LIGHT (L≥85%).
+           CRITICAL: ≥4.5:1 contrast ratio for all text/surface pairs.
+
+        Step 4) ACCENTS — vivid mood color:
+           brand/link = mood color at full saturation. active = brighter variant.
+           danger=red, success=green, warning=amber (standard, always).
+           code-bg = SAME hue as surface-bg, just 3-5% darker.
+           border-color = between surface-bg and text-primary in lightness.
+
+        === CRITICAL MISTAKES TO AVOID ===
+        - NEVER make surfaces gray/neutral when the prompt has a clear color (the #1 mistake)
+        - NEVER make text-on-btn similar lightness to surface-btn
+        - NEVER make all surfaces the same lightness (need clear staircase)
+        - For multi-color prompts: NEVER blend all colors into one muddy tone
       PROMPT
 
       response = @client.chat([
