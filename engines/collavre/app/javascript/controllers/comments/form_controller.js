@@ -435,22 +435,29 @@ export default class extends Controller {
     const text = clipboardData.getData('text/plain')
     if (!text) return
 
-    // Detect HTML content: must contain at least one HTML tag pair or self-closing tag
-    const htmlTagPattern = /<[a-zA-Z][^>]*>[\s\S]*<\/[a-zA-Z]+>|<[a-zA-Z][^>]*\/>/
-    if (!htmlTagPattern.test(text)) return
+    // Detect HTML tags in pasted text
+    // Match outermost HTML tag blocks (opening tag ... closing tag) or self-closing tags
+    const htmlBlockPattern = /<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>[\s\S]*?<\/\1>|<[a-zA-Z][^>]*\/>/g
+    if (!htmlBlockPattern.test(text)) return
 
     // Already wrapped in code block — don't double-wrap
     if (text.trimStart().startsWith('```')) return
 
     event.preventDefault()
-    const wrapped = '```html\n' + text + '\n```'
+
+    // Replace only the HTML portions with code blocks, keeping surrounding text intact
+    htmlBlockPattern.lastIndex = 0
+    const result = text.replace(htmlBlockPattern, (match) => {
+      return '\n```html\n' + match + '\n```\n'
+    }).replace(/^\n/, '').replace(/\n$/, '')
+
     const textarea = this.textareaTarget
     const start = textarea.selectionStart
     const end = textarea.selectionEnd
     const before = textarea.value.substring(0, start)
     const after = textarea.value.substring(end)
-    textarea.value = before + wrapped + after
-    const cursorPos = start + wrapped.length
+    textarea.value = before + result + after
+    const cursorPos = start + result.length
     textarea.setSelectionRange(cursorPos, cursorPos)
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
   }
