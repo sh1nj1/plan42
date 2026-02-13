@@ -130,6 +130,9 @@ en:
         granted: System admin access granted.
         revoked: System admin access removed.
         failed: Could not update the user's system admin status.
+      unlock:
+        button: Unlock
+        success: "%{name} has been unlocked."
       destroy:
         success: The user and all associated data have been deleted.
         failure: Could not delete the user.

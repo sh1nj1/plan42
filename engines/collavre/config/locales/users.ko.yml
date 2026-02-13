@@ -125,6 +125,9 @@ ko:
         granted: 시스템 관리자 권한이 부여되었습니다.
         revoked: 시스템 관리자 권한이 해제되었습니다.
         failed: 사용자의 시스템 관리자 상태를 변경하지 못했습니다.
+      unlock:
+        button: 잠금 해제
+        success: "%{name}의 잠금이 해제되었습니다."
       destroy:
         success: 사용자와 모든 관련 데이터가 삭제되었습니다.
         failure: 사용자를 삭제하지 못했습니다.

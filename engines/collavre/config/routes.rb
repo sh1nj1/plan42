@@ -15,6 +15,7 @@ Collavre::Engine.routes.draw do
       patch :update_ai
       patch :grant_system_admin
       patch :revoke_system_admin
+      patch :unlock
       get :edit_password
       patch :update_password
       get :passkeys
