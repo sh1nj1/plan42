@@ -184,7 +184,7 @@ creative-tree-row.show-edit .creative-row {
     background: var(--creative-bullet-color);
     margin-left: 4px;
     margin-right: 8px;
-    flex: 0 0 5px;
+    flex: 0 0 var(--creative-bullet-size);
     margin-top: 10px;
     /* Align with first line of text (approx) */
 }
