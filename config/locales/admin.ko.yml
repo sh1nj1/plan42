@@ -3,6 +3,7 @@ ko:
     title: "관리자 설정"
     tabs:
       system: "시스템"
+      uiux: "UI / UX"
       users: "사용자"
       orchestration: "AI 오케스트레이션"
     settings:
@@ -35,9 +36,6 @@ ko:
       api_rate_hint: "사용자당 API 요청을 제한합니다 (비인증 요청은 IP 기준)."
       rate_limit_requests: "최대 요청 수"
       rate_limit_period_minutes: "기간 (분)"
-      tabs:
-        system: "시스템"
-        uiux: "UI / UX"
       default_theme: "기본 테마"
       default_theme_hint: "개인 테마를 설정하지 않은 사용자에게 적용되는 기본 테마입니다. '자동'은 운영체제 설정을 따릅니다."
       theme_auto: "자동 (OS 설정 따름)"
