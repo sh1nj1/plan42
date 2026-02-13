@@ -74,4 +74,7 @@ Rails.application.configure do
   config.hosts << /.*\.ngrok\.app/
   config.hosts << /.*\.ngrok-free\.app/
   config.hosts << /.*\.ngrok\.io/
+
+  # Allow Tailscale hosts for remote development access
+  config.hosts << /.*\.tailadceed\.ts\.net/
 end

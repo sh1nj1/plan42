@@ -68,6 +68,18 @@
                             class: 'btn btn-xs btn-success',
                             form: { data: { turbo_confirm: t('collavre.users.confirm_grant_system_admin') } } %>
             <% end %>
+            <% if user.locked? %>
+              <%= button_to t('collavre.users.unlock.button'),
+                            collavre.unlock_user_path(user),
+                            method: :patch,
+                            class: 'btn btn-xs btn-secondary' %>
+            <% else %>
+              <%= button_to t('collavre.users.lock.button'),
+                            collavre.lock_user_path(user),
+                            method: :patch,
+                            class: 'btn btn-xs btn-danger',
+                            form: { data: { turbo_confirm: t('collavre.users.lock.confirm') } } %>
+            <% end %>
             <%= button_to t('collavre.users.delete'),
                           collavre.user_path(user),
                           method: :delete,
