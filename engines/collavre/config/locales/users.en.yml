@@ -133,6 +133,11 @@ en:
       unlock:
         button: Unlock
         success: "%{name} has been unlocked."
+      lock:
+        button: Lock
+        confirm: "Lock this user's account? They will not be able to log in."
+        success: "%{name} has been locked."
+        cannot_lock_self: "You cannot lock your own account."
       destroy:
         success: The user and all associated data have been deleted.
         failure: Could not delete the user.

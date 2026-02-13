@@ -128,6 +128,11 @@ ko:
       unlock:
         button: 잠금 해제
         success: "%{name}의 잠금이 해제되었습니다."
+      lock:
+        button: 잠금
+        confirm: "이 사용자의 계정을 잠글까요? 로그인할 수 없게 됩니다."
+        success: "%{name}의 계정이 잠겼습니다."
+        cannot_lock_self: "자신의 계정은 잠글 수 없습니다."
       destroy:
         success: 사용자와 모든 관련 데이터가 삭제되었습니다.
         failure: 사용자를 삭제하지 못했습니다.
