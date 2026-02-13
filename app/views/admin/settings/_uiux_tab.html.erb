@@ -1,0 +1,44 @@
+<section class="tab-panel active">
+  <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
+  <%= form_with url: admin_uiux_path, method: :patch, local: true, html: { class: 'profile-form' } do |f| %>
+
+    <div>
+      <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.default_themes') %></h3>
+      <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-bottom: 1.5em;">
+        <%= t('admin.settings.default_themes_hint') %>
+      </div>
+
+      <div style="display: flex; gap: 2em; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 250px;">
+          <%= label_tag :default_light_theme_id, t('admin.settings.default_light_theme') %>
+          <%= select_tag :default_light_theme_id,
+                options_for_select(
+                  [[t('admin.settings.theme_system_default'), '']] +
+                  @available_themes.map { |t| [t.name, t.id] },
+                  @default_light_theme_id.to_s
+                ),
+                style: "width: 100%;" %>
+          <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+            <%= t('admin.settings.default_light_theme_hint') %>
+          </div>
+        </div>
+
+        <div style="flex: 1; min-width: 250px;">
+          <%= label_tag :default_dark_theme_id, t('admin.settings.default_dark_theme') %>
+          <%= select_tag :default_dark_theme_id,
+                options_for_select(
+                  [[t('admin.settings.theme_system_default'), '']] +
+                  @available_themes.map { |t| [t.name, t.id] },
+                  @default_dark_theme_id.to_s
+                ),
+                style: "width: 100%;" %>
+          <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+            <%= t('admin.settings.default_dark_theme_hint') %>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <%= f.submit t('admin.settings.save') %>
+  <% end %>
+</section>

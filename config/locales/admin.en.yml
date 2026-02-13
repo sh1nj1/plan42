@@ -3,6 +3,7 @@ en:
     title: "Admin Settings"
     tabs:
       system: "System"
+      uiux: "UI / UX"
       users: "Users"
       orchestration: "AI Orchestration"
     settings:
@@ -35,6 +36,13 @@ en:
       api_rate_hint: "Limit API requests per user (or IP for unauthenticated requests)."
       rate_limit_requests: "Max Requests"
       rate_limit_period_minutes: "Period (minutes)"
+      default_themes: "Default Themes"
+      default_themes_hint: "Set custom themes for users who haven't configured their own. Each setting applies based on the user's OS appearance mode."
+      default_light_theme: "When OS is Light Mode"
+      default_light_theme_hint: "Theme applied when the user's OS is in light mode."
+      default_dark_theme: "When OS is Dark Mode"
+      default_dark_theme_hint: "Theme applied when the user's OS is in dark mode."
+      theme_system_default: "System Default"
       updated: "Settings updated successfully."
       save: "Save Settings"
     orchestration:
