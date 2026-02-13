@@ -75,9 +75,13 @@ module Collavre
     AGENT_CONF_DEFAULTS = {
       "context" => {
         "chat_history" => 50,
-        "chat_history_size" => 100_000
+        "chat_history_size" => 100_000,
+        "creative_children_level" => nil
       }
     }.freeze
+
+    # Default creative children level when agent_conf doesn't specify one
+    DEFAULT_CREATIVE_CHILDREN_LEVEL = 6
 
     # Returns parsed agent_conf merged with defaults
     def parsed_agent_conf
@@ -98,6 +102,14 @@ module Collavre
 
     def chat_history_size_limit
       parsed_agent_conf.dig("context", "chat_history_size") || 100_000
+    end
+
+    # Returns the creative children depth level for AI context.
+    # nil in agent_conf means use the default (6).
+    # 0 = no children, 1 = direct children only, 2 = grandchildren, etc.
+    def creative_children_level
+      level = parsed_agent_conf.dig("context", "creative_children_level")
+      level.nil? ? DEFAULT_CREATIVE_CHILDREN_LEVEL : level.to_i
     end
 
     encrypts :llm_api_key, deterministic: false

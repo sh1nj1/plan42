@@ -198,7 +198,13 @@ module Collavre
         if creative_id
           creative = Creative.find_by(id: creative_id)
           if creative
-            markdown = ApplicationController.helpers.render_creative_tree_markdown([ creative ], 1, true)
+            # creative_children_level: 0=no children, 1=children, 2=grandchildren, etc.
+            # max_depth = 1 (root) + creative_children_level
+            children_level = @agent.creative_children_level
+            max_depth = 1 + children_level
+            markdown = ApplicationController.helpers.render_creative_tree_markdown(
+              [ creative ], 1, true, max_depth: max_depth
+            )
             messages << { role: "user", parts: [ { text: "Creative:\n#{markdown}" } ] }
           end
         end

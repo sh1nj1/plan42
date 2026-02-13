@@ -93,7 +93,7 @@ module Collavre
       !!(expanded_state_map && expanded_state_map[creative_id.to_s])
     end
 
-    def render_creative_tree_markdown(creatives, level = 1, with_progress = false)
+    def render_creative_tree_markdown(creatives, level = 1, with_progress = false, max_depth: nil)
       return "" if creatives.blank?
       md = ""
       creatives.each do |creative|
@@ -134,8 +134,8 @@ module Collavre
           md += "#{indent}* #{inner}\n"
         end
         children = creative.linked_children
-        if children.present?
-          md += render_creative_tree_markdown(children, level + 1, with_progress)
+        if children.present? && (max_depth.nil? || level < max_depth)
+          md += render_creative_tree_markdown(children, level + 1, with_progress, max_depth: max_depth)
         end
         md += "\n" if level <= 4 && !rendered_table_block
       end
