@@ -2,16 +2,17 @@
     --creative-row-text-offset: 1.8em;
     --creative-loading-emojis: "🚀,🧠,🧩,🤝,🗂️,⚡";
 
-    /* Creative tree heading styles */
+    /* Creative tree heading styles — defaults match pre-#799 behavior.
+       Themes that don't define these variables render identically to before. */
     --creative-h1-size: 1.3em;
     --creative-h2-size: 1.2em;
     --creative-h3-size: 1.1em;
-    --creative-h1-weight: 700;
-    --creative-h2-weight: 600;
-    --creative-h3-weight: 500;
-    --creative-h1-color: var(--text-primary);
-    --creative-h2-color: var(--text-primary);
-    --creative-h3-color: var(--text-primary);
+    --creative-h1-weight: bold;
+    --creative-h2-weight: bold;
+    --creative-h3-weight: bold;
+    --creative-h1-color: inherit;
+    --creative-h2-color: inherit;
+    --creative-h3-color: inherit;
     --creative-h1-bg: transparent;
     --creative-h2-bg: transparent;
     --creative-h3-bg: transparent;
@@ -22,7 +23,7 @@
 
     /* Bullet style */
     --creative-bullet-size: 5px;
-    --creative-bullet-color: var(--text-primary);
+    --creative-bullet-color: currentColor;
 
     /* Tree line style */
     --creative-tree-line-color: var(--border-color);
