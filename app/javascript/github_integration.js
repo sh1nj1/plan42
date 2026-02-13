@@ -154,11 +154,21 @@ if (!githubIntegrationInitialized) {
         .then(function (response) { return response.json(); })
         .then(function (data) {
           if (!data.connected) {
-            statusEl.textContent = modal.dataset.loginRequired;
-            hasExistingIntegration = false;
-            renderExistingConnections([]);
-            if (connectMessage) connectMessage.style.display = '';
-            if (loginBtn) loginBtn.style.display = 'inline-block';
+            var allRepos = data.all_repositories || [];
+            if (allRepos.length > 0) {
+              // Other users have linked repositories to this creative
+              statusEl.textContent = existingMessage;
+              hasExistingIntegration = true;
+              renderExistingConnections(allRepos, true);
+              if (connectMessage) connectMessage.style.display = 'none';
+              if (loginBtn) loginBtn.style.display = 'inline-block';
+            } else {
+              statusEl.textContent = '';
+              hasExistingIntegration = false;
+              renderExistingConnections([]);
+              if (connectMessage) connectMessage.style.display = '';
+              if (loginBtn) loginBtn.style.display = 'inline-block';
+            }
             currentStep = 'connect';
             updateStep();
             return;
@@ -192,7 +202,7 @@ if (!githubIntegrationInitialized) {
         });
     }
 
-    function renderExistingConnections(repos) {
+    function renderExistingConnections(repos, readOnly) {
       if (!existingContainer || !existingList) return;
       existingList.innerHTML = '';
       selectedReposForDeletion = new Set();
@@ -217,27 +227,29 @@ if (!githubIntegrationInitialized) {
         label.style.display = 'flex';
         label.style.alignItems = 'center';
         label.style.gap = '0.5em';
-        label.style.cursor = 'pointer';
+        label.style.cursor = readOnly ? 'default' : 'pointer';
         label.style.flex = '1';
 
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.value = fullName;
-        checkbox.className = 'github-existing-repo-checkbox';
-        checkbox.addEventListener('change', function () {
-          if (checkbox.checked) {
-            selectedReposForDeletion.add(fullName);
-          } else {
-            selectedReposForDeletion.delete(fullName);
-          }
-          updateDeleteButtonState();
-        });
+        if (!readOnly) {
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.value = fullName;
+          checkbox.className = 'github-existing-repo-checkbox';
+          checkbox.addEventListener('change', function () {
+            if (checkbox.checked) {
+              selectedReposForDeletion.add(fullName);
+            } else {
+              selectedReposForDeletion.delete(fullName);
+            }
+            updateDeleteButtonState();
+          });
+          label.appendChild(checkbox);
+        }
 
         const nameSpan = document.createElement('span');
         nameSpan.textContent = fullName;
         nameSpan.style.flex = '1';
 
-        label.appendChild(checkbox);
         label.appendChild(nameSpan);
         li.appendChild(label);
         existingList.appendChild(li);
@@ -245,7 +257,7 @@ if (!githubIntegrationInitialized) {
 
       existingContainer.style.display = 'block';
       if (deleteBtn) {
-        deleteBtn.style.display = 'inline-flex';
+        deleteBtn.style.display = readOnly ? 'none' : 'inline-flex';
         updateDeleteButtonState();
       }
       if (loginBtn) loginBtn.style.display = 'none';
