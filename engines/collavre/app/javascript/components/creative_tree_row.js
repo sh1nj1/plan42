@@ -304,7 +304,7 @@ class CreativeTreeRow extends LitElement {
 
       // If no children, render as div instead of heading to avoid large font size
       if (!this.hasChildren) {
-        return html`<div class=${headingClass}>${content}${indicator}</div>`;
+        return html`<div class="${headingClass} creative-childless">${content}${indicator}</div>`;
       }
 
       // We wrap content in heading tags for semantics
