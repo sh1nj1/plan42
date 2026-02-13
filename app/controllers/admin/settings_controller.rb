@@ -31,7 +31,9 @@ module Admin
     end
 
     def uiux
-      @default_theme = SystemSetting.default_theme
+      @default_light_theme_id = SystemSetting.default_light_theme_id
+      @default_dark_theme_id = SystemSetting.default_dark_theme_id
+      @available_themes = Collavre::UserTheme.all.order(:name)
     end
 
     def update
@@ -124,12 +126,16 @@ module Admin
           api_period_setting.value = api_period.to_s
           api_period_setting.save!
 
-          # Default Theme
-          default_theme = params[:default_theme].to_s.strip
-          default_theme = nil unless %w[light dark].include?(default_theme)
-          default_theme_setting = SystemSetting.find_or_initialize_by(key: "default_theme")
-          default_theme_setting.value = default_theme
-          default_theme_setting.save!
+          # Default Themes (light/dark mode)
+          light_theme_id = params[:default_light_theme_id].to_s.strip
+          light_theme_setting = SystemSetting.find_or_initialize_by(key: "default_light_theme_id")
+          light_theme_setting.value = light_theme_id.present? ? light_theme_id : nil
+          light_theme_setting.save!
+
+          dark_theme_id = params[:default_dark_theme_id].to_s.strip
+          dark_theme_setting = SystemSetting.find_or_initialize_by(key: "default_dark_theme_id")
+          dark_theme_setting.value = dark_theme_id.present? ? dark_theme_id : nil
+          dark_theme_setting.save!
 
           # Auth Providers
           auth_providers = Array(params[:auth_providers]).reject(&:blank?)

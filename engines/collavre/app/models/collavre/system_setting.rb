@@ -28,8 +28,10 @@ module Collavre
     # Default home page path (nil means use root_path "/")
     DEFAULT_HOME_PAGE_PATH = nil
 
-    # Default theme (nil means follow OS preference)
-    DEFAULT_THEME = nil
+    # Default theme IDs (nil means use built-in light/dark)
+    # These reference UserTheme IDs for admin-configured custom themes
+    DEFAULT_LIGHT_THEME_ID = nil
+    DEFAULT_DARK_THEME_ID = nil
 
     validates :key, presence: true, uniqueness: true
 
@@ -50,7 +52,7 @@ module Collavre
         lockout_duration_minutes session_timeout_minutes password_min_length
         password_reset_rate_limit password_reset_rate_period_minutes
         api_rate_limit api_rate_period_minutes auth_providers_disabled
-        creatives_login_required home_page_path default_theme
+        creatives_login_required home_page_path default_light_theme_id default_dark_theme_id
       ].each { |k| Rails.cache.delete("system_setting:#{k}") }
     end
 
@@ -144,10 +146,23 @@ module Collavre
       api_rate_period_minutes.minutes
     end
 
-    # Default theme for users without a personal theme preference
-    def self.default_theme
-      value = cached_value("default_theme")
-      value.presence
+    # Default theme IDs for users without a personal theme preference
+    def self.default_light_theme_id
+      cached_value("default_light_theme_id")&.to_i.then { |v| v.positive? ? v : nil }
+    end
+
+    def self.default_dark_theme_id
+      cached_value("default_dark_theme_id")&.to_i.then { |v| v.positive? ? v : nil }
+    end
+
+    def self.default_light_theme
+      id = default_light_theme_id
+      id ? Collavre::UserTheme.find_by(id: id) : nil
+    end
+
+    def self.default_dark_theme
+      id = default_dark_theme_id
+      id ? Collavre::UserTheme.find_by(id: id) : nil
     end
   end
 end

@@ -4,7 +4,7 @@ module Collavre
     # Custom themes get "light-mode" to disable OS dark mode overrides,
     # ensuring the custom theme controls all colors regardless of OS setting.
     def body_theme_class
-      theme = Current.user&.theme.presence || SystemSetting.default_theme
+      theme = Current.user&.theme
       return "" if theme.blank?
 
       case theme
@@ -16,6 +16,48 @@ module Collavre
         "light-mode" # Custom theme: neutralize OS dark mode
       end
     end
+
+    # Renders CSS for admin-configured default themes (light/dark mode)
+    # Only applies when the user has no personal theme set
+    def default_theme_styles
+      return "" if Current.user&.theme.present?
+
+      light_theme = SystemSetting.default_light_theme
+      dark_theme = SystemSetting.default_dark_theme
+      return "" unless light_theme || dark_theme
+
+      styles = []
+
+      if light_theme
+        styles << render_theme_media_query(light_theme, "light")
+      end
+
+      if dark_theme
+        styles << render_theme_media_query(dark_theme, "dark")
+      end
+
+      styles.join("\n").html_safe # rubocop:disable Rails/OutputSafety
+    end
+
+    private
+
+    def render_theme_media_query(theme, mode)
+      vars = theme.variables.map { |k, v| "#{k}: #{v} !important;" }.join("\n            ")
+      legacy = legacy_alias_declarations(theme.variables).map { |k, v| "#{k}: #{v} !important;" }.join("\n            ")
+      dark_filter = theme.dark? ? "--date-icon-filter: invert(0.8) !important;" : ""
+
+      <<~CSS
+        @media (prefers-color-scheme: #{mode}) {
+          body:not(.dark-mode):not(.light-mode) {
+            #{vars}
+            #{legacy}
+            #{dark_filter}
+          }
+        }
+      CSS
+    end
+
+    public
 
     # Maps semantic token names to their legacy alias names.
     # When custom themes inject semantic tokens on <body>, the legacy aliases
