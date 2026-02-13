@@ -148,11 +148,13 @@ module Collavre
 
     # Default theme IDs for users without a personal theme preference
     def self.default_light_theme_id
-      cached_value("default_light_theme_id")&.to_i.then { |v| v.positive? ? v : nil }
+      value = cached_value("default_light_theme_id")
+      value.present? && value.to_i.positive? ? value.to_i : nil
     end
 
     def self.default_dark_theme_id
-      cached_value("default_dark_theme_id")&.to_i.then { |v| v.positive? ? v : nil }
+      value = cached_value("default_dark_theme_id")
+      value.present? && value.to_i.positive? ? value.to_i : nil
     end
 
     def self.default_light_theme
