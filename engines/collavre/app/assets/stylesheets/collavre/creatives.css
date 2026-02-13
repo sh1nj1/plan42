@@ -23,10 +23,13 @@
 
     /* Bullet style */
     --creative-bullet-size: 5px;
-    --creative-bullet-color: currentColor;
+    /* --creative-bullet-color: NOT set here; inline fallback (currentColor) used.
+       Setting it at :root would freeze the value to :root scope,
+       ignoring dark-mode overrides on body. */
 
-    /* Tree line style */
-    --creative-tree-line-color: var(--border-color);
+    /* Tree line style — only size/opacity have safe defaults.
+       --creative-tree-line-color: NOT set here; inline fallback var(--border-color) used.
+       This ensures dark mode's --border-color override on body is respected. */
     --creative-tree-line-opacity: 0.5;
 }
 
