@@ -1,6 +1,6 @@
 <section class="tab-panel active">
   <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
-  <%= form_with url: admin_settings_path, method: :patch, local: true, html: { class: 'profile-form' } do |f| %>
+  <%= form_with url: collavre.admin_settings_path, method: :patch, local: true, html: { class: 'profile-form' } do |f| %>
     <%# system tab %>
     <div>
       <%= f.label :help_link, t('admin.settings.help_link') %>

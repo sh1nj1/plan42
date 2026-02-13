@@ -1,6 +1,6 @@
 <div class="tab-list">
-  <%= link_to t('admin.tabs.system'), main_app.admin_path, class: "tab-button #{'active' if controller_name == 'settings' && action_name == 'index'}" %>
-  <%= link_to t('admin.tabs.uiux'), main_app.admin_uiux_path, class: "tab-button #{'active' if controller_name == 'settings' && action_name == 'uiux'}" %>
+  <%= link_to t('admin.tabs.system'), collavre.admin_settings_path, class: "tab-button #{'active' if controller_name == 'settings' && action_name == 'index'}" %>
+  <%= link_to t('admin.tabs.uiux'), collavre.admin_uiux_path, class: "tab-button #{'active' if controller_name == 'settings' && action_name == 'uiux'}" %>
   <%= link_to t('admin.tabs.users'), collavre.users_path, class: "tab-button #{'active' if controller_name == 'users'}" %>
   <%= link_to t('admin.tabs.orchestration'), collavre.admin_orchestration_path, class: "tab-button #{'active' if controller_name == 'orchestration'}" %>
 </div>
