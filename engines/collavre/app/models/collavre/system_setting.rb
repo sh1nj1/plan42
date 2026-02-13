@@ -28,6 +28,9 @@ module Collavre
     # Default home page path (nil means use root_path "/")
     DEFAULT_HOME_PAGE_PATH = nil
 
+    # Default theme (nil means follow OS preference)
+    DEFAULT_THEME = nil
+
     validates :key, presence: true, uniqueness: true
 
     # Clear cache after save
@@ -47,7 +50,7 @@ module Collavre
         lockout_duration_minutes session_timeout_minutes password_min_length
         password_reset_rate_limit password_reset_rate_period_minutes
         api_rate_limit api_rate_period_minutes auth_providers_disabled
-        creatives_login_required home_page_path
+        creatives_login_required home_page_path default_theme
       ].each { |k| Rails.cache.delete("system_setting:#{k}") }
     end
 
@@ -139,6 +142,12 @@ module Collavre
 
     def self.api_rate_period
       api_rate_period_minutes.minutes
+    end
+
+    # Default theme for users without a personal theme preference
+    def self.default_theme
+      value = cached_value("default_theme")
+      value.presence
     end
   end
 end

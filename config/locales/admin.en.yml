@@ -35,6 +35,14 @@ en:
       api_rate_hint: "Limit API requests per user (or IP for unauthenticated requests)."
       rate_limit_requests: "Max Requests"
       rate_limit_period_minutes: "Period (minutes)"
+      tabs:
+        system: "System"
+        uiux: "UI / UX"
+      default_theme: "Default Theme"
+      default_theme_hint: "Default theme for users who haven't set their own preference. 'Auto' follows the operating system setting."
+      theme_auto: "Auto (follow OS)"
+      theme_light: "Light"
+      theme_dark: "Dark"
       updated: "Settings updated successfully."
       save: "Save Settings"
     orchestration:

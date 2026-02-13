@@ -4,7 +4,7 @@ module Collavre
     # Custom themes get "light-mode" to disable OS dark mode overrides,
     # ensuring the custom theme controls all colors regardless of OS setting.
     def body_theme_class
-      theme = Current.user&.theme
+      theme = Current.user&.theme.presence || SystemSetting.default_theme
       return "" if theme.blank?
 
       case theme

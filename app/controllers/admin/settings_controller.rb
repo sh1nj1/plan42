@@ -3,6 +3,7 @@ module Admin
     before_action :require_system_admin!
 
     def index
+      @active_settings_tab = params[:tab].presence || "system"
       @help_link = SystemSetting.find_by(key: "help_menu_link")&.value
       @mcp_tool_approval = SystemSetting.find_by(key: "mcp_tool_approval_required")&.value == "true"
       @creatives_login_required = SystemSetting.creatives_login_required?
@@ -23,6 +24,9 @@ module Admin
       @password_reset_rate_period_minutes = SystemSetting.password_reset_rate_period_minutes
       @api_rate_limit = SystemSetting.api_rate_limit
       @api_rate_period_minutes = SystemSetting.api_rate_period_minutes
+
+      # UI/UX settings
+      @default_theme = SystemSetting.default_theme
 
       # Storage is "disabled" list. View expects "enabled" list.
       all_provider_keys = Rails.application.config.auth_providers.map { |p| p[:key].to_s }
@@ -120,6 +124,13 @@ module Admin
           api_period_setting.value = api_period.to_s
           api_period_setting.save!
 
+          # Default Theme
+          default_theme = params[:default_theme].to_s.strip
+          default_theme = nil unless %w[light dark].include?(default_theme)
+          default_theme_setting = SystemSetting.find_or_initialize_by(key: "default_theme")
+          default_theme_setting.value = default_theme
+          default_theme_setting.save!
+
           # Auth Providers
           auth_providers = Array(params[:auth_providers]).reject(&:blank?)
           if auth_providers.empty?
@@ -151,7 +162,9 @@ module Admin
         @password_reset_rate_period_minutes = params[:password_reset_rate_period_minutes].to_i.positive? ? params[:password_reset_rate_period_minutes].to_i : SystemSetting::DEFAULT_PASSWORD_RESET_RATE_PERIOD_MINUTES
         @api_rate_limit = params[:api_rate_limit].to_i.positive? ? params[:api_rate_limit].to_i : SystemSetting::DEFAULT_API_RATE_LIMIT
         @api_rate_period_minutes = params[:api_rate_period_minutes].to_i.positive? ? params[:api_rate_period_minutes].to_i : SystemSetting::DEFAULT_API_RATE_PERIOD_MINUTES
+        @default_theme = params[:default_theme]
         @enabled_auth_providers = params[:auth_providers] || []
+        @active_settings_tab = params[:tab].presence || "system"
         render :index, status: :unprocessable_entity
       end
     end
