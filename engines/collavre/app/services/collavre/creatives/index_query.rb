@@ -82,6 +82,9 @@ module Creatives
         # Sort by comment updated_at for comment filter
         if params[:comment] == "true"
           matched_creatives = matched_creatives.sort_by { |c| c.comments.maximum(:updated_at) || c.updated_at }.reverse
+        elsif params[:search].present? && params[:simple].present?
+          # Sort by description length (shorter = more relevant match)
+          matched_creatives = matched_creatives.sort_by { |c| c.description.to_s.length }
         end
 
         parent = params[:id] ? Creative.find_by(id: params[:id]) : nil
