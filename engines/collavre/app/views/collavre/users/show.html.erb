@@ -120,7 +120,7 @@
         <%= link_to t('doorkeeper.my_applications'), main_app.oauth_applications_path %>
         <% if @user.system_admin? %>
           <br>
-          <%= link_to t('admin.title'), main_app.admin_path %>
+          <%= link_to t('admin.title'), collavre.admin_settings_path %>
         <% end %>
       </div>
 
