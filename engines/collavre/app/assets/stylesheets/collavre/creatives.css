@@ -138,8 +138,8 @@ creative-tree-row.show-edit .creative-row {
     bottom: 0;
     left: 50%;
     width: 1px;
-    background-color: var(--creative-tree-line-color);
-    opacity: var(--creative-tree-line-opacity);
+    background-color: var(--creative-tree-line-color, var(--border-color));
+    opacity: var(--creative-tree-line-opacity, 0.5);
 }
 
 .creative-content {
@@ -175,17 +175,17 @@ creative-tree-row.show-edit .creative-row {
 
 /* make it as same as <li> tag */
 .creative-tree-bullet {
-    width: var(--creative-bullet-size);
-    height: var(--creative-bullet-size);
-    min-width: var(--creative-bullet-size);
-    min-height: var(--creative-bullet-size);
-    max-width: var(--creative-bullet-size);
-    max-height: var(--creative-bullet-size);
+    width: var(--creative-bullet-size, 5px);
+    height: var(--creative-bullet-size, 5px);
+    min-width: var(--creative-bullet-size, 5px);
+    min-height: var(--creative-bullet-size, 5px);
+    max-width: var(--creative-bullet-size, 5px);
+    max-height: var(--creative-bullet-size, 5px);
     border-radius: 50%;
-    background: var(--creative-bullet-color);
+    background: var(--creative-bullet-color, currentColor);
     margin-left: 4px;
     margin-right: 8px;
-    flex: 0 0 var(--creative-bullet-size);
+    flex: 0 0 var(--creative-bullet-size, 5px);
     margin-top: 10px;
     /* Align with first line of text (approx) */
 }
@@ -477,23 +477,23 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 }
 
 .creative-row-start h1 {
-    font-size: var(--creative-h1-size);
-    font-weight: var(--creative-h1-weight);
-    color: var(--creative-h1-color);
+    font-size: var(--creative-h1-size, 1.3em);
+    font-weight: var(--creative-h1-weight, bold);
+    color: var(--creative-h1-color, inherit);
     margin: 0;
 }
 
 .creative-row-start h2 {
-    font-size: var(--creative-h2-size);
-    font-weight: var(--creative-h2-weight);
-    color: var(--creative-h2-color);
+    font-size: var(--creative-h2-size, 1.2em);
+    font-weight: var(--creative-h2-weight, bold);
+    color: var(--creative-h2-color, inherit);
     margin: 0;
 }
 
 .creative-row-start h3 {
-    font-size: var(--creative-h3-size);
-    font-weight: var(--creative-h3-weight);
-    color: var(--creative-h3-color);
+    font-size: var(--creative-h3-size, 1.1em);
+    font-weight: var(--creative-h3-weight, bold);
+    color: var(--creative-h3-color, inherit);
     margin: 0;
 }
 
@@ -505,8 +505,8 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 
 /* Childless items (level 1-3 without children) rendered as plain text */
 .creative-childless .creative-content {
-    font-size: var(--creative-childless-size);
-    font-weight: var(--creative-childless-weight);
+    font-size: var(--creative-childless-size, 1em);
+    font-weight: var(--creative-childless-weight, 400);
 }
 
 /* Headings need specific alignment adjustments */
@@ -558,19 +558,19 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 .creative-row.level-1 {
     padding-top: 6px;
     padding-bottom: 6px;
-    background-color: var(--creative-h1-bg);
+    background-color: var(--creative-h1-bg, transparent);
 }
 
 .creative-row.level-2 {
     padding-top: 6px;
     padding-bottom: 6px;
-    background-color: var(--creative-h2-bg);
+    background-color: var(--creative-h2-bg, transparent);
 }
 
 .creative-row.level-3 {
     padding-top: 6px;
     padding-bottom: 6px;
-    background-color: var(--creative-h3-bg);
+    background-color: var(--creative-h3-bg, transparent);
 }
 
 .comment-icon {
