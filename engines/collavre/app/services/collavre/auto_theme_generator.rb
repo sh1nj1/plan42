@@ -32,6 +32,24 @@ module Collavre
       --border-drag-edge
       --hover-brightness
       --creative-loading-emojis
+      --creative-h1-size
+      --creative-h2-size
+      --creative-h3-size
+      --creative-h1-weight
+      --creative-h2-weight
+      --creative-h3-weight
+      --creative-h1-color
+      --creative-h2-color
+      --creative-h3-color
+      --creative-childless-size
+      --creative-childless-weight
+      --creative-bullet-size
+      --creative-bullet-color
+      --creative-tree-line-color
+      --creative-tree-line-opacity
+      --creative-h1-bg
+      --creative-h2-bg
+      --creative-h3-bg
     ].freeze
 
     def initialize(client: default_client)
@@ -60,7 +78,14 @@ module Collavre
          "--color-accent-border":"#a67a00","--color-accent-text":"#c69900",
          "--color-code-bg":"#f5efc0","--color-code-text":"#1a1200",
          "--border-color":"#c4b060","--border-drag-over":"#d4a800","--border-drag-edge":"#c69900",
-         "--hover-brightness":"90%","--creative-loading-emojis":"🍌🌻💛🍋✨🌼"}
+         "--hover-brightness":"90%","--creative-loading-emojis":"🍌🌻💛🍋✨🌼",
+         "--creative-h1-size":"1.3em","--creative-h2-size":"1.2em","--creative-h3-size":"1.1em",
+         "--creative-h1-weight":"700","--creative-h2-weight":"600","--creative-h3-weight":"500",
+         "--creative-h1-color":"#1a1200","--creative-h2-color":"#1a1200","--creative-h3-color":"#5a4e00",
+         "--creative-childless-size":"1em","--creative-childless-weight":"400",
+         "--creative-bullet-size":"5px","--creative-bullet-color":"#1a1200",
+         "--creative-tree-line-color":"#c4b060","--creative-tree-line-opacity":"0.5",
+         "--creative-h1-bg":"transparent","--creative-h2-bg":"transparent","--creative-h3-bg":"transparent"}
 
         "숲속" (green, light):
         {"--surface-bg":"#ecf4ef","--surface-nav":"#d5e2d7","--surface-section":"#e2f4e7",
@@ -74,7 +99,14 @@ module Collavre
          "--color-accent-border":"#337344","--color-accent-text":"#1a3520",
          "--color-code-bg":"#e0ede4","--color-code-text":"#0a1f10",
          "--border-color":"#a0bca6","--border-drag-over":"#40905a","--border-drag-edge":"#25984d",
-         "--hover-brightness":"90%","--creative-loading-emojis":"🌲🍃🌿🌱✨🦎"}
+         "--hover-brightness":"90%","--creative-loading-emojis":"🌲🍃🌿🌱✨🦎",
+         "--creative-h1-size":"1.3em","--creative-h2-size":"1.15em","--creative-h3-size":"1.05em",
+         "--creative-h1-weight":"700","--creative-h2-weight":"600","--creative-h3-weight":"500",
+         "--creative-h1-color":"#0a1f10","--creative-h2-color":"#0a1f10","--creative-h3-color":"#3a5040",
+         "--creative-childless-size":"1em","--creative-childless-weight":"400",
+         "--creative-bullet-size":"5px","--creative-bullet-color":"#25984d",
+         "--creative-tree-line-color":"#a0bca6","--creative-tree-line-opacity":"0.5",
+         "--creative-h1-bg":"transparent","--creative-h2-bg":"transparent","--creative-h3-bg":"transparent"}
 
         "토마토" (red/warm, light):
         {"--surface-bg":"#fbefea","--surface-nav":"#f7ded6","--surface-section":"#f5e8e4",
@@ -88,7 +120,14 @@ module Collavre
          "--color-accent-border":"#c85b32","--color-accent-text":"#b22800",
          "--color-code-bg":"#f0e4de","--color-code-text":"#1f0800",
          "--border-color":"#d0a898","--border-drag-over":"#e04020","--border-drag-edge":"#cc0000",
-         "--hover-brightness":"90%","--creative-loading-emojis":"🍅🔴🌶️🫕✨🍝"}
+         "--hover-brightness":"90%","--creative-loading-emojis":"🍅🔴🌶️🫕✨🍝",
+         "--creative-h1-size":"1.3em","--creative-h2-size":"1.2em","--creative-h3-size":"1.1em",
+         "--creative-h1-weight":"700","--creative-h2-weight":"600","--creative-h3-weight":"500",
+         "--creative-h1-color":"#1f0800","--creative-h2-color":"#1f0800","--creative-h3-color":"#5a3020",
+         "--creative-childless-size":"1em","--creative-childless-weight":"400",
+         "--creative-bullet-size":"5px","--creative-bullet-color":"#d40924",
+         "--creative-tree-line-color":"#d0a898","--creative-tree-line-opacity":"0.5",
+         "--creative-h1-bg":"transparent","--creative-h2-bg":"transparent","--creative-h3-bg":"transparent"}
 
         "사이버펑크" (neon, dark):
         {"--surface-bg":"#070b14","--surface-nav":"#0f101f","--surface-section":"#12161f",
@@ -102,7 +141,14 @@ module Collavre
          "--color-accent-border":"#0094c9","--color-accent-text":"#eb63c5",
          "--color-code-bg":"#0e1220","--color-code-text":"#c0c4d0",
          "--border-color":"#2a2e3a","--border-drag-over":"#6030a0","--border-drag-edge":"#e749df",
-         "--hover-brightness":"110%","--creative-loading-emojis":"🌃💜⚡🤖✨🎮"}
+         "--hover-brightness":"110%","--creative-loading-emojis":"🌃💜⚡🤖✨🎮",
+         "--creative-h1-size":"1.4em","--creative-h2-size":"1.2em","--creative-h3-size":"1.1em",
+         "--creative-h1-weight":"800","--creative-h2-weight":"600","--creative-h3-weight":"500",
+         "--creative-h1-color":"#e749df","--creative-h2-color":"#0099f0","--creative-h3-color":"#8a8c99",
+         "--creative-childless-size":"1em","--creative-childless-weight":"400",
+         "--creative-bullet-size":"4px","--creative-bullet-color":"#e749df",
+         "--creative-tree-line-color":"#2a2e3a","--creative-tree-line-opacity":"0.7",
+         "--creative-h1-bg":"#0f101f","--creative-h2-bg":"#12161f","--creative-h3-bg":"transparent"}
 
         === RULES ===
 
@@ -118,6 +164,22 @@ module Collavre
            - Each color must be RECOGNIZABLE — never blend into one muddy tone
         6) Match the vibe: "토마토" = warm reds/oranges, "바나나" = bright yellows, "숲" = rich greens.
            The user should IMMEDIATELY recognize the theme from its colors.
+        7) CREATIVE TREE STYLING — the app has a hierarchical list (outliner) with levels:
+           - Level 1-3: headings (h1/h2/h3). Level 4+: bullet items.
+           - Items at level 1-3 WITHOUT children render as plain text (childless style).
+           - creative-h{1,2,3}-size: font size (em units). h1 largest, descending. Range: 1.0em-1.5em.
+           - creative-h{1,2,3}-weight: font weight. h1 boldest. Values: 400-800.
+           - creative-h{1,2,3}-color: heading colors. Use text-primary or theme accent for h1.
+             h3 can use muted color. MUST be readable on surface-bg.
+           - creative-childless-size: usually 1em (normal text size).
+           - creative-childless-weight: usually 400 (normal weight).
+           - creative-bullet-size: bullet dot diameter in px. Range: 3px-6px.
+           - creative-bullet-color: bullet color. Can match brand or text-primary.
+           - creative-tree-line-color: vertical guide line color. Usually border-color or muted.
+           - creative-tree-line-opacity: 0.3-0.8. Subtle but visible.
+           - creative-h{1,2,3}-bg: heading row background color. Usually "transparent".
+             For dark/accent themes, h1 can use a subtle darker surface. Must not clash with text.
+           - For playful themes, vary heading colors. For minimal themes, keep sizes uniform.
       PROMPT
 
       response = @client.chat([
