@@ -47,6 +47,9 @@ module Collavre
       --creative-bullet-color
       --creative-tree-line-color
       --creative-tree-line-opacity
+      --creative-h1-bg
+      --creative-h2-bg
+      --creative-h3-bg
     ].freeze
 
     def initialize(client: default_client)
@@ -81,7 +84,8 @@ module Collavre
          "--creative-h1-color":"#1a1200","--creative-h2-color":"#1a1200","--creative-h3-color":"#5a4e00",
          "--creative-childless-size":"1em","--creative-childless-weight":"400",
          "--creative-bullet-size":"5px","--creative-bullet-color":"#1a1200",
-         "--creative-tree-line-color":"#c4b060","--creative-tree-line-opacity":"0.5"}
+         "--creative-tree-line-color":"#c4b060","--creative-tree-line-opacity":"0.5",
+         "--creative-h1-bg":"transparent","--creative-h2-bg":"transparent","--creative-h3-bg":"transparent"}
 
         "숲속" (green, light):
         {"--surface-bg":"#ecf4ef","--surface-nav":"#d5e2d7","--surface-section":"#e2f4e7",
@@ -101,7 +105,8 @@ module Collavre
          "--creative-h1-color":"#0a1f10","--creative-h2-color":"#0a1f10","--creative-h3-color":"#3a5040",
          "--creative-childless-size":"1em","--creative-childless-weight":"400",
          "--creative-bullet-size":"5px","--creative-bullet-color":"#25984d",
-         "--creative-tree-line-color":"#a0bca6","--creative-tree-line-opacity":"0.5"}
+         "--creative-tree-line-color":"#a0bca6","--creative-tree-line-opacity":"0.5",
+         "--creative-h1-bg":"transparent","--creative-h2-bg":"transparent","--creative-h3-bg":"transparent"}
 
         "토마토" (red/warm, light):
         {"--surface-bg":"#fbefea","--surface-nav":"#f7ded6","--surface-section":"#f5e8e4",
@@ -121,7 +126,8 @@ module Collavre
          "--creative-h1-color":"#1f0800","--creative-h2-color":"#1f0800","--creative-h3-color":"#5a3020",
          "--creative-childless-size":"1em","--creative-childless-weight":"400",
          "--creative-bullet-size":"5px","--creative-bullet-color":"#d40924",
-         "--creative-tree-line-color":"#d0a898","--creative-tree-line-opacity":"0.5"}
+         "--creative-tree-line-color":"#d0a898","--creative-tree-line-opacity":"0.5",
+         "--creative-h1-bg":"transparent","--creative-h2-bg":"transparent","--creative-h3-bg":"transparent"}
 
         "사이버펑크" (neon, dark):
         {"--surface-bg":"#070b14","--surface-nav":"#0f101f","--surface-section":"#12161f",
@@ -141,7 +147,8 @@ module Collavre
          "--creative-h1-color":"#e749df","--creative-h2-color":"#0099f0","--creative-h3-color":"#8a8c99",
          "--creative-childless-size":"1em","--creative-childless-weight":"400",
          "--creative-bullet-size":"4px","--creative-bullet-color":"#e749df",
-         "--creative-tree-line-color":"#2a2e3a","--creative-tree-line-opacity":"0.7"}
+         "--creative-tree-line-color":"#2a2e3a","--creative-tree-line-opacity":"0.7",
+         "--creative-h1-bg":"#0f101f","--creative-h2-bg":"#12161f","--creative-h3-bg":"transparent"}
 
         === RULES ===
 
@@ -170,6 +177,8 @@ module Collavre
            - creative-bullet-color: bullet color. Can match brand or text-primary.
            - creative-tree-line-color: vertical guide line color. Usually border-color or muted.
            - creative-tree-line-opacity: 0.3-0.8. Subtle but visible.
+           - creative-h{1,2,3}-bg: heading row background color. Usually "transparent".
+             For dark/accent themes, h1 can use a subtle darker surface. Must not clash with text.
            - For playful themes, vary heading colors. For minimal themes, keep sizes uniform.
       PROMPT
 
