@@ -220,4 +220,48 @@ class CreativesHelperTest < ActionView::TestCase
       assert_match(/Origin Child/, markdown)
     end
   end
+
+  # max_depth tests for render_creative_tree_markdown
+
+  test "render_creative_tree_markdown with max_depth limits tree depth" do
+    user = users(:one)
+
+    root = Collavre::Creative.create!(description: "Root", user: user)
+    child = Collavre::Creative.create!(description: "Child", parent: root, user: user)
+    Collavre::Creative.create!(description: "Grandchild", parent: child, user: user)
+
+    Current.set(user: user) do
+      # max_depth: 1 → only root (level 1), no children
+      md = render_creative_tree_markdown([ root ], 1, false, max_depth: 1)
+      assert_match(/Root/, md)
+      assert_no_match(/Child/, md)
+
+      # max_depth: 2 → root + children, no grandchildren
+      md = render_creative_tree_markdown([ root ], 1, false, max_depth: 2)
+      assert_match(/Root/, md)
+      assert_match(/Child/, md)
+      assert_no_match(/Grandchild/, md)
+
+      # max_depth: 3 → root + children + grandchildren
+      md = render_creative_tree_markdown([ root ], 1, false, max_depth: 3)
+      assert_match(/Root/, md)
+      assert_match(/Child/, md)
+      assert_match(/Grandchild/, md)
+    end
+  end
+
+  test "render_creative_tree_markdown without max_depth includes all levels" do
+    user = users(:one)
+
+    root = Collavre::Creative.create!(description: "Root", user: user)
+    child = Collavre::Creative.create!(description: "Child", parent: root, user: user)
+    Collavre::Creative.create!(description: "Grandchild", parent: child, user: user)
+
+    Current.set(user: user) do
+      md = render_creative_tree_markdown([ root ], 1, false)
+      assert_match(/Root/, md)
+      assert_match(/Child/, md)
+      assert_match(/Grandchild/, md)
+    end
+  end
 end

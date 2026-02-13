@@ -36,5 +36,32 @@ module Collavre
       @user.agent_conf = ""
       assert_equal 50, @user.chat_history_limit
     end
+
+    # creative_children_level tests
+
+    test "creative_children_level returns default 6 when agent_conf is blank" do
+      @user.agent_conf = nil
+      assert_equal 6, @user.creative_children_level
+    end
+
+    test "creative_children_level returns default 6 when set to nil" do
+      @user.agent_conf = "context:\n  creative_children_level:"
+      assert_equal 6, @user.creative_children_level
+    end
+
+    test "creative_children_level returns 0 when set to 0" do
+      @user.agent_conf = "context:\n  creative_children_level: 0"
+      assert_equal 0, @user.creative_children_level
+    end
+
+    test "creative_children_level returns configured value" do
+      @user.agent_conf = "context:\n  creative_children_level: 2"
+      assert_equal 2, @user.creative_children_level
+    end
+
+    test "creative_children_level coerces string to integer" do
+      @user.agent_conf = "context:\n  creative_children_level: '3'"
+      assert_equal 3, @user.creative_children_level
+    end
   end
 end
