@@ -45,7 +45,7 @@ en:
         tools_description: These tools are available for the agent to use.
         no_tools_found: No tools found.
         agent_conf_label: "Agent Configuration (YAML)"
-        agent_conf_help: "YAML configuration for agent behavior. chat_history: max previous messages (default 50), chat_history_size: max total characters (default 100000)."
+        agent_conf_help: "YAML configuration for agent behavior. chat_history: max previous messages (default 50), chat_history_size: max total characters (default 100000), context.creative_children_level: depth of children to include in creative context (default nil → follows user setting, 0=no children, 1=direct children, 2=grandchildren)."
         chat_title: Chat with Agent
         chat_placeholder: Type a message to test the agent...
       update_ai:
