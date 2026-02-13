@@ -75,12 +75,32 @@
   position: absolute;
   top: 0.75em;
   right: 0.75em;
-  background: none;
+  background: transparent;
   border: none;
   font-size: 1.2em;
   line-height: 1;
   cursor: pointer;
   color: var(--text-primary);
+  opacity: 0.6;
+}
+
+.popup-close-btn:hover {
+  opacity: 1;
+}
+
+.delete-share-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 1.1em;
+  opacity: 0.6;
+  padding: 0 0.5em;
+}
+
+.delete-share-btn:hover {
+  opacity: 1;
+  color: var(--danger);
 }
 
 #github-integration-modal .github-modal-status {
