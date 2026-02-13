@@ -35,6 +35,7 @@ Rails.application.routes.draw do
   # Admin settings (host app specific)
   get "/admin", to: "admin/settings#index"
   get "/admin/uiux", to: "admin/settings#uiux", as: :admin_uiux
+  patch "/admin/uiux", to: "admin/settings#update_uiux"
   namespace :admin do
     resource :settings, only: [ :update ]
   end

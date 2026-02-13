@@ -36,6 +36,28 @@ module Admin
       @available_themes = Collavre::UserTheme.all.order(:name)
     end
 
+    def update_uiux
+      SystemSetting.transaction do
+        light_theme_id = params[:default_light_theme_id].to_s.strip
+        light_theme_setting = SystemSetting.find_or_initialize_by(key: "default_light_theme_id")
+        light_theme_setting.value = light_theme_id.present? ? light_theme_id : nil
+        light_theme_setting.save!
+
+        dark_theme_id = params[:default_dark_theme_id].to_s.strip
+        dark_theme_setting = SystemSetting.find_or_initialize_by(key: "default_dark_theme_id")
+        dark_theme_setting.value = dark_theme_id.present? ? dark_theme_id : nil
+        dark_theme_setting.save!
+      end
+
+      redirect_to admin_uiux_path, notice: t("admin.settings.updated")
+    rescue ActiveRecord::RecordInvalid => e
+      flash.now[:alert] = e.record.errors.full_messages.join(", ")
+      @default_light_theme_id = params[:default_light_theme_id]
+      @default_dark_theme_id = params[:default_dark_theme_id]
+      @available_themes = Collavre::UserTheme.all.order(:name)
+      render :uiux, status: :unprocessable_entity
+    end
+
     def update
       begin
         SystemSetting.transaction do
@@ -125,17 +147,6 @@ module Admin
           api_period_setting = SystemSetting.find_or_initialize_by(key: "api_rate_period_minutes")
           api_period_setting.value = api_period.to_s
           api_period_setting.save!
-
-          # Default Themes (light/dark mode)
-          light_theme_id = params[:default_light_theme_id].to_s.strip
-          light_theme_setting = SystemSetting.find_or_initialize_by(key: "default_light_theme_id")
-          light_theme_setting.value = light_theme_id.present? ? light_theme_id : nil
-          light_theme_setting.save!
-
-          dark_theme_id = params[:default_dark_theme_id].to_s.strip
-          dark_theme_setting = SystemSetting.find_or_initialize_by(key: "default_dark_theme_id")
-          dark_theme_setting.value = dark_theme_id.present? ? dark_theme_id : nil
-          dark_theme_setting.save!
 
           # Auth Providers
           auth_providers = Array(params[:auth_providers]).reject(&:blank?)

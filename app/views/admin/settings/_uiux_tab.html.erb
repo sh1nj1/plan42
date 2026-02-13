@@ -1,6 +1,6 @@
 <section class="tab-panel active">
   <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
-  <%= form_with url: admin_settings_path, method: :patch, local: true, html: { class: 'profile-form' } do |f| %>
+  <%= form_with url: admin_uiux_path, method: :patch, local: true, html: { class: 'profile-form' } do |f| %>
 
     <div>
       <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.default_themes') %></h3>
