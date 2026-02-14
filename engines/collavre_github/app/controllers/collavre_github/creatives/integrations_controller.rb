@@ -10,6 +10,10 @@ module CollavreGithub
         account = Current.user.github_account
         links = linked_repository_links(account)
 
+        # Also include repositories linked by other users for this creative
+        all_links = @creative.github_repository_links.includes(:github_account)
+        all_repositories = all_links.map(&:repository_full_name).uniq
+
         render json: {
           connected: account.present?,
           account: account && {
@@ -18,6 +22,7 @@ module CollavreGithub
             avatar_url: account.avatar_url
           },
           selected_repositories: links.map(&:repository_full_name),
+          all_repositories: all_repositories,
           webhooks: serialize_webhooks(links),
           github_gemini_prompt: @origin.github_gemini_prompt_template
         }
