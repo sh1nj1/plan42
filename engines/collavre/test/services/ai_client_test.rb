@@ -24,7 +24,11 @@ class AiClientTest < ActiveSupport::TestCase
     end
 
     def add_message(role:, content:)
-      @messages_added << { "role" => role.to_s, "parts" => [ { "text" => content } ] }
+      if content.is_a?(RubyLLM::Content)
+        @messages_added << { "role" => role.to_s, "content" => content }
+      else
+        @messages_added << { "role" => role.to_s, "parts" => [ { "text" => content } ] }
+      end
     end
 
     def messages
@@ -133,6 +137,60 @@ class AiClientTest < ActiveSupport::TestCase
     assert_nil log_data["error_message"]
     assert_equal 10, log_data["input_tokens"]
     assert_equal 20, log_data["output_tokens"]
+  end
+
+  test "add_messages handles image parts with Content" do
+    conversation = FakeConversation.new
+
+    client = Collavre::AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: "system",
+      llm_api_key: "api-key"
+    )
+
+    # Create a temporary file to simulate an image source
+    tempfile = Tempfile.new([ "test", ".png" ])
+    tempfile.write("\x89PNG\r\n\x1a\n") # PNG header
+    tempfile.rewind
+
+    messages = [
+      { role: "user", parts: [ { text: "What is this?" }, { image: tempfile.path } ] }
+    ]
+
+    client.send(:add_messages, conversation, messages)
+
+    assert_equal 1, conversation.messages_added.size
+    msg = conversation.messages_added.first
+    assert_equal "user", msg["role"]
+    assert_instance_of RubyLLM::Content, msg["content"]
+    assert_equal "What is this?", msg["content"].text
+    assert_equal 1, msg["content"].attachments.size
+  ensure
+    tempfile&.close
+    tempfile&.unlink
+  end
+
+  test "add_messages works with text-only parts unchanged" do
+    conversation = FakeConversation.new
+
+    client = Collavre::AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: "system",
+      llm_api_key: "api-key"
+    )
+
+    messages = [
+      { role: "user", parts: [ { text: "hello" } ] }
+    ]
+
+    client.send(:add_messages, conversation, messages)
+
+    assert_equal 1, conversation.messages_added.size
+    msg = conversation.messages_added.first
+    assert_equal "user", msg["role"]
+    assert_equal [ { "text" => "hello" } ], msg["parts"]
   end
 
   test "logs error details when chat fails" do
