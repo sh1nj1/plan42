@@ -159,9 +159,18 @@ module Collavre
         next unless role
 
         text = extract_message_text(message)
-        next if text.blank?
+        image_sources = extract_image_sources(message)
 
-        conversation.add_message(role:, content: text)
+        next if text.blank? && image_sources.empty?
+
+        if image_sources.any?
+          content = RubyLLM::Content.new(text.presence, image_sources)
+          conversation.add_message(role:, content: content)
+        else
+          next if text.blank?
+
+          conversation.add_message(role:, content: text)
+        end
       end
     end
 
@@ -175,6 +184,13 @@ module Collavre
       else
         nil
       end
+    end
+
+    def extract_image_sources(message)
+      parts = message[:parts] || message["parts"]
+      return [] if parts.nil?
+
+      Array(parts).filter_map { |part| part[:image] || part["image"] }
     end
 
     def extract_message_text(message)

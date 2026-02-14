@@ -265,7 +265,16 @@ module Collavre
         payload_text = MentionParser.strip_self_mention(payload_text, @agent.name)
         payload_text = "[#{sender_name}]: #{payload_text}"
       end
-      messages << { role: "user", parts: [ { text: payload_text } ] }
+      trigger_parts = [ { text: payload_text } ]
+
+      # Include images from the trigger comment if present
+      if @original_comment&.images&.attached?
+        @original_comment.images.each do |image|
+          trigger_parts << { image: image.blob }
+        end
+      end
+
+      messages << { role: "user", parts: trigger_parts }
 
       messages
     end

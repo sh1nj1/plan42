@@ -198,6 +198,47 @@ module CollavreOpenclaw
       end
     end
 
+    def extract_image_sources(message)
+      parts = message[:parts] || message["parts"]
+      return [] if parts.nil?
+
+      Array(parts).filter_map { |part| part[:image] || part["image"] }
+    end
+
+    def encode_image_source(source)
+      if defined?(ActiveStorage) && source.is_a?(ActiveStorage::Blob)
+        data = Base64.strict_encode64(source.download)
+        {
+          type: "image_url",
+          image_url: { url: "data:#{source.content_type};base64,#{data}" }
+        }
+      elsif source.respond_to?(:download)
+        # ActiveStorage::Attached::One
+        blob = source.respond_to?(:blob) ? source.blob : source
+        return nil unless blob
+
+        data = Base64.strict_encode64(blob.download)
+        {
+          type: "image_url",
+          image_url: { url: "data:#{blob.content_type};base64,#{data}" }
+        }
+      elsif source.is_a?(String) && source.match?(%r{^https?://})
+        { type: "image_url", image_url: { url: source } }
+      elsif source.is_a?(String)
+        # File path
+        return nil unless File.exist?(source)
+
+        mime = Marcel::MimeType.for(Pathname.new(source))
+        data = Base64.strict_encode64(File.binread(source))
+        { type: "image_url", image_url: { url: "data:#{mime};base64,#{data}" } }
+      else
+        nil
+      end
+    rescue StandardError => e
+      Rails.logger.warn("[CollavreOpenclaw] Failed to encode image: #{e.message}")
+      nil
+    end
+
     # ─────────────────────────────────────────────
     # HTTP transport (fallback)
     # ─────────────────────────────────────────────
@@ -308,14 +349,25 @@ module CollavreOpenclaw
     def format_messages(messages)
       Array(messages).map do |msg|
         role = msg[:role] || msg["role"]
-        content = extract_message_text(msg)
+        text = extract_message_text(msg)
 
         sender_name = msg[:sender_name] || msg["sender_name"]
         if sender_name.present? && normalize_role(role) == "user"
-          content = "[#{sender_name}]: #{content}"
+          text = "[#{sender_name}]: #{text}"
         end
 
-        { role: normalize_role(role), content: content.to_s }
+        image_sources = extract_image_sources(msg)
+
+        if image_sources.any?
+          content_parts = [ { type: "text", text: text.to_s } ]
+          image_sources.each do |source|
+            image_data = encode_image_source(source)
+            content_parts << image_data if image_data
+          end
+          { role: normalize_role(role), content: content_parts }
+        else
+          { role: normalize_role(role), content: text.to_s }
+        end
       end
     end
 
