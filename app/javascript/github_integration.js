@@ -150,7 +150,7 @@ if (!githubIntegrationInitialized) {
         return;
       }
       clearError();
-      fetch(`/creatives/${creativeId}/github_integration`, { headers: { Accept: 'application/json' } })
+      fetch(`/github/creatives/${creativeId}/integration`, { headers: { Accept: 'application/json' } })
         .then(function (response) { return response.json(); })
         .then(function (data) {
           if (!data.connected) {
@@ -427,7 +427,7 @@ if (!githubIntegrationInitialized) {
       clearError();
       const payload = { repositories: Array.from(selectedRepos) };
       if (promptInput) payload.github_gemini_prompt = promptInput.value;
-      fetch(`/creatives/${creativeId}/github_integration`, {
+      fetch(`/github/creatives/${creativeId}/integration`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -531,7 +531,7 @@ if (!githubIntegrationInitialized) {
       }
       if (!window.confirm(deleteConfirm)) return;
 
-      fetch(`/creatives/${creativeId}/github_integration`, {
+      fetch(`/github/creatives/${creativeId}/integration`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
