@@ -171,6 +171,52 @@ class AiClientTest < ActiveSupport::TestCase
     tempfile&.unlink
   end
 
+  test "add_messages passes ActiveStorage blob as RubyLLM attachment" do
+    conversation = FakeConversation.new
+
+    client = Collavre::AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: "system",
+      llm_api_key: "api-key"
+    )
+
+    # Create a real ActiveStorage blob
+    blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new("\x89PNG\r\n\x1a\n" + "\x00" * 100),
+      filename: "test_image.png",
+      content_type: "image/png"
+    )
+
+    messages = [
+      { role: "user", parts: [ { text: "Describe this image" }, { image: blob } ] }
+    ]
+
+    client.send(:add_messages, conversation, messages)
+
+    assert_equal 1, conversation.messages_added.size
+    msg = conversation.messages_added.first
+    assert_equal "user", msg["role"]
+
+    content = msg["content"]
+    assert_instance_of RubyLLM::Content, content
+    assert_equal "Describe this image", content.text
+    assert_equal 1, content.attachments.size
+
+    attachment = content.attachments.first
+    assert_instance_of RubyLLM::Attachment, attachment
+    assert attachment.active_storage?, "Attachment should recognize ActiveStorage blob"
+    assert_equal "image/png", attachment.mime_type
+    assert attachment.image?, "Attachment should be recognized as image"
+
+    # Verify the attachment can actually download content
+    downloaded = attachment.content
+    assert downloaded.present?, "Attachment content should be downloadable"
+    assert downloaded.start_with?("\x89PNG".b), "Downloaded content should be PNG data"
+  ensure
+    blob&.purge
+  end
+
   test "add_messages works with text-only parts unchanged" do
     conversation = FakeConversation.new
 
