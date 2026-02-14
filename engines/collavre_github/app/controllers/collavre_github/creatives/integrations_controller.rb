@@ -2,6 +2,7 @@ module CollavreGithub
   module Creatives
     class IntegrationsController < ApplicationController
       before_action :set_creative
+      before_action :set_origin
       before_action :ensure_read_permission
       before_action :ensure_admin_permission, only: [ :show, :update ]
 
@@ -18,7 +19,7 @@ module CollavreGithub
           },
           selected_repositories: links.map(&:repository_full_name),
           webhooks: serialize_webhooks(links),
-          github_gemini_prompt: @creative.github_gemini_prompt_template
+          github_gemini_prompt: @origin.github_gemini_prompt_template
         }
       end
 
@@ -41,7 +42,7 @@ module CollavreGithub
             .delete_all
 
           repositories.each do |full_name|
-            @creative.github_repository_links.find_or_create_by!(
+            @origin.github_repository_links.find_or_create_by!(
               github_account: account,
               repository_full_name: full_name
             )
@@ -50,7 +51,7 @@ module CollavreGithub
           links = linked_repository_links(account).to_a
 
           if prompt_param
-            @creative.update!(github_gemini_prompt: prompt_param.presence)
+            @origin.update!(github_gemini_prompt: prompt_param.presence)
           end
         end
 
@@ -64,7 +65,7 @@ module CollavreGithub
           success: true,
           selected_repositories: links.map(&:repository_full_name),
           webhooks: serialize_webhooks(links),
-          github_gemini_prompt: @creative.github_gemini_prompt_template
+          github_gemini_prompt: @origin.github_gemini_prompt_template
         }
       rescue ActiveRecord::RecordInvalid => e
         render json: { error: e.message }, status: :unprocessable_entity
@@ -133,7 +134,7 @@ module CollavreGithub
           success: true,
           selected_repositories: links.pluck(:repository_full_name),
           webhooks: serialize_webhooks(links),
-          github_gemini_prompt: @creative.github_gemini_prompt_template
+          github_gemini_prompt: @origin.github_gemini_prompt_template
         }
       end
 
@@ -141,6 +142,10 @@ module CollavreGithub
 
       def set_creative
         @creative = Collavre::Creative.find(params[:creative_id])
+      end
+
+      def set_origin
+        @origin = @creative.effective_origin
       end
 
       def ensure_read_permission
@@ -158,7 +163,7 @@ module CollavreGithub
       def linked_repository_links(account)
         return CollavreGithub::RepositoryLink.none unless account
 
-        @creative.github_repository_links.where(github_account: account)
+        @origin.github_repository_links.where(github_account: account)
       end
 
       def integration_params
