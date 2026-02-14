@@ -137,6 +137,62 @@ module CollavreOpenclaw
       assert_equal "Response", formatted[0][:content]
     end
 
+    test "format_messages includes image as base64 data URL in OpenAI format" do
+      user = build_test_user(gateway_url: "https://test-gateway.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: {}
+      )
+
+      blob = ActiveStorage::Blob.create_and_upload!(
+        io: StringIO.new("\x89PNG\r\n\x1a\n" + "\x00" * 100),
+        filename: "test.png",
+        content_type: "image/png"
+      )
+
+      messages = [
+        { role: "user", parts: [ { text: "What is this?" }, { image: blob } ] }
+      ]
+
+      formatted = adapter.send(:format_messages, messages)
+
+      assert_equal 1, formatted.size
+      msg = formatted.first
+      assert_equal "user", msg[:role]
+      assert_instance_of Array, msg[:content]
+      assert_equal 2, msg[:content].size
+
+      text_part = msg[:content].find { |p| p[:type] == "text" }
+      image_part = msg[:content].find { |p| p[:type] == "image_url" }
+
+      assert_equal "What is this?", text_part[:text]
+      assert image_part[:image_url][:url].start_with?("data:image/png;base64,")
+    ensure
+      blob&.purge
+    end
+
+    test "format_messages keeps plain text when no images" do
+      user = build_test_user(gateway_url: "https://test-gateway.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: {}
+      )
+
+      messages = [
+        { role: "user", parts: [ { text: "Hello" } ] }
+      ]
+
+      formatted = adapter.send(:format_messages, messages)
+
+      assert_equal "user", formatted.first[:role]
+      assert_equal "Hello", formatted.first[:content]
+      assert_instance_of String, formatted.first[:content]
+    end
+
     test "builds session key based on topic" do
       user = build_test_user(gateway_url: "https://test-gateway.com")
 
