@@ -71,6 +71,12 @@
   font-size: 1.1em;
 }
 
+.popup-box input,
+.popup-box select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .popup-close-btn {
   position: absolute;
   top: 0.75em;
