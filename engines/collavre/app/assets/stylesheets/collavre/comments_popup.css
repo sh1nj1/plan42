@@ -1065,3 +1065,8 @@ body.chat-fullscreen {
         border-color: var(--border-color);
     }
 }
+
+/* Override popup-close-btn absolute positioning inside comments popup header */
+.comments-popup-actions .popup-close-btn {
+  position: static;
+}

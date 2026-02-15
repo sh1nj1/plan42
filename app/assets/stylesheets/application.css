@@ -434,12 +434,8 @@ button {
 }
 
 #close-inbox {
+    position: static;
     color: var(--color-nav-text);
-    background: none;
-    border: none;
-    font-size: 1.2em;
-    line-height: 1;
-    cursor: pointer;
 }
 
 #inbox-panel {

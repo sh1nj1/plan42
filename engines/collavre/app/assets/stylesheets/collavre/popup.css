@@ -77,11 +77,13 @@
   right: 0.75em;
   background: transparent;
   border: none;
+  padding: 0;
   font-size: 1.2em;
   line-height: 1;
   cursor: pointer;
   color: var(--text-primary);
   opacity: 0.6;
+  appearance: none;
 }
 
 .popup-close-btn:hover {
@@ -91,8 +93,10 @@
 .delete-share-btn {
   background: transparent;
   border: none;
+  padding: 0;
   cursor: pointer;
   color: var(--text-primary);
+  appearance: none;
   font-size: 1.1em;
   opacity: 0.6;
   padding: 0 0.5em;
