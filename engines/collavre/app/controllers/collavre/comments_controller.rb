@@ -163,24 +163,33 @@ module Collavre
       if @comment.save
 
         # Dispatch system event
-        ::SystemEvents::Dispatcher.dispatch("comment_created", {
-          comment: {
-            id: @comment.id,
-            content: @comment.content,
-            user_id: @comment.user_id,
-            quoted_comment_id: @comment.quoted_comment_id
-          }.compact,
-          creative: {
-            id: @creative.id,
-            description: @creative.description
-          },
-          topic: {
-            id: @comment.topic_id
-          },
-          chat: {
-            content: @comment.content
-          }
-        }) unless @comment.private? || response.present?
+        unless @comment.private? || response.present?
+          begin
+            ::SystemEvents::Dispatcher.dispatch("comment_created", {
+              comment: {
+                id: @comment.id,
+                content: @comment.content,
+                user_id: @comment.user_id,
+                quoted_comment_id: @comment.quoted_comment_id
+              }.compact,
+              creative: {
+                id: @creative.id,
+                description: @creative.description
+              },
+              topic: {
+                id: @comment.topic_id
+              },
+              chat: {
+                content: @comment.content
+              }
+            })
+          rescue => e
+            Rails.logger.error(
+              "[SystemEvents] Dispatch failed for comment #{@comment.id}: " \
+              "#{e.class} #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}"
+            )
+          end
+        end
         @comment = Comment.with_attached_images.includes(:comment_reactions).find(@comment.id)
         render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }, status: :created
       else
