@@ -23,6 +23,15 @@ module Collavre
                  "For 'delete': { action: 'delete', id: <int> }\n\n" \
                  "Fields other than 'action' and 'id'/'parent_id' are optional.", required: true
 
+      class BatchRollbackError < StandardError
+        attr_reader :results
+
+        def initialize(results)
+          @results = results
+          super("Batch operation failed")
+        end
+      end
+
       sig { params(operations: T::Array[T::Hash[String, T.untyped]]).returns(T::Hash[Symbol, T.untyped]) }
       def call(operations:)
         raise "Current.user is required" unless Current.user
@@ -46,18 +55,14 @@ module Collavre
             result[:action] = action
             results << result
 
-            if result[:error]
-              raise ActiveRecord::Rollback
-            end
+            raise BatchRollbackError, results if result[:error]
           end
         end
 
-        failed = results.find { |r| r[:error] }
-        if failed
-          { success: false, error: "Operation #{failed[:index]} (#{failed[:action]}) failed: #{failed[:error]}", results: results }
-        else
-          { success: true, results: results }
-        end
+        { success: true, results: results }
+      rescue BatchRollbackError => e
+        failed = e.results.find { |r| r[:error] }
+        { success: false, error: "Operation #{failed[:index]} (#{failed[:action]}) failed: #{failed[:error]}", results: e.results }
       end
 
       private
@@ -81,8 +86,8 @@ module Collavre
         service.call(
           id: id,
           description: op["description"],
-          progress: op["progress"]&.to_f,
-          parent_id: op["parent_id"]&.to_i
+          progress: op.key?("progress") ? op["progress"]&.to_f : nil,
+          parent_id: op.key?("parent_id") ? op["parent_id"]&.to_i : nil
         )
       end
 

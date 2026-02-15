@@ -153,6 +153,10 @@ module Collavre
 
         def delete_creative(payload)
           creative = find_target_creative(payload)
+          executor = comment.user || Current.user
+          unless creative.has_permission?(executor, :write)
+            raise InvalidActionError, I18n.t("collavre.comments.approve_no_write_permission")
+          end
           creative.destroy!
         end
 
