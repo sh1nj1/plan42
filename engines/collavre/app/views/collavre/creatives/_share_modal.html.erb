@@ -10,7 +10,7 @@
            data-share-user-search-creative-id-value="<%= (@parent_creative || @creative).id %>"
            data-share-user-search-scope-value="contacts">
         <label for="share-user-email"><%= t('collavre.creatives.index.user_email') %></label>
-        <input type="email" name="user_email" id="share-user-email" style="width:100%;box-sizing:border-box;" 
+        <input type="email" name="user_email" id="share-user-email" 
           data-share-invite-target="email" 
           data-share-user-search-target="input"
           data-action="blur->share-invite#check input->share-user-search#input focus->share-user-search#focus keydown->share-user-search#handleKey"
@@ -18,7 +18,7 @@
         <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'share-user-suggestions') %>
       </div>
       <div style="margin-bottom:1em;">
-        <select name="permission" id="share-permission" style="width:100%;box-sizing:border-box;">
+        <select name="permission" id="share-permission">
           <option value="no_access"><%= t('collavre.creatives.index.permission_no_access') %></option>
           <option value="read"><%= t('collavre.creatives.index.permission_read') %></option>
           <option value="feedback"><%= t('collavre.creatives.index.permission_feedback') %></option>
