@@ -129,9 +129,12 @@ module Collavre
       tool_name = tool_call.name
       task = context&.dig(:task)
 
-      # Check if this tool requires approval
+      # Check if this tool requires approval (dynamic McpTool or system tool)
       mcp_tool = McpTool.find_by(name: tool_name)
-      return unless mcp_tool&.requires_approval?
+      system_tool_class = ToolMeta.registry.find { |klass| klass.tool_metadata[:name] == tool_name }
+      requires = mcp_tool&.requires_approval? ||
+                 (system_tool_class.respond_to?(:requires_approval?) && system_tool_class.requires_approval?)
+      return unless requires
 
       # Check if we already have approval for this specific call (resume scenario)
       if task&.pending_tool_call.present?

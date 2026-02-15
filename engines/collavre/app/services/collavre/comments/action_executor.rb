@@ -73,6 +73,7 @@ module Collavre
         SUPPORTED_ACTIONS = {
           "create_creative" => :create_creative,
           "update_creative" => :update_creative,
+          "delete_creative" => :delete_creative,
           "approve_tool" => :approve_tool,
           "execute_tool" => :execute_tool
         }.freeze
@@ -148,6 +149,11 @@ module Collavre
           creative.save!
         rescue ActiveRecord::RecordInvalid => e
           raise InvalidActionError, e.record.errors.full_messages.to_sentence
+        end
+
+        def delete_creative(payload)
+          creative = find_target_creative(payload)
+          creative.destroy!
         end
 
         def approve_tool(payload)

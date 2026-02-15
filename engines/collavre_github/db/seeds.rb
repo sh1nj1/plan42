@@ -23,33 +23,26 @@ module CollavreGithub
       - Consider the PR title, description, and commit messages for context
 
       ## Response Format:
-      After your analysis, if you identify tasks to update or create, respond with an action comment.
+      After your analysis, use the `creative_batch_service` tool to apply all changes at once.
+      This tool accepts an array of operations (create, update, delete) and executes them in a single transaction.
 
-      For completed tasks, suggest updating progress to 1.0:
-      ```json
-      {
-        "actions": [
-          { "action": "update_creative", "creative_id": <id>, "attributes": { "progress": 1.0 } }
-        ]
-      }
+      Example tool call:
       ```
-
-      For new tasks discovered:
-      ```json
-      {
-        "actions": [
-          { "action": "create_creative", "parent_id": <parent_id>, "attributes": { "description": "Task description" } }
+      creative_batch_service({
+        operations: [
+          { action: "update", id: 123, progress: 1.0 },
+          { action: "create", parent_id: 456, description: "New task discovered" },
+          { action: "delete", id: 789 }
         ]
-      }
+      })
       ```
-
-      You can combine multiple actions in a single response.
 
       ## Important:
       - Only suggest updates for tasks that are clearly addressed by the PR
       - Be conservative - don't mark tasks complete unless the PR clearly resolves them
-      - Provide a brief summary of your analysis before the action JSON
-      - If no task updates are needed, just provide your analysis summary without action JSON
+      - Provide a brief summary of your analysis before calling the tool
+      - If no task updates are needed, just provide your analysis summary without calling any tool
+      - The batch tool requires approval — a human will review and approve your changes before they are applied
     PROMPT
 
     # Matches GitHub PR merged events
@@ -69,7 +62,7 @@ module CollavreGithub
       github_pr_diff
       github_pr_commits
       creative_retrieval_service
-      creative_update_service
+      creative_batch_service
     ].freeze
 
     def self.call
