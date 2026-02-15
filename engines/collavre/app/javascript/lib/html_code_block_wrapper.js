@@ -8,8 +8,10 @@
 export function wrapHtmlInCodeBlocks(text) {
   if (!text) return { changed: false, result: text }
 
-  // Already wrapped in code block — don't double-wrap
-  if (text.trimStart().startsWith('```')) return { changed: false, result: text }
+  // If entire text is a single code block, skip
+  if (text.trimStart().startsWith('```') && text.trimEnd().endsWith('```')) {
+    return { changed: false, result: text }
+  }
 
   const segments = extractHtmlSegments(text)
   if (!segments) return { changed: false, result: text }
@@ -112,6 +114,21 @@ function extractHtmlSegments(text) {
 
   // Sort by position
   segments.sort((a, b) => a.start - b.start)
+
+  // Filter out segments inside existing markdown code blocks
+  const codeBlockRanges = []
+  const codeBlockRe = /^```[^\n]*\n[\s\S]*?^```/gm
+  let cbMatch
+  while ((cbMatch = codeBlockRe.exec(text)) !== null) {
+    codeBlockRanges.push({ start: cbMatch.index, end: cbMatch.index + cbMatch[0].length })
+  }
+  if (codeBlockRanges.length > 0) {
+    const filtered = segments.filter(
+      (seg) => !codeBlockRanges.some((cb) => seg.start >= cb.start && seg.end <= cb.end)
+    )
+    return filtered.length > 0 ? filtered : null
+  }
+
   return segments
 }
 

@@ -168,4 +168,34 @@ describe('wrapHtmlInCodeBlocks', () => {
     expect(result).toBe('test \n\n```html\n<html><h1>hello</h1></html>\n```')
     expect(result).toContain('\n\n```html')
   })
+
+  // --- Double-wrap prevention ---
+
+  test('does not double-wrap HTML inside existing code blocks', () => {
+    const input = '"\n```html\n<button type="button" class="popup-close-btn">×</button>\n```\n"'
+    const { changed } = wrapHtmlInCodeBlocks(input)
+    expect(changed).toBe(false)
+  })
+
+  test('does not wrap HTML inside code blocks but wraps HTML outside', () => {
+    const input = 'before\n```html\n<div>inside</div>\n```\nafter <span>outside</span> end'
+    const { changed, result } = wrapHtmlInCodeBlocks(input)
+    expect(changed).toBe(true)
+    expect(result).toContain('```html\n<div>inside</div>\n```')
+    expect(result).toContain('```html\n<span>outside</span>\n```')
+    // The inside div should NOT be double-wrapped
+    expect(result).not.toContain('```html\n```html')
+  })
+
+  test('mixed text with code block containing HTML is not double-wrapped', () => {
+    const input = 'some text\n```\n<button>click</button>\n```\nmore text'
+    const { changed } = wrapHtmlInCodeBlocks(input)
+    expect(changed).toBe(false)
+  })
+
+  test('text starting with quote then code block is not double-wrapped', () => {
+    const input = '"\n```html\n<button id="close-slack-modal" class="popup-close-btn">×</button>\n```\n"'
+    const { changed } = wrapHtmlInCodeBlocks(input)
+    expect(changed).toBe(false)
+  })
 })
