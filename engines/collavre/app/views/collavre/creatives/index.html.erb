@@ -60,6 +60,11 @@
   <button id="export-markdown-btn" class="export-btn desktop-only" data-parent-creative-id="<%= @parent_creative&.id %>" data-error="<%= t('collavre.creatives.index.export_failed') %>"><%= t('.export_markdown') %></button>
   <%= render 'mobile_actions_menu', current_creative: current_creative, can_manage_integrations: can_manage_integrations %>
 </div>
+
+<% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
+  <%= render 'share_modal' %>
+<% end %>
+
   <%= render 'import_upload_zone' %>
 
 <% if can_manage_integrations %>
