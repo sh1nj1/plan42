@@ -44,6 +44,7 @@ ko:
       approve_invalid_attributes: 댓글 작업 속성은 객체 형식이어야 합니다.
       approve_no_attributes: 댓글 작업에는 최소 한 개의 허용 속성이 포함되어야 합니다.
       approve_invalid_creative: 댓글 작업이 잘못된 크리에이티브를 대상으로 하고 있습니다.
+      approve_no_write_permission: 이 크리에이티브에 대한 쓰기 권한이 없습니다.
       approve_invalid_progress: 댓글 작업 진행률은 숫자여야 합니다.
       approve_invalid_description: 댓글 작업 설명은 텍스트여야 합니다.
       approved_label: 승인됨
