@@ -286,8 +286,11 @@ if (!githubIntegrationInitialized) {
       }
       organizations.forEach(function (org) {
         const label = document.createElement('label');
-        label.style.display = 'block';
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '0.5em';
         label.style.marginBottom = '0.5em';
+        label.style.cursor = 'pointer';
 
         const input = document.createElement('input');
         input.type = 'radio';
@@ -303,7 +306,6 @@ if (!githubIntegrationInitialized) {
         span.textContent = org.name || org.login;
 
         label.appendChild(input);
-        label.appendChild(document.createTextNode(' '));
         label.appendChild(span);
         orgList.appendChild(label);
       });
@@ -340,8 +342,11 @@ if (!githubIntegrationInitialized) {
       }
       repositories.forEach(function (repo) {
         const label = document.createElement('label');
-        label.style.display = 'block';
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '0.5em';
         label.style.marginBottom = '0.5em';
+        label.style.cursor = 'pointer';
 
         const input = document.createElement('input');
         input.type = 'checkbox';
@@ -359,7 +364,6 @@ if (!githubIntegrationInitialized) {
         span.textContent = repo.full_name;
 
         label.appendChild(input);
-        label.appendChild(document.createTextNode(' '));
         label.appendChild(span);
         repoList.appendChild(label);
       });
