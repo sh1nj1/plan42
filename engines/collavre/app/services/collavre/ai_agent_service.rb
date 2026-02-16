@@ -13,30 +13,25 @@ module Collavre
 
     def call
       Current.set(user: @agent) do
-        # Log start action
         log_action("start", { message: "Starting agent execution" })
 
-        # Set original comment early so build_messages can check review_eligible?
         target_comment_id = @context.dig("comment", "id")
         @original_comment = target_comment_id ? Comment.find_by(id: target_comment_id) : nil
 
-        # Prepare messages for AI
-        messages = build_messages
+        messages = AiAgent::MessageBuilder.new(
+          agent: @agent, context: @context, original_comment: @original_comment
+        ).build
 
-        # Log prompt generation
         log_action("prompt_generated", { messages: messages })
 
-        # Call AI Client
         @response_content = ""
 
-        # Enrich context for rendering
         rendering_context = @context.dup
         if @context.dig("creative", "id")
           creative = Creative.find_by(id: @context["creative"]["id"])
           rendering_context["creative"] = creative.as_json if creative
         end
 
-        # Add agent collaboration context
         agent_context = build_agent_context(creative)
         rendering_context.merge!(agent_context)
 
@@ -45,16 +40,14 @@ module Collavre
           context: rendering_context
         ).render
 
-        # Append collaboration guide to system prompt
         collaboration_prompt = build_collaboration_prompt(creative)
         rendered_system_prompt = "#{rendered_system_prompt}\n\n#{collaboration_prompt}" if collaboration_prompt.present?
 
-        # Create a placeholder comment to stream into
         @reply_comment = nil
 
         if @original_comment
           @reply_comment = @original_comment.creative.comments.create!(
-            content: Comment::STREAMING_PLACEHOLDER_CONTENT, # Placeholder — replaced during streaming
+            content: Comment::STREAMING_PLACEHOLDER_CONTENT,
             user: @agent,
             topic_id: @original_comment.topic_id
           )
@@ -62,7 +55,6 @@ module Collavre
 
         @creative = @context.dig("creative", "id") ? Creative.find_by(id: @context["creative"]["id"]) : nil
 
-        # Broadcast "thinking" status via presence channel
         broadcast_agent_status("thinking")
 
         client = AiClient.new(
@@ -85,7 +77,6 @@ module Collavre
           check_cancelled!
           @response_content += delta
 
-          # Stream updates to placeholder comment (throttled)
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           if @reply_comment && (now - last_broadcast_at) >= STREAM_THROTTLE_INTERVAL
             @reply_comment.update_column(:content, @response_content)
@@ -97,44 +88,20 @@ module Collavre
           end
         end
 
-        # Log completion
         log_action("completion", { response: @response_content })
 
-        # Final save to ensure everything is consistent and trigger final callbacks
-        if @reply_comment
-          if @response_content.present?
-            # Review message handling: update the quoted comment if agent has edit permission
-            if @original_comment&.review_message? && handle_review_message(@response_content)
-              # React to the review message with a completion emoji
-              add_review_completion_reaction(@original_comment)
-              # Preserve activity logs by moving them to the quoted comment before destroying placeholder
-              reassociate_activity_logs(@reply_comment, @original_comment.quoted_comment)
-              @reply_comment.destroy!
-            else
-              # Force dirty tracking since update_column bypassed it during streaming
-              @reply_comment.content_will_change!
-              @reply_comment.update!(content: @response_content)
-              log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content })
+        finalize_response
 
-              # Re-associate activity logs from the trigger comment to the reply comment
-              reassociate_activity_logs(@original_comment, @reply_comment)
-              dispatch_a2a_if_needed
-            end
-          else
-            @reply_comment.destroy!
-          end
-        elsif target_comment_id && @response_content.present?
-          reply_to_comment(target_comment_id, @response_content)
-        end
-
-        # Broadcast "idle" status
         broadcast_agent_status("idle")
 
         @response_content
       end
     rescue ApprovalPendingError => e
-      handle_approval_pending(e)
-      raise # Re-raise to signal the job to handle status
+      AiAgent::ApprovalHandler.new(
+        task: @task, agent: @agent, context: @context,
+        creative: @creative, reply_comment: @reply_comment
+      ).handle(e)
+      raise
     rescue CancelledError
       handle_cancelled
       raise
@@ -151,7 +118,6 @@ module Collavre
     end
 
     def handle_cancelled
-      # Save accumulated content to the placeholder comment before stopping
       if @reply_comment
         if @response_content.present?
           @reply_comment.content_will_change!
@@ -165,6 +131,30 @@ module Collavre
 
       broadcast_agent_status("idle")
       log_action("cancelled", { message: "Task cancelled by user" })
+    end
+
+    def finalize_response
+      review_handler = AiAgent::ReviewHandler.new(@original_comment, @agent)
+
+      if @reply_comment
+        if @response_content.present?
+          if @original_comment&.review_message? && review_handler.handle(@response_content, task: @task)
+            review_handler.add_completion_reaction
+            reassociate_activity_logs(@reply_comment, @original_comment.quoted_comment)
+            @reply_comment.destroy!
+          else
+            @reply_comment.content_will_change!
+            @reply_comment.update!(content: @response_content)
+            log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content })
+            reassociate_activity_logs(@original_comment, @reply_comment)
+            dispatch_a2a_if_needed
+          end
+        else
+          @reply_comment.destroy!
+        end
+      elsif @context.dig("comment", "id") && @response_content.present?
+        reply_to_comment(@context["comment"]["id"], @response_content)
+      end
     end
 
     def broadcast_agent_status(status, content: nil)
@@ -188,141 +178,6 @@ module Collavre
         result: result,
         status: "done"
       )
-    end
-
-    def build_messages
-      messages = []
-
-      if @context["creative"]
-        creative_id = @context.dig("creative", "id")
-        if creative_id
-          creative = Creative.find_by(id: creative_id)
-          if creative
-            # creative_children_level: 0=no children, 1=children, 2=grandchildren, etc.
-            # max_depth = 1 (root) + creative_children_level
-            children_level = @agent.creative_children_level
-            max_depth = 1 + children_level
-            markdown = ApplicationController.helpers.render_creative_tree_markdown(
-              [ creative ], 1, true, max_depth: max_depth
-            )
-            messages << { role: "user", parts: [ { text: "Creative:\n#{markdown}" } ] }
-          end
-        end
-      end
-
-      if @context.dig("creative", "id")
-        creative_id = @context["creative"]["id"]
-
-        trigger_comment_id = @context.dig("comment", "id")
-        trigger_comment = Comment.find_by(id: trigger_comment_id)
-        topic_id = trigger_comment&.topic_id
-
-        history_limit = @agent.chat_history_limit
-        history_size_limit = @agent.chat_history_size_limit
-        history_chars = 0
-
-        Comment.where(creative_id: creative_id, private: false)
-               .where(topic_id: topic_id)
-               .includes(:user)
-               .order(created_at: :desc)
-               .limit(history_limit)
-               .reverse
-               .each do |c|
-          next if c.id == @context.dig("comment", "id")
-
-          role = (c.user_id == @agent.id) ? "model" : "user"
-          content = c.content.to_s
-
-          if role == "user"
-            content = MentionParser.strip_self_mention(content, @agent.name)
-
-            speaker = c.user&.name || "unknown"
-            content = "[#{speaker}]: #{content}"
-          end
-
-          # Enforce chat_history_size limit
-          history_chars += content.length
-          break if history_chars > history_size_limit
-
-          messages << { role: role, parts: [ { text: content } ] }
-        end
-      end
-
-      payload_text = @context.dig("comment", "content") || @context.to_json
-
-      # Add review context only when the review will actually result in an in-place update.
-      # This prevents misleading the AI when quoting non-agent or ineligible comments.
-      if review_eligible?
-        quoted_body = @original_comment.quoted_comment&.content
-        review_context = I18n.t("collavre.ai_agent.review.context")
-        review_parts = [ review_context ]
-        review_parts << "---\nOriginal message:\n#{quoted_body}\n---" if quoted_body.present?
-        payload_text = "#{review_parts.join("\n\n")}\n\n#{payload_text}"
-      end
-
-      sender_name = @context.dig("sender", "name")
-      if sender_name
-        payload_text = MentionParser.strip_self_mention(payload_text, @agent.name)
-        payload_text = "[#{sender_name}]: #{payload_text}"
-      end
-      trigger_parts = [ { text: payload_text } ]
-
-      # Include images from the trigger comment if present
-      if @original_comment&.images&.attached?
-        @original_comment.images.each do |image|
-          trigger_parts << { image: image.blob }
-        end
-      end
-
-      messages << { role: "user", parts: trigger_parts }
-
-      messages
-    end
-
-    def review_eligible?
-      return false unless @original_comment&.review_message?
-
-      quoted_comment = @original_comment.quoted_comment
-      return false unless quoted_comment
-      return false unless quoted_comment.user_id == @agent.id
-      return false unless quoted_comment.creative_id == @original_comment.creative_id
-      # Ensure the quoted comment is not private (prevent privilege bypass via client-supplied IDs)
-      return false if quoted_comment.private?
-      # Ensure both comments are in the same topic to prevent cross-topic overwrites
-      return false unless quoted_comment.topic_id == @original_comment.topic_id
-
-      true
-    end
-
-    def handle_review_message(response_content)
-      return false unless review_eligible?
-
-      quoted_comment = @original_comment.quoted_comment
-      quoted_comment.update!(content: response_content)
-      log_action("review_updated", {
-        quoted_comment_id: quoted_comment.id,
-        original_comment_id: @original_comment.id,
-        content: response_content
-      })
-      true
-    end
-
-    def add_review_completion_reaction(comment)
-      reaction = begin
-        CommentReaction.find_or_create_by!(
-          comment: comment,
-          user: @agent,
-          emoji: "✅"
-        )
-      rescue ActiveRecord::RecordNotUnique
-        # Already reacted via race condition, fetch existing
-        CommentReaction.find_by(comment: comment, user: @agent, emoji: "✅")
-      end
-
-      CommentReaction.broadcast_reaction_update(comment) if reaction
-    rescue StandardError => e
-      # Reaction is supplementary; log but don't fail the review update
-      Rails.logger.warn("[AiAgentService] Failed to add review reaction: #{e.message}")
     end
 
     def reply_to_comment(comment_id, content)
@@ -391,68 +246,6 @@ module Collavre
 
     def build_policy_resolver
       Orchestration::PolicyResolver.new(@context)
-    end
-
-    def handle_approval_pending(error)
-      # Clean up placeholder comment if exists
-      @reply_comment&.destroy! if @reply_comment&.content == Comment::STREAMING_PLACEHOLDER_CONTENT
-
-      broadcast_agent_status("idle")
-
-      @task.update!(
-        status: "pending_approval",
-        pending_tool_call: {
-          tool_name: error.tool_name,
-          tool_call_id: error.tool_call_id,
-          arguments: error.tool_arguments,
-          requested_at: Time.current.iso8601
-        }
-      )
-
-      log_action("pending_approval", error.to_h)
-      create_approval_comment(error)
-    end
-
-    def create_approval_comment(error)
-      return unless @creative
-
-      approver = @creative.user || User.find_by(id: @context.dig("comment", "user_id"))
-      return unless approver
-
-      action_payload = {
-        action: "execute_tool",
-        tool_name: error.tool_name,
-        arguments: error.tool_arguments,
-        resume: {
-          task_id: @task.id,
-          tool_call_id: error.tool_call_id
-        }
-      }
-
-      args_display = if error.tool_arguments.present?
-                       JSON.pretty_generate(error.tool_arguments)
-      else
-                       I18n.t("collavre.ai_agent.approval.no_arguments")
-      end
-
-      content = I18n.t(
-        "collavre.ai_agent.approval.message",
-        tool_name: error.tool_name,
-        arguments: args_display
-      )
-
-      original_comment = Comment.find_by(id: @context.dig("comment", "id"))
-      topic_id = original_comment&.topic_id
-
-      Comment.create!(
-        creative: @creative,
-        content: content,
-        user: @agent,
-        approver: approver,
-        action: JSON.pretty_generate(action_payload),
-        topic_id: topic_id,
-        private: false
-      )
     end
   end
 end
