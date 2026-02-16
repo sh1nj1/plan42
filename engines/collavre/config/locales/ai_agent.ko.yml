@@ -34,5 +34,6 @@ ko:
         rules_header: "## 협업 규칙"
         mention_rule: "- 다른 Agent 호출: @이름: 요청내용"
         confidence_rule: "- 확신이 낮으면 재검토 후 발화"
+        confidence_format_instruction: "- 응답 끝에 [confidence: 0-100] 형식으로 확신도를 명시하세요 (예: [confidence: 85])"
         escalation_rule: "- 막히면 에스컬레이션 대상에게 도움 요청"
         review_rule: "- 코드 리뷰가 필요하면 리뷰어에게 요청"

@@ -104,6 +104,9 @@ module Collavre
         sections << I18n.t("collavre.ai_agent.collaboration.rules_header")
         sections << (collab["mention_rule"] || I18n.t("collavre.ai_agent.collaboration.mention_rule"))
         sections << (collab["confidence_rule"] || I18n.t("collavre.ai_agent.collaboration.confidence_rule"))
+        if @policy_resolver&.self_reflection_enabled?
+          sections << I18n.t("collavre.ai_agent.collaboration.confidence_format_instruction")
+        end
         sections << (collab["escalation_rule"] || I18n.t("collavre.ai_agent.collaboration.escalation_rule"))
         sections << (collab["review_rule"] || I18n.t("collavre.ai_agent.collaboration.review_rule"))
         sections << ""
