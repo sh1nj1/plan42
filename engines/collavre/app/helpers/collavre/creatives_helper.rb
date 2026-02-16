@@ -1,7 +1,3 @@
-require "base64"
-require "securerandom"
-require "nokogiri"
-
 module Collavre
   module CreativesHelper
     # Shared toggle button symbol helper
@@ -103,18 +99,18 @@ module Collavre
           desc = "#{desc} (#{pct}%)"
         end
         raw_html = desc.gsub(/<!--.*?-->/m, "").strip
-        markdown_content = html_links_to_markdown(raw_html)
+        markdown_content = MarkdownConverter.html_to_markdown(raw_html)
         cleaned_markdown = markdown_content.strip
         rendered_table_block = false
 
         table_match = cleaned_markdown.match(/^<div[^>]*>\s*<div[^>]*>\s*(\|.*?\|(?:\n\|.*?\|)*)\s*<\/div>\s*<\/div>$/m)
         if level <= 4 && table_match
           table_content = table_match[1].strip
-          if markdown_table_block?(table_content)
+          if MarkdownConverter.table_block?(table_content)
             md += "#{table_content}\n\n"
             rendered_table_block = true
           end
-        elsif level <= 4 && markdown_table_block?(cleaned_markdown)
+        elsif level <= 4 && MarkdownConverter.table_block?(cleaned_markdown)
           md += "#{cleaned_markdown}\n\n"
           rendered_table_block = true
         elsif level <= 4
@@ -142,202 +138,14 @@ module Collavre
       md
     end
 
+    # Delegate to MarkdownConverter for backward compatibility.
+    # These methods are used in views and by MarkdownImporter via ApplicationController.helpers.
     def markdown_links_to_html(text, image_refs = {})
-      return "" if text.nil?
-      html = text.dup
-
-      html.gsub!(/^\s*\[([^\]]+)\]:\s*<\s*(data:image\/[^>]+)\s*>\s*$/) do
-        image_refs[$1] = $2.strip
-        ""
-      end
-
-      html.gsub!(/(?<!\\)!\[([^\]]*)\]\[([^\]]+)\]/) do
-        if (data_url = image_refs[$2])
-          convert_data_image_to_attachment(data_url, $1)
-        else
-          "![#{$1}][#{$2}]"
-        end
-      end
-
-      html.gsub!(/(?<!\\)!\[([^\]]*)\]\((data:image\/[^)]+)\)/) do
-        convert_data_image_to_attachment($2, $1)
-      end
-      html.gsub!(/(?<!\\)\[([^\]]+)\]\(([^)]+)\)/) do
-        "<a href=\"#{$2}\">#{$1}</a>"
-      end
-      html.gsub!(/(?<!\\)(\*\*|__)(.+?)\1/m) do
-        "<strong>#{$2}</strong>"
-      end
-      html.gsub!(/\\([\\*_\[\]()!#~+\-])/, '\\1')
-      html.gsub!(/\\\\/, "\\")
-      html.strip!
-      html
+      MarkdownConverter.markdown_to_html(text, image_refs)
     end
 
     def html_links_to_markdown(text)
-      return "" if text.nil?
-      markdown = text.dup
-      placeholders = {}
-      index = 0
-      markdown.gsub!(%r{<table\b[^>]*>.*?</table>}im) do |match|
-        token = "__TABLE#{index}__"; index += 1
-        placeholders[token] = html_table_to_markdown(match)
-        token
-      end
-      markdown.gsub!(%r{<action-text-attachment ([^>]+)>(?:</action-text-attachment>)?}) do |match|
-        attrs = Hash[$1.scan(/(\S+?)="([^"]*)"/)]
-        sgid = attrs["sgid"]
-        caption = attrs["caption"] || ""
-        if (blob = GlobalID::Locator.locate_signed(sgid, for: "attachable"))
-          data = Base64.strict_encode64(blob.download)
-          token = "__IMG#{index}__"; index += 1
-          placeholders[token] = "![#{caption}](data:#{blob.content_type};base64,#{data})"
-          token
-        else
-          ""
-        end
-      end
-      markdown.gsub!(%r{<img [^>]*src=["'](/rails/active_storage/blobs/[^"']+)["'][^>]*alt=["']([^"']*)["'][^>]*>}) do |match|
-        blob_path = $1
-        alt_text = $2
-        if blob_path =~ %r{/rails/active_storage/blobs/(?:redirect|proxy)/([^/]+)/}
-          signed_id = $1
-          begin
-            blob = ActiveStorage::Blob.find_signed(signed_id)
-            data = Base64.strict_encode64(blob.download)
-            token = "__IMG#{index}__"; index += 1
-            placeholders[token] = "![#{alt_text}](data:#{blob.content_type};base64,#{data})"
-            token
-          rescue
-            match
-          end
-        else
-          match
-        end
-      end
-      markdown.gsub!(/<img [^>]*src=['"](data:[^'"]+)['"][^>]*alt=['"]([^'"]*)['"][^>]*>/) do
-        token = "__IMG#{index}__"; index += 1
-        placeholders[token] = "![#{$2}](#{$1})"
-        token
-      end
-      markdown.gsub!(/<img [^>]*alt=['"]([^'"]*)['"][^>]*src=['"](data:[^'"]+)['"][^>]*>/) do
-        token = "__IMG#{index}__"; index += 1
-        placeholders[token] = "![#{$1}](#{$2})"
-        token
-      end
-      markdown.gsub!(/<a [^>]*href=['"]([^'"]+)['"][^>]*>(.*?)<\/a>/m) do
-        inner = ActionView::Base.full_sanitizer.sanitize($2)
-        token = "__LINK#{index}__"; index += 1
-        placeholders[token] = "[#{inner}](#{$1})"
-        token
-      end
-      markdown.gsub!(/<(strong|b)(?:\s+[^>]*)?>(.*?)<\/\1>/im) do
-        token = "__BOLD#{index}__"; index += 1
-        placeholders[token] = "**#{$2.strip}**"
-        token
-      end
-      markdown.gsub!(/([\\*\[\]()!#~+\-])/) { "\\#{$1}" }
-      placeholders.each { |k, v| markdown.gsub!(k, v) }
-      markdown.gsub!(/<[^>]+>/, "")
-      markdown
-    end
-
-    private
-
-    def markdown_table_block?(text)
-      lines = text.to_s.strip.split("\n")
-      return false if lines.length < 2
-
-      header_line = lines[0]
-      alignment_line = lines[1]
-      return false unless header_line.match?(/\A\|.*\|\z/)
-      return false unless alignment_line.match?(/\A\|[ \-:\|]+\|\z/)
-
-      true
-    end
-
-    def convert_data_image_to_attachment(data_url, alt)
-      if data_url =~ %r{\Adata:(image/[\w.+-]+);base64,(.+)\z}
-        content_type = Regexp.last_match(1)
-        data = Base64.decode64(Regexp.last_match(2))
-        ext = Mime::Type.lookup(content_type).symbol.to_s
-        filename = "import-#{SecureRandom.hex}.#{ext}"
-        blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new(data), filename: filename, content_type: content_type)
-        "<img src=\"#{Rails.application.routes.url_helpers.rails_blob_url(blob, only_path: true)}\" alt=\"#{alt}\" />"
-      else
-        "<img src=\"#{data_url}\" alt=\"#{alt}\" />"
-      end
-    end
-
-    def html_table_to_markdown(table_html)
-      fragment = Nokogiri::HTML::DocumentFragment.parse(table_html)
-      table = fragment.at_css("table")
-      return "" unless table
-
-      header_row = table.at_css("thead tr") || table.css("tr").first
-      return "" unless header_row
-
-      header_cells = header_row.css("th,td")
-      headers = header_cells.map { |cell| escape_markdown_table_cell(html_links_to_markdown(cell.inner_html).strip) }
-
-      alignments = header_cells.map { |cell| alignment_from_html_cell(cell) }
-
-      body_rows = table.css("tbody tr")
-      if body_rows.empty?
-        all_rows = table.css("tr")
-        body_rows = all_rows.drop(1)
-      end
-
-      body_lines = body_rows.map do |row|
-        cells = row.css("th,td").map { |cell| escape_markdown_table_cell(html_links_to_markdown(cell.inner_html).strip) }
-        normalized = normalize_row_cells(cells, headers.length)
-        "| #{normalized.join(' | ')} |"
-      end
-
-      alignment_cells = normalize_row_cells(alignments, headers.length).map { |align| alignment_to_markdown(align) }
-      header_line = "| #{headers.map(&:strip).join(' | ')} |"
-      alignment_line = "| #{alignment_cells.join(' | ')} |"
-
-      ([ header_line, alignment_line ] + body_lines).join("\n")
-    end
-
-    def escape_markdown_table_cell(text)
-      text.to_s.gsub(/(?<!\\)\|/, '\\|')
-    end
-
-    def alignment_from_html_cell(cell)
-      style = cell["style"].to_s
-      align = cell["align"].to_s
-      case
-      when style =~ /text-align\s*:\s*center/i || align =~ /center/i
-        :center
-      when style =~ /text-align\s*:\s*right/i || align =~ /right/i
-        :right
-      when style =~ /text-align\s*:\s*left/i || align =~ /left/i
-        :left
-      else
-        nil
-      end
-    end
-
-    def alignment_to_markdown(alignment)
-      case alignment
-      when :center
-        ":---:"
-      when :right
-        "---:"
-      when :left
-        ":---"
-      else
-        "---"
-      end
-    end
-
-    def normalize_row_cells(cells, expected_length)
-      values = cells.dup
-      values = values.first(expected_length)
-      values.fill("", values.length...expected_length)
-      values
+      MarkdownConverter.html_to_markdown(text)
     end
   end
 end

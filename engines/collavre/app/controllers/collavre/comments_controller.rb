@@ -402,87 +402,19 @@ module Collavre
         head :forbidden and return
       end
 
-      render json: command_menu_items
+      render json: CommandMenuService.new(user: Current.user).items
     end
 
     def move
-      comment_ids = Array(params[:comment_ids]).map(&:presence).compact.map(&:to_i)
-      if comment_ids.empty?
-        render json: { error: I18n.t("collavre.comments.move_no_selection") }, status: :unprocessable_entity and return
-      end
-
-      # Support moving to topic within same creative (target_topic_id only)
-      # or moving to different creative (target_creative_id)
-      target_topic_id = params[:target_topic_id]
-      target_creative_id = params[:target_creative_id]
-
-      # Determine target creative and topic
-      if target_creative_id.present?
-        # Moving to different creative
-        target_creative = Creative.find_by(id: target_creative_id)
-        if target_creative.nil?
-          render json: { error: I18n.t("collavre.comments.move_invalid_target") }, status: :unprocessable_entity and return
-        end
-        target_origin = target_creative.effective_origin
-        new_topic_id = nil # Reset topic when moving to different creative
-      elsif target_topic_id.present? || target_topic_id == ""
-        # Moving to topic within same creative (empty string means Main/no topic)
-        target_origin = @creative
-        new_topic_id = target_topic_id.presence # nil for Main topic
-
-        # Validate topic exists if specified
-        if new_topic_id.present? && !@creative.topics.exists?(id: new_topic_id)
-          render json: { error: I18n.t("collavre.comments.move_invalid_topic", default: "Invalid topic") }, status: :unprocessable_entity and return
-        end
-      else
-        render json: { error: I18n.t("collavre.comments.move_invalid_target") }, status: :unprocessable_entity and return
-      end
-
-      unless @creative.has_permission?(Current.user, :feedback) && target_origin.has_permission?(Current.user, :feedback)
-        render json: { error: I18n.t("collavre.comments.move_not_allowed") }, status: :forbidden and return
-      end
-
-      scope = @creative.comments.where(
-        "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
-        false,
-        Current.user.id,
-        Current.user.id
+      result = CommentMoveService.new(creative: @creative, user: Current.user).call(
+        comment_ids: params[:comment_ids],
+        target_creative_id: params[:target_creative_id],
+        target_topic_id: params[:target_topic_id]
       )
-
-      comments = scope.where(id: comment_ids).to_a
-
-      if comments.length != comment_ids.length
-        render json: { error: I18n.t("collavre.comments.move_not_allowed") }, status: :forbidden and return
-      end
-
-      moved_count = 0
-      ActiveRecord::Base.transaction do
-        comments.each do |comment|
-          # Skip if already in target location
-          same_creative = comment.creative_id == target_origin.id
-          same_topic = comment.topic_id.to_s == new_topic_id.to_s
-
-          next if same_creative && same_topic
-
-          original_creative = comment.creative
-          original_topic_id = comment.topic_id
-
-          if same_creative
-            # Just update topic within same creative
-            comment.update!(topic_id: new_topic_id)
-          else
-            # Move to different creative
-            comment.update!(creative: target_origin, topic_id: new_topic_id)
-            broadcast_move_removal(comment, original_creative)
-          end
-          moved_count += 1
-        end
-      end
-
-      Comment.broadcast_badges(@creative)
-      Comment.broadcast_badges(target_origin) unless target_origin == @creative
-
-      render json: { success: true, moved_count: moved_count }
+      render json: result
+    rescue CommentMoveService::MoveError => e
+      status = e.message == I18n.t("collavre.comments.move_not_allowed") ? :forbidden : :unprocessable_entity
+      render json: { error: e.message }, status: status
     rescue ActiveRecord::RecordInvalid => e
       render json: { error: e.record.errors.full_messages.to_sentence.presence || I18n.t("collavre.comments.move_error") }, status: :unprocessable_entity
     end
@@ -491,63 +423,6 @@ module Collavre
 
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin
-    end
-
-    def command_menu_items
-      [
-        {
-          name: "calendar",
-          label: "/calendar",
-          aliases: [ "/cal" ],
-          description: I18n.t("collavre.comments.command_menu.calendar_description"),
-          args: I18n.t("collavre.comments.command_menu.calendar_args")
-        },
-        {
-          name: "topic",
-          label: "/topic",
-          description: I18n.t("collavre.comments.command_menu.topic_description"),
-          args: I18n.t("collavre.comments.command_menu.topic_args")
-        }
-      ] + mcp_command_items
-    end
-
-    def mcp_command_items
-      Collavre::McpService.available_tools(Current.user).filter_map do |tool|
-        tool_name = tool[:name] || tool["name"]
-        next unless tool_name
-
-        {
-          name: tool_name,
-          label: "/#{tool_name}",
-          description: tool[:description] || tool["description"],
-          args: format_command_args(tool[:params] || tool["params"])
-        }
-      end
-    end
-
-    def format_command_args(params)
-      return if params.blank?
-
-      # Handle array format (from MetaToolService)
-      if params.is_a?(Array)
-        return params.map do |param|
-          name = param[:name] || param["name"]
-          required = param[:required] || param["required"]
-          name.to_s + (required ? "*" : "")
-        end.join(", ")
-      end
-
-      # Handle JSON Schema format (Hash with :properties)
-      properties = params[:properties] || params["properties"]
-      return unless properties.is_a?(Hash)
-
-      required = params[:required] || params["required"] || []
-      required = Array(required).map(&:to_s)
-
-      properties.keys.map do |key|
-        key = key.to_s
-        required.include?(key) ? "#{key}*" : key
-      end.join(", ")
     end
 
     def set_comment
@@ -567,15 +442,6 @@ module Collavre
 
     def can_convert_comment?
       @comment.user == Current.user || @creative.has_permission?(Current.user, :admin)
-    end
-
-    def broadcast_move_removal(comment, original_creative)
-      return if comment.private?
-
-      Turbo::StreamsChannel.broadcast_remove_to(
-        [ original_creative, :comments ],
-        target: view_context.dom_id(comment)
-      )
     end
 
     def build_convert_system_message(creative)
