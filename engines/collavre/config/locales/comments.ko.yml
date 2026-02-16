@@ -87,6 +87,8 @@ ko:
         event_created: '이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})'
         event_created_local: '이벤트가 생성되었습니다 (로컬 전용 - 구글 캘린더 연동 시 동기화됩니다)'
         event_created_sync_failed: '이벤트가 생성되었습니다 (구글 캘린더 동기화 실패 - 구글 계정을 다시 연동해주세요)'
+      mcp_command:
+        error_running: "/%{tool_name} 실행 오류: %{error}"
       topic_command:
         missing_name: '토픽 이름을 따옴표로 지정하세요: /topic "토픽 이름"'
         created: '토픽 "%{name}"이(가) 생성되었습니다.'

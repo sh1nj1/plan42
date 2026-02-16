@@ -90,6 +90,8 @@ en:
         event_created: 'event created: [Google Calendar event](%{url})'
         event_created_local: 'event created (local only - connect Google Calendar to sync)'
         event_created_sync_failed: 'event created (Google Calendar sync failed - please reconnect your Google account)'
+      mcp_command:
+        error_running: "Error running /%{tool_name}: %{error}"
       topic_command:
         missing_name: 'Please specify a topic name in quotes: /topic "topic name"'
         created: 'Topic "%{name}" created.'
