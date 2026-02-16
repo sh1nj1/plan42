@@ -79,8 +79,7 @@ module Collavre
       end
 
       def format_response(response)
-        # TODO: i18n text
-        return "Error running /#{tool_name}: #{response[:error]}" if response[:error].present?
+        return I18n.t("collavre.comments.mcp_command.error_running", tool_name: tool_name, error: response[:error]) if response[:error].present?
 
         result = response[:result]
         content = case result
