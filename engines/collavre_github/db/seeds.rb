@@ -61,6 +61,7 @@ module CollavreGithub
       context:
         chat_history: 1
         chat_history_size: 1000
+        creative_children_level: 0
     YAML
 
     TOOLS = %w[
