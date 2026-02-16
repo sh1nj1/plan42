@@ -12,7 +12,7 @@ module Collavre
     MENTION_LOOSE_PATTERN = /\A@(\S+)\s+/
 
     # Scan pattern: finds all @name: mentions anywhere in text
-    MENTION_SCAN_PATTERN = /(?:^|\s)@([^:]+?):/
+    MENTION_SCAN_PATTERN = /(?:^|(?<=\s))@([^:]+?):/
 
     # Extract the first mentioned name from text (returns nil if no mention found)
     def self.extract_name(text)
