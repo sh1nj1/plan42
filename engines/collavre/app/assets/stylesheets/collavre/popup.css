@@ -71,7 +71,7 @@
   font-size: 1.1em;
 }
 
-.popup-box input,
+.popup-box input:not([type="radio"]):not([type="checkbox"]),
 .popup-box select {
   width: 100%;
   box-sizing: border-box;
