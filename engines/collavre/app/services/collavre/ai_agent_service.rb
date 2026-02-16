@@ -198,16 +198,20 @@ module Collavre
     def dispatch_a2a_if_needed
       return unless @reply_comment&.content.present?
 
-      mentioned_user = MentionParser.resolve_user(@reply_comment.content)
-      return unless mentioned_user&.ai_user?
+      # Find all mentioned AI agents anywhere in the response (not just at the start)
+      mentioned_agents = MentionParser.resolve_all_users(@reply_comment.content).select(&:ai_user?)
+      return if mentioned_agents.empty?
 
       creative = @reply_comment.creative
 
-      if creative
-        context = { "creative" => { "id" => creative.id }, "topic" => { "id" => @reply_comment.topic_id } }
-        Orchestration::LoopBreaker.new(context).record_interaction(@agent.id, mentioned_user.id, creative.id)
+      mentioned_agents.each do |mentioned_user|
+        if creative
+          context = { "creative" => { "id" => creative.id }, "topic" => { "id" => @reply_comment.topic_id } }
+          Orchestration::LoopBreaker.new(context).record_interaction(@agent.id, mentioned_user.id, creative.id)
+        end
       end
 
+      # Dispatch event — downstream Matcher will route to the correct agent(s)
       SystemEvents::Dispatcher.dispatch("comment_created", {
         comment: { id: @reply_comment.id, content: @reply_comment.content, user_id: @reply_comment.user_id },
         creative: { id: creative&.id, description: creative&.description },
