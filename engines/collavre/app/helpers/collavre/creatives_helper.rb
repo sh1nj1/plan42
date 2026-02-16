@@ -14,7 +14,7 @@ module Collavre
         index += 1
         content_tag(:span, class: "tag") do
           (index == 1 ? "" : " ").html_safe +
-          link_to("##{strip_tags(label.name)}", collavre.creatives_path(tags: [label.id]), class: class_name ? class_name: "", title: strip_tags(label.name)) + suffix
+          link_to("##{strip_tags(label.name)}", collavre.creatives_path(tags: [ label.id ]), class: class_name ? class_name: "", title: strip_tags(label.name)) + suffix
         end
       end)
     end
@@ -45,14 +45,14 @@ module Collavre
           if Current.user && CommentPresenceStore.list(origin.id).include?(Current.user.id)
             unread_count = 0
           end
-          classes = ["comments-btn", "creative-action-btn"]
+          classes = [ "comments-btn", "creative-action-btn" ]
           classes << "no-comments" if comments_count.zero?
           comment_icon = svg_tag(
             "comment.svg",
             class: "comment-icon"
           )
           badge_id = "comment-badge-#{origin.id}"
-          stream = turbo_stream_from [Current.user, origin, :comment_badge]
+          stream = turbo_stream_from [ Current.user, origin, :comment_badge ]
           badge = render(
             Inbox::BadgeComponent.new(
               count: unread_count,

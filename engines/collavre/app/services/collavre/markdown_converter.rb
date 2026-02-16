@@ -182,7 +182,7 @@ module Collavre
         header_line = "| #{headers.map(&:strip).join(' | ')} |"
         alignment_line = "| #{alignment_cells.join(' | ')} |"
 
-        ([header_line, alignment_line] + body_lines).join("\n")
+        ([ header_line, alignment_line ] + body_lines).join("\n")
       end
 
       # Convert a data-URI image to an Active Storage attachment <img> tag.
