@@ -297,6 +297,8 @@ if (!githubIntegrationInitialized) {
         input.name = 'github-organization';
         input.value = org.login;
         input.checked = selectedOrg === org.login;
+        input.style.flexShrink = '0';
+        input.style.margin = '0';
         input.addEventListener('change', function () {
           selectedOrg = org.login;
           nextBtn.disabled = false;
