@@ -37,7 +37,7 @@ module Collavre
         markdown = ApplicationController.helpers.render_creative_tree_markdown(
           [ creative ], 1, true, max_depth: max_depth
         )
-        messages << { role: "user", parts: [ { text: "Creative:\n#{markdown}" } ] }
+        messages << { role: "user", parts: [ { text: "Creative (id: #{creative.id}):\n#{markdown}" } ] }
       end
 
       def append_chat_history(messages)
