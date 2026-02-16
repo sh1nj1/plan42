@@ -176,47 +176,21 @@ module Collavre
     end
 
     def create
-      @creative = Creative.new(creative_params)
-      if @creative.parent
-        @creative.user = @creative.parent.user
-      else
-        @creative.user = Current.user
-      end
+      result = Creatives::CreateService.new(
+        creative_params: creative_params,
+        user: Current.user,
+        child_id: params[:child_id],
+        before_id: params[:before_id],
+        after_id: params[:after_id],
+        tag_ids: params[:tags]
+      ).call
 
-      # Rebuild @child_creative from params if present
-      if params[:child_id].present?
-        @child_creative = Creative.find_by(id: params[:child_id])
-      end
+      @creative = result.creative
 
-      if @creative.save
-        @child_creative.update(parent: @creative) if @child_creative
-        if params[:before_id].present?
-          before_creative = Creative.find_by(id: params[:before_id])
-          if before_creative && before_creative.parent_id == @creative.parent_id
-            siblings = @creative.parent ? @creative.parent.children.order(:sequence).to_a : Creative.roots.order(:sequence).to_a
-            siblings.reject! { |s| s.id == @creative.id }
-            index = siblings.index { |s| s.id == before_creative.id } || 0
-            siblings.insert(index, @creative)
-            siblings.each_with_index { |c, idx| c.update_column(:sequence, idx) }
-          end
-        elsif params[:after_id].present?
-          after_creative = Creative.find_by(id: params[:after_id])
-          if after_creative && after_creative.parent_id == @creative.parent_id
-            siblings = @creative.parent ? @creative.parent.children.order(:sequence).to_a : Creative.roots.order(:sequence).to_a
-            siblings.reject! { |s| s.id == @creative.id }
-            index = siblings.index { |s| s.id == after_creative.id } || -1
-            siblings.insert(index + 1, @creative)
-            siblings.each_with_index { |c, idx| c.update_column(:sequence, idx) }
-          end
-        end
-        if params[:tags].present?
-          Array(params[:tags]).each do |tag_id|
-            @creative.tags.create(label_id: tag_id)
-          end
-        end
+      if result.success?
         render json: { id: @creative.id }
       else
-        render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity
+        render json: { errors: result.errors }, status: :unprocessable_entity
       end
     end
 
@@ -275,15 +249,11 @@ module Collavre
       unless @creative.has_permission?(Current.user, :admin)
         redirect_to @creative, alert: t("collavre.creatives.errors.no_permission") and return
       end
-      if params[:delete_with_children]
-        # Recursively destroy deletable descendants before deleting parent
-        destroy_descendants_recursively(@creative, Current.user)
-      else
-        # Re-link children to parent
-        @creative.children.each { |child| child.update(parent: parent) }
-      end
-      CreativeShare.where(creative: @creative).destroy_all
-      @creative.destroy
+      Creatives::DestroyService.new(
+        creative: @creative,
+        user: Current.user,
+        delete_with_children: params[:delete_with_children].present?
+      ).call
     end
 
     def request_permission
@@ -522,16 +492,6 @@ module Collavre
             progress_map: progress_map
           )
         }
-      end
-
-      # Recursively destroy all descendants the user can delete
-      def destroy_descendants_recursively(creative, user)
-        deletable_children = creative.children_with_permission(user, :admin)
-        deletable_children.each do |child|
-          destroy_descendants_recursively(child, user)
-          CreativeShare.where(creative: child).destroy_all
-          child.destroy
-        end
       end
 
       def enforce_creatives_login_policy
