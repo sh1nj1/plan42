@@ -59,8 +59,9 @@ export default class extends Controller {
           this._isStreaming = true
           contentElement.innerHTML = '<span class="streaming-dots"><span>.</span><span>.</span><span>.</span></span>'
           contentElement.classList.add('streaming')
-        } else if (this.element.dataset.aiUser === 'true' && this._isStreaming && text.trim()) {
+        } else if (this.element.dataset.aiUser === 'true' && (this._isStreaming || this.element.dataset.streaming === 'true') && text.trim()) {
           // Streaming content arrived — render markdown with cursor
+          this._isStreaming = true
           contentElement.innerHTML = renderCommentMarkdown(text)
           this._appendStreamingCursor(contentElement)
           contentElement.classList.add('streaming')
