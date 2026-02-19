@@ -68,5 +68,39 @@ module Collavre
       assert_nil MentionParser.strip_self_mention(nil, "Bot")
       assert_equal "@Bot: hello", MentionParser.strip_self_mention("@Bot: hello", nil)
     end
+
+    # Lenient prefix character tests
+    test "extract_name after colon" do
+      assert_equal "AgentB", MentionParser.extract_name("결과:@AgentB: 완료")
+    end
+
+    test "extract_name after period" do
+      assert_equal "AgentB", MentionParser.extract_name("done.@AgentB: check")
+    end
+
+    test "extract_name after comma" do
+      assert_equal "AgentB", MentionParser.extract_name("ok,@AgentB: check")
+    end
+
+    test "extract_name after semicolon" do
+      assert_equal "AgentB", MentionParser.extract_name("ok;@AgentB: check")
+    end
+
+    test "extract_name after newline" do
+      assert_equal "AgentB", MentionParser.extract_name("line1\n@AgentB: check")
+    end
+
+    test "extract_all_names finds mentions after punctuation" do
+      text = "결과:@Agent1: 완료,@Agent2: 확인.@Agent3: 검토"
+      names = MentionParser.extract_all_names(text)
+      assert_includes names, "Agent1"
+      assert_includes names, "Agent2"
+      assert_includes names, "Agent3"
+    end
+
+    test "extract_name does not match after alphanumeric" do
+      # email-like patterns should not match
+      assert_nil MentionParser.extract_name("user@agent: test")
+    end
   end
 end
