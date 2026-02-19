@@ -188,7 +188,7 @@ module Collavre
           content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
           user: agent,
           topic_id: topic_id,
-          private: true
+          private: false
         )
       end
     end
