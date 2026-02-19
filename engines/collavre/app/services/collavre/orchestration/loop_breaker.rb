@@ -67,9 +67,12 @@ module Collavre
         Rails.cache.write(key, interactions, expires_in: CACHE_EXPIRY)
       end
 
-      # Record a task creation for creative retry detection
-      def record_task(creative_id, agent_id)
-        key = creative_tasks_key(creative_id)
+      # Record a task creation for creative retry detection (per-topic)
+      # Skips recording for user-initiated messages (only agent-to-agent counts as potential loop)
+      def record_task(creative_id, agent_id, topic_id: nil, triggered_by_user: false)
+        return if triggered_by_user
+
+        key = topic_tasks_key(creative_id, topic_id)
         tasks = Rails.cache.read(key) || []
         tasks << { at: Time.current.to_i, agent_id: agent_id }
 
@@ -136,12 +139,13 @@ module Collavre
         safe_result
       end
 
-      # Detect too many tasks on same creative
+      # Detect too many tasks on same topic (per-topic, not per-creative)
       def check_creative_retry
         creative_id = @context.dig("creative", "id")
+        topic_id = @context.dig("topic", "id")
         return safe_result unless creative_id
 
-        key = creative_tasks_key(creative_id)
+        key = topic_tasks_key(creative_id, topic_id)
         tasks = Rails.cache.read(key) || []
 
         # Filter to window
@@ -154,6 +158,7 @@ module Collavre
             reason: :creative_retry_exceeded,
             details: {
               creative_id: creative_id,
+              topic_id: topic_id,
               task_count: recent_tasks.size,
               threshold: creative_retry_threshold,
               window_minutes: @config["creative_retry_window_minutes"]
@@ -253,8 +258,8 @@ module Collavre
         "#{CACHE_PREFIX}:ping_pong:#{sorted[0]}-#{sorted[1]}:#{creative_id}"
       end
 
-      def creative_tasks_key(creative_id)
-        "#{CACHE_PREFIX}:creative:#{creative_id}:tasks"
+      def topic_tasks_key(creative_id, topic_id)
+        "#{CACHE_PREFIX}:creative:#{creative_id}:topic:#{topic_id || "main"}:tasks"
       end
 
       def token_usage_key(agent_id)
