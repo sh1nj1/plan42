@@ -48,8 +48,6 @@ module Collavre
         creative_id = @context.dig("creative", "id")
         return unless creative_id
 
-        trigger_comment_id = @context.dig("comment", "id")
-        trigger_comment = Comment.find_by(id: trigger_comment_id)
         topic_id = trigger_comment&.topic_id
 
         history_limit = @agent.chat_history_limit
@@ -64,7 +62,7 @@ module Collavre
                .limit(history_limit)
                .reverse
                .each do |c|
-          next if c.id == @context.dig("comment", "id")
+          next if c.id == trigger_comment&.id
 
           role = (c.user_id == @agent.id) ? "model" : "user"
           content = c.content.to_s
@@ -110,9 +108,14 @@ module Collavre
         messages << { role: "user", parts: trigger_parts }
       end
 
+      def trigger_comment
+        @trigger_comment ||= begin
+          id = @context.dig("comment", "id")
+          Comment.find_by(id: id) if id
+        end
+      end
+
       def current_topic
-        trigger_comment_id = @context.dig("comment", "id")
-        trigger_comment = Comment.find_by(id: trigger_comment_id)
         return unless trigger_comment&.topic_id
 
         Topic.find_by(id: trigger_comment.topic_id)
