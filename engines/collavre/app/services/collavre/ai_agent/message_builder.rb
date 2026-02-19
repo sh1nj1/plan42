@@ -37,15 +37,17 @@ module Collavre
         markdown = ApplicationController.helpers.render_creative_tree_markdown(
           [ creative ], 1, true, max_depth: max_depth
         )
-        messages << { role: "user", parts: [ { text: "Creative (id: #{creative.id}):\n#{markdown}" } ] }
+
+        topic = current_topic
+        topic_info = topic ? "\nTopic: #{topic.name} (id: #{topic.id})" : ""
+
+        messages << { role: "user", parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
       end
 
       def append_chat_history(messages)
         creative_id = @context.dig("creative", "id")
         return unless creative_id
 
-        trigger_comment_id = @context.dig("comment", "id")
-        trigger_comment = Comment.find_by(id: trigger_comment_id)
         topic_id = trigger_comment&.topic_id
 
         history_limit = @agent.chat_history_limit
@@ -60,7 +62,7 @@ module Collavre
                .limit(history_limit)
                .reverse
                .each do |c|
-          next if c.id == @context.dig("comment", "id")
+          next if c.id == trigger_comment&.id
 
           role = (c.user_id == @agent.id) ? "model" : "user"
           content = c.content.to_s
@@ -104,6 +106,19 @@ module Collavre
         end
 
         messages << { role: "user", parts: trigger_parts }
+      end
+
+      def trigger_comment
+        @trigger_comment ||= begin
+          id = @context.dig("comment", "id")
+          Comment.find_by(id: id) if id
+        end
+      end
+
+      def current_topic
+        return unless trigger_comment&.topic_id
+
+        Topic.find_by(id: trigger_comment.topic_id)
       end
 
       def review_eligible?
