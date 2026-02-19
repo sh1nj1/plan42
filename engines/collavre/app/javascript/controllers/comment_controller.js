@@ -44,7 +44,7 @@ export default class extends Controller {
       const c = el.querySelector('.streaming-cursor')
       if (c) c.remove()
       this._isStreaming = false
-    }, 3000)
+    }, 10000)
   }
 
   connect() {
