@@ -13,7 +13,7 @@ module CollavreNotion
 
         render json: {
           connected: account.present?,
-          creative_title: helpers.strip_tags(@creative.description).strip.presence || "Untitled Creative",
+          creative_title: helpers.strip_tags(@creative.effective_origin.description.to_s).strip.presence || "Untitled Creative",
           account: account && {
             workspace_name: account.workspace_name,
             workspace_id: account.workspace_id,
