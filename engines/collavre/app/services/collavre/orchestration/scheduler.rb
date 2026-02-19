@@ -77,7 +77,7 @@ module Collavre
         if topic_max && @context.key?("topic")
           topic_id = @context.dig("topic", "id")
           if (Task.running_for_topic(topic_id).count + topic_immediate_count) >= topic_max
-            return deferred_decision(agent)
+            return deferred_decision(agent, :topic_concurrency)
           end
         end
 
@@ -101,10 +101,11 @@ module Collavre
         }
       end
 
-      def deferred_decision(agent)
+      def deferred_decision(agent, reason = nil)
         {
           agent: agent,
-          timing: :deferred
+          timing: :deferred,
+          reason: reason
         }
       end
 

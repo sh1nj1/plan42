@@ -110,32 +110,86 @@ module Collavre
 
       def enqueue_jobs(decisions)
         decisions.filter_map do |decision|
+          agent = decision[:agent]
+          log_decision(decision)
+
           case decision[:timing]
           when :immediate
-            AiAgentJob.perform_later(decision[:agent].id, @event_name, @context)
-            decision[:agent]
+            AiAgentJob.perform_later(agent.id, @event_name, @context)
+            agent
           when :deferred
             Task.create!(
               name: "Response to #{@event_name}",
               status: "queued",
               trigger_event_name: @event_name,
               trigger_event_payload: @context,
-              agent: decision[:agent],
+              agent: agent,
               topic_id: @context.dig("topic", "id")
             )
-            decision[:agent]
+            post_waiting_notice(agent, decision)
+            agent
           when :delayed
             AiAgentJob.set(wait: decision[:delay]).perform_later(
-              decision[:agent].id, @event_name, @context
+              agent.id, @event_name, @context
             )
-            decision[:agent]
+            post_waiting_notice(agent, decision)
+            agent
           when :rejected
-            Rails.logger.info(
-              "[Orchestrator] Agent #{decision[:agent].id} rejected: #{decision[:reason]}"
-            )
             nil
           end
         end
+      end
+
+      def log_decision(decision)
+        agent = decision[:agent]
+        timing = decision[:timing]
+        reason = decision[:reason]
+        topic_id = @context.dig("topic", "id") || "main"
+
+        case timing
+        when :immediate
+          Rails.logger.info(
+            "[Orchestrator] Agent #{agent.id} (#{agent.name}) → immediate " \
+            "(event=#{@event_name}, topic=#{topic_id})"
+          )
+        when :deferred
+          Rails.logger.info(
+            "[Orchestrator] Agent #{agent.id} (#{agent.name}) → deferred: #{reason} " \
+            "(event=#{@event_name}, topic=#{topic_id})"
+          )
+        when :delayed
+          Rails.logger.info(
+            "[Orchestrator] Agent #{agent.id} (#{agent.name}) → delayed #{decision[:delay]}s: #{reason} " \
+            "(event=#{@event_name}, topic=#{topic_id})"
+          )
+        when :rejected
+          Rails.logger.info(
+            "[Orchestrator] Agent #{agent.id} (#{agent.name}) → rejected: #{reason} " \
+            "(event=#{@event_name}, topic=#{topic_id})"
+          )
+        end
+      end
+
+      def post_waiting_notice(agent, decision)
+        creative_id = @context.dig("creative", "id")
+        topic_id = @context.dig("topic", "id")
+        return unless creative_id
+
+        creative = Creative.find_by(id: creative_id)
+        return unless creative
+
+        reason_key = decision[:reason] || :unknown
+        reason_text = I18n.t(
+          "collavre.orchestration.waiting_reasons.#{reason_key}",
+          default: reason_key.to_s.humanize
+        )
+
+        creative.comments.create!(
+          content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
+          user: agent,
+          topic_id: topic_id,
+          private: true
+        )
       end
     end
   end

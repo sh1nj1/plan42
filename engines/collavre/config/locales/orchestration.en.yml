@@ -1,4 +1,12 @@
 en:
+  collavre:
+    orchestration:
+      waiting_notice: "⏳ Waiting (%{reason})"
+      waiting_reasons:
+        topic_concurrency: "another task is running in this topic"
+        busy: "agent concurrency limit reached"
+        rate_limited: "rate limit reached"
+        unknown: "waiting for resources"
   admin:
     orchestration:
       title: "AI Agent Orchestration"

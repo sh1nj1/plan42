@@ -1,4 +1,12 @@
 ko:
+  collavre:
+    orchestration:
+      waiting_notice: "⏳ 대기중 (%{reason})"
+      waiting_reasons:
+        topic_concurrency: "이 토픽에서 다른 작업이 실행 중"
+        busy: "에이전트 동시 실행 한도 도달"
+        rate_limited: "요청 속도 제한 도달"
+        unknown: "리소스 대기 중"
   admin:
     orchestration:
       title: "AI 에이전트 오케스트레이션"
