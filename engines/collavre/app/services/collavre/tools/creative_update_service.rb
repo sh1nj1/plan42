@@ -7,11 +7,11 @@ module Tools
     extend ToolMeta
 
     tool_name "creative_update_service"
-    tool_description "Update an existing Creative's content, progress, or parent. Use this to:\n- Modify the description/title of a Creative\n- Update progress (0.0 to 1.0, where 1.0 = complete)\n- Move a Creative to a different parent\n\nNote: Setting progress to 1.0 on a parent will also complete all descendants."
+    tool_description "Update an existing Creative's content, progress, or parent. Use this to:\n- Modify the description/title of a Creative\n- Mark a leaf Creative as complete (progress = 1.0)\n- Move a Creative to a different parent\n\nProgress constraints:\n- Only 1.0 (100%) is allowed — partial progress updates are not supported\n- Only leaf Creatives (with no children) can have their progress updated\n- Parent Creative progress is automatically calculated from children\n\nUse creative_retrieval_service to find the correct Creative before updating."
 
     tool_param :id, description: "The ID of the Creative to update.", required: true
     tool_param :description, description: "New content/title for the Creative. Accepts HTML format. If omitted, description remains unchanged.", required: false
-    tool_param :progress, description: "New progress value (0.0 to 1.0). Setting to 1.0 marks as complete.", required: false
+    tool_param :progress, description: "Set to 1.0 to mark a leaf Creative as complete. Only 1.0 is allowed; partial progress and updates on parent Creatives are rejected.", required: false
     tool_param :parent_id, description: "New parent Creative ID to move this Creative under. Use null/0 to make it a root Creative.", required: false
 
     sig { params(id: Integer, description: T.nilable(String), progress: T.nilable(Float), parent_id: T.nilable(Integer)).returns(T::Hash[Symbol, T.untyped]) }
@@ -29,7 +29,6 @@ module Tools
 
       # Get the effective origin for updating content
       base = creative.effective_origin
-      previous_progress = base.progress
 
       updates = {}
       parent_updates = {}
@@ -41,7 +40,19 @@ module Tools
 
       # Handle progress update
       if progress.present?
-        updates[:progress] = progress.to_f.clamp(0.0, 1.0)
+        progress_value = progress.to_f.clamp(0.0, 1.0)
+
+        # Only 100% (1.0) progress updates are allowed via tools
+        unless progress_value == 1.0
+          return { error: "Only progress of 1.0 (100%) is allowed. Partial progress updates are not supported.", id: id }
+        end
+
+        # Only leaf creatives (no children) can have progress updated directly
+        if base.children.exists?
+          return { error: "Cannot update progress on a parent Creative. Only leaf Creatives (with no children) can be marked complete.", id: id }
+        end
+
+        updates[:progress] = progress_value
       end
 
       # Handle parent change (on the creative itself, not base)
@@ -77,14 +88,8 @@ module Tools
       if updates.present?
         success &&= base.update(updates)
 
-        # If progress set to 1.0 and has children, complete all descendants
-        requested_progress = updates[:progress]
-        if success && requested_progress.present? && requested_progress >= 1 && previous_progress.to_f < 1
-          if base.children.exists?
-            base.self_and_descendants.where(origin_id: nil)
-              .update_all(progress: 1.0, updated_at: Time.current)
-          end
-        end
+        # Note: progress updates are only allowed on leaf Creatives (validated above).
+        # Parent progress is automatically calculated from children.
       end
 
       if success

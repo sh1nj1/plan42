@@ -43,7 +43,20 @@ module Collavre
         assert_equal "<p>Plain text update</p>", @creative.description
       end
 
-      test "updates progress" do
+      test "updates progress to 1.0 on leaf creative" do
+        service = CreativeUpdateService.new
+
+        result = service.call(
+          id: @creative.id,
+          progress: 1.0
+        )
+
+        assert result[:success]
+        @creative.reload
+        assert_in_delta 1.0, @creative.progress, 0.01
+      end
+
+      test "rejects partial progress update" do
         service = CreativeUpdateService.new
 
         result = service.call(
@@ -51,22 +64,28 @@ module Collavre
           progress: 0.75
         )
 
-        assert result[:success]
+        assert result[:error].present?
+        assert_match(/only progress of 1.0/i, result[:error])
         @creative.reload
-        assert_in_delta 0.75, @creative.progress, 0.01
+        assert_in_delta 0.0, @creative.progress, 0.01
       end
 
-      test "clamps progress to valid range" do
+      test "rejects progress update on parent creative" do
+        child = Creative.create!(
+          description: "<p>Child</p>",
+          user: @user,
+          parent: @creative
+        )
+
         service = CreativeUpdateService.new
 
         result = service.call(
           id: @creative.id,
-          progress: 1.5
+          progress: 1.0
         )
 
-        assert result[:success]
-        @creative.reload
-        assert_in_delta 1.0, @creative.progress, 0.01
+        assert result[:error].present?
+        assert_match(/leaf/i, result[:error])
       end
 
       test "updates parent_id" do

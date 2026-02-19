@@ -19,7 +19,7 @@ module Collavre
 
       tool_param :operations, description: "Array of operation objects. Each object must have an 'action' key.\n\n" \
                  "For 'create': { action: 'create', parent_id: <int>, description: <string>, progress: <float>, after_id: <int>, before_id: <int> }\n" \
-                 "For 'update': { action: 'update', id: <int>, description: <string>, progress: <float>, parent_id: <int> }\n" \
+                 "For 'update': { action: 'update', id: <int>, description: <string>, progress: 1.0, parent_id: <int> } — progress only accepts 1.0 (complete) and only on leaf Creatives\n" \
                  "For 'delete': { action: 'delete', id: <int> }\n\n" \
                  "Fields other than 'action' and 'id'/'parent_id' are optional.", required: true
 
