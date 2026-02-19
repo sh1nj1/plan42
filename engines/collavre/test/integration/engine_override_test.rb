@@ -97,7 +97,11 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
   end
 
   test "overrides footer partial in layout" do
-    get root_path
+    # Use a page with application layout (which renders shared/_footer)
+    # Landing page uses its own layout without shared/_footer
+    user = users(:one)
+    sign_in_as user
+    get collavre.creatives_path
 
     assert_response :success
     assert_select "#custom-footer", text: "Custom Enterprise Footer"
