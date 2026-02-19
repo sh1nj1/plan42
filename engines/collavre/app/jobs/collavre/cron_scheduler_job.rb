@@ -46,7 +46,10 @@ module Collavre
       cron = Fugit.parse(task.schedule)
       return false unless cron.is_a?(Fugit::Cron)
 
-      cron.match?(time)
+      # Truncate to the beginning of the current minute so that
+      # cron.match? works regardless of which second the job runs at.
+      minute_start = time.change(sec: 0)
+      cron.match?(minute_start)
     end
 
     def cache_key(task, time)
