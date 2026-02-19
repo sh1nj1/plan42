@@ -77,6 +77,14 @@ export default class extends Controller {
         } else {
           contentElement.innerHTML = renderCommentMarkdown(text)
           contentElement.classList.remove('streaming')
+          // Streaming just finished — clean up
+          if (this._isStreaming) {
+            this._isStreaming = false
+            if (this._streamingTimeout) {
+              clearTimeout(this._streamingTimeout)
+              this._streamingTimeout = null
+            }
+          }
         }
         contentElement.dataset.rendered = 'true'
       } finally {
