@@ -17,11 +17,11 @@ module Collavre
   # Duplicate-execution guard: uses Rails.cache with a per-task, per-minute
   # key so that even if this job runs twice in the same minute window,
   # each task fires at most once.
+  #
+  # Reschedule guard: uses SolidQueue::Job table (DB-based) to prevent
+  # duplicate scheduler chains — no Rails.cache dependency for locking.
   class CronSchedulerJob < ApplicationJob
     queue_as :default
-
-    # Prevent duplicate scheduler instances from piling up
-    RESCHEDULE_LOCK_KEY = "cron_scheduler:reschedule_lock"
 
     def perform
       now = Time.current
@@ -82,11 +82,18 @@ module Collavre
     end
 
     def reschedule
-      # Use cache lock to prevent multiple scheduler chains from forming
-      return if Rails.cache.read(RESCHEDULE_LOCK_KEY).present?
+      # DB-based guard: skip if a CronSchedulerJob is already pending
+      return if pending_scheduler_exists?
 
-      Rails.cache.write(RESCHEDULE_LOCK_KEY, true, expires_in: 50.seconds)
       self.class.set(wait: 1.minute).perform_later
+      Rails.logger.info("[CronScheduler] Rescheduled for next minute")
+    end
+
+    def pending_scheduler_exists?
+      SolidQueue::Job
+        .where(class_name: self.class.name)
+        .where(finished_at: nil)
+        .exists?
     end
   end
 end

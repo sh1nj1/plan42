@@ -45,7 +45,6 @@ module Collavre
         arguments: [ { creative_id: 1, topic_id: nil, agent_id: 1, message: "test" } ]
       )
 
-      # Should only enqueue the self-rescheduling, not CronActionJob
       assert_no_enqueued_jobs(only: Collavre::CronActionJob) do
         CronSchedulerJob.perform_now
       end
@@ -97,7 +96,6 @@ module Collavre
       CronSchedulerJob.perform_now
 
       travel_to @now + 5.minutes
-      Rails.cache.delete(Collavre::CronSchedulerJob::RESCHEDULE_LOCK_KEY)
 
       assert_enqueued_with(job: Collavre::CronActionJob) do
         CronSchedulerJob.perform_now
@@ -106,6 +104,20 @@ module Collavre
 
     test "reschedules itself after perform" do
       assert_enqueued_with(job: Collavre::CronSchedulerJob) do
+        CronSchedulerJob.perform_now
+      end
+    end
+
+    test "does not reschedule if pending scheduler already exists" do
+      # Simulate a pending CronSchedulerJob in SolidQueue
+      SolidQueue::Job.create!(
+        class_name: "Collavre::CronSchedulerJob",
+        queue_name: "default",
+        finished_at: nil
+      )
+
+      # Should not enqueue another CronSchedulerJob
+      assert_no_enqueued_jobs(only: Collavre::CronSchedulerJob) do
         CronSchedulerJob.perform_now
       end
     end
