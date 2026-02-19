@@ -3,16 +3,19 @@ module Collavre
   # All @mention logic should go through this module so changes
   # to the mention format only need to be made in one place.
   module MentionParser
+    # Characters allowed before @ in mentions (besides start-of-text)
+    MENTION_PREFIX_CHARS = /[\s:.,;\n\r]/
+
     # Canonical mention: @name: (with colon separator)
-    # Matches at start of text or after whitespace/newline
-    MENTION_PATTERN = /(?:\A|(?<=\s))@([^:]+?):\s*/
+    # Matches at start of text or after whitespace/punctuation/newline
+    MENTION_PATTERN = /(?:\A|(?<=#{MENTION_PREFIX_CHARS}))@([^:]+?):\s*/
 
     # Mention without colon: @name followed by whitespace (start-of-text only
     # to avoid false positives like email addresses)
     MENTION_LOOSE_PATTERN = /\A@(\S+)\s+/
 
     # Scan pattern: finds all @name: mentions anywhere in text
-    MENTION_SCAN_PATTERN = /(?:^|(?<=\s))@([^:]+?):/
+    MENTION_SCAN_PATTERN = /(?:^|(?<=#{MENTION_PREFIX_CHARS}))@([^:]+?):/
 
     # Extract the first mentioned name from text (returns nil if no mention found)
     def self.extract_name(text)
