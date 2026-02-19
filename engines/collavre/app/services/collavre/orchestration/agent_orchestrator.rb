@@ -23,6 +23,7 @@ module Collavre
         updated = Task.where(id: task.id, status: "queued").update_all(status: "pending")
         if updated > 0
           task.reload
+          cleanup_waiting_notices!(task)
           refresh_deferred_context!(task)
 
           if task.status == "cancelled"
@@ -34,6 +35,19 @@ module Collavre
           end
         end
       end
+
+      # Remove waiting notice comments (system messages) for this task's creative/topic.
+      def self.cleanup_waiting_notices!(task)
+        context = task.trigger_event_payload
+        creative_id = context&.dig("creative", "id")
+        topic_id = context&.dig("topic", "id")
+        return unless creative_id
+
+        Comment.where(creative_id: creative_id, topic_id: topic_id, user_id: nil)
+               .where("content LIKE ?", "⏳%")
+               .destroy_all
+      end
+      private_class_method :cleanup_waiting_notices!
 
       # Refresh trigger_event_payload so the deferred agent sees the latest
       # conversation state instead of the stale snapshot from enqueue time.
@@ -142,32 +156,13 @@ module Collavre
 
       def log_decision(decision)
         agent = decision[:agent]
-        timing = decision[:timing]
-        reason = decision[:reason]
         topic_id = @context.dig("topic", "id") || "main"
-
-        case timing
-        when :immediate
-          Rails.logger.info(
-            "[Orchestrator] Agent #{agent.id} (#{agent.name}) → immediate " \
-            "(event=#{@event_name}, topic=#{topic_id})"
-          )
-        when :deferred
-          Rails.logger.info(
-            "[Orchestrator] Agent #{agent.id} (#{agent.name}) → deferred: #{reason} " \
-            "(event=#{@event_name}, topic=#{topic_id})"
-          )
-        when :delayed
-          Rails.logger.info(
-            "[Orchestrator] Agent #{agent.id} (#{agent.name}) → delayed #{decision[:delay]}s: #{reason} " \
-            "(event=#{@event_name}, topic=#{topic_id})"
-          )
-        when :rejected
-          Rails.logger.info(
-            "[Orchestrator] Agent #{agent.id} (#{agent.name}) → rejected: #{reason} " \
-            "(event=#{@event_name}, topic=#{topic_id})"
-          )
-        end
+        detail = [ decision[:timing], decision[:reason] ].compact.join(": ")
+        detail += " #{decision[:delay]}s" if decision[:delay]
+        Rails.logger.info(
+          "[Orchestrator] Agent #{agent.id} (#{agent.name}) → #{detail} " \
+          "(event=#{@event_name}, topic=#{topic_id})"
+        )
       end
 
       def post_waiting_notice(agent, decision)
