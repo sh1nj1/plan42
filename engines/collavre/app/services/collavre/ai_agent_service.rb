@@ -132,6 +132,11 @@ module Collavre
         if @response_content.present?
           @reply_comment.content_will_change!
           @reply_comment.update!(content: @response_content)
+          @reply_comment.broadcast_update_to(
+            [ @reply_comment.creative, :comments ],
+            partial: "collavre/comments/comment",
+            locals: { comment: @reply_comment, streaming: false }
+          )
           log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content, partial: true })
           reassociate_activity_logs(@original_comment, @reply_comment)
         else
@@ -155,6 +160,11 @@ module Collavre
           else
             @reply_comment.content_will_change!
             @reply_comment.update!(content: @response_content)
+            @reply_comment.broadcast_update_to(
+              [ @reply_comment.creative, :comments ],
+              partial: "collavre/comments/comment",
+              locals: { comment: @reply_comment, streaming: false }
+            )
             log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content })
             reassociate_activity_logs(@original_comment, @reply_comment)
             dispatch_a2a_if_needed
