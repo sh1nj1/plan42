@@ -79,7 +79,6 @@ export default class extends Controller {
     // This prevents read-receipt or other sibling Turbo updates from
     // triggering the observer and accidentally re-rendering markdown.
     if (this.element.dataset.aiUser === 'true') {
-      this._streamingTimeout = null
       this._contentObserver = new MutationObserver(() => {
         const el = this.element.querySelector('.comment-content')
         if (!el) return
