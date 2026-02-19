@@ -6,7 +6,8 @@ export default class extends CommonPopupController {
 
     connect() {
         super.connect()
-        this.inputTarget.addEventListener('input', this.search.bind(this))
+        this._debounceTimer = null
+        this.inputTarget.addEventListener('input', this._debouncedSearch.bind(this))
         this.inputTarget.addEventListener('keydown', this.handleInputKeydown.bind(this))
         this.closeTarget.addEventListener('click', () => this.close())
 
@@ -42,9 +43,14 @@ export default class extends CommonPopupController {
         }
     }
 
+    _debouncedSearch() {
+        if (this._debounceTimer) clearTimeout(this._debounceTimer)
+        this._debounceTimer = setTimeout(() => this.search(), 300)
+    }
+
     search() {
         const query = this.inputTarget.value.trim()
-        if (!query) {
+        if (query.length < 3) {
             this.setItems([])
             return
         }
