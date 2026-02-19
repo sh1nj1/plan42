@@ -13,6 +13,7 @@ module Creatives
       dragged, target = fetch_creatives(dragged_id, target_id)
       validate_direction!(direction)
       raise Error, "Invalid creatives" unless dragged && target
+      validate_ownership!(dragged, target)
 
       if direction == "child"
         reorder_as_child(dragged, target)
@@ -34,6 +35,8 @@ module Creatives
       dragged_lookup = Creative.where(id: ids).index_by { |creative| creative.id.to_s }
       ordered_dragged = ids.map { |id| dragged_lookup[id.to_s] }.compact
       raise Error, "Invalid creatives" unless ordered_dragged.size == ids.size
+
+      ordered_dragged.each { |dragged| validate_ownership!(dragged, target) }
 
       if ordered_dragged.any? { |creative| creative.id == target.id }
         raise Error, "Invalid creatives"
@@ -59,6 +62,9 @@ module Creatives
       dragged, target = fetch_creatives(dragged_id, target_id)
       validate_direction!(direction)
       raise Error, "Invalid creatives" unless dragged && target
+      unless owned_by_user?(target)
+        raise Error, "Cannot link into creatives owned by other users"
+      end
 
       origin = dragged.effective_origin
       new_parent = direction == "child" ? target : target.parent
@@ -106,6 +112,16 @@ module Creatives
     private
 
     attr_reader :user
+
+    def validate_ownership!(dragged, target)
+      unless owned_by_user?(dragged) && owned_by_user?(target)
+        raise Error, "Cannot move creatives owned by different users"
+      end
+    end
+
+    def owned_by_user?(creative)
+      creative.user_id == user.id
+    end
 
     def fetch_creatives(dragged_id, target_id)
       [ Creative.find_by(id: dragged_id), Creative.find_by(id: target_id) ]
