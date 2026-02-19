@@ -23,8 +23,6 @@ en:
       summary: "The following repositories will be linked to this Creative:"
       webhook_instructions: "Configure each repository with the webhook details below."
       summary_empty: "No repositories selected."
-      prompt_title: "Review the Gemini analysis prompt and edit it if needed."
-      prompt_help: "Use the placeholders below to inject runtime details as needed:"
     auth:
       login_first: "Please log in first to connect your GitHub account"
       connected: "GitHub account connected successfully"
