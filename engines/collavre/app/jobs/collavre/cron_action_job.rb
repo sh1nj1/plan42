@@ -6,25 +6,35 @@ module Collavre
   # agent orchestration pipeline.
   #
   # Created dynamically via the cron_create MCP tool.
+  # topic_id can be nil for the main topic.
   class CronActionJob < ApplicationJob
     queue_as :default
 
     def perform(creative_id:, topic_id:, agent_id:, message:)
       creative = Creative.find_by(id: creative_id)
-      topic = Topic.find_by(id: topic_id)
       agent = User.find_by(id: agent_id)
 
-      unless creative && topic && agent
+      unless creative && agent
         Rails.logger.warn(
-          "[CronActionJob] Skipping: creative=#{creative_id} topic=#{topic_id} agent=#{agent_id} - record not found"
+          "[CronActionJob] Skipping: creative=#{creative_id} agent=#{agent_id} - record not found"
         )
         return
+      end
+
+      # topic_id nil means main topic; otherwise look up the topic
+      topic = nil
+      if topic_id.present?
+        topic = Topic.find_by(id: topic_id)
+        unless topic
+          Rails.logger.warn("[CronActionJob] Skipping: topic=#{topic_id} not found")
+          return
+        end
       end
 
       comment = creative.comments.create!(
         content: message,
         user: agent,
-        topic_id: topic.id,
+        topic_id: topic&.id,
         private: false
       )
 
@@ -40,14 +50,16 @@ module Collavre
           description: creative.description
         },
         topic: {
-          id: topic.id
+          id: topic&.id
         },
         chat: {
           content: comment.content
         }
       })
 
-      Rails.logger.info("[CronActionJob] Posted cron message to creative #{creative_id}, topic #{topic_id}")
+      Rails.logger.info(
+        "[CronActionJob] Posted cron message to creative #{creative_id}, topic #{topic_id || 'main'}"
+      )
     end
   end
 end
