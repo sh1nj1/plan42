@@ -43,7 +43,7 @@ module Collavre
             "topic" => { "id" => topic.id }
           }
           scheduler = Scheduler.new(context)
-          decisions = scheduler.schedule([@agent])
+          decisions = scheduler.schedule([ @agent ])
           decisions.first[:timing] == :immediate
         end
 

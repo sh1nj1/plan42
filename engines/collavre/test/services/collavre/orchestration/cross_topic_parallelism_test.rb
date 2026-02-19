@@ -39,7 +39,7 @@ module Collavre
         }
 
         scheduler = Scheduler.new(context_b)
-        decisions = scheduler.schedule([@agent])
+        decisions = scheduler.schedule([ @agent ])
 
         assert_equal 1, decisions.size
         assert_equal :immediate, decisions.first[:timing],
@@ -64,7 +64,7 @@ module Collavre
         }
 
         scheduler = Scheduler.new(context_a)
-        decisions = scheduler.schedule([@agent])
+        decisions = scheduler.schedule([ @agent ])
 
         assert_equal :deferred, decisions.first[:timing],
           "Same agent should be deferred in same topic"
@@ -102,7 +102,7 @@ module Collavre
         }
 
         scheduler = Scheduler.new(context_b)
-        decisions = scheduler.schedule([@agent])
+        decisions = scheduler.schedule([ @agent ])
 
         assert_equal :immediate, decisions.first[:timing],
           "Topic B should not be blocked by Topic A or Main running tasks. " \
@@ -125,7 +125,7 @@ module Collavre
         }
 
         scheduler = Scheduler.new(context_c)
-        decisions = scheduler.schedule([@agent])
+        decisions = scheduler.schedule([ @agent ])
 
         assert_equal :immediate, decisions.first[:timing],
           "Third topic should also run in parallel. " \

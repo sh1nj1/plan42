@@ -36,12 +36,12 @@ module Collavre
         decisions = @topics.map do |topic|
           context = build_context(topic)
           scheduler = Scheduler.new(context)
-          scheduler.schedule([@agent]).first
+          scheduler.schedule([ @agent ]).first
         end
 
         assert decisions.all? { |d| d[:timing] == :immediate },
           "All 5 topics should be :immediate from Scheduler, " \
-          "got: #{decisions.map { |d| [d[:timing], d[:reason]] }}"
+          "got: #{decisions.map { |d| [ d[:timing], d[:reason] ] }}"
 
         # Part 2: Simulate job execution with limited thread pool
         # Each job blocks for the duration of AI response (HTTP streaming)
