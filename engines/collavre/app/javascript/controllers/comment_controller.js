@@ -9,16 +9,21 @@ export default class extends Controller {
   connect() {
     const contentElement = this.element.querySelector('.comment-content')
     if (contentElement && contentElement.dataset.rendered !== 'true') {
-      const text = contentElement.textContent || ''
-      if (this.element.dataset.aiUser === 'true' && text.trim() === '...') {
-        // Streaming placeholder — show animated dots
-        contentElement.innerHTML = '<span class="streaming-dots"><span>.</span><span>.</span><span>.</span></span>'
-        contentElement.classList.add('streaming')
-      } else {
-        contentElement.innerHTML = renderCommentMarkdown(text)
-        contentElement.classList.remove('streaming')
+      contentElement.dataset.rendering = 'true'
+      try {
+        const text = contentElement.textContent || ''
+        if (this.element.dataset.aiUser === 'true' && text.trim() === '...') {
+          // Streaming placeholder — show animated dots
+          contentElement.innerHTML = '<span class="streaming-dots"><span>.</span><span>.</span><span>.</span></span>'
+          contentElement.classList.add('streaming')
+        } else {
+          contentElement.innerHTML = renderCommentMarkdown(text)
+          contentElement.classList.remove('streaming')
+        }
+        contentElement.dataset.rendered = 'true'
+      } finally {
+        requestAnimationFrame(() => { contentElement.dataset.rendering = 'false' })
       }
-      contentElement.dataset.rendered = 'true'
     }
 
     // Observe Turbo replacements to re-render markdown and maintain streaming state
