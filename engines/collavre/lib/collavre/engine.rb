@@ -70,17 +70,20 @@ module Collavre
 
     # Boot the self-scheduling CronSchedulerJob for dynamic recurring tasks.
     # Uses DB-based guard (SolidQueue::Job table) to prevent duplicate chains.
+    # Boot the self-scheduling CronSchedulerJob for dynamic recurring tasks.
+    # Uses DB-based guard (SolidQueue::Job table) to prevent duplicate chains.
+    # Runs in any non-test process that has DB access — the DB guard ensures
+    # only one scheduler chain is active regardless of how many processes boot.
     initializer "collavre.cron_scheduler" do
       config.after_initialize do
         next if Rails.env.test?
-
-        # Only boot in server or Solid Queue worker processes
-        next unless defined?(Rails::Server) || defined?(SolidQueue::Supervisor)
 
         # DB-based check: skip if a CronSchedulerJob is already pending
         unless SolidQueue::Job.where(class_name: "Collavre::CronSchedulerJob", finished_at: nil).exists?
           Rails.logger.info("[CronScheduler] Booting self-scheduling cron scheduler")
           Collavre::CronSchedulerJob.perform_later
+        else
+          Rails.logger.info("[CronScheduler] Already running, skipping boot")
         end
       rescue StandardError => e
         Rails.logger.error("[CronScheduler] Failed to boot: #{e.message}")
