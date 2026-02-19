@@ -55,8 +55,15 @@ module Collavre
           sections << I18n.t("collavre.ai_agent.a2a.request_description",
                              sender_name: @sender["name"], sender_type: @sender["type"])
           sections << (collab["a2a_focus_instruction"] || I18n.t("collavre.ai_agent.a2a.focus_instruction"))
-          sections << (collab["a2a_completion_instruction"] || I18n.t("collavre.ai_agent.a2a.completion_instruction"))
+          sections << (collab["a2a_completion_instruction"] ||
+                       I18n.t("collavre.ai_agent.a2a.completion_instruction",
+                              sender_name: @sender["name"]))
           sections << (collab["a2a_followup_instruction"] || I18n.t("collavre.ai_agent.a2a.followup_instruction"))
+          sections << ""
+        elsif @sender
+          # Human-triggered request: instruct agent to report back
+          sections << I18n.t("collavre.ai_agent.a2a.human_completion_instruction",
+                             sender_name: @sender["name"])
           sections << ""
         end
 

@@ -21,8 +21,9 @@ en:
         request_header: "## ⚡ Agent Request"
         request_description: "This message is a request from another AI Agent (@%{sender_name}, %{sender_type})."
         focus_instruction: "- Focus on answering the request"
-        completion_instruction: "- When done, report results to the requester via @name: mention"
+        completion_instruction: "- When done, you MUST report results back to @%{sender_name}: via mention"
         followup_instruction: "- If you need more information, ask the requester via @mention"
+        human_completion_instruction: "- When done, report your results back to @%{sender_name}: via mention"
       review:
         context: "The user is reviewing your previous message and requesting changes. Your response will REPLACE the original message entirely. You MUST provide the complete response — never abbreviate, skip, or summarize any part (e.g., do NOT write 'items 2-5 remain the same'). Write the full content from start to finish as if the original never existed."
       collaboration:

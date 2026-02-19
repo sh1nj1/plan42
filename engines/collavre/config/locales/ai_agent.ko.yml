@@ -21,8 +21,9 @@ ko:
         request_header: "## ⚡ Agent 요청"
         request_description: "이 메시지는 다른 AI Agent(@%{sender_name}, %{sender_type})가 보낸 요청입니다."
         focus_instruction: "- 요청에 집중해서 답변하세요"
-        completion_instruction: "- 완료되면 요청자에게 @이름: 멘션으로 결과를 보고하세요"
+        completion_instruction: "- 완료되면 반드시 @%{sender_name}: 멘션으로 결과를 보고하세요"
         followup_instruction: "- 추가 정보가 필요하면 요청자에게 @멘션으로 물어보세요"
+        human_completion_instruction: "- 완료되면 @%{sender_name}: 멘션으로 결과를 보고하세요"
       review:
         context: "사용자가 당신의 이전 메시지를 리뷰하고 변경을 요청하고 있습니다. 당신의 응답이 원본 메시지를 완전히 대체됩니다. 반드시 전체 응답을 빠짐없이 작성하세요 — 절대로 일부를 생략하거나 요약하지 마세요 (예: '2~5번은 이전과 동일' 같은 표현 금지). 원본이 없다고 생각하고 처음부터 끝까지 완전한 내용을 작성하세요."
       collaboration:

@@ -348,7 +348,7 @@ module Collavre
         assert_includes prompt, I18n.t("collavre.ai_agent.collaboration.header")
       end
 
-      test "collaboration prompt excludes A2A context when sender is human" do
+      test "collaboration prompt excludes A2A context but includes human completion instruction when sender is human" do
         Collavre::CreativeShare.create!(
           creative: @creative,
           user: @pm_agent,
@@ -366,6 +366,7 @@ module Collavre
         prompt = builder.to_collaboration_prompt
 
         assert_not_includes prompt, I18n.t("collavre.ai_agent.a2a.request_header")
+        assert_includes prompt, "@#{@human_user.name}"
         assert_includes prompt, I18n.t("collavre.ai_agent.collaboration.header")
       end
 
@@ -461,8 +462,47 @@ module Collavre
         )
         prompt = builder.to_collaboration_prompt
 
-        assert_includes prompt, I18n.t("collavre.ai_agent.a2a.completion_instruction")
+        assert_includes prompt, I18n.t("collavre.ai_agent.a2a.completion_instruction",
+                                       sender_name: "qa-agent")
         assert_includes prompt, I18n.t("collavre.ai_agent.collaboration.mention_rule")
+      end
+
+      test "A2A completion instruction includes sender name" do
+        sender = {
+          "id" => @qa_agent.id,
+          "name" => "qa-agent",
+          "is_ai" => true,
+          "type" => "qa"
+        }
+
+        builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative, sender: sender)
+        prompt = builder.to_collaboration_prompt
+
+        assert_includes prompt, "@qa-agent"
+        assert_includes prompt, I18n.t("collavre.ai_agent.a2a.completion_instruction",
+                                       sender_name: "qa-agent")
+      end
+
+      test "human sender gets completion instruction with their name" do
+        Collavre::CreativeShare.create!(
+          creative: @creative,
+          user: @pm_agent,
+          permission: :admin
+        )
+
+        sender = {
+          "id" => @human_user.id,
+          "name" => "John",
+          "is_ai" => false,
+          "type" => "human"
+        }
+
+        builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative, sender: sender)
+        prompt = builder.to_collaboration_prompt
+
+        assert_includes prompt, "@John"
+        assert_includes prompt, I18n.t("collavre.ai_agent.a2a.human_completion_instruction",
+                                       sender_name: "John")
       end
 
       private
