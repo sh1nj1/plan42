@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Collavre
-  # CronSchedulerJob runs every minute (as a static recurring task) and
+  # CronSchedulerJob is a self-scheduling job that runs every minute and
   # picks up dynamically-created recurring tasks (static: false) whose
   # cron schedule matches the current minute. For each match it enqueues
   # the target job (e.g. CronActionJob).
@@ -10,11 +10,18 @@ module Collavre
   # static (config-defined) recurring tasks — dynamic ones created via
   # cron_create are ignored by the Scheduler.
   #
+  # Self-scheduling: after each run, the job re-enqueues itself with
+  # `wait: 1.minute`. Boot-time scheduling is handled by the engine
+  # initializer (see collavre/engine.rb).
+  #
   # Duplicate-execution guard: uses Rails.cache with a per-task, per-minute
   # key so that even if this job runs twice in the same minute window,
   # each task fires at most once.
   class CronSchedulerJob < ApplicationJob
     queue_as :default
+
+    # Prevent duplicate scheduler instances from piling up
+    RESCHEDULE_LOCK_KEY = "cron_scheduler:reschedule_lock"
 
     def perform
       now = Time.current
@@ -27,6 +34,8 @@ module Collavre
         enqueue_task(task)
         mark_dispatched(task, now)
       end
+    ensure
+      reschedule
     end
 
     private
@@ -35,7 +44,6 @@ module Collavre
       cron = Fugit.parse(task.schedule)
       return false unless cron.is_a?(Fugit::Cron)
 
-      # Check if this minute matches the cron expression
       cron.match?(time)
     end
 
@@ -71,6 +79,14 @@ module Collavre
       Rails.logger.info("[CronScheduler] Enqueued #{task.class_name} for task #{task.key}")
     rescue StandardError => e
       Rails.logger.error("[CronScheduler] Failed to enqueue #{task.key}: #{e.message}")
+    end
+
+    def reschedule
+      # Use cache lock to prevent multiple scheduler chains from forming
+      return if Rails.cache.read(RESCHEDULE_LOCK_KEY).present?
+
+      Rails.cache.write(RESCHEDULE_LOCK_KEY, true, expires_in: 50.seconds)
+      self.class.set(wait: 1.minute).perform_later
     end
   end
 end

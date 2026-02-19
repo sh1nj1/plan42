@@ -2,11 +2,6 @@ default: &default
   dispatchers:
     - polling_interval: 1
       batch_size: 500
-      recurring_tasks:
-        cron_scheduler:
-          class: Collavre::CronSchedulerJob
-          schedule: "every 1 minute"
-          queue: default
   workers:
     # High-priority worker for authorization cache (runs permission updates fast)
     - queues: [authz]

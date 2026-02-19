@@ -68,6 +68,27 @@ module Collavre
       end
     end
 
+    # Boot the self-scheduling CronSchedulerJob for dynamic recurring tasks.
+    # Uses a cache lock to ensure only one scheduler chain is active.
+    initializer "collavre.cron_scheduler" do
+      ActiveSupport.on_load(:active_job) do
+        Rails.application.config.after_initialize do
+          next if Rails.env.test?
+
+          # Delay to let Solid Queue workers start first
+          Thread.new do
+            sleep 5
+            unless Rails.cache.read(Collavre::CronSchedulerJob::RESCHEDULE_LOCK_KEY).present?
+              Rails.logger.info("[CronScheduler] Booting self-scheduling cron scheduler")
+              Collavre::CronSchedulerJob.perform_later
+            end
+          rescue StandardError => e
+            Rails.logger.error("[CronScheduler] Failed to boot: #{e.message}")
+          end
+        end
+      end
+    end
+
     # Reset navigation registry before any registrations (runs first)
     initializer "collavre.navigation_reset" do
       ActiveSupport::Reloader.to_prepare(prepend: true) do
