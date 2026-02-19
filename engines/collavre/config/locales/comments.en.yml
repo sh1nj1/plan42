@@ -24,7 +24,6 @@ en:
       no_permission: You do not have permission to comment.
       convert_not_allowed: Only the comment owner or a creative admin can convert
         this message.
-      gemini: Gemini
       convert_button: Convert
       convert_to_creative: Convert to Creative
       convert_confirm: This will add the comment content as a child creative of the

@@ -11,14 +11,11 @@
   </div>
   <div>
     <%= render Collavre::AvatarComponent.new(user: comment.user, size: 20, classes: 'avatar comment-avatar') %>
-    <% system_prefix = "#{t('collavre.comments.system_user')}:" %>
     <% display_name =
          if comment.user.present?
            comment.user.display_name
-         elsif comment.content.to_s.strip.start_with?(system_prefix)
-           t('collavre.comments.system_user')
          else
-           t('collavre.comments.gemini')
+           t('collavre.comments.system_user')
          end %>
     <% timestamp = comment.created_at.in_time_zone %>
     <strong><%= display_name %></strong>
