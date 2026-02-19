@@ -104,7 +104,22 @@ module Collavre
         assert_equal "max_retries_exceeded", result.reason
       end
 
-      test "returns retry when no confidence signal and no uncertainty" do
+      test "returns done when no confidence signal on first response (lenient)" do
+        policy_resolver = mock_policy_resolver(enabled: true, threshold: 70)
+        evaluator = SelfReflectionEvaluator.new(
+          @task,
+          response_content: "작업을 완료했습니다. 코드를 수정했습니다.",
+          policy_resolver: policy_resolver
+        )
+
+        result = evaluator.evaluate
+
+        assert_equal :done, result.action
+        assert_equal "no_signal", result.reason
+      end
+
+      test "returns retry when no confidence signal after reflection prompt (retry_count > 0)" do
+        @task.update!(retry_count: 1)
         policy_resolver = mock_policy_resolver(enabled: true, threshold: 70)
         evaluator = SelfReflectionEvaluator.new(
           @task,
@@ -262,7 +277,8 @@ module Collavre
         evaluator = SelfReflectionEvaluator.new(@task, policy_resolver: policy_resolver)
 
         result = evaluator.evaluate
-        assert_equal :retry, result.action
+        # First response (retry_count=0) is lenient — done even without signal
+        assert_equal :done, result.action
         assert_equal "no_signal", result.reason
       end
 

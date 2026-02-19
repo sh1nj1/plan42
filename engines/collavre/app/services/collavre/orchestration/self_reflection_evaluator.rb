@@ -56,8 +56,11 @@ module Collavre
         uncertainty_detected = detect_uncertainty
 
         if confidence.nil? && !uncertainty_detected
-          # No confidence signal - retry to request confidence tag
-          if @task.retry_count >= max_retries
+          # No confidence signal on first response - be lenient (done)
+          # After reflection prompt has explicitly asked for confidence - retry
+          if @task.retry_count.zero?
+            Result.new(action: :done, confidence: nil, reason: "no_signal")
+          elsif @task.retry_count >= max_retries
             Result.new(action: :escalate, confidence: nil, reason: "no_signal_max_retries")
           else
             Result.new(action: :retry, delay: retry_delay, confidence: nil, reason: "no_signal")
