@@ -40,9 +40,17 @@ export default class extends Controller {
   _resetStreamingTimeout(el) {
     if (this._streamingTimeout) clearTimeout(this._streamingTimeout)
     this._streamingTimeout = setTimeout(() => {
-      el.classList.remove('streaming')
-      const c = el.querySelector('.streaming-cursor')
-      if (c) c.remove()
+      const currentEl = this.element?.querySelector('.comment-content')
+      if (currentEl) {
+        currentEl.dataset.rendering = 'true'
+        try {
+          currentEl.classList.remove('streaming')
+          const c = currentEl.querySelector('.streaming-cursor')
+          if (c) c.remove()
+        } finally {
+          requestAnimationFrame(() => { currentEl.dataset.rendering = 'false' })
+        }
+      }
       this._isStreaming = false
     }, 10000)
   }
