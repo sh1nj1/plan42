@@ -1,3 +1,8 @@
+## v0.4.0 (2026-02-20)
+
+### Changes
+- 0d579a9c feat: pass image attachments from comments to AI via RubyLLM (#808)
+
 ## v0.3.1 (2026-02-09)
 
 ### Changes
