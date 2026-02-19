@@ -7,12 +7,21 @@ export default class extends CommonPopupController {
     connect() {
         super.connect()
         this._debounceTimer = null
+        this._searchToken = 0
         this.inputTarget.addEventListener('input', this._debouncedSearch.bind(this))
         this.inputTarget.addEventListener('keydown', this.handleInputKeydown.bind(this))
         this.closeTarget.addEventListener('click', () => this.close())
 
         // Bind public methods
         this.open = this.open.bind(this)
+    }
+
+    disconnect() {
+        if (this._debounceTimer) {
+            clearTimeout(this._debounceTimer)
+            this._debounceTimer = null
+        }
+        super.disconnect()
     }
 
     open(anchorRect, onSelectCallback, onCloseCallback) {
@@ -28,6 +37,10 @@ export default class extends CommonPopupController {
     }
 
     close() {
+        if (this._debounceTimer) {
+            clearTimeout(this._debounceTimer)
+            this._debounceTimer = null
+        }
         // super.close() calls popup.hide(), which triggers dispatchClose, 
         // where we now handle the callback. So we just need to call super.close().
         super.close()
@@ -51,18 +64,25 @@ export default class extends CommonPopupController {
     search() {
         const query = this.inputTarget.value.trim()
         if (query.length < 3) {
+            this._searchToken++
             this.setItems([])
             return
         }
 
+        const token = ++this._searchToken
         creativesApi.search(query, { simple: true })
             .then((results) => {
+                // Discard stale responses if input changed since this request
+                if (token !== this._searchToken) return
+
                 const items = Array.isArray(results)
                     ? results.map((result) => ({ id: result.id, label: result.description }))
                     : []
                 this.setItems(items)
             })
-            .catch(() => this.setItems([]))
+            .catch(() => {
+                if (token === this._searchToken) this.setItems([])
+            })
     }
 
     // Override select to invoke callback
