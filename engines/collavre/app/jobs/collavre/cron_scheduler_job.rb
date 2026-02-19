@@ -16,10 +16,12 @@ module Collavre
   #
   # Duplicate-execution guard: uses Rails.cache with a per-task, per-minute
   # key so that even if this job runs twice in the same minute window,
-  # each task fires at most once.
+  # each task fires at most once. (This cache is process-local and acceptable
+  # since CronSchedulerJob runs in a single SQ worker process.)
   #
   # Reschedule guard: uses SolidQueue::Job table (DB-based) to prevent
-  # duplicate scheduler chains — no Rails.cache dependency for locking.
+  # duplicate scheduler chains — works across all environments without
+  # shared cache infrastructure.
   class CronSchedulerJob < ApplicationJob
     queue_as :default
 
@@ -90,10 +92,14 @@ module Collavre
     end
 
     def pending_scheduler_exists?
-      SolidQueue::Job
+      scope = SolidQueue::Job
         .where(class_name: self.class.name)
         .where(finished_at: nil)
-        .exists?
+
+      # Exclude the currently running job to avoid blocking our own reschedule
+      scope = scope.where.not(id: provider_job_id) if provider_job_id.present?
+
+      scope.exists?
     end
   end
 end
