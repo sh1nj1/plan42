@@ -79,7 +79,10 @@ module Collavre
         next if Rails.env.test?
 
         # DB-based check: skip if a CronSchedulerJob is already pending
-        unless SolidQueue::Job.where(class_name: "Collavre::CronSchedulerJob", finished_at: nil).exists?
+        pending = SolidQueue::Job.where(class_name: "Collavre::CronSchedulerJob", finished_at: nil)
+        failed_ids = SolidQueue::FailedExecution.pluck(:job_id)
+        pending = pending.where.not(id: failed_ids) if failed_ids.any?
+        unless pending.exists?
           Rails.logger.info("[CronScheduler] Booting self-scheduling cron scheduler")
           Collavre::CronSchedulerJob.perform_later
         else

@@ -46,7 +46,10 @@ module Collavre
       cron = Fugit.parse(task.schedule)
       return false unless cron.is_a?(Fugit::Cron)
 
-      cron.match?(time)
+      # Truncate to the beginning of the current minute so that
+      # cron.match? works regardless of which second the job runs at.
+      minute_start = time.change(sec: 0)
+      cron.match?(minute_start)
     end
 
     def cache_key(task, time)
@@ -98,6 +101,10 @@ module Collavre
 
       # Exclude the currently running job to avoid blocking our own reschedule
       scope = scope.where.not(id: provider_job_id) if provider_job_id.present?
+
+      # Exclude failed jobs — they won't run again without manual retry
+      failed_job_ids = SolidQueue::FailedExecution.pluck(:job_id)
+      scope = scope.where.not(id: failed_job_ids) if failed_job_ids.any?
 
       scope.exists?
     end
