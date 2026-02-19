@@ -10,7 +10,7 @@ module Tools
     tool_description "Create a new recurring scheduled job. The job will periodically post a message to a creative's topic, triggering agent orchestration. Schedule uses cron syntax (e.g., '*/5 * * * *' for every 5 minutes, '0 9 * * *' for daily at 9am)."
 
     tool_param :creative_id, description: "The creative ID to post recurring messages to.", required: true
-    tool_param :topic_id, description: "The topic ID within the creative to post to.", required: true
+    tool_param :topic_name, description: "The topic name within the creative to post to. Use 'Main' for the main topic (topic_id = nil).", required: true
     tool_param :schedule, description: "Cron schedule expression (e.g., '0 9 * * *' for daily at 9am, '*/30 * * * *' for every 30 minutes).", required: true
     tool_param :message, description: "The message content to post on each execution. This triggers the agent orchestration pipeline.", required: true
     tool_param :description, description: "Human-readable description of what this cron job does.", required: false
@@ -18,13 +18,13 @@ module Tools
     sig do
       params(
         creative_id: Integer,
-        topic_id: Integer,
+        topic_name: String,
         schedule: String,
         message: String,
         description: T.nilable(String)
       ).returns(T::Hash[Symbol, T.untyped])
     end
-    def call(creative_id:, topic_id:, schedule:, message:, description: nil)
+    def call(creative_id:, topic_name:, schedule:, message:, description: nil)
       raise "Current.user is required" unless Current.user
 
       creative = Creative.find_by(id: creative_id)
@@ -33,8 +33,8 @@ module Tools
         return { error: "No write permission on this Creative", id: creative_id }
       end
 
-      topic = Topic.find_by(id: topic_id, creative_id: creative.effective_origin.id)
-      return { error: "Topic not found or does not belong to this creative", topic_id: topic_id } unless topic
+      topic_id = resolve_topic_id(creative, topic_name)
+      return topic_id if topic_id.is_a?(Hash) && topic_id[:error]
 
       parsed = Fugit.parse(schedule)
       unless parsed.is_a?(Fugit::Cron)
@@ -65,8 +65,20 @@ module Tools
         schedule: task.schedule,
         description: task.description,
         creative_id: creative_id,
+        topic_name: topic_name,
         next_run: task.next_time&.iso8601
       }
+    end
+
+    private
+
+    def resolve_topic_id(creative, topic_name)
+      return nil if topic_name.casecmp("main").zero?
+
+      topic = Topic.find_by(name: topic_name, creative_id: creative.effective_origin.id)
+      return { error: "Topic '#{topic_name}' not found for this creative" } unless topic
+
+      topic.id
     end
   end
 end
