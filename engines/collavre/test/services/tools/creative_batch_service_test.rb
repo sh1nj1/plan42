@@ -37,11 +37,11 @@ module Collavre
       test "updates a creative via batch" do
         service = CreativeBatchService.new
         result = service.call(operations: [
-          { "action" => "update", "id" => @root.id, "progress" => 0.5 }
+          { "action" => "update", "id" => @root.id, "progress" => 1.0 }
         ])
 
         assert result[:success]
-        assert_equal 0.5, result[:results][0][:progress]
+        assert_equal 1.0, result[:results][0][:progress]
       end
 
       test "deletes a creative via batch" do
@@ -58,10 +58,11 @@ module Collavre
       end
 
       test "mixed operations in a single batch" do
+        child = Creative.create!(description: "<p>Child</p>", user: @user, parent: @root)
         service = CreativeBatchService.new
         result = service.call(operations: [
           { "action" => "create", "parent_id" => @root.id, "description" => "New task" },
-          { "action" => "update", "id" => @root.id, "progress" => 0.75 }
+          { "action" => "update", "id" => child.id, "description" => "<p>Updated child</p>" }
         ])
 
         assert result[:success]
