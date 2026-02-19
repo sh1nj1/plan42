@@ -30,6 +30,11 @@ if (!notionIntegrationInitialized) {
     const parentSummaryEl = document.getElementById('notion-parent-summary');
     const parentPageSummaryEl = document.getElementById('notion-parent-page-summary');
 
+    // Store original button text for restoration after async operations
+    if (exportBtn) exportBtn.dataset.originalText = exportBtn.textContent;
+    if (syncBtn) syncBtn.dataset.originalText = syncBtn.textContent;
+    if (deleteBtn) deleteBtn.dataset.originalText = deleteBtn.textContent;
+
     let creativeId = null;
     let currentStep = 'connect';
     let hasExistingIntegration = false;
@@ -113,7 +118,7 @@ if (!notionIntegrationInitialized) {
     function loadIntegrationStatus() {
       if (!creativeId) return;
 
-      statusEl.textContent = 'Loading...';
+      statusEl.textContent = modal.dataset.loading;
       clearError();
 
       fetch(`/notion/creatives/${creativeId}/notion_integration`, {
@@ -141,7 +146,7 @@ if (!notionIntegrationInitialized) {
             console.log('Available pages:', availablePages);
             
             if (workspaceNameEl) {
-              workspaceNameEl.textContent = data.account.workspace_name || 'Notion Workspace';
+              workspaceNameEl.textContent = data.account.workspace_name || modal.dataset.defaultWorkspace;
             }
 
             if (data.linked_pages && data.linked_pages.length > 0) {
@@ -163,7 +168,7 @@ if (!notionIntegrationInitialized) {
         .catch(error => {
           console.error('Error loading integration status:', error);
           statusEl.textContent = '';
-          showError('Failed to load integration status');
+          showError(modal.dataset.loadFailed);
         });
     }
 
@@ -176,12 +181,12 @@ if (!notionIntegrationInitialized) {
         const link = document.createElement('a');
         link.href = page.page_url;
         link.target = '_blank';
-        link.textContent = page.page_title || 'Untitled Page';
+        link.textContent = page.page_title || modal.dataset.untitledPage;
         li.appendChild(link);
         
         if (page.last_synced_at) {
           const syncInfo = document.createElement('span');
-          syncInfo.textContent = ` (synced ${new Date(page.last_synced_at).toLocaleDateString()})`;
+          syncInfo.textContent = ` (${modal.dataset.syncedLabel} ${new Date(page.last_synced_at).toLocaleDateString()})`;
           syncInfo.style.color = 'var(--color-text-secondary)';
           li.appendChild(syncInfo);
         }
@@ -225,7 +230,7 @@ if (!notionIntegrationInitialized) {
       if (availablePages.length === 0) {
         const option = document.createElement('option');
         option.value = '';
-        option.textContent = 'No pages available or loading...';
+        option.textContent = modal.dataset.noPages;
         parentPageSelect.appendChild(option);
       } else {
         const defaultOption = document.createElement('option');
@@ -237,7 +242,7 @@ if (!notionIntegrationInitialized) {
           console.log('Adding page option:', page);
           const option = document.createElement('option');
           option.value = page.id;
-          option.textContent = page.title || 'Untitled';
+          option.textContent = page.title || modal.dataset.untitled;
           parentPageSelect.appendChild(option);
         });
       }
@@ -246,20 +251,20 @@ if (!notionIntegrationInitialized) {
     function updateSummary() {
       if (creativeTitleEl) {
         // Use the creative title from the API response
-        const title = window.notionCreativeTitle || 'Current Creative';
+        const title = window.notionCreativeTitle || modal.dataset.currentCreative;
         console.log(`Creative title used: "${title}" for ID: ${creativeId}`);
         creativeTitleEl.textContent = title;
       }
 
       if (workspaceSummaryEl && workspaceInfo) {
-        workspaceSummaryEl.textContent = workspaceInfo.workspace_name || 'Notion Workspace';
+        workspaceSummaryEl.textContent = workspaceInfo.workspace_name || modal.dataset.defaultWorkspace;
       }
 
       const selectedExportType = document.querySelector('input[name="notion-export-type"]:checked')?.value || 'new-page';
       exportType = selectedExportType;
 
       if (exportTypeSummaryEl) {
-        exportTypeSummaryEl.textContent = selectedExportType === 'new-page' ? 'New page' : 'Subpage';
+        exportTypeSummaryEl.textContent = selectedExportType === 'new-page' ? modal.dataset.newPageLabel : modal.dataset.subpageLabel;
       }
 
       if (selectedExportType === 'select-parent') {
@@ -267,7 +272,7 @@ if (!notionIntegrationInitialized) {
         if (parentSummaryEl && parentPageSummaryEl) {
           if (selectedParentPage) {
             const selectedPage = availablePages.find(p => p.id === selectedParentPage);
-            parentPageSummaryEl.textContent = selectedPage?.title || 'Selected page';
+            parentPageSummaryEl.textContent = selectedPage?.title || modal.dataset.selectedPage;
             parentSummaryEl.style.display = 'block';
           } else {
             parentSummaryEl.style.display = 'none';
@@ -285,7 +290,7 @@ if (!notionIntegrationInitialized) {
       }
 
       exportBtn.disabled = true;
-      exportBtn.textContent = 'Exporting...';
+      exportBtn.textContent = modal.dataset.exporting;
       clearError();
 
       const requestData = {
@@ -317,16 +322,16 @@ if (!notionIntegrationInitialized) {
               resetWizard();
             }, 2000);
           } else {
-            showError(data.message || 'Export failed');
+            showError(data.message || modal.dataset.exportFailed);
           }
         })
         .catch(error => {
           console.error('Export error:', error);
-          showError('Export failed');
+          showError(modal.dataset.exportFailed);
         })
         .finally(() => {
           exportBtn.disabled = false;
-          exportBtn.textContent = 'Export to Notion';
+          exportBtn.textContent = exportBtn.dataset.originalText;
         });
     }
 
@@ -334,7 +339,7 @@ if (!notionIntegrationInitialized) {
       if (!creativeId) return;
 
       syncBtn.disabled = true;
-      syncBtn.textContent = 'Syncing...';
+      syncBtn.textContent = modal.dataset.syncing;
       clearError();
 
       fetch(`/notion/creatives/${creativeId}/notion_integration`, {
@@ -351,16 +356,16 @@ if (!notionIntegrationInitialized) {
             statusEl.textContent = modal.dataset.syncSuccess || 'Sync completed successfully';
             statusEl.style.color = 'green';
           } else {
-            showError(data.message || 'Sync failed');
+            showError(data.message || modal.dataset.syncFailed);
           }
         })
         .catch(error => {
           console.error('Sync error:', error);
-          showError('Sync failed');
+          showError(modal.dataset.syncFailed);
         })
         .finally(() => {
           syncBtn.disabled = false;
-          syncBtn.textContent = 'Sync to Notion';
+          syncBtn.textContent = syncBtn.dataset.originalText;
         });
     }
 
@@ -368,7 +373,7 @@ if (!notionIntegrationInitialized) {
       if (!confirm(modal.dataset.deleteConfirm)) return;
 
       deleteBtn.disabled = true;
-      deleteBtn.textContent = 'Removing...';
+      deleteBtn.textContent = modal.dataset.removing;
       clearError();
 
       fetch(`/notion/creatives/${creativeId}/notion_integration`, {
@@ -388,16 +393,16 @@ if (!notionIntegrationInitialized) {
               resetWizard();
             }, 2000);
           } else {
-            showError(data.message || 'Deletion failed');
+            showError(data.message || modal.dataset.deleteFailed);
           }
         })
         .catch(error => {
           console.error('Delete error:', error);
-          showError('Deletion failed');
+          showError(modal.dataset.deleteFailed);
         })
         .finally(() => {
           deleteBtn.disabled = false;
-          deleteBtn.textContent = 'Remove link';
+          deleteBtn.textContent = modal.dataset.deleteButtonLabel;
         });
     }
 
