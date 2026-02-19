@@ -173,18 +173,7 @@ input[type="submit"] {
   color: var(--text-on-badge);
 }
 
-/* --- Date/time input: dark mode native controls --- */
-body.dark-mode input[type="date"],
-body.dark-mode input[type="datetime-local"] {
-  color-scheme: dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  body:not(.light-mode):not(.dark-mode) input[type="date"],
-  body:not(.light-mode):not(.dark-mode) input[type="datetime-local"] {
-    color-scheme: dark;
-  }
-}
+/* --- Date/time input placeholder text --- */
 
 input[type="date"]::-webkit-datetime-edit-text,
 input[type="date"]::-webkit-datetime-edit-month-field,

@@ -127,6 +127,17 @@ textarea {
     border: 1px solid var(--color-border);
 }
 
+input[type="date"],
+input[type="datetime-local"] {
+    color-scheme: light dark;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    opacity: 0.7;
+    cursor: pointer;
+}
+
 input[type="submit"]:disabled {
     opacity: 0.5;
     cursor: not-allowed;
