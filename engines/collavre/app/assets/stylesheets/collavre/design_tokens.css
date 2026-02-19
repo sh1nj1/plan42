@@ -13,6 +13,9 @@
  * Usage: padding, margin, gap
  * ============================================================================ */
 :root {
+  /* -- Color scheme -- */
+  --color-scheme: light;             /* light | dark — used by native controls */
+
   --space-000: -0.5rem;   /* -8px */
   --space-00: -0.25rem;   /* -4px */
   --space-1: 0.25rem;     /* 4px */
@@ -205,10 +208,21 @@
 }
 
 /* ============================================================================
+ * DATE INPUT — Native controls follow the theme's color-scheme token.
+ * Each theme sets --color-scheme: light | dark, and the browser renders
+ * native icons (calendar picker, dropdown arrows) accordingly.
+ * ============================================================================ */
+input[type="date"],
+input[type="datetime-local"] {
+  color-scheme: var(--color-scheme, light);
+}
+
+/* ============================================================================
  * DARK MODE OVERRIDES
  * Every semantic token that changes in dark mode MUST be listed here.
  * ============================================================================ */
 body.dark-mode {
+  --color-scheme: dark;
   --shadow-color: 220 40% 2%;
   --shadow-strength: 25%;
 
@@ -249,8 +263,6 @@ body.dark-mode {
   /* -- Effects -- */
   --hover-brightness: 110%;
 
-  /* -- Date input -- */
-  --date-icon-filter: invert(0.8);
 }
 
 /* ============================================================================
@@ -260,6 +272,7 @@ body.dark-mode {
 @media (prefers-color-scheme: dark) {
   body:not(.light-mode):not(.dark-mode) {
     color-scheme: dark;
+    --color-scheme: dark;
     --shadow-color: 220 40% 2%;
     --shadow-strength: 25%;
 
@@ -294,8 +307,6 @@ body.dark-mode {
     --border-drag-edge: #777777;
 
     --hover-brightness: 110%;
-
-    --date-icon-filter: invert(0.8);
 
     /* Legacy aliases — must be redefined here so var() resolves against
        the dark semantic tokens above, not :root's light values. */
