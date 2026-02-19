@@ -13,6 +13,9 @@
  * Usage: padding, margin, gap
  * ============================================================================ */
 :root {
+  /* -- Color scheme -- */
+  --color-scheme: light;             /* light | dark — used by native controls */
+
   --space-000: -0.5rem;   /* -8px */
   --space-00: -0.25rem;   /* -4px */
   --space-1: 0.25rem;     /* 4px */
@@ -205,25 +208,13 @@
 }
 
 /* ============================================================================
- * DATE INPUT — Calendar picker icon
- * Uses currentColor + mask so the icon follows the input text color
- * in any theme, matching placeholder text visibility.
+ * DATE INPUT — Native controls follow the theme's color-scheme token.
+ * Each theme sets --color-scheme: light | dark, and the browser renders
+ * native icons (calendar picker, dropdown arrows) accordingly.
  * ============================================================================ */
-input[type="date"]::-webkit-calendar-picker-indicator,
-input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-  -webkit-appearance: none;
-  display: block;
-  width: 1em;
-  height: 1em;
-  background: currentColor;
-  opacity: 0.5;
-  cursor: pointer;
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM9 10H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z'/%3E%3C/svg%3E");
-  -webkit-mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM9 10H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z'/%3E%3C/svg%3E");
-  mask-size: contain;
-  mask-repeat: no-repeat;
+input[type="date"],
+input[type="datetime-local"] {
+  color-scheme: var(--color-scheme, light);
 }
 
 /* ============================================================================
@@ -231,6 +222,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
  * Every semantic token that changes in dark mode MUST be listed here.
  * ============================================================================ */
 body.dark-mode {
+  --color-scheme: dark;
   --shadow-color: 220 40% 2%;
   --shadow-strength: 25%;
 
@@ -280,6 +272,7 @@ body.dark-mode {
 @media (prefers-color-scheme: dark) {
   body:not(.light-mode):not(.dark-mode) {
     color-scheme: dark;
+    --color-scheme: dark;
     --shadow-color: 220 40% 2%;
     --shadow-strength: 25%;
 

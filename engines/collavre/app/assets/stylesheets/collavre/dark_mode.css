@@ -82,12 +82,12 @@ body.dark-mode {
 body {
   background: var(--surface-bg);
   color: var(--text-primary);
-  color-scheme: light;
+  color-scheme: var(--color-scheme, light);
   transition: background 0.3s, color 0.3s;
 }
 
 body.dark-mode {
-  color-scheme: dark;
+  color-scheme: var(--color-scheme, dark);
 }
 
 nav {
