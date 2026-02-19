@@ -37,7 +37,11 @@ module Collavre
         markdown = ApplicationController.helpers.render_creative_tree_markdown(
           [ creative ], 1, true, max_depth: max_depth
         )
-        messages << { role: "user", parts: [ { text: "Creative (id: #{creative.id}):\n#{markdown}" } ] }
+
+        topic = current_topic
+        topic_info = topic ? "\nTopic: #{topic.name} (id: #{topic.id})" : ""
+
+        messages << { role: "user", parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
       end
 
       def append_chat_history(messages)
@@ -104,6 +108,14 @@ module Collavre
         end
 
         messages << { role: "user", parts: trigger_parts }
+      end
+
+      def current_topic
+        trigger_comment_id = @context.dig("comment", "id")
+        trigger_comment = Comment.find_by(id: trigger_comment_id)
+        return unless trigger_comment&.topic_id
+
+        Topic.find_by(id: trigger_comment.topic_id)
       end
 
       def review_eligible?
