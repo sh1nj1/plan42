@@ -23,6 +23,7 @@ module Collavre
         updated = Task.where(id: task.id, status: "queued").update_all(status: "pending")
         if updated > 0
           task.reload
+          cleanup_waiting_notices!(task)
           refresh_deferred_context!(task)
 
           if task.status == "cancelled"
@@ -34,6 +35,19 @@ module Collavre
           end
         end
       end
+
+      # Remove waiting notice comments (system messages) for this task's creative/topic.
+      def self.cleanup_waiting_notices!(task)
+        context = task.trigger_event_payload
+        creative_id = context&.dig("creative", "id")
+        topic_id = context&.dig("topic", "id")
+        return unless creative_id
+
+        Comment.where(creative_id: creative_id, topic_id: topic_id, user_id: nil)
+               .where("content LIKE ?", "⏳%")
+               .destroy_all
+      end
+      private_class_method :cleanup_waiting_notices!
 
       # Refresh trigger_event_payload so the deferred agent sees the latest
       # conversation state instead of the stale snapshot from enqueue time.
@@ -47,7 +61,7 @@ module Collavre
         topic_id = context.dig("topic", "id")
         scope = Comment
           .where(creative_id: creative_id, topic_id: topic_id, private: false)
-          .where.not(user_id: task.agent_id)
+          .where.not(user_id: [ task.agent_id, nil ])
           .order(created_at: :desc)
         latest_comment = scope.first
 
@@ -110,32 +124,67 @@ module Collavre
 
       def enqueue_jobs(decisions)
         decisions.filter_map do |decision|
+          agent = decision[:agent]
+          log_decision(decision)
+
           case decision[:timing]
           when :immediate
-            AiAgentJob.perform_later(decision[:agent].id, @event_name, @context)
-            decision[:agent]
+            AiAgentJob.perform_later(agent.id, @event_name, @context)
+            agent
           when :deferred
             Task.create!(
               name: "Response to #{@event_name}",
               status: "queued",
               trigger_event_name: @event_name,
               trigger_event_payload: @context,
-              agent: decision[:agent],
+              agent: agent,
               topic_id: @context.dig("topic", "id")
             )
-            decision[:agent]
+            post_waiting_notice(agent, decision)
+            agent
           when :delayed
             AiAgentJob.set(wait: decision[:delay]).perform_later(
-              decision[:agent].id, @event_name, @context
+              agent.id, @event_name, @context
             )
-            decision[:agent]
+            post_waiting_notice(agent, decision)
+            agent
           when :rejected
-            Rails.logger.info(
-              "[Orchestrator] Agent #{decision[:agent].id} rejected: #{decision[:reason]}"
-            )
             nil
           end
         end
+      end
+
+      def log_decision(decision)
+        agent = decision[:agent]
+        topic_id = @context.dig("topic", "id") || "main"
+        detail = [ decision[:timing], decision[:reason] ].compact.join(": ")
+        detail += " #{decision[:delay]}s" if decision[:delay]
+        Rails.logger.info(
+          "[Orchestrator] Agent #{agent.id} (#{agent.name}) → #{detail} " \
+          "(event=#{@event_name}, topic=#{topic_id})"
+        )
+      end
+
+      def post_waiting_notice(agent, decision)
+        creative_id = @context.dig("creative", "id")
+        topic_id = @context.dig("topic", "id")
+        return unless creative_id
+
+        creative = Creative.find_by(id: creative_id)
+        return unless creative
+
+        reason_key = decision[:reason] || :unknown
+        reason_text = I18n.t(
+          "collavre.orchestration.waiting_reasons.#{reason_key}",
+          default: reason_key.to_s.humanize
+        )
+
+        creative.comments.create!(
+          content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
+          topic_id: topic_id,
+          private: false,
+          skip_default_user: true
+        )
       end
     end
   end

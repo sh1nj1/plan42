@@ -54,6 +54,7 @@ module Collavre
 
         Comment.where(creative_id: creative_id, private: false)
                .where(topic_id: topic_id)
+               .where.not(user_id: nil)
                .includes(:user)
                .order(created_at: :desc)
                .limit(history_limit)

@@ -24,6 +24,8 @@ module Collavre
     include Notifiable
     include Approvable
 
+    attribute :skip_default_user, :boolean, default: false
+
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
     before_save :apply_link_previews, if: :should_apply_link_previews?
@@ -54,6 +56,7 @@ module Collavre
     end
 
     def assign_default_user
+      return if skip_default_user
       self.user ||= Collavre.current_user
     end
 
