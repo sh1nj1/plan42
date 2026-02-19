@@ -104,7 +104,7 @@ module Collavre
         assert_equal "max_retries_exceeded", result.reason
       end
 
-      test "returns done when no confidence signal and no uncertainty" do
+      test "returns retry when no confidence signal and no uncertainty" do
         policy_resolver = mock_policy_resolver(enabled: true, threshold: 70)
         evaluator = SelfReflectionEvaluator.new(
           @task,
@@ -114,8 +114,23 @@ module Collavre
 
         result = evaluator.evaluate
 
-        assert_equal :done, result.action
+        assert_equal :retry, result.action
         assert_equal "no_signal", result.reason
+      end
+
+      test "returns escalate when no confidence signal and max retries exceeded" do
+        @task.update!(retry_count: 3)
+        policy_resolver = mock_policy_resolver(enabled: true, threshold: 70)
+        evaluator = SelfReflectionEvaluator.new(
+          @task,
+          response_content: "작업을 완료했습니다. 코드를 수정했습니다.",
+          policy_resolver: policy_resolver
+        )
+
+        result = evaluator.evaluate
+
+        assert_equal :escalate, result.action
+        assert_equal "no_signal_max_retries", result.reason
       end
 
       test "parses various confidence formats" do
@@ -247,7 +262,7 @@ module Collavre
         evaluator = SelfReflectionEvaluator.new(@task, policy_resolver: policy_resolver)
 
         result = evaluator.evaluate
-        assert_equal :done, result.action
+        assert_equal :retry, result.action
         assert_equal "no_signal", result.reason
       end
 

@@ -56,8 +56,12 @@ module Collavre
         uncertainty_detected = detect_uncertainty
 
         if confidence.nil? && !uncertainty_detected
-          # No confidence signal and no uncertainty - assume done
-          Result.new(action: :done, confidence: nil, reason: "no_signal")
+          # No confidence signal - retry to request confidence tag
+          if @task.retry_count >= max_retries
+            Result.new(action: :escalate, confidence: nil, reason: "no_signal_max_retries")
+          else
+            Result.new(action: :retry, delay: retry_delay, confidence: nil, reason: "no_signal")
+          end
         elsif confidence && confidence >= threshold
           # Confidence meets threshold - done
           Result.new(action: :done, confidence: confidence, reason: "threshold_met")
