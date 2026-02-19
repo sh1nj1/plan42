@@ -2,9 +2,50 @@ import { Controller } from "@hotwired/stimulus"
 import { renderCommentMarkdown } from '../lib/utils/markdown'
 import CommonPopup from '../lib/common_popup'
 
+// Global tracker: persists streaming state across Turbo replacements
+// (each replacement creates a new controller instance, losing instance state)
+if (!window._streamingCommentIds) window._streamingCommentIds = new Set()
+
 // Connects to data-controller="comment"
 export default class extends Controller {
   static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "reviewButton", "replaceButton"]
+
+  get _commentId() {
+    return this.element.dataset.commentId
+  }
+
+  get _isStreaming() {
+    return window._streamingCommentIds.has(this._commentId)
+  }
+
+  set _isStreaming(val) {
+    if (val) {
+      window._streamingCommentIds.add(this._commentId)
+    } else {
+      window._streamingCommentIds.delete(this._commentId)
+    }
+  }
+
+  _appendStreamingCursor(el) {
+    const cursor = document.createElement('span')
+    cursor.className = 'streaming-cursor'
+    cursor.textContent = '▍'
+    let target = el
+    while (target.lastElementChild && target.lastElementChild.tagName !== 'BR') {
+      target = target.lastElementChild
+    }
+    target.appendChild(cursor)
+  }
+
+  _resetStreamingTimeout(el) {
+    if (this._streamingTimeout) clearTimeout(this._streamingTimeout)
+    this._streamingTimeout = setTimeout(() => {
+      el.classList.remove('streaming')
+      const c = el.querySelector('.streaming-cursor')
+      if (c) c.remove()
+      this._isStreaming = false
+    }, 3000)
+  }
 
   connect() {
     if (!this._streamingTimeout) this._streamingTimeout = null
@@ -16,30 +57,14 @@ export default class extends Controller {
         if (this.element.dataset.aiUser === 'true' && text.trim() === '...') {
           // Streaming placeholder — show animated dots
           this._isStreaming = true
-          this.element.dataset.streaming = 'true'
           contentElement.innerHTML = '<span class="streaming-dots"><span>.</span><span>.</span><span>.</span></span>'
           contentElement.classList.add('streaming')
         } else if (this.element.dataset.aiUser === 'true' && this._isStreaming && text.trim()) {
           // Streaming content arrived — render markdown with cursor
           contentElement.innerHTML = renderCommentMarkdown(text)
-          const cursor = document.createElement('span')
-          cursor.className = 'streaming-cursor'
-          cursor.textContent = '▍'
-          let target = contentElement
-          while (target.lastElementChild && target.lastElementChild.tagName !== 'BR') {
-            target = target.lastElementChild
-          }
-          target.appendChild(cursor)
+          this._appendStreamingCursor(contentElement)
           contentElement.classList.add('streaming')
-          // Auto-remove cursor if no further updates (streaming ended)
-          if (this._streamingTimeout) clearTimeout(this._streamingTimeout)
-          this._streamingTimeout = setTimeout(() => {
-            contentElement.classList.remove('streaming')
-            const c = contentElement.querySelector('.streaming-cursor')
-            if (c) c.remove()
-            this._isStreaming = false
-            this.element.dataset.streaming = 'false'
-          }, 3000)
+          this._resetStreamingTimeout(contentElement)
         } else {
           contentElement.innerHTML = renderCommentMarkdown(text)
           contentElement.classList.remove('streaming')
@@ -50,10 +75,11 @@ export default class extends Controller {
       }
     }
 
-    // Observe Turbo replacements to re-render markdown and maintain streaming state
+    // Observe only .comment-content for content changes.
+    // This prevents read-receipt or other sibling Turbo updates from
+    // triggering the observer and accidentally re-rendering markdown.
     if (this.element.dataset.aiUser === 'true') {
       this._streamingTimeout = null
-      this._isStreaming = this.element.dataset.streaming === 'true'
       this._contentObserver = new MutationObserver(() => {
         const el = this.element.querySelector('.comment-content')
         if (!el) return
@@ -62,32 +88,15 @@ export default class extends Controller {
         try {
           const text = el.textContent || ''
           if (text.trim() === '...') {
-            // Placeholder detected — this comment is streaming
             this._isStreaming = true
             el.innerHTML = '<span class="streaming-dots"><span>.</span><span>.</span><span>.</span></span>'
             el.classList.add('streaming')
           } else if (text.trim()) {
             el.innerHTML = renderCommentMarkdown(text)
             if (this._isStreaming) {
-              // Append blinking cursor inline at the end of content
-              const cursor = document.createElement('span')
-              cursor.className = 'streaming-cursor'
-              cursor.textContent = '▍'
-              // Find the deepest last element to append cursor inline
-              let target = el
-              while (target.lastElementChild && target.lastElementChild.tagName !== 'BR') {
-                target = target.lastElementChild
-              }
-              target.appendChild(cursor)
+              this._appendStreamingCursor(el)
               el.classList.add('streaming')
-              // Reset timeout: remove streaming class if no update for 3s
-              if (this._streamingTimeout) clearTimeout(this._streamingTimeout)
-              this._streamingTimeout = setTimeout(() => {
-                el.classList.remove('streaming')
-                const c = el.querySelector('.streaming-cursor')
-                if (c) c.remove()
-                this._isStreaming = false
-              }, 3000)
+              this._resetStreamingTimeout(el)
             }
           }
           el.dataset.rendered = 'true'
@@ -95,9 +104,6 @@ export default class extends Controller {
           requestAnimationFrame(() => { el.dataset.rendering = 'false' })
         }
       })
-      // Observe only .comment-content, not the entire comment-item.
-      // This prevents read-receipt or other sibling Turbo updates from
-      // triggering the observer and accidentally re-rendering markdown.
       const observeTarget = this.element.querySelector('.comment-content')
       if (observeTarget) {
         this._contentObserver.observe(observeTarget, { childList: true, subtree: true, characterData: true })
