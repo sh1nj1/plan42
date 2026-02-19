@@ -23,10 +23,15 @@ module Collavre
           topic_id: context&.dig("topic", "id")
         )
 
-        # Record task for loop breaker tracking
+        # Record task for loop breaker tracking (per-topic, skip user-initiated)
         creative_id = context&.dig("creative", "id")
         if creative_id
-          Orchestration::LoopBreaker.new(context).record_task(creative_id, agent.id)
+          comment_user_id = context&.dig("comment", "user_id")
+          triggered_by_user = comment_user_id.present? && !User.where(id: comment_user_id, searchable: true).exists?
+          topic_id = context&.dig("topic", "id")
+          Orchestration::LoopBreaker.new(context).record_task(
+            creative_id, agent.id, topic_id: topic_id, triggered_by_user: triggered_by_user
+          )
         end
       end
 
