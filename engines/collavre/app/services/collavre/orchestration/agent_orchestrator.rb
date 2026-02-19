@@ -12,7 +12,6 @@ module Collavre
     #   AgentOrchestrator.dispatch("comment_created", context)
     #
     class AgentOrchestrator
-      WAITING_NOTICE_PREFIX = "⏳"
 
       def self.dispatch(event_name, context)
         new(event_name: event_name, context: context).dispatch
@@ -49,8 +48,7 @@ module Collavre
         topic_id = context.dig("topic", "id")
         scope = Comment
           .where(creative_id: creative_id, topic_id: topic_id, private: false)
-          .where.not(user_id: task.agent_id)
-          .where.not("content LIKE ?", WAITING_NOTICE_PREFIX + "%")
+          .where.not(user_id: [task.agent_id, nil])
           .order(created_at: :desc)
         latest_comment = scope.first
 
@@ -189,7 +187,7 @@ module Collavre
 
         creative.comments.create!(
           content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
-          user: agent,
+          user_id: nil,
           topic_id: topic_id,
           private: false
         )
