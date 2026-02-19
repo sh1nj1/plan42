@@ -7,6 +7,7 @@ export default class extends Controller {
   static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "reviewButton", "replaceButton"]
 
   connect() {
+    if (!this._streamingTimeout) this._streamingTimeout = null
     const contentElement = this.element.querySelector('.comment-content')
     if (contentElement && contentElement.dataset.rendered !== 'true') {
       contentElement.dataset.rendering = 'true'
@@ -14,8 +15,31 @@ export default class extends Controller {
         const text = contentElement.textContent || ''
         if (this.element.dataset.aiUser === 'true' && text.trim() === '...') {
           // Streaming placeholder — show animated dots
+          this._isStreaming = true
+          this.element.dataset.streaming = 'true'
           contentElement.innerHTML = '<span class="streaming-dots"><span>.</span><span>.</span><span>.</span></span>'
           contentElement.classList.add('streaming')
+        } else if (this.element.dataset.aiUser === 'true' && this._isStreaming && text.trim()) {
+          // Streaming content arrived — render markdown with cursor
+          contentElement.innerHTML = renderCommentMarkdown(text)
+          const cursor = document.createElement('span')
+          cursor.className = 'streaming-cursor'
+          cursor.textContent = '▍'
+          let target = contentElement
+          while (target.lastElementChild && target.lastElementChild.tagName !== 'BR') {
+            target = target.lastElementChild
+          }
+          target.appendChild(cursor)
+          contentElement.classList.add('streaming')
+          // Auto-remove cursor if no further updates (streaming ended)
+          if (this._streamingTimeout) clearTimeout(this._streamingTimeout)
+          this._streamingTimeout = setTimeout(() => {
+            contentElement.classList.remove('streaming')
+            const c = contentElement.querySelector('.streaming-cursor')
+            if (c) c.remove()
+            this._isStreaming = false
+            this.element.dataset.streaming = 'false'
+          }, 3000)
         } else {
           contentElement.innerHTML = renderCommentMarkdown(text)
           contentElement.classList.remove('streaming')
@@ -29,7 +53,7 @@ export default class extends Controller {
     // Observe Turbo replacements to re-render markdown and maintain streaming state
     if (this.element.dataset.aiUser === 'true') {
       this._streamingTimeout = null
-      this._isStreaming = false  // Only set true when we see '...' placeholder
+      this._isStreaming = this.element.dataset.streaming === 'true'
       this._contentObserver = new MutationObserver(() => {
         const el = this.element.querySelector('.comment-content')
         if (!el) return

@@ -85,7 +85,8 @@ module Collavre
             @reply_comment.update_column(:content, @response_content)
             @reply_comment.broadcast_update_to(
               [ @reply_comment.creative, :comments ],
-              partial: "collavre/comments/comment"
+              partial: "collavre/comments/comment",
+              locals: { comment: @reply_comment, streaming: true }
             )
             last_broadcast_at = now
           end
