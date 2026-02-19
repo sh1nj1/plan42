@@ -49,6 +49,12 @@ module CollavreGithub
       - Provide a brief summary of your analysis before calling the tool
       - If no task updates are needed, just provide your analysis summary without calling any tool
       - The batch tool requires approval — a human will review and approve your changes before they are applied
+
+      ## Progress Update Rules:
+      - You can ONLY set progress to 1.0 (100% complete) — partial progress values are NOT allowed
+      - You can ONLY update progress on LEAF Creatives (Creatives with no children)
+      - Parent Creative progress is automatically calculated from their children — never try to update it directly
+      - Use `creative_retrieval_service` to navigate the tree and find the correct leaf Creative before updating
     PROMPT
 
     # Matches GitHub PR merged events
