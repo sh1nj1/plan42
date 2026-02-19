@@ -173,12 +173,17 @@ input[type="submit"] {
   color: var(--text-on-badge);
 }
 
-/* --- Date/time input calendar icon & placeholder --- */
-input[type="date"]::-webkit-calendar-picker-indicator,
-input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-  opacity: 0.6;
-  filter: var(--date-icon-filter, none);
-  cursor: pointer;
+/* --- Date/time input: dark mode native controls --- */
+body.dark-mode input[type="date"],
+body.dark-mode input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not(.light-mode):not(.dark-mode) input[type="date"],
+  body:not(.light-mode):not(.dark-mode) input[type="datetime-local"] {
+    color-scheme: dark;
+  }
 }
 
 input[type="date"]::-webkit-datetime-edit-text,
