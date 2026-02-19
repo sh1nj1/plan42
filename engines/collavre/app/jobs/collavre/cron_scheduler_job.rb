@@ -99,6 +99,10 @@ module Collavre
       # Exclude the currently running job to avoid blocking our own reschedule
       scope = scope.where.not(id: provider_job_id) if provider_job_id.present?
 
+      # Exclude failed jobs — they won't run again without manual retry
+      failed_job_ids = SolidQueue::FailedExecution.pluck(:job_id)
+      scope = scope.where.not(id: failed_job_ids) if failed_job_ids.any?
+
       scope.exists?
     end
   end
