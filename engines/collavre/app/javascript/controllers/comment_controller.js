@@ -71,7 +71,13 @@ export default class extends Controller {
           requestAnimationFrame(() => { el.dataset.rendering = 'false' })
         }
       })
-      this._contentObserver.observe(this.element, { childList: true, subtree: true, characterData: true })
+      // Observe only .comment-content, not the entire comment-item.
+      // This prevents read-receipt or other sibling Turbo updates from
+      // triggering the observer and accidentally re-rendering markdown.
+      const observeTarget = this.element.querySelector('.comment-content')
+      if (observeTarget) {
+        this._contentObserver.observe(observeTarget, { childList: true, subtree: true, characterData: true })
+      }
     }
 
     // Text selection quote support
