@@ -2,16 +2,121 @@ import { Controller } from "@hotwired/stimulus"
 import { renderCommentMarkdown } from '../lib/utils/markdown'
 import CommonPopup from '../lib/common_popup'
 
+// Global tracker: persists streaming state across Turbo replacements
+// (each replacement creates a new controller instance, losing instance state)
+if (!window._streamingCommentIds) window._streamingCommentIds = new Set()
+
 // Connects to data-controller="comment"
 export default class extends Controller {
   static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "reviewButton", "replaceButton"]
 
+  get _commentId() {
+    return this.element.dataset.commentId
+  }
+
+  get _isStreaming() {
+    return window._streamingCommentIds.has(this._commentId)
+  }
+
+  set _isStreaming(val) {
+    if (val) {
+      window._streamingCommentIds.add(this._commentId)
+    } else {
+      window._streamingCommentIds.delete(this._commentId)
+    }
+  }
+
+  // --- Streaming state helpers ---
+
+  get _isAiComment() {
+    return this.element.dataset.aiUser === 'true'
+  }
+
+  // Server explicitly marked this broadcast as streaming (true) or done (false).
+  // When no streaming local is provided the partial defaults to "false".
+  get _serverStreaming() {
+    return this.element.dataset.streaming === 'true'
+  }
+
+  // The server sent streaming: false explicitly — stream just ended.
+  get _serverStreamingDone() {
+    return this.element.dataset.streaming === 'false'
+  }
+
+  // Should we treat this comment as currently streaming?
+  // True when the server says so OR the global Set remembers it,
+  // but NOT if the server explicitly signalled completion.
+  _shouldStream(text) {
+    if (!this._isAiComment || !text.trim()) return false
+    if (this._serverStreamingDone) return false
+    return this._isStreaming || this._serverStreaming
+  }
+
+  _appendStreamingCursor(el) {
+    const cursor = document.createElement('span')
+    cursor.className = 'streaming-cursor'
+    cursor.textContent = '▍'
+    let target = el
+    while (target.lastElementChild && target.lastElementChild.tagName !== 'BR') {
+      target = target.lastElementChild
+    }
+    target.appendChild(cursor)
+  }
+
+  _resetStreamingTimeout() {
+    if (this._streamingTimeout) clearTimeout(this._streamingTimeout)
+    this._streamingTimeout = setTimeout(() => {
+      const currentEl = this.element?.querySelector('.comment-content')
+      if (currentEl) {
+        currentEl.dataset.rendering = 'true'
+        try {
+          currentEl.classList.remove('streaming')
+          const c = currentEl.querySelector('.streaming-cursor')
+          if (c) c.remove()
+        } finally {
+          requestAnimationFrame(() => { currentEl.dataset.rendering = 'false' })
+        }
+      }
+      this._isStreaming = false
+    }, 10000)
+  }
+
+  _cleanupStreaming() {
+    this._isStreaming = false
+    if (this._streamingTimeout) {
+      clearTimeout(this._streamingTimeout)
+      this._streamingTimeout = null
+    }
+  }
+
   connect() {
+    if (!this._streamingTimeout) this._streamingTimeout = null
     const contentElement = this.element.querySelector('.comment-content')
     if (contentElement && contentElement.dataset.rendered !== 'true') {
-      const text = contentElement.textContent || ''
-      contentElement.innerHTML = renderCommentMarkdown(text)
-      contentElement.dataset.rendered = 'true'
+      contentElement.dataset.rendering = 'true'
+      try {
+        const text = contentElement.textContent || ''
+        if (this._isAiComment && text.trim() === '...') {
+          // Streaming placeholder — show animated dots
+          this._isStreaming = true
+          contentElement.innerHTML = '<span class="streaming-dots"><span>.</span><span>.</span><span>.</span></span>'
+          contentElement.classList.add('streaming')
+        } else if (this._shouldStream(text)) {
+          // Streaming content arrived — render markdown with cursor
+          this._isStreaming = true
+          contentElement.innerHTML = renderCommentMarkdown(text)
+          this._appendStreamingCursor(contentElement)
+          contentElement.classList.add('streaming')
+          this._resetStreamingTimeout()
+        } else {
+          contentElement.innerHTML = renderCommentMarkdown(text)
+          contentElement.classList.remove('streaming')
+          if (this._isStreaming) this._cleanupStreaming()
+        }
+        contentElement.dataset.rendered = 'true'
+      } finally {
+        requestAnimationFrame(() => { contentElement.dataset.rendering = 'false' })
+      }
     }
 
     // Text selection quote support
@@ -118,6 +223,10 @@ export default class extends Controller {
   }
 
   disconnect() {
+    if (this._streamingTimeout) {
+      clearTimeout(this._streamingTimeout)
+      this._streamingTimeout = null
+    }
     this.element.removeEventListener('mouseup', this.handleMouseUp)
     this._removeSelectionChangeListener()
     this.hideReviewPopup()

@@ -1070,3 +1070,55 @@ body.chat-fullscreen {
 .comments-popup-actions .popup-close-btn {
   position: static;
 }
+
+/* Streaming indicator for AI comments */
+.comment-content.streaming {
+    min-height: 1.5em;
+}
+
+.streaming-dots {
+    display: inline-flex;
+    gap: 2px;
+    font-size: 1.5em;
+    line-height: 1;
+}
+
+.streaming-dots span {
+    animation: streaming-bounce 1.4s infinite ease-in-out both;
+}
+
+.streaming-dots span:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.streaming-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.streaming-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes streaming-bounce {
+    0%, 80%, 100% {
+        opacity: 0.3;
+        transform: translateY(0);
+    }
+    40% {
+        opacity: 1;
+        transform: translateY(-4px);
+    }
+}
+
+/* Blinking cursor inline at the end of streaming content */
+.streaming-cursor {
+    animation: streaming-blink 1s infinite;
+    color: var(--color-text, #333);
+    margin-left: 1px;
+    font-weight: normal;
+}
+
+@keyframes streaming-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}

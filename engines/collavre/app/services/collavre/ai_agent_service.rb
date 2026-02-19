@@ -4,6 +4,8 @@ module Collavre
     STREAM_THROTTLE_INTERVAL = 0.1
     # Minimum interval (in seconds) between cancellation checks to avoid excessive DB queries
     CANCEL_CHECK_INTERVAL = 1.0
+    # Interval (in seconds) between agent_status heartbeats during streaming
+    AGENT_STATUS_HEARTBEAT_INTERVAL = 3.0
 
     def initialize(task)
       @task = task
@@ -71,6 +73,7 @@ module Collavre
         )
 
         last_broadcast_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        last_heartbeat_at = last_broadcast_at
         @last_cancel_check_at = last_broadcast_at
 
         client.chat(messages, tools: @agent.tools || []) do |delta|
@@ -82,9 +85,16 @@ module Collavre
             @reply_comment.update_column(:content, @response_content)
             @reply_comment.broadcast_update_to(
               [ @reply_comment.creative, :comments ],
-              partial: "collavre/comments/comment"
+              partial: "collavre/comments/comment",
+              locals: { comment: @reply_comment, streaming: true }
             )
             last_broadcast_at = now
+          end
+
+          # Periodic agent_status heartbeat so clients know we're still streaming
+          if (now - last_heartbeat_at) >= AGENT_STATUS_HEARTBEAT_INTERVAL
+            broadcast_agent_status("streaming")
+            last_heartbeat_at = now
           end
         end
 
@@ -122,6 +132,11 @@ module Collavre
         if @response_content.present?
           @reply_comment.content_will_change!
           @reply_comment.update!(content: @response_content)
+          @reply_comment.broadcast_update_to(
+            [ @reply_comment.creative, :comments ],
+            partial: "collavre/comments/comment",
+            locals: { comment: @reply_comment, streaming: false }
+          )
           log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content, partial: true })
           reassociate_activity_logs(@original_comment, @reply_comment)
         else
@@ -145,6 +160,11 @@ module Collavre
           else
             @reply_comment.content_will_change!
             @reply_comment.update!(content: @response_content)
+            @reply_comment.broadcast_update_to(
+              [ @reply_comment.creative, :comments ],
+              partial: "collavre/comments/comment",
+              locals: { comment: @reply_comment, streaming: false }
+            )
             log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content })
             reassociate_activity_logs(@original_comment, @reply_comment)
             dispatch_a2a_if_needed
