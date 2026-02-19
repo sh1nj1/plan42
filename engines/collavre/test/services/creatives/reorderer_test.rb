@@ -145,5 +145,64 @@ module Creatives
         )
       end
     end
+
+    test "link_drop raises when target creative is owned by another user" do
+      other_user = User.create!(
+        email: "other5@example.com",
+        password: "password123",
+        name: "Other5",
+        email_verified_at: Time.current,
+        notifications_enabled: false
+      )
+      other_creative = Creative.create!(description: "Other's", user: other_user)
+
+      assert_raises(Reorderer::Error) do
+        @reorderer.link_drop(
+          dragged_id: @child_a.id,
+          target_id: other_creative.id,
+          direction: "child"
+        )
+      end
+    end
+
+    test "link_drop raises when target parent is owned by another user (sibling direction)" do
+      other_user = User.create!(
+        email: "other6@example.com",
+        password: "password123",
+        name: "Other6",
+        email_verified_at: Time.current,
+        notifications_enabled: false
+      )
+      other_root = Creative.create!(description: "Other root", user: other_user)
+      other_child = Creative.create!(description: "Other child", user: other_user, parent: other_root)
+
+      assert_raises(Reorderer::Error) do
+        @reorderer.link_drop(
+          dragged_id: @child_a.id,
+          target_id: other_child.id,
+          direction: "up"
+        )
+      end
+    end
+
+    test "link_drop allows linking into own creative" do
+      other_user = User.create!(
+        email: "other7@example.com",
+        password: "password123",
+        name: "Other7",
+        email_verified_at: Time.current,
+        notifications_enabled: false
+      )
+      other_creative = Creative.create!(description: "Other's", user: other_user)
+
+      result = @reorderer.link_drop(
+        dragged_id: other_creative.id,
+        target_id: @root.id,
+        direction: "child"
+      )
+
+      assert_equal @root.id, result.new_creative.parent_id
+      assert_equal other_creative.id, result.new_creative.origin_id
+    end
   end
 end

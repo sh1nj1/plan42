@@ -62,12 +62,12 @@ module Creatives
       dragged, target = fetch_creatives(dragged_id, target_id)
       validate_direction!(direction)
       raise Error, "Invalid creatives" unless dragged && target
-      unless owned_by_user?(target)
-        raise Error, "Cannot link into creatives owned by other users"
-      end
-
       origin = dragged.effective_origin
       new_parent = direction == "child" ? target : target.parent
+
+      unless owned_by_user?(new_parent || target)
+        raise Error, "Cannot link into creatives owned by other users"
+      end
 
       if new_parent.present?
         origin_descendant_ids = origin.self_and_descendants.pluck(:id)
