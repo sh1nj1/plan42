@@ -6,9 +6,13 @@ module Collavre
   module Tools
     class CreativeBatchServiceTest < ActiveSupport::TestCase
       setup do
-        @user = User.create!(name: "Batch Test", email: "batch_test@example.com", password: "password123")
+        @user = User.create!(name: "Batch Test", email: "batch_test_#{SecureRandom.hex(4)}@example.com", password: "password123")
         Current.user = @user
         @root = Creative.create!(description: "<p>Root</p>", user: @user, progress: 0)
+        # Ensure permission cache is populated for the owner
+        CreativeSharesCache.find_or_create_by!(creative: @root, user: @user) do |cache|
+          cache.permission = :admin
+        end
       end
 
       teardown do
