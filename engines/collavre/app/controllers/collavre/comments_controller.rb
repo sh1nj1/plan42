@@ -170,6 +170,7 @@ module Collavre
                 id: @comment.id,
                 content: @comment.content,
                 user_id: @comment.user_id,
+                from_ai: @comment.user&.searchable? || false,
                 quoted_comment_id: @comment.quoted_comment_id
               }.compact,
               creative: {
