@@ -129,7 +129,7 @@ textarea {
 
 input[type="date"],
 input[type="datetime-local"] {
-    color-scheme: light dark;
+    color-scheme: inherit;
 }
 
 input[type="date"]::-webkit-calendar-picker-indicator,
