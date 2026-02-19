@@ -23,8 +23,7 @@ module CollavreGithub
           },
           selected_repositories: links.map(&:repository_full_name),
           all_repositories: all_repositories,
-          webhooks: serialize_webhooks(links),
-          github_gemini_prompt: @origin.github_gemini_prompt_template
+          webhooks: serialize_webhooks(links)
         }
       end
 
@@ -37,7 +36,6 @@ module CollavreGithub
 
         integration_attributes = integration_params
         repositories = Array(integration_attributes[:repositories]).map(&:to_s).uniq
-        prompt_param = integration_attributes[:github_gemini_prompt] if integration_attributes.key?(:github_gemini_prompt)
 
         links = nil
 
@@ -54,10 +52,6 @@ module CollavreGithub
           end
 
           links = linked_repository_links(account).to_a
-
-          if prompt_param
-            @origin.update!(github_gemini_prompt: prompt_param.presence)
-          end
         end
 
         CollavreGithub::WebhookProvisioner.ensure_for_links(
@@ -69,8 +63,7 @@ module CollavreGithub
         render json: {
           success: true,
           selected_repositories: links.map(&:repository_full_name),
-          webhooks: serialize_webhooks(links),
-          github_gemini_prompt: @origin.github_gemini_prompt_template
+          webhooks: serialize_webhooks(links)
         }
       rescue ActiveRecord::RecordInvalid => e
         render json: { error: e.message }, status: :unprocessable_entity
@@ -138,8 +131,7 @@ module CollavreGithub
         render json: {
           success: true,
           selected_repositories: links.pluck(:repository_full_name),
-          webhooks: serialize_webhooks(links),
-          github_gemini_prompt: @origin.github_gemini_prompt_template
+          webhooks: serialize_webhooks(links)
         }
       end
 
@@ -172,7 +164,7 @@ module CollavreGithub
       end
 
       def integration_params
-        params.permit(:github_gemini_prompt, repositories: [])
+        params.permit(repositories: [])
       end
 
       def serialize_webhooks(links)

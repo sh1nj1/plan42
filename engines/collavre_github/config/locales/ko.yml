@@ -23,8 +23,6 @@ ko:
       summary: "다음 저장소가 이 Creative에 연동됩니다:"
       webhook_instructions: "각 저장소에 아래 웹훅 정보를 설정하세요."
       summary_empty: "선택된 저장소가 없습니다."
-      prompt_title: "Gemini 분석 프롬프트를 검토하고 필요시 수정하세요."
-      prompt_help: "다음 플레이스홀더를 사용하여 런타임 정보를 주입할 수 있습니다:"
     auth:
       login_first: "GitHub 계정을 연결하려면 먼저 로그인하세요"
       connected: "GitHub 계정이 연결되었습니다"

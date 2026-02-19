@@ -50,20 +50,6 @@
       <p id="github-summary-empty" class="github-modal-empty" style="display:none;"><%= t('collavre_github.integration.summary_empty', default: 'No repositories selected.') %></p>
     </div>
 
-    <div class="github-wizard-step" id="github-step-prompt" style="display:none;">
-      <p class="github-modal-subtext"><%= t('collavre_github.integration.prompt_title', default: 'Review the Gemini analysis prompt and edit it if needed.') %></p>
-      <textarea id="github-gemini-prompt" style="width:100%;min-height:220px;padding:0.75em;border:1px solid var(--color-border);border-radius:4px;font-family:monospace;font-size:0.95em;"></textarea>
-      <p class="github-modal-subtext" style="margin-top:0.75em;font-size:0.9em;">
-        <%= t('collavre_github.integration.prompt_help', default: 'Use the placeholders below to inject runtime details as needed:') %>
-        <code>#{pr_title}</code>,
-        <code>#{pr_body}</code>,
-        <code>#{commit_messages}</code>,
-        <code>#{diff}</code>,
-        <code>#{creative_tree}</code>,
-        <code>#{language_instructions}</code>
-      </p>
-    </div>
-
     <div id="github-wizard-error" style="display:none;margin:0.5em 0;color:#c0392b;font-weight:bold;"></div>
 
     <div class="github-wizard-footer" style="display:flex;justify-content:space-between;gap:0.5em;margin-top:1.5em;">
