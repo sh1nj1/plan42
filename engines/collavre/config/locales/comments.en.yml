@@ -108,6 +108,12 @@ en:
         subtask_started: '📋 @%{agent} starting work on "%{creative}" (%{current}/%{total})'
         workflow_completed: '✅ Workflow completed by @%{agent}: %{completed} creatives processed.'
         workflow_failed: 'Workflow failed by @%{agent} on "%{creative}": %{reason}'
+        workflow_stopped: '⏹️ Workflow stopped by @%{agent}. %{completed} completed, %{remaining} remaining.'
+        workflow_resumed: '▶️ Workflow resumed by @%{agent}. %{remaining} tasks remaining.'
+        stopped: 'Workflow stopped for @%{agent}.'
+        resumed: 'Workflow resumed for @%{agent}: %{remaining} tasks remaining.'
+        no_active_workflow: 'No active workflow found on this creative.'
+        no_resumable_workflow: 'No failed or stopped workflow found to resume.'
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
     calendar_events:

@@ -155,6 +155,83 @@ module Collavre
         assert_match(/Workflow started/, result)
       end
 
+      test "stop cancels active workflow" do
+        comment = create_comment('/work @TestAgent: Do work')
+        assert_enqueued_with(job: AiAgentJob) do
+          WorkCommand.new(comment: comment, user: @user).call
+        end
+
+        parent_task = Task.find_by(creative: @creative, trigger_event_name: "work_command")
+        assert_equal "running", parent_task.status
+
+        stop_comment = create_comment('/work stop')
+        result = WorkCommand.new(comment: stop_comment, user: @user).call
+
+        assert_match(/stopped/, result)
+        parent_task.reload
+        assert_equal "cancelled", parent_task.status
+      end
+
+      test "stop returns error when no active workflow" do
+        stop_comment = create_comment('/work stop')
+        result = WorkCommand.new(comment: stop_comment, user: @user).call
+
+        assert_match(/No active workflow/, result)
+      end
+
+      test "resume restarts cancelled workflow" do
+        comment = create_comment('/work @TestAgent: Do work')
+        assert_enqueued_with(job: AiAgentJob) do
+          WorkCommand.new(comment: comment, user: @user).call
+        end
+
+        parent_task = Task.find_by(creative: @creative, trigger_event_name: "work_command")
+        # Stop it
+        WorkflowExecutor.new(parent_task).stop!
+        assert_equal "cancelled", parent_task.reload.status
+
+        # Resume
+        resume_comment = create_comment('/work resume')
+        result = nil
+        assert_enqueued_with(job: AiAgentJob) do
+          result = WorkCommand.new(comment: resume_comment, user: @user).call
+        end
+
+        assert_match(/resumed/, result)
+        parent_task.reload
+        assert_equal "running", parent_task.status
+      end
+
+      test "resume restarts failed workflow" do
+        comment = create_comment('/work @TestAgent: Do work')
+        assert_enqueued_with(job: AiAgentJob) do
+          WorkCommand.new(comment: comment, user: @user).call
+        end
+
+        parent_task = Task.find_by(creative: @creative, trigger_event_name: "work_command")
+        # Simulate failure
+        parent_task.update!(status: "failed",
+          workflow_state: parent_task.workflow_state.merge("failed_creative_id" => @child1.id, "failure_reason" => "timeout"))
+
+        resume_comment = create_comment('/work resume')
+        result = nil
+        assert_enqueued_with(job: AiAgentJob) do
+          result = WorkCommand.new(comment: resume_comment, user: @user).call
+        end
+
+        assert_match(/resumed/, result)
+        parent_task.reload
+        assert_equal "running", parent_task.status
+        assert_nil parent_task.workflow_state["failed_creative_id"]
+      end
+
+      test "resume returns error when no resumable workflow" do
+        resume_comment = create_comment('/work resume')
+        result = WorkCommand.new(comment: resume_comment, user: @user).call
+
+        assert_match(/No failed or stopped workflow/, result)
+      end
+
       private
 
       def create_comment(content)

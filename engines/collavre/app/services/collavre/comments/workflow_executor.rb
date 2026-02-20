@@ -11,8 +11,9 @@ module Collavre
       end
 
       def advance!
-        # Loop instead of recursion to avoid stack overflow on many missing creatives
         loop do
+          return if @parent_task.status == "cancelled"
+
           pending = @state["pending_creative_ids"] || []
 
           if pending.empty?
@@ -28,13 +29,9 @@ module Collavre
             next
           end
 
-          # Update state
           @state["current_creative_id"] = next_creative_id
           @parent_task.update!(workflow_state: @state)
 
-          # Create sub-task and dispatch to agent
-          # Trigger comment is created inside build_subtask_context
-          # in the child creative's main topic (topic_id: nil)
           sub_task_context = build_subtask_context(next_creative)
 
           sub_task = Task.create!(
@@ -67,7 +64,6 @@ module Collavre
         @state["current_creative_id"] = nil
         @parent_task.update!(workflow_state: @state)
 
-        # Update parent creative progress
         total = @state["total"] || 1
         progress = completed.size.to_f / total
         @parent_task.creative&.update!(progress: progress.clamp(0.0, 1.0))
@@ -86,6 +82,50 @@ module Collavre
         )
 
         post_failure_notice(sub_task, error_message)
+      end
+
+      def stop!
+        # Cancel running sub-task if any
+        current_sub = @parent_task.sub_tasks.where(status: %w[running queued pending]).first
+        current_sub&.update!(status: "cancelled")
+
+        @state["current_creative_id"] = nil
+        @parent_task.update!(
+          status: "cancelled",
+          workflow_state: @state
+        )
+
+        post_notice(
+          I18n.t("collavre.comments.work_command.workflow_stopped",
+                 agent: @parent_task.agent.display_name,
+                 completed: (@state["completed_creative_ids"] || []).size,
+                 remaining: (@state["pending_creative_ids"] || []).size)
+        )
+      end
+
+      def resume!
+        # Re-check pending creatives — some may have been completed manually
+        pending = @state["pending_creative_ids"] || []
+        pending = refilter_pending(pending)
+        @state["pending_creative_ids"] = pending
+        @state["current_creative_id"] = nil
+
+        # Clear failure state
+        @state.delete("failed_creative_id")
+        @state.delete("failure_reason")
+
+        @parent_task.update!(
+          status: "running",
+          workflow_state: @state
+        )
+
+        post_notice(
+          I18n.t("collavre.comments.work_command.workflow_resumed",
+                 agent: @parent_task.agent.display_name,
+                 remaining: pending.size)
+        )
+
+        advance!
       end
 
       private
@@ -148,15 +188,12 @@ module Collavre
       end
 
       def build_subtask_context(creative)
-        # Create a trigger comment in the child creative's main topic
-        # so the agent's response appears in that creative's chat.
-        # Use the original /work command user (not the agent) to avoid self-response loops.
         original_user = find_original_user
         trigger_comment = creative.comments.create!(
           content: I18n.t("collavre.comments.work_command.trigger_comment",
                          context: @parent_task.workflow_context),
           user: original_user,
-          topic_id: nil # main topic
+          topic_id: nil
         )
 
         {
@@ -181,6 +218,22 @@ module Collavre
         comment_id = @parent_task.trigger_event_payload&.dig("comment", "id")
         comment = Comment.find_by(id: comment_id) if comment_id
         comment&.user || @parent_task.agent
+      end
+
+      def refilter_pending(creative_ids)
+        return [] if creative_ids.empty?
+
+        # Remove creatives that now have completed tasks or full progress
+        tasked = Task.where(creative_id: creative_ids)
+                     .where(status: %w[running queued pending pending_approval done])
+                     .pluck(:creative_id)
+
+        completed = Creative.where(id: creative_ids)
+                            .where("progress >= 1.0")
+                            .pluck(:id)
+
+        skip_ids = (tasked + completed).uniq
+        creative_ids - skip_ids
       end
     end
   end
