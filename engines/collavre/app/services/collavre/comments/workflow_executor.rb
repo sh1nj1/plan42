@@ -256,7 +256,11 @@ module Collavre
         comment = Comment.find_by(id: comment_id) if comment_id
         # Always use the /work command issuer, never the agent itself.
         # Using agent as sender causes self-referencing context issues.
-        comment&.user || User.find_by(id: @parent_task.trigger_event_payload&.dig("comment", "user_id")) || @parent_task.agent
+        user = comment&.user || User.find_by(id: @parent_task.trigger_event_payload&.dig("comment", "user_id"))
+        # Never fall back to agent — causes self-referencing context issues
+        raise "Cannot find original /work command user for task ##{@parent_task.id}" unless user
+
+        user
       end
 
       def refilter_pending(creative_ids)
