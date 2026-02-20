@@ -86,7 +86,6 @@ module Tools
       return [] if combined_ids.empty?
 
       Creative.where(id: combined_ids)
-              .order(:sequence)
               .sort_by { |c| c.description.to_s.length }
     end
 
@@ -107,10 +106,14 @@ module Tools
         tag_names = tags.split(",").map(&:strip)
         label_ids = Label.where(value: tag_names).pluck(:id)
         tagged_ids = Tag.where(label_id: label_ids).pluck(:creative_id).to_set
-        # Include creative if it or any descendant is tagged
-        all_descendant_ids = creatives.flat_map { |c| c.self_and_descendants.pluck(:id) }.to_set
-        matching_tagged = tagged_ids & all_descendant_ids
-        result = result.select { |c| matching_tagged.include?(c.id) || (c.self_and_descendants.pluck(:id).to_set & matching_tagged).any? }
+        # Batch: find which input creatives have tagged descendants (single query)
+        creative_ids = result.map(&:id)
+        ancestors_with_tagged = CreativeHierarchy
+          .where(ancestor_id: creative_ids)
+          .where(descendant_id: tagged_ids.to_a)
+          .pluck(:ancestor_id)
+          .to_set
+        result = result.select { |c| tagged_ids.include?(c.id) || ancestors_with_tagged.include?(c.id) }
       end
 
       if progress_min.present?
@@ -169,7 +172,7 @@ module Tools
         result[:recent_comments] = creative.comments.order(created_at: :desc).limit(3).map do |comment|
           {
             content: ActionView::Base.full_sanitizer.sanitize(comment.content).strip.truncate(200),
-            user: comment.user&.email,
+            user: comment.user&.display_name || comment.user&.name,
             created_at: comment.created_at&.iso8601
           }
         end
