@@ -14,6 +14,17 @@ module Collavre
       else
         # Create new task
         agent = User.find(agent_id_or_task)
+
+        # Guard: skip if there's already a running task for the same agent + comment
+        comment_id = context&.dig("comment", "id")
+        if comment_id && duplicate_running_task?(agent.id, comment_id)
+          Rails.logger.warn(
+            "[AiAgentJob] Skipping duplicate: agent #{agent.id} already has a running task " \
+            "for comment #{comment_id} (event=#{event_name})"
+          )
+          return
+        end
+
         task = Task.create!(
           name: "Response to #{event_name}",
           status: "running",
@@ -91,6 +102,14 @@ module Collavre
     end
 
     private
+
+    def duplicate_running_task?(agent_id, comment_id)
+      Task.where(agent_id: agent_id, status: "running").find_each do |task|
+        payload_comment_id = task.trigger_event_payload&.dig("comment", "id")
+        return true if payload_comment_id.to_s == comment_id.to_s
+      end
+      false
+    end
 
     def evaluate_self_reflection(task, response_content)
       Orchestration::SelfReflectionEvaluator.new(task, response_content: response_content).evaluate
