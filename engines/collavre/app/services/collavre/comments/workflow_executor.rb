@@ -56,6 +56,11 @@ module Collavre
         completed = @state["completed_creative_ids"] || []
         pending = @state["pending_creative_ids"] || []
 
+        Rails.logger.info(
+          "[WorkflowExecutor] complete_subtask! task=#{sub_task.id} creative=#{sub_task.creative_id} " \
+          "pending=#{pending.inspect} completed=#{completed.inspect}"
+        )
+
         completed << sub_task.creative_id
         pending.delete(sub_task.creative_id)
 
@@ -67,6 +72,10 @@ module Collavre
         total = @state["total"] || 1
         progress = completed.size.to_f / total
         @parent_task.creative&.update!(progress: progress.clamp(0.0, 1.0))
+
+        Rails.logger.info(
+          "[WorkflowExecutor] Progress updated: #{completed.size}/#{total} (#{(progress * 100).round}%)"
+        )
 
         post_subtask_completed_notice(sub_task, completed.size, total)
 
@@ -191,11 +200,18 @@ module Collavre
 
       def post_notice(content)
         comment_id = @parent_task.trigger_event_payload&.dig("comment", "id")
-        return unless comment_id
+        unless comment_id
+          Rails.logger.warn("[WorkflowExecutor] post_notice: no comment_id in trigger_event_payload: #{@parent_task.trigger_event_payload.inspect}")
+          return
+        end
 
         original_comment = Comment.find_by(id: comment_id)
-        return unless original_comment
+        unless original_comment
+          Rails.logger.warn("[WorkflowExecutor] post_notice: comment #{comment_id} not found")
+          return
+        end
 
+        Rails.logger.info("[WorkflowExecutor] post_notice: posting to creative #{original_comment.creative_id}")
         original_comment.creative.comments.create!(
           content: content,
           user: @parent_task.agent,
