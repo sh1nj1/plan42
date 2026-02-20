@@ -47,7 +47,8 @@ module Collavre
       end
 
       def find_agent
-        comment.mentioned_users&.find(&:ai_user?)
+        mentioned = MentionParser.resolve_all_users(comment.content.to_s)
+        mentioned.find(&:ai_user?)
       end
 
       def extract_workflow_context

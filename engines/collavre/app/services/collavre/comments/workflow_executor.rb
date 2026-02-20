@@ -11,46 +11,46 @@ module Collavre
       end
 
       def advance!
-        pending = @state["pending_creative_ids"] || []
+        # Loop instead of recursion to avoid stack overflow on many missing creatives
+        loop do
+          pending = @state["pending_creative_ids"] || []
 
-        if pending.empty?
-          complete_workflow!
+          if pending.empty?
+            complete_workflow!
+            return
+          end
+
+          next_creative_id = pending.first
+          next_creative = Creative.find_by(id: next_creative_id)
+
+          unless next_creative
+            skip_current!
+            next
+          end
+
+          # Update state
+          @state["current_creative_id"] = next_creative_id
+          @parent_task.update!(workflow_state: @state)
+
+          # Create sub-task and dispatch to agent
+          sub_task_context = build_subtask_context(next_creative)
+          topic = next_creative.topics.first
+
+          sub_task = Task.create!(
+            name: "Work on: #{next_creative.description&.truncate(50)}",
+            status: "pending",
+            agent: @parent_task.agent,
+            creative: next_creative,
+            parent_task: @parent_task,
+            workflow_context: @parent_task.workflow_context,
+            trigger_event_name: "workflow_subtask",
+            trigger_event_payload: sub_task_context,
+            topic_id: topic&.id
+          )
+
+          AiAgentJob.perform_later(sub_task)
           return
         end
-
-        next_creative_id = pending.first
-        next_creative = Creative.find_by(id: next_creative_id)
-
-        unless next_creative
-          # Skip missing creative
-          skip_current!
-          return advance!
-        end
-
-        # Update state
-        @state["current_creative_id"] = next_creative_id
-        @parent_task.update!(workflow_state: @state)
-
-        # Create sub-task and dispatch to agent
-        sub_task_context = build_subtask_context(next_creative)
-
-        # Use the topic from the creative if available, otherwise nil
-        topic = next_creative.topics.first
-
-        sub_task = Task.create!(
-          name: "Work on: #{next_creative.description&.truncate(50)}",
-          status: "pending",
-          agent: @parent_task.agent,
-          creative: next_creative,
-          parent_task: @parent_task,
-          workflow_context: @parent_task.workflow_context,
-          trigger_event_name: "workflow_subtask",
-          trigger_event_payload: sub_task_context,
-          topic_id: topic&.id
-        )
-
-        # Only dispatch the job if not in test environment to avoid complex test setup
-        AiAgentJob.perform_later(sub_task) unless Rails.env.test?
       end
 
       def complete_subtask!(sub_task)
@@ -73,6 +73,19 @@ module Collavre
         advance!
       end
 
+      def fail_subtask!(sub_task, error_message: nil)
+        @state["current_creative_id"] = nil
+        @parent_task.update!(
+          status: "failed",
+          workflow_state: @state.merge(
+            "failed_creative_id" => sub_task.creative_id,
+            "failure_reason" => error_message
+          )
+        )
+
+        post_failure_notice(sub_task, error_message)
+      end
+
       private
 
       def skip_current!
@@ -86,25 +99,42 @@ module Collavre
         @parent_task.update!(status: "done")
         @parent_task.creative&.update!(progress: 1.0)
 
-        # Post completion notice
-        if (comment_id = @parent_task.trigger_event_payload&.dig("comment", "id"))
-          original_comment = Comment.find_by(id: comment_id)
-          if original_comment
-            completed_count = (@state["completed_creative_ids"] || []).size
-            original_comment.creative.comments.create!(
-              content: I18n.t("collavre.comments.work_command.workflow_completed",
-                             agent: @parent_task.agent.display_name,
-                             completed: completed_count),
-              user: @parent_task.agent,
-              topic_id: original_comment.topic_id
-            )
-          end
-        end
+        post_notice(
+          I18n.t("collavre.comments.work_command.workflow_completed",
+                 agent: @parent_task.agent.display_name,
+                 completed: (@state["completed_creative_ids"] || []).size)
+        )
+      end
+
+      def post_failure_notice(sub_task, error_message)
+        creative_desc = sub_task.creative&.description&.truncate(50) || "unknown"
+        post_notice(
+          I18n.t("collavre.comments.work_command.workflow_failed",
+                 agent: @parent_task.agent.display_name,
+                 creative: creative_desc,
+                 reason: error_message || "unknown error")
+        )
+      end
+
+      def post_notice(content)
+        comment_id = @parent_task.trigger_event_payload&.dig("comment", "id")
+        return unless comment_id
+
+        original_comment = Comment.find_by(id: comment_id)
+        return unless original_comment
+
+        original_comment.creative.comments.create!(
+          content: content,
+          user: @parent_task.agent,
+          topic_id: original_comment.topic_id
+        )
       end
 
       def build_subtask_context(creative)
+        topic = creative.topics.first
         {
           "creative" => { "id" => creative.id, "description" => creative.description },
+          "topic" => topic ? { "id" => topic.id } : nil,
           "workflow" => {
             "context" => @parent_task.workflow_context,
             "parent_task_id" => @parent_task.id,
@@ -117,7 +147,7 @@ module Collavre
           "chat" => {
             "content" => "#{@parent_task.workflow_context}\n\nCurrent creative: #{creative.description}"
           }
-        }
+        }.compact
       end
     end
   end

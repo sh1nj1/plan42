@@ -60,11 +60,11 @@ module Collavre
           Rails.logger.info("[AiAgentJob] Task #{task.id} escalated after max retries")
         else # :done
           task.update!(status: "done")
-          # Advance workflow if this is a sub-task
+          tracker.release!(job_id || task.id, tokens_used: 0)
+          # Advance workflow after releasing resources to avoid deadlock
           if task.parent_task_id.present?
             Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
           end
-          tracker.release!(job_id || task.id, tokens_used: 0)
         end
       rescue ApprovalPendingError
         # Task status already set to pending_approval by AiAgentService
@@ -77,6 +77,10 @@ module Collavre
       rescue StandardError => e
         task.update!(status: "failed")
         tracker.release!(job_id || task.id, tokens_used: 0)
+        # Fail workflow if this is a sub-task
+        if task.parent_task_id.present?
+          Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(task, error_message: e.message)
+        end
         Rails.logger.error("AiAgentJob failed for task #{task.id}: #{e.message}")
         raise e
       ensure
