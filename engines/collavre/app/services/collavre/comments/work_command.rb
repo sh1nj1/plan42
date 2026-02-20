@@ -61,6 +61,7 @@ module Collavre
         return I18n.t("collavre.comments.work_command.no_resumable_workflow") unless parent_task
 
         WorkflowExecutor.new(parent_task).resume!
+        parent_task.reload
         I18n.t("collavre.comments.work_command.resumed",
                agent: parent_task.agent.display_name,
                remaining: (parent_task.workflow_state["pending_creative_ids"] || []).size)
