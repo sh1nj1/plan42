@@ -250,17 +250,13 @@ module Collavre
       def refilter_pending(creative_ids)
         return [] if creative_ids.empty?
 
-        # Remove creatives that now have completed tasks or full progress
+        # Only skip creatives with currently active tasks.
+        # Done/failed/cancelled tasks allow re-work.
         tasked = Task.where(creative_id: creative_ids)
-                     .where(status: %w[running queued pending pending_approval done])
+                     .where(status: %w[running queued pending pending_approval])
                      .pluck(:creative_id)
 
-        completed = Creative.where(id: creative_ids)
-                            .where("progress >= 1.0")
-                            .pluck(:id)
-
-        skip_ids = (tasked + completed).uniq
-        creative_ids - skip_ids
+        creative_ids - tasked.uniq
       end
     end
   end
