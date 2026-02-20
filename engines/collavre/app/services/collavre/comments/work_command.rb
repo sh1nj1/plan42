@@ -26,6 +26,49 @@ module Collavre
       end
 
       def execute_work
+        subcommand = parse_subcommand
+        case subcommand
+        when :stop then execute_stop
+        when :resume then execute_resume
+        else execute_start
+        end
+      end
+
+      def parse_subcommand
+        content = comment.content.to_s.strip.sub(/\A\/work\s*/i, "")
+        case content
+        when /\Astop\b/i then :stop
+        when /\Aresume\b/i then :resume
+        else :start
+        end
+      end
+
+      # --- /work stop ---
+
+      def execute_stop
+        parent_task = find_active_workflow
+        return I18n.t("collavre.comments.work_command.no_active_workflow") unless parent_task
+
+        WorkflowExecutor.new(parent_task).stop!
+        I18n.t("collavre.comments.work_command.stopped",
+               agent: parent_task.agent.display_name)
+      end
+
+      # --- /work resume ---
+
+      def execute_resume
+        parent_task = find_resumable_workflow
+        return I18n.t("collavre.comments.work_command.no_resumable_workflow") unless parent_task
+
+        WorkflowExecutor.new(parent_task).resume!
+        I18n.t("collavre.comments.work_command.resumed",
+               agent: parent_task.agent.display_name,
+               remaining: (parent_task.workflow_state["pending_creative_ids"] || []).size)
+      end
+
+      # --- /work start (default) ---
+
+      def execute_start
         agent = find_agent
         return I18n.t("collavre.comments.work_command.agent_not_found") unless agent
         return I18n.t("collavre.comments.work_command.no_children") if creative.descendants.empty?
@@ -70,12 +113,10 @@ module Collavre
       end
 
       def filter_already_tasked(creative_ids)
-        # Skip creatives with active or completed tasks
         tasked = Task.where(creative_id: creative_ids)
                      .where(status: %w[running queued pending pending_approval done])
                      .pluck(:creative_id)
 
-        # Also skip creatives already at 100% progress
         completed = Creative.where(id: creative_ids)
                             .where("progress >= 1.0")
                             .pluck(:id)
@@ -102,6 +143,16 @@ module Collavre
             "comment" => { "id" => comment.id }
           }
         )
+      end
+
+      def find_active_workflow
+        Task.where(creative: creative, trigger_event_name: "work_command", status: "running")
+            .order(created_at: :desc).first
+      end
+
+      def find_resumable_workflow
+        Task.where(creative: creative, trigger_event_name: "work_command", status: %w[failed cancelled])
+            .order(created_at: :desc).first
       end
     end
   end

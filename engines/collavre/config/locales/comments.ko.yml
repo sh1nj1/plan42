@@ -105,6 +105,12 @@ ko:
         subtask_started: '📋 @%{agent}가 "%{creative}" 작업을 시작합니다 (%{current}/%{total})'
         workflow_completed: '✅ @%{agent}가 워크플로우를 완료했습니다: %{completed}개 크리에이티브 처리됨.'
         workflow_failed: '@%{agent} 워크플로우 실패 - "%{creative}": %{reason}'
+        workflow_stopped: '⏹️ @%{agent} 워크플로우가 중지되었습니다. %{completed}개 완료, %{remaining}개 남음.'
+        workflow_resumed: '▶️ @%{agent} 워크플로우가 재개되었습니다. %{remaining}개 작업 남음.'
+        stopped: '@%{agent}의 워크플로우가 중지되었습니다.'
+        resumed: '@%{agent}의 워크플로우가 재개되었습니다: %{remaining}개 작업 남음.'
+        no_active_workflow: '이 크리에이티브에 활성 워크플로우가 없습니다.'
+        no_resumable_workflow: '재개할 수 있는 실패/중지된 워크플로우가 없습니다.'
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
     calendar_events:
