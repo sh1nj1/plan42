@@ -217,17 +217,13 @@ module Collavre
       end
 
       def build_trigger_content(_creative)
-        parts = []
-
         # Resolve workflow_context: if it's a creative ID, render that creative's markdown
         # as the instruction (like a user pasting the content). Otherwise use as-is.
-        workflow_instruction = resolve_workflow_context
-        parts << "@#{@parent_task.agent.name}: #{workflow_instruction}"
-
-        # NOTE: Do NOT include current creative's markdown here.
-        # MessageBuilder already renders it from context["creative"]["id"].
-
-        parts.join("\n")
+        # NOTE: Do NOT prefix with @Agent — the trigger comment is authored by the
+        # original /work user, not the agent. Including @Agent causes the agent to
+        # interpret it as a self-referencing instruction.
+        # MessageBuilder already renders current creative's markdown from context["creative"]["id"].
+        resolve_workflow_context
       end
 
       def resolve_workflow_context
@@ -258,7 +254,9 @@ module Collavre
       def find_original_user
         comment_id = @parent_task.trigger_event_payload&.dig("comment", "id")
         comment = Comment.find_by(id: comment_id) if comment_id
-        comment&.user || @parent_task.agent
+        # Always use the /work command issuer, never the agent itself.
+        # Using agent as sender causes self-referencing context issues.
+        comment&.user || User.find_by(id: @parent_task.trigger_event_payload&.dig("comment", "user_id")) || @parent_task.agent
       end
 
       def refilter_pending(creative_ids)
