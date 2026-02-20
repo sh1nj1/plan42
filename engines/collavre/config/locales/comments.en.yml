@@ -106,6 +106,7 @@ en:
         started: 'Workflow started with @%{agent}: %{total} tasks queued (%{skipped} skipped).'
         trigger_comment: '📋 [Workflow] %{context}'
         subtask_started: '📋 @%{agent} starting work on "%{creative}" (%{current}/%{total})'
+        subtask_completed: '✅ @%{agent} completed "%{creative}" (%{completed}/%{total}, %{progress}%%)'
         workflow_completed: '✅ Workflow completed by @%{agent}: %{completed} creatives processed.'
         workflow_failed: 'Workflow failed by @%{agent} on "%{creative}": %{reason}'
         workflow_stopped: '⏹️ Workflow stopped by @%{agent}. %{completed} completed, %{remaining} remaining.'
