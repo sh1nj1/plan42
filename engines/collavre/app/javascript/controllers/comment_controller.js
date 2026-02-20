@@ -123,8 +123,7 @@ export default class extends Controller {
     this.handleMouseUp = this.handleMouseUp.bind(this)
     this.element.addEventListener('mouseup', this.handleMouseUp)
 
-    // Bound handler for review button (stored for cleanup)
-    this._boundReviewClick = this._onReviewClick.bind(this)
+    // Review button now uses data-action="click->comment#reviewClick" in template
 
     this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
@@ -322,17 +321,8 @@ export default class extends Controller {
     return this.application.getControllerForElementAndIdentifier(popup, 'comments--form')
   }
 
-  reviewButtonTargetConnected(button) {
-    button.addEventListener('click', this._boundReviewClick)
-  }
-
-  reviewButtonTargetDisconnected(button) {
-    button.removeEventListener('click', this._boundReviewClick)
-  }
-
-  // replaceButton removed — unified into reviewButton
-
-  _onReviewClick(event) {
+  // Stimulus action: click->comment#reviewClick (bound via data-action in template)
+  reviewClick(event) {
     event.preventDefault()
     event.stopPropagation()
     // Use selected text if available, otherwise full comment text
