@@ -286,9 +286,10 @@ export default class extends Controller {
 
     this._reviewPopup = new CommonPopup(this._reviewPopupEl, {
       onSelect: () => {
+        const commentId = this.element.dataset.commentId
         const formController = this.findFormController()
         if (formController) {
-          formController.appendReviewQuote(selectedText)
+          formController.appendReviewQuote(commentId, selectedText)
         }
         window.getSelection().removeAllRanges()
         this.hideReviewPopup()
@@ -338,9 +339,10 @@ export default class extends Controller {
     const selectedText = this._getSelectedTextInContent()
     const contentEl = this.element.querySelector('.comment-content')
     const text = selectedText || (contentEl ? contentEl.textContent.trim() : '')
+    const commentId = this.element.dataset.commentId
     const formController = this.findFormController()
     if (formController && text) {
-      formController.appendReviewQuote(text)
+      formController.appendReviewQuote(commentId, text)
     }
     if (selectedText) window.getSelection().removeAllRanges()
   }

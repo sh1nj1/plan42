@@ -546,14 +546,18 @@ export default class extends Controller {
 
   // Append a review quote to the textarea as markdown blockquote.
   // Multiple reviews accumulate; user types feedback after each quote.
-  appendReviewQuote(selectedText) {
+  appendReviewQuote(commentId, selectedText) {
     if (!selectedText) return
+    // Set quoted_comment_id for the review target
+    if (commentId) {
+      this.quotedCommentIdTarget.value = commentId
+    }
     const textarea = this.textareaTarget
     const current = textarea.value
     // Build markdown blockquote: prefix each line with >
     const quoted = selectedText.split('\n').map(line => `> ${line}`).join('\n')
-    // If textarea already has content, add a blank line separator
-    const prefix = current.length > 0 ? (current.endsWith('\n') ? '' : '\n') : ''
+    // Add blank line separator between reviews for proper markdown rendering
+    const prefix = current.length > 0 ? (current.endsWith('\n\n') ? '' : current.endsWith('\n') ? '\n' : '\n\n') : ''
     const newValue = current + prefix + quoted + '\n'
     textarea.value = newValue
     // Place cursor at the end (user types review feedback here)
