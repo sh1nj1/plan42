@@ -196,10 +196,11 @@ body.chat-fullscreen {
     margin-bottom: 0.2em;
 }
 
-.comment-quoted-text {
+.comment-quoted-text,
+.comment-content blockquote {
     border-left: 3px solid var(--color-border);
     padding: 0.3em 0.6em;
-    margin: 0;
+    margin: 0 0 0.4em 0;
     color: var(--color-muted);
     font-size: 0.9em;
     background: color-mix(in srgb, var(--color-section-bg) 50%, transparent);
