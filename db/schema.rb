@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_19_104210) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_20_072200) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -700,7 +700,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_19_104210) do
   create_table "tasks", force: :cascade do |t|
     t.integer "agent_id", null: false
     t.datetime "created_at", null: false
+    t.integer "creative_id"
     t.string "name"
+    t.integer "parent_task_id"
     t.json "pending_tool_call"
     t.integer "retry_count", default: 0, null: false
     t.string "status", default: "pending"
@@ -708,7 +710,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_19_104210) do
     t.string "trigger_event_name"
     t.json "trigger_event_payload"
     t.datetime "updated_at", null: false
+    t.text "workflow_context"
+    t.json "workflow_state"
     t.index ["agent_id"], name: "index_tasks_on_agent_id"
+    t.index ["creative_id"], name: "index_tasks_on_creative_id"
+    t.index ["parent_task_id"], name: "index_tasks_on_parent_task_id"
     t.index ["topic_id", "status"], name: "index_tasks_on_topic_id_and_status"
   end
 
