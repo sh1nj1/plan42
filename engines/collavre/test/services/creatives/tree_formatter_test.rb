@@ -2,17 +2,24 @@ require "test_helper"
 
 module Creatives
   class TreeFormatterTest < ActiveSupport::TestCase
-    test "formats single root correctly" do
+    test "formats single root with header" do
       root = Creative.new(id: 1, description: "Root", progress: 0.5)
 
       formatter = Creatives::TreeFormatter.new
       result = formatter.format(root)
 
-      expected = <<~TEXT.chomp
-        - {"id":1,"progress":0.5,"desc":"Root"}
-      TEXT
+      assert_includes result, "<!-- format: [id] description (progress%) -->"
+      assert_includes result, "- [1] Root (50%)"
+    end
 
-      assert_equal expected, result
+    test "formats without header when include_header is false" do
+      root = Creative.new(id: 1, description: "Root", progress: 0.5)
+
+      formatter = Creatives::TreeFormatter.new(include_header: false)
+      result = formatter.format(root)
+
+      refute_includes result, "<!-- format:"
+      assert_includes result, "- [1] Root (50%)"
     end
 
     test "formats tree with depth correctly" do
@@ -35,10 +42,11 @@ module Creatives
       result = formatter.format(root)
 
       expected = <<~TEXT.chomp
-        - {"id":1,"progress":0.0,"desc":"Root"}
-            - {"id":2,"progress":1.0,"desc":"Child1"}
-            - {"id":3,"progress":0.0,"desc":"Child2"}
-                - {"id":4,"progress":0.0,"desc":"Child2-1"}
+        <!-- format: [id] description (progress%) -->
+        - [1] Root (0%)
+          - [2] Child1 (100%)
+          - [3] Child2 (0%)
+            - [4] Child2-1 (0%)
       TEXT
 
       assert_equal expected, result
@@ -60,30 +68,48 @@ module Creatives
       result = formatter.format([ root1, root2 ])
 
       expected = <<~TEXT.chomp
-        - {"id":1,"progress":0.0,"desc":"Root1"}
-            - {"id":2,"progress":1.0,"desc":"Child1"}
-        - {"id":3,"progress":1.0,"desc":"Root2"}
+        <!-- format: [id] description (progress%) -->
+        - [1] Root1 (0%)
+          - [2] Child1 (100%)
+        - [3] Root2 (100%)
       TEXT
 
       assert_equal expected, result
     end
+
+    test "respects max_depth" do
+      root = Creative.new(id: 1, description: "Root", progress: 0.0)
+      child = Creative.new(id: 2, description: "Child", progress: 0.0, parent: root)
+      grandchild = Creative.new(id: 3, description: "Grandchild", progress: 0.0, parent: child)
+
+      def root.children; [ @child ]; end
+      def child.children; [ @grandchild ]; end
+      def grandchild.children; []; end
+
+      root.instance_variable_set(:@child, child)
+      child.instance_variable_set(:@grandchild, grandchild)
+
+      formatter = Creatives::TreeFormatter.new(max_depth: 1)
+      result = formatter.format(root)
+
+      assert_includes result, "[1] Root"
+      assert_includes result, "[2] Child"
+      refute_includes result, "Grandchild"
+    end
+
     test "formats tree correctly with manually set children association" do
       root = Creative.new(id: 1, description: "Root", progress: 0.0)
       child = Creative.new(id: 2, description: "Child", progress: 0.0, parent: root)
 
       # Manually set the association target as we do in GeminiParentRecommender
       root.association(:children).target = [ child ]
-      child.association(:children).target = [] # Ensure recursion stops without db lookup
+      child.association(:children).target = []
 
       formatter = Creatives::TreeFormatter.new
       result = formatter.format(root)
 
-      expected = <<~TEXT.chomp
-        - {"id":1,"progress":0.0,"desc":"Root"}
-            - {"id":2,"progress":0.0,"desc":"Child"}
-      TEXT
-
-      assert_equal expected, result
+      assert_includes result, "- [1] Root (0%)"
+      assert_includes result, "  - [2] Child (0%)"
     end
   end
 end

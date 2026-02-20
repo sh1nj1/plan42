@@ -106,6 +106,16 @@ module Tools
     # --- Markdown format ---
 
     def build_markdown_tree(creatives, level:, max_depth:, include_comments: false, header: true)
+      # Use shared TreeFormatter for base tree, then append comments if needed
+      if include_comments
+        build_markdown_tree_with_comments(creatives, level: level, max_depth: max_depth, header: header)
+      else
+        formatter = Creatives::TreeFormatter.new(max_depth: max_depth - 1, include_header: header)
+        formatter.format(creatives) + "\n"
+      end
+    end
+
+    def build_markdown_tree_with_comments(creatives, level:, max_depth:, header: true)
       md = ""
       md += "<!-- format: [id] description (progress%) -->\n" if header
 
@@ -118,17 +128,15 @@ module Tools
 
         md += "#{indent}- [#{creative.id}] #{desc} (#{progress}%)\n"
 
-        if include_comments
-          recent_comments = creative.comments.order(created_at: :desc).limit(3)
-          recent_comments.reverse_each do |comment|
-            comment_text = ActionView::Base.full_sanitizer.sanitize(comment.content).strip.truncate(100)
-            md += "#{indent}    > #{comment_text}\n"
-          end
+        recent_comments = creative.comments.order(created_at: :desc).limit(3)
+        recent_comments.reverse_each do |comment|
+          comment_text = ActionView::Base.full_sanitizer.sanitize(comment.content).strip.truncate(100)
+          md += "#{indent}    > #{comment_text}\n"
         end
 
         children = creative.linked_children
         if children.present? && level < max_depth
-          md += build_markdown_tree(children, level: level + 1, max_depth: max_depth, include_comments: include_comments, header: false)
+          md += build_markdown_tree_with_comments(children, level: level + 1, max_depth: max_depth, header: false)
         end
       end
 
