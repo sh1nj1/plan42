@@ -105,6 +105,7 @@ en:
         all_already_tasked: "All child creatives already have active tasks."
         started: 'Workflow started with @%{agent}: %{total} tasks queued (%{skipped} skipped).'
         trigger_comment: '📋 [Workflow] %{context}'
+        trigger_creative_context: 'Current creative: %{creative}'
         subtask_started: '📋 @%{agent} starting work on "%{creative}" (%{current}/%{total})'
         workflow_completed: '✅ Workflow completed by @%{agent}: %{completed} creatives processed.'
         workflow_failed: 'Workflow failed by @%{agent} on "%{creative}": %{reason}'

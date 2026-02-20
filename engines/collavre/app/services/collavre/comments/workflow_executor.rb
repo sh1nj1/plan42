@@ -189,29 +189,56 @@ module Collavre
 
       def build_subtask_context(creative)
         original_user = find_original_user
+
+        # Build rich trigger comment with creative content + workflow instruction
+        # This mimics a user manually asking the agent in the creative's chat
+        trigger_content = build_trigger_content(creative)
+
         trigger_comment = creative.comments.create!(
-          content: I18n.t("collavre.comments.work_command.trigger_comment",
-                         context: @parent_task.workflow_context),
+          content: trigger_content,
           user: original_user,
           topic_id: nil
         )
 
+        # Context matches the format MessageBuilder expects:
+        # - creative.id → MessageBuilder renders creative tree markdown + chat history
+        # - comment.id → points to trigger comment in the child creative
+        # - sender → original user who issued /work
         {
           "creative" => { "id" => creative.id, "description" => creative.description },
           "workflow" => {
             "context" => @parent_task.workflow_context,
-            "parent_task_id" => @parent_task.id,
-            "instruction" => "You are working on this creative as part of a workflow. " \
-                           "The workflow context is: #{@parent_task.workflow_context}. " \
-                           "Focus on this specific creative: #{creative.description}. " \
-                           "When done, your work will be marked complete automatically."
+            "parent_task_id" => @parent_task.id
           },
           "comment" => { "id" => trigger_comment.id, "content" => trigger_comment.content,
                          "user_id" => trigger_comment.user_id },
-          "chat" => {
-            "content" => "#{@parent_task.workflow_context}\n\nCurrent creative: #{creative.description}"
-          }
+          "sender" => { "name" => original_user.name, "id" => original_user.id }
         }
+      end
+
+      def build_trigger_content(creative)
+        parts = []
+        parts << "@#{@parent_task.agent.name}: #{@parent_task.workflow_context}"
+        parts << ""
+        parts << I18n.t("collavre.comments.work_command.trigger_creative_context",
+                        creative: creative.description)
+        parts << ""
+
+        # Render creative tree markdown so agent sees full content without needing tools
+        markdown = render_creative_markdown(creative)
+        parts << markdown if markdown.present?
+
+        parts.join("\n")
+      end
+
+      def render_creative_markdown(creative)
+        max_depth = @parent_task.agent.creative_children_level + 1
+        ApplicationController.helpers.render_creative_tree_markdown(
+          [ creative ], 1, true, max_depth: max_depth
+        )
+      rescue StandardError => e
+        Rails.logger.warn("WorkflowExecutor: Failed to render creative markdown: #{e.message}")
+        nil
       end
 
       def find_original_user
