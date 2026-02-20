@@ -47,7 +47,7 @@ module Collavre
       end
 
       def find_agent
-        comment.mentioned_users.find(&:ai_user?)
+        comment.mentioned_users&.find(&:ai_user?)
       end
 
       def extract_workflow_context
@@ -100,6 +100,9 @@ module Collavre
 
       def start_next_subtask(parent_task, agent)
         WorkflowExecutor.advance!(parent_task)
+      rescue StandardError => e
+        Rails.logger.error("WorkflowExecutor failed: #{e.message}")
+        raise e
       end
     end
   end
