@@ -144,7 +144,7 @@ module Collavre
           trigger_event_name: "work_command",
           trigger_event_payload: {
             "creative" => { "id" => creative.id },
-            "comment" => { "id" => comment.id }
+            "comment" => { "id" => comment.id, "user_id" => comment.user_id }
           }
         )
       end

@@ -286,11 +286,14 @@ module Collavre
       def find_original_user
         comment_id = @parent_task.trigger_event_payload&.dig("comment", "id")
         comment = Comment.find_by(id: comment_id) if comment_id
-        # Always use the /work command issuer, never the agent itself.
-        # Using agent as sender causes self-referencing context issues.
-        user = comment&.user || User.find_by(id: @parent_task.trigger_event_payload&.dig("comment", "user_id"))
-        # Never fall back to agent — causes self-referencing context issues
-        raise "Cannot find original /work command user for task ##{@parent_task.id}" unless user
+
+        # Try: comment author → stored user_id → creative owner → agent (last resort)
+        user = comment&.user
+        user ||= User.find_by(id: @parent_task.trigger_event_payload&.dig("comment", "user_id"))
+        user ||= @parent_task.creative&.user
+        user ||= @parent_task.agent
+
+        Rails.logger.warn("[WorkflowExecutor] Using fallback user (#{user&.class}:#{user&.id}) for task ##{@parent_task.id}") unless comment&.user
 
         user
       end
