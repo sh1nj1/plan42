@@ -129,7 +129,7 @@ module Collavre
 
           # Guard: skip if agent already has a running task for this comment
           comment_id = @context.dig("comment", "id")
-          if comment_id && duplicate_running_task?(agent.id, comment_id)
+          if comment_id && Task.duplicate_running_for_comment?(agent.id, comment_id)
             Rails.logger.warn(
               "[AgentOrchestrator] Skipping enqueue: agent #{agent.id} already has a running task " \
               "for comment #{comment_id}"
@@ -162,14 +162,6 @@ module Collavre
             nil
           end
         end
-      end
-
-      def duplicate_running_task?(agent_id, comment_id)
-        Task.where(agent_id: agent_id, status: "running", trigger_event_name: "comment_created")
-            .find_each do |task|
-          return true if task.trigger_event_payload&.dig("comment", "id").to_s == comment_id.to_s
-        end
-        false
       end
 
       def log_decision(decision)

@@ -13,6 +13,15 @@ module Collavre
     scope :running_for_topic, ->(topic_id) { where(topic_id: topic_id, status: "running") }
     scope :queued_for_topic, ->(topic_id) { where(topic_id: topic_id, status: "queued").order(:created_at) }
 
+    # Check if agent already has a running task triggered by the same comment
+    def self.duplicate_running_for_comment?(agent_id, comment_id)
+      where(agent_id: agent_id, status: "running", trigger_event_name: "comment_created")
+        .find_each do |task|
+        return true if task.trigger_event_payload&.dig("comment", "id").to_s == comment_id.to_s
+      end
+      false
+    end
+
     def workflow_parent?
       workflow_state.present? && parent_task_id.nil?
     end
