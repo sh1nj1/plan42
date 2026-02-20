@@ -33,9 +33,9 @@ module Collavre
       category_ids = categories.index_by(&:id)
       top_level_categories = categories.reject { |c| category_ids.key?(c.parent_id) }
 
-      tree_text = Creatives::TreeFormatter.new.format(top_level_categories)
+      tree_text = Creatives::TreeFormatter.new(use_permissions: false).format(top_level_categories)
 
-      prompt = build_prompt(tree_text, ActionController::Base.helpers.strip_tags(creative.description).to_s)
+      prompt = build_prompt(tree_text, Creatives::TreeFormatter.plain_description(creative))
       Rails.logger.info("### prompt=#{prompt}")
 
       response = @client.chat([ { role: :user, parts: [ { text: prompt } ] } ])
@@ -45,7 +45,7 @@ module Collavre
       ids.map do |id|
          c = Creative.find_by(id: id)
          next unless c
-         path = c.ancestors.reverse.map { |a| ActionController::Base.helpers.strip_tags(a.description) } + [ ActionController::Base.helpers.strip_tags(c.description) ]
+         path = c.ancestors.reverse.map { |a| Creatives::TreeFormatter.plain_description(a) } + [ Creatives::TreeFormatter.plain_description(c) ]
          { id: id, path: path.join(" > ") }
       end.compact
     end
