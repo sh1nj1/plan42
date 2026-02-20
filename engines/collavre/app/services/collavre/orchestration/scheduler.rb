@@ -72,11 +72,12 @@ module Collavre
           return delayed_decision(agent, :rate_limited, config)
         end
 
-        # Check 4: Topic concurrency limit (applies to Main topic with nil topic_id too)
+        # Check 4: Topic concurrency limit (scoped by creative to avoid cross-creative blocking)
         topic_max = @policy_resolver.topic_max_concurrent_jobs
         if topic_max && @context.key?("topic")
           topic_id = @context.dig("topic", "id")
-          if (Task.running_for_topic(topic_id).count + topic_immediate_count) >= topic_max
+          creative_id = @context.dig("creative", "id")
+          if (Task.running_for_topic(topic_id, creative_id).count + topic_immediate_count) >= topic_max
             return deferred_decision(agent, :topic_concurrency)
           end
         end

@@ -109,7 +109,7 @@ module Collavre
 
         # Create a running task to trigger topic concurrency limit
         Task.create!(name: "Running", status: "running", trigger_event_name: "e",
-                     agent: @ai_agent, topic_id: topic.id)
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
 
         queued_count_before = Task.where(status: "queued", topic_id: topic.id).count
         result = AgentOrchestrator.dispatch("comment_created", context)

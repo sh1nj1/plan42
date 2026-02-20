@@ -74,7 +74,7 @@ module Collavre
           end
 
           # Drain the queue for the topic so waiting tasks can execute
-          AgentOrchestrator.dequeue_next_for_topic(task.topic_id)
+          AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
         rescue StandardError => e
           Rails.logger.error("[StuckDetector] Auto-recovery failed for task #{task.id}: #{e.message}")
         end

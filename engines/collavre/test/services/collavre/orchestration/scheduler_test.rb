@@ -221,7 +221,8 @@ module Collavre
           status: "running",
           trigger_event_name: "comment_created",
           agent: @agent,
-          topic_id: @topic.id
+          topic_id: @topic.id,
+          creative: @creative
         )
 
         scheduler = Scheduler.new(@context)
@@ -246,8 +247,8 @@ module Collavre
           config: { "topic_max_concurrent_jobs" => 2 }
         )
 
-        Task.create!(name: "t1", status: "running", trigger_event_name: "e", agent: @agent, topic_id: @topic.id)
-        Task.create!(name: "t2", status: "running", trigger_event_name: "e", agent: @agent, topic_id: @topic.id)
+        Task.create!(name: "t1", status: "running", trigger_event_name: "e", agent: @agent, topic_id: @topic.id, creative: @creative)
+        Task.create!(name: "t2", status: "running", trigger_event_name: "e", agent: @agent, topic_id: @topic.id, creative: @creative)
 
         scheduler = Scheduler.new(@context)
         decisions = scheduler.schedule([ @agent ])
@@ -275,7 +276,8 @@ module Collavre
           status: "running",
           trigger_event_name: "comment_created",
           agent: @agent,
-          topic_id: nil
+          topic_id: nil,
+          creative: @creative
         )
 
         scheduler = Scheduler.new(main_topic_context)
@@ -315,6 +317,30 @@ module Collavre
         assert_equal :deferred, decisions.last[:timing]
       ensure
         ResourceTracker.for(agent2).reset! if agent2
+      end
+
+      test "does not defer when running task belongs to different creative on main topic" do
+        other_creative = Creative.create!(description: "Other Creative", progress: 0, user: @agent)
+
+        # Running task on OTHER creative's main topic
+        Task.create!(
+          name: "Other creative main task",
+          status: "running",
+          trigger_event_name: "comment_created",
+          agent: @agent,
+          topic_id: nil,
+          creative: other_creative
+        )
+
+        main_topic_context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => nil }
+        }
+
+        scheduler = Scheduler.new(main_topic_context)
+        decisions = scheduler.schedule([ @agent ])
+
+        assert_equal :immediate, decisions.first[:timing]
       end
 
       # Default policy values
