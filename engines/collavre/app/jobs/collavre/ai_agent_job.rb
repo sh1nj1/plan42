@@ -104,9 +104,9 @@ module Collavre
     private
 
     def duplicate_running_task?(agent_id, comment_id)
-      Task.where(agent_id: agent_id, status: "running").find_each do |task|
-        payload_comment_id = task.trigger_event_payload&.dig("comment", "id")
-        return true if payload_comment_id.to_s == comment_id.to_s
+      Task.where(agent_id: agent_id, status: "running", trigger_event_name: "comment_created")
+          .find_each do |task|
+        return true if task.trigger_event_payload&.dig("comment", "id").to_s == comment_id.to_s
       end
       false
     end
