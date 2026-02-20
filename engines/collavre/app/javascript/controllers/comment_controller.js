@@ -8,7 +8,7 @@ if (!window._streamingCommentIds) window._streamingCommentIds = new Set()
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "reviewButton", "replaceButton"]
+  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "reviewButton"]
 
   get _commentId() {
     return this.element.dataset.commentId
@@ -123,9 +123,8 @@ export default class extends Controller {
     this.handleMouseUp = this.handleMouseUp.bind(this)
     this.element.addEventListener('mouseup', this.handleMouseUp)
 
-    // Bound handlers for review/replace buttons (stored for cleanup)
+    // Bound handler for review button (stored for cleanup)
     this._boundReviewClick = this._onReviewClick.bind(this)
-    this._boundReplaceClick = this._onReplaceClick.bind(this)
 
     this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
@@ -228,7 +227,6 @@ export default class extends Controller {
       this._streamingTimeout = null
     }
     this.element.removeEventListener('mouseup', this.handleMouseUp)
-    this._removeSelectionChangeListener()
     this.hideReviewPopup()
     if (this._reviewPopupEl) {
       this._reviewPopupEl.remove()
@@ -288,10 +286,9 @@ export default class extends Controller {
 
     this._reviewPopup = new CommonPopup(this._reviewPopupEl, {
       onSelect: () => {
-        const commentId = this.element.dataset.commentId
         const formController = this.findFormController()
         if (formController) {
-          formController.quoteComment(commentId, selectedText)
+          formController.appendReviewQuote(selectedText)
         }
         window.getSelection().removeAllRanges()
         this.hideReviewPopup()
@@ -332,44 +329,20 @@ export default class extends Controller {
     button.removeEventListener('click', this._boundReviewClick)
   }
 
-  replaceButtonTargetConnected(button) {
-    button.addEventListener('click', this._boundReplaceClick)
-    // Only listen for selectionchange when a replace button exists
-    this._addSelectionChangeListener()
-  }
-
-  replaceButtonTargetDisconnected(button) {
-    button.removeEventListener('click', this._boundReplaceClick)
-    if (!this.hasReplaceButtonTarget) {
-      this._removeSelectionChangeListener()
-    }
-  }
+  // replaceButton removed — unified into reviewButton
 
   _onReviewClick(event) {
     event.preventDefault()
     event.stopPropagation()
-    const commentId = this.element.dataset.commentId
-    const contentEl = this.element.querySelector('.comment-content')
-    const fullText = contentEl ? contentEl.textContent.trim() : ''
-    const formController = this.findFormController()
-    if (formController && fullText) {
-      formController.quoteComment(commentId, fullText)
-    }
-  }
-
-  _onReplaceClick(event) {
-    event.preventDefault()
-    event.stopPropagation()
+    // Use selected text if available, otherwise full comment text
     const selectedText = this._getSelectedTextInContent()
-    if (!selectedText) return
-
-    const commentId = this.element.dataset.commentId
+    const contentEl = this.element.querySelector('.comment-content')
+    const text = selectedText || (contentEl ? contentEl.textContent.trim() : '')
     const formController = this.findFormController()
-    if (formController) {
-      formController.quoteComment(commentId, selectedText)
+    if (formController && text) {
+      formController.appendReviewQuote(text)
     }
-    window.getSelection().removeAllRanges()
-    this._updateReplaceButton()
+    if (selectedText) window.getSelection().removeAllRanges()
   }
 
   _getSelectedTextInContent() {
@@ -388,30 +361,7 @@ export default class extends Controller {
     return text
   }
 
-  _addSelectionChangeListener() {
-    if (this._selectionChangeActive) return
-    this._handleSelectionChange = this._handleSelectionChange.bind(this)
-    document.addEventListener('selectionchange', this._handleSelectionChange)
-    this._selectionChangeActive = true
-  }
-
-  _removeSelectionChangeListener() {
-    if (!this._selectionChangeActive) return
-    document.removeEventListener('selectionchange', this._handleSelectionChange)
-    this._selectionChangeActive = false
-  }
-
-  _handleSelectionChange() {
-    this._updateReplaceButton()
-  }
-
-  _updateReplaceButton() {
-    if (!this.hasReplaceButtonTarget) return
-    const hasSelection = !!this._getSelectedTextInContent()
-    this.replaceButtonTargets.forEach((btn) => {
-      btn.disabled = !hasSelection
-    })
-  }
+  // Selection change listener and replace button logic removed — unified into review
 
   updateReactionsUI(reactionsData) {
     let reactionsContainer = this.element.querySelector('.comment-reactions')
