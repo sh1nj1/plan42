@@ -343,6 +343,15 @@ export default class extends Controller {
     const formController = this.findFormController()
     if (formController && text) {
       formController.appendReviewQuote(commentId, text)
+      // Scroll textarea into view and flash highlight for visual feedback
+      const textarea = formController.textareaTarget
+      if (textarea) {
+        textarea.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        textarea.classList.add('review-quote-flash')
+        textarea.addEventListener('animationend', () => {
+          textarea.classList.remove('review-quote-flash')
+        }, { once: true })
+      }
     }
     if (selectedText) window.getSelection().removeAllRanges()
   }
