@@ -199,14 +199,18 @@ body.chat-fullscreen {
 .comment-quoted-text,
 .comment-content blockquote {
     border-left: 3px solid var(--color-border);
-    padding: 0.3em 0.6em;
-    margin: 0 0 0.4em 0;
+    padding: 0.2em 0.6em;
+    margin: 0 0 0.3em 0;
     color: var(--color-muted);
     font-size: 0.9em;
     background: color-mix(in srgb, var(--color-section-bg) 50%, transparent);
     border-radius: 0 4px 4px 0;
     white-space: pre-wrap;
     word-break: break-word;
+}
+
+.comment-content blockquote p {
+    margin: 0;
 }
 
 /* Quote indicator in form */
