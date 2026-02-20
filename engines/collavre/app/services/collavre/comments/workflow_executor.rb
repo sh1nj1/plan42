@@ -48,6 +48,7 @@ module Collavre
             topic_id: topic&.id
           )
 
+          post_progress_notice(next_creative)
           AiAgentJob.perform_later(sub_task)
           return
         end
@@ -103,6 +104,21 @@ module Collavre
           I18n.t("collavre.comments.work_command.workflow_completed",
                  agent: @parent_task.agent.display_name,
                  completed: (@state["completed_creative_ids"] || []).size)
+        )
+      end
+
+      def post_progress_notice(creative)
+        total = @state["total"] || 1
+        completed_count = (@state["completed_creative_ids"] || []).size
+        current_index = completed_count + 1
+        creative_desc = creative.description&.truncate(50) || "untitled"
+
+        post_notice(
+          I18n.t("collavre.comments.work_command.subtask_started",
+                 agent: @parent_task.agent.display_name,
+                 creative: creative_desc,
+                 current: current_index,
+                 total: total)
         )
       end
 

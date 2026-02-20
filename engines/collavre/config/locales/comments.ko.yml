@@ -101,7 +101,8 @@ ko:
         no_children: "이 크리에이티브에는 작업할 하위 크리에이티브가 없습니다."
         all_already_tasked: "모든 하위 크리에이티브가 이미 활성 작업을 가지고 있습니다."
         started: '워크플로우가 @%{agent}와 함께 시작되었습니다: %{total}개 작업 대기중 (%{skipped}개 생략).'
-        workflow_completed: '@%{agent}가 워크플로우를 완료했습니다: %{completed}개 크리에이티브 처리됨.'
+        subtask_started: '📋 @%{agent}가 "%{creative}" 작업을 시작합니다 (%{current}/%{total})'
+        workflow_completed: '✅ @%{agent}가 워크플로우를 완료했습니다: %{completed}개 크리에이티브 처리됨.'
         workflow_failed: '@%{agent} 워크플로우 실패 - "%{creative}": %{reason}'
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록

@@ -70,10 +70,17 @@ module Collavre
       end
 
       def filter_already_tasked(creative_ids)
-        Task.where(creative_id: creative_ids)
-            .where(status: %w[running queued pending pending_approval])
-            .pluck(:creative_id)
-            .uniq
+        # Skip creatives with active or completed tasks
+        tasked = Task.where(creative_id: creative_ids)
+                     .where(status: %w[running queued pending pending_approval done])
+                     .pluck(:creative_id)
+
+        # Also skip creatives already at 100% progress
+        completed = Creative.where(id: creative_ids)
+                            .where("progress >= 1.0")
+                            .pluck(:id)
+
+        (tasked + completed).uniq
       end
 
       def create_parent_task(agent, workflow_text, pending_ids)
