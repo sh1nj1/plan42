@@ -45,7 +45,12 @@ module Tools
       if format == "json"
         build_json_tree(creatives, depth: level, include_comments: include_comments)
       else
-        build_markdown_tree(creatives, level: 1, max_depth: level, include_comments: include_comments)
+        formatter = Creatives::TreeFormatter.new(
+          max_depth: level - 1,
+          include_header: true,
+          include_comments: include_comments
+        )
+        formatter.format(creatives) + "\n"
       end
     end
 
@@ -64,17 +69,35 @@ module Tools
     end
 
     def search_creatives(query)
-      # Search in descriptions
-      scope = Creative.where("description LIKE ?", "%#{Creative.sanitize_sql_like(query)}%")
+      sanitized = Creative.sanitize_sql_like(query)
 
-      # Also search in comments
-      comment_creative_ids = Comment.where("content LIKE ?", "%#{Comment.sanitize_sql_like(query)}%")
-                                    .pluck(:creative_id)
+      # Scope search to user's own + shared creatives via permission cache
+      accessible_ids = accessible_creative_ids
 
-      combined_ids = scope.pluck(:id) | comment_creative_ids
+      desc_ids = Creative.where(id: accessible_ids)
+                         .where("description LIKE ?", "%#{sanitized}%")
+                         .pluck(:id)
+
+      comment_ids = Comment.where(creative_id: accessible_ids)
+                           .where("content LIKE ?", "%#{sanitized}%")
+                           .pluck(:creative_id)
+
+      combined_ids = (desc_ids | comment_ids)
+      return [] if combined_ids.empty?
+
       Creative.where(id: combined_ids)
-              .select { |c| c.has_permission?(Current.user, :read) }
+              .order(:sequence)
               .sort_by { |c| c.description.to_s.length }
+    end
+
+    def accessible_creative_ids
+      # User's own creatives + those shared via permission cache
+      own_ids = Creative.where(user: Current.user).pluck(:id)
+      shared_ids = CreativeSharesCache
+                     .where(user_id: Current.user.id)
+                     .where.not(permission: :no_access)
+                     .pluck(:creative_id)
+      own_ids | shared_ids
     end
 
     def apply_filters(creatives, tags:, progress_min:, progress_max:, updated_since:)
@@ -83,8 +106,11 @@ module Tools
       if tags.present?
         tag_names = tags.split(",").map(&:strip)
         label_ids = Label.where(value: tag_names).pluck(:id)
-        tagged_creative_ids = Tag.where(label_id: label_ids).pluck(:creative_id).to_set
-        result = result.select { |c| tagged_creative_ids.include?(c.id) || (c.self_and_descendants.pluck(:id) & tagged_creative_ids.to_a).any? }
+        tagged_ids = Tag.where(label_id: label_ids).pluck(:creative_id).to_set
+        # Include creative if it or any descendant is tagged
+        all_descendant_ids = creatives.flat_map { |c| c.self_and_descendants.pluck(:id) }.to_set
+        matching_tagged = tagged_ids & all_descendant_ids
+        result = result.select { |c| matching_tagged.include?(c.id) || (c.self_and_descendants.pluck(:id).to_set & matching_tagged).any? }
       end
 
       if progress_min.present?
@@ -97,50 +123,19 @@ module Tools
 
       if updated_since.present?
         since = Time.parse(updated_since)
-        result = result.select { |c| c.updated_at >= since || c.descendants.where("updated_at >= ?", since).exists? }
+        # Batch check: get all descendant IDs with updates, then filter
+        creative_ids = result.map(&:id)
+        updated_descendant_ancestors = CreativeHierarchy
+          .where(ancestor_id: creative_ids)
+          .joins("INNER JOIN creatives ON creatives.id = creative_hierarchies.descendant_id")
+          .where("creatives.updated_at >= ?", since)
+          .pluck(:ancestor_id)
+          .to_set
+
+        result = result.select { |c| c.updated_at >= since || updated_descendant_ancestors.include?(c.id) }
       end
 
       result
-    end
-
-    # --- Markdown format ---
-
-    def build_markdown_tree(creatives, level:, max_depth:, include_comments: false, header: true)
-      # Use shared TreeFormatter for base tree, then append comments if needed
-      if include_comments
-        build_markdown_tree_with_comments(creatives, level: level, max_depth: max_depth, header: header)
-      else
-        formatter = Creatives::TreeFormatter.new(max_depth: max_depth - 1, include_header: header)
-        formatter.format(creatives) + "\n"
-      end
-    end
-
-    def build_markdown_tree_with_comments(creatives, level:, max_depth:, header: true)
-      md = ""
-      md += "<!-- format: [id] description (progress%) -->\n" if header
-
-      return md if creatives.blank? || level > max_depth
-
-      creatives.each do |creative|
-        desc = plain_description(creative)
-        progress = (creative.progress.to_f * 100).round
-        indent = "  " * (level - 1)
-
-        md += "#{indent}- [#{creative.id}] #{desc} (#{progress}%)\n"
-
-        recent_comments = creative.comments.order(created_at: :desc).limit(3)
-        recent_comments.reverse_each do |comment|
-          comment_text = ActionView::Base.full_sanitizer.sanitize(comment.content).strip.truncate(100)
-          md += "#{indent}    > #{comment_text}\n"
-        end
-
-        children = creative.linked_children
-        if children.present? && level < max_depth
-          md += build_markdown_tree_with_comments(children, level: level + 1, max_depth: max_depth, header: false)
-        end
-      end
-
-      md
     end
 
     # --- JSON format ---
@@ -154,16 +149,18 @@ module Tools
     end
 
     def serialize_creative(creative, depth:, current_depth:, include_comments: false)
+      children = creative.linked_children
+
       result = {
         id: creative.id,
-        description: plain_description(creative),
+        description: Creatives::TreeFormatter.plain_description(creative),
         progress: creative.progress.to_f.round(2),
         parent_id: creative.parent_id,
         tags: creative.tags.includes(:label).map { |t| t.label&.value }.compact,
         linked: creative.origin_id.present?,
         origin_id: creative.origin_id,
-        has_children: creative.linked_children.any?,
-        children_count: creative.linked_children.size,
+        has_children: children.any?,
+        children_count: children.size,
         created_at: creative.created_at&.iso8601,
         updated_at: creative.updated_at&.iso8601
       }
@@ -179,7 +176,7 @@ module Tools
       end
 
       if current_depth < depth
-        result[:children] = creative.linked_children.map do |child|
+        result[:children] = children.map do |child|
           serialize_creative(child, depth: depth, current_depth: current_depth + 1, include_comments: include_comments)
         end
       else
@@ -187,13 +184,6 @@ module Tools
       end
 
       result
-    end
-
-    # --- Helpers ---
-
-    def plain_description(creative)
-      raw = creative.effective_description(nil, true)
-      ActionView::Base.full_sanitizer.sanitize(raw).strip
     end
   end
 end

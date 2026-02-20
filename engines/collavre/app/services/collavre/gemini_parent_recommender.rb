@@ -33,7 +33,7 @@ module Collavre
       category_ids = categories.index_by(&:id)
       top_level_categories = categories.reject { |c| category_ids.key?(c.parent_id) }
 
-      tree_text = Creatives::TreeFormatter.new.format(top_level_categories)
+      tree_text = Creatives::TreeFormatter.new(use_permissions: false).format(top_level_categories)
 
       prompt = build_prompt(tree_text, ActionController::Base.helpers.strip_tags(creative.description).to_s)
       Rails.logger.info("### prompt=#{prompt}")

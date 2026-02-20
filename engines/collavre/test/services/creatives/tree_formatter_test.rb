@@ -5,7 +5,7 @@ module Creatives
     test "formats single root with header" do
       root = Creative.new(id: 1, description: "Root", progress: 0.5)
 
-      formatter = Creatives::TreeFormatter.new
+      formatter = Creatives::TreeFormatter.new(use_permissions: false)
       result = formatter.format(root)
 
       assert_includes result, "<!-- format: [id] description (progress%) -->"
@@ -15,7 +15,7 @@ module Creatives
     test "formats without header when include_header is false" do
       root = Creative.new(id: 1, description: "Root", progress: 0.5)
 
-      formatter = Creatives::TreeFormatter.new(include_header: false)
+      formatter = Creatives::TreeFormatter.new(include_header: false, use_permissions: false)
       result = formatter.format(root)
 
       refute_includes result, "<!-- format:"
@@ -28,7 +28,6 @@ module Creatives
       child2 = Creative.new(id: 3, description: "Child2", progress: 0.0, parent: root)
       child2_1 = Creative.new(id: 4, description: "Child2-1", progress: 0.0, parent: child2)
 
-      # Mock children association since these are not saved records
       def root.children; [ @child1, @child2 ]; end
       def child2.children; [ @child2_1 ]; end
       def child1.children; []; end
@@ -38,7 +37,7 @@ module Creatives
       root.instance_variable_set(:@child2, child2)
       child2.instance_variable_set(:@child2_1, child2_1)
 
-      formatter = Creatives::TreeFormatter.new
+      formatter = Creatives::TreeFormatter.new(use_permissions: false)
       result = formatter.format(root)
 
       expected = <<~TEXT.chomp
@@ -57,14 +56,13 @@ module Creatives
       child1 = Creative.new(id: 2, description: "Child1", progress: 1.0, parent: root1)
       root2 = Creative.new(id: 3, description: "Root2", progress: 1.0)
 
-      # Mock children
       def root1.children; [ @child1 ]; end
       def child1.children; []; end
       def root2.children; []; end
 
       root1.instance_variable_set(:@child1, child1)
 
-      formatter = Creatives::TreeFormatter.new
+      formatter = Creatives::TreeFormatter.new(use_permissions: false)
       result = formatter.format([ root1, root2 ])
 
       expected = <<~TEXT.chomp
@@ -89,7 +87,7 @@ module Creatives
       root.instance_variable_set(:@child, child)
       child.instance_variable_set(:@grandchild, grandchild)
 
-      formatter = Creatives::TreeFormatter.new(max_depth: 1)
+      formatter = Creatives::TreeFormatter.new(max_depth: 1, use_permissions: false)
       result = formatter.format(root)
 
       assert_includes result, "[1] Root"
@@ -101,15 +99,20 @@ module Creatives
       root = Creative.new(id: 1, description: "Root", progress: 0.0)
       child = Creative.new(id: 2, description: "Child", progress: 0.0, parent: root)
 
-      # Manually set the association target as we do in GeminiParentRecommender
       root.association(:children).target = [ child ]
       child.association(:children).target = []
 
-      formatter = Creatives::TreeFormatter.new
+      formatter = Creatives::TreeFormatter.new(use_permissions: false)
       result = formatter.format(root)
 
       assert_includes result, "- [1] Root (0%)"
       assert_includes result, "  - [2] Child (0%)"
+    end
+
+    test "plain_description strips HTML" do
+      creative = Creative.new(description: "<b>Bold</b> text")
+      result = Creatives::TreeFormatter.plain_description(creative)
+      assert_equal "Bold text", result
     end
   end
 end
