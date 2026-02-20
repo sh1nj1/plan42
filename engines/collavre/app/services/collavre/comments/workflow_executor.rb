@@ -33,8 +33,9 @@ module Collavre
           @parent_task.update!(workflow_state: @state)
 
           # Create sub-task and dispatch to agent
+          # Trigger comment is created inside build_subtask_context
+          # in the child creative's main topic (topic_id: nil)
           sub_task_context = build_subtask_context(next_creative)
-          topic = next_creative.topics.first
 
           sub_task = Task.create!(
             name: "Work on: #{next_creative.description&.truncate(50)}",
@@ -45,7 +46,7 @@ module Collavre
             workflow_context: @parent_task.workflow_context,
             trigger_event_name: "workflow_subtask",
             trigger_event_payload: sub_task_context,
-            topic_id: topic&.id
+            topic_id: nil
           )
 
           post_progress_notice(next_creative)
@@ -147,10 +148,17 @@ module Collavre
       end
 
       def build_subtask_context(creative)
-        topic = creative.topics.first
+        # Create a trigger comment in the child creative's main topic
+        # so the agent's response appears in that creative's chat
+        trigger_comment = creative.comments.create!(
+          content: @parent_task.workflow_context,
+          user: @parent_task.agent,
+          topic_id: nil # main topic
+        )
+
         {
           "creative" => { "id" => creative.id, "description" => creative.description },
-          "topic" => topic ? { "id" => topic.id } : nil,
+          "topic" => { "id" => nil },
           "workflow" => {
             "context" => @parent_task.workflow_context,
             "parent_task_id" => @parent_task.id,
@@ -159,11 +167,12 @@ module Collavre
                            "Focus on this specific creative: #{creative.description}. " \
                            "When done, your work will be marked complete automatically."
           },
-          "comment" => @parent_task.trigger_event_payload&.dig("comment"),
+          "comment" => { "id" => trigger_comment.id, "content" => trigger_comment.content,
+                         "user_id" => trigger_comment.user_id },
           "chat" => {
             "content" => "#{@parent_task.workflow_context}\n\nCurrent creative: #{creative.description}"
           }
-        }.compact
+        }
       end
     end
   end
