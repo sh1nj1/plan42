@@ -60,9 +60,6 @@
         <button class="review-comment-btn" data-comment-target="reviewButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.review_button') %>">
           <%= t('collavre.comments.review_button') %>
         </button>
-        <button class="replace-comment-btn" data-comment-target="replaceButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.replace_button') %>" disabled>
-          <%= t('collavre.comments.replace_button') %>
-        </button>
       <% end %>
       <button class="copy-comment-link-btn" data-comment-id="<%= comment.id %>" data-comment-url="<%= collavre.creative_comment_url(comment.creative, comment, Rails.application.config.action_mailer.default_url_options) %>" title="<%= t('collavre.comments.copy_link_button') %>">
         <%= t('collavre.comments.copy_link_button') %>
