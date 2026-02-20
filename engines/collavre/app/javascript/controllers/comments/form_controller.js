@@ -558,7 +558,8 @@ export default class extends Controller {
     const quoted = selectedText.split('\n').map(line => `> ${line}`).join('\n')
     // Add blank line separator between reviews for proper markdown rendering
     const prefix = current.length > 0 ? (current.endsWith('\n\n') ? '' : current.endsWith('\n') ? '\n' : '\n\n') : ''
-    const newValue = current + prefix + quoted + '\n'
+    // Double newline after blockquote so markdown renders it as a separate block
+    const newValue = current + prefix + quoted + '\n\n'
     textarea.value = newValue
     // Place cursor at the end (user types review feedback here)
     textarea.selectionStart = textarea.selectionEnd = newValue.length
