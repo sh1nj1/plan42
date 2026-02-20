@@ -103,6 +103,7 @@ ko:
         started: '워크플로우가 @%{agent}와 함께 시작되었습니다: %{total}개 작업 대기중 (%{skipped}개 생략).'
         trigger_comment: '📋 [워크플로우] %{context}'
         subtask_started: '📋 @%{agent}가 "%{creative}" 작업을 시작합니다 (%{current}/%{total})'
+        subtask_completed: '✅ @%{agent}가 "%{creative}" 완료 (%{completed}/%{total}, %{progress}%%)'
         workflow_completed: '✅ @%{agent}가 워크플로우를 완료했습니다: %{completed}개 크리에이티브 처리됨.'
         workflow_failed: '@%{agent} 워크플로우 실패 - "%{creative}": %{reason}'
         workflow_stopped: '⏹️ @%{agent} 워크플로우가 중지되었습니다. %{completed}개 완료, %{remaining}개 남음.'

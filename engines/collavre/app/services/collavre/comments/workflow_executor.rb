@@ -68,6 +68,8 @@ module Collavre
         progress = completed.size.to_f / total
         @parent_task.creative&.update!(progress: progress.clamp(0.0, 1.0))
 
+        post_subtask_completed_notice(sub_task, completed.size, total)
+
         advance!
       end
 
@@ -160,6 +162,20 @@ module Collavre
                  creative: creative_desc,
                  current: current_index,
                  total: total)
+        )
+      end
+
+      def post_subtask_completed_notice(sub_task, completed_count, total)
+        creative_desc = sub_task.creative&.description&.truncate(50) || "untitled"
+        progress_pct = ((completed_count.to_f / total) * 100).round
+
+        post_notice(
+          I18n.t("collavre.comments.work_command.subtask_completed",
+                 agent: @parent_task.agent.display_name,
+                 creative: creative_desc,
+                 completed: completed_count,
+                 total: total,
+                 progress: progress_pct)
         )
       end
 
