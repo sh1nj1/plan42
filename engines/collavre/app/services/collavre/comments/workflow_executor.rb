@@ -216,19 +216,33 @@ module Collavre
         }
       end
 
-      def build_trigger_content(creative)
+      def build_trigger_content(_creative)
         parts = []
-        parts << "@#{@parent_task.agent.name}: #{@parent_task.workflow_context}"
-        parts << ""
-        parts << I18n.t("collavre.comments.work_command.trigger_creative_context",
-                        creative: creative.description)
-        parts << ""
 
-        # Render creative tree markdown so agent sees full content without needing tools
-        markdown = render_creative_markdown(creative)
-        parts << markdown if markdown.present?
+        # Resolve workflow_context: if it's a creative ID, render that creative's markdown
+        # as the instruction (like a user pasting the content). Otherwise use as-is.
+        workflow_instruction = resolve_workflow_context
+        parts << "@#{@parent_task.agent.name}: #{workflow_instruction}"
+
+        # NOTE: Do NOT include current creative's markdown here.
+        # MessageBuilder already renders it from context["creative"]["id"].
 
         parts.join("\n")
+      end
+
+      def resolve_workflow_context
+        context_text = @parent_task.workflow_context.to_s.strip
+        creative_id = context_text[/\A\d+\z/]
+        return context_text unless creative_id
+
+        context_creative = Creative.find_by(id: creative_id)
+        return context_text unless context_creative
+
+        # Render the workflow context creative's full tree as markdown
+        markdown = render_creative_markdown(context_creative)
+        return context_text if markdown.blank?
+
+        markdown
       end
 
       def render_creative_markdown(creative)
