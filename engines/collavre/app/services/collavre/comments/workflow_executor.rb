@@ -149,16 +149,18 @@ module Collavre
 
       def build_subtask_context(creative)
         # Create a trigger comment in the child creative's main topic
-        # so the agent's response appears in that creative's chat
+        # so the agent's response appears in that creative's chat.
+        # Use the original /work command user (not the agent) to avoid self-response loops.
+        original_user = find_original_user
         trigger_comment = creative.comments.create!(
-          content: @parent_task.workflow_context,
-          user: @parent_task.agent,
+          content: I18n.t("collavre.comments.work_command.trigger_comment",
+                         context: @parent_task.workflow_context),
+          user: original_user,
           topic_id: nil # main topic
         )
 
         {
           "creative" => { "id" => creative.id, "description" => creative.description },
-          "topic" => { "id" => nil },
           "workflow" => {
             "context" => @parent_task.workflow_context,
             "parent_task_id" => @parent_task.id,
@@ -173,6 +175,12 @@ module Collavre
             "content" => "#{@parent_task.workflow_context}\n\nCurrent creative: #{creative.description}"
           }
         }
+      end
+
+      def find_original_user
+        comment_id = @parent_task.trigger_event_payload&.dig("comment", "id")
+        comment = Comment.find_by(id: comment_id) if comment_id
+        comment&.user || @parent_task.agent
       end
     end
   end
