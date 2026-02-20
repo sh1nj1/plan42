@@ -127,6 +127,16 @@ module Collavre
           agent = decision[:agent]
           log_decision(decision)
 
+          # Guard: skip if agent already has a running task for this comment
+          comment_id = @context.dig("comment", "id")
+          if comment_id && Task.duplicate_running_for_comment?(agent.id, comment_id)
+            Rails.logger.warn(
+              "[AgentOrchestrator] Skipping enqueue: agent #{agent.id} already has a running task " \
+              "for comment #{comment_id}"
+            )
+            next
+          end
+
           case decision[:timing]
           when :immediate
             AiAgentJob.perform_later(agent.id, @event_name, @context)

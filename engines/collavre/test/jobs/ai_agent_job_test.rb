@@ -299,4 +299,52 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert messages.count > 40
     assert messages.count < 60
   end
+
+  test "skips duplicate execution when agent already has running task for same comment" do
+    # Create an existing running task for the same agent + comment
+    Task.create!(
+      name: "Response to comment_created",
+      status: "running",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: @context,
+      agent: @agent,
+      topic_id: nil
+    )
+
+    initial_task_count = Task.where(agent_id: @agent.id).count
+
+    AiClient.stub :new, ->(**kwargs) { FakeAiClient.new } do
+      perform_enqueued_jobs do
+        AiAgentJob.perform_later(@agent.id, "comment_created", @context)
+      end
+    end
+
+    # No new task should have been created
+    assert_equal initial_task_count, Task.where(agent_id: @agent.id).count,
+      "Expected no new task when duplicate running task exists for same comment"
+  end
+
+  test "allows execution when existing task for same comment is done" do
+    # Create a completed task for the same agent + comment
+    Task.create!(
+      name: "Response to comment_created",
+      status: "done",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: @context,
+      agent: @agent,
+      topic_id: nil
+    )
+
+    initial_task_count = Task.where(agent_id: @agent.id).count
+
+    AiClient.stub :new, ->(**kwargs) { FakeAiClient.new } do
+      perform_enqueued_jobs do
+        AiAgentJob.perform_later(@agent.id, "comment_created", @context)
+      end
+    end
+
+    # A new task should have been created (the done one doesn't block)
+    assert_operator Task.where(agent_id: @agent.id).count, :>, initial_task_count,
+      "Expected new task when existing task is done"
+  end
 end
