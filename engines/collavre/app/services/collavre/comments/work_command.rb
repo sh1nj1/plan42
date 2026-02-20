@@ -38,7 +38,7 @@ module Collavre
         return I18n.t("collavre.comments.work_command.all_already_tasked") if pending_ids.empty?
 
         parent_task = create_parent_task(agent, workflow_text, pending_ids)
-        start_next_subtask(parent_task, agent)
+        WorkflowExecutor.advance!(parent_task)
 
         I18n.t("collavre.comments.work_command.started",
                agent: agent.display_name,
@@ -52,7 +52,6 @@ module Collavre
       end
 
       def extract_workflow_context
-        # Remove command and @mention, rest is workflow context
         content = comment.content.to_s.strip
         content = content.sub(/\A\/work\s+/, "")
         content = content.sub(/@[^:]+:\s*/, "")
@@ -60,10 +59,9 @@ module Collavre
       end
 
       def collect_dfs_creative_ids
-        # DFS order via closure_tree - children ordered by sequence
         dfs_ids = []
         dfs_traverse(creative) { |c| dfs_ids << c.id }
-        dfs_ids.reject { |id| id == creative.id } # exclude root
+        dfs_ids.reject { |id| id == creative.id }
       end
 
       def dfs_traverse(node, &block)
@@ -97,13 +95,6 @@ module Collavre
             "comment" => { "id" => comment.id }
           }
         )
-      end
-
-      def start_next_subtask(parent_task, agent)
-        WorkflowExecutor.advance!(parent_task)
-      rescue StandardError => e
-        Rails.logger.error("WorkflowExecutor failed: #{e.message}")
-        raise e
       end
     end
   end
