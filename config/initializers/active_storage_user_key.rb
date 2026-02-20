@@ -19,9 +19,9 @@ module ActiveStorageUserKeyPrefix
 
       self[:key] = if user_id.present?
                      "users/#{user_id}/#{token}"
-                   else
+      else
                      "unscoped/#{token}"
-                   end
+      end
     end
 
     self[:key] || super

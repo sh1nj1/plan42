@@ -29,13 +29,13 @@ namespace :storage do
                   when "Collavre::User"
                     attachment.record_id
                   end
-                end
+      end
 
       new_key = if user_id
                   "users/#{user_id}/#{ActiveStorage::Blob.generate_unique_secure_token}"
-                else
+      else
                   "unscoped/#{ActiveStorage::Blob.generate_unique_secure_token}"
-                end
+      end
 
       begin
         blob.open do |tempfile|
