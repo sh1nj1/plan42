@@ -16,8 +16,8 @@ module Collavre
         new(event_name: event_name, context: context).dispatch
       end
 
-      def self.dequeue_next_for_topic(topic_id)
-        task = Task.queued_for_topic(topic_id).first
+      def self.dequeue_next_for_topic(topic_id, creative_id = nil)
+        task = Task.queued_for_topic(topic_id, creative_id).first
         return unless task
 
         updated = Task.where(id: task.id, status: "queued").update_all(status: "pending")
@@ -29,7 +29,7 @@ module Collavre
           if task.status == "cancelled"
             # refresh_deferred_context! cancelled this task (no eligible comment),
             # try the next queued task for this topic.
-            dequeue_next_for_topic(topic_id)
+            dequeue_next_for_topic(topic_id, creative_id)
           else
             AiAgentJob.perform_later(task)
           end

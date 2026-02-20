@@ -10,8 +10,16 @@ module Collavre
 
     validates :name, presence: true
 
-    scope :running_for_topic, ->(topic_id) { where(topic_id: topic_id, status: "running") }
-    scope :queued_for_topic, ->(topic_id) { where(topic_id: topic_id, status: "queued").order(:created_at) }
+    scope :running_for_topic, ->(topic_id, creative_id = nil) {
+      rel = where(topic_id: topic_id, status: "running")
+      rel = rel.where(creative_id: creative_id) if creative_id
+      rel
+    }
+    scope :queued_for_topic, ->(topic_id, creative_id = nil) {
+      rel = where(topic_id: topic_id, status: "queued")
+      rel = rel.where(creative_id: creative_id) if creative_id
+      rel.order(:created_at)
+    }
 
     # Check if agent already has a running task triggered by the same comment
     def self.duplicate_running_for_comment?(agent_id, comment_id)
