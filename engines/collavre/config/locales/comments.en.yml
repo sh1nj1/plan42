@@ -85,6 +85,8 @@ en:
         calendar_args: "YYYY-MM-DD@HH:MM memo (today/tomorrow, +3days, +2weeks, +1months, +1years, +mon)"
         topic_description: "Create a new topic with optional primary agent."
         topic_args: '"topic name" @agent_name'
+        work_description: "Create a workflow to execute tasks on child creatives via DFS traversal."
+        work_args: "@agent_name workflow_context"
       calendar_command:
         event_created: 'event created: [Google Calendar event](%{url})'
         event_created_local: 'event created (local only - connect Google Calendar to sync)'
@@ -97,6 +99,12 @@ en:
         created_with_agent: 'Topic "%{name}" created with @%{agent} as primary agent.'
         updated_agent: 'Topic "%{name}" primary agent updated to @%{agent}.'
         already_exists: 'Topic "%{name}" already exists.'
+      work_command:
+        agent_not_found: "Please mention an AI agent to execute the workflow."
+        no_children: "This creative has no child creatives to work on."
+        all_already_tasked: "All child creatives already have active tasks."
+        started: 'Workflow started with @%{agent}: %{total} tasks queued (%{skipped} skipped).'
+        workflow_completed: 'Workflow completed by @%{agent}: %{completed} creatives processed.'
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
     calendar_events:

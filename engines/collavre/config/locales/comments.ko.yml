@@ -82,6 +82,8 @@ ko:
         calendar_args: "YYYY-MM-DD@HH:MM 메모 (today/tomorrow, +3days, +2weeks, +1months, +1years, +mon/+월)"
         topic_description: "새 토픽을 생성합니다. Primary Agent를 지정할 수 있습니다."
         topic_args: '"토픽 이름" @에이전트이름'
+        work_description: "하위 크리에이티브들에 대해 DFS 순회를 통한 워크플로우를 실행합니다."
+        work_args: "@에이전트이름 워크플로우_컨텍스트"
       calendar_command:
         event_created: '이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})'
         event_created_local: '이벤트가 생성되었습니다 (로컬 전용 - 구글 캘린더 연동 시 동기화됩니다)'
@@ -94,6 +96,12 @@ ko:
         created_with_agent: '토픽 "%{name}"이(가) 생성되었습니다. @%{agent}이(가) Primary Agent로 설정되었습니다.'
         updated_agent: '토픽 "%{name}"의 Primary Agent가 @%{agent}(으)로 변경되었습니다.'
         already_exists: '토픽 "%{name}"이(가) 이미 존재합니다.'
+      work_command:
+        agent_not_found: "워크플로우를 실행할 AI 에이전트를 멘션해주세요."
+        no_children: "이 크리에이티브에는 작업할 하위 크리에이티브가 없습니다."
+        all_already_tasked: "모든 하위 크리에이티브가 이미 활성 작업을 가지고 있습니다."
+        started: '워크플로우가 @%{agent}와 함께 시작되었습니다: %{total}개 작업 대기중 (%{skipped}개 생략).'
+        workflow_completed: '@%{agent}가 워크플로우를 완료했습니다: %{completed}개 크리에이티브 처리됨.'
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
     calendar_events:

@@ -26,6 +26,12 @@ module Collavre
           label: "/topic",
           description: I18n.t("collavre.comments.command_menu.topic_description"),
           args: I18n.t("collavre.comments.command_menu.topic_args")
+        },
+        {
+          name: "work",
+          label: "/work",
+          description: I18n.t("collavre.comments.command_menu.work_description"),
+          args: I18n.t("collavre.comments.command_menu.work_args")
         }
       ]
     end
