@@ -1121,3 +1121,21 @@ body.chat-fullscreen {
     0%, 100% { opacity: 1; }
     50% { opacity: 0; }
 }
+
+.review-hint {
+    background: var(--surface-3, #333);
+    color: var(--text-1, #fff);
+    padding: var(--space-2, 4px) var(--space-3, 8px);
+    border-radius: var(--radius-2, 4px);
+    font-size: var(--text-0, 0.75rem);
+    white-space: nowrap;
+    z-index: var(--layer-important, 999);
+    animation: review-hint-fade 3s ease-out forwards;
+    pointer-events: none;
+    box-shadow: var(--shadow-2, 0 2px 8px rgba(0,0,0,0.15));
+}
+
+@keyframes review-hint-fade {
+    0%, 70% { opacity: 1; }
+    100% { opacity: 0; }
+}

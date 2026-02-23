@@ -8,7 +8,7 @@ if (!window._streamingCommentIds) window._streamingCommentIds = new Set()
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "reviewButton"]
+  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls"]
 
   get _commentId() {
     return this.element.dataset.commentId
@@ -122,9 +122,6 @@ export default class extends Controller {
     // Text selection quote support
     this.handleMouseUp = this.handleMouseUp.bind(this)
     this.element.addEventListener('mouseup', this.handleMouseUp)
-
-    // Bound handler for review button (stored for cleanup)
-    this._boundReviewClick = this._onReviewClick.bind(this)
 
     this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
@@ -322,29 +319,43 @@ export default class extends Controller {
     return this.application.getControllerForElementAndIdentifier(popup, 'comments--form')
   }
 
-  reviewButtonTargetConnected(button) {
-    button.addEventListener('click', this._boundReviewClick)
-  }
-
-  reviewButtonTargetDisconnected(button) {
-    button.removeEventListener('click', this._boundReviewClick)
-  }
-
-  // replaceButton removed — unified into reviewButton
-
-  _onReviewClick(event) {
+  // Stimulus action: click->comment#reviewClick (bound via data-action in template)
+  reviewClick(event) {
     event.preventDefault()
-    event.stopPropagation()
-    // Use selected text if available, otherwise full comment text
     const selectedText = this._getSelectedTextInContent()
-    const contentEl = this.element.querySelector('.comment-content')
-    const text = selectedText || (contentEl ? contentEl.textContent.trim() : '')
+    if (!selectedText) {
+      this._showReviewHint(event.currentTarget)
+      return
+    }
     const commentId = this.element.dataset.commentId
     const formController = this.findFormController()
-    if (formController && text) {
-      formController.appendReviewQuote(commentId, text)
+    if (formController) {
+      formController.appendReviewQuote(commentId, selectedText)
+      const textarea = formController.textareaTarget
+      if (textarea) {
+        textarea.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        textarea.focus()
+        textarea.selectionStart = textarea.selectionEnd = textarea.value.length
+      }
     }
-    if (selectedText) window.getSelection().removeAllRanges()
+    window.getSelection().removeAllRanges()
+  }
+
+  _showReviewHint(button) {
+    // Remove any existing hint
+    document.querySelectorAll('.review-hint').forEach(el => el.remove())
+
+    // Show hint popup near the button using fixed positioning
+    const rect = button.getBoundingClientRect()
+    const hint = document.createElement('div')
+    hint.className = 'review-hint'
+    hint.textContent = button.dataset.hintText || 'Select text to review'
+    hint.style.position = 'fixed'
+    hint.style.top = `${rect.top - 8}px`
+    hint.style.left = `${rect.left + rect.width / 2}px`
+    hint.style.transform = 'translate(-50%, -100%)'
+    document.body.appendChild(hint)
+    hint.addEventListener('animationend', () => hint.remove(), { once: true })
   }
 
   _getSelectedTextInContent() {

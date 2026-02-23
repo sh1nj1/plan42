@@ -57,7 +57,7 @@
         <%= t('collavre.comments.edit_button') %>
       </button>
       <% if comment.user&.ai_user? %>
-        <button class="review-comment-btn" data-comment-target="reviewButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.review_button') %>">
+        <button class="review-comment-btn" data-action="click->comment#reviewClick" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.review_button') %>" data-hint-text="<%= t('collavre.comments.review_select_hint') %>">
           <%= t('collavre.comments.review_button') %>
         </button>
       <% end %>
