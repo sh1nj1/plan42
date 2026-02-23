@@ -238,7 +238,8 @@ class AiAgentJobTest < ActiveJob::TestCase
       name: "Queued task", status: "queued",
       trigger_event_name: "comment_created",
       trigger_event_payload: context_with_topic,
-      agent: @agent, topic_id: topic.id
+      agent: @agent, topic_id: topic.id,
+      creative_id: @creative.id
     )
 
     AiClient.stub :new, FakeAiClient.new do
@@ -258,7 +259,8 @@ class AiAgentJobTest < ActiveJob::TestCase
       name: "Queued task", status: "queued",
       trigger_event_name: "comment_created",
       trigger_event_payload: context_with_topic,
-      agent: @agent, topic_id: topic.id
+      agent: @agent, topic_id: topic.id,
+      creative_id: @creative.id
     )
 
     AiClient.stub :new, ->(*args) { raise StandardError, "AI Error" } do
