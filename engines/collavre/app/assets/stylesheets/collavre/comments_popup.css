@@ -1122,14 +1122,11 @@ body.chat-fullscreen {
     50% { opacity: 0; }
 }
 
-/* Flash highlight when review quote is appended to textarea */
-@keyframes review-quote-flash {
-    0% { background-color: var(--color-accent-light, #e3f2fd); }
-    100% { background-color: transparent; }
-}
-
-.review-quote-flash {
-    animation: review-quote-flash 0.8s ease-out;
+.review-highlight {
+    outline: 2px solid var(--brand, #4f8cff);
+    outline-offset: 2px;
+    border-radius: var(--radius-2, 4px);
+    transition: outline-color 0.3s ease;
 }
 
 .review-hint {

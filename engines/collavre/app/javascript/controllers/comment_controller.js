@@ -333,35 +333,25 @@ export default class extends Controller {
     const formController = this.findFormController()
     if (formController) {
       formController.appendReviewQuote(commentId, selectedText)
-      // Scroll textarea into view and flash highlight for visual feedback
       const textarea = formController.textareaTarget
       if (textarea) {
         textarea.scrollIntoView({ behavior: 'smooth', block: 'center' })
         textarea.focus()
         textarea.selectionStart = textarea.selectionEnd = textarea.value.length
-        textarea.classList.add('review-quote-flash')
-        textarea.addEventListener('animationend', () => {
-          textarea.classList.remove('review-quote-flash')
-        }, { once: true })
       }
     }
     window.getSelection().removeAllRanges()
   }
 
   _showReviewHint(button) {
-    // Remove existing hint
+    // Remove any existing hint
     document.querySelectorAll('.review-hint').forEach(el => el.remove())
 
-    // Highlight comment content area
+    // Highlight comment content to indicate selectable area
     const contentEl = this.element.querySelector('.comment-content')
     if (contentEl) {
-      contentEl.style.outline = '2px solid var(--brand, #4f8cff)'
-      contentEl.style.outlineOffset = '2px'
-      contentEl.style.borderRadius = 'var(--radius-2, 4px)'
-      setTimeout(() => {
-        contentEl.style.outline = ''
-        contentEl.style.outlineOffset = ''
-      }, 3000)
+      contentEl.classList.add('review-highlight')
+      setTimeout(() => contentEl.classList.remove('review-highlight'), 3000)
     }
 
     // Show hint popup near the button using fixed positioning
@@ -374,7 +364,6 @@ export default class extends Controller {
     hint.style.left = `${rect.left + rect.width / 2}px`
     hint.style.transform = 'translate(-50%, -100%)'
     document.body.appendChild(hint)
-
     setTimeout(() => hint.remove(), 3000)
   }
 
