@@ -349,29 +349,33 @@ export default class extends Controller {
   }
 
   _showReviewHint(button) {
-    // Remove existing hint if any
-    const existing = this.element.querySelector('.review-hint')
-    if (existing) existing.remove()
+    // Remove existing hint
+    document.querySelectorAll('.review-hint').forEach(el => el.remove())
 
+    // Highlight comment content area
     const contentEl = this.element.querySelector('.comment-content')
-    if (!contentEl) return
+    if (contentEl) {
+      contentEl.style.outline = '2px solid var(--brand, #4f8cff)'
+      contentEl.style.outlineOffset = '2px'
+      contentEl.style.borderRadius = 'var(--radius-2, 4px)'
+      setTimeout(() => {
+        contentEl.style.outline = ''
+        contentEl.style.outlineOffset = ''
+      }, 3000)
+    }
 
-    // Brief highlight on content area to draw attention
-    contentEl.style.outline = '2px solid var(--brand, #4f8cff)'
-    contentEl.style.outlineOffset = '2px'
-    contentEl.style.borderRadius = 'var(--radius-2, 4px)'
-
+    // Show hint popup near the button using fixed positioning
+    const rect = button.getBoundingClientRect()
     const hint = document.createElement('div')
     hint.className = 'review-hint'
     hint.textContent = button.dataset.hintText || 'Select text to review'
-    contentEl.style.position = 'relative'
-    contentEl.appendChild(hint)
+    hint.style.position = 'fixed'
+    hint.style.top = `${rect.top - 8}px`
+    hint.style.left = `${rect.left + rect.width / 2}px`
+    hint.style.transform = 'translate(-50%, -100%)'
+    document.body.appendChild(hint)
 
-    setTimeout(() => {
-      hint.remove()
-      contentEl.style.outline = ''
-      contentEl.style.outlineOffset = ''
-    }, 3000)
+    setTimeout(() => hint.remove(), 3000)
   }
 
   _getSelectedTextInContent() {
