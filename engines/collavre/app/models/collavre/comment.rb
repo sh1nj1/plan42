@@ -40,7 +40,7 @@ module Collavre
     after_destroy_commit :cancel_pending_tasks
 
     def review_message?
-      quoted_comment_id.present? && review_type_review?
+      quoted_comment_id.present? && !review_type_question?
     end
 
     # public for db migration
