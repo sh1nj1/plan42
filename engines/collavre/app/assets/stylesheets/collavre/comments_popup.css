@@ -270,11 +270,33 @@ body.chat-fullscreen {
     gap: 0.3em;
     padding: 0.25em 0.5em;
     background: color-mix(in srgb, var(--color-section-bg) 50%, transparent);
-    border-left: 3px solid var(--color-active);
+    border-left: 3px solid var(--color-muted);
     border-radius: 0 var(--radius-2) var(--radius-2) 0;
     font-size: var(--text-0);
     color: var(--color-muted);
     line-height: 1.3;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.review-quote-chip--active {
+    border-left-color: var(--color-active);
+    background: color-mix(in srgb, var(--color-active) 8%, transparent);
+}
+
+.review-quote-type-toggle {
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0 0.1em;
+    font-size: 0.85em;
+    line-height: 1;
+    flex-shrink: 0;
+    opacity: 0.8;
+    transition: opacity 0.15s ease;
+}
+
+.review-quote-type-toggle:hover {
+    opacity: 1;
 }
 
 .review-quote-chip-text {
@@ -290,6 +312,17 @@ body.chat-fullscreen {
     color: var(--color-text);
 }
 
+.review-quote-chip-feedback {
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.85em;
+    color: var(--color-text);
+    opacity: 0.7;
+}
+
 .review-quote-chip-remove {
     border: none;
     background: none;
@@ -303,6 +336,11 @@ body.chat-fullscreen {
 
 .review-quote-chip-remove:hover {
     color: var(--color-danger, #e53e3e);
+}
+
+.review-submit-btn {
+    font-size: var(--text-0) !important;
+    white-space: nowrap;
 }
 
 .comment-highlight {
