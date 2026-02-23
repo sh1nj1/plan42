@@ -202,8 +202,15 @@ export default class extends Controller {
   handleSend(event) {
     event.preventDefault()
 
-    // If active quote exists, commit its feedback instead of sending
+    // If active quote exists, handle based on type
     if (this._activeQuoteId && this._reviewQuotes.length > 0) {
+      const activeQuote = this._reviewQuotes.find(q => q.id === this._activeQuoteId)
+      if (activeQuote && activeQuote.type === 'question') {
+        // Question type: save feedback then send immediately as standalone comment
+        this._saveActiveQuoteFeedback()
+        this._sendQuestionQuote(activeQuote)
+        return
+      }
       this._commitActiveQuote()
       return
     }
@@ -696,7 +703,14 @@ export default class extends Controller {
       })
       .then((html) => {
         this.renderCommentHtml(html)
-        this.scrollToBottom(true)
+        const listCtrl = this.application.getControllerForElementAndIdentifier(
+          document.querySelector('[data-controller~="comments--list"]'), 'comments--list'
+        )
+        if (listCtrl) {
+          listCtrl.scrollToBottom()
+          listCtrl.updateStickiness()
+          listCtrl.markCommentsRead()
+        }
       })
       .catch((error) => {
         alert(error?.message || 'Failed to send question')
@@ -737,16 +751,9 @@ export default class extends Controller {
         : this._getI18nText('reviewTypeReviewLabel', 'Review')
       typeToggle.addEventListener('click', (e) => {
         e.stopPropagation()
-        if (quote.type === 'review') {
-          quote.type = 'question'
-          // Question type: send immediately with current feedback
-          this._saveActiveQuoteFeedback()
-          this._sendQuestionQuote(quote)
-        } else {
-          quote.type = 'review'
-          this._renderReviewQuoteChips()
-          this._updateSubmitButton()
-        }
+        quote.type = quote.type === 'review' ? 'question' : 'review'
+        this._renderReviewQuoteChips()
+        this._updateSubmitButton()
       })
 
       // Quote text
@@ -835,8 +842,14 @@ export default class extends Controller {
 
     this.submitTarget.classList.add('review-submit-btn')
     if (this._activeQuoteId) {
-      // Active chip awaiting feedback → button = "+ Add quote"
-      this.submitTarget.textContent = this._getI18nText('reviewAddQuote', '+ Add')
+      const activeQuote = this._reviewQuotes.find(q => q.id === this._activeQuoteId)
+      if (activeQuote && activeQuote.type === 'question') {
+        // Question type → button = "Send question"
+        this.submitTarget.textContent = this._getI18nText('reviewSendQuestion', 'Send question')
+      } else {
+        // Review type → button = "+ Add quote"
+        this.submitTarget.textContent = this._getI18nText('reviewAddQuote', '+ Add')
+      }
     } else {
       // All chips done → button = "Send review"
       this.submitTarget.textContent = this._getI18nText('reviewSend', 'Send review')

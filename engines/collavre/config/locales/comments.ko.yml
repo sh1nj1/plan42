@@ -68,6 +68,7 @@ ko:
       review_summary_placeholder: 종합 코멘트 (선택)...
       review_add_quote: "+ 추가"
       review_send: 리뷰 전송
+      review_send_question: 질문 보내기
       review_type_review: 리뷰
       review_type_question: 질문
       replace_button: 바꾸기

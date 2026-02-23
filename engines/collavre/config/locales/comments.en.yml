@@ -71,6 +71,7 @@ en:
       review_summary_placeholder: Overall comment (optional)...
       review_add_quote: "+ Add"
       review_send: Send review
+      review_send_question: Send question
       review_type_review: Review
       review_type_question: Question
       replace_button: Replace
