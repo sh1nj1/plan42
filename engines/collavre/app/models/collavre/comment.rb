@@ -15,6 +15,9 @@ module Collavre
     belongs_to :action_executed_by, class_name: Collavre.configuration.user_class_name, optional: true
     belongs_to :topic, class_name: "Collavre::Topic", optional: true
     belongs_to :quoted_comment, class_name: "Collavre::Comment", optional: true
+
+    # review_type: nil = normal chat, 0 = review, 1 = question
+    enum :review_type, { review: 0, question: 1 }, prefix: true
     has_many :activity_logs, class_name: "Collavre::ActivityLog", dependent: :destroy
     has_many :comment_reactions, class_name: "Collavre::CommentReaction", dependent: :destroy
 
@@ -37,7 +40,7 @@ module Collavre
     after_destroy_commit :cancel_pending_tasks
 
     def review_message?
-      quoted_comment_id.present?
+      quoted_comment_id.present? && review_type_review?
     end
 
     # public for db migration

@@ -227,6 +227,7 @@ export default class extends Controller {
     if (hasQuotes) {
       store.backup(this.textareaTarget.value)
       this.textareaTarget.value = store.buildContent(this.textareaTarget.value)
+      this._pendingReviewType = 'review'
     }
 
     const wasPrivate = this.privateCheckboxTarget?.checked ?? false
@@ -234,6 +235,10 @@ export default class extends Controller {
     const formData = new FormData(this.formTarget)
     if (this.currentTopicId) {
       formData.append('comment[topic_id]', this.currentTopicId)
+    }
+    if (this._pendingReviewType) {
+      formData.append('comment[review_type]', this._pendingReviewType)
+      this._pendingReviewType = null
     }
 
     let url = `/creatives/${this.creativeId}/comments`
@@ -637,10 +642,14 @@ export default class extends Controller {
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
 
-    // Send as a standalone comment (no quoted_comment_id — treated as normal chat)
+    // Send as a question comment with quoted_comment_id preserved + review_type=question
     this.sending = true
     const formData = new FormData()
     formData.append('comment[content]', content)
+    formData.append('comment[review_type]', 'question')
+    if (quote.commentId) {
+      formData.append('comment[quoted_comment_id]', quote.commentId)
+    }
     const isPrivate = this.privateCheckboxTarget?.checked ?? false
     if (isPrivate) formData.append('comment[private]', '1')
     if (this.currentTopicId) {

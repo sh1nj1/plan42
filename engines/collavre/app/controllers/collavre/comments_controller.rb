@@ -438,7 +438,7 @@ module Collavre
     end
 
     def comment_params
-      params.require(:comment).permit(:content, :private, :topic_id, :quoted_comment_id, :quoted_text, images: [])
+      params.require(:comment).permit(:content, :private, :topic_id, :quoted_comment_id, :quoted_text, :review_type, images: [])
     end
 
     def can_convert_comment?
