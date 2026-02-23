@@ -682,6 +682,8 @@ export default class extends Controller {
     this.sending = true
     const formData = new FormData()
     formData.append('comment[content]', content)
+    const isPrivate = this.privateCheckboxTarget?.checked ?? false
+    if (isPrivate) formData.append('comment[private]', '1')
     if (this.currentTopicId) {
       formData.append('comment[topic_id]', this.currentTopicId)
     }
@@ -866,6 +868,8 @@ export default class extends Controller {
 
     this._reviewQuotes.forEach((q, i) => {
       if (i > 0) parts.push('') // Blank line between quotes to prevent blockquote merging
+      // Safety net: questions are normally sent immediately via _sendQuestionQuote,
+      // but handle them here in case of future batch-question support
       const prefix = q.type === 'question' ? '> ❓ ' : '> '
       const quoted = q.text.split('\n').map((line, j) => {
         return j === 0 ? `${prefix}${line}` : `> ${line}`
