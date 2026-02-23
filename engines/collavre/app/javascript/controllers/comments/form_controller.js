@@ -1,6 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
+import ReviewQuotesStore from './review_quotes_store'
 
 export default class extends Controller {
   static targets = [
@@ -26,8 +27,7 @@ export default class extends Controller {
     this.creativeId = null
     this.editingId = null
     this.sending = false
-    this._reviewQuotes = []
-    this._activeQuoteId = null // currently active chip awaiting feedback
+    this._reviewStore = new ReviewQuotesStore()
     this.cachedImageFiles = null
 
     this.handleSubmit = this.handleSubmit.bind(this)
@@ -203,11 +203,11 @@ export default class extends Controller {
     event.preventDefault()
 
     // If active quote exists, handle based on type
-    if (this._activeQuoteId && this._reviewQuotes.length > 0) {
-      const activeQuote = this._reviewQuotes.find(q => q.id === this._activeQuoteId)
+    const store = this._reviewStore
+    if (store.hasActive && !store.isEmpty) {
+      const activeQuote = store.activeQuote
       if (activeQuote && activeQuote.type === 'question') {
-        // Question type: save feedback then send immediately as standalone comment
-        this._saveActiveQuoteFeedback()
+        store.saveActiveFeedback(this.textareaTarget.value)
         this._sendQuestionQuote(activeQuote)
         return
       }
@@ -216,7 +216,7 @@ export default class extends Controller {
     }
 
     const hasText = this.textareaTarget.value.trim().length > 0
-    const hasQuotes = this._reviewQuotes.length > 0
+    const hasQuotes = !store.isEmpty
     const hasImages = this.currentImageFiles().length > 0
     if (this.sending || (!hasText && !hasQuotes && !hasImages) || !this.creativeId) return
     this.sending = true
@@ -225,9 +225,8 @@ export default class extends Controller {
 
     // Build final content from review quotes + user text
     if (hasQuotes) {
-      this._savedReviewQuotes = JSON.parse(JSON.stringify(this._reviewQuotes))
-      this._savedTextareaValue = this.textareaTarget.value
-      this.textareaTarget.value = this._buildReviewContent()
+      store.backup(this.textareaTarget.value)
+      this.textareaTarget.value = store.buildContent(this.textareaTarget.value)
     }
 
     const wasPrivate = this.privateCheckboxTarget?.checked ?? false
@@ -297,11 +296,9 @@ export default class extends Controller {
       })
       .catch((error) => {
         // Restore review quotes state on failure so user doesn't lose work
-        if (this._savedReviewQuotes) {
-          this._reviewQuotes = this._savedReviewQuotes
-          this.textareaTarget.value = this._savedTextareaValue || ''
-          this._savedReviewQuotes = null
-          this._savedTextareaValue = null
+        if (this._reviewStore.hasBackup()) {
+          const restoredText = this._reviewStore.restore()
+          this.textareaTarget.value = restoredText || ''
           this._renderReviewQuoteChips()
           this._updateSubmitButton()
         }
@@ -593,50 +590,28 @@ export default class extends Controller {
   }
 
   // Append a review quote as a visual chip above the textarea.
-  // Multiple reviews accumulate as chips; textarea stays clean for user feedback.
   appendReviewQuote(commentId, selectedText) {
     if (!selectedText) return
 
-    // If there's an active quote awaiting feedback, save current textarea as its feedback first
-    this._saveActiveQuoteFeedback()
+    const store = this._reviewStore
+    store.saveActiveFeedback(this.textareaTarget.value)
 
-    // Set quoted_comment_id for the review target (last one wins for single-quote compat)
     if (commentId) {
       this.quotedCommentIdTarget.value = commentId
     }
 
-    // Add to internal quotes array
-    const quote = {
-      commentId,
-      text: selectedText,
-      id: Date.now(),
-      type: 'review', // 'review' | 'question'
-      feedback: '',
-    }
-    this._reviewQuotes.push(quote)
-    this._activeQuoteId = quote.id
+    store.add(commentId, selectedText)
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
 
-    // Clear textarea for feedback input
     this.textareaTarget.value = ''
     this.textareaTarget.placeholder = this._getI18nText('reviewFeedbackPlaceholder', 'Write feedback for this quote...')
     this.focusTextarea()
   }
 
-  // Save textarea content as feedback for the currently active quote
-  _saveActiveQuoteFeedback() {
-    if (!this._activeQuoteId) return
-    const quote = this._reviewQuotes.find(q => q.id === this._activeQuoteId)
-    if (quote) {
-      quote.feedback = this.textareaTarget.value.trim()
-    }
-  }
-
-  // Commit the active quote's feedback and deactivate it
   _commitActiveQuote() {
-    this._saveActiveQuoteFeedback()
-    this._activeQuoteId = null
+    const store = this._reviewStore
+    store.commitActive(this.textareaTarget.value)
     this.textareaTarget.value = ''
     this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
     this._renderReviewQuoteChips()
@@ -645,40 +620,24 @@ export default class extends Controller {
   }
 
   // Send a single question quote immediately as a standalone comment.
-  // Remaining review quotes are preserved.
   _sendQuestionQuote(quote) {
     if (this.sending || !this.creativeId) return
 
-    // Build question content: quoted text + feedback as context
-    const prefix = '> ❓ '
-    const quoted = quote.text.split('\n').map((line, i) => {
-      return i === 0 ? `${prefix}${line}` : `> ${line}`
-    }).join('\n')
-    const parts = [quoted]
-    if (quote.feedback) {
-      parts.push('')
-      parts.push(quote.feedback)
-    }
-    const content = parts.join('\n')
+    const store = this._reviewStore
+    const content = store.buildQuestionContent(quote)
 
-    // Remove this quote from the list
-    const idx = this._reviewQuotes.findIndex(q => q.id === quote.id)
-    if (idx !== -1) this._reviewQuotes.splice(idx, 1)
-    if (this._activeQuoteId === quote.id) {
-      this._activeQuoteId = null
-      this.textareaTarget.value = ''
-    }
+    store.remove(quote.id)
+    this.textareaTarget.value = ''
 
-    // Update UI immediately
-    if (this._reviewQuotes.length === 0) {
+    if (store.isEmpty) {
       this.textareaTarget.placeholder = ''
-    } else if (!this._activeQuoteId) {
+    } else if (!store.hasActive) {
       this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
     }
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
 
-    // Send as a standalone comment (no quoted_comment_id — question is treated as normal chat)
+    // Send as a standalone comment (no quoted_comment_id — treated as normal chat)
     this.sending = true
     const formData = new FormData()
     formData.append('comment[content]', content)
@@ -723,18 +682,19 @@ export default class extends Controller {
 
   _renderReviewQuoteChips() {
     const container = this.reviewQuotesContainerTarget
+    const store = this._reviewStore
     container.innerHTML = ''
 
-    if (this._reviewQuotes.length === 0) {
+    if (store.isEmpty) {
       container.style.display = 'none'
       return
     }
 
     container.style.display = ''
-    this._reviewQuotes.forEach((quote) => {
+    store.quotes.forEach((quote) => {
       const chip = document.createElement('div')
       chip.className = 'review-quote-chip'
-      if (quote.id === this._activeQuoteId) {
+      if (quote.id === store.activeId) {
         chip.classList.add('review-quote-chip--active')
       }
 
@@ -750,7 +710,7 @@ export default class extends Controller {
         : this._getI18nText('reviewTypeReviewLabel', 'Review')
       typeToggle.addEventListener('click', (e) => {
         e.stopPropagation()
-        quote.type = quote.type === 'review' ? 'question' : 'review'
+        store.toggleType(quote.id)
         this._renderReviewQuoteChips()
         this._updateSubmitButton()
       })
@@ -766,8 +726,7 @@ export default class extends Controller {
 
       // Click chip to edit its feedback
       textSpan.addEventListener('click', () => {
-        if (quote.id === this._activeQuoteId) {
-          // Already active — scroll to original comment
+        if (quote.id === store.activeId) {
           const commentEl = document.querySelector(`[data-comment-id="${quote.commentId}"]`)
           if (commentEl) {
             commentEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -776,9 +735,8 @@ export default class extends Controller {
           }
           return
         }
-        // Switch active chip
-        this._saveActiveQuoteFeedback()
-        this._activeQuoteId = quote.id
+        store.saveActiveFeedback(this.textareaTarget.value)
+        store.activate(quote.id)
         this.textareaTarget.value = quote.feedback || ''
         this.textareaTarget.placeholder = this._getI18nText('reviewFeedbackPlaceholder', 'Write feedback for this quote...')
         this._renderReviewQuoteChips()
@@ -789,7 +747,7 @@ export default class extends Controller {
       // Feedback preview (shown when not active and has feedback)
       const feedbackSpan = document.createElement('span')
       feedbackSpan.className = 'review-quote-chip-feedback'
-      if (quote.feedback && quote.id !== this._activeQuoteId) {
+      if (quote.feedback && quote.id !== store.activeId) {
         const fbPreview = quote.feedback.length > 40
           ? quote.feedback.substring(0, 40) + '…'
           : quote.feedback
@@ -804,16 +762,12 @@ export default class extends Controller {
       removeBtn.title = 'Remove'
       removeBtn.addEventListener('click', (e) => {
         e.stopPropagation()
-        const idx = this._reviewQuotes.findIndex(q => q.id === quote.id)
-        if (idx !== -1) this._reviewQuotes.splice(idx, 1)
-        if (this._activeQuoteId === quote.id) {
-          this._activeQuoteId = null
-          this.textareaTarget.value = ''
-        }
-        // Reset placeholder when all chips removed
-        if (this._reviewQuotes.length === 0) {
+        const wasActive = quote.id === store.activeId
+        store.remove(quote.id)
+        if (wasActive) this.textareaTarget.value = ''
+        if (store.isEmpty) {
           this.textareaTarget.placeholder = ''
-        } else if (!this._activeQuoteId) {
+        } else if (!store.hasActive) {
           this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
         }
         this._renderReviewQuoteChips()
@@ -822,7 +776,7 @@ export default class extends Controller {
 
       chip.appendChild(typeToggle)
       chip.appendChild(textSpan)
-      if (quote.feedback && quote.id !== this._activeQuoteId) {
+      if (quote.feedback && quote.id !== store.activeId) {
         chip.appendChild(feedbackSpan)
       }
       chip.appendChild(removeBtn)
@@ -830,64 +784,25 @@ export default class extends Controller {
     })
   }
 
-  // Update submit button label based on review state
   _updateSubmitButton() {
-    if (this._reviewQuotes.length === 0) {
-      // Normal mode — restore default send icon
+    const state = this._reviewStore.buttonState
+    if (state === 'normal') {
       this.submitTarget.innerHTML = this.defaultSubmitHTML
       this.submitTarget.classList.remove('review-submit-btn')
       return
     }
 
     this.submitTarget.classList.add('review-submit-btn')
-    if (this._activeQuoteId) {
-      const activeQuote = this._reviewQuotes.find(q => q.id === this._activeQuoteId)
-      if (activeQuote && activeQuote.type === 'question') {
-        // Question type → button = "Send question"
-        this.submitTarget.textContent = this._getI18nText('reviewSendQuestion', 'Send question')
-      } else {
-        // Review type → button = "+ Add quote"
-        this.submitTarget.textContent = this._getI18nText('reviewAddQuote', '+ Add')
-      }
-    } else {
-      // All chips done → button = "Send review"
-      this.submitTarget.textContent = this._getI18nText('reviewSend', 'Send review')
+    const labels = {
+      'add': this._getI18nText('reviewAddQuote', '+ Add'),
+      'send-review': this._getI18nText('reviewSend', 'Send review'),
+      'send-question': this._getI18nText('reviewSendQuestion', 'Send question'),
     }
+    this.submitTarget.textContent = labels[state]
   }
 
   _getI18nText(key, fallback) {
     return this.element.dataset[key] || fallback
-  }
-
-  // Build markdown content from review quotes + user text for submission
-  _buildReviewContent() {
-    if (this._reviewQuotes.length === 0) return this.textareaTarget.value
-
-    const userText = this.textareaTarget.value.trim()
-    const parts = []
-
-    this._reviewQuotes.forEach((q, i) => {
-      if (i > 0) parts.push('') // Blank line between quotes to prevent blockquote merging
-      // Safety net: questions are normally sent immediately via _sendQuestionQuote,
-      // but handle them here in case of future batch-question support
-      const prefix = q.type === 'question' ? '> ❓ ' : '> '
-      const quoted = q.text.split('\n').map((line, j) => {
-        return j === 0 ? `${prefix}${line}` : `> ${line}`
-      }).join('\n')
-      parts.push(quoted)
-      if (q.feedback) {
-        parts.push('')
-        parts.push(q.feedback)
-      }
-    })
-
-    if (userText) {
-      parts.push('')
-      parts.push('---')
-      parts.push(userText)
-    }
-
-    return parts.join('\n')
   }
 
   cancelQuote() {
@@ -895,8 +810,7 @@ export default class extends Controller {
     this.quotedTextTarget.value = ''
     this.quoteIndicatorTarget.style.display = 'none'
     this.quoteIndicatorTextTarget.textContent = ''
-    this._reviewQuotes = []
-    this._activeQuoteId = null
+    this._reviewStore.clear()
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
     this.textareaTarget.placeholder = ''
