@@ -337,6 +337,8 @@ export default class extends Controller {
       const textarea = formController.textareaTarget
       if (textarea) {
         textarea.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        textarea.focus()
+        textarea.selectionStart = textarea.selectionEnd = textarea.value.length
         textarea.classList.add('review-quote-flash')
         textarea.addEventListener('animationend', () => {
           textarea.classList.remove('review-quote-flash')
