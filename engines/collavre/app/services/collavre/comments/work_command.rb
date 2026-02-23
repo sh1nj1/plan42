@@ -102,8 +102,8 @@ module Collavre
       def extract_workflow_context
         content = comment.content.to_s.strip
         content = content.sub(/\A\/work\s+/, "")
-        # Strip all @mentions (worker + optional supervisor)
-        content = content.gsub(/@[^\s:]+:?\s*/, "")
+        # Strip @mentions using the same pattern as MentionParser
+        content = content.gsub(MentionParser::MENTION_PATTERN, "")
         content.strip
       end
 
