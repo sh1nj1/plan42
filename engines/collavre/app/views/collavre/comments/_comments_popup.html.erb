@@ -69,6 +69,7 @@
       <span class="comment-quote-indicator-text" data-comments--form-target="quoteIndicatorText"></span>
       <button type="button" class="comment-quote-cancel" data-action="click->comments--form#cancelQuote" title="<%= t('app.cancel') %>">&times;</button>
     </div>
+    <div class="review-quotes-container" data-comments--form-target="reviewQuotesContainer" style="display:none;"></div>
     <textarea class="shared-input-surface" name="comment[content]" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" enterkeyhint="send"></textarea>
     <div class="comment-bottom">
     <input type="file" id="comment-images" name="comment[images][]" accept="image/*" multiple data-comments--form-target="imageInput" style="display:none;" />

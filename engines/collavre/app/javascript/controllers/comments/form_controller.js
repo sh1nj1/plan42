@@ -19,12 +19,14 @@ export default class extends Controller {
     'quotedText',
     'quoteIndicator',
     'quoteIndicatorText',
+    'reviewQuotesContainer',
   ]
 
   connect() {
     this.creativeId = null
     this.editingId = null
     this.sending = false
+    this._reviewQuotes = []
     this.cachedImageFiles = null
 
     this.handleSubmit = this.handleSubmit.bind(this)
@@ -197,11 +199,17 @@ export default class extends Controller {
   handleSend(event) {
     event.preventDefault()
     const hasText = this.textareaTarget.value.trim().length > 0
+    const hasQuotes = this._reviewQuotes.length > 0
     const hasImages = this.currentImageFiles().length > 0
-    if (this.sending || (!hasText && !hasImages) || !this.creativeId) return
+    if (this.sending || (!hasText && !hasQuotes && !hasImages) || !this.creativeId) return
     this.sending = true
     this.setSendingState(true)
     this.presenceController?.stoppedTyping()
+
+    // Build final content from review quotes + user text
+    if (hasQuotes) {
+      this.textareaTarget.value = this._buildReviewContent()
+    }
 
     const wasPrivate = this.privateCheckboxTarget?.checked ?? false
 
@@ -556,28 +564,88 @@ export default class extends Controller {
     this.focusTextarea()
   }
 
-  // Append a review quote to the textarea as markdown blockquote.
-  // Multiple reviews accumulate; user types feedback after each quote.
+  // Append a review quote as a visual chip above the textarea.
+  // Multiple reviews accumulate as chips; textarea stays clean for user feedback.
   appendReviewQuote(commentId, selectedText) {
     if (!selectedText) return
-    // Set quoted_comment_id for the review target
+    // Set quoted_comment_id for the review target (last one wins for single-quote compat)
     if (commentId) {
       this.quotedCommentIdTarget.value = commentId
     }
-    const textarea = this.textareaTarget
-    const current = textarea.value
-    // Build markdown blockquote: prefix each line with >
-    const quoted = selectedText.split('\n').map(line => `> ${line}`).join('\n')
-    // Add blank line separator between reviews for proper markdown rendering
-    const prefix = current.length > 0 ? (current.endsWith('\n\n') ? '' : current.endsWith('\n') ? '\n' : '\n\n') : ''
-    // Double newline after blockquote so markdown renders it as a separate block
-    const newValue = current + prefix + quoted + '\n\n'
-    textarea.value = newValue
-    // Place cursor at the end (user types review feedback here)
-    textarea.selectionStart = textarea.selectionEnd = newValue.length
+
+    // Add to internal quotes array
+    const quote = { commentId, text: selectedText, id: Date.now() }
+    this._reviewQuotes.push(quote)
+    this._renderReviewQuoteChips()
     this.focusTextarea()
-    // Trigger input event so any external auto-resize logic can adjust height
-    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  _renderReviewQuoteChips() {
+    const container = this.reviewQuotesContainerTarget
+    container.innerHTML = ''
+
+    if (this._reviewQuotes.length === 0) {
+      container.style.display = 'none'
+      return
+    }
+
+    container.style.display = ''
+    this._reviewQuotes.forEach((quote, index) => {
+      const chip = document.createElement('div')
+      chip.className = 'review-quote-chip'
+      chip.dataset.index = index
+
+      const textSpan = document.createElement('span')
+      textSpan.className = 'review-quote-chip-text'
+      const preview = quote.text.length > 60
+        ? quote.text.substring(0, 60) + '…'
+        : quote.text
+      textSpan.textContent = preview
+      textSpan.title = quote.text
+
+      // Click to scroll to original comment
+      textSpan.addEventListener('click', () => {
+        const commentEl = document.querySelector(`[data-comment-id="${quote.commentId}"]`)
+        if (commentEl) {
+          commentEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          commentEl.classList.add('comment-highlight')
+          setTimeout(() => commentEl.classList.remove('comment-highlight'), 2000)
+        }
+      })
+
+      const removeBtn = document.createElement('button')
+      removeBtn.type = 'button'
+      removeBtn.className = 'review-quote-chip-remove'
+      removeBtn.innerHTML = '&times;'
+      removeBtn.title = 'Remove'
+      removeBtn.addEventListener('click', () => {
+        this._reviewQuotes.splice(index, 1)
+        this._renderReviewQuoteChips()
+      })
+
+      chip.appendChild(textSpan)
+      chip.appendChild(removeBtn)
+      container.appendChild(chip)
+    })
+  }
+
+  // Build markdown content from review quotes + user text for submission
+  _buildReviewContent() {
+    if (this._reviewQuotes.length === 0) return this.textareaTarget.value
+
+    const userText = this.textareaTarget.value.trim()
+    const quoteParts = this._reviewQuotes.map(q => {
+      const quoted = q.text.split('\n').map(line => `> ${line}`).join('\n')
+      return quoted
+    })
+
+    // If single quote + user text: quote then user text
+    // If multiple quotes + user text: all quotes then user text
+    let content = quoteParts.join('\n\n')
+    if (userText) {
+      content += '\n\n' + userText
+    }
+    return content
   }
 
   cancelQuote() {
@@ -585,6 +653,8 @@ export default class extends Controller {
     this.quotedTextTarget.value = ''
     this.quoteIndicatorTarget.style.display = 'none'
     this.quoteIndicatorTextTarget.textContent = ''
+    this._reviewQuotes = []
+    this._renderReviewQuoteChips()
   }
 
   renderCommentHtml(html, { replaceExisting = false } = {}) {
