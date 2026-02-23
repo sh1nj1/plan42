@@ -678,13 +678,10 @@ export default class extends Controller {
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
 
-    // Send as a standalone comment
+    // Send as a standalone comment (no quoted_comment_id — question is treated as normal chat)
     this.sending = true
     const formData = new FormData()
     formData.append('comment[content]', content)
-    if (quote.commentId) {
-      formData.append('comment[quoted_comment_id]', quote.commentId)
-    }
     if (this.currentTopicId) {
       formData.append('comment[topic_id]', this.currentTopicId)
     }
