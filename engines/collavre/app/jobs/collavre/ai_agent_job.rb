@@ -31,7 +31,8 @@ module Collavre
           trigger_event_name: event_name,
           trigger_event_payload: context,
           agent: agent,
-          topic_id: context&.dig("topic", "id")
+          topic_id: context&.dig("topic", "id"),
+          creative_id: context&.dig("creative", "id")
         )
 
         # Record task for loop breaker tracking (per-topic, skip user-initiated)
