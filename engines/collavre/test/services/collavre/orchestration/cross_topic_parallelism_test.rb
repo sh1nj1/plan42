@@ -28,7 +28,8 @@ module Collavre
           status: "running",
           trigger_event_name: "comment_created",
           agent: @agent,
-          topic_id: @topic_a.id
+          topic_id: @topic_a.id,
+          creative_id: @creative.id
         )
         ResourceTracker.for(@agent).reserve!("job-topic-a")
 
@@ -53,7 +54,8 @@ module Collavre
           status: "running",
           trigger_event_name: "comment_created",
           agent: @agent,
-          topic_id: @topic_a.id
+          topic_id: @topic_a.id,
+          creative_id: @creative.id
         )
         ResourceTracker.for(@agent).reserve!("job-topic-a")
 
@@ -80,7 +82,8 @@ module Collavre
           status: "running",
           trigger_event_name: "comment_created",
           agent: @agent,
-          topic_id: @topic_a.id
+          topic_id: @topic_a.id,
+          creative_id: @creative.id
         )
 
         # Also a running task in Main (topic_id: nil) — simulating Main topic broadcast
@@ -89,7 +92,8 @@ module Collavre
           status: "running",
           trigger_event_name: "comment_created",
           agent: @agent,
-          topic_id: nil
+          topic_id: nil,
+          creative_id: @creative.id
         )
 
         ResourceTracker.for(@agent).reserve!("job-topic-a")
@@ -113,8 +117,8 @@ module Collavre
         topic_c = Topic.create!(name: "Topic C", creative: @creative, user: @user)
 
         # Running tasks in A and B
-        Task.create!(name: "t-a", status: "running", trigger_event_name: "e", agent: @agent, topic_id: @topic_a.id)
-        Task.create!(name: "t-b", status: "running", trigger_event_name: "e", agent: @agent, topic_id: @topic_b.id)
+        Task.create!(name: "t-a", status: "running", trigger_event_name: "e", agent: @agent, topic_id: @topic_a.id, creative_id: @creative.id)
+        Task.create!(name: "t-b", status: "running", trigger_event_name: "e", agent: @agent, topic_id: @topic_b.id, creative_id: @creative.id)
         ResourceTracker.for(@agent).reserve!("job-a")
         ResourceTracker.for(@agent).reserve!("job-b")
 
