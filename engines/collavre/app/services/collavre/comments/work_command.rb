@@ -70,8 +70,8 @@ module Collavre
       # --- /work start (default) ---
 
       def execute_start
-        agent = find_agent
-        return I18n.t("collavre.comments.work_command.agent_not_found") unless agent
+        worker, supervisor = find_agents
+        return I18n.t("collavre.comments.work_command.agent_not_found") unless worker
         return I18n.t("collavre.comments.work_command.no_children") if creative.descendants.empty?
 
         workflow_text = extract_workflow_context
@@ -81,24 +81,29 @@ module Collavre
 
         return I18n.t("collavre.comments.work_command.all_already_tasked") if pending_ids.empty?
 
-        parent_task = create_parent_task(agent, workflow_text, pending_ids)
+        parent_task = create_parent_task(worker, supervisor, workflow_text, pending_ids)
         WorkflowExecutor.advance!(parent_task)
 
         I18n.t("collavre.comments.work_command.started",
-               agent: agent.display_name,
+               agent: worker.display_name,
                total: pending_ids.size,
                skipped: skipped_ids.size)
       end
 
-      def find_agent
-        mentioned = MentionParser.resolve_all_users(comment.content.to_s)
-        mentioned.find(&:ai_user?)
+      # Parse mentioned AI agents: first = worker, second = supervisor (optional)
+      # Usage: /work @Worker @Supervisor: context
+      def find_agents
+        mentioned = MentionParser.resolve_all_users(comment.content.to_s).select(&:ai_user?)
+        worker = mentioned.first
+        supervisor = mentioned.second # nil if only one agent mentioned
+        [ worker, supervisor ]
       end
 
       def extract_workflow_context
         content = comment.content.to_s.strip
         content = content.sub(/\A\/work\s+/, "")
-        content = content.sub(/@[^:]+:\s*/, "")
+        # Strip all @mentions (worker + optional supervisor)
+        content = content.gsub(/@[^\s:]+:?\s*/, "")
         content.strip
       end
 
@@ -128,19 +133,26 @@ module Collavre
         (active + completed).uniq
       end
 
-      def create_parent_task(agent, workflow_text, pending_ids)
+      def create_parent_task(worker, supervisor, workflow_text, pending_ids)
+        state = {
+          "pending_creative_ids" => pending_ids,
+          "completed_creative_ids" => [],
+          "current_creative_id" => nil,
+          "total" => pending_ids.size
+        }
+
+        # Store supervisor info for WorkflowExecutor to include in trigger comments
+        if supervisor
+          state["supervisor"] = { "id" => supervisor.id, "name" => supervisor.display_name }
+        end
+
         Task.create!(
           name: "Workflow: #{creative.description&.truncate(50)}",
           status: "running",
-          agent: agent,
+          agent: worker,
           creative: creative,
           workflow_context: workflow_text,
-          workflow_state: {
-            "pending_creative_ids" => pending_ids,
-            "completed_creative_ids" => [],
-            "current_creative_id" => nil,
-            "total" => pending_ids.size
-          },
+          workflow_state: state,
           trigger_event_name: "work_command",
           trigger_event_payload: {
             "creative" => { "id" => creative.id },
