@@ -637,6 +637,77 @@ export default class extends Controller {
     this.focusTextarea()
   }
 
+  // Send a single question quote immediately as a standalone comment.
+  // Remaining review quotes are preserved.
+  _sendQuestionQuote(quote) {
+    if (this.sending || !this.creativeId) return
+
+    // Build question content: quoted text + feedback as context
+    const prefix = '> ❓ '
+    const quoted = quote.text.split('\n').map((line, i) => {
+      return i === 0 ? `${prefix}${line}` : `> ${line}`
+    }).join('\n')
+    const parts = [quoted]
+    if (quote.feedback) {
+      parts.push('')
+      parts.push(quote.feedback)
+    }
+    const content = parts.join('\n')
+
+    // Remove this quote from the list
+    const idx = this._reviewQuotes.findIndex(q => q.id === quote.id)
+    if (idx !== -1) this._reviewQuotes.splice(idx, 1)
+    if (this._activeQuoteId === quote.id) {
+      this._activeQuoteId = null
+      this.textareaTarget.value = ''
+    }
+
+    // Update UI immediately
+    if (this._reviewQuotes.length === 0) {
+      this.textareaTarget.placeholder = ''
+    } else if (!this._activeQuoteId) {
+      this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
+    }
+    this._renderReviewQuoteChips()
+    this._updateSubmitButton()
+
+    // Send as a standalone comment
+    this.sending = true
+    const formData = new FormData()
+    formData.append('comment[content]', content)
+    if (quote.commentId) {
+      formData.append('comment[quoted_comment_id]', quote.commentId)
+    }
+    if (this.currentTopicId) {
+      formData.append('comment[topic_id]', this.currentTopicId)
+    }
+
+    const url = `/creatives/${this.creativeId}/comments`
+    fetch(url, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
+      body: formData,
+    })
+      .then((response) => {
+        if (response.ok) return response.text()
+        return response.json().then((json) => {
+          throw new Error(json.errors?.join(', ') || 'Unable to save comment')
+        })
+      })
+      .then((html) => {
+        this.renderCommentHtml(html)
+        this.scrollToBottom(true)
+      })
+      .catch((error) => {
+        alert(error?.message || 'Failed to send question')
+      })
+      .finally(() => {
+        this.sending = false
+      })
+
+    this.focusTextarea()
+  }
+
   _renderReviewQuoteChips() {
     const container = this.reviewQuotesContainerTarget
     container.innerHTML = ''
@@ -666,8 +737,16 @@ export default class extends Controller {
         : this._getI18nText('reviewTypeReviewLabel', 'Review')
       typeToggle.addEventListener('click', (e) => {
         e.stopPropagation()
-        quote.type = quote.type === 'review' ? 'question' : 'review'
-        this._renderReviewQuoteChips()
+        if (quote.type === 'review') {
+          quote.type = 'question'
+          // Question type: send immediately with current feedback
+          this._saveActiveQuoteFeedback()
+          this._sendQuestionQuote(quote)
+        } else {
+          quote.type = 'review'
+          this._renderReviewQuoteChips()
+          this._updateSubmitButton()
+        }
       })
 
       // Quote text
