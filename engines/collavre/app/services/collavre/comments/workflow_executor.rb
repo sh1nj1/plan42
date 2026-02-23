@@ -259,27 +259,41 @@ module Collavre
       end
 
       def resolve_workflow_context
+        # Use cached rendered context if available (avoids re-rendering in job context)
+        cached = @state["rendered_workflow_context"]
+        return cached if cached.present?
+
         context_text = @parent_task.workflow_context.to_s.strip
         creative_id = context_text[/\A\d+\z/]
-        return context_text unless creative_id
 
-        context_creative = Creative.find_by(id: creative_id)
-        return context_text unless context_creative
+        resolved = if creative_id
+                     context_creative = Creative.find_by(id: creative_id)
+                     if context_creative
+                       markdown = render_creative_markdown(context_creative)
+                       markdown.presence || context_text
+                     else
+                       context_text
+                     end
+        else
+                     context_text
+        end
 
-        # Render the workflow context creative's full tree as markdown
-        markdown = render_creative_markdown(context_creative)
-        return context_text if markdown.blank?
+        # Cache for subsequent sub-tasks
+        @state["rendered_workflow_context"] = resolved
+        @parent_task.update!(workflow_state: @state)
 
-        markdown
+        resolved
       end
 
       def render_creative_markdown(creative)
         max_depth = @parent_task.agent.creative_children_level + 1
-        ApplicationController.helpers.render_creative_tree_markdown(
+        result = ApplicationController.helpers.render_creative_tree_markdown(
           [ creative ], 1, true, max_depth: max_depth
         )
+        Rails.logger.info("[WorkflowExecutor] render_creative_markdown: creative=#{creative.id} result_length=#{result&.length}")
+        result
       rescue StandardError => e
-        Rails.logger.warn("WorkflowExecutor: Failed to render creative markdown: #{e.message}")
+        Rails.logger.error("[WorkflowExecutor] render_creative_markdown FAILED: creative=#{creative.id} error=#{e.class}: #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}")
         nil
       end
 
