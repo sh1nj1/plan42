@@ -138,8 +138,12 @@ body.chat-fullscreen {
 
 #new-comment-form textarea {
     width: 96%;
-    resize: vertical;
+    resize: none;
     font-size: var(--text-1);
+    overflow-y: auto;
+    min-height: calc(var(--text-1) * 1.5 * 2); /* 2 lines minimum */
+    max-height: calc(var(--text-1) * 1.5 * 10); /* 10 lines maximum */
+    transition: height 0.1s ease-out;
     /* Prevent iOS zoom on focus */
 }
 

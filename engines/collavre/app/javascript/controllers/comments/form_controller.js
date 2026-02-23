@@ -66,6 +66,15 @@ export default class extends Controller {
     this.listening = false
     this.recognitionActive = false
 
+    // Auto-resize textarea
+    this._autoResize = () => {
+      const textarea = this.textareaTarget
+      textarea.style.height = 'auto'
+      const maxHeight = parseInt(getComputedStyle(textarea).lineHeight, 10) * 10 || 200
+      textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
+    }
+    this.textareaTarget.addEventListener('input', this._autoResize)
+
     this.textareaTarget.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
         if (this.isMentionMenuVisible()) return
@@ -102,6 +111,7 @@ export default class extends Controller {
     this.teardownSpeechRecognition()
     this.imageButtonTarget?.removeEventListener('click', this.handleImageButtonClick)
     this.imageInputTarget?.removeEventListener('change', this.handleImageChange)
+    this.textareaTarget.removeEventListener('input', this._autoResize)
     this.textareaTarget.removeEventListener('dragover', this.handleDragOver)
     this.textareaTarget.removeEventListener('drop', this.handleDrop)
     this.textareaTarget.removeEventListener('paste', this.handlePaste)
@@ -163,6 +173,8 @@ export default class extends Controller {
     this.presenceController?.clearManualTypingMessage()
     this.clearImageAttachments()
     this.cancelQuote()
+    // Reset textarea height after clearing content
+    this.textareaTarget.style.height = 'auto'
   }
 
   setSendingState(isSending) {
