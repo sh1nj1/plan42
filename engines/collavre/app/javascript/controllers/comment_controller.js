@@ -324,7 +324,6 @@ export default class extends Controller {
   // Stimulus action: click->comment#reviewClick (bound via data-action in template)
   reviewClick(event) {
     event.preventDefault()
-    event.stopPropagation()
     const selectedText = this._getSelectedTextInContent()
     if (!selectedText) {
       this._showReviewHint(event.currentTarget)
@@ -357,12 +356,22 @@ export default class extends Controller {
     const contentEl = this.element.querySelector('.comment-content')
     if (!contentEl) return
 
+    // Brief highlight on content area to draw attention
+    contentEl.style.outline = '2px solid var(--brand, #4f8cff)'
+    contentEl.style.outlineOffset = '2px'
+    contentEl.style.borderRadius = 'var(--radius-2, 4px)'
+
     const hint = document.createElement('div')
     hint.className = 'review-hint'
     hint.textContent = button.dataset.hintText || 'Select text to review'
     contentEl.style.position = 'relative'
     contentEl.appendChild(hint)
-    setTimeout(() => hint.remove(), 3000)
+
+    setTimeout(() => {
+      hint.remove()
+      contentEl.style.outline = ''
+      contentEl.style.outlineOffset = ''
+    }, 3000)
   }
 
   _getSelectedTextInContent() {
