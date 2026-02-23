@@ -1122,13 +1122,6 @@ body.chat-fullscreen {
     50% { opacity: 0; }
 }
 
-.review-highlight {
-    outline: 2px solid var(--brand, #4f8cff);
-    outline-offset: 2px;
-    border-radius: var(--radius-2, 4px);
-    transition: outline-color 0.3s ease;
-}
-
 .review-hint {
     background: var(--surface-3, #333);
     color: var(--text-1, #fff);

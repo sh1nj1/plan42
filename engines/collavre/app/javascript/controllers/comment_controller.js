@@ -347,13 +347,6 @@ export default class extends Controller {
     // Remove any existing hint
     document.querySelectorAll('.review-hint').forEach(el => el.remove())
 
-    // Highlight comment content to indicate selectable area
-    const contentEl = this.element.querySelector('.comment-content')
-    if (contentEl) {
-      contentEl.classList.add('review-highlight')
-      setTimeout(() => contentEl.classList.remove('review-highlight'), 3000)
-    }
-
     // Show hint popup near the button using fixed positioning
     const rect = button.getBoundingClientRect()
     const hint = document.createElement('div')
