@@ -1134,20 +1134,19 @@ body.chat-fullscreen {
 
 .review-hint {
     position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
+    top: 0;
+    left: 0;
+    right: 0;
     background: var(--surface-3, #333);
     color: var(--text-1, #fff);
-    padding: var(--space-2, 4px) var(--space-3, 8px);
+    padding: var(--space-3, 8px);
     border-radius: var(--radius-2, 4px);
-    font-size: var(--text-0, 0.75rem);
-    white-space: nowrap;
+    font-size: var(--text-1, 0.875rem);
+    text-align: center;
     z-index: var(--layer-important, 999);
     animation: review-hint-fade 3s ease-out forwards;
     pointer-events: none;
     box-shadow: var(--shadow-2, 0 2px 8px rgba(0,0,0,0.15));
-    margin-bottom: 4px;
 }
 
 @keyframes review-hint-fade {

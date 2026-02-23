@@ -354,11 +354,14 @@ export default class extends Controller {
     const existing = this.element.querySelector('.review-hint')
     if (existing) existing.remove()
 
+    const contentEl = this.element.querySelector('.comment-content')
+    if (!contentEl) return
+
     const hint = document.createElement('div')
     hint.className = 'review-hint'
     hint.textContent = button.dataset.hintText || 'Select text to review'
-    button.parentElement.style.position = 'relative'
-    button.parentElement.appendChild(hint)
+    contentEl.style.position = 'relative'
+    contentEl.appendChild(hint)
     setTimeout(() => hint.remove(), 3000)
   }
 
