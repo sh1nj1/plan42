@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_20_072200) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_23_173533) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -137,6 +137,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_20_072200) do
     t.boolean "private", default: false, null: false
     t.integer "quoted_comment_id"
     t.text "quoted_text"
+    t.integer "review_type", limit: 1
     t.boolean "streaming", default: false, null: false
     t.integer "topic_id"
     t.datetime "updated_at", null: false

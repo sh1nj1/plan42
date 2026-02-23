@@ -64,6 +64,13 @@ ko:
       move_button: 이동
       review_button: 리뷰
       review_select_hint: 리뷰할 텍스트를 선택해 주세요
+      review_feedback_placeholder: 이 인용에 대한 피드백을 입력하세요...
+      review_summary_placeholder: 종합 코멘트 (선택)...
+      review_add_quote: "+ 추가"
+      review_send: 리뷰 전송
+      review_send_question: 질문 보내기
+      review_type_review: 리뷰
+      review_type_question: 질문
       replace_button: 바꾸기
       move_no_selection: 이동할 메시지를 선택해주세요.
       move_error: 메시지를 이동할 수 없습니다.

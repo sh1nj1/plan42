@@ -32,7 +32,16 @@
      data-hint-drag-topic-text="<%= t('collavre.comments.hint_drag_topic') %>"
      data-hint-move-button-text="<%= t('collavre.comments.hint_move_button') %>"
      data-add-participant-text="<%= t('collavre.comments.add_participant') %>"
-     data-review-button-text="<%= t('collavre.comments.review_button') %>">
+     data-review-button-text="<%= t('collavre.comments.review_button') %>"
+     data-review-feedback-placeholder="<%= t('collavre.comments.review_feedback_placeholder') %>"
+     data-review-summary-placeholder="<%= t('collavre.comments.review_summary_placeholder') %>"
+     data-review-add-quote="<%= t('collavre.comments.review_add_quote') %>"
+     data-review-send="<%= t('collavre.comments.review_send') %>"
+     data-review-send-question="<%= t('collavre.comments.review_send_question') %>"
+     data-review-type-review="💬"
+     data-review-type-question="❓"
+     data-review-type-review-label="<%= t('collavre.comments.review_type_review') %>"
+     data-review-type-question-label="<%= t('collavre.comments.review_type_question') %>">
   <div class="resize-handle resize-handle-left" data-comments--popup-target="leftHandle"></div>
   <div class="resize-handle resize-handle-right" data-comments--popup-target="rightHandle"></div>
   <div class="comments-popup-header">
@@ -69,6 +78,7 @@
       <span class="comment-quote-indicator-text" data-comments--form-target="quoteIndicatorText"></span>
       <button type="button" class="comment-quote-cancel" data-action="click->comments--form#cancelQuote" title="<%= t('app.cancel') %>">&times;</button>
     </div>
+    <div class="review-quotes-container" data-comments--form-target="reviewQuotesContainer" style="display:none;"></div>
     <textarea class="shared-input-surface" name="comment[content]" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" enterkeyhint="send"></textarea>
     <div class="comment-bottom">
     <input type="file" id="comment-images" name="comment[images][]" accept="image/*" multiple data-comments--form-target="imageInput" style="display:none;" />

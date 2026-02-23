@@ -67,6 +67,13 @@ en:
       move_button: Move
       review_button: Review
       review_select_hint: Please select text to review
+      review_feedback_placeholder: Write feedback for this quote...
+      review_summary_placeholder: Overall comment (optional)...
+      review_add_quote: "+ Add"
+      review_send: Send review
+      review_send_question: Send question
+      review_type_review: Review
+      review_type_question: Question
       replace_button: Replace
       move_no_selection: Select at least one message to move.
       move_error: Unable to move messages.

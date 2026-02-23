@@ -1,6 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
+import ReviewQuotesStore from './review_quotes_store'
 
 export default class extends Controller {
   static targets = [
@@ -19,12 +20,14 @@ export default class extends Controller {
     'quotedText',
     'quoteIndicator',
     'quoteIndicatorText',
+    'reviewQuotesContainer',
   ]
 
   connect() {
     this.creativeId = null
     this.editingId = null
     this.sending = false
+    this._reviewStore = new ReviewQuotesStore()
     this.cachedImageFiles = null
 
     this.handleSubmit = this.handleSubmit.bind(this)
@@ -169,10 +172,12 @@ export default class extends Controller {
     this.editingId = null
     this.submitTarget.innerHTML = this.defaultSubmitHTML
     this.submitTarget.disabled = false
+    this.submitTarget.classList.remove('review-submit-btn')
     if (this.cancelTarget) this.cancelTarget.style.display = 'none'
     this.presenceController?.clearManualTypingMessage()
     this.clearImageAttachments()
     this.cancelQuote()
+    this.textareaTarget.placeholder = ''
     // Reset textarea height after clearing content
     this.textareaTarget.style.height = 'auto'
   }
@@ -196,18 +201,44 @@ export default class extends Controller {
 
   handleSend(event) {
     event.preventDefault()
+
+    // If active quote exists, handle based on type
+    const store = this._reviewStore
+    if (store.hasActive && !store.isEmpty) {
+      const activeQuote = store.activeQuote
+      if (activeQuote && activeQuote.type === 'question') {
+        store.saveActiveFeedback(this.textareaTarget.value)
+        this._sendQuestionQuote(activeQuote)
+        return
+      }
+      this._commitActiveQuote()
+      return
+    }
+
     const hasText = this.textareaTarget.value.trim().length > 0
+    const hasQuotes = !store.isEmpty
     const hasImages = this.currentImageFiles().length > 0
-    if (this.sending || (!hasText && !hasImages) || !this.creativeId) return
+    if (this.sending || (!hasText && !hasQuotes && !hasImages) || !this.creativeId) return
     this.sending = true
     this.setSendingState(true)
     this.presenceController?.stoppedTyping()
+
+    // Build final content from review quotes + user text
+    if (hasQuotes) {
+      store.backup(this.textareaTarget.value)
+      this.textareaTarget.value = store.buildContent(this.textareaTarget.value)
+      this._pendingReviewType = 'review'
+    }
 
     const wasPrivate = this.privateCheckboxTarget?.checked ?? false
 
     const formData = new FormData(this.formTarget)
     if (this.currentTopicId) {
       formData.append('comment[topic_id]', this.currentTopicId)
+    }
+    if (this._pendingReviewType) {
+      formData.append('comment[review_type]', this._pendingReviewType)
+      this._pendingReviewType = null
     }
 
     let url = `/creatives/${this.creativeId}/comments`
@@ -269,6 +300,13 @@ export default class extends Controller {
         }
       })
       .catch((error) => {
+        // Restore review quotes state on failure so user doesn't lose work
+        if (this._reviewStore.hasBackup()) {
+          const restoredText = this._reviewStore.restore()
+          this.textareaTarget.value = restoredText || ''
+          this._renderReviewQuoteChips()
+          this._updateSubmitButton()
+        }
         alert(error?.message || 'Failed to submit comment')
       })
       .finally(() => {
@@ -556,28 +594,224 @@ export default class extends Controller {
     this.focusTextarea()
   }
 
-  // Append a review quote to the textarea as markdown blockquote.
-  // Multiple reviews accumulate; user types feedback after each quote.
+  // Append a review quote as a visual chip above the textarea.
   appendReviewQuote(commentId, selectedText) {
     if (!selectedText) return
-    // Set quoted_comment_id for the review target
+
+    const store = this._reviewStore
+    store.saveActiveFeedback(this.textareaTarget.value)
+
     if (commentId) {
       this.quotedCommentIdTarget.value = commentId
     }
-    const textarea = this.textareaTarget
-    const current = textarea.value
-    // Build markdown blockquote: prefix each line with >
-    const quoted = selectedText.split('\n').map(line => `> ${line}`).join('\n')
-    // Add blank line separator between reviews for proper markdown rendering
-    const prefix = current.length > 0 ? (current.endsWith('\n\n') ? '' : current.endsWith('\n') ? '\n' : '\n\n') : ''
-    // Double newline after blockquote so markdown renders it as a separate block
-    const newValue = current + prefix + quoted + '\n\n'
-    textarea.value = newValue
-    // Place cursor at the end (user types review feedback here)
-    textarea.selectionStart = textarea.selectionEnd = newValue.length
+
+    store.add(commentId, selectedText)
+    this._renderReviewQuoteChips()
+    this._updateSubmitButton()
+
+    this.textareaTarget.value = ''
+    this.textareaTarget.placeholder = this._getI18nText('reviewFeedbackPlaceholder', 'Write feedback for this quote...')
     this.focusTextarea()
-    // Trigger input event so any external auto-resize logic can adjust height
-    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  _commitActiveQuote() {
+    const store = this._reviewStore
+    store.commitActive(this.textareaTarget.value)
+    this.textareaTarget.value = ''
+    this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
+    this._renderReviewQuoteChips()
+    this._updateSubmitButton()
+    this.focusTextarea()
+  }
+
+  // Send a single question quote immediately as a standalone comment.
+  _sendQuestionQuote(quote) {
+    if (this.sending || !this.creativeId) return
+
+    const store = this._reviewStore
+    const content = store.buildQuestionContent(quote)
+
+    store.remove(quote.id)
+    this.textareaTarget.value = ''
+
+    if (store.isEmpty) {
+      this.textareaTarget.placeholder = ''
+    } else if (!store.hasActive) {
+      this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
+    }
+    this._renderReviewQuoteChips()
+    this._updateSubmitButton()
+
+    // Send as a question comment with quoted_comment_id preserved + review_type=question
+    this.sending = true
+    const formData = new FormData()
+    formData.append('comment[content]', content)
+    formData.append('comment[review_type]', 'question')
+    if (quote.commentId) {
+      formData.append('comment[quoted_comment_id]', quote.commentId)
+    }
+    const isPrivate = this.privateCheckboxTarget?.checked ?? false
+    if (isPrivate) formData.append('comment[private]', '1')
+    if (this.currentTopicId) {
+      formData.append('comment[topic_id]', this.currentTopicId)
+    }
+
+    const url = `/creatives/${this.creativeId}/comments`
+    fetch(url, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
+      body: formData,
+    })
+      .then((response) => {
+        if (response.ok) return response.text()
+        return response.json().then((json) => {
+          throw new Error(json.errors?.join(', ') || 'Unable to save comment')
+        })
+      })
+      .then((html) => {
+        this.renderCommentHtml(html)
+        const listCtrl = this.application.getControllerForElementAndIdentifier(
+          document.querySelector('[data-controller~="comments--list"]'), 'comments--list'
+        )
+        if (listCtrl) {
+          listCtrl.scrollToBottom()
+          listCtrl.updateStickiness()
+          listCtrl.markCommentsRead()
+        }
+      })
+      .catch((error) => {
+        alert(error?.message || 'Failed to send question')
+      })
+      .finally(() => {
+        this.sending = false
+      })
+
+    this.focusTextarea()
+  }
+
+  _renderReviewQuoteChips() {
+    const container = this.reviewQuotesContainerTarget
+    const store = this._reviewStore
+    container.innerHTML = ''
+
+    if (store.isEmpty) {
+      container.style.display = 'none'
+      return
+    }
+
+    container.style.display = ''
+    store.quotes.forEach((quote) => {
+      const chip = document.createElement('div')
+      chip.className = 'review-quote-chip'
+      if (quote.id === store.activeId) {
+        chip.classList.add('review-quote-chip--active')
+      }
+
+      // Type toggle (review / question)
+      const typeToggle = document.createElement('button')
+      typeToggle.type = 'button'
+      typeToggle.className = `review-quote-type-toggle review-quote-type-toggle--${quote.type}`
+      typeToggle.textContent = quote.type === 'question'
+        ? this._getI18nText('reviewTypeQuestion', '❓')
+        : this._getI18nText('reviewTypeReview', '💬')
+      typeToggle.title = quote.type === 'question'
+        ? this._getI18nText('reviewTypeQuestionLabel', 'Question')
+        : this._getI18nText('reviewTypeReviewLabel', 'Review')
+      typeToggle.addEventListener('click', (e) => {
+        e.stopPropagation()
+        store.toggleType(quote.id)
+        this._renderReviewQuoteChips()
+        this._updateSubmitButton()
+      })
+
+      // Quote text
+      const textSpan = document.createElement('span')
+      textSpan.className = 'review-quote-chip-text'
+      const preview = quote.text.length > 60
+        ? quote.text.substring(0, 60) + '…'
+        : quote.text
+      textSpan.textContent = preview
+      textSpan.title = quote.text
+
+      // Click chip to edit its feedback
+      textSpan.addEventListener('click', () => {
+        if (quote.id === store.activeId) {
+          const commentEl = document.querySelector(`[data-comment-id="${quote.commentId}"]`)
+          if (commentEl) {
+            commentEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            commentEl.classList.add('comment-highlight')
+            setTimeout(() => commentEl.classList.remove('comment-highlight'), 2000)
+          }
+          return
+        }
+        store.saveActiveFeedback(this.textareaTarget.value)
+        store.activate(quote.id)
+        this.textareaTarget.value = quote.feedback || ''
+        this.textareaTarget.placeholder = this._getI18nText('reviewFeedbackPlaceholder', 'Write feedback for this quote...')
+        this._renderReviewQuoteChips()
+        this._updateSubmitButton()
+        this.focusTextarea()
+      })
+
+      // Feedback preview (shown when not active and has feedback)
+      const feedbackSpan = document.createElement('span')
+      feedbackSpan.className = 'review-quote-chip-feedback'
+      if (quote.feedback && quote.id !== store.activeId) {
+        const fbPreview = quote.feedback.length > 40
+          ? quote.feedback.substring(0, 40) + '…'
+          : quote.feedback
+        feedbackSpan.textContent = `→ ${fbPreview}`
+      }
+
+      // Remove button
+      const removeBtn = document.createElement('button')
+      removeBtn.type = 'button'
+      removeBtn.className = 'review-quote-chip-remove'
+      removeBtn.innerHTML = '&times;'
+      removeBtn.title = 'Remove'
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const wasActive = quote.id === store.activeId
+        store.remove(quote.id)
+        if (wasActive) this.textareaTarget.value = ''
+        if (store.isEmpty) {
+          this.textareaTarget.placeholder = ''
+        } else if (!store.hasActive) {
+          this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
+        }
+        this._renderReviewQuoteChips()
+        this._updateSubmitButton()
+      })
+
+      chip.appendChild(typeToggle)
+      chip.appendChild(textSpan)
+      if (quote.feedback && quote.id !== store.activeId) {
+        chip.appendChild(feedbackSpan)
+      }
+      chip.appendChild(removeBtn)
+      container.appendChild(chip)
+    })
+  }
+
+  _updateSubmitButton() {
+    const state = this._reviewStore.buttonState
+    if (state === 'normal') {
+      this.submitTarget.innerHTML = this.defaultSubmitHTML
+      this.submitTarget.classList.remove('review-submit-btn')
+      return
+    }
+
+    this.submitTarget.classList.add('review-submit-btn')
+    const labels = {
+      'add': this._getI18nText('reviewAddQuote', '+ Add'),
+      'send-review': this._getI18nText('reviewSend', 'Send review'),
+      'send-question': this._getI18nText('reviewSendQuestion', 'Send question'),
+    }
+    this.submitTarget.textContent = labels[state]
+  }
+
+  _getI18nText(key, fallback) {
+    return this.element.dataset[key] || fallback
   }
 
   cancelQuote() {
@@ -585,6 +819,10 @@ export default class extends Controller {
     this.quotedTextTarget.value = ''
     this.quoteIndicatorTarget.style.display = 'none'
     this.quoteIndicatorTextTarget.textContent = ''
+    this._reviewStore.clear()
+    this._renderReviewQuoteChips()
+    this._updateSubmitButton()
+    this.textareaTarget.placeholder = ''
   }
 
   renderCommentHtml(html, { replaceExisting = false } = {}) {
