@@ -325,14 +325,15 @@ export default class extends Controller {
   reviewClick(event) {
     event.preventDefault()
     event.stopPropagation()
-    // Use selected text if available, otherwise full comment text
     const selectedText = this._getSelectedTextInContent()
-    const contentEl = this.element.querySelector('.comment-content')
-    const text = selectedText || (contentEl ? contentEl.textContent.trim() : '')
+    if (!selectedText) {
+      this._showReviewHint(event.currentTarget)
+      return
+    }
     const commentId = this.element.dataset.commentId
     const formController = this.findFormController()
-    if (formController && text) {
-      formController.appendReviewQuote(commentId, text)
+    if (formController) {
+      formController.appendReviewQuote(commentId, selectedText)
       // Scroll textarea into view and flash highlight for visual feedback
       const textarea = formController.textareaTarget
       if (textarea) {
@@ -345,7 +346,20 @@ export default class extends Controller {
         }, { once: true })
       }
     }
-    if (selectedText) window.getSelection().removeAllRanges()
+    window.getSelection().removeAllRanges()
+  }
+
+  _showReviewHint(button) {
+    // Remove existing hint if any
+    const existing = this.element.querySelector('.review-hint')
+    if (existing) existing.remove()
+
+    const hint = document.createElement('div')
+    hint.className = 'review-hint'
+    hint.textContent = button.dataset.hintText || 'Select text to review'
+    button.parentElement.style.position = 'relative'
+    button.parentElement.appendChild(hint)
+    setTimeout(() => hint.remove(), 3000)
   }
 
   _getSelectedTextInContent() {
