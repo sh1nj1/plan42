@@ -8,7 +8,7 @@ if (!window._streamingCommentIds) window._streamingCommentIds = new Set()
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "reviewButton"]
+  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls"]
 
   get _commentId() {
     return this.element.dataset.commentId
@@ -122,8 +122,6 @@ export default class extends Controller {
     // Text selection quote support
     this.handleMouseUp = this.handleMouseUp.bind(this)
     this.element.addEventListener('mouseup', this.handleMouseUp)
-
-    // Review button now uses data-action="click->comment#reviewClick" in template
 
     this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
@@ -357,7 +355,7 @@ export default class extends Controller {
     hint.style.left = `${rect.left + rect.width / 2}px`
     hint.style.transform = 'translate(-50%, -100%)'
     document.body.appendChild(hint)
-    setTimeout(() => hint.remove(), 3000)
+    hint.addEventListener('animationend', () => hint.remove(), { once: true })
   }
 
   _getSelectedTextInContent() {
