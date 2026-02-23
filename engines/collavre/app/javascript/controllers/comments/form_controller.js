@@ -218,6 +218,8 @@ export default class extends Controller {
 
     // Build final content from review quotes + user text
     if (hasQuotes) {
+      this._savedReviewQuotes = JSON.parse(JSON.stringify(this._reviewQuotes))
+      this._savedTextareaValue = this.textareaTarget.value
       this.textareaTarget.value = this._buildReviewContent()
     }
 
@@ -287,6 +289,15 @@ export default class extends Controller {
         }
       })
       .catch((error) => {
+        // Restore review quotes state on failure so user doesn't lose work
+        if (this._savedReviewQuotes) {
+          this._reviewQuotes = this._savedReviewQuotes
+          this.textareaTarget.value = this._savedTextareaValue || ''
+          this._savedReviewQuotes = null
+          this._savedTextareaValue = null
+          this._renderReviewQuoteChips()
+          this._updateSubmitButton()
+        }
         alert(error?.message || 'Failed to submit comment')
       })
       .finally(() => {
@@ -713,6 +724,11 @@ export default class extends Controller {
         if (this._activeQuoteId === quote.id) {
           this._activeQuoteId = null
           this.textareaTarget.value = ''
+        }
+        // Reset placeholder when all chips removed
+        if (this._reviewQuotes.length === 0) {
+          this.textareaTarget.placeholder = ''
+        } else if (!this._activeQuoteId) {
           this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
         }
         this._renderReviewQuoteChips()
@@ -759,10 +775,11 @@ export default class extends Controller {
     const userText = this.textareaTarget.value.trim()
     const parts = []
 
-    this._reviewQuotes.forEach(q => {
+    this._reviewQuotes.forEach((q, i) => {
+      if (i > 0) parts.push('') // Blank line between quotes to prevent blockquote merging
       const prefix = q.type === 'question' ? '> ❓ ' : '> '
-      const quoted = q.text.split('\n').map((line, i) => {
-        return i === 0 ? `${prefix}${line}` : `> ${line}`
+      const quoted = q.text.split('\n').map((line, j) => {
+        return j === 0 ? `${prefix}${line}` : `> ${line}`
       }).join('\n')
       parts.push(quoted)
       if (q.feedback) {
