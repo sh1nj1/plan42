@@ -49,6 +49,9 @@ Collavre::Engine.routes.draw do
   resource :creative_plan, only: [ :create, :destroy ], controller: "creative_plans"
 
   resources :creatives do
+    collection do
+      get :search
+    end
     resources :creative_shares, only: [ :create, :destroy ]
     resources :topics, only: [ :index, :create, :update, :destroy ] do
       collection do

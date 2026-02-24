@@ -6,6 +6,15 @@ module Collavre
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
     before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions slide_view unconvert ]
 
+    def search
+      query = params[:q].to_s.strip
+      creatives = Creative.where(user: Current.user)
+                          .where("title LIKE ?", "%#{query}%")
+                          .order(:title)
+                          .limit(20)
+      render json: creatives.map { |c| { id: c.id, title: c.title } }
+    end
+
     def index
       respond_to do |format|
         format.html do
