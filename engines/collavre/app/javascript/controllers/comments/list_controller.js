@@ -560,42 +560,54 @@ export default class extends Controller {
   openTopicSearchPopup(event) {
     if (this.selection.size === 0) return
 
-    // Reuse link-creative-modal pattern: find or create a topic search modal
-    let modal = document.getElementById('topic-search-modal')
-    if (!modal) {
-      modal = document.createElement('div')
-      modal.id = 'topic-search-modal'
-      modal.className = 'common-popup'
-      modal.style.display = 'none'
-      modal.dataset.controller = 'topic-search'
-      modal.innerHTML = `
-        <button type="button" class="popup-close-btn" data-topic-search-target="close">&times;</button>
-        <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
-          placeholder="${this.element.dataset.topicSearchPlaceholderText || 'Search topics...'}"
-          data-topic-search-target="input">
-        <ul class="common-popup-list" data-popup-list data-topic-search-target="list"></ul>
-      `
-      document.body.appendChild(modal)
-      // Trigger Stimulus to connect the controller
-      this.application.router.loadElement(modal)
-    }
-
-    const controller = this.application.getControllerForElementAndIdentifier(modal, 'topic-search')
-    if (!controller) {
-      console.error('topic-search controller not found')
-      return
+    const openWithController = (controller, btnRect) => {
+      controller.openForCreative(
+        this.creativeId,
+        btnRect,
+        (topic) => {
+          const commentIds = Array.from(this.selection)
+          this.handleMoveToTopic({ detail: { commentIds, targetTopicId: topic.id } })
+        },
+        this.element.dataset.topicMainText || 'Main'
+      )
     }
 
     const btnRect = event.currentTarget.getBoundingClientRect()
-    controller.openForCreative(
-      this.creativeId,
-      btnRect,
-      (topic) => {
-        const commentIds = Array.from(this.selection)
-        this.handleMoveToTopic({ detail: { commentIds, targetTopicId: topic.id } })
-      },
-      this.element.dataset.topicMainText || 'Main'
-    )
+    let modal = document.getElementById('topic-search-modal')
+
+    if (modal) {
+      // Modal already exists — controller should be connected
+      const controller = this.application.getControllerForElementAndIdentifier(modal, 'topic-search')
+      if (controller) {
+        openWithController(controller, btnRect)
+      }
+      return
+    }
+
+    // First time: create modal and wait for Stimulus to connect
+    modal = document.createElement('div')
+    modal.id = 'topic-search-modal'
+    modal.className = 'common-popup'
+    modal.style.display = 'none'
+    modal.dataset.controller = 'topic-search'
+    modal.innerHTML = `
+      <button type="button" class="popup-close-btn" data-topic-search-target="close">&times;</button>
+      <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
+        placeholder="${this.element.dataset.topicSearchPlaceholderText || 'Search topics...'}"
+        data-topic-search-target="input">
+      <ul class="common-popup-list" data-popup-list data-topic-search-target="list"></ul>
+    `
+    document.body.appendChild(modal)
+
+    // Wait for Stimulus to connect the controller, then open
+    requestAnimationFrame(() => {
+      const controller = this.application.getControllerForElementAndIdentifier(modal, 'topic-search')
+      if (controller) {
+        openWithController(controller, btnRect)
+      } else {
+        console.error('topic-search controller not found after creation')
+      }
+    })
   }
 
   updateDraggableState() {
