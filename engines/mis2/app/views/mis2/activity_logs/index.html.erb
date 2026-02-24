@@ -11,24 +11,44 @@
           <th><%= t("mis2.activity_logs.table.headers.timestamp") %></th>
           <th><%= t("mis2.activity_logs.table.headers.user") %></th>
           <th><%= t("mis2.activity_logs.table.headers.details") %></th>
+          <th><%= t("mis2.activity_logs.table.headers.actions") %></th>
         </tr>
       </thead>
       <tbody>
         <% @logs.each do |log| %>
-          <tr>
-            <td style="white-space: nowrap;"><%= log.created_at.strftime('%Y-%m-%d %H:%M:%S') %></td>
-            <td style="white-space: nowrap;">
+          <tr<%= ' class="log-row--undone"'.html_safe if log.undone_at.present? %>>
+            <td class="cell-nowrap"><%= log.created_at.strftime('%Y-%m-%d %H:%M:%S') %></td>
+            <td class="cell-nowrap">
               <strong><%= log.user_name %></strong>
               <% if log.user_id %>
-                <br><span class="text-muted" style="font-size: 0.9em;">(ID: <%= log.user_id %>)</span>
+                <br><span class="text-muted log-secondary-info">(ID: <%= log.user_id %>)</span>
               <% end %>
             </td>
-            <td><%= log.message %></td>
+            <td>
+              <%= log.message %>
+              <% if log.undone_at.present? %>
+                <br><span class="text-muted log-undone-label">
+                  <%= t("mis2.activity_logs.table.undone_label", time: log.undone_at.strftime('%Y-%m-%d %H:%M:%S')) %>
+                </span>
+              <% end %>
+            </td>
+            <td class="cell-nowrap">
+              <%= link_to t("mis2.activity_logs.table.detail_button"), mis2.activity_log_path(log), class: "btn btn-sm btn-secondary log-action-btn" %>
+              <% if log.undoable? %>
+                <%= button_to t("mis2.activity_logs.table.undo_button"),
+                      mis2.undo_activity_log_path(log),
+                      method: :patch,
+                      class: "btn btn-sm btn-secondary",
+                      data: { turbo_confirm: t("mis2.activity_logs.table.undo_confirm") } %>
+              <% elsif log.undone_at.present? %>
+                <span class="status-chip status-chip--completed"><%= t("mis2.activity_logs.table.undone_status") %></span>
+              <% end %>
+            </td>
           </tr>
         <% end %>
         <% if @logs.empty? %>
           <tr>
-            <td colspan="3" class="text-center text-muted"><%= t("mis2.activity_logs.index.no_logs") %></td>
+            <td colspan="4" class="text-center text-muted"><%= t("mis2.activity_logs.index.no_logs") %></td>
           </tr>
         <% end %>
       </tbody>

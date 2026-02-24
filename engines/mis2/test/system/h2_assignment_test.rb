@@ -157,14 +157,14 @@ module Mis2
 
       # Find the row for "Test Training Program" and update its dates
       row = find("tr", text: "Test Training Program")
-      form_id = row.find("button[type='submit']")[:form]
+      form_id = row.find("button.assignment-update-btn")[:form]
 
       execute_script("document.querySelector(\"input[name='start_date'][form='#{form_id}']\").value = '#{overlapping_start}'")
       execute_script("document.querySelector(\"input[name='end_date'][form='#{form_id}']\").value = '#{overlapping_end}'")
       execute_script("document.querySelector(\"input[name='start_date'][form='#{form_id}']\").dispatchEvent(new Event('input', { bubbles: true }))")
 
       accept_confirm do
-        row.find("button[type='submit']").click
+        row.find("button.assignment-update-btn").click
       end
 
       # Verify overlap error message

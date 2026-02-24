@@ -1,6 +1,10 @@
 Mis2::Engine.routes.draw do
   root to: "home#index"
-  resources :activity_logs, only: [ :index ]
+  resources :activity_logs, only: [ :index, :show ] do
+    member do
+      patch :undo
+    end
+  end
 
   namespace :h3 do
     resources :organizations, only: [ :index ] do
@@ -11,7 +15,7 @@ Mis2::Engine.routes.draw do
   end
 
   namespace :h2 do
-    resources :assignments, only: [ :index, :edit, :update ] do
+    resources :assignments, only: [ :index, :edit, :update, :destroy ] do
       collection do
         post :validate
       end

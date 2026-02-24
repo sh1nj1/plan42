@@ -34,12 +34,24 @@ module Mis2
             target_id: @user.user_idx.to_s,
             message: log_message,
             metadata: {
-              h2_user_id: @user.user_idx,
-              h2_user_name: @user.name,
-              old_organization_idx: old_organization&.organization_idx,
-              old_organization_name: old_organization_name,
-              new_organization_idx: new_organization.organization_idx,
-              new_organization_name: new_organization.organization_name
+              "h2_user_id" => @user.user_idx,
+              "h2_user_name" => @user.name,
+              "old_organization_idx" => old_organization&.organization_idx,
+              "old_organization_name" => old_organization_name,
+              "new_organization_idx" => new_organization.organization_idx,
+              "new_organization_name" => new_organization.organization_name,
+              "undoable" => true,
+              "database" => "h2",
+              "operations" => [
+                {
+                  "type" => "update",
+                  "table" => "brain_user",
+                  "primary_key" => "user_idx",
+                  "primary_key_value" => @user.user_idx,
+                  "old_values" => { "organization_idx" => old_organization&.organization_idx },
+                  "new_values" => { "organization_idx" => new_organization.organization_idx }
+                }
+              ]
             }
           )
 
@@ -54,7 +66,8 @@ module Mis2
             message: t("mis2.h2.users.update_organization_error", message: @user.errors.full_messages.join(", "))
           }, status: :unprocessable_entity
         end
-      rescue => e
+      rescue ActiveRecord::RecordInvalid, ActiveRecord::StatementInvalid => e
+        Rails.logger.error("[H2 UpdateOrg] id=#{params[:id]} error=#{e.class}: #{e.message}")
         render json: {
           success: false,
           message: t("mis2.h2.users.update_organization_error", message: e.message)

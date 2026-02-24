@@ -13,3 +13,80 @@
  *= require_tree .
  *= require_self
  */
+
+/* ================================================
+   Activity Log Detail (show) page
+   ================================================ */
+
+/* Detail table: narrower than full-width contacts-table */
+.detail-table {
+    min-width: auto;
+}
+
+.detail-table th {
+    width: 160px;
+    white-space: nowrap;
+}
+
+/* Metadata section */
+.detail-metadata-heading {
+    margin-top: 1.5em;
+}
+
+.detail-metadata-pre {
+    background: var(--color-section-bg, #f9fafb);
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: 6px;
+    padding: 1em;
+    overflow-x: auto;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+/* Action buttons row */
+.detail-actions {
+    margin-top: 1.5em;
+    display: flex;
+    gap: 0.5em;
+}
+
+/* ================================================
+   Activity Log Index page
+   ================================================ */
+
+/* Undone row: visually dimmed using muted color token */
+.log-row--undone td,
+.log-row--undone td a,
+.log-row--undone td strong {
+    color: var(--color-muted);
+}
+
+/* Nowrap cell for timestamp / actions */
+.cell-nowrap {
+    white-space: nowrap;
+}
+
+/* Secondary info label (e.g. user ID, undone timestamp) */
+.log-secondary-info {
+    font-size: 0.9em;
+}
+
+.log-undone-label {
+    font-size: 0.85em;
+}
+
+/* Action button spacing within a cell */
+.log-action-btn {
+    margin-right: 0.25em;
+}
+
+/* ================================================
+   H2 Assignments
+   ================================================ */
+
+/* Button group in assignment row (update + delete) */
+.assignment-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}

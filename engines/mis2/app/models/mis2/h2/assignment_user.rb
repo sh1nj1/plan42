@@ -53,6 +53,38 @@ module Mis2
         connection.select_value(sanitize_sql_array([ query, user_idx, target_assignment_idx, new_start, new_end, new_start, new_end ]))
       end
 
+      # Backup all rows across 7 tables, then delete them in FK reverse order.
+      # Returns an operations array for ActivityLog metadata (undo support).
+      def self.backup_and_delete_round(round_idx, user_idx)
+        operations = []
+
+        transaction do
+          # Subqueries used to find child rows (all parameterized via sanitize_sql_array)
+          unit_user_sub = sanitize_sql_array([ "SELECT assignment_unit_user_idx FROM map_assignment_unit_user WHERE assignment_user = ?", round_idx ])
+          stats_sub     = "SELECT idx FROM learning_statistics WHERE map_assignment_unit_user_idx IN (#{unit_user_sub})"
+          survey_sub    = "SELECT id FROM assignment_survey WHERE map_assignment_unit_user_id IN (#{unit_user_sub})"
+
+          # Leaf → root order: backup then delete each table
+          cascade_tables = [
+            { table: "learning_result",           pk: "idx",                       where: "learning_statistics_idx IN (#{stats_sub})" },
+            { table: "learning_statistics",       pk: "idx",                       where: "map_assignment_unit_user_idx IN (#{unit_user_sub})" },
+            { table: "survey_result",             pk: "idx",                       where: "assignment_survey_id IN (#{survey_sub})" },
+            { table: "assignment_survey",         pk: "id",                        where: "map_assignment_unit_user_id IN (#{unit_user_sub})" },
+            { table: "assignment_log",            pk: "idx",                       where: sanitize_sql_array([ "assignment_user = ?", round_idx ]) },
+            { table: "map_assignment_unit_user",  pk: "assignment_unit_user_idx",  where: sanitize_sql_array([ "assignment_user = ?", round_idx ]) },
+            { table: "map_assignment_user",       pk: "assignment_user_idx",       where: sanitize_sql_array([ "assignment_user_idx = ? AND user = ?", round_idx, user_idx ]) }
+          ]
+
+          cascade_tables.each do |entry|
+            rows = connection.select_all("SELECT * FROM #{entry[:table]} WHERE #{entry[:where]}").to_a
+            operations << { "type" => "delete", "table" => entry[:table], "primary_key" => entry[:pk], "rows" => rows }
+            connection.execute("DELETE FROM #{entry[:table]} WHERE #{entry[:where]}")
+          end
+        end
+
+        operations
+      end
+
       # Update with safety check
       def self.safe_update_dates(user_idx, target_assignment_idx, new_start, new_end)
         # Using custom SQL update to strictly follow the requirement including the safety subquery

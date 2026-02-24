@@ -30,11 +30,18 @@
   <td><span class="status-chip status-chip--<%= assignment.progress_status.to_s.dasherize %>"><%= t("mis2.h2.assignments.table.status.#{assignment.progress_status}") %></span></td>
   <td><%= assignment.create_time&.strftime('%Y-%m-%d %H:%M:%S') %></td>
   <td>
-    <button type="submit"
-            class="btn btn-sm btn-primary assignment-update-btn"
-            form="<%= form_id %>"
-            disabled
-            data-assignment-row-target="submit"
-            data-turbo-confirm="<%= t("mis2.h2.assignments.edit.confirm_update") %>"><%= t("mis2.h2.assignments.edit.update_button") %></button>
+    <div class="assignment-actions">
+      <button type="submit"
+              class="btn btn-sm btn-primary assignment-update-btn"
+              form="<%= form_id %>"
+              disabled
+              data-assignment-row-target="submit"
+              data-turbo-confirm="<%= t("mis2.h2.assignments.edit.confirm_update") %>"><%= t("mis2.h2.assignments.edit.update_button") %></button>
+      <%= button_to t("mis2.h2.assignments.edit.delete_button"),
+            mis2.h2_assignment_path(assignment.assignment_user_idx, user_idx: user.user_idx),
+            method: :delete,
+            class: "btn btn-sm btn-danger",
+            data: { turbo_confirm: t("mis2.h2.assignments.edit.confirm_delete") } %>
+    </div>
   </td>
 </tr>

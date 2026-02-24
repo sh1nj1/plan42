@@ -35,27 +35,9 @@ if File.exist?(h3_schema_file)
   H3TestSchema.load!(Mis2::H3Record.connection)
 end
 
-module ActiveSupport
-  class TestCase
-    include ActiveJob::TestHelper
+# --- Helper modules (must be defined before inclusion) ---
 
-    # Run tests in parallel with specified workers
-    parallelize(workers: :number_of_processors)
-
-    # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
-    fixtures :all
-
-    # Add more helper methods to be used by all tests here...
-    setup do
-      Rails.cache.clear
-      Current.reset
-      # Rebuild the closure tree for Creatives fixture
-      Creative.rebuild! if defined?(Creative)
-    end
-  end
-end
-
-TEST_PASSWORD = "password123"
+TEST_PASSWORD = "password"
 
 module IntegrationAuthHelper
   def sign_in_as(user, password: TEST_PASSWORD, follow_redirect: false)
@@ -129,6 +111,30 @@ module H3TestHelper
       end
     end
     Mis2::ActivityLog.where(action: "h3_organization_approve").delete_all
+  end
+end
+
+# --- Test case configuration ---
+
+module ActiveSupport
+  class TestCase
+    include ActiveJob::TestHelper
+    include H2TestHelper
+    include H3TestHelper
+
+    # Run tests in parallel with specified workers
+    parallelize(workers: :number_of_processors)
+
+    # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
+    fixtures :all
+
+    # Add more helper methods to be used by all tests here...
+    setup do
+      Rails.cache.clear
+      Current.reset
+      # Rebuild the closure tree for Creatives fixture
+      Creative.rebuild! if defined?(Creative)
+    end
   end
 end
 

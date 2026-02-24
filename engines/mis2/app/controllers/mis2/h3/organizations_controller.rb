@@ -52,11 +52,12 @@ module Mis2
               admin_id: admin.id
             ),
             metadata: {
-              h3_admin_id: admin.id,
-              h3_admin_name: admin.name,
-              h3_org_id: org.id,
-              h3_org_name: org.name,
-              h3_org_code: org.code
+              "h3_admin_id" => admin.id,
+              "h3_admin_name" => admin.name,
+              "h3_org_id" => org.id,
+              "h3_org_name" => org.name,
+              "h3_org_code" => org.code,
+              "undoable" => false
             }
           )
         rescue ActiveRecord::RecordInvalid, ActiveRecord::StatementInvalid => e

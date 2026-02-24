@@ -1,0 +1,78 @@
+<div class="contact-management">
+  <div class="flex-row-center-between">
+    <h1 class="no-top-margin"><%= t("mis2.activity_logs.show.title") %></h1>
+    <%= link_to t("mis2.activity_logs.show.back_list"), mis2.activity_logs_path, class: "btn btn-sm btn-secondary" %>
+  </div>
+
+  <table class="contacts-table detail-table">
+    <tbody>
+      <tr>
+        <th><%= t("mis2.activity_logs.show.id") %></th>
+        <td><%= @log.id %></td>
+      </tr>
+      <tr>
+        <th><%= t("mis2.activity_logs.show.action") %></th>
+        <td>
+          <span class="status-chip status-chip--<%= @log.action.include?('delete') ? 'scheduled' : @log.action.include?('undo') ? 'completed' : 'in-progress' %>">
+            <%= @log.action %>
+          </span>
+        </td>
+      </tr>
+      <tr>
+        <th><%= t("mis2.activity_logs.table.headers.timestamp") %></th>
+        <td><%= @log.created_at.strftime('%Y-%m-%d %H:%M:%S') %></td>
+      </tr>
+      <tr>
+        <th><%= t("mis2.activity_logs.table.headers.user") %></th>
+        <td><%= @log.user_name %> (ID: <%= @log.user_id %>)</td>
+      </tr>
+      <tr>
+        <th><%= t("mis2.activity_logs.show.target_type") %></th>
+        <td><%= @log.target_type %></td>
+      </tr>
+      <tr>
+        <th><%= t("mis2.activity_logs.show.target_id") %></th>
+        <td><%= @log.target_id %></td>
+      </tr>
+      <tr>
+        <th><%= t("mis2.activity_logs.table.headers.details") %></th>
+        <td><%= @log.message %></td>
+      </tr>
+      <tr>
+        <th><%= t("mis2.activity_logs.show.undoable") %></th>
+        <td>
+          <% if @log.undoable? %>
+            <span class="status-chip status-chip--in-progress"><%= t("mis2.activity_logs.show.undoable_yes") %></span>
+          <% elsif @log.undone_at.present? %>
+            <span class="status-chip status-chip--completed"><%= t("mis2.activity_logs.table.undone_status") %></span>
+          <% else %>
+            <span class="status-chip status-chip--scheduled"><%= t("mis2.activity_logs.show.undoable_no") %></span>
+          <% end %>
+        </td>
+      </tr>
+      <% if @log.undone_at.present? %>
+        <tr>
+          <th><%= t("mis2.activity_logs.show.undone_at") %></th>
+          <td><%= @log.undone_at.strftime('%Y-%m-%d %H:%M:%S') %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+  <%# Metadata as YAML %>
+  <% if @log.metadata.present? %>
+    <h2 class="detail-metadata-heading"><%= t("mis2.activity_logs.show.metadata") %></h2>
+    <pre class="detail-metadata-pre"><%= @log.metadata.to_yaml.sub(/\A---\n/, '') %></pre>
+  <% end %>
+
+  <%# Actions %>
+  <div class="detail-actions">
+    <% if @log.undoable? %>
+      <%= button_to t("mis2.activity_logs.table.undo_button"),
+            mis2.undo_activity_log_path(@log),
+            method: :patch,
+            class: "btn btn-sm btn-secondary",
+            data: { turbo_confirm: t("mis2.activity_logs.table.undo_confirm") } %>
+    <% end %>
+  </div>
+</div>

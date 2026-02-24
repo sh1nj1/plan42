@@ -8,8 +8,10 @@ ko:
     activity_log:
       messages:
         h2_training_update: "'%{assignment_name}' 훈련(회차: %{round}) 업데이트 (대상: %{user_name}, ID: %{user_id}). 날짜 변경: %{old_start} ~ %{old_end} -> %{new_start} ~ %{new_end}."
+        h2_training_delete: "'%{assignment_name}' 훈련(회차: %{round}) 삭제 (대상: %{user_name}, ID: %{user_id}). 기간: %{start_date} ~ %{end_date}."
         h2_organization_update: "'%{user_name}' (ID: %{user_id}) 소속 변경: '%{old_organization}' -> '%{new_organization}'."
         h3_organization_approve: "H3 병원 가입 승인: '%{org_name}' (코드: %{org_code}), 관리자: '%{admin_name}' (ID: %{admin_id})"
+        undo: "복원: '%{original_action}' 작업 복원 (로그 ID: %{original_id})."
     home:
       h2_assignment_link: "H2 사용자 리스트"
       h3_organizations_link: "H3 병원 관리"
@@ -24,6 +26,29 @@ ko:
           timestamp: "일시"
           user: "작업자"
           details: "내용"
+          actions: "관리"
+        detail_button: "상세"
+        undo_button: "복원"
+        undo_confirm: "이 작업을 복원하시겠습니까? 변경 내용이 되돌려집니다."
+        undone_label: "%{time}에 복원됨"
+        undone_status: "복원됨"
+      show:
+        title: "작업 로그 상세"
+        back_list: "목록으로 돌아가기"
+        id: "로그 ID"
+        action: "작업"
+        target_type: "대상 유형"
+        target_id: "대상 ID"
+        undoable: "복원 가능"
+        undoable_yes: "가능"
+        undoable_no: "불가"
+        undone_at: "복원 일시"
+        metadata: "메타데이터"
+      undo:
+        success: "작업이 성공적으로 복원되었습니다."
+        not_undoable: "이 작업은 복원할 수 없습니다."
+        no_operations: "복원할 작업 정보가 없습니다."
+        error: "복원 실패: %{message}"
     h2:
       assignments:
         index:
@@ -37,6 +62,8 @@ ko:
           back_button: "검색으로 돌아가기"
           update_button: "수정"
           confirm_update: "정말 날짜를 수정하시겠습니까?"
+          delete_button: "삭제"
+          confirm_delete: "이 회차를 삭제하시겠습니까? 관련된 모든 학습 데이터가 함께 삭제됩니다. 작업 로그에서 복원할 수 있습니다."
         table:
           headers:
             id: "ID"
@@ -60,8 +87,10 @@ ko:
           date_order_error: "시작일은 종료일보다 늦을 수 없습니다."
           overlap_error: "훈련 업데이트 실패. 기간이 중복됩니다."
           general_error: "오류: %{message}"
+          round_not_found: "해당 회차를 찾을 수 없습니다."
         notices:
           update_success: "훈련이 성공적으로 업데이트되었습니다."
+          delete_success: "회차가 성공적으로 삭제되었습니다."
       organizations:
         modal_title: "병원 검색"
         search_placeholder: "병원 이름으로 검색..."

@@ -880,3 +880,17 @@ input[type="password"] {
     opacity: 1;
     border-color: var(--color-text, #333);
 }
+
+/* Danger button */
+.btn-danger {
+    background: #ef4444;
+    color: white;
+    border: 1px solid #dc2626;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+}

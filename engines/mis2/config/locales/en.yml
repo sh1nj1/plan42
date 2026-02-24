@@ -8,8 +8,10 @@ en:
     activity_log:
       messages:
         h2_training_update: "Updated H2 Training '%{assignment_name}' (Round %{round}) for user '%{user_name}' (ID: %{user_id}). Dates changed: %{old_start} ~ %{old_end} -> %{new_start} ~ %{new_end}."
+        h2_training_delete: "Deleted H2 Training '%{assignment_name}' (Round %{round}) for user '%{user_name}' (ID: %{user_id}). Dates: %{start_date} ~ %{end_date}."
         h2_organization_update: "Updated organization for '%{user_name}' (ID: %{user_id}): '%{old_organization}' -> '%{new_organization}'."
         h3_organization_approve: "H3 Hospital Approved: '%{org_name}' (Code: %{org_code}), Admin: '%{admin_name}' (ID: %{admin_id})"
+        undo: "Restored: '%{original_action}' operation (Log ID: %{original_id})."
     home:
       h2_assignment_link: "H2 User List"
       h3_organizations_link: "H3 Hospital Management"
@@ -24,6 +26,29 @@ en:
           timestamp: "Timestamp"
           user: "Operator"
           details: "Details"
+          actions: "Actions"
+        detail_button: "Detail"
+        undo_button: "Restore"
+        undo_confirm: "Are you sure you want to restore this operation? This will reverse the changes."
+        undone_label: "Restored at %{time}"
+        undone_status: "Restored"
+      show:
+        title: "Activity Log Detail"
+        back_list: "Back to List"
+        id: "Log ID"
+        action: "Action"
+        target_type: "Target Type"
+        target_id: "Target ID"
+        undoable: "Restorable"
+        undoable_yes: "Yes"
+        undoable_no: "No"
+        undone_at: "Restored At"
+        metadata: "Metadata"
+      undo:
+        success: "Operation has been successfully restored."
+        not_undoable: "This operation cannot be restored."
+        no_operations: "No operation data available for restoration."
+        error: "Failed to restore: %{message}"
     h2:
       assignments:
         index:
@@ -37,6 +62,8 @@ en:
           back_button: "Back to Search"
           update_button: "Update"
           confirm_update: "Are you sure you want to update the dates?"
+          delete_button: "Delete"
+          confirm_delete: "Are you sure you want to delete this round? All related learning data will be deleted. You can restore it from the Activity Logs."
         table:
           headers:
             id: "ID"
@@ -60,8 +87,10 @@ en:
           date_order_error: "Start date cannot be later than end date."
           overlap_error: "Failed to update training. Date overlap detected."
           general_error: "Error: %{message}"
+          round_not_found: "Round not found."
         notices:
           update_success: "Training updated successfully."
+          delete_success: "Round deleted successfully."
       organizations:
         modal_title: "Search Hospital"
         search_placeholder: "Search by hospital name..."
