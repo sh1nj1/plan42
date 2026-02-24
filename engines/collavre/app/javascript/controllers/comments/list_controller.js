@@ -512,7 +512,7 @@ export default class extends Controller {
       </div>
     `
 
-    bar.querySelector('.selection-action-delete').addEventListener('click', () => this.deleteSelectedComments())
+    bar.querySelector('.selection-action-delete').addEventListener('click', (e) => { e.stopPropagation(); this.deleteSelectedComments() })
     bar.querySelector('.selection-action-move').addEventListener('click', (e) => this.openMoveModal(e))
     bar.querySelector('.selection-action-topic').addEventListener('click', (e) => this.openTopicSearchPopup(e))
     bar.querySelector('.selection-action-bar-close').addEventListener('click', () => this.clearSelection())
@@ -529,7 +529,11 @@ export default class extends Controller {
   async deleteSelectedComments() {
     if (this.selection.size === 0) return
     const confirmText = this.element.dataset.batchDeleteConfirmText || 'Are you sure you want to delete the selected messages?'
-    if (!confirm(confirmText)) return
+    if (!confirm(confirmText)) {
+      // Re-render action bar to preserve selection state after confirm cancel
+      this.updateSelectionActionBar()
+      return
+    }
 
     const commentIds = Array.from(this.selection)
     try {
