@@ -912,7 +912,7 @@ export default class extends Controller {
       body: JSON.stringify({ comment_ids: commentIds, target_creative_id: targetId })
     }).then(r => r.ok ? r.json() : Promise.reject())
       .then(() => {
-        this.selection.clear()
+        this.clearSelection()
         this.loadInitialComments()
       })
       .finally(() => { this.movingComments = false; this.notifySelectionChange() })
