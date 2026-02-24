@@ -39,6 +39,7 @@
 
 #link-creative-modal {
   min-width: 320px;
+  z-index: calc(var(--layer-modal) + 10);
 }
 
 .common-popup {
