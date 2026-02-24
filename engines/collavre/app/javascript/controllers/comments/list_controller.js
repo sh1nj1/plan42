@@ -894,16 +894,92 @@ export default class extends Controller {
     }
     this.movingComments = true
     this.notifySelectionChange()
-    // ... assumed modal controller logic ...
-    const modal = document.getElementById('link-creative-modal')
-    const controller = this.application.getControllerForElementAndIdentifier(modal, 'link-creative')
-    if (controller) {
-      controller.open(this.element.getBoundingClientRect(),
-        (item) => { this.moveSelectedComments(item.id) },
-        () => { this.movingComments = false; this.notifySelectionChange() })
-    } else {
-      this.movingComments = false; this.notifySelectionChange()
+
+    // Close any existing move popup
+    if (this._movePopupEl) {
+      this._movePopupEl.remove()
+      this._movePopupEl = null
     }
+
+    const popupEl = document.createElement('div')
+    popupEl.className = 'creative-search-popup'
+    popupEl.style.display = 'none'
+    popupEl.innerHTML = `
+      <input type="text" class="creative-search-input" placeholder="${this.element.dataset.moveSearchPlaceholderText || 'Search creative...'}" />
+      <ul class="creative-search-list" data-popup-list></ul>
+    `
+
+    // Insert before action bar
+    const actionBar = this.element.querySelector('.selection-action-bar')
+    if (actionBar) {
+      actionBar.parentNode.insertBefore(popupEl, actionBar)
+    } else {
+      const typingIndicator = this.element.querySelector('#typing-indicator')
+      if (typingIndicator) {
+        typingIndicator.parentNode.insertBefore(popupEl, typingIndicator)
+      } else {
+        this.element.appendChild(popupEl)
+      }
+    }
+    this._movePopupEl = popupEl
+
+    const searchInput = popupEl.querySelector('.creative-search-input')
+    let debounceTimer = null
+    let searchToken = 0
+
+    this._movePopup = new CommonPopup(popupEl, {
+      closeOnOutsideClick: true,
+      onSelect: (item) => {
+        this._movePopupEl?.remove()
+        this._movePopupEl = null
+        this.moveSelectedComments(item.id)
+      },
+      renderItem: (item) => {
+        const text = (item.label || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        return `<span>${text}</span>`
+      },
+      onClose: () => {
+        this._movePopupEl?.remove()
+        this._movePopupEl = null
+        this.movingComments = false
+        this.notifySelectionChange()
+      },
+    })
+
+    popupEl.style.display = 'block'
+    popupEl.style.visibility = 'visible'
+
+    searchInput.addEventListener('input', () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(async () => {
+        const q = searchInput.value.trim()
+        if (q.length < 2) { this._movePopup.setItems([]); return }
+        const token = ++searchToken
+        try {
+          const response = await fetch(`/creatives/search?q=${encodeURIComponent(q)}&simple=true`, {
+            headers: { Accept: 'application/json' }
+          })
+          if (token !== searchToken) return
+          const results = await response.json()
+          const items = Array.isArray(results)
+            ? results.map(r => ({ id: r.id, label: r.description || r.title || `#${r.id}` }))
+            : []
+          this._movePopup.setItems(items)
+        } catch { this._movePopup.setItems([]) }
+      }, 300)
+    })
+
+    searchInput.addEventListener('keydown', (e) => {
+      if (this._movePopup.handleKey(e)) return
+      if (e.key === 'Escape') {
+        this._movePopupEl?.remove()
+        this._movePopupEl = null
+        this.movingComments = false
+        this.notifySelectionChange()
+      }
+    })
+
+    searchInput.focus()
   }
 
   moveSelectedComments(targetId) {
