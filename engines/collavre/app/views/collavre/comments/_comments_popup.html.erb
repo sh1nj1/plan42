@@ -29,8 +29,6 @@
      data-voice-stop-text="<%= t('collavre.comments.voice_stop') %>"
      data-move-no-selection-text="<%= t('collavre.comments.move_no_selection') %>"
      data-move-error-text="<%= t('collavre.comments.move_error') %>"
-     data-hint-drag-topic-text="<%= t('collavre.comments.hint_drag_topic') %>"
-     data-hint-move-button-text="<%= t('collavre.comments.hint_move_button') %>"
      data-selection-count-text="<%= t('collavre.comments.selection_count') %>"
      data-selection-delete-text="<%= t('collavre.comments.selection_delete') %>"
      data-selection-move-text="<%= t('collavre.comments.selection_move') %>"
@@ -96,7 +94,6 @@
     <button class="creative-action-btn" id="attach-image-btn" data-comments--form-target="imageButton" type="button"><%= t('collavre.comments.image_button') %></button>
     <button class="creative-action-btn" id="voice-comments-btn" data-comments--form-target="voiceButton" type="button" data-voice-state="idle"><%= t('collavre.comments.voice_button') %></button>
     <button class="creative-action-btn" id="search-comments-btn" data-comments--form-target="searchButton" type="button"><%= t('collavre.comments.search_button') %></button>
-    <%# Move button removed — use selection action bar %>
     <button class="creative-action-btn" id="cancel-edit-btn" data-comments--form-target="cancel" type="button" style="display:none;"><%= t('app.cancel') %></button>
     <button class="creative-action-btn" type="submit" data-comments--form-target="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
     </div>

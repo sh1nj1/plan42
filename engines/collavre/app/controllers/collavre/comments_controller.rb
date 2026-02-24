@@ -406,8 +406,10 @@ module Collavre
       render json: CommandMenuService.new(user: Current.user).items
     end
 
+    MAX_BATCH_DELETE = 100
+
     def batch_destroy
-      comment_ids = Array(params[:comment_ids]).map(&:to_i)
+      comment_ids = Array(params[:comment_ids]).map(&:to_i).uniq.first(MAX_BATCH_DELETE)
       if comment_ids.empty?
         render json: { error: I18n.t("collavre.comments.batch_delete_no_selection") }, status: :unprocessable_entity and return
       end
@@ -433,9 +435,7 @@ module Collavre
         end
       end
 
-      ActiveRecord::Base.transaction do
-        comments.each(&:destroy!)
-      end
+      Comment.where(id: comments.map(&:id)).destroy_all
 
       head :no_content
     end

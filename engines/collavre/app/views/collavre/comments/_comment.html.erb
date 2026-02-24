@@ -64,7 +64,6 @@
       <button class="copy-comment-link-btn" data-comment-id="<%= comment.id %>" data-comment-url="<%= collavre.creative_comment_url(comment.creative, comment, Rails.application.config.action_mailer.default_url_options) %>" title="<%= t('collavre.comments.copy_link_button') %>">
         <%= t('collavre.comments.copy_link_button') %>
       </button>
-      <%# Individual delete button removed — use selection action bar batch delete %>
     </div>
   <% if comment.quoted_text.present? %>
     <div class="comment-quoted-block">
