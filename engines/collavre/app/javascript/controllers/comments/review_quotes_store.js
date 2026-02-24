@@ -9,6 +9,8 @@
  *
  * Does NOT touch the DOM — the controller handles all rendering.
  */
+let _nextId = 1
+
 export default class ReviewQuotesStore {
   constructor() {
     this._quotes = []
@@ -51,7 +53,7 @@ export default class ReviewQuotesStore {
 
   add(commentId, text) {
     const quote = {
-      id: Date.now(),
+      id: _nextId++,
       commentId,
       text,
       type: 'review', // 'review' | 'question'
