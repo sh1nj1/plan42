@@ -3,7 +3,7 @@ import { copyTextToClipboard } from '../../utils/clipboard'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
-import CommonPopup from '../../lib/common_popup'
+// CommonPopup is now used via TopicSearchController (Stimulus)
 
 export default class extends Controller {
   static targets = ['list']
@@ -559,72 +559,43 @@ export default class extends Controller {
 
   openTopicSearchPopup(event) {
     if (this.selection.size === 0) return
-    if (this._topicPopup) {
-      this._topicPopup.hide()
-      this._topicPopupEl?.remove()
+
+    // Reuse link-creative-modal pattern: find or create a topic search modal
+    let modal = document.getElementById('topic-search-modal')
+    if (!modal) {
+      modal = document.createElement('div')
+      modal.id = 'topic-search-modal'
+      modal.className = 'common-popup'
+      modal.style.display = 'none'
+      modal.dataset.controller = 'topic-search'
+      modal.innerHTML = `
+        <button type="button" class="popup-close-btn" data-topic-search-target="close">&times;</button>
+        <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
+          placeholder="${this.element.dataset.topicSearchPlaceholderText || 'Search topics...'}"
+          data-topic-search-target="input">
+        <ul class="common-popup-list" data-popup-list data-topic-search-target="list"></ul>
+      `
+      document.body.appendChild(modal)
+      // Trigger Stimulus to connect the controller
+      this.application.router.loadElement(modal)
     }
 
-    const popupEl = document.createElement('div')
-    popupEl.className = 'topic-search-popup'
-    popupEl.style.display = 'none'
-    popupEl.innerHTML = `
-      <input type="text" class="topic-search-input" placeholder="${this.element.dataset.topicSearchPlaceholderText || 'Search topics...'}" />
-      <ul class="topic-search-list" data-popup-list></ul>
-    `
-    // Append inside the chat popup so CommonPopup positions relative to it
-    this.element.appendChild(popupEl)
-    this._topicPopupEl = popupEl
+    const controller = this.application.getControllerForElementAndIdentifier(modal, 'topic-search')
+    if (!controller) {
+      console.error('topic-search controller not found')
+      return
+    }
 
-    const searchInput = popupEl.querySelector('.topic-search-input')
-
-    this._topicPopup = new CommonPopup(popupEl, {
-      closeOnOutsideClick: true,
-      onSelect: (topic) => {
-        this._topicPopup.hide()
-        this._topicPopupEl?.remove()
-        this._topicPopupEl = null
+    const btnRect = event.currentTarget.getBoundingClientRect()
+    controller.openForCreative(
+      this.creativeId,
+      btnRect,
+      (topic) => {
         const commentIds = Array.from(this.selection)
         this.handleMoveToTopic({ detail: { commentIds, targetTopicId: topic.id } })
       },
-      renderItem: (topic) => `<span>${topic.name}</span>`,
-      onClose: () => {
-        this._topicPopupEl?.remove()
-        this._topicPopupEl = null
-      },
-    })
-
-    // Float above the button using CommonPopup positioning
-    const btnRect = event.currentTarget.getBoundingClientRect()
-    this._topicPopup.showAt(btnRect)
-
-    // Load topics
-    this._loadTopicsForSearch(searchInput)
-  }
-
-  async _loadTopicsForSearch(searchInput) {
-    if (!this.creativeId) return
-    try {
-      const response = await fetch(`/creatives/${this.creativeId}/topics`)
-      const data = await response.json()
-      this._allTopics = data.topics || []
-
-      // Add "Main" (no topic) option
-      const mainLabel = this.element.dataset.topicMainText || 'Main'
-      const allTopics = [{ id: '', name: `📋 ${mainLabel}` }, ...this._allTopics.map(t => ({ id: t.id, name: `#${t.name}` }))]
-      this._topicPopup.setItems(allTopics)
-
-      searchInput.addEventListener('input', () => {
-        const q = searchInput.value.toLowerCase()
-        const filtered = allTopics.filter(t => t.name.toLowerCase().includes(q))
-        this._topicPopup.setItems(filtered)
-      })
-      searchInput.addEventListener('keydown', (e) => {
-        if (this._topicPopup.handleKey(e)) return
-      })
-      searchInput.focus()
-    } catch (error) {
-      console.error('Error loading topics:', error)
-    }
+      this.element.dataset.topicMainText || 'Main'
+    )
   }
 
   updateDraggableState() {

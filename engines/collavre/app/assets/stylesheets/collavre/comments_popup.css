@@ -1202,51 +1202,6 @@ body.chat-fullscreen {
 }
 
 /* Floating search popups — positioned by CommonPopup inside #comments-popup */
-/* Topic search popup — positioned by CommonPopup inside #comments-popup */
-.topic-search-popup {
-    position: absolute;
-    background: var(--surface-section);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-2);
-    box-shadow: var(--shadow-2);
-    z-index: 200;
-    min-width: 200px;
-    max-width: 90%;
-    max-height: 250px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
-.topic-search-input {
-    border: none;
-    border-bottom: 1px solid var(--border-color);
-    padding: var(--space-2);
-    font-size: 0.85em;
-    outline: none;
-    background: transparent;
-    color: var(--color-text);
-}
-
-.topic-search-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    overflow-y: auto;
-    max-height: 250px;
-}
-
-.topic-search-list .common-popup-item {
-    padding: var(--space-2) var(--space-3);
-    cursor: pointer;
-    font-size: 0.85em;
-}
-
-.topic-search-list .common-popup-item:hover,
-.topic-search-list .common-popup-item.active {
-    background: var(--surface-hover, rgba(0, 0, 0, 0.05));
-}
-
 /* Override popup-close-btn absolute positioning inside comments popup header */
 .comments-popup-actions .popup-close-btn {
   position: static;

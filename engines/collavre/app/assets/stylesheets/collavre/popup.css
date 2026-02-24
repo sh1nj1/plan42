@@ -37,7 +37,8 @@
   margin-right: 0.4em;
 }
 
-#link-creative-modal {
+#link-creative-modal,
+#topic-search-modal {
   min-width: 320px;
   z-index: calc(var(--layer-modal) + 10);
 }
