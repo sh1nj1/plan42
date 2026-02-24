@@ -80,6 +80,17 @@ en:
       add_participant: Add user
       hint_drag_topic: "🎯 Drag → Move to topic"
       hint_move_button: "📤 Move button → Another chat"
+      selection_count: "{count} selected"
+      selection_delete: Delete
+      selection_move: Move
+      selection_topic_move: Move to topic
+      selection_close: Cancel
+      selection_drag_hint: "You can also drag & drop to move to a topic"
+      batch_delete_confirm: Are you sure you want to delete the selected messages?
+      batch_delete_no_selection: Select at least one message to delete.
+      batch_delete_not_found: Some selected messages could not be found.
+      topic_search_placeholder: Search topics...
+      topic_main: Main
       fullscreen: Full screen
       exit_fullscreen: Exit full screen
       move_invalid_target: Select a valid creative to move messages to.

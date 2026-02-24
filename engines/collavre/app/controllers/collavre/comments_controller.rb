@@ -406,6 +406,40 @@ module Collavre
       render json: CommandMenuService.new(user: Current.user).items
     end
 
+    def batch_destroy
+      comment_ids = Array(params[:comment_ids]).map(&:to_i)
+      if comment_ids.empty?
+        render json: { error: I18n.t("collavre.comments.batch_delete_no_selection") }, status: :unprocessable_entity and return
+      end
+
+      is_admin = @creative.has_permission?(Current.user, :admin)
+      is_creative_owner = @creative.user == Current.user
+
+      visible_scope = @creative.comments.where(
+        "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
+        false, Current.user.id, Current.user.id
+      )
+      comments = visible_scope.where(id: comment_ids).to_a
+
+      if comments.length != comment_ids.length
+        render json: { error: I18n.t("collavre.comments.batch_delete_not_found") }, status: :not_found and return
+      end
+
+      # Check permissions: user must own all comments, or be admin/creative owner
+      unless is_admin || is_creative_owner
+        unauthorized = comments.reject { |c| c.user == Current.user }
+        if unauthorized.any?
+          render json: { error: I18n.t("collavre.comments.not_owner") }, status: :forbidden and return
+        end
+      end
+
+      ActiveRecord::Base.transaction do
+        comments.each(&:destroy!)
+      end
+
+      head :no_content
+    end
+
     def move
       result = CommentMoveService.new(creative: @creative, user: Current.user).call(
         comment_ids: params[:comment_ids],

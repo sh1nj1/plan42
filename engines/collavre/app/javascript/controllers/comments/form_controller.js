@@ -10,7 +10,6 @@ export default class extends Controller {
     'submit',
     'privateCheckbox',
     'cancel',
-    'moveButton',
     'searchButton',
     'voiceButton',
     'imageInput',
@@ -36,7 +35,6 @@ export default class extends Controller {
     this.handlePointerSend = this.handlePointerSend.bind(this)
     this.handleTouchSend = this.handleTouchSend.bind(this)
     this.handleCancel = this.handleCancel.bind(this)
-    this.handleMoveClick = this.handleMoveClick.bind(this)
     this.handleSearch = this.handleSearch.bind(this)
     this.handleVoiceToggle = this.handleVoiceToggle.bind(this)
     this.handleRecognitionStart = this.handleRecognitionStart.bind(this)
@@ -53,7 +51,6 @@ export default class extends Controller {
     this.submitTarget.addEventListener('pointerup', this.handlePointerSend)
     this.submitTarget.addEventListener('touchend', this.handleTouchSend, { passive: false })
     this.cancelTarget?.addEventListener('click', this.handleCancel)
-    this.moveButtonTarget?.addEventListener('click', this.handleMoveClick)
     this.searchButtonTarget?.addEventListener('click', this.handleSearch)
     this.voiceButtonTarget?.addEventListener('click', this.handleVoiceToggle)
 
@@ -108,7 +105,6 @@ export default class extends Controller {
     this.submitTarget.removeEventListener('pointerup', this.handlePointerSend)
     this.submitTarget.removeEventListener('touchend', this.handleTouchSend)
     this.cancelTarget?.removeEventListener('click', this.handleCancel)
-    this.moveButtonTarget?.removeEventListener('click', this.handleMoveClick)
     this.searchButtonTarget?.removeEventListener('click', this.handleSearch)
     this.voiceButtonTarget?.removeEventListener('click', this.handleVoiceToggle)
     this.teardownSpeechRecognition()
@@ -145,8 +141,7 @@ export default class extends Controller {
   }
 
   onSelectionChanged({ size, moving }) {
-    if (!this.moveButtonTarget) return
-    this.moveButtonTarget.disabled = moving || size === 0
+    // Selection state now managed by list_controller action bar
   }
 
   focusTextarea() {
@@ -328,11 +323,6 @@ export default class extends Controller {
   handleCancel(event) {
     event.preventDefault()
     this.resetForm()
-  }
-
-  handleMoveClick(event) {
-    event.preventDefault()
-    this.listController?.openMoveModal()
   }
 
   handleSearch(event) {

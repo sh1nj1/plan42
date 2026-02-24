@@ -77,6 +77,17 @@ ko:
       add_participant: 사용자 추가
       hint_drag_topic: "🎯 드래그 → 토픽 이동"
       hint_move_button: "📤 이동 버튼 → 다른 채팅창"
+      selection_count: "{count}개 선택"
+      selection_delete: 삭제
+      selection_move: 이동
+      selection_topic_move: 토픽 이동
+      selection_close: 취소
+      selection_drag_hint: "드래그&드롭으로도 토픽 이동 가능"
+      batch_delete_confirm: 선택한 메시지를 삭제하시겠습니까?
+      batch_delete_no_selection: 삭제할 메시지를 선택해주세요.
+      batch_delete_not_found: 일부 선택한 메시지를 찾을 수 없습니다.
+      topic_search_placeholder: 토픽 검색...
+      topic_main: 메인
       fullscreen: 전체 화면
       exit_fullscreen: 전체 화면 종료
       move_invalid_target: 이동할 크리에이티브를 선택해주세요.
