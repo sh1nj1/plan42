@@ -534,8 +534,12 @@ export default class extends Controller {
     const confirmText = this.element.dataset.batchDeleteConfirmText || 'Are you sure you want to delete the selected messages?'
     this._skipReload = true
     const confirmed = confirm(confirmText)
+    if (!confirmed) {
+      // Delay clearing guard — window.focus fires asynchronously after confirm() returns
+      setTimeout(() => { this._skipReload = false }, 200)
+      return
+    }
     this._skipReload = false
-    if (!confirmed) return
 
     const commentIds = Array.from(this.selection)
     try {
