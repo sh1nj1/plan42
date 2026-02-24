@@ -335,7 +335,7 @@ body.chat-fullscreen {
 }
 
 .review-quote-chip-remove:hover {
-    color: var(--color-danger, #e53e3e);
+    color: var(--color-danger);
 }
 
 .review-submit-btn {
@@ -1161,7 +1161,7 @@ body.chat-fullscreen {
 }
 
 .selection-action-delete:hover {
-    color: var(--color-danger, #e53e3e);
+    color: var(--color-danger);
 }
 
 .selection-action-bar-close {

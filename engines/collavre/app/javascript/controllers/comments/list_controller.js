@@ -173,7 +173,6 @@ export default class extends Controller {
       this.formController?.focusTextarea()
       this.markCommentsRead()
 
-      // (selection is preserved via _skipReload guard during confirm dialogs)
     })
   }
 
@@ -915,7 +914,7 @@ export default class extends Controller {
         this.clearSelection()
         this.loadInitialComments()
       })
-      .finally(() => { this.movingComments = false; this.notifySelectionChange() })
+      .finally(() => { this.movingComments = false })
   }
 
   // UI Helpers
