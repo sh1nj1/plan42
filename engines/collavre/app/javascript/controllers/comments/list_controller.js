@@ -517,7 +517,13 @@ export default class extends Controller {
     bar.querySelector('.selection-action-topic').addEventListener('click', (e) => this.openTopicSearchPopup(e))
     bar.querySelector('.selection-action-bar-close').addEventListener('click', () => this.clearSelection())
 
-    this.element.appendChild(bar)
+    // Insert before typing indicator so it stays inside the popup window
+    const typingIndicator = this.element.querySelector('#typing-indicator')
+    if (typingIndicator) {
+      typingIndicator.parentNode.insertBefore(bar, typingIndicator)
+    } else {
+      this.element.appendChild(bar)
+    }
   }
 
   async deleteSelectedComments() {
@@ -561,17 +567,28 @@ export default class extends Controller {
     const popupEl = document.createElement('div')
     popupEl.className = 'topic-search-popup'
     popupEl.style.display = 'none'
-    popupEl.style.position = 'absolute'
     popupEl.innerHTML = `
       <input type="text" class="topic-search-input" placeholder="${this.element.dataset.topicSearchPlaceholderText || 'Search topics...'}" />
       <ul class="topic-search-list" data-popup-list></ul>
     `
-    this.element.appendChild(popupEl)
+    // Insert before the action bar so it stays inside the popup window
+    const actionBar = this.element.querySelector('.selection-action-bar')
+    if (actionBar) {
+      actionBar.parentNode.insertBefore(popupEl, actionBar)
+    } else {
+      const typingIndicator = this.element.querySelector('#typing-indicator')
+      if (typingIndicator) {
+        typingIndicator.parentNode.insertBefore(popupEl, typingIndicator)
+      } else {
+        this.element.appendChild(popupEl)
+      }
+    }
     this._topicPopupEl = popupEl
 
     const searchInput = popupEl.querySelector('.topic-search-input')
 
     this._topicPopup = new CommonPopup(popupEl, {
+      closeOnOutsideClick: true,
       onSelect: (topic) => {
         this._topicPopup.hide()
         this._topicPopupEl?.remove()
@@ -586,8 +603,9 @@ export default class extends Controller {
       },
     })
 
-    const btnRect = event.currentTarget.getBoundingClientRect()
-    this._topicPopup.showAt(btnRect)
+    // Show inline instead of absolute positioned
+    popupEl.style.display = 'block'
+    popupEl.style.visibility = 'visible'
 
     // Load topics
     this._loadTopicsForSearch(searchInput)
