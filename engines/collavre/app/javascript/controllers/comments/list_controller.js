@@ -139,6 +139,7 @@ export default class extends Controller {
 
   loadInitialComments() {
     if (!this.creativeId) return
+    if (this._skipReload) return
 
     const params = {}
     if (this.highlightAfterLoad) {
@@ -172,10 +173,7 @@ export default class extends Controller {
       this.formController?.focusTextarea()
       this.markCommentsRead()
 
-      // Restore selection state after reload (e.g. window focus triggers reload)
-      if (this.selection.size > 0) {
-        this.restoreSelectionUI()
-      }
+      // (selection is preserved via _skipReload guard during confirm dialogs)
     })
   }
 
@@ -534,11 +532,10 @@ export default class extends Controller {
   async deleteSelectedComments() {
     if (this.selection.size === 0) return
     const confirmText = this.element.dataset.batchDeleteConfirmText || 'Are you sure you want to delete the selected messages?'
-    if (!confirm(confirmText)) {
-      // Re-render action bar to preserve selection state after confirm cancel
-      this.updateSelectionActionBar()
-      return
-    }
+    this._skipReload = true
+    const confirmed = confirm(confirmText)
+    this._skipReload = false
+    if (!confirmed) return
 
     const commentIds = Array.from(this.selection)
     try {
@@ -695,30 +692,6 @@ export default class extends Controller {
   notifySelectionChange() {
     const size = this.selection.size
     this.formController?.onSelectionChanged({ size, moving: this.movingComments })
-  }
-
-  restoreSelectionUI() {
-    // Re-check checkboxes and apply classes for items still in the selection Set
-    const survivingIds = new Set()
-    this.selection.forEach((id) => {
-      const checkbox = this.listTarget.querySelector(`.comment-select-checkbox[value="${id}"]`)
-      if (checkbox) {
-        checkbox.checked = true
-        const item = checkbox.closest('.comment-item')
-        if (item) {
-          item.classList.add('selected-for-move')
-          item.setAttribute('draggable', 'true')
-        }
-        survivingIds.add(id)
-      }
-    })
-    // Remove IDs that no longer exist in the DOM
-    this.selection.forEach((id) => {
-      if (!survivingIds.has(id)) this.selection.delete(id)
-    })
-    this.updateDraggableState()
-    this.notifySelectionChange()
-    this.updateSelectionActionBar()
   }
 
   clearSelection() {
