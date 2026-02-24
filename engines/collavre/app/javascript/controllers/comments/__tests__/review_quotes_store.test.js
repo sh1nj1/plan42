@@ -74,8 +74,7 @@ describe('ReviewQuotesStore', () => {
   describe('buildContent', () => {
     test('builds markdown with quotes and summary', () => {
       const q1 = store.add(1, 'quote one')
-      store.setFeedback(q1.id, 'feedback one')
-      store.commitActive('')
+      store.commitActive('feedback one')
       store.add(2, 'quote two')
       store.commitActive('feedback two')
 
@@ -100,7 +99,10 @@ describe('ReviewQuotesStore', () => {
     test('restores quotes after backup', () => {
       store.add(1, 'text')
       store.backup('saved textarea')
-      store.clear()
+      // Simulate what happens after send: quotes are manually emptied
+      // but backup remains (clear() also wipes backup, so avoid it here)
+      store._quotes = []
+      store._activeId = null
       expect(store.isEmpty).toBe(true)
 
       const restored = store.restore()

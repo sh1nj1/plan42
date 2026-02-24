@@ -59,12 +59,16 @@ describe('FormController - Review Quote Chips', () => {
     document.body.removeChild(container)
   })
 
+  // Helper accessors for the refactored store-based API
+  const getQuotes = (ctrl) => ctrl._reviewStore.quotes
+  const getActiveId = (ctrl) => ctrl._reviewStore.activeId
+
   describe('appendReviewQuote', () => {
     test('adds a review quote chip', () => {
       controller.appendReviewQuote(42, 'Hello world')
 
-      expect(controller._reviewQuotes).toHaveLength(1)
-      expect(controller._reviewQuotes[0]).toMatchObject({
+      expect(getQuotes(controller)).toHaveLength(1)
+      expect(getQuotes(controller)[0]).toMatchObject({
         commentId: 42,
         text: 'Hello world',
         type: 'review',
@@ -75,7 +79,7 @@ describe('FormController - Review Quote Chips', () => {
 
     test('sets active quote id', () => {
       controller.appendReviewQuote(1, 'text')
-      expect(controller._activeQuoteId).toBe(controller._reviewQuotes[0].id)
+      expect(getActiveId(controller)).toBe(getQuotes(controller)[0].id)
     })
 
     test('saves previous active quote feedback', () => {
@@ -83,8 +87,8 @@ describe('FormController - Review Quote Chips', () => {
       controller.textareaTarget.value = 'feedback for first'
       controller.appendReviewQuote(2, 'second')
 
-      expect(controller._reviewQuotes[0].feedback).toBe('feedback for first')
-      expect(controller._reviewQuotes[1].feedback).toBe('')
+      expect(getQuotes(controller)[0].feedback).toBe('feedback for first')
+      expect(getQuotes(controller)[1].feedback).toBe('')
       expect(controller.textareaTarget.value).toBe('')
     })
 
@@ -95,12 +99,12 @@ describe('FormController - Review Quote Chips', () => {
 
     test('ignores empty text', () => {
       controller.appendReviewQuote(1, '')
-      expect(controller._reviewQuotes).toHaveLength(0)
+      expect(getQuotes(controller)).toHaveLength(0)
     })
 
     test('ignores null text', () => {
       controller.appendReviewQuote(1, null)
-      expect(controller._reviewQuotes).toHaveLength(0)
+      expect(getQuotes(controller)).toHaveLength(0)
     })
 
     test('accumulates multiple quotes', () => {
@@ -108,7 +112,7 @@ describe('FormController - Review Quote Chips', () => {
       controller.appendReviewQuote(2, 'second')
       controller.appendReviewQuote(3, 'third')
 
-      expect(controller._reviewQuotes).toHaveLength(3)
+      expect(getQuotes(controller)).toHaveLength(3)
       expect(container.querySelectorAll('.review-quote-chip')).toHaveLength(3)
     })
   })
@@ -119,8 +123,8 @@ describe('FormController - Review Quote Chips', () => {
       controller.textareaTarget.value = 'my feedback'
       controller._commitActiveQuote()
 
-      expect(controller._reviewQuotes[0].feedback).toBe('my feedback')
-      expect(controller._activeQuoteId).toBeNull()
+      expect(getQuotes(controller)[0].feedback).toBe('my feedback')
+      expect(getActiveId(controller)).toBeNull()
       expect(controller.textareaTarget.value).toBe('')
       expect(controller.textareaTarget.placeholder).toBe('Overall comment (optional)...')
     })
@@ -140,7 +144,7 @@ describe('FormController - Review Quote Chips', () => {
 
     test('"Send question" when active question quote', () => {
       controller.appendReviewQuote(1, 'text')
-      controller._reviewQuotes[0].type = 'question'
+      controller._reviewStore.toggleType(getQuotes(controller)[0].id)
       controller._updateSubmitButton()
       expect(controller.submitTarget.textContent).toBe('Send question')
     })
@@ -152,28 +156,26 @@ describe('FormController - Review Quote Chips', () => {
     })
   })
 
-  describe('_buildReviewContent', () => {
+  describe('_buildReviewContent (via store.buildContent)', () => {
     test('builds markdown from review quotes with feedback', () => {
-      controller._reviewQuotes = [
-        { id: 1, commentId: 1, text: 'line one', type: 'review', feedback: 'good' },
-      ]
-      controller._activeQuoteId = null
+      controller.appendReviewQuote(1, 'line one')
+      controller.textareaTarget.value = 'good'
+      controller._commitActiveQuote()
       controller.textareaTarget.value = ''
 
-      const content = controller._buildReviewContent()
+      const content = controller._reviewStore.buildContent(controller.textareaTarget.value)
       expect(content).toContain('> line one')
       expect(content).toContain('good')
     })
 
     test('blank line between quotes prevents blockquote merging', () => {
-      controller._reviewQuotes = [
-        { id: 1, commentId: 1, text: 'first', type: 'review', feedback: '' },
-        { id: 2, commentId: 2, text: 'second', type: 'review', feedback: '' },
-      ]
-      controller._activeQuoteId = null
+      controller.appendReviewQuote(1, 'first')
+      controller._commitActiveQuote()
+      controller.appendReviewQuote(2, 'second')
+      controller._commitActiveQuote()
       controller.textareaTarget.value = ''
 
-      const content = controller._buildReviewContent()
+      const content = controller._reviewStore.buildContent(controller.textareaTarget.value)
       const lines = content.split('\n')
       const firstIdx = lines.indexOf('> first')
       const secondIdx = lines.indexOf('> second')
@@ -182,36 +184,31 @@ describe('FormController - Review Quote Chips', () => {
     })
 
     test('summary after --- separator', () => {
-      controller._reviewQuotes = [
-        { id: 1, commentId: 1, text: 'quoted', type: 'review', feedback: 'fix' },
-      ]
-      controller._activeQuoteId = null
-      controller.textareaTarget.value = 'overall good'
+      controller.appendReviewQuote(1, 'quoted')
+      controller.textareaTarget.value = 'fix'
+      controller._commitActiveQuote()
 
-      const content = controller._buildReviewContent()
+      const content = controller._reviewStore.buildContent('overall good')
       expect(content).toContain('---')
       expect(content).toContain('overall good')
     })
 
     test('no summary: no --- separator', () => {
-      controller._reviewQuotes = [
-        { id: 1, commentId: 1, text: 'quoted', type: 'review', feedback: 'fix' },
-      ]
-      controller._activeQuoteId = null
-      controller.textareaTarget.value = ''
+      controller.appendReviewQuote(1, 'quoted')
+      controller.textareaTarget.value = 'fix'
+      controller._commitActiveQuote()
 
-      const content = controller._buildReviewContent()
+      const content = controller._reviewStore.buildContent('')
       expect(content).not.toContain('---')
     })
 
-    test('question type uses ❓ prefix (safety net)', () => {
-      controller._reviewQuotes = [
-        { id: 1, commentId: 1, text: 'why?', type: 'question', feedback: '' },
-      ]
-      controller._activeQuoteId = null
+    test('question type uses ❓ prefix', () => {
+      controller.appendReviewQuote(1, 'why?')
+      controller._reviewStore.toggleType(getQuotes(controller)[0].id)
+      controller._commitActiveQuote()
       controller.textareaTarget.value = ''
 
-      const content = controller._buildReviewContent()
+      const content = controller._reviewStore.buildContent(controller.textareaTarget.value)
       expect(content).toContain('> ❓ why?')
     })
   })
@@ -219,13 +216,13 @@ describe('FormController - Review Quote Chips', () => {
   describe('type toggle', () => {
     test('toggles between review and question', () => {
       controller.appendReviewQuote(1, 'text')
-      expect(controller._reviewQuotes[0].type).toBe('review')
+      expect(getQuotes(controller)[0].type).toBe('review')
 
       container.querySelector('.review-quote-type-toggle').click()
-      expect(controller._reviewQuotes[0].type).toBe('question')
+      expect(getQuotes(controller)[0].type).toBe('question')
 
       container.querySelector('.review-quote-type-toggle').click()
-      expect(controller._reviewQuotes[0].type).toBe('review')
+      expect(getQuotes(controller)[0].type).toBe('review')
     })
 
     test('updates button text on toggle', () => {
@@ -242,8 +239,8 @@ describe('FormController - Review Quote Chips', () => {
       controller.appendReviewQuote(1, 'text')
       container.querySelector('.review-quote-chip-remove').click()
 
-      expect(controller._reviewQuotes).toHaveLength(0)
-      expect(controller._activeQuoteId).toBeNull()
+      expect(getQuotes(controller)).toHaveLength(0)
+      expect(getActiveId(controller)).toBeNull()
       expect(controller.textareaTarget.placeholder).toBe('')
       expect(container.querySelector('.review-quotes-container').style.display).toBe('none')
     })
@@ -256,8 +253,8 @@ describe('FormController - Review Quote Chips', () => {
 
       container.querySelectorAll('.review-quote-chip-remove')[0].click()
 
-      expect(controller._reviewQuotes).toHaveLength(1)
-      expect(controller._reviewQuotes[0].text).toBe('second')
+      expect(getQuotes(controller)).toHaveLength(1)
+      expect(getQuotes(controller)[0].text).toBe('second')
     })
   })
 
@@ -266,8 +263,8 @@ describe('FormController - Review Quote Chips', () => {
       controller.appendReviewQuote(1, 'text')
       controller.cancelQuote()
 
-      expect(controller._reviewQuotes).toHaveLength(0)
-      expect(controller._activeQuoteId).toBeNull()
+      expect(getQuotes(controller)).toHaveLength(0)
+      expect(getActiveId(controller)).toBeNull()
       expect(controller.textareaTarget.placeholder).toBe('')
     })
   })
@@ -282,7 +279,7 @@ describe('FormController - Review Quote Chips', () => {
 
       container.querySelectorAll('.review-quote-chip-text')[0].click()
 
-      expect(controller._activeQuoteId).toBe(controller._reviewQuotes[0].id)
+      expect(getActiveId(controller)).toBe(getQuotes(controller)[0].id)
       expect(controller.textareaTarget.value).toBe('feedback1')
     })
 
@@ -301,7 +298,7 @@ describe('FormController - Review Quote Chips', () => {
       // Click second chip
       container.querySelectorAll('.review-quote-chip-text')[1].click()
 
-      expect(controller._reviewQuotes[0].feedback).toBe('fb1-updated')
+      expect(getQuotes(controller)[0].feedback).toBe('fb1-updated')
       expect(controller.textareaTarget.value).toBe('fb2')
     })
   })
