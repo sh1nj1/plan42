@@ -1201,13 +1201,17 @@ body.chat-fullscreen {
     }
 }
 
-/* Inline search popups — within the popup window */
+/* Floating search popups — positioned by CommonPopup inside #comments-popup */
 .creative-search-popup {
+    position: absolute;
     background: var(--surface-section);
-    border-top: 1px solid var(--border-color);
-    border-bottom: 1px solid var(--border-color);
-    z-index: 100;
-    max-height: 200px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2);
+    box-shadow: var(--shadow-2);
+    z-index: 200;
+    min-width: 200px;
+    max-width: 90%;
+    max-height: 250px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -1241,13 +1245,17 @@ body.chat-fullscreen {
     background: var(--surface-hover, rgba(0, 0, 0, 0.05));
 }
 
-/* Topic search popup — inline within the popup window */
+/* Topic search popup — positioned by CommonPopup inside #comments-popup */
 .topic-search-popup {
+    position: absolute;
     background: var(--surface-section);
-    border-top: 1px solid var(--border-color);
-    border-bottom: 1px solid var(--border-color);
-    z-index: 100;
-    max-height: 200px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2);
+    box-shadow: var(--shadow-2);
+    z-index: 200;
+    min-width: 200px;
+    max-width: 90%;
+    max-height: 250px;
     overflow: hidden;
     display: flex;
     flex-direction: column;

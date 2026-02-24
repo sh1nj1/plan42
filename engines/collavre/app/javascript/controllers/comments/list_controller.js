@@ -513,7 +513,7 @@ export default class extends Controller {
     `
 
     bar.querySelector('.selection-action-delete').addEventListener('click', () => this.deleteSelectedComments())
-    bar.querySelector('.selection-action-move').addEventListener('click', () => this.openMoveModal())
+    bar.querySelector('.selection-action-move').addEventListener('click', (e) => this.openMoveModal(e))
     bar.querySelector('.selection-action-topic').addEventListener('click', (e) => this.openTopicSearchPopup(e))
     bar.querySelector('.selection-action-bar-close').addEventListener('click', () => this.clearSelection())
 
@@ -571,18 +571,8 @@ export default class extends Controller {
       <input type="text" class="topic-search-input" placeholder="${this.element.dataset.topicSearchPlaceholderText || 'Search topics...'}" />
       <ul class="topic-search-list" data-popup-list></ul>
     `
-    // Insert before the action bar so it stays inside the popup window
-    const actionBar = this.element.querySelector('.selection-action-bar')
-    if (actionBar) {
-      actionBar.parentNode.insertBefore(popupEl, actionBar)
-    } else {
-      const typingIndicator = this.element.querySelector('#typing-indicator')
-      if (typingIndicator) {
-        typingIndicator.parentNode.insertBefore(popupEl, typingIndicator)
-      } else {
-        this.element.appendChild(popupEl)
-      }
-    }
+    // Append inside the chat popup so CommonPopup positions relative to it
+    this.element.appendChild(popupEl)
     this._topicPopupEl = popupEl
 
     const searchInput = popupEl.querySelector('.topic-search-input')
@@ -603,9 +593,9 @@ export default class extends Controller {
       },
     })
 
-    // Show inline instead of absolute positioned
-    popupEl.style.display = 'block'
-    popupEl.style.visibility = 'visible'
+    // Float above the button using CommonPopup positioning
+    const btnRect = event.currentTarget.getBoundingClientRect()
+    this._topicPopup.showAt(btnRect)
 
     // Load topics
     this._loadTopicsForSearch(searchInput)
@@ -886,7 +876,7 @@ export default class extends Controller {
   }
 
   // Move Modal Logic
-  openMoveModal() {
+  openMoveModal(event) {
     if (this.movingComments) return
     if (this.selection.size === 0) {
       alert(this.element.dataset.moveNoSelectionText || "No Selection")
@@ -909,18 +899,8 @@ export default class extends Controller {
       <ul class="creative-search-list" data-popup-list></ul>
     `
 
-    // Insert before action bar
-    const actionBar = this.element.querySelector('.selection-action-bar')
-    if (actionBar) {
-      actionBar.parentNode.insertBefore(popupEl, actionBar)
-    } else {
-      const typingIndicator = this.element.querySelector('#typing-indicator')
-      if (typingIndicator) {
-        typingIndicator.parentNode.insertBefore(popupEl, typingIndicator)
-      } else {
-        this.element.appendChild(popupEl)
-      }
-    }
+    // Append inside the chat popup so CommonPopup positions relative to it
+    this.element.appendChild(popupEl)
     this._movePopupEl = popupEl
 
     const searchInput = popupEl.querySelector('.creative-search-input')
@@ -946,8 +926,9 @@ export default class extends Controller {
       },
     })
 
-    popupEl.style.display = 'block'
-    popupEl.style.visibility = 'visible'
+    // Float above the button using CommonPopup positioning
+    const btnRect = event.currentTarget.getBoundingClientRect()
+    this._movePopup.showAt(btnRect)
 
     searchInput.addEventListener('input', () => {
       if (debounceTimer) clearTimeout(debounceTimer)
