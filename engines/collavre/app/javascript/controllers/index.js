@@ -18,6 +18,7 @@ import CommentsPopupController from "./comments/popup_controller"
 import ClickTargetController from "./click_target_controller"
 import TabsController from "./tabs_controller"
 import LinkCreativeController from "./link_creative_controller"
+import TopicSearchController from "./topic_search_controller"
 import CommonPopupController from "./common_popup_controller"
 import CommentController from "./comment_controller"
 import ReactionPickerController from "./reaction_picker_controller"
@@ -44,6 +45,7 @@ export {
   ClickTargetController,
   TabsController,
   LinkCreativeController,
+  TopicSearchController,
   CommonPopupController,
   CommentController,
   ReactionPickerController,
@@ -71,6 +73,7 @@ export function registerControllers(application) {
   application.register("click-target", ClickTargetController)
   application.register("tabs", TabsController)
   application.register("link-creative", LinkCreativeController)
+  application.register("topic-search", TopicSearchController)
   application.register("common-popup", CommonPopupController)
   application.register("comment", CommentController)
   application.register("reaction-picker", ReactionPickerController)

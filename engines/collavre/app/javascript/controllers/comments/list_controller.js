@@ -3,6 +3,7 @@ import { copyTextToClipboard } from '../../utils/clipboard'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
+// CommonPopup is now used via TopicSearchController (Stimulus)
 
 export default class extends Controller {
   static targets = ['list']
@@ -138,6 +139,7 @@ export default class extends Controller {
 
   loadInitialComments() {
     if (!this.creativeId) return
+    if (this.selection.size > 0) return
 
     const params = {}
     if (this.highlightAfterLoad) {
@@ -170,6 +172,7 @@ export default class extends Controller {
       this.initialLoadComplete = true
       this.formController?.focusTextarea()
       this.markCommentsRead()
+
     })
   }
 
@@ -382,11 +385,6 @@ export default class extends Controller {
       this.closeActionEditor(this.getActionContainer(target.closest('.cancel-comment-action-edit-btn')))
       return
     }
-    if (target.classList.contains('delete-comment-btn')) {
-      event.preventDefault()
-      this.deleteComment(target)
-      return
-    }
     if (target.classList.contains('convert-comment-btn')) {
       event.preventDefault()
       this.convertComment(target)
@@ -488,64 +486,129 @@ export default class extends Controller {
     }
     this.updateDraggableState()
     this.notifySelectionChange()
-    this.updateSelectionHint()
+    this.updateSelectionActionBar()
   }
 
-  updateSelectionHint() {
-    // Remove existing hint
-    const existingHint = document.querySelector('.selection-hint-popup')
-    if (existingHint) {
-      existingHint.remove()
-    }
+  updateSelectionActionBar() {
+    // Remove existing bar
+    const existing = document.querySelector('.selection-action-bar')
+    if (existing) existing.remove()
 
     if (this.selection.size === 0) return
 
-    // Find the first selected checkbox
-    const firstSelected = this.listTarget.querySelector('.comment-item.selected-for-move')
-    if (!firstSelected) return
+    const count = this.selection.size
+    const i18n = (key, fallback) => this.element.dataset[key] || fallback
 
-    const checkbox = firstSelected.querySelector('.comment-select-checkbox')
-    if (!checkbox) return
-
-    // Create hint popup
-    const hint = document.createElement('div')
-    hint.className = 'selection-hint-popup'
-    const dragTopicText = this.element.dataset.hintDragTopicText || '🎯 Drag → Move to topic'
-    const moveButtonText = this.element.dataset.hintMoveButtonText || '📤 Move button → Another chat'
-    hint.innerHTML = `
-      <div class="hint-content">
-        <span>${dragTopicText}</span>
-        <span>${moveButtonText}</span>
+    const bar = document.createElement('div')
+    bar.className = 'selection-action-bar'
+    bar.innerHTML = `
+      <div class="selection-action-bar-main">
+        <span class="selection-action-bar-count">${i18n('selectionCountText', '{count}개 선택').replace('{count}', count)}</span>
+        <button type="button" class="selection-action-bar-btn selection-action-delete" title="${i18n('selectionDeleteText', 'Delete')}">🗑 ${i18n('selectionDeleteText', 'Delete')}</button>
+        <button type="button" class="selection-action-bar-btn selection-action-move" title="${i18n('selectionMoveText', 'Move')}">📤 ${i18n('selectionMoveText', 'Move')}</button>
+        <button type="button" class="selection-action-bar-btn selection-action-topic" title="${i18n('selectionTopicMoveText', 'Move to topic')}">🏷 ${i18n('selectionTopicMoveText', 'Move to topic')}</button>
+        <button type="button" class="selection-action-bar-close" title="${i18n('selectionCloseText', 'Cancel')}">✕</button>
+      </div>
+      <div class="selection-action-bar-hint no-touch">
+        💡 ${i18n('selectionDragHintText', 'Drag & drop to move to topic')}
       </div>
     `
 
-    // Append to body for proper positioning
-    document.body.appendChild(hint)
+    bar.querySelector('.selection-action-delete').addEventListener('click', (e) => { e.stopPropagation(); this.deleteSelectedComments() })
+    bar.querySelector('.selection-action-move').addEventListener('click', (e) => this.openMoveModal(e))
+    bar.querySelector('.selection-action-topic').addEventListener('click', (e) => this.openTopicSearchPopup(e))
+    bar.querySelector('.selection-action-bar-close').addEventListener('click', () => this.clearSelection())
 
-    // Position like CommonPopup - to the right of checkbox, within viewport
-    requestAnimationFrame(() => {
-      const checkboxRect = checkbox.getBoundingClientRect()
-      const hintRect = hint.getBoundingClientRect()
-      const boundsPadding = 8
+    // Insert before typing indicator so it stays inside the popup window
+    const typingIndicator = this.element.querySelector('#typing-indicator')
+    if (typingIndicator) {
+      typingIndicator.parentNode.insertBefore(bar, typingIndicator)
+    } else {
+      this.element.appendChild(bar)
+    }
+  }
 
-      // Start to the right of the checkbox, vertically centered
-      let left = checkboxRect.right + 8
-      let top = checkboxRect.top + (checkboxRect.height / 2) - (hintRect.height / 2)
+  async deleteSelectedComments() {
+    if (this.selection.size === 0) return
+    const confirmText = this.element.dataset.batchDeleteConfirmText || 'Are you sure you want to delete the selected messages?'
+    if (!confirm(confirmText)) return
 
-      // Keep within viewport bounds
-      const maxLeft = window.innerWidth - hintRect.width - boundsPadding
-      const maxTop = window.innerHeight - hintRect.height - boundsPadding
-
-      // If overflows right, position to the left of checkbox instead
-      if (left > maxLeft) {
-        left = checkboxRect.left - hintRect.width - 8
+    const commentIds = Array.from(this.selection)
+    try {
+      const response = await fetch(`/creatives/${this.creativeId}/comments/batch_destroy`, {
+        method: 'DELETE',
+        headers: {
+          'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ comment_ids: commentIds }),
+      })
+      if (response.ok) {
+        commentIds.forEach((id) => {
+          const el = document.getElementById(`comment_${id}`)
+          if (el) el.remove()
+        })
+        this.clearSelection()
+      } else {
+        const data = await response.json().catch(() => ({}))
+        alert(data.error || 'Failed to delete comments')
       }
-      
-      left = Math.max(boundsPadding, Math.min(left, maxLeft))
-      top = Math.max(boundsPadding, Math.min(top, maxTop))
+    } catch (error) {
+      console.error('Error deleting comments:', error)
+      alert('Failed to delete comments')
+    }
+  }
 
-      hint.style.left = `${left}px`
-      hint.style.top = `${top}px`
+  openTopicSearchPopup(event) {
+    if (this.selection.size === 0) return
+
+    const openWithController = (controller, btnRect) => {
+      controller.openForCreative(
+        this.creativeId,
+        btnRect,
+        (topic) => {
+          const commentIds = Array.from(this.selection)
+          this.handleMoveToTopic({ detail: { commentIds, targetTopicId: topic.id } })
+        },
+        this.element.dataset.topicMainText || 'Main'
+      )
+    }
+
+    const btnRect = event.currentTarget.getBoundingClientRect()
+    let modal = document.getElementById('topic-search-modal')
+
+    if (modal) {
+      // Modal already exists — controller should be connected
+      const controller = this.application.getControllerForElementAndIdentifier(modal, 'topic-search')
+      if (controller) {
+        openWithController(controller, btnRect)
+      }
+      return
+    }
+
+    // First time: create modal and wait for Stimulus to connect
+    modal = document.createElement('div')
+    modal.id = 'topic-search-modal'
+    modal.className = 'common-popup'
+    modal.style.display = 'none'
+    modal.dataset.controller = 'topic-search'
+    modal.innerHTML = `
+      <button type="button" class="popup-close-btn" data-topic-search-target="close">&times;</button>
+      <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
+        placeholder="${this.element.dataset.topicSearchPlaceholderText || 'Search topics...'}"
+        data-topic-search-target="input">
+      <ul class="common-popup-list" data-popup-list data-topic-search-target="list"></ul>
+    `
+    document.body.appendChild(modal)
+
+    // Wait for Stimulus to connect the controller, then open
+    requestAnimationFrame(() => {
+      const controller = this.application.getControllerForElementAndIdentifier(modal, 'topic-search')
+      if (controller) {
+        openWithController(controller, btnRect)
+      } else {
+        console.error('topic-search controller not found after creation')
+      }
     })
   }
 
@@ -635,9 +698,9 @@ export default class extends Controller {
       if (item) item.classList.remove('selected-for-move')
     })
     this.notifySelectionChange()
-    // Remove hint popup from body
-    const hint = document.querySelector('.selection-hint-popup')
-    if (hint) hint.remove()
+    // Remove action bar
+    const bar = document.querySelector('.selection-action-bar')
+    if (bar) bar.remove()
   }
 
   copyCommentLink(button) {
@@ -798,7 +861,7 @@ export default class extends Controller {
   }
 
   // Move Modal Logic
-  openMoveModal() {
+  openMoveModal(event) {
     if (this.movingComments) return
     if (this.selection.size === 0) {
       alert(this.element.dataset.moveNoSelectionText || "No Selection")
@@ -806,16 +869,37 @@ export default class extends Controller {
     }
     this.movingComments = true
     this.notifySelectionChange()
-    // ... assumed modal controller logic ...
+
+    // Reuse the existing link-creative-modal and its controller
     const modal = document.getElementById('link-creative-modal')
-    const controller = this.application.getControllerForElementAndIdentifier(modal, 'link-creative')
-    if (controller) {
-      controller.open(this.element.getBoundingClientRect(),
-        (item) => { this.moveSelectedComments(item.id) },
-        () => { this.movingComments = false; this.notifySelectionChange() })
-    } else {
-      this.movingComments = false; this.notifySelectionChange()
+    if (!modal) {
+      console.error('link-creative-modal not found')
+      this.movingComments = false
+      this.notifySelectionChange()
+      return
     }
+
+    const controller = this.application.getControllerForElementAndIdentifier(modal, 'link-creative')
+    if (!controller) {
+      console.error('link-creative controller not found')
+      this.movingComments = false
+      this.notifySelectionChange()
+      return
+    }
+
+    const btnRect = event.currentTarget.getBoundingClientRect()
+    controller.open(
+      btnRect,
+      (item) => {
+        // onSelect — move comments to selected creative
+        this.moveSelectedComments(item.id)
+      },
+      () => {
+        // onClose
+        this.movingComments = false
+        this.notifySelectionChange()
+      }
+    )
   }
 
   moveSelectedComments(targetId) {
@@ -827,10 +911,10 @@ export default class extends Controller {
       body: JSON.stringify({ comment_ids: commentIds, target_creative_id: targetId })
     }).then(r => r.ok ? r.json() : Promise.reject())
       .then(() => {
-        this.selection.clear()
+        this.clearSelection()
         this.loadInitialComments()
       })
-      .finally(() => { this.movingComments = false; this.notifySelectionChange() })
+      .finally(() => { this.movingComments = false })
   }
 
   // UI Helpers

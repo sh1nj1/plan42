@@ -335,7 +335,7 @@ body.chat-fullscreen {
 }
 
 .review-quote-chip-remove:hover {
-    color: var(--color-danger, #e53e3e);
+    color: var(--color-danger);
 }
 
 .review-submit-btn {
@@ -1119,35 +1119,81 @@ body.chat-fullscreen {
     outline: none;
 }
 
-/* Selection hint popup */
-.selection-hint-popup {
-    position: fixed;
+/* Selection action bar */
+.selection-action-bar {
+    position: sticky;
+    bottom: 0;
     background: var(--surface-section);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: var(--space-2) 12px;
-    box-shadow: var(--shadow-2);
-    white-space: nowrap;
-    z-index: 10000;
-    animation: hint-fade-in 0.2s ease-out;
+    border-top: 1px solid var(--border-color);
+    padding: var(--space-2) var(--space-3);
+    z-index: 100;
+    animation: action-bar-slide-up 0.2s ease-out;
 }
 
-.selection-hint-popup .hint-content {
+.selection-action-bar-main {
     display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    font-size: 0.8em;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.selection-action-bar-count {
+    font-size: 0.85em;
+    font-weight: bold;
+    color: var(--color-text);
+    margin-right: var(--space-1);
+}
+
+.selection-action-bar-btn {
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 0.85em;
+    color: var(--color-chat-btn-text);
+    font-weight: bold;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-2);
+    white-space: nowrap;
+}
+
+.selection-action-bar-btn:hover {
+    background: var(--surface-hover, rgba(0, 0, 0, 0.05));
+}
+
+.selection-action-delete:hover {
+    color: var(--color-danger);
+}
+
+.selection-action-bar-close {
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 1em;
     color: var(--text-muted);
+    margin-left: auto;
+    padding: var(--space-1);
 }
 
-.selection-hint-popup .hint-content span {
-    display: block;
+.selection-action-bar-close:hover {
+    color: var(--color-text);
 }
 
-@keyframes hint-fade-in {
+.selection-action-bar-hint {
+    font-size: 0.75em;
+    color: var(--text-muted);
+    margin-top: var(--space-1);
+}
+
+@media (pointer: coarse) {
+    .selection-action-bar-hint.no-touch {
+        display: none;
+    }
+}
+
+@keyframes action-bar-slide-up {
     from {
         opacity: 0;
-        transform: translateY(-4px);
+        transform: translateY(8px);
     }
     to {
         opacity: 1;
@@ -1155,14 +1201,7 @@ body.chat-fullscreen {
     }
 }
 
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-    .selection-hint-popup {
-        background: var(--surface-section);
-        border-color: var(--border-color);
-    }
-}
-
+/* Floating search popups — positioned by CommonPopup inside #comments-popup */
 /* Override popup-close-btn absolute positioning inside comments popup header */
 .comments-popup-actions .popup-close-btn {
   position: static;

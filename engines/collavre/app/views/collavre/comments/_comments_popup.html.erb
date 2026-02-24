@@ -29,8 +29,15 @@
      data-voice-stop-text="<%= t('collavre.comments.voice_stop') %>"
      data-move-no-selection-text="<%= t('collavre.comments.move_no_selection') %>"
      data-move-error-text="<%= t('collavre.comments.move_error') %>"
-     data-hint-drag-topic-text="<%= t('collavre.comments.hint_drag_topic') %>"
-     data-hint-move-button-text="<%= t('collavre.comments.hint_move_button') %>"
+     data-selection-count-text="<%= t('collavre.comments.selection_count') %>"
+     data-selection-delete-text="<%= t('collavre.comments.selection_delete') %>"
+     data-selection-move-text="<%= t('collavre.comments.selection_move') %>"
+     data-selection-topic-move-text="<%= t('collavre.comments.selection_topic_move') %>"
+     data-selection-close-text="<%= t('collavre.comments.selection_close') %>"
+     data-selection-drag-hint-text="<%= t('collavre.comments.selection_drag_hint') %>"
+     data-batch-delete-confirm-text="<%= t('collavre.comments.batch_delete_confirm') %>"
+     data-topic-search-placeholder-text="<%= t('collavre.comments.topic_search_placeholder') %>"
+     data-topic-main-text="<%= t('collavre.comments.topic_main') %>"
      data-add-participant-text="<%= t('collavre.comments.add_participant') %>"
      data-review-button-text="<%= t('collavre.comments.review_button') %>"
      data-review-feedback-placeholder="<%= t('collavre.comments.review_feedback_placeholder') %>"
@@ -87,7 +94,6 @@
     <button class="creative-action-btn" id="attach-image-btn" data-comments--form-target="imageButton" type="button"><%= t('collavre.comments.image_button') %></button>
     <button class="creative-action-btn" id="voice-comments-btn" data-comments--form-target="voiceButton" type="button" data-voice-state="idle"><%= t('collavre.comments.voice_button') %></button>
     <button class="creative-action-btn" id="search-comments-btn" data-comments--form-target="searchButton" type="button"><%= t('collavre.comments.search_button') %></button>
-    <button class="creative-action-btn" id="move-comments-btn" data-comments--form-target="moveButton" type="button" disabled><%= t('collavre.comments.move_button') %></button>
     <button class="creative-action-btn" id="cancel-edit-btn" data-comments--form-target="cancel" type="button" style="display:none;"><%= t('app.cancel') %></button>
     <button class="creative-action-btn" type="submit" data-comments--form-target="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
     </div>

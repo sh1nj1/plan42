@@ -70,6 +70,7 @@ Collavre::Engine.routes.draw do
         get :participants
         get :fullscreen
         post :move
+        delete :batch_destroy
         get :commands
       end
     end
