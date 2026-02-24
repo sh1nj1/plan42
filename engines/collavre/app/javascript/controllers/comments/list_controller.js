@@ -171,6 +171,11 @@ export default class extends Controller {
       this.initialLoadComplete = true
       this.formController?.focusTextarea()
       this.markCommentsRead()
+
+      // Restore selection state after reload (e.g. window focus triggers reload)
+      if (this.selection.size > 0) {
+        this.restoreSelectionUI()
+      }
     })
   }
 
@@ -690,6 +695,30 @@ export default class extends Controller {
   notifySelectionChange() {
     const size = this.selection.size
     this.formController?.onSelectionChanged({ size, moving: this.movingComments })
+  }
+
+  restoreSelectionUI() {
+    // Re-check checkboxes and apply classes for items still in the selection Set
+    const survivingIds = new Set()
+    this.selection.forEach((id) => {
+      const checkbox = this.listTarget.querySelector(`.comment-select-checkbox[value="${id}"]`)
+      if (checkbox) {
+        checkbox.checked = true
+        const item = checkbox.closest('.comment-item')
+        if (item) {
+          item.classList.add('selected-for-move')
+          item.setAttribute('draggable', 'true')
+        }
+        survivingIds.add(id)
+      }
+    })
+    // Remove IDs that no longer exist in the DOM
+    this.selection.forEach((id) => {
+      if (!survivingIds.has(id)) this.selection.delete(id)
+    })
+    this.updateDraggableState()
+    this.notifySelectionChange()
+    this.updateSelectionActionBar()
   }
 
   clearSelection() {
