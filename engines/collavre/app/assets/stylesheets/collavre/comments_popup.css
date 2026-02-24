@@ -1202,49 +1202,6 @@ body.chat-fullscreen {
 }
 
 /* Floating search popups — positioned by CommonPopup inside #comments-popup */
-.creative-search-popup {
-    position: absolute;
-    background: var(--surface-section);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-2);
-    box-shadow: var(--shadow-2);
-    z-index: 200;
-    min-width: 200px;
-    max-width: 90%;
-    max-height: 250px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
-.creative-search-input {
-    border: none;
-    border-bottom: 1px solid var(--border-color);
-    padding: var(--space-2);
-    font-size: 0.85em;
-    outline: none;
-    background: transparent;
-    color: var(--color-text);
-}
-
-.creative-search-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    overflow-y: auto;
-}
-
-.creative-search-list .common-popup-item {
-    padding: var(--space-2);
-    cursor: pointer;
-    font-size: 0.85em;
-}
-
-.creative-search-list .common-popup-item:hover,
-.creative-search-list .common-popup-item.active {
-    background: var(--surface-hover, rgba(0, 0, 0, 0.05));
-}
-
 /* Topic search popup — positioned by CommonPopup inside #comments-popup */
 .topic-search-popup {
     position: absolute;

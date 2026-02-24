@@ -885,82 +885,36 @@ export default class extends Controller {
     this.movingComments = true
     this.notifySelectionChange()
 
-    // Close any existing move popup
-    if (this._movePopupEl) {
-      this._movePopupEl.remove()
-      this._movePopupEl = null
+    // Reuse the existing link-creative-modal and its controller
+    const modal = document.getElementById('link-creative-modal')
+    if (!modal) {
+      console.error('link-creative-modal not found')
+      this.movingComments = false
+      this.notifySelectionChange()
+      return
     }
 
-    const popupEl = document.createElement('div')
-    popupEl.className = 'creative-search-popup'
-    popupEl.style.display = 'none'
-    popupEl.innerHTML = `
-      <input type="text" class="creative-search-input" placeholder="${this.element.dataset.moveSearchPlaceholderText || 'Search creative...'}" />
-      <ul class="creative-search-list" data-popup-list></ul>
-    `
+    const controller = this.application.getControllerForElementAndIdentifier(modal, 'link-creative')
+    if (!controller) {
+      console.error('link-creative controller not found')
+      this.movingComments = false
+      this.notifySelectionChange()
+      return
+    }
 
-    // Append inside the chat popup so CommonPopup positions relative to it
-    this.element.appendChild(popupEl)
-    this._movePopupEl = popupEl
-
-    const searchInput = popupEl.querySelector('.creative-search-input')
-    let debounceTimer = null
-    let searchToken = 0
-
-    this._movePopup = new CommonPopup(popupEl, {
-      closeOnOutsideClick: true,
-      onSelect: (item) => {
-        this._movePopupEl?.remove()
-        this._movePopupEl = null
+    const btnRect = event.currentTarget.getBoundingClientRect()
+    controller.open(
+      btnRect,
+      (item) => {
+        // onSelect — move comments to selected creative
         this.moveSelectedComments(item.id)
       },
-      renderItem: (item) => {
-        const text = (item.label || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        return `<span>${text}</span>`
-      },
-      onClose: () => {
-        this._movePopupEl?.remove()
-        this._movePopupEl = null
-        this.movingComments = false
-        this.notifySelectionChange()
-      },
-    })
-
-    // Float above the button using CommonPopup positioning
-    const btnRect = event.currentTarget.getBoundingClientRect()
-    this._movePopup.showAt(btnRect)
-
-    searchInput.addEventListener('input', () => {
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(async () => {
-        const q = searchInput.value.trim()
-        if (q.length < 2) { this._movePopup.setItems([]); return }
-        const token = ++searchToken
-        try {
-          const response = await fetch(`/creatives/search?q=${encodeURIComponent(q)}&simple=true`, {
-            headers: { Accept: 'application/json' }
-          })
-          if (token !== searchToken) return
-          const results = await response.json()
-          const items = Array.isArray(results)
-            ? results.map(r => ({ id: r.id, label: r.description || r.title || `#${r.id}` }))
-            : []
-          this._movePopup.setItems(items)
-        } catch { this._movePopup.setItems([]) }
-      }, 300)
-    })
-
-    searchInput.addEventListener('keydown', (e) => {
-      if (this._movePopup.handleKey(e)) return
-      if (e.key === 'Escape') {
-        this._movePopupEl?.remove()
-        this._movePopupEl = null
+      () => {
+        // onClose
         this.movingComments = false
         this.notifySelectionChange()
       }
-    })
-
-    searchInput.focus()
+    )
   }
 
   moveSelectedComments(targetId) {
