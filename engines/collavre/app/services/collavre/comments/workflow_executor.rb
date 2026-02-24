@@ -255,7 +255,19 @@ module Collavre
         # original /work user, not the agent. Including @Agent causes the agent to
         # interpret it as a self-referencing instruction.
         # MessageBuilder already renders current creative's markdown from context["creative"]["id"].
-        resolve_workflow_context
+        content = resolve_workflow_context
+
+        # If a supervisor is assigned, append instruction to consult them instead of asking the user
+        supervisor = @state["supervisor"]
+        if supervisor
+          supervisor_instruction = I18n.t(
+            "collavre.comments.work_command.supervisor_instruction",
+            supervisor: supervisor["name"]
+          )
+          content = "#{content}\n\n#{supervisor_instruction}"
+        end
+
+        content
       end
 
       def resolve_workflow_context

@@ -123,6 +123,7 @@ en:
         resumed: 'Workflow resumed for @%{agent}: %{remaining} tasks remaining.'
         no_active_workflow: 'No active workflow found on this creative.'
         no_resumable_workflow: 'No failed or stopped workflow found to resume.'
+        supervisor_instruction: "If you need clarification, have questions, or are unsure about anything, ask @%{supervisor} instead of the user. They will guide you."
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
     calendar_events:
