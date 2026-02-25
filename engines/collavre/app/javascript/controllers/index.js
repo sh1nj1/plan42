@@ -24,6 +24,7 @@ import CommentController from "./comment_controller"
 import ReactionPickerController from "./reaction_picker_controller"
 import ShareInviteController from "./share_invite_controller"
 import ShareUserSearchController from "./share_user_search_controller"
+import CommentVersionController from "./comment_version_controller"
 
 // Export all controllers
 export {
@@ -50,7 +51,8 @@ export {
   CommentController,
   ReactionPickerController,
   ShareInviteController,
-  ShareUserSearchController
+  ShareUserSearchController,
+  CommentVersionController
 }
 
 // Registration function for use with a Stimulus application
@@ -79,4 +81,5 @@ export function registerControllers(application) {
   application.register("reaction-picker", ReactionPickerController)
   application.register("share-invite", ShareInviteController)
   application.register("share-user-search", ShareUserSearchController)
+  application.register("comment-version", CommentVersionController)
 }

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_23_173533) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_25_074416) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -126,6 +126,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_23_173533) do
     t.index ["user_id"], name: "index_comment_read_pointers_on_user_id"
   end
 
+  create_table "comment_versions", force: :cascade do |t|
+    t.integer "comment_id", null: false
+    t.text "content", null: false
+    t.datetime "created_at", null: false
+    t.integer "review_comment_id"
+    t.datetime "updated_at", null: false
+    t.integer "version_number", null: false
+    t.index ["comment_id", "version_number"], name: "index_comment_versions_on_comment_id_and_version_number", unique: true
+    t.index ["comment_id"], name: "index_comment_versions_on_comment_id"
+    t.index ["review_comment_id"], name: "index_comment_versions_on_review_comment_id"
+  end
+
   create_table "comments", force: :cascade do |t|
     t.text "action"
     t.datetime "action_executed_at"
@@ -138,6 +150,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_23_173533) do
     t.integer "quoted_comment_id"
     t.text "quoted_text"
     t.integer "review_type", limit: 1
+    t.integer "selected_version_id"
     t.boolean "streaming", default: false, null: false
     t.integer "topic_id"
     t.datetime "updated_at", null: false
@@ -146,6 +159,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_23_173533) do
     t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
+    t.index ["selected_version_id"], name: "index_comments_on_selected_version_id"
     t.index ["topic_id"], name: "index_comments_on_topic_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
   end
@@ -802,6 +816,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_23_173533) do
   add_foreign_key "comment_reactions", "users"
   add_foreign_key "comment_read_pointers", "creatives"
   add_foreign_key "comment_read_pointers", "users"
+  add_foreign_key "comment_versions", "comments"
+  add_foreign_key "comment_versions", "comments", column: "review_comment_id"
+  add_foreign_key "comments", "comment_versions", column: "selected_version_id"
   add_foreign_key "comments", "creatives"
   add_foreign_key "comments", "topics"
   add_foreign_key "comments", "users"

@@ -34,7 +34,24 @@ module Collavre
         return false unless eligible?
 
         quoted_comment = @original_comment.quoted_comment
-        quoted_comment.update!(content: response_content)
+
+        # Save old content as a version if this is the first review (no versions yet)
+        if quoted_comment.comment_versions.empty?
+          quoted_comment.comment_versions.create!(
+            content: quoted_comment.content,
+            version_number: quoted_comment.next_version_number
+          )
+        end
+
+        # Save new content as the latest version
+        new_version = quoted_comment.comment_versions.create!(
+          content: response_content,
+          version_number: quoted_comment.next_version_number,
+          review_comment: @original_comment
+        )
+
+        # Update content and point to the new version
+        quoted_comment.update!(content: response_content, selected_version_id: new_version.id)
 
         task.task_actions.create!(
           action_type: "review_updated",

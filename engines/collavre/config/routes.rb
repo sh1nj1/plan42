@@ -65,6 +65,11 @@ Collavre::Engine.routes.draw do
 
       resources :reactions, only: [ :create ], module: :comments
       resource :activity_log, only: [ :show ], module: :comments
+      resources :versions, only: [ :index, :destroy ], module: :comments do
+        member do
+          post :select
+        end
+      end
 
       collection do
         get :participants

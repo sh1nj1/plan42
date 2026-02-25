@@ -20,6 +20,8 @@ module Collavre
     enum :review_type, { review: 0, question: 1 }, prefix: true
     has_many :activity_logs, class_name: "Collavre::ActivityLog", dependent: :destroy
     has_many :comment_reactions, class_name: "Collavre::CommentReaction", dependent: :destroy
+    has_many :comment_versions, class_name: "Collavre::CommentVersion", dependent: :destroy
+    belongs_to :selected_version, class_name: "Collavre::CommentVersion", optional: true
 
     has_many_attached :images, dependent: :purge_later
 
@@ -38,6 +40,10 @@ module Collavre
     validate :images_must_be_images
 
     after_destroy_commit :cancel_pending_tasks
+
+    def next_version_number
+      (comment_versions.maximum(:version_number) || 0) + 1
+    end
 
     def review_message?
       quoted_comment_id.present? && !review_type_question?
