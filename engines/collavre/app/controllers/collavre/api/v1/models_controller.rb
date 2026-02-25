@@ -4,23 +4,34 @@ module Collavre
   module Api
     module V1
       class ModelsController < BaseController
-        AVAILABLE_MODELS = [
-          { id: "gemini-2.5-flash", owned_by: "google" },
-          { id: "gemini-2.5-pro", owned_by: "google" },
-          { id: "gemini-2.0-flash", owned_by: "google" }
-        ].freeze
-
         def index
-          models = AVAILABLE_MODELS.map do |m|
+          ai_agents = accessible_ai_agents
+
+          models = ai_agents.map do |agent|
             {
-              id: m[:id],
+              id: "collavre/#{agent.id}",
               object: "model",
-              created: 1_700_000_000,
-              owned_by: m[:owned_by]
+              created: agent.created_at.to_i,
+              owned_by: "collavre",
+              meta: {
+                name: agent.name,
+                llm_vendor: agent.llm_vendor,
+                llm_model: agent.llm_model
+              }
             }
           end
 
           render json: { object: "list", data: models }
+        end
+
+        private
+
+        def accessible_ai_agents
+          # User's own AI agents + searchable AI agents
+          owned = Collavre::User.where(created_by_id: Current.user.id).where.not(llm_vendor: [ nil, "" ])
+          searchable = Collavre::User.where(searchable: true).where.not(llm_vendor: [ nil, "" ])
+
+          owned.or(searchable).distinct.order(:name)
         end
       end
     end

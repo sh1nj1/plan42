@@ -6,7 +6,6 @@ module Collavre
       module Chat
         class CompletionsController < BaseController
           def create
-            model = params[:model] || "gemini-2.5-flash"
             messages = params[:messages] || []
             stream = params[:stream] == true || params[:stream] == "true"
 
@@ -16,39 +15,75 @@ module Collavre
               return
             end
 
-            system_prompt = build_system_prompt(messages)
+            agent = resolve_agent
+            unless agent
+              render json: { error: { message: "Invalid model", type: "invalid_request_error" } },
+                     status: :bad_request
+              return
+            end
+
+            system_prompt = build_system_prompt(messages, agent)
             contents = build_contents(messages)
 
             client = Collavre::AiClient.new(
-              vendor: "google",
-              model: model,
+              vendor: agent.llm_vendor,
+              model: agent.llm_model,
               system_prompt: system_prompt,
               llm_api_key: Current.user.llm_api_key,
               context: { creative: collavre_creative, user: Current.user }
             )
 
+            model_name = params[:model] || "collavre/#{agent.id}"
+
             if stream
-              stream_response(client, contents, model)
+              stream_response(client, contents, model_name)
             else
-              non_stream_response(client, contents, model)
+              non_stream_response(client, contents, model_name)
             end
           end
 
           private
 
-          def build_system_prompt(messages)
+          def resolve_agent
+            model_param = params[:model].to_s
+
+            # Format: "collavre/{ai_id}"
+            if model_param.start_with?("collavre/")
+              ai_id = model_param.sub("collavre/", "")
+              agent = Collavre::User.find_by(id: ai_id)
+              return nil unless agent&.ai_user?
+              return nil unless agent_accessible?(agent)
+
+              agent
+            else
+              # No model specified or raw model name — use first available agent
+              # or create a virtual agent-like object with defaults
+              VirtualAgent.new(
+                llm_vendor: "google",
+                llm_model: model_param.presence || "gemini-2.5-flash",
+                system_prompt: nil
+              )
+            end
+          end
+
+          def agent_accessible?(agent)
+            agent.created_by_id == Current.user.id || agent.searchable?
+          end
+
+          def build_system_prompt(messages, agent)
             parts = []
 
-            # Extract system messages
+            # Agent's own system prompt
+            parts << agent.system_prompt if agent.system_prompt.present?
+
+            # Extract system messages from request
             system_messages = messages.select { |m| m[:role] == "system" || m["role"] == "system" }
             system_messages.each do |msg|
               parts << (msg[:content] || msg["content"])
             end
 
             # Inject Collavre context if creative is specified
-            if collavre_creative
-              parts << build_creative_context
-            end
+            parts << build_creative_context if collavre_creative
 
             parts.compact.join("\n\n").presence || Collavre::AiClient::SYSTEM_INSTRUCTIONS
           end
@@ -62,7 +97,6 @@ module Collavre
               context_parts << "Topic: #{collavre_topic.title}" if collavre_topic.title.present?
             end
 
-            # Add recent comments as context
             if collavre_creative
               scope = collavre_creative.comments
                                        .where(private: false)
@@ -143,7 +177,6 @@ module Collavre
                 yielder << "data: #{data.to_json}\n\n"
               end
 
-              # Send final chunk
               final = {
                 id: completion_id,
                 object: "chat.completion.chunk",
@@ -159,6 +192,13 @@ module Collavre
               }
               yielder << "data: #{final.to_json}\n\n"
               yielder << "data: [DONE]\n\n"
+            end
+          end
+
+          # Simple struct for raw model name requests (without collavre/ prefix)
+          VirtualAgent = Struct.new(:llm_vendor, :llm_model, :system_prompt, keyword_init: true) do
+            def ai_user?
+              true
             end
           end
         end
