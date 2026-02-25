@@ -69,9 +69,6 @@ Collavre::Engine.routes.draw do
         member do
           post :select
         end
-        collection do
-          post :deselect
-        end
       end
 
       collection do

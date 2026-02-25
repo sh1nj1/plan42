@@ -35,14 +35,23 @@ module Collavre
 
         quoted_comment = @original_comment.quoted_comment
 
-        # Save old content as a version before overwriting
-        quoted_comment.comment_versions.create!(
-          content: quoted_comment.content,
+        # Save old content as a version (only if not already versioned, e.g. first review)
+        unless quoted_comment.comment_versions.exists?(content: quoted_comment.content)
+          quoted_comment.comment_versions.create!(
+            content: quoted_comment.content,
+            version_number: quoted_comment.next_version_number
+          )
+        end
+
+        # Save new content as the latest version
+        new_version = quoted_comment.comment_versions.create!(
+          content: response_content,
           version_number: quoted_comment.next_version_number,
           review_comment: @original_comment
         )
 
-        quoted_comment.update!(content: response_content, selected_version_id: nil)
+        # Update content and point to the new version
+        quoted_comment.update!(content: response_content, selected_version_id: new_version.id)
 
         task.task_actions.create!(
           action_type: "review_updated",

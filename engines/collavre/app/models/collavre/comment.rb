@@ -41,10 +41,6 @@ module Collavre
 
     after_destroy_commit :cancel_pending_tasks
 
-    def display_content
-      selected_version&.content || content
-    end
-
     def next_version_number
       (comment_versions.maximum(:version_number) || 0) + 1
     end
