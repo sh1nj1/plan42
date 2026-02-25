@@ -146,7 +146,12 @@ export default class extends Controller {
   }
 
   isSelectedIndex() {
-    if (!this.versions) return this.currentIndex === this.totalValue
+    if (!this.versions) {
+      // Before versions are fetched, use initialIndex to determine
+      // If no selectedVersionId, the latest (total) is selected
+      if (!this.selectedVersionIdValue) return this.currentIndex === this.totalValue
+      return this.currentIndex === this.initialIndexValue
+    }
     const version = this.versions[this.currentIndex - 1]
     return version && version.id === this.selectedVersionId
   }
