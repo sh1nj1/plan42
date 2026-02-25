@@ -25,7 +25,7 @@ module Collavre
         Current.user.id,
         Current.user.id
       )
-      scope = visible_scope.with_attached_images.includes(:topic, :comment_reactions)
+      scope = visible_scope.with_attached_images.includes(:topic, :comment_reactions, :comment_versions)
 
       if params[:search].present?
         search_term = ActiveRecord::Base.sanitize_sql_like(params[:search].to_s.strip.downcase)
@@ -191,7 +191,7 @@ module Collavre
             )
           end
         end
-        @comment = Comment.with_attached_images.includes(:comment_reactions).find(@comment.id)
+        @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions).find(@comment.id)
         render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }, status: :created
       else
         render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
@@ -206,7 +206,7 @@ module Collavre
         end
 
         if @comment.update(safe_params)
-          @comment = Comment.with_attached_images.includes(:comment_reactions).find(@comment.id)
+          @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions).find(@comment.id)
           render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
         else
           render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
@@ -295,7 +295,7 @@ module Collavre
 
       begin
         ::Comments::ActionExecutor.new(comment: @comment, executor: Current.user).call
-        @comment = Comment.with_attached_images.includes(:comment_reactions).find(@comment.id)
+        @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions).find(@comment.id)
         render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
       rescue ::Comments::ActionExecutor::ExecutionError => e
         render json: { error: e.message }, status: :unprocessable_entity
@@ -365,7 +365,7 @@ module Collavre
       elsif executed_error
         render json: { error: I18n.t("collavre.comments.approve_already_executed") }, status: :unprocessable_entity
       elsif update_success
-        @comment = Comment.with_attached_images.includes(:comment_reactions).find(@comment.id)
+        @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions).find(@comment.id)
         render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
       else
         error_message = @comment.errors.full_messages.to_sentence.presence || I18n.t("collavre.comments.action_update_error")

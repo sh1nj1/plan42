@@ -24,6 +24,10 @@ module Collavre
       end
 
       def destroy
+        unless @comment.user == Current.user || @creative.has_permission?(Current.user, :admin)
+          render json: { error: I18n.t("collavre.comments.not_owner") }, status: :forbidden and return
+        end
+
         version = @comment.comment_versions.find(params[:id])
         version.destroy!
         head :no_content
@@ -36,7 +40,14 @@ module Collavre
       end
 
       def set_comment
-        @comment = @creative.comments.find(params[:comment_id])
+        @comment = @creative.comments
+                             .where(
+                               "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
+                               false,
+                               Current.user.id,
+                               Current.user.id
+                             )
+                             .find(params[:comment_id])
       end
     end
   end
