@@ -29,6 +29,9 @@ Rails.application.configure do
   # Disable request forgery protection in test environment.
   config.action_controller.allow_forgery_protection = false
 
+  # Set default host for URL generation in tests (needed when multiple engines mount at "/")
+  Rails.application.routes.default_url_options[:host] = "example.com"
+
   # Collavre uploaded files on the local file system in a temporary directory.
   config.active_storage.service = :test
 
