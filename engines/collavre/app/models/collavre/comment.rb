@@ -18,9 +18,15 @@ module Collavre
 
     # review_type: nil = normal chat, 0 = review, 1 = question
     enum :review_type, { review: 0, question: 1 }, prefix: true
+
+    # Must run before dependent: :destroy on comment_versions to clear FK
+    before_destroy :nullify_selected_version
+
     has_many :activity_logs, class_name: "Collavre::ActivityLog", dependent: :destroy
     has_many :comment_reactions, class_name: "Collavre::CommentReaction", dependent: :destroy
     has_many :comment_versions, class_name: "Collavre::CommentVersion", dependent: :destroy
+    has_many :inbox_items, class_name: "Collavre::InboxItem", dependent: :nullify
+    has_many :quoting_comments, class_name: "Collavre::Comment", foreign_key: :quoted_comment_id, dependent: :nullify
     belongs_to :selected_version, class_name: "Collavre::CommentVersion", optional: true
 
     has_many_attached :images, dependent: :purge_later
@@ -55,6 +61,10 @@ module Collavre
     end
 
     private
+
+    def nullify_selected_version
+      update_column(:selected_version_id, nil) if selected_version_id.present?
+    end
 
     def cancel_pending_tasks
       # Cancel tasks triggered by this comment
