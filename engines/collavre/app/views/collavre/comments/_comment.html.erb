@@ -70,7 +70,22 @@
       <blockquote class="comment-quoted-text"><%= comment.quoted_text %></blockquote>
     </div>
   <% end %>
-  <div class="comment-content"><%= comment.content %></div>
+  <div class="comment-content" data-comment-target="content"><%= comment.content %></div>
+  <% if comment.comment_versions.any? %>
+    <div class="comment-version-navigator"
+         data-controller="comment-version"
+         data-comment-version-comment-id-value="<%= comment.id %>"
+         data-comment-version-creative-id-value="<%= comment.creative_id %>"
+         data-comment-version-total-value="<%= comment.comment_versions.size + 1 %>"
+         data-comment-version-content-target-value="<%= dom_id(comment) %>">
+      <button class="comment-version-btn" data-action="click->comment-version#prev" data-comment-version-target="prevBtn" title="<%= t('collavre.comments.versions.previous') %>">◀</button>
+      <span class="comment-version-indicator" data-comment-version-target="indicator">
+        v<%= comment.comment_versions.size + 1 %>/<%= comment.comment_versions.size + 1 %>
+      </span>
+      <button class="comment-version-btn" data-action="click->comment-version#next" data-comment-version-target="nextBtn" title="<%= t('collavre.comments.versions.next') %>">▶</button>
+      <button class="comment-version-delete-btn comment-version-delete-hidden" data-action="click->comment-version#deleteVersion" data-comment-version-target="deleteBtn" title="<%= t('collavre.comments.versions.delete') %>">✕</button>
+    </div>
+  <% end %>
 
 
   <% if comment.images.attached? %>

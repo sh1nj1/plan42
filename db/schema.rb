@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_23_173533) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_25_065200) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -124,6 +124,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_23_173533) do
     t.index ["creative_id"], name: "index_comment_read_pointers_on_creative_id"
     t.index ["user_id", "creative_id"], name: "index_comment_read_pointers_on_user_id_and_creative_id", unique: true
     t.index ["user_id"], name: "index_comment_read_pointers_on_user_id"
+  end
+
+  create_table "comment_versions", force: :cascade do |t|
+    t.integer "comment_id", null: false
+    t.text "content", null: false
+    t.datetime "created_at", null: false
+    t.integer "review_comment_id"
+    t.datetime "updated_at", null: false
+    t.integer "version_number", null: false
+    t.index ["comment_id", "version_number"], name: "index_comment_versions_on_comment_id_and_version_number", unique: true
+    t.index ["comment_id"], name: "index_comment_versions_on_comment_id"
+    t.index ["review_comment_id"], name: "index_comment_versions_on_review_comment_id"
   end
 
   create_table "comments", force: :cascade do |t|
@@ -802,6 +814,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_23_173533) do
   add_foreign_key "comment_reactions", "users"
   add_foreign_key "comment_read_pointers", "creatives"
   add_foreign_key "comment_read_pointers", "users"
+  add_foreign_key "comment_versions", "comments"
+  add_foreign_key "comment_versions", "comments", column: "review_comment_id"
   add_foreign_key "comments", "creatives"
   add_foreign_key "comments", "topics"
   add_foreign_key "comments", "users"

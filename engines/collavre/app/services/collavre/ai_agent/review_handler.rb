@@ -34,6 +34,14 @@ module Collavre
         return false unless eligible?
 
         quoted_comment = @original_comment.quoted_comment
+
+        # Save old content as a version before overwriting
+        quoted_comment.comment_versions.create!(
+          content: quoted_comment.content,
+          version_number: quoted_comment.next_version_number,
+          review_comment: @original_comment
+        )
+
         quoted_comment.update!(content: response_content)
 
         task.task_actions.create!(
