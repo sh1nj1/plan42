@@ -57,11 +57,27 @@ module Collavre
     private
 
     def cancel_pending_tasks
+      # Cancel tasks triggered by this comment
       Task.where(status: %w[pending running queued]).each do |task|
         if task.trigger_event_payload&.dig("comment", "id") == id
           task.update!(status: "cancelled")
         end
       end
+
+      # Cancel queued tasks when their waiting notice (system comment) is deleted
+      cancel_queued_tasks_for_waiting_notice if waiting_notice?
+    end
+
+    def waiting_notice?
+      user_id.nil? && content&.start_with?("⏳")
+    end
+
+    def cancel_queued_tasks_for_waiting_notice
+      Task.where(
+        status: "queued",
+        creative_id: creative_id,
+        topic_id: topic_id
+      ).update_all(status: "cancelled")
     end
 
     def assign_default_user
