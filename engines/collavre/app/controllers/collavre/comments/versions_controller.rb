@@ -62,9 +62,25 @@ module Collavre
         end
 
         version = @comment.comment_versions.find(params[:id])
-        @comment.update!(selected_version_id: nil) if @comment.selected_version_id == version.id
+        was_selected = @comment.selected_version_id == version.id
         version.destroy!
-        head :no_content
+
+        if was_selected
+          # Roll back to the latest remaining version or the newest version's content
+          latest = @comment.comment_versions.order(:version_number).last
+          if latest
+            @comment.update!(selected_version_id: latest.id, content: latest.content)
+          else
+            @comment.update!(selected_version_id: nil)
+          end
+        end
+
+        remaining = @comment.comment_versions.count
+        render json: {
+          selected_version_id: @comment.selected_version_id,
+          content: @comment.content,
+          total: remaining + 1
+        }
       end
 
       private

@@ -13,7 +13,7 @@ export default class extends Controller {
 
   connect() {
     this.versions = null
-    this.currentIndex = this.totalValue // default: latest (current content)
+    this.currentIndex = this.totalValue
     this.updateButtons()
   }
 
@@ -30,7 +30,6 @@ export default class extends Controller {
     this.selectedVersionId = data.selected_version_id
     this.totalValue = data.total
 
-    // Set currentIndex based on selected version
     if (this.selectedVersionId) {
       const idx = this.versions.findIndex(v => v.id === this.selectedVersionId)
       if (idx !== -1) this.currentIndex = idx + 1
@@ -59,14 +58,16 @@ export default class extends Controller {
     const versions = await this.fetchVersions()
 
     if (this.currentIndex === this.totalValue) {
-      // Selecting "current" = deselect (clear pointer)
+      // Selecting latest = deselect (clear pointer)
       const response = await fetch(
         `${this.versionsUrlValue}/deselect`,
         { method: "POST", headers: { "X-CSRF-Token": this.csrfToken } }
       )
       if (response.ok) {
+        const data = await response.json()
         this.selectedVersionId = null
-        this.updateButtons()
+        this.currentContent = data.content
+        this.render()
       }
       return
     }
@@ -81,14 +82,20 @@ export default class extends Controller {
 
     if (response.ok) {
       this.selectedVersionId = version.id
-      this.updateButtons()
+      this.currentContent = version.content
+      this.render()
     }
   }
 
   async deleteVersion() {
-    if (this.currentIndex === this.totalValue) return
-
     const versions = await this.fetchVersions()
+
+    if (this.currentIndex === this.totalValue) {
+      // Deleting "latest" (comment.content that's not in versions) — not allowed
+      // This slot represents the latest AI output, only version records can be deleted
+      return
+    }
+
     const version = versions[this.currentIndex - 1]
     if (!version) return
 
@@ -98,20 +105,25 @@ export default class extends Controller {
     )
 
     if (response.ok) {
-      // If deleting the selected version, clear selection
-      if (this.selectedVersionId === version.id) {
-        this.selectedVersionId = null
-      }
-
+      const data = await response.json()
       versions.splice(this.currentIndex - 1, 1)
-      this.totalValue = versions.length + 1
+      this.totalValue = data.total
+      this.selectedVersionId = data.selected_version_id
+      this.currentContent = data.content
+
       if (this.currentIndex > this.totalValue) {
         this.currentIndex = this.totalValue
       }
+
+      // If the deleted version was selected, jump to the new selection
+      if (data.selected_version_id) {
+        const idx = versions.findIndex(v => v.id === data.selected_version_id)
+        if (idx !== -1) this.currentIndex = idx + 1
+      }
+
       this.render()
 
       if (versions.length === 0) {
-        // Show current content and remove navigator
         this.setContentText(this.currentContent)
         this.element.remove()
       }
@@ -140,28 +152,27 @@ export default class extends Controller {
     this.prevBtnTarget.disabled = this.currentIndex <= 1
     this.nextBtnTarget.disabled = this.currentIndex >= this.totalValue
 
-    const isHistorical = this.currentIndex < this.totalValue
+    const isLatestSlot = this.currentIndex === this.totalValue
     const isCurrentlySelected = this.isSelectedIndex()
 
-    // Delete: only for historical versions
+    // Delete: always visible, disabled for latest slot (not a version record)
     if (this.hasDeleteBtnTarget) {
-      this.deleteBtnTarget.classList.toggle("comment-version-delete-hidden", !isHistorical)
+      this.deleteBtnTarget.disabled = isLatestSlot
     }
 
-    // Select: show for historical versions, disable if already selected
+    // Select: always visible, disabled if already selected
     if (this.hasSelectBtnTarget) {
-      this.selectBtnTarget.classList.toggle("comment-version-delete-hidden", !isHistorical)
       this.selectBtnTarget.disabled = isCurrentlySelected
     }
 
-    // Highlight the indicator if viewing the selected version
-    this.indicatorTarget.classList.toggle("comment-version-selected", isCurrentlySelected && isHistorical)
+    // Highlight indicator when viewing the selected/active version
+    this.indicatorTarget.classList.toggle("comment-version-selected", isCurrentlySelected)
   }
 
   isSelectedIndex() {
     if (!this.selectedVersionId) return this.currentIndex === this.totalValue
-    if (this.currentIndex === this.totalValue) return !this.selectedVersionId
     if (!this.versions) return false
+    if (this.currentIndex === this.totalValue) return !this.selectedVersionId
     const version = this.versions[this.currentIndex - 1]
     return version && version.id === this.selectedVersionId
   }

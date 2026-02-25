@@ -64,11 +64,13 @@
   line-height: 1.6;
 }
 
-.comment-version-select-btn:hover {
+.comment-version-select-btn:hover:not(:disabled) {
   background: var(--primary-color, #4a90d9);
   color: white;
 }
 
-.comment-version-delete-hidden {
-  display: none;
+.comment-version-select-btn:disabled,
+.comment-version-delete-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
