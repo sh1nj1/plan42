@@ -27,11 +27,7 @@ module Collavre
         private
 
         def accessible_ai_agents
-          # User's own AI agents + searchable AI agents
-          owned = Collavre::User.where(created_by_id: Current.user.id).where.not(llm_vendor: [ nil, "" ])
-          searchable = Collavre::User.where(searchable: true).where.not(llm_vendor: [ nil, "" ])
-
-          owned.or(searchable).distinct.order(:name)
+          Collavre::User.accessible_ai_agents_for(Current.user)
         end
       end
     end

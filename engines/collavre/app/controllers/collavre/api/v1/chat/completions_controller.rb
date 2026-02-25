@@ -5,6 +5,7 @@ module Collavre
     module V1
       module Chat
         class CompletionsController < BaseController
+          CREATIVE_CONTEXT_COMMENT_LIMIT = 20
           def create
             messages = params[:messages] || []
             stream = params[:stream] == true || params[:stream] == "true"
@@ -25,11 +26,15 @@ module Collavre
             system_prompt = build_system_prompt(messages, agent)
             contents = build_contents(messages)
 
+            # Use agent owner's llm_api_key for external LLM calls
+            api_key = agent.respond_to?(:llm_api_key) ? agent.llm_api_key : nil
+            api_key ||= agent.respond_to?(:creator) ? agent.creator&.llm_api_key : nil
+
             client = Collavre::AiClient.new(
               vendor: agent.llm_vendor,
               model: agent.llm_model,
               system_prompt: system_prompt,
-              llm_api_key: Current.user.llm_api_key,
+              llm_api_key: api_key,
               context: { creative: collavre_creative, user: Current.user }
             )
 
@@ -47,23 +52,17 @@ module Collavre
           def resolve_agent
             model_param = params[:model].to_s
 
-            # Format: "collavre/{ai_id}"
-            if model_param.start_with?("collavre/")
-              ai_id = model_param.sub("collavre/", "")
-              agent = Collavre::User.find_by(id: ai_id)
-              return nil unless agent&.ai_user?
-              return nil unless agent_accessible?(agent)
-
-              agent
-            else
-              # No model specified or raw model name — use first available agent
-              # or create a virtual agent-like object with defaults
-              VirtualAgent.new(
-                llm_vendor: "google",
-                llm_model: model_param.presence || "gemini-2.5-flash",
-                system_prompt: nil
-              )
+            # Only "collavre/{ai_id}" format is accepted
+            unless model_param.start_with?("collavre/")
+              return nil
             end
+
+            ai_id = model_param.sub("collavre/", "")
+            agent = Collavre::User.find_by(id: ai_id)
+            return nil unless agent&.ai_user?
+            return nil unless agent_accessible?(agent)
+
+            agent
           end
 
           def agent_accessible?(agent)
@@ -101,7 +100,7 @@ module Collavre
               scope = collavre_creative.comments
                                        .where(private: false)
                                        .order(created_at: :desc)
-                                       .limit(20)
+                                       .limit(CREATIVE_CONTEXT_COMMENT_LIMIT)
               scope = scope.where(topic_id: collavre_topic.id) if collavre_topic
 
               recent_comments = scope.includes(:user).to_a.reverse
@@ -132,6 +131,9 @@ module Collavre
             result = client.chat(contents)
             completion_id = "chatcmpl-#{SecureRandom.hex(12)}"
 
+            prompt_tokens = client.last_input_tokens
+            completion_tokens = client.last_output_tokens
+
             render json: {
               id: completion_id,
               object: "chat.completion",
@@ -145,9 +147,9 @@ module Collavre
                 }
               ],
               usage: {
-                prompt_tokens: 0,
-                completion_tokens: 0,
-                total_tokens: 0
+                prompt_tokens: prompt_tokens,
+                completion_tokens: completion_tokens,
+                total_tokens: prompt_tokens + completion_tokens
               }
             }
           end
@@ -160,8 +162,25 @@ module Collavre
             response.headers["Connection"] = "keep-alive"
 
             self.response_body = Enumerator.new do |yielder|
-              client.chat(contents) do |chunk|
-                data = {
+              begin
+                client.chat(contents) do |chunk|
+                  data = {
+                    id: completion_id,
+                    object: "chat.completion.chunk",
+                    created: Time.current.to_i,
+                    model: model,
+                    choices: [
+                      {
+                        index: 0,
+                        delta: { content: chunk },
+                        finish_reason: nil
+                      }
+                    ]
+                  }
+                  yielder << "data: #{data.to_json}\n\n"
+                end
+
+                final = {
                   id: completion_id,
                   object: "chat.completion.chunk",
                   created: Time.current.to_i,
@@ -169,38 +188,34 @@ module Collavre
                   choices: [
                     {
                       index: 0,
-                      delta: { content: chunk },
-                      finish_reason: nil
+                      delta: {},
+                      finish_reason: "stop"
                     }
                   ]
                 }
-                yielder << "data: #{data.to_json}\n\n"
+                yielder << "data: #{final.to_json}\n\n"
+              rescue StandardError => e
+                error_data = {
+                  id: completion_id,
+                  object: "chat.completion.chunk",
+                  created: Time.current.to_i,
+                  model: model,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { content: "\n\n⚠️ Error: #{e.message}" },
+                      finish_reason: "stop"
+                    }
+                  ]
+                }
+                yielder << "data: #{error_data.to_json}\n\n"
+              ensure
+                yielder << "data: [DONE]\n\n"
               end
-
-              final = {
-                id: completion_id,
-                object: "chat.completion.chunk",
-                created: Time.current.to_i,
-                model: model,
-                choices: [
-                  {
-                    index: 0,
-                    delta: {},
-                    finish_reason: "stop"
-                  }
-                ]
-              }
-              yielder << "data: #{final.to_json}\n\n"
-              yielder << "data: [DONE]\n\n"
             end
           end
 
-          # Simple struct for raw model name requests (without collavre/ prefix)
-          VirtualAgent = Struct.new(:llm_vendor, :llm_model, :system_prompt, keyword_init: true) do
-            def ai_user?
-              true
-            end
-          end
+          # VirtualAgent removed — only collavre/{ai_id} format accepted
         end
       end
     end
