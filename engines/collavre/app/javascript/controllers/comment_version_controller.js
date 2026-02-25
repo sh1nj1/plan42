@@ -6,7 +6,8 @@ export default class extends Controller {
     commentId: Number,
     creativeId: Number,
     total: Number,
-    contentTarget: String
+    contentTarget: String,
+    versionsUrl: String
   }
 
   connect() {
@@ -19,7 +20,7 @@ export default class extends Controller {
     if (this.versions) return this.versions
 
     const response = await fetch(
-      `/collavre/creatives/${this.creativeIdValue}/comments/${this.commentIdValue}/versions`,
+      this.versionsUrlValue,
       { headers: { "Accept": "application/json" } }
     )
     const data = await response.json()
@@ -51,7 +52,7 @@ export default class extends Controller {
     if (!version) return
 
     const response = await fetch(
-      `/collavre/creatives/${this.creativeIdValue}/comments/${this.commentIdValue}/versions/${version.id}`,
+      `${this.versionsUrlValue}/${version.id}`,
       { method: "DELETE", headers: { "X-CSRF-Token": this.csrfToken } }
     )
 

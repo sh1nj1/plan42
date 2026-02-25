@@ -76,6 +76,7 @@
          data-controller="comment-version"
          data-comment-version-comment-id-value="<%= comment.id %>"
          data-comment-version-creative-id-value="<%= comment.creative_id %>"
+         data-comment-version-versions-url-value="<%= collavre.creative_comment_versions_path(comment.creative, comment) %>"
          data-comment-version-total-value="<%= comment.comment_versions.size + 1 %>"
          data-comment-version-content-target-value="<%= dom_id(comment) %>">
       <button class="comment-version-btn" data-action="click->comment-version#prev" data-comment-version-target="prevBtn" title="<%= t('collavre.comments.versions.previous') %>">◀</button>
