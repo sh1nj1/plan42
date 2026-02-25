@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_25_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_25_074416) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -87,20 +87,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_25_120000) do
     t.datetime "updated_at", null: false
     t.index ["ai_user_id"], name: "index_agent_runs_on_ai_user_id"
     t.index ["creative_id"], name: "index_agent_runs_on_creative_id"
-  end
-
-  create_table "api_keys", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.datetime "expires_at"
-    t.datetime "last_used_at"
-    t.string "name", null: false
-    t.string "token_digest", null: false
-    t.string "token_prefix", limit: 8, null: false
-    t.datetime "updated_at", null: false
-    t.integer "user_id", null: false
-    t.index ["token_digest"], name: "index_api_keys_on_token_digest", unique: true
-    t.index ["token_prefix"], name: "index_api_keys_on_token_prefix"
-    t.index ["user_id"], name: "index_api_keys_on_user_id"
   end
 
   create_table "calendar_events", force: :cascade do |t|
@@ -824,7 +810,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_25_120000) do
   add_foreign_key "activity_logs", "comments"
   add_foreign_key "activity_logs", "creatives"
   add_foreign_key "activity_logs", "users"
-  add_foreign_key "api_keys", "users"
   add_foreign_key "calendar_events", "creatives"
   add_foreign_key "calendar_events", "users"
   add_foreign_key "comment_reactions", "comments"

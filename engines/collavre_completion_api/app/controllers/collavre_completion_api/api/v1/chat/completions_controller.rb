@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
-module Collavre
+module CollavreCompletionApi
   module Api
     module V1
       module Chat
         class CompletionsController < BaseController
           CREATIVE_CONTEXT_COMMENT_LIMIT = 20
+
           def create
             messages = params[:messages] || []
             stream = params[:stream] == true || params[:stream] == "true"
@@ -35,7 +36,7 @@ module Collavre
               model: agent.llm_model,
               system_prompt: system_prompt,
               llm_api_key: api_key,
-              context: { creative: collavre_creative, user: Current.user }
+              context: { creative: collavre_creative, user: current_user }
             )
 
             model_name = params[:model] || "collavre/#{agent.id}"
@@ -52,10 +53,7 @@ module Collavre
           def resolve_agent
             model_param = params[:model].to_s
 
-            # Only "collavre/{ai_id}" format is accepted
-            unless model_param.start_with?("collavre/")
-              return nil
-            end
+            return nil unless model_param.start_with?("collavre/")
 
             ai_id = model_param.sub("collavre/", "")
             agent = Collavre::User.find_by(id: ai_id)
@@ -66,22 +64,19 @@ module Collavre
           end
 
           def agent_accessible?(agent)
-            agent.created_by_id == Current.user.id || agent.searchable?
+            agent.created_by_id == current_user.id || agent.searchable?
           end
 
           def build_system_prompt(messages, agent)
             parts = []
 
-            # Agent's own system prompt
             parts << agent.system_prompt if agent.system_prompt.present?
 
-            # Extract system messages from request
             system_messages = messages.select { |m| m[:role] == "system" || m["role"] == "system" }
             system_messages.each do |msg|
               parts << (msg[:content] || msg["content"])
             end
 
-            # Inject Collavre context if creative is specified
             parts << build_creative_context if collavre_creative
 
             parts.compact.join("\n\n").presence || Collavre::AiClient::SYSTEM_INSTRUCTIONS
@@ -96,20 +91,18 @@ module Collavre
               context_parts << "Topic: #{collavre_topic.title}" if collavre_topic.title.present?
             end
 
-            if collavre_creative
-              scope = collavre_creative.comments
-                                       .where(private: false)
-                                       .order(created_at: :desc)
-                                       .limit(CREATIVE_CONTEXT_COMMENT_LIMIT)
-              scope = scope.where(topic_id: collavre_topic.id) if collavre_topic
+            scope = collavre_creative.comments
+                                     .where(private: false)
+                                     .order(created_at: :desc)
+            scope = scope.where(topic_id: collavre_topic.id) if collavre_topic
+            recent_comments = scope.limit(CREATIVE_CONTEXT_COMMENT_LIMIT)
+                                   .includes(:user).to_a.reverse
 
-              recent_comments = scope.includes(:user).to_a.reverse
-              if recent_comments.any?
-                context_parts << "\n### Recent Discussion"
-                recent_comments.each do |comment|
-                  author = comment.user&.name || "Unknown"
-                  context_parts << "- **#{author}**: #{comment.content.to_s.truncate(500)}"
-                end
+            if recent_comments.any?
+              context_parts << "\n### Recent Discussion"
+              recent_comments.each do |comment|
+                author = comment.user&.name || "Unknown"
+                context_parts << "- **#{author}**: #{comment.content.to_s.truncate(500)}"
               end
             end
 
@@ -214,8 +207,6 @@ module Collavre
               end
             end
           end
-
-          # VirtualAgent removed — only collavre/{ai_id} format accepted
         end
       end
     end

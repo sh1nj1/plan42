@@ -1,4 +1,12 @@
 PATH
+  remote: engines/collavre_completion_api
+  specs:
+    collavre_completion_api (0.1.0)
+      collavre
+      doorkeeper
+      rails (>= 8.0)
+
+PATH
   remote: engines/collavre_github
   specs:
     collavre_github (0.3.0)
@@ -659,6 +667,7 @@ DEPENDENCIES
   capybara
   closure_tree
   collavre!
+  collavre_completion_api!
   collavre_github!
   collavre_notion!
   collavre_openclaw!

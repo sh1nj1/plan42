@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
-module Collavre
+module CollavreCompletionApi
   module Api
     module V1
       class ModelsController < BaseController
         def index
-          ai_agents = accessible_ai_agents
+          ai_agents = Collavre::User.accessible_ai_agents_for(current_user)
 
           models = ai_agents.map do |agent|
             {
@@ -22,12 +22,6 @@ module Collavre
           end
 
           render json: { object: "list", data: models }
-        end
-
-        private
-
-        def accessible_ai_agents
-          Collavre::User.accessible_ai_agents_for(Current.user)
         end
       end
     end

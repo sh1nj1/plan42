@@ -102,16 +102,6 @@ Collavre::Engine.routes.draw do
   post "/creative_expanded_states/toggle", to: "creative_expanded_states#toggle"
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
 
-  # OpenAI-compatible API
-  namespace :api do
-    namespace :v1 do
-      resources :models, only: [ :index ]
-      namespace :chat do
-        resources :completions, only: [ :create ]
-      end
-    end
-  end
-
   # Admin settings & orchestration
   scope "/admin", as: :admin do
     get "/", to: "admin/settings#index", as: :settings

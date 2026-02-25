@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module Collavre
+module CollavreCompletionApi
   module Api
     module V1
       class BaseController < ActionController::API
@@ -32,7 +32,7 @@ module Collavre
           user = Collavre::User.find_by(id: access_token.resource_owner_id)
           return false unless user
 
-          Current.user = user
+          Collavre::Current.user = user
           true
         end
 
@@ -43,13 +43,17 @@ module Collavre
           auth_header.sub("Bearer ", "")
         end
 
+        def current_user
+          Collavre::Current.user
+        end
+
         def collavre_creative
           @collavre_creative ||= begin
             creative_id = request.headers["X-Collavre-Creative"]
             return nil if creative_id.blank?
 
             creative = Collavre::Creative.find_by(id: creative_id)&.effective_origin
-            return nil unless creative&.has_permission?(Current.user, :member)
+            return nil unless creative&.has_permission?(current_user, :member)
 
             creative
           end
