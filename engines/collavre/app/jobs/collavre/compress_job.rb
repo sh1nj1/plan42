@@ -42,7 +42,7 @@ module Collavre
       )
 
       summary = +""
-      client.chat([ { role: "user", content: conversation } ]) do |delta|
+      client.chat([ { role: "user", text: conversation } ]) do |delta|
         summary << delta
       end
 
