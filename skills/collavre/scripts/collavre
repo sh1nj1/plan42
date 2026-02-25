@@ -35,6 +35,8 @@ class McpClient {
     this.baseUrl = url.replace(/\/+$/, "");
     this.token = token;
     this.sessionUrl = null;
+    this._pendingRequests = new Map();
+    this._sseBuffer = "";
   }
 
   async connect() {
@@ -45,7 +47,6 @@ class McpClient {
         10000
       );
       const req = this._request(sseUrl, { method: "GET" });
-      let buffer = "";
 
       req.on("response", (res) => {
         if (res.statusCode !== 200) {
@@ -53,20 +54,24 @@ class McpClient {
           reject(new Error(`SSE connection failed: ${res.statusCode}`));
           return;
         }
+        this._sseRes = res;
         res.on("data", (chunk) => {
-          buffer += chunk.toString();
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
+          this._sseBuffer += chunk.toString();
+          const lines = this._sseBuffer.split("\n");
+          this._sseBuffer = lines.pop() || "";
           for (const line of lines) {
             if (line.startsWith("data: ")) {
               const data = line.slice(6).trim();
-              if (data.includes("/mcp/messages")) {
+              // First data message contains the messages endpoint URL
+              if (!this.sessionUrl && data.includes("/mcp/messages")) {
                 clearTimeout(timeout);
                 this.sessionUrl = data.startsWith("http")
                   ? data
                   : `${this.baseUrl}${data}`;
-                this._sseRes = res;
                 resolve();
+              } else if (this.sessionUrl) {
+                // Subsequent data messages are JSON-RPC responses
+                this._handleSseMessage(data);
               }
             }
           }
@@ -84,41 +89,69 @@ class McpClient {
     });
   }
 
+  _handleSseMessage(data) {
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed.id && this._pendingRequests.has(parsed.id)) {
+        const { resolve, reject } = this._pendingRequests.get(parsed.id);
+        this._pendingRequests.delete(parsed.id);
+        if (parsed.error) {
+          reject(new Error(parsed.error.message || JSON.stringify(parsed.error)));
+        } else {
+          resolve(parsed.result);
+        }
+      }
+    } catch {
+      // ignore non-JSON SSE messages
+    }
+  }
+
   async callTool(name, args) {
     if (!this.sessionUrl) throw new Error("Not connected. Call connect() first.");
 
+    const id = Date.now();
     const body = JSON.stringify({
       jsonrpc: "2.0",
-      id: Date.now(),
+      id,
       method: "tools/call",
       params: { name, arguments: args },
     });
 
-    return new Promise((resolve, reject) => {
+    // Set up listener for SSE response before sending
+    const resultPromise = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this._pendingRequests.delete(id);
+        reject(new Error("Tool call timeout (30s)"));
+      }, 30000);
+      this._pendingRequests.set(id, {
+        resolve: (v) => { clearTimeout(timeout); resolve(v); },
+        reject: (e) => { clearTimeout(timeout); reject(e); },
+      });
+    });
+
+    // Send the POST request (response comes via SSE, not HTTP body)
+    await new Promise((resolve, reject) => {
       const req = this._request(this.sessionUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
-      let data = "";
       req.on("response", (res) => {
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => {
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.error) {
-              reject(new Error(parsed.error.message || JSON.stringify(parsed.error)));
-            } else {
-              resolve(parsed.result);
-            }
-          } catch {
-            reject(new Error(`Invalid response: ${data.slice(0, 200)}`));
-          }
-        });
+        // 200 or 202 = accepted, actual result comes via SSE
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          res.resume(); // drain response
+          resolve();
+        } else {
+          let data = "";
+          res.on("data", (chunk) => (data += chunk));
+          res.on("end", () => reject(new Error(`HTTP ${res.statusCode}: ${data}`)));
+        }
       });
       req.on("error", reject);
       req.write(body);
       req.end();
     });
+
+    return resultPromise;
   }
 
   disconnect() {
