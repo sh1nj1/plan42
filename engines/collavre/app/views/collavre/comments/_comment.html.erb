@@ -70,7 +70,7 @@
       <blockquote class="comment-quoted-text"><%= comment.quoted_text %></blockquote>
     </div>
   <% end %>
-  <div class="comment-content" data-comment-target="content"><%= comment.display_content %></div>
+  <div class="comment-content" data-comment-target="content"><%= comment.content %></div>
   <% if comment.comment_versions.any? %>
     <% version_count = comment.comment_versions.size %>
     <% selected_id = comment.selected_version_id %>

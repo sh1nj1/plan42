@@ -30,9 +30,19 @@ module Collavre
         end
 
         version = @comment.comment_versions.find(params[:id])
-        @comment.update!(selected_version_id: version.id)
 
-        render json: { selected_version_id: version.id }
+        # Save current content as a version if not already versioned
+        unless @comment.comment_versions.exists?(content: @comment.content)
+          @comment.comment_versions.create!(
+            content: @comment.content,
+            version_number: @comment.next_version_number
+          )
+        end
+
+        # Update pointer AND content
+        @comment.update!(selected_version_id: version.id, content: version.content)
+
+        render json: { selected_version_id: version.id, content: version.content }
       end
 
       def deselect
@@ -40,8 +50,10 @@ module Collavre
           render json: { error: I18n.t("collavre.comments.not_owner") }, status: :forbidden and return
         end
 
-        @comment.update!(selected_version_id: nil)
-        render json: { selected_version_id: nil }
+        latest_version = @comment.comment_versions.order(:version_number).last
+        new_content = latest_version&.content || @comment.content
+        @comment.update!(selected_version_id: nil, content: new_content)
+        render json: { selected_version_id: nil, content: new_content }
       end
 
       def destroy
