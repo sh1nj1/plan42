@@ -47,6 +47,23 @@
   color: var(--danger-color, #e53e3e);
 }
 
+.comment-version-select-btn {
+  background: none;
+  border: 1px solid var(--primary-color, #4a90d9);
+  border-radius: var(--radius-1, 4px);
+  cursor: pointer;
+  color: var(--primary-color, #4a90d9);
+  font-size: var(--text-xs, 0.75rem);
+  padding: 0 var(--space-2, 0.25rem);
+  margin-left: var(--space-1, 0.125rem);
+  line-height: 1.6;
+}
+
+.comment-version-select-btn:hover {
+  background: var(--primary-color, #4a90d9);
+  color: white;
+}
+
 .comment-version-delete-hidden {
   display: none;
 }

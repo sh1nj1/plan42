@@ -84,6 +84,7 @@
         v<%= comment.comment_versions.size + 1 %>/<%= comment.comment_versions.size + 1 %>
       </span>
       <button class="comment-version-btn" data-action="click->comment-version#next" data-comment-version-target="nextBtn" title="<%= t('collavre.comments.versions.next') %>">▶</button>
+      <button class="comment-version-select-btn comment-version-delete-hidden" data-action="click->comment-version#selectVersion" data-comment-version-target="selectBtn" title="<%= t('collavre.comments.versions.select') %>">✓ <%= t('collavre.comments.versions.select') %></button>
       <button class="comment-version-delete-btn comment-version-delete-hidden" data-action="click->comment-version#deleteVersion" data-comment-version-target="deleteBtn" title="<%= t('collavre.comments.versions.delete') %>">✕</button>
     </div>
   <% end %>

@@ -135,6 +135,7 @@ ko:
         next: 다음 버전
         delete: 이 버전 삭제
         delete_confirm: 이 버전을 삭제하시겠습니까?
+        select: 선택
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
     calendar_events:

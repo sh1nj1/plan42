@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["prevBtn", "nextBtn", "indicator", "deleteBtn"]
+  static targets = ["prevBtn", "nextBtn", "indicator", "deleteBtn", "selectBtn"]
   static values = {
     commentId: Number,
     creativeId: Number,
@@ -42,6 +42,29 @@ export default class extends Controller {
     await this.fetchVersions()
     this.currentIndex++
     this.render()
+  }
+
+  async selectVersion() {
+    if (this.currentIndex === this.totalValue) return // already current
+
+    const versions = await this.fetchVersions()
+    const version = versions[this.currentIndex - 1]
+    if (!version) return
+
+    const response = await fetch(
+      `${this.versionsUrlValue}/${version.id}/select`,
+      { method: "POST", headers: { "X-CSRF-Token": this.csrfToken } }
+    )
+
+    if (response.ok) {
+      const data = await response.json()
+      // Reset: refetch versions on next navigation
+      this.versions = null
+      this.currentContent = data.content
+      this.totalValue = data.total
+      this.currentIndex = this.totalValue
+      this.render()
+    }
   }
 
   async deleteVersion() {
@@ -98,13 +121,13 @@ export default class extends Controller {
     this.prevBtnTarget.disabled = this.currentIndex <= 1
     this.nextBtnTarget.disabled = this.currentIndex >= this.totalValue
 
-    // Show delete button only for historical versions (not current)
+    // Show delete/select buttons only for historical versions (not current)
+    const isHistorical = this.currentIndex < this.totalValue
     if (this.hasDeleteBtnTarget) {
-      if (this.currentIndex < this.totalValue) {
-        this.deleteBtnTarget.classList.remove("comment-version-delete-hidden")
-      } else {
-        this.deleteBtnTarget.classList.add("comment-version-delete-hidden")
-      }
+      this.deleteBtnTarget.classList.toggle("comment-version-delete-hidden", !isHistorical)
+    }
+    if (this.hasSelectBtnTarget) {
+      this.selectBtnTarget.classList.toggle("comment-version-delete-hidden", !isHistorical)
     }
   }
 

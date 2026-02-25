@@ -23,6 +23,24 @@ module Collavre
         }
       end
 
+      def select
+        unless @comment.user == Current.user || @creative.has_permission?(Current.user, :admin)
+          render json: { error: I18n.t("collavre.comments.not_owner") }, status: :forbidden and return
+        end
+
+        version = @comment.comment_versions.find(params[:id])
+
+        # Save current content as a new version before replacing
+        @comment.comment_versions.create!(
+          content: @comment.content,
+          version_number: @comment.next_version_number
+        )
+
+        @comment.update!(content: version.content)
+
+        render json: { content: @comment.content, total: @comment.comment_versions.size + 1 }
+      end
+
       def destroy
         unless @comment.user == Current.user || @creative.has_permission?(Current.user, :admin)
           render json: { error: I18n.t("collavre.comments.not_owner") }, status: :forbidden and return
