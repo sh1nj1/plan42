@@ -2,13 +2,14 @@
 // Collavre CLI — MCP SSE client for Creative management
 // Usage: collavre <command> [options]
 
-const fs = require("fs");
-const path = require("path");
-const https = require("https");
-const http = require("http");
+import fs from "node:fs";
+import path from "node:path";
+import https from "node:https";
+import http from "node:http";
+import os from "node:os";
 
 const CONFIG_DIR = path.join(
-  process.env.HOME || process.env.USERPROFILE,
+  os.homedir(),
   ".config",
   "collavre"
 );
@@ -61,7 +62,6 @@ class McpClient {
               const data = line.slice(6).trim();
               if (data.includes("/mcp/messages")) {
                 clearTimeout(timeout);
-                // Extract the full messages URL
                 this.sessionUrl = data.startsWith("http")
                   ? data
                   : `${this.baseUrl}${data}`;
@@ -179,7 +179,6 @@ function parseArgs(argv) {
 
 function printResult(result) {
   if (!result) return;
-  // MCP tool results come as content array
   if (result.content) {
     for (const item of result.content) {
       if (item.type === "text") {
@@ -303,7 +302,7 @@ const commands = {
     if (args.file) {
       markdown = fs.readFileSync(args.file, "utf8");
     } else if (args.stdin) {
-      markdown = fs.readFileSync(0, "utf8"); // read from stdin
+      markdown = fs.readFileSync(0, "utf8");
     } else {
       console.error("Provide --file <path> or --stdin");
       process.exit(1);
