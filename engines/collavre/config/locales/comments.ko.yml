@@ -101,12 +101,20 @@ ko:
         topic_args: '"토픽 이름" @에이전트이름'
         work_description: "하위 크리에이티브들에 대해 DFS 순회를 통한 워크플로우를 실행합니다."
         work_args: "@에이전트이름 워크플로우_컨텍스트"
+        compress_description: "현재 토픽의 모든 메세지를 요약하고 원본을 삭제합니다."
+        compress_args: "[추가 지시사항]"
       calendar_command:
         event_created: '이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})'
         event_created_local: '이벤트가 생성되었습니다 (로컬 전용 - 구글 캘린더 연동 시 동기화됩니다)'
         event_created_sync_failed: '이벤트가 생성되었습니다 (구글 캘린더 동기화 실패 - 구글 계정을 다시 연동해주세요)'
       mcp_command:
         error_running: "/%{tool_name} 실행 오류: %{error}"
+      compress_command:
+        topic_required: "/compress 명령은 토픽 내에서만 사용할 수 있습니다."
+        nothing_to_compress: "이 토픽에 요약할 메세지가 없습니다."
+        started: "⏳ 토픽 메세지를 요약하는 중..."
+        summary_title: "토픽 요약 — %{topic}"
+        failed: "요약 실패"
       topic_command:
         missing_name: '토픽 이름을 따옴표로 지정하세요: /topic "토픽 이름"'
         created: '토픽 "%{name}"이(가) 생성되었습니다.'

@@ -1,0 +1,90 @@
+module Collavre
+  class CompressJob < ApplicationJob
+    queue_as :default
+
+    def perform(creative_id, topic_id, user_id, extra_prompt = nil)
+      creative = Creative.find(creative_id)
+      topic = Topic.find(topic_id)
+      user = User.find(user_id)
+
+      # Collect all comments in topic (chronological)
+      comments = creative.comments
+        .where(topic_id: topic_id)
+        .order(created_at: :asc)
+        .includes(:user)
+
+      return if comments.size <= 1
+
+      # Build conversation text
+      conversation = comments.map do |c|
+        author = c.user&.name || I18n.t("collavre.comments.anonymous")
+        "#{author}: #{c.content}"
+      end.join("\n\n")
+
+      # Build AI prompt
+      system_prompt = Comments::CompressCommand::SYSTEM_PROMPT.dup
+      if extra_prompt.present?
+        system_prompt += "\n\nAdditional instruction from the user: #{extra_prompt}"
+      end
+
+      # Find an AI agent on this creative, or use default config
+      agent = find_ai_agent(creative)
+
+      client = AiClient.new(
+        vendor: agent&.llm_vendor || default_vendor,
+        model: agent&.llm_model || default_model,
+        system_prompt: system_prompt,
+        llm_api_key: agent&.llm_api_key || agent&.creator&.llm_api_key
+      )
+
+      summary = +""
+      client.chat([ { role: "user", content: conversation } ]) do |delta|
+        summary << delta
+      end
+
+      if summary.blank?
+        Rails.logger.error("[CompressJob] AI returned empty summary for topic #{topic_id}")
+        return
+      end
+
+      # Create summary comment
+      topic_name = topic.name.presence || "Topic"
+      title = I18n.t("collavre.comments.compress_command.summary_title", topic: topic_name)
+      summary_content = "**#{title}**\n\n#{summary}"
+
+      # Store comment IDs to delete before creating the new one
+      comment_ids_to_delete = comments.pluck(:id)
+
+      # Create the summary comment in the same topic
+      summary_comment = creative.comments.create!(
+        user: user,
+        topic_id: topic_id,
+        content: summary_content
+      )
+
+      # Delete original comments (excluding the newly created summary)
+      creative.comments.where(id: comment_ids_to_delete).find_each do |c|
+        c.destroy
+      end
+    rescue StandardError => e
+      Rails.logger.error("[CompressJob] Failed: #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}")
+    end
+
+    private
+
+    def find_ai_agent(creative)
+      # Look for an AI agent with access to this creative
+      creative.effective_origin.all_shared_users(:feedback)
+        .map(&:user)
+        .find(&:ai_user?)
+    end
+
+    def default_vendor
+      "google"
+    end
+
+    def default_model
+      "gemini-2.5-flash"
+    end
+  end
+end
