@@ -140,6 +140,14 @@ module Collavre
       llm_vendor.present?
     end
 
+    scope :ai_agents, -> { where.not(llm_vendor: [ nil, "" ]) }
+
+    def self.accessible_ai_agents_for(user)
+      owned = ai_agents.where(created_by_id: user.id)
+      searchable = ai_agents.where(searchable: true)
+      owned.or(searchable).distinct.order(:name)
+    end
+
     def self.mentionable_for(creative)
       scope = where(searchable: true)
       return scope unless creative

@@ -8,12 +8,16 @@ module Collavre
       - Respond in the asker's language (prefer the latest user message). Keep code and error messages in their original form.
     PROMPT
 
+    attr_reader :last_input_tokens, :last_output_tokens
+
     def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, context: {})
       @vendor = vendor
       @model = model
       @system_prompt = system_prompt
       @llm_api_key = llm_api_key
       @context = context
+      @last_input_tokens = 0
+      @last_output_tokens = 0
     end
 
     def chat(contents, tools: [], &block)
@@ -90,6 +94,8 @@ module Collavre
       yield "\n\n⚠️ AI Error: #{error_message}" if block_given?
       nil
     ensure
+      @last_input_tokens = input_tokens || 0
+      @last_output_tokens = output_tokens || 0
       log_interaction(
         messages: conversation.messages.to_a || Array(contents),
         tools: conversation.tools.to_a,
