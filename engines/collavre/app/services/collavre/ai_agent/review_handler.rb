@@ -35,8 +35,8 @@ module Collavre
 
         quoted_comment = @original_comment.quoted_comment
 
-        # Save old content as a version (only if not already versioned, e.g. first review)
-        unless quoted_comment.comment_versions.exists?(content: quoted_comment.content)
+        # Save old content as a version if this is the first review (no versions yet)
+        if quoted_comment.comment_versions.empty?
           quoted_comment.comment_versions.create!(
             content: quoted_comment.content,
             version_number: quoted_comment.next_version_number

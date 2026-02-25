@@ -79,6 +79,8 @@ export default class extends Controller {
     // Can't delete if it's the only version
     if (versions.length <= 1) return
 
+    if (!confirm(this.deleteBtnTarget.dataset.confirmMessage || "Are you sure?")) return
+
     const response = await fetch(
       `${this.versionsUrlValue}/${version.id}`,
       { method: "DELETE", headers: { "X-CSRF-Token": this.csrfToken } }

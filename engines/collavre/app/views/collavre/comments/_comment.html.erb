@@ -91,7 +91,7 @@
       </span>
       <button class="comment-version-btn" data-action="click->comment-version#next" data-comment-version-target="nextBtn" title="<%= t('collavre.comments.versions.next') %>">▶</button>
       <button class="comment-version-select-btn" data-action="click->comment-version#selectVersion" data-comment-version-target="selectBtn" title="<%= t('collavre.comments.versions.select') %>" disabled>✓ <%= t('collavre.comments.versions.select') %></button>
-      <button class="comment-version-delete-btn" data-action="click->comment-version#deleteVersion" data-comment-version-target="deleteBtn" title="<%= t('collavre.comments.versions.delete') %>" disabled>✕</button>
+      <button class="comment-version-delete-btn" data-action="click->comment-version#deleteVersion" data-comment-version-target="deleteBtn" data-confirm-message="<%= t('collavre.comments.versions.delete_confirm') %>" title="<%= t('collavre.comments.versions.delete') %>" disabled>✕</button>
     </div>
   <% end %>
 
