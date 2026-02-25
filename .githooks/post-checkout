@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# post-checkout hook: runs after `git checkout` and `git worktree add`.
+#
+# Arguments from git:
+#   $1 = previous HEAD ref
+#   $2 = new HEAD ref
+#   $3 = flag: 1 = branch checkout, 0 = file checkout
+#
+# On `git worktree add`, $1 is the null ref (0000...).
+
+previous_ref="$1"
+new_ref="$2"
+checkout_type="$3"
+
+# Only run on branch checkouts (not file checkouts)
+if [ "$checkout_type" != "1" ]; then
+  exit 0
+fi
+
+# Detect if this is a new worktree (previous ref is null on worktree add)
+null_ref="0000000000000000000000000000000000000000"
+if [ "$previous_ref" = "$null_ref" ]; then
+  echo "📦 New worktree detected — running setup..."
+  # Use main worktree's script (new worktree may not have it yet)
+  MAIN_WT=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')
+  bash "$MAIN_WT/bin/setup_worktree"
+fi

@@ -1,0 +1,64 @@
+#!/bin/bash
+# Sets up a new git worktree by symlinking shared resources from the main worktree.
+# Called automatically by .githooks/post-checkout, or run manually: bin/setup_worktree
+
+set -euo pipefail
+
+SHARED_RESOURCES_FILE=".shared-resources"
+
+# Detect main worktree (first entry in git worktree list)
+MAIN_WORKTREE=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')
+CURRENT=$(git rev-parse --show-toplevel)
+
+if [ -z "$MAIN_WORKTREE" ]; then
+  echo "⚠️  Could not detect main worktree. Skipping."
+  exit 0
+fi
+
+# Resolve to real paths for comparison
+MAIN_REAL=$(cd "$MAIN_WORKTREE" && pwd -P)
+CURRENT_REAL=$(cd "$CURRENT" && pwd -P)
+
+if [ "$MAIN_REAL" = "$CURRENT_REAL" ]; then
+  # Running in main worktree — nothing to do
+  exit 0
+fi
+
+RESOURCES_FILE="$MAIN_WORKTREE/$SHARED_RESOURCES_FILE"
+if [ ! -f "$RESOURCES_FILE" ]; then
+  echo "⚠️  $SHARED_RESOURCES_FILE not found in main worktree. Skipping."
+  exit 0
+fi
+
+echo "🔗 Setting up worktree: $CURRENT"
+echo "   Main worktree: $MAIN_WORKTREE"
+echo ""
+
+while IFS= read -r resource || [ -n "$resource" ]; do
+  # Skip empty lines and comments
+  resource=$(echo "$resource" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [[ -z "$resource" || "$resource" == \#* ]] && continue
+
+  source="$MAIN_WORKTREE/$resource"
+  target="$CURRENT/$resource"
+
+  if [ ! -e "$source" ] && [ ! -L "$source" ]; then
+    echo "   ⏭  $resource — not found in main worktree, skipping"
+    continue
+  fi
+
+  # Ensure parent directory exists
+  mkdir -p "$(dirname "$target")"
+
+  # Remove existing file/dir/symlink
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    rm -rf "$target"
+    echo "   🗑  $resource — removed existing"
+  fi
+
+  ln -s "$source" "$target"
+  echo "   ✅ $resource → $source"
+done < "$RESOURCES_FILE"
+
+echo ""
+echo "🎉 Worktree setup complete!"

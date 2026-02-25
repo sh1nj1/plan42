@@ -1,0 +1,8 @@
+# Shared resources to symlink from main worktree to new worktrees.
+# One path per line (relative to project root). Blank lines and # comments are ignored.
+node_modules
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+tmp/cache
