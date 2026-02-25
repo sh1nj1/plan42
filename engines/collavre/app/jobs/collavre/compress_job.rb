@@ -7,16 +7,20 @@ module Collavre
       topic = Topic.find(topic_id)
       user = User.find(user_id)
 
-      # Collect all comments in topic (chronological)
-      comments = creative.comments
+      # Collect all comments in topic (chronological), excluding /compress command
+      all_comments = creative.comments
         .where(topic_id: topic_id)
         .order(created_at: :asc)
         .includes(:user)
 
-      return if comments.size <= 1
+      # Separate: comments to summarize vs the compress command itself
+      compress_pattern = /\A\/compress\b/i
+      target_comments = all_comments.reject { |c| c.content.to_s.strip.match?(compress_pattern) }
+
+      return if target_comments.size <= 1
 
       # Build conversation text
-      conversation = comments.map do |c|
+      conversation = target_comments.map do |c|
         author = c.user&.name || I18n.t("collavre.comments.anonymous")
         "#{author}: #{c.content}"
       end.join("\n\n")
@@ -52,8 +56,8 @@ module Collavre
       title = I18n.t("collavre.comments.compress_command.summary_title", topic: topic_name)
       summary_content = "**#{title}**\n\n#{summary}"
 
-      # Store comment IDs to delete before creating the new one
-      comment_ids_to_delete = comments.pluck(:id)
+      # Store comment IDs to delete before creating the new one (all originals including /compress command)
+      comment_ids_to_delete = all_comments.pluck(:id)
 
       # Create the summary comment in the same topic
       summary_comment = creative.comments.create!(
