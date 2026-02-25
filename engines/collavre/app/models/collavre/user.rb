@@ -11,6 +11,7 @@ module Collavre
     has_many :access_grants, class_name: "Doorkeeper::AccessGrant", foreign_key: :resource_owner_id, dependent: :delete_all
     has_many :access_tokens, class_name: "Doorkeeper::AccessToken", foreign_key: :resource_owner_id, dependent: :delete_all
     has_many :webauthn_credentials, class_name: "Collavre::WebauthnCredential", dependent: :destroy
+    has_many :api_keys, class_name: "Collavre::ApiKey", dependent: :destroy
     has_many :devices, class_name: "Collavre::Device", dependent: :destroy
     has_many :emails, class_name: "Collavre::Email", dependent: :destroy
     has_many :contacts, class_name: "Collavre::Contact", dependent: :destroy
