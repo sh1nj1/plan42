@@ -89,6 +89,40 @@ module Collavre
       assert_equal "queued", task.reload.status
     end
 
+    test "deleting waiting notice cancels only the latest queued task" do
+      older_task = Task.create!(
+        name: "Older queued work",
+        status: "queued",
+        agent: @ai_agent,
+        creative_id: @creative.id,
+        topic_id: @topic.id,
+        trigger_event_name: "comment.created",
+        trigger_event_payload: { "comment" => { "id" => 990 } }
+      )
+
+      newer_task = Task.create!(
+        name: "Newer queued work",
+        status: "queued",
+        agent: @ai_agent,
+        creative_id: @creative.id,
+        topic_id: @topic.id,
+        trigger_event_name: "comment.created",
+        trigger_event_payload: { "comment" => { "id" => 991 } }
+      )
+
+      notice = @creative.comments.create!(
+        content: "⏳ 대기중",
+        topic_id: @topic.id,
+        private: false,
+        skip_default_user: true
+      )
+
+      notice.destroy!
+
+      assert_equal "queued", older_task.reload.status
+      assert_equal "cancelled", newer_task.reload.status
+    end
+
     test "deleting trigger comment cancels its associated task" do
       comment = @creative.comments.create!(
         content: "Do something",

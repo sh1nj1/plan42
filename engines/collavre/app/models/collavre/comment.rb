@@ -73,11 +73,10 @@ module Collavre
     end
 
     def cancel_queued_tasks_for_waiting_notice
-      Task.where(
-        status: "queued",
-        creative_id: creative_id,
-        topic_id: topic_id
-      ).update_all(status: "cancelled")
+      scope = Task.where(status: "queued", creative_id: creative_id)
+      scope = topic_id ? scope.where(topic_id: topic_id) : scope.where(topic_id: nil)
+      task = scope.order(created_at: :desc).first
+      task&.update!(status: "cancelled")
     end
 
     def assign_default_user
