@@ -42,7 +42,7 @@ module Collavre
           review_comment: @original_comment
         )
 
-        quoted_comment.update!(content: response_content)
+        quoted_comment.update!(content: response_content, selected_version_id: nil)
 
         task.task_actions.create!(
           action_type: "review_updated",

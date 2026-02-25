@@ -47,6 +47,11 @@
   color: var(--danger-color, #e53e3e);
 }
 
+.comment-version-selected {
+  color: var(--primary-color, #4a90d9);
+  font-weight: bold;
+}
+
 .comment-version-select-btn {
   background: none;
   border: 1px solid var(--primary-color, #4a90d9);

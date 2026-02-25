@@ -19,6 +19,7 @@ module Collavre
         render json: {
           versions: versions,
           current_content: @comment.content,
+          selected_version_id: @comment.selected_version_id,
           total: versions.size + 1
         }
       end
@@ -29,16 +30,18 @@ module Collavre
         end
 
         version = @comment.comment_versions.find(params[:id])
+        @comment.update!(selected_version_id: version.id)
 
-        # Save current content as a new version before replacing
-        @comment.comment_versions.create!(
-          content: @comment.content,
-          version_number: @comment.next_version_number
-        )
+        render json: { selected_version_id: version.id }
+      end
 
-        @comment.update!(content: version.content)
+      def deselect
+        unless @comment.user == Current.user || @creative.has_permission?(Current.user, :admin)
+          render json: { error: I18n.t("collavre.comments.not_owner") }, status: :forbidden and return
+        end
 
-        render json: { content: @comment.content, total: @comment.comment_versions.size + 1 }
+        @comment.update!(selected_version_id: nil)
+        render json: { selected_version_id: nil }
       end
 
       def destroy
@@ -47,6 +50,7 @@ module Collavre
         end
 
         version = @comment.comment_versions.find(params[:id])
+        @comment.update!(selected_version_id: nil) if @comment.selected_version_id == version.id
         version.destroy!
         head :no_content
       end

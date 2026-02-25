@@ -70,18 +70,22 @@
       <blockquote class="comment-quoted-text"><%= comment.quoted_text %></blockquote>
     </div>
   <% end %>
-  <div class="comment-content" data-comment-target="content"><%= comment.content %></div>
+  <div class="comment-content" data-comment-target="content"><%= comment.display_content %></div>
   <% if comment.comment_versions.any? %>
+    <% version_count = comment.comment_versions.size %>
+    <% selected_id = comment.selected_version_id %>
+    <% selected_index = selected_id ? comment.comment_versions.order(:version_number).pluck(:id).index(selected_id)&.+(1) : version_count + 1 %>
     <div class="comment-version-navigator"
          data-controller="comment-version"
          data-comment-version-comment-id-value="<%= comment.id %>"
          data-comment-version-creative-id-value="<%= comment.creative_id %>"
          data-comment-version-versions-url-value="<%= collavre.creative_comment_versions_path(comment.creative, comment) %>"
-         data-comment-version-total-value="<%= comment.comment_versions.size + 1 %>"
+         data-comment-version-total-value="<%= version_count + 1 %>"
+         data-comment-version-selected-version-id-value="<%= selected_id %>"
          data-comment-version-content-target-value="<%= dom_id(comment) %>">
       <button class="comment-version-btn" data-action="click->comment-version#prev" data-comment-version-target="prevBtn" title="<%= t('collavre.comments.versions.previous') %>">◀</button>
       <span class="comment-version-indicator" data-comment-version-target="indicator">
-        v<%= comment.comment_versions.size + 1 %>/<%= comment.comment_versions.size + 1 %>
+        v<%= selected_index %>/<%= version_count + 1 %>
       </span>
       <button class="comment-version-btn" data-action="click->comment-version#next" data-comment-version-target="nextBtn" title="<%= t('collavre.comments.versions.next') %>">▶</button>
       <button class="comment-version-select-btn comment-version-delete-hidden" data-action="click->comment-version#selectVersion" data-comment-version-target="selectBtn" title="<%= t('collavre.comments.versions.select') %>">✓ <%= t('collavre.comments.versions.select') %></button>
