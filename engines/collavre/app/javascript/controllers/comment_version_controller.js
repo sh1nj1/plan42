@@ -8,12 +8,13 @@ export default class extends Controller {
     total: Number,
     contentTarget: String,
     versionsUrl: String,
-    selectedVersionId: Number
+    selectedVersionId: Number,
+    initialIndex: Number
   }
 
   connect() {
     this.versions = null
-    this.currentIndex = this.totalValue // 1-based, starts at last version
+    this.currentIndex = this.initialIndexValue || this.totalValue
     this.updateButtons()
   }
 
