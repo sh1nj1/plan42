@@ -17,14 +17,12 @@ module Collavre
             return
           end
 
-          # Try OAuth (Doorkeeper) first, then fall back to API key
-          if authenticate_oauth(token) || authenticate_api_key(token)
-            return
+          unless authenticate_oauth(token)
+            render json: { error: { message: "Invalid authentication token", type: "invalid_request_error",
+                                    code: "invalid_token" } },
+                   status: :unauthorized
+            nil
           end
-
-          render json: { error: { message: "Invalid authentication token", type: "invalid_request_error",
-                                  code: "invalid_token" } },
-                 status: :unauthorized
         end
 
         def authenticate_oauth(token)
@@ -35,15 +33,6 @@ module Collavre
           return false unless user
 
           Current.user = user
-          true
-        end
-
-        def authenticate_api_key(token)
-          api_key = Collavre::ApiKey.find_by_token(token)
-          return false unless api_key
-
-          api_key.touch_last_used!
-          Current.user = api_key.user
           true
         end
 
