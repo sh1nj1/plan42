@@ -1,0 +1,370 @@
+#!/usr/bin/env node
+// Collavre CLI — MCP SSE client for Creative management
+// Usage: collavre <command> [options]
+
+const fs = require("fs");
+const path = require("path");
+const https = require("https");
+const http = require("http");
+
+const CONFIG_DIR = path.join(
+  process.env.HOME || process.env.USERPROFILE,
+  ".config",
+  "collavre"
+);
+const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+
+// --- Config ---
+function loadConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveConfig(config) {
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+}
+
+// --- MCP SSE Client ---
+class McpClient {
+  constructor(url, token) {
+    this.baseUrl = url.replace(/\/+$/, "");
+    this.token = token;
+    this.sessionUrl = null;
+  }
+
+  async connect() {
+    const sseUrl = `${this.baseUrl}/mcp/sse`;
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("SSE connection timeout")),
+        10000
+      );
+      const req = this._request(sseUrl, { method: "GET" });
+      let buffer = "";
+
+      req.on("response", (res) => {
+        if (res.statusCode !== 200) {
+          clearTimeout(timeout);
+          reject(new Error(`SSE connection failed: ${res.statusCode}`));
+          return;
+        }
+        res.on("data", (chunk) => {
+          buffer += chunk.toString();
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6).trim();
+              if (data.includes("/mcp/messages")) {
+                clearTimeout(timeout);
+                // Extract the full messages URL
+                this.sessionUrl = data.startsWith("http")
+                  ? data
+                  : `${this.baseUrl}${data}`;
+                this._sseRes = res;
+                resolve();
+              }
+            }
+          }
+        });
+        res.on("error", (e) => {
+          clearTimeout(timeout);
+          reject(e);
+        });
+      });
+      req.on("error", (e) => {
+        clearTimeout(timeout);
+        reject(e);
+      });
+      req.end();
+    });
+  }
+
+  async callTool(name, args) {
+    if (!this.sessionUrl) throw new Error("Not connected. Call connect() first.");
+
+    const body = JSON.stringify({
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method: "tools/call",
+      params: { name, arguments: args },
+    });
+
+    return new Promise((resolve, reject) => {
+      const req = this._request(this.sessionUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      let data = "";
+      req.on("response", (res) => {
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.error) {
+              reject(new Error(parsed.error.message || JSON.stringify(parsed.error)));
+            } else {
+              resolve(parsed.result);
+            }
+          } catch {
+            reject(new Error(`Invalid response: ${data.slice(0, 200)}`));
+          }
+        });
+      });
+      req.on("error", reject);
+      req.write(body);
+      req.end();
+    });
+  }
+
+  disconnect() {
+    if (this._sseRes) {
+      this._sseRes.destroy();
+      this._sseRes = null;
+    }
+  }
+
+  _request(url, opts) {
+    const parsed = new URL(url);
+    const mod = parsed.protocol === "https:" ? https : http;
+    return mod.request(url, {
+      ...opts,
+      headers: {
+        ...(opts.headers || {}),
+        Authorization: `Bearer ${this.token}`,
+      },
+    });
+  }
+}
+
+// --- Commands ---
+async function withClient(fn) {
+  const config = loadConfig();
+  if (!config.url || !config.token) {
+    console.error("Not configured. Run: collavre auth --url <url> --token <token>");
+    process.exit(1);
+  }
+  const client = new McpClient(config.url, config.token);
+  try {
+    await client.connect();
+    await fn(client);
+  } finally {
+    client.disconnect();
+  }
+}
+
+function parseArgs(argv) {
+  const args = {};
+  const positional = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i].startsWith("--")) {
+      const key = argv[i].slice(2);
+      const next = argv[i + 1];
+      if (!next || next.startsWith("--")) {
+        args[key] = true;
+      } else {
+        args[key] = next;
+        i++;
+      }
+    } else {
+      positional.push(argv[i]);
+    }
+  }
+  return { args, positional };
+}
+
+function printResult(result) {
+  if (!result) return;
+  // MCP tool results come as content array
+  if (result.content) {
+    for (const item of result.content) {
+      if (item.type === "text") {
+        try {
+          const parsed = JSON.parse(item.text);
+          console.log(JSON.stringify(parsed, null, 2));
+        } catch {
+          console.log(item.text);
+        }
+      }
+    }
+  } else {
+    console.log(JSON.stringify(result, null, 2));
+  }
+}
+
+const commands = {
+  auth(argv) {
+    const { args } = parseArgs(argv);
+    if (!args.url || !args.token) {
+      console.error("Usage: collavre auth --url <url> --token <token>");
+      process.exit(1);
+    }
+    saveConfig({ url: args.url, token: args.token });
+    console.log(`Saved config to ${CONFIG_FILE}`);
+  },
+
+  async list(argv) {
+    const { args } = parseArgs(argv);
+    await withClient(async (client) => {
+      const result = await client.callTool("creative_retrieval_service", {
+        level: parseInt(args.level) || 3,
+        format: args.format || "markdown",
+        include_comments: args.comments === true,
+      });
+      printResult(result);
+    });
+  },
+
+  async get(argv) {
+    const { args, positional } = parseArgs(argv);
+    const id = parseInt(positional[0]);
+    if (!id) {
+      console.error("Usage: collavre get <id> [--level N] [--comments] [--format json]");
+      process.exit(1);
+    }
+    await withClient(async (client) => {
+      const result = await client.callTool("creative_retrieval_service", {
+        id,
+        level: parseInt(args.level) || 3,
+        format: args.format || "markdown",
+        include_comments: args.comments === true,
+      });
+      printResult(result);
+    });
+  },
+
+  async search(argv) {
+    const { args, positional } = parseArgs(argv);
+    const query = positional[0];
+    if (!query) {
+      console.error("Usage: collavre search <query> [--tags tags] [--level N]");
+      process.exit(1);
+    }
+    await withClient(async (client) => {
+      const params = {
+        query,
+        level: parseInt(args.level) || 3,
+        format: args.format || "markdown",
+      };
+      if (args.tags) params.tags = args.tags;
+      if (args["progress-min"]) params.progress_min = parseFloat(args["progress-min"]);
+      if (args["progress-max"]) params.progress_max = parseFloat(args["progress-max"]);
+      const result = await client.callTool("creative_retrieval_service", params);
+      printResult(result);
+    });
+  },
+
+  async create(argv) {
+    const { args } = parseArgs(argv);
+    if (!args.desc) {
+      console.error("Usage: collavre create --parent <id> --desc <text>");
+      process.exit(1);
+    }
+    await withClient(async (client) => {
+      const params = { description: args.desc };
+      if (args.parent) params.parent_id = parseInt(args.parent);
+      if (args.after) params.after_id = parseInt(args.after);
+      if (args.before) params.before_id = parseInt(args.before);
+      const result = await client.callTool("creative_create_service", params);
+      printResult(result);
+    });
+  },
+
+  async update(argv) {
+    const { args, positional } = parseArgs(argv);
+    const id = parseInt(positional[0]);
+    if (!id) {
+      console.error("Usage: collavre update <id> [--desc text] [--progress 1.0] [--parent id]");
+      process.exit(1);
+    }
+    await withClient(async (client) => {
+      const params = { id };
+      if (args.desc) params.description = args.desc;
+      if (args.progress !== undefined) params.progress = parseFloat(args.progress);
+      if (args.parent !== undefined) params.parent_id = parseInt(args.parent);
+      const result = await client.callTool("creative_update_service", params);
+      printResult(result);
+    });
+  },
+
+  async import(argv) {
+    const { args } = parseArgs(argv);
+    const parentId = parseInt(args.parent);
+    if (!parentId) {
+      console.error("Usage: collavre import --parent <id> --file <path> | --stdin");
+      process.exit(1);
+    }
+
+    let markdown;
+    if (args.file) {
+      markdown = fs.readFileSync(args.file, "utf8");
+    } else if (args.stdin) {
+      markdown = fs.readFileSync(0, "utf8"); // read from stdin
+    } else {
+      console.error("Provide --file <path> or --stdin");
+      process.exit(1);
+    }
+
+    await withClient(async (client) => {
+      const result = await client.callTool("creative_import_service", {
+        markdown,
+        parent_id: parentId,
+      });
+      printResult(result);
+    });
+  },
+
+  async batch(argv) {
+    const { args } = parseArgs(argv);
+    if (!args.file) {
+      console.error("Usage: collavre batch --file <ops.json>");
+      process.exit(1);
+    }
+    const ops = JSON.parse(fs.readFileSync(args.file, "utf8"));
+    await withClient(async (client) => {
+      const result = await client.callTool("creative_batch_service", {
+        operations: ops,
+      });
+      printResult(result);
+    });
+  },
+};
+
+// --- Main ---
+async function main() {
+  const [cmd, ...argv] = process.argv.slice(2);
+
+  if (!cmd || cmd === "help" || cmd === "--help") {
+    console.log(`Collavre CLI — Manage Creatives via MCP
+
+Usage: collavre <command> [options]
+
+Commands:
+  auth     --url <url> --token <token>     Configure connection
+  list     [--level N] [--format json]     List root creatives
+  get      <id> [--level N] [--comments]   Get creative subtree
+  search   <query> [--tags t1,t2]          Search creatives
+  create   --parent <id> --desc <text>     Create creative
+  update   <id> [--desc] [--progress 1.0]  Update creative
+  import   --parent <id> --file <path>     Import markdown
+  batch    --file <ops.json>               Batch operations
+  help                                     Show this help`);
+    process.exit(0);
+  }
+
+  if (commands[cmd]) {
+    await commands[cmd](argv);
+  } else {
+    console.error(`Unknown command: ${cmd}. Run 'collavre help' for usage.`);
+    process.exit(1);
+  }
+}
+
+main().catch((e) => {
+  console.error(`Error: ${e.message}`);
+  process.exit(1);
+});
