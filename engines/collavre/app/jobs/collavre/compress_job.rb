@@ -17,7 +17,7 @@ module Collavre
       compress_pattern = /\A\/compress\b/i
       target_comments = all_comments.reject { |c| c.content.to_s.strip.match?(compress_pattern) }
 
-      return if target_comments.size <= 1
+      return if target_comments.size < 2
 
       # Build conversation text
       conversation = target_comments.map do |c|
@@ -41,7 +41,7 @@ module Collavre
         llm_api_key: agent&.llm_api_key || agent&.creator&.llm_api_key
       )
 
-      summary = +""
+      summary = String.new
       client.chat([ { role: "user", text: conversation } ]) do |delta|
         summary << delta
       end
@@ -67,11 +67,9 @@ module Collavre
       )
 
       # Delete original comments (excluding the newly created summary)
-      creative.comments.where(id: comment_ids_to_delete).find_each do |c|
-        c.destroy
-      end
-    rescue StandardError => e
-      Rails.logger.error("[CompressJob] Failed: #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}")
+      creative.comments.where(id: comment_ids_to_delete).destroy_all
+    rescue ActiveRecord::RecordNotFound => e
+      Rails.logger.error("[CompressJob] Record not found: #{e.message}")
     end
 
     private

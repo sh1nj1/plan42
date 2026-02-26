@@ -20,6 +20,7 @@ module Collavre
         return unless compress_command?
 
         validate!
+        authorize!
         enqueue_compress_job
       rescue StandardError => e
         Rails.logger.error("Compress command failed: #{e.message}")
@@ -45,9 +46,18 @@ module Collavre
           raise I18n.t("collavre.comments.compress_command.topic_required")
         end
 
-        topic_comments = creative.comments.where(topic_id: comment.topic_id)
-        if topic_comments.count <= 1 # only the /compress command itself
+        # The /compress command comment may not be saved yet, so count existing non-compress comments
+        compress_pattern = /\A\/compress\b/i
+        existing_count = creative.comments.where(topic_id: comment.topic_id)
+          .reject { |c| c.content.to_s.strip.match?(compress_pattern) }.size
+        if existing_count < 2
           raise I18n.t("collavre.comments.compress_command.nothing_to_compress")
+        end
+      end
+
+      def authorize!
+        unless creative.has_permission?(user, :write)
+          raise I18n.t("collavre.comments.compress_command.not_authorized")
         end
       end
 
