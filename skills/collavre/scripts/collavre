@@ -343,7 +343,6 @@ const commands = {
     await withClient(async (client) => {
       const params = {
         query,
-        simple: true,
       };
       if (args.tags) params.tags = args.tags;
       const result = await client.callTool("creative_retrieval_service", params);
