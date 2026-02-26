@@ -337,22 +337,17 @@ const commands = {
     const { args, positional } = parseArgs(argv);
     const query = positional[0];
     if (!query) {
-      console.error("Usage: collavre search <query> [--tags tags] [--level N] [--tree]");
+      console.error("Usage: collavre search <query> [--tags tags]");
       process.exit(1);
     }
     await withClient(async (client) => {
       const params = {
         query,
-        level: parseInt(args.level) || 3,
-        format: args.format || "markdown",
-        simple: args.tree !== true, // default: flat list; --tree for subtree expansion
+        simple: true,
       };
       if (args.tags) params.tags = args.tags;
-      if (args["progress-min"]) params.progress_min = parseFloat(args["progress-min"]);
-      if (args["progress-max"]) params.progress_max = parseFloat(args["progress-max"]);
       const result = await client.callTool("creative_retrieval_service", params);
-      const truncate = args.truncate ? parseInt(args.truncate) : undefined;
-      printResult(result, { truncate });
+      printResult(result);
     });
   },
 
@@ -445,7 +440,7 @@ Commands:
   auth     --url <url> --token <token>     Configure connection
   list     [--level N] [--format json] [--truncate N]  List root creatives
   get      <id> [--level N] [--comments] [--truncate N]  Get creative subtree
-  search   <query> [--tags t1,t2] [--tree] [--truncate N]  Search creatives
+  search   <query> [--tags t1,t2]           Search creatives
   create   --parent <id> --desc <text>     Create creative
   update   <id> [--desc] [--progress 1.0]  Update creative
   import   --parent <id> --file <path>     Import markdown
