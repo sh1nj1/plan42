@@ -18,6 +18,7 @@ module Tools
     tool_param :updated_since, description: "ISO8601 timestamp - only items updated after this.", required: false
     tool_param :include_comments, description: "Include recent comments per creative (default: false).", required: false
     tool_param :format, description: "Response format: 'markdown' (default, compact tree) or 'json' (structured data with tags/dates).", required: false
+    tool_param :simple, description: "Return flat list without subtree expansion (useful for search results). Default: false.", required: false
 
     sig do
       params(
@@ -29,20 +30,27 @@ module Tools
         progress_max: T.nilable(Float),
         updated_since: T.nilable(String),
         include_comments: T.nilable(T::Boolean),
-        format: T.nilable(String)
+        format: T.nilable(String),
+        simple: T.nilable(T::Boolean)
       ).returns(T.any(String, T::Array[T::Hash[Symbol, T.untyped]]))
     end
-    def call(id: nil, query: nil, level: 3, tags: nil, progress_min: nil, progress_max: nil, updated_since: nil, include_comments: false, format: "markdown")
+    def call(id: nil, query: nil, level: 3, tags: nil, progress_min: nil, progress_max: nil, updated_since: nil, include_comments: false, format: "markdown", simple: false)
       level ||= 3
       format ||= "markdown"
       include_comments ||= false
+      simple ||= false
 
       raise "Current.user is required" unless Current.user
 
       creatives = fetch_creatives(id: id, query: query)
       creatives = apply_filters(creatives, tags: tags, progress_min: progress_min, progress_max: progress_max, updated_since: updated_since)
 
-      if format == "json"
+      if simple
+        # Flat list without subtree expansion — useful for search results
+        creatives.map do |c|
+          { id: c.id, description: Creatives::TreeFormatter.plain_description(c), progress: c.progress.to_f.round(2) }
+        end
+      elsif format == "json"
         build_json_tree(creatives, depth: level, include_comments: include_comments)
       else
         formatter = Creatives::TreeFormatter.new(

@@ -38,6 +38,8 @@ collavre get 123 --level 5 --comments
 ```bash
 collavre search "project name"
 collavre search "urgent" --tags "v2"
+collavre search "task" --tree              # show full subtrees (default: flat list)
+collavre search "task" --truncate 50       # limit description length
 ```
 
 ### Create
