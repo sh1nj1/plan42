@@ -220,8 +220,8 @@ function decodeHtmlEntities(text) {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
 }
 
 // Fix Ruby hash-style output to valid JSON
@@ -235,12 +235,11 @@ function fixRubyHash(text) {
     return text;
   } catch {
     // Convert Ruby hash syntax to JSON
+    // First, quote symbol keys: word: → "word":
     let fixed = text
-      // nil → null
-      .replace(/\bnil\b/g, "null")
-      // true/false are the same
-      // Symbol keys: word: → "word":
       .replace(/(?<=[\{,\s])(\w+):\s/g, '"$1": ');
+    // Replace nil → null only outside quoted strings
+    fixed = fixed.replace(/"(?:[^"\\]|\\.)*"|(\bnil\b)/g, (match, nil) => nil ? "null" : match);
     try {
       JSON.parse(fixed);
       return fixed;
