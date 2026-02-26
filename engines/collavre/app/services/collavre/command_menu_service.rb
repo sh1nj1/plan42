@@ -32,6 +32,12 @@ module Collavre
           label: "/work",
           description: I18n.t("collavre.comments.command_menu.work_description"),
           args: I18n.t("collavre.comments.command_menu.work_args")
+        },
+        {
+          name: "compress",
+          label: "/compress",
+          description: I18n.t("collavre.comments.command_menu.compress_description"),
+          args: I18n.t("collavre.comments.command_menu.compress_args")
         }
       ]
     end

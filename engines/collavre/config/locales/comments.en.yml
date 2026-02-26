@@ -104,12 +104,21 @@ en:
         topic_args: '"topic name" @agent_name'
         work_description: "Create a workflow to execute tasks on child creatives via DFS traversal."
         work_args: "@agent_name workflow_context"
+        compress_description: "Summarize all messages in the current topic and remove originals."
+        compress_args: "[additional instructions]"
       calendar_command:
         event_created: 'event created: [Google Calendar event](%{url})'
         event_created_local: 'event created (local only - connect Google Calendar to sync)'
         event_created_sync_failed: 'event created (Google Calendar sync failed - please reconnect your Google account)'
       mcp_command:
         error_running: "Error running /%{tool_name}: %{error}"
+      compress_command:
+        not_authorized: "You need write permission to compress a topic."
+        topic_required: "The /compress command can only be used within a topic."
+        nothing_to_compress: "No messages to compress in this topic."
+        started: "⏳ Compressing topic messages..."
+        summary_title: "Topic Summary — %{topic}"
+        failed: "Compress failed"
       topic_command:
         missing_name: 'Please specify a topic name in quotes: /topic "topic name"'
         created: 'Topic "%{name}" created.'
