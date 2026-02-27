@@ -56,14 +56,21 @@ module Tools
       end
     end
 
-    test "search by query text" do
+    test "search by query text returns flat list" do
       Current.set(user: @user) do
         service = Tools::CreativeRetrievalService.new
         result = service.call(query: "Child")
 
-        assert_kind_of String, result
-        assert_includes result, "Child Creative"
-        assert_includes result, "Another Child"
+        assert_kind_of Array, result
+        descriptions = result.map { |r| r[:description] }
+        assert_includes descriptions, "Child Creative"
+        assert_includes descriptions, "Another Child"
+        # Each item should have id, description, progress
+        result.each do |item|
+          assert_includes item.keys, :id
+          assert_includes item.keys, :description
+          assert_includes item.keys, :progress
+        end
       end
     end
 
@@ -123,13 +130,15 @@ module Tools
 
         # Only completed items
         result = service.call(query: "Child", progress_min: 1.0)
-        assert_includes result, "Child Creative"
-        refute_includes result, "Another Child"
+        descriptions = result.map { |r| r[:description] }
+        assert_includes descriptions, "Child Creative"
+        refute_includes descriptions, "Another Child"
 
         # Only incomplete items
         result = service.call(query: "Child", progress_max: 0.5)
-        refute_includes result, "Child Creative"
-        assert_includes result, "Another Child"
+        descriptions = result.map { |r| r[:description] }
+        refute_includes descriptions, "Child Creative"
+        assert_includes descriptions, "Another Child"
       end
     end
 
@@ -139,11 +148,13 @@ module Tools
 
         # All should be recent
         result = service.call(query: "Child", updated_since: 1.hour.ago.iso8601)
-        assert_includes result, "Child Creative"
+        descriptions = result.map { |r| r[:description] }
+        assert_includes descriptions, "Child Creative"
 
         # None should match far future
         result = service.call(query: "Child", updated_since: 1.day.from_now.iso8601)
-        refute_includes result, "Child Creative"
+        descriptions = result.map { |r| r[:description] }
+        refute_includes descriptions, "Child Creative"
       end
     end
 
@@ -156,7 +167,8 @@ module Tools
       Current.set(user: @user) do
         service = Tools::CreativeRetrievalService.new
         result = service.call(query: "Child", tags: "important")
-        assert_includes result, "Child Creative"
+        descriptions = result.map { |r| r[:description] }
+        assert_includes descriptions, "Child Creative"
       end
     end
 

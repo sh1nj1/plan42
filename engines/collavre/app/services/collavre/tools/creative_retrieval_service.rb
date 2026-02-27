@@ -42,7 +42,12 @@ module Tools
       creatives = fetch_creatives(id: id, query: query)
       creatives = apply_filters(creatives, tags: tags, progress_min: progress_min, progress_max: progress_max, updated_since: updated_since)
 
-      if format == "json"
+      # Search queries return a flat list — no subtree expansion needed
+      if query.present? && id.blank?
+        creatives.map do |c|
+          { id: c.id, description: Creatives::TreeFormatter.plain_description(c), progress: c.progress.to_f.round(2) }
+        end
+      elsif format == "json"
         build_json_tree(creatives, depth: level, include_comments: include_comments)
       else
         formatter = Creatives::TreeFormatter.new(

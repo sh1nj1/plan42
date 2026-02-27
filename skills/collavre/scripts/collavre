@@ -210,16 +210,77 @@ function parseArgs(argv) {
   return { args, positional };
 }
 
-function printResult(result) {
+// HTML entity decoding
+function decodeHtmlEntities(text) {
+  if (!text) return text;
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
+}
+
+// Fix Ruby hash-style output to valid JSON
+function fixRubyHash(text) {
+  if (!text) return text;
+  // Ruby symbol keys: {id: 1} → {"id": 1}
+  // Also handles nested arrays/hashes
+  try {
+    // Try parsing as JSON first
+    JSON.parse(text);
+    return text;
+  } catch {
+    // Convert Ruby hash syntax to JSON
+    // First, quote symbol keys: word: → "word":
+    let fixed = text
+      .replace(/(?<=[\{,\s])(\w+):\s/g, '"$1": ');
+    // Replace nil → null only outside quoted strings
+    fixed = fixed.replace(/"(?:[^"\\]|\\.)*"|(\bnil\b)/g, (match, nil) => nil ? "null" : match);
+    try {
+      JSON.parse(fixed);
+      return fixed;
+    } catch {
+      return text;
+    }
+  }
+}
+
+function processMarkdownOutput(text, truncateLen) {
+  let output = decodeHtmlEntities(text);
+  if (truncateLen && truncateLen > 0) {
+    output = output.split("\n").map((line) => {
+      // Match tree lines: "  - [id] description (progress%)"
+      const match = line.match(/^(\s*-\s*\[\d+\]\s*)(.+?)(\s*\(\d+%\)\s*)$/);
+      if (match) {
+        let desc = match[2];
+        if (desc.length > truncateLen) {
+          desc = desc.slice(0, truncateLen - 1) + "…";
+        }
+        return match[1] + desc + match[3];
+      }
+      return line;
+    }).join("\n");
+  }
+  return output;
+}
+
+function printResult(result, { truncate } = {}) {
   if (!result) return;
   if (result.content) {
     for (const item of result.content) {
       if (item.type === "text") {
+        // Try to parse as JSON (or fix Ruby hash format)
+        const fixed = fixRubyHash(item.text);
         try {
-          const parsed = JSON.parse(item.text);
+          const parsed = JSON.parse(fixed);
           console.log(JSON.stringify(parsed, null, 2));
         } catch {
-          console.log(item.text);
+          // Markdown output — decode HTML entities and optionally truncate
+          console.log(processMarkdownOutput(item.text, truncate));
         }
       }
     }
@@ -241,13 +302,14 @@ const commands = {
 
   async list(argv) {
     const { args } = parseArgs(argv);
+    const truncate = args.truncate ? parseInt(args.truncate) : undefined;
     await withClient(async (client) => {
       const result = await client.callTool("creative_retrieval_service", {
         level: parseInt(args.level) || 3,
         format: args.format || "markdown",
         include_comments: args.comments === true,
       });
-      printResult(result);
+      printResult(result, { truncate });
     });
   },
 
@@ -255,9 +317,10 @@ const commands = {
     const { args, positional } = parseArgs(argv);
     const id = parseInt(positional[0]);
     if (!id) {
-      console.error("Usage: collavre get <id> [--level N] [--comments] [--format json]");
+      console.error("Usage: collavre get <id> [--level N] [--comments] [--format json] [--truncate N]");
       process.exit(1);
     }
+    const truncate = args.truncate ? parseInt(args.truncate) : undefined;
     await withClient(async (client) => {
       const result = await client.callTool("creative_retrieval_service", {
         id,
@@ -265,7 +328,7 @@ const commands = {
         format: args.format || "markdown",
         include_comments: args.comments === true,
       });
-      printResult(result);
+      printResult(result, { truncate });
     });
   },
 
@@ -273,18 +336,14 @@ const commands = {
     const { args, positional } = parseArgs(argv);
     const query = positional[0];
     if (!query) {
-      console.error("Usage: collavre search <query> [--tags tags] [--level N]");
+      console.error("Usage: collavre search <query> [--tags tags]");
       process.exit(1);
     }
     await withClient(async (client) => {
       const params = {
         query,
-        level: parseInt(args.level) || 3,
-        format: args.format || "markdown",
       };
       if (args.tags) params.tags = args.tags;
-      if (args["progress-min"]) params.progress_min = parseFloat(args["progress-min"]);
-      if (args["progress-max"]) params.progress_max = parseFloat(args["progress-max"]);
       const result = await client.callTool("creative_retrieval_service", params);
       printResult(result);
     });
@@ -377,9 +436,9 @@ Usage: collavre <command> [options]
 
 Commands:
   auth     --url <url> --token <token>     Configure connection
-  list     [--level N] [--format json]     List root creatives
-  get      <id> [--level N] [--comments]   Get creative subtree
-  search   <query> [--tags t1,t2]          Search creatives
+  list     [--level N] [--format json] [--truncate N]  List root creatives
+  get      <id> [--level N] [--comments] [--truncate N]  Get creative subtree
+  search   <query> [--tags t1,t2]           Search creatives
   create   --parent <id> --desc <text>     Create creative
   update   <id> [--desc] [--progress 1.0]  Update creative
   import   --parent <id> --file <path>     Import markdown
