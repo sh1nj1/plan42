@@ -79,12 +79,51 @@ function setupTokenModalListeners() {
   }
 }
 
+function setupViewTokenListeners() {
+  var csrfToken = document.querySelector('meta[name="csrf-token"]')
+  var token = csrfToken ? csrfToken.getAttribute('content') : ''
+
+  document.querySelectorAll('[data-action="show-token"]').forEach(function(btn) {
+    btn.onclick = function() {
+      var url = btn.getAttribute('data-token-url')
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'X-CSRF-Token': token
+        }
+      })
+        .then(function(res) {
+          if (!res.ok) throw new Error('Failed to fetch token')
+          return res.json()
+        })
+        .then(function(data) {
+          if (data.token) {
+            document.getElementById('generated-token').textContent = data.token
+            var modal = document.getElementById('token-modal')
+            modal.style.display = 'flex'
+          }
+        })
+        .catch(function() {
+          alert('Could not retrieve token.')
+        })
+    }
+  })
+}
+
 // Set up event listeners on turbo:load for Turbo-driven navigation
-document.addEventListener('turbo:load', setupTokenModalListeners)
+document.addEventListener('turbo:load', function() {
+  setupTokenModalListeners()
+  setupViewTokenListeners()
+})
 
 // Also handle initial page load for non-Turbo pages
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', setupTokenModalListeners)
+  document.addEventListener('DOMContentLoaded', function() {
+    setupTokenModalListeners()
+    setupViewTokenListeners()
+  })
 } else {
   setupTokenModalListeners()
+  setupViewTokenListeners()
 }

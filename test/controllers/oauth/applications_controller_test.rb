@@ -90,6 +90,32 @@ module Oauth
       assert_equal I18n.t("doorkeeper.applications.personal_access_token.flash.invalid_expiration"), flash[:alert]
     end
 
+    test "should show access token for valid token" do
+      token = Doorkeeper::AccessToken.create!(application: @application, resource_owner_id: @user.id, scopes: "public")
+
+      post show_access_token_oauth_application_url(@application, token_id: token.id), headers: { "Accept" => "application/json" }
+      assert_response :success
+
+      json = JSON.parse(response.body)
+      assert_equal token.token, json["token"]
+    end
+
+    test "should not show revoked access token" do
+      token = Doorkeeper::AccessToken.create!(application: @application, resource_owner_id: @user.id, scopes: "public")
+      token.revoke
+
+      post show_access_token_oauth_application_url(@application, token_id: token.id), headers: { "Accept" => "application/json" }
+      assert_response :not_found
+    end
+
+    test "should not show access token of another user" do
+      other_user = users(:two)
+      token = Doorkeeper::AccessToken.create!(application: @application, resource_owner_id: other_user.id, scopes: "public")
+
+      post show_access_token_oauth_application_url(@application, token_id: token.id), headers: { "Accept" => "application/json" }
+      assert_response :not_found
+    end
+
     test "should exclude expired tokens from list" do
       # Create an expired token
       expired_token = Doorkeeper::AccessToken.create!(
