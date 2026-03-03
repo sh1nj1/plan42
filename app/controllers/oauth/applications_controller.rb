@@ -70,6 +70,17 @@ module Oauth
       end
     end
 
+    def show_access_token
+      @application = current_resource_owner.oauth_applications.find(params[:id])
+      token = Doorkeeper::AccessToken.find_by(id: params[:token_id], application_id: @application.id, resource_owner_id: current_resource_owner.id)
+
+      if token && !token.revoked? && !token.expired?
+        render json: { token: token.token }
+      else
+        render json: { error: I18n.t("doorkeeper.applications.personal_access_token.flash.revoke_error") }, status: :not_found
+      end
+    end
+
     def destroy_access_token
       @application = current_resource_owner.oauth_applications.find(params[:id])
       token = Doorkeeper::AccessToken.find_by(id: params[:token_id], application_id: @application.id, resource_owner_id: current_resource_owner.id)

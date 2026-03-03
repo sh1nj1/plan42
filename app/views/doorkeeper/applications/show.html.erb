@@ -105,7 +105,8 @@
                       <%= "#{expiration_time.strftime('%Y-%m-%d %H:%M')} (#{distance_of_time_in_words(Time.current, expiration_time)})" %>
                     <% end %>
                   </td>
-                  <td class="text-right">
+                  <td class="text-right" style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                    <button type="button" class="secondary-link" data-action="show-token" data-token-url="<%= show_access_token_oauth_application_path(@application, token_id: token.id) %>"><%= t('doorkeeper.applications.personal_access_token.list.view') %></button>
                     <%= button_to t('doorkeeper.applications.personal_access_token.list.revoke'), destroy_access_token_oauth_application_path(@application, token_id: token.id), method: :delete, class: "danger-link", form: { data: { turbo_confirm: t('doorkeeper.applications.personal_access_token.list.revoke_confirm') } } %>
                   </td>
                 </tr>
@@ -119,6 +120,20 @@
     </div>
   </div>
 </div>
+  <!-- View Token Modal (reused for show-token buttons) -->
+  <div id="view-token-modal" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000;">
+    <div class="common-popup" style="position: relative; max-width: 500px; width: 90%;">
+      <button type="button" class="popup-close-btn" data-action="close-view-modal">&times;</button>
+      <h3 class="doorkeeper-section-title" style="margin-top: 0;"><%= t('doorkeeper.applications.personal_access_token.title') %></h3>
+      <div style="position: relative;">
+        <div id="view-token-value" class="doorkeeper-token-code" style="margin-bottom: 0; padding-right: 80px;"></div>
+        <button type="button" data-action="copy-view-token" style="position: absolute; top: 5px; right: 5px; color: var(--color-btn-text); background: var(--color-btn-bg); border: 1px solid var(--color-border); padding: 4px 8px; border-radius: 4px; cursor: pointer;">
+          Copy
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div class="doorkeeper-back-link">
     <%= link_to t('doorkeeper.applications.buttons.back'), oauth_applications_path, class: "btn btn-default" %>
   </div>

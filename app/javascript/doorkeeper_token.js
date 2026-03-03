@@ -79,12 +79,59 @@ function setupTokenModalListeners() {
   }
 }
 
+function setupViewTokenListeners() {
+  document.querySelectorAll('[data-action="show-token"]').forEach(function(btn) {
+    btn.onclick = function() {
+      const url = btn.getAttribute('data-token-url')
+      fetch(url, { headers: { 'Accept': 'application/json' } })
+        .then(function(res) { return res.json() })
+        .then(function(data) {
+          if (data.token) {
+            document.getElementById('view-token-value').textContent = data.token
+            const modal = document.getElementById('view-token-modal')
+            modal.style.display = 'flex'
+          }
+        })
+    }
+  })
+
+  const closeViewBtn = document.querySelector('[data-action="close-view-modal"]')
+  if (closeViewBtn) {
+    closeViewBtn.onclick = function() {
+      document.getElementById('view-token-modal').style.display = 'none'
+    }
+  }
+
+  const copyViewBtn = document.querySelector('[data-action="copy-view-token"]')
+  if (copyViewBtn) {
+    copyViewBtn.onclick = function() {
+      const tokenText = document.getElementById('view-token-value').textContent.trim()
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(tokenText).then(function() {
+          showCopyFeedback(copyViewBtn, true)
+        }, function() {
+          copyTokenFallback(tokenText, copyViewBtn)
+        })
+      } else {
+        copyTokenFallback(tokenText, copyViewBtn)
+      }
+    }
+  }
+}
+
 // Set up event listeners on turbo:load for Turbo-driven navigation
-document.addEventListener('turbo:load', setupTokenModalListeners)
+document.addEventListener('turbo:load', function() {
+  setupTokenModalListeners()
+  setupViewTokenListeners()
+})
 
 // Also handle initial page load for non-Turbo pages
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', setupTokenModalListeners)
+  document.addEventListener('DOMContentLoaded', function() {
+    setupTokenModalListeners()
+    setupViewTokenListeners()
+  })
 } else {
   setupTokenModalListeners()
+  setupViewTokenListeners()
 }
