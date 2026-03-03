@@ -71,11 +71,33 @@ module Collavre
           tracker.release!(job_id || task.id, tokens_used: 0)
           Rails.logger.info("[AiAgentJob] Task #{task.id} escalated after max retries")
         else # :done
-          task.update!(status: "done")
-          tracker.release!(job_id || task.id, tokens_used: 0)
-          # Advance workflow after releasing resources to avoid deadlock
-          if task.parent_task_id.present?
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
+          # Workflow subtasks with empty responses should retry, then fail
+          if task.parent_task_id.present? && response_content.blank?
+            max_retries = 2
+            current_retry = task.retry_count || 0
+
+            if current_retry < max_retries
+              task.update!(retry_count: current_retry + 1, status: "pending")
+              tracker.release!(job_id || task.id, tokens_used: 0)
+              Rails.logger.warn(
+                "[AiAgentJob] Workflow subtask #{task.id} returned empty response, " \
+                "retrying (#{current_retry + 1}/#{max_retries})"
+              )
+              AiAgentJob.set(wait: 5.seconds).perform_later(task)
+            else
+              task.update!(status: "failed")
+              tracker.release!(job_id || task.id, tokens_used: 0)
+              Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+                task, error_message: "Agent returned empty response after #{max_retries} retries"
+              )
+            end
+          else
+            task.update!(status: "done")
+            tracker.release!(job_id || task.id, tokens_used: 0)
+            # Advance workflow after releasing resources to avoid deadlock
+            if task.parent_task_id.present?
+              Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
+            end
           end
         end
       rescue ApprovalPendingError
