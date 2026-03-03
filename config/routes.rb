@@ -11,7 +11,7 @@ Rails.application.routes.draw do
   resources :oauth_applications, controller: "oauth/applications", as: :oauth_applications, only: [] do
     member do
       post :create_access_token
-      get :show_access_token
+      post :show_access_token
       delete :destroy_access_token
     end
   end
