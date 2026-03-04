@@ -353,7 +353,11 @@ class AiAgentJobTest < ActiveJob::TestCase
     old_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :test
 
-    AiClient.stub :new, EmptyAiClient.new do
+    # Stub AiAgentService to return empty response (avoids comment lookup)
+    fake_service = Minitest::Mock.new
+    fake_service.expect :call, ""
+
+    AiAgentService.stub :new, ->(_task) { fake_service } do
       AiAgentJob.perform_now(subtask)
     end
 
@@ -387,7 +391,11 @@ class AiAgentJobTest < ActiveJob::TestCase
       retry_count: AiAgentJob::EMPTY_RESPONSE_MAX_RETRIES # Already at max
     )
 
-    AiClient.stub :new, EmptyAiClient.new do
+    # Stub AiAgentService to return empty response (avoids comment lookup)
+    fake_service = Minitest::Mock.new
+    fake_service.expect :call, ""
+
+    AiAgentService.stub :new, ->(_task) { fake_service } do
       AiAgentJob.perform_now(subtask)
     end
 
