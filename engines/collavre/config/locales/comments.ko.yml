@@ -138,7 +138,8 @@ ko:
         resumed: '@%{agent}의 워크플로우가 재개되었습니다: %{remaining}개 작업 남음.'
         no_active_workflow: '이 크리에이티브에 활성 워크플로우가 없습니다.'
         no_resumable_workflow: '재개할 수 있는 실패/중지된 워크플로우가 없습니다.'
-        supervisor_instruction: "질문이 있거나 확인이 필요하면 사용자 대신 @%{supervisor}에게 물어보세요. 감독자가 안내해줄 것입니다."
+        supervisor_instruction: "질문이 있거나 확인이 필요하면 사용자 대신 @%{supervisor}: 에게 물어보세요. 감독자가 안내해줄 것입니다."
+        empty_response_after_retries: "에이전트가 %{retries}회 재시도 후에도 빈 응답을 반환했습니다"
       versions:
         previous: 이전 버전
         next: 다음 버전

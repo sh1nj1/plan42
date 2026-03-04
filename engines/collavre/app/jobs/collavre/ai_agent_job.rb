@@ -53,6 +53,12 @@ module Collavre
       begin
         response_content = AiAgentService.new(task).call
 
+        # Workflow subtask: retry on empty response (AI may return no text after tool calls)
+        if response_content.blank? && task.parent_task_id.present?
+          handle_empty_workflow_response(task, tracker)
+          return
+        end
+
         # Evaluate self-reflection if enabled
         reflection_result = evaluate_self_reflection(task, response_content)
 
@@ -103,6 +109,28 @@ module Collavre
     end
 
     private
+
+    EMPTY_RESPONSE_MAX_RETRIES = 2
+    EMPTY_RESPONSE_RETRY_DELAY = 5.seconds
+
+    def handle_empty_workflow_response(task, tracker)
+      if task.retry_count < EMPTY_RESPONSE_MAX_RETRIES
+        task.update!(status: "running", retry_count: task.retry_count + 1)
+        tracker.release!(job_id || task.id, tokens_used: 0)
+        AiAgentJob.set(wait: EMPTY_RESPONSE_RETRY_DELAY).perform_later(task)
+        Rails.logger.warn(
+          "[AiAgentJob] Empty response for workflow subtask #{task.id}, " \
+          "retry #{task.retry_count}/#{EMPTY_RESPONSE_MAX_RETRIES}"
+        )
+      else
+        task.update!(status: "failed")
+        tracker.release!(job_id || task.id, tokens_used: 0)
+        error_msg = I18n.t("collavre.comments.workflow.empty_response_after_retries",
+                           retries: EMPTY_RESPONSE_MAX_RETRIES)
+        Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(task, error_message: error_msg)
+        Rails.logger.error("[AiAgentJob] Workflow subtask #{task.id} failed: empty response after #{EMPTY_RESPONSE_MAX_RETRIES} retries")
+      end
+    end
 
     def evaluate_self_reflection(task, response_content)
       Orchestration::SelfReflectionEvaluator.new(task, response_content: response_content).evaluate

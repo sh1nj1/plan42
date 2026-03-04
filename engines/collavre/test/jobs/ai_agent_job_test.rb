@@ -326,6 +326,68 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected no new task when duplicate running task exists for same comment"
   end
 
+  test "retries workflow subtask on empty AI response" do
+    # Create parent workflow task
+    parent_task = Task.create!(
+      name: "Workflow parent",
+      status: "running",
+      trigger_event_name: "workflow",
+      trigger_event_payload: @context,
+      agent: @agent,
+      creative_id: @creative.id
+    )
+
+    # Create subtask
+    subtask = Task.create!(
+      name: "Workflow subtask",
+      status: "running",
+      trigger_event_name: "workflow_subtask",
+      trigger_event_payload: @context,
+      agent: @agent,
+      parent_task: parent_task,
+      creative_id: @creative.id,
+      retry_count: 0
+    )
+
+    AiClient.stub :new, EmptyAiClient.new do
+      AiAgentJob.perform_now(subtask)
+    end
+
+    subtask.reload
+    # Should have incremented retry_count and enqueued a retry
+    assert_equal 1, subtask.retry_count
+    assert_equal "running", subtask.status
+    assert_enqueued_with(job: AiAgentJob, args: [subtask])
+  end
+
+  test "fails workflow subtask after max retries on empty response" do
+    parent_task = Task.create!(
+      name: "Workflow parent",
+      status: "running",
+      trigger_event_name: "workflow",
+      trigger_event_payload: @context,
+      agent: @agent,
+      creative_id: @creative.id
+    )
+
+    subtask = Task.create!(
+      name: "Workflow subtask",
+      status: "running",
+      trigger_event_name: "workflow_subtask",
+      trigger_event_payload: @context,
+      agent: @agent,
+      parent_task: parent_task,
+      creative_id: @creative.id,
+      retry_count: AiAgentJob::EMPTY_RESPONSE_MAX_RETRIES # Already at max
+    )
+
+    AiClient.stub :new, EmptyAiClient.new do
+      AiAgentJob.perform_now(subtask)
+    end
+
+    assert_equal "failed", subtask.reload.status
+  end
+
   test "allows execution when existing task for same comment is done" do
     # Create a completed task for the same agent + comment
     Task.create!(
