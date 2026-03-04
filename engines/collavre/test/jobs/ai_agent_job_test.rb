@@ -45,7 +45,7 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     # Verify Task Actions
     assert_equal 4, task.task_actions.count
-    assert_equal ["start", "prompt_generated", "completion", "reply_created"], task.task_actions.pluck(:action_type)
+    assert_equal [ "start", "prompt_generated", "completion", "reply_created" ], task.task_actions.pluck(:action_type)
 
     # Verify final comment is created (not a streaming placeholder)
     reply = @creative.comments.order(:created_at).last
@@ -85,7 +85,7 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     # Verify Task Actions - reply_created should be missing
     assert_equal 3, task.task_actions.count
-    assert_equal ["start", "prompt_generated", "completion"], task.task_actions.pluck(:action_type)
+    assert_equal [ "start", "prompt_generated", "completion" ], task.task_actions.pluck(:action_type)
 
     # Verify no new comment created (no placeholder, no reply)
     assert_equal 1, @creative.comments.count # Only the initial comment
