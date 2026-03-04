@@ -345,8 +345,7 @@ class AiAgentJobTest < ActiveJob::TestCase
       trigger_event_payload: @context,
       agent: @agent,
       parent_task: parent_task,
-      creative_id: @creative.id,
-      retry_count: 0
+      creative_id: @creative.id
     )
 
     # Use :test adapter so set(wait:).perform_later works without a real backend
@@ -362,8 +361,9 @@ class AiAgentJobTest < ActiveJob::TestCase
     end
 
     subtask.reload
-    # Should have incremented retry_count and enqueued a retry
-    assert_equal 1, subtask.retry_count
+    # Should track empty_response_retries in result JSON (not retry_count)
+    assert_equal 0, subtask.retry_count, "retry_count should stay 0 (reserved for self-reflection)"
+    assert_equal 1, subtask.result&.dig("empty_response_retries")
     assert_equal "running", subtask.status
     assert_enqueued_with(job: AiAgentJob, args: [ subtask ])
   ensure
@@ -388,7 +388,7 @@ class AiAgentJobTest < ActiveJob::TestCase
       agent: @agent,
       parent_task: parent_task,
       creative_id: @creative.id,
-      retry_count: AiAgentJob::EMPTY_RESPONSE_MAX_RETRIES # Already at max
+      result: { "empty_response_retries" => AiAgentJob::EMPTY_RESPONSE_MAX_RETRIES } # Already at max
     )
 
     # Stub AiAgentService to return empty response (avoids comment lookup)

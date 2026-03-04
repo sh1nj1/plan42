@@ -114,13 +114,18 @@ module Collavre
     EMPTY_RESPONSE_RETRY_DELAY = 5.seconds
 
     def handle_empty_workflow_response(task, tracker)
-      if task.retry_count < EMPTY_RESPONSE_MAX_RETRIES
-        task.update!(status: "running", retry_count: task.retry_count + 1)
+      empty_retries = task.result&.dig("empty_response_retries").to_i
+
+      if empty_retries < EMPTY_RESPONSE_MAX_RETRIES
+        task.update!(
+          status: "running",
+          result: (task.result || {}).merge("empty_response_retries" => empty_retries + 1)
+        )
         tracker.release!(job_id || task.id, tokens_used: 0)
         AiAgentJob.set(wait: EMPTY_RESPONSE_RETRY_DELAY).perform_later(task)
         Rails.logger.warn(
           "[AiAgentJob] Empty response for workflow subtask #{task.id}, " \
-          "retry #{task.retry_count}/#{EMPTY_RESPONSE_MAX_RETRIES}"
+          "retry #{empty_retries + 1}/#{EMPTY_RESPONSE_MAX_RETRIES}"
         )
       else
         task.update!(status: "failed")
