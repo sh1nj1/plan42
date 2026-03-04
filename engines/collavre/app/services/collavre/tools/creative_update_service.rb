@@ -109,8 +109,6 @@ module Tools
     end
 
     private
-
-
   end
 end
 end
