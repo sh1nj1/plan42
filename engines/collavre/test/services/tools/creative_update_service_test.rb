@@ -153,6 +153,45 @@ module Collavre
         assert_match(/descendant/i, result[:error])
       end
 
+      test "strips leading and trailing whitespace from plain text description" do
+        service = CreativeUpdateService.new
+
+        result = service.call(
+          id: @creative.id,
+          description: "  Updated with spaces  "
+        )
+
+        assert result[:success]
+        @creative.reload
+        assert_equal "<p>Updated with spaces</p>", @creative.description
+      end
+
+      test "strips leading and trailing whitespace from HTML description" do
+        service = CreativeUpdateService.new
+
+        result = service.call(
+          id: @creative.id,
+          description: "  <p>Updated HTML with spaces</p>  "
+        )
+
+        assert result[:success]
+        @creative.reload
+        assert_equal "<p>Updated HTML with spaces</p>", @creative.description
+      end
+
+      test "strips newlines from description" do
+        service = CreativeUpdateService.new
+
+        result = service.call(
+          id: @creative.id,
+          description: "\nUpdated with newlines\n"
+        )
+
+        assert result[:success]
+        @creative.reload
+        assert_equal "<p>Updated with newlines</p>", @creative.description
+      end
+
       test "raises error when no current user" do
         Current.user = nil
         service = CreativeUpdateService.new

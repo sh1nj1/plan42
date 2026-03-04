@@ -5,6 +5,7 @@ module Tools
   class CreativeCreateService
     extend T::Sig
     extend ToolMeta
+    include DescriptionNormalizable
 
     tool_name "creative_create_service"
     tool_description "Create a new Creative (task/content block) in the hierarchical structure. Creatives function like tasks in a tree structure, with automatic progress calculation.\n\nUse this to:\n- Create new tasks under a parent Creative\n- Add sub-items to organize work\n- Build hierarchical project structures\n\nNote: The description field accepts HTML format for rich text content."
@@ -61,14 +62,6 @@ module Tools
     end
 
     private
-
-    def normalize_description(desc)
-      return desc if desc.blank?
-      # If it already looks like HTML, return as-is
-      return desc if desc.strip.start_with?("<")
-      # Otherwise wrap in <p> tags
-      "<p>#{ERB::Util.html_escape(desc)}</p>"
-    end
 
     def handle_ordering(creative, before_id:, after_id:)
       return unless before_id.present? || after_id.present?
