@@ -365,7 +365,7 @@ class AiAgentJobTest < ActiveJob::TestCase
     # Should have incremented retry_count and enqueued a retry
     assert_equal 1, subtask.retry_count
     assert_equal "running", subtask.status
-    assert_enqueued_with(job: AiAgentJob, args: [subtask])
+    assert_enqueued_with(job: AiAgentJob, args: [ subtask ])
   ensure
     ActiveJob::Base.queue_adapter = old_adapter
   end
