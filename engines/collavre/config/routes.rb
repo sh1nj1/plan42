@@ -1,4 +1,7 @@
 Collavre::Engine.routes.draw do
+  # Games
+  get "games/tetris", to: "games#tetris"
+
   # Authentication routes
   resource :session, only: [ :new, :create, :destroy ]
   resources :passwords, param: :token, only: [ :new, :create, :edit, :update ]
