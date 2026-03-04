@@ -5,6 +5,7 @@ module Tools
   class CreativeUpdateService
     extend T::Sig
     extend ToolMeta
+    include DescriptionNormalizable
 
     tool_name "creative_update_service"
     tool_description "Update an existing Creative's content, progress, or parent. Use this to:\n- Modify the description/title of a Creative\n- Mark a leaf Creative as complete (progress = 1.0)\n- Move a Creative to a different parent\n\nProgress constraints:\n- Only 1.0 (100%) is allowed — partial progress updates are not supported\n- Only leaf Creatives (with no children) can have their progress updated\n- Parent Creative progress is automatically calculated from children\n\nUse creative_retrieval_service to find the correct Creative before updating."
@@ -109,14 +110,7 @@ module Tools
 
     private
 
-    def normalize_description(desc)
-      return desc if desc.blank?
-      stripped = desc.strip
-      # If it already looks like HTML, return as-is
-      return stripped if stripped.start_with?("<")
-      # Otherwise wrap in <p> tags
-      "<p>#{ERB::Util.html_escape(stripped)}</p>"
-    end
+
   end
 end
 end
