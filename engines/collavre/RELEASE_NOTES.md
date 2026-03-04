@@ -1,3 +1,40 @@
+## v0.6.0 (2026-03-05)
+
+### Changes
+- db908d3c fix: strip whitespace in normalize_description for creative create/update (#903)
+- f6137dc8 fix: retry workflow subtask on empty AI response and fix supervisor mention format (#899)
+- 839ff7a5 fix: improve collavre CLI output quality (#891)
+- e386119b feat: add /compress command to summarize and clean topic messages (#888)
+- 6ec26002 feat: add creative_import_service MCP tool for markdown import (#886)
+- aaaa7777 fix: resolve FK constraint error when deleting comments (#885)
+- 4a0f3643 feat: OpenAI-compatible chat completions API (#883)
+- 1790e90f fix: cancel queued tasks when waiting notice is deleted (#884)
+- 7001c05c feat(collavre): add review comment versioning (#882)
+- f8ced8a4 feat(comments): replace selection hint with action bar for batch operations (#879)
+- a6f5cab8 fix: update review quote tests for store-based API and fix ID collision
+- 506e90ef feat: add optional supervisor agent to /work command (#877)
+- 86cac589 fix: cache rendered workflow context to prevent re-render failures in job context
+- 36866ec0 feat: review quote chips UI for multi-review workflow (#876)
+- 3e10a00f fix: auto-resize textarea in comment form (#875)
+- 98d24978 fix: populate creative_id on Task creation for topic concurrency checks (#872)
+- 62153745 fix: add visual feedback when review button appends quote (#870)
+- ec215f80 fix: scope topic concurrency checks by creative_id (#871)
+- 699afbe8 fix: prevent duplicate agent task execution for same comment (#869)
+- 7ca09011 fix: resolve user lookup error in WorkflowExecutor
+- 4fa83985 chore: add debug logging to WorkflowExecutor for progress tracking
+- b91e84e0 fix: add sub-task completion notice to parent creative chat (#868)
+- 508c8407 fix: remove agent fallback from workflow trigger comment author (#867)
+- 1b5f06ca fix: use /work command issuer as trigger comment author, not agent (#866)
+- e384b49f fix: resolve workflow_context creative ID to markdown content (#865)
+- 2cce47e5 fix: restore progress >= 1.0 skip for completed creatives (#864)
+- e213bce2 fix: only skip creatives with active tasks, allow re-work after done/failed/cancelled (#863)
+- 7e40d8e6 feat: enrich workflow trigger with creative markdown and sender context (#862)
+- 573c4d12 feat: add /work stop and /work resume subcommands (#861)
+- 2fc03891 fix: route subtask agent responses to child creative's chat (#860)
+- 0941e1e7 feat: add /work command for DFS workflow execution (#859)
+- 9c271dcd feat: unify review and replace buttons with multi-quote support (#856)
+- 4fb54457 feat: refactor creative_retrieval_service for agent-friendly output (#855)
+
 ## v0.5.0 (2026-02-20)
 
 ### Changes
