@@ -363,7 +363,7 @@ class AiAgentJobTest < ActiveJob::TestCase
     subtask.reload
     # Should track empty_response_retries in result JSON (not retry_count)
     assert_equal 0, subtask.retry_count, "retry_count should stay 0 (reserved for self-reflection)"
-    assert_equal 1, subtask.result&.dig("empty_response_retries")
+    assert_equal 1, subtask.workflow_state&.dig("empty_response_retries")
     assert_equal "running", subtask.status
     assert_enqueued_with(job: AiAgentJob, args: [ subtask ])
   ensure
@@ -388,7 +388,7 @@ class AiAgentJobTest < ActiveJob::TestCase
       agent: @agent,
       parent_task: parent_task,
       creative_id: @creative.id,
-      result: { "empty_response_retries" => AiAgentJob::EMPTY_RESPONSE_MAX_RETRIES } # Already at max
+      workflow_state: { "empty_response_retries" => AiAgentJob::EMPTY_RESPONSE_MAX_RETRIES } # Already at max
     )
 
     # Stub AiAgentService to return empty response (avoids comment lookup)

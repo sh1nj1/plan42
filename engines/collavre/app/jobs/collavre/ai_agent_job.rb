@@ -114,12 +114,12 @@ module Collavre
     EMPTY_RESPONSE_RETRY_DELAY = 5.seconds
 
     def handle_empty_workflow_response(task, tracker)
-      empty_retries = task.result&.dig("empty_response_retries").to_i
+      empty_retries = task.workflow_state&.dig("empty_response_retries").to_i
 
       if empty_retries < EMPTY_RESPONSE_MAX_RETRIES
         task.update!(
           status: "running",
-          result: (task.result || {}).merge("empty_response_retries" => empty_retries + 1)
+          workflow_state: (task.workflow_state || {}).merge("empty_response_retries" => empty_retries + 1)
         )
         tracker.release!(job_id || task.id, tokens_used: 0)
         AiAgentJob.set(wait: EMPTY_RESPONSE_RETRY_DELAY).perform_later(task)
