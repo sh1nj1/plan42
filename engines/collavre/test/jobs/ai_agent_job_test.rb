@@ -349,6 +349,10 @@ class AiAgentJobTest < ActiveJob::TestCase
       retry_count: 0
     )
 
+    # Use :test adapter so set(wait:).perform_later works without a real backend
+    old_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+
     AiClient.stub :new, EmptyAiClient.new do
       AiAgentJob.perform_now(subtask)
     end
@@ -358,6 +362,8 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_equal 1, subtask.retry_count
     assert_equal "running", subtask.status
     assert_enqueued_with(job: AiAgentJob, args: [subtask])
+  ensure
+    ActiveJob::Base.queue_adapter = old_adapter
   end
 
   test "fails workflow subtask after max retries on empty response" do
