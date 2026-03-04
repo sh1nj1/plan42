@@ -111,10 +111,11 @@ module Tools
 
     def normalize_description(desc)
       return desc if desc.blank?
+      stripped = desc.strip
       # If it already looks like HTML, return as-is
-      return desc if desc.strip.start_with?("<")
+      return stripped if stripped.start_with?("<")
       # Otherwise wrap in <p> tags
-      "<p>#{ERB::Util.html_escape(desc)}</p>"
+      "<p>#{ERB::Util.html_escape(stripped)}</p>"
     end
   end
 end

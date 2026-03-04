@@ -101,6 +101,45 @@ module Collavre
         assert_match(/permission/i, result[:error])
       end
 
+      test "strips leading and trailing whitespace from plain text description" do
+        service = CreativeCreateService.new
+
+        result = service.call(
+          parent_id: @parent_creative.id,
+          description: "  New task with spaces  "
+        )
+
+        assert result[:success]
+        creative = Creative.find(result[:id])
+        assert_equal "<p>New task with spaces</p>", creative.description
+      end
+
+      test "strips leading and trailing whitespace from HTML description" do
+        service = CreativeCreateService.new
+
+        result = service.call(
+          parent_id: @parent_creative.id,
+          description: "  <p>HTML with spaces</p>  "
+        )
+
+        assert result[:success]
+        creative = Creative.find(result[:id])
+        assert_equal "<p>HTML with spaces</p>", creative.description
+      end
+
+      test "strips newlines from description" do
+        service = CreativeCreateService.new
+
+        result = service.call(
+          parent_id: @parent_creative.id,
+          description: "\nNew task with newlines\n"
+        )
+
+        assert result[:success]
+        creative = Creative.find(result[:id])
+        assert_equal "<p>New task with newlines</p>", creative.description
+      end
+
       test "raises error when no current user" do
         Current.user = nil
         service = CreativeCreateService.new
