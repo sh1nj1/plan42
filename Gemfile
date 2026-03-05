@@ -85,7 +85,7 @@ group :test do
   gem "minitest-mock"
 end
 
-gem "doorkeeper", "~> 5.8"
+gem "doorkeeper", "~> 5.9"
 
 if File.exist?(File.expand_path("../rails_mcp_engine", __FILE__))
   gem "rails_mcp_engine", "~> 0.4.2", path: "../rails_mcp_engine"
