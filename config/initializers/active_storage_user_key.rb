@@ -6,13 +6,13 @@
 # Uses Collavre::Current.user (thread-safe via ActiveSupport::CurrentAttributes)
 # to determine the uploading user at blob creation time.
 #
-# For variant blobs (thumbnails/resized images), the user prefix is inherited
-# from the original blob's key, since Current.user may not be set during
-# background variant processing.
+# For variant blobs (thumbnails/resized images created by VariantWithRecord),
+# the user prefix is inherited from the source blob's key via thread-local,
+# since Current.user may not be set during variant processing.
 
 Rails.application.config.after_initialize do
   ActiveStorage::Blob.prepend(ActiveStorageUserKeyPrefix)
-  ActiveStorage::Variant.prepend(ActiveStorageVariantUserKey)
+  ActiveStorage::VariantWithRecord.prepend(ActiveStorageVariantWithRecordUserKey)
 end
 
 module ActiveStorageUserKeyPrefix
@@ -39,13 +39,16 @@ module ActiveStorageUserKeyPrefix
   end
 end
 
-module ActiveStorageVariantUserKey
-  # Pass the original blob's user prefix to the variant blob via thread-local
+module ActiveStorageVariantWithRecordUserKey
+  private
+
+  # Pass the source blob's user prefix to the variant blob via thread-local,
+  # so the variant blob inherits the same users/{id}/ folder structure.
   def process
     source_key = blob.key
-    # Extract user prefix (e.g. "users/42") from original blob key
+
+    # Extract user prefix (e.g. "users/42") from source blob key
     if source_key&.start_with?("users/")
-      # "users/42/abc123..." → "users/42"
       parts = source_key.split("/")
       Thread.current[:active_storage_user_prefix] = "#{parts[0]}/#{parts[1]}"
     end
