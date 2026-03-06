@@ -29,8 +29,8 @@ Rails.application.configure do
   # Enable serving of images, stylesheets, and JavaScripts from an asset server.
   # config.asset_host = "http://assets.example.com"
 
-  # Collavre uploaded files on the local file system (see config/storage.yml for options).
-  config.active_storage.service = :local
+  # Collavre uploaded files storage: S3 if AWS_S3_ACCESS_KEY_ID is set, otherwise local disk.
+  config.active_storage.service = ENV["AWS_S3_ACCESS_KEY_ID"].present? ? :amazon : :local
 
   # Assume all access to the app is happening through a SSL-terminating reverse proxy.
   config.assume_ssl = true
