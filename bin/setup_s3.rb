@@ -111,10 +111,10 @@ secret_key = access_info["SecretAccessKey"]
 
 puts "▶️ 7. Writing #{env_file}"
 File.write(env_file, <<~ENV)
-  AWS_S3_ACCESS_KEY_ID=#{access_key}
-  AWS_S3_SECRET_ACCESS_KEY=#{secret_key}
-  AWS_S3_BUCKET=#{bucket}
-  AWS_REGION=#{region}
+AWS_S3_ACCESS_KEY_ID=#{access_key}
+AWS_S3_SECRET_ACCESS_KEY=#{secret_key}
+AWS_S3_BUCKET=#{bucket}
+AWS_REGION=#{region}
 ENV
 
 puts <<~DONE
