@@ -8,8 +8,8 @@ local:
 
 amazon:
   service: S3
-  access_key_id: <%= ENV["AWS_ACCESS_KEY_ID"] %>
-  secret_access_key: <%= ENV["AWS_SECRET_ACCESS_KEY"] %>
+  access_key_id: <%= ENV["AWS_S3_ACCESS_KEY_ID"] %>
+  secret_access_key: <%= ENV["AWS_S3_SECRET_ACCESS_KEY"] %>
   region: <%= ENV.fetch("AWS_REGION", "ap-northeast-2") %>
   bucket: <%= ENV.fetch("AWS_S3_BUCKET", "collavre-uploads-#{Rails.env}") %>
   upload:
