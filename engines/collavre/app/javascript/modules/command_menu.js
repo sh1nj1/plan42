@@ -104,11 +104,11 @@ if (!commandMenuInitialized) {
       const controller = window.Stimulus?.getControllerForElementAndIdentifier(modal, 'link-creative')
       if (!controller) return
 
-      // Clear the "/creative" text from textarea
+      // Clear the command text (e.g. "/crea", "/creative") from textarea
       const pos = textarea.selectionStart
       const before = textarea.value.slice(0, pos)
       const after = textarea.value.slice(pos)
-      const cleaned = before.replace(/^\/creative\s*$/, '')
+      const cleaned = before.replace(/^\/\S*\s*/, '')
       textarea.value = cleaned + after
       textarea.setSelectionRange(cleaned.length, cleaned.length)
 
