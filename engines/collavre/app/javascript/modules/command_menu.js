@@ -35,6 +35,11 @@ if (!commandMenuInitialized) {
         `
       },
       onSelect: (command) => {
+        if (command.type === 'popup' && command.popup_type === 'creative_picker') {
+          openCreativePicker(textarea)
+          popupMenu.hide()
+          return
+        }
         insert(command)
         popupMenu.hide()
         textarea.focus()
@@ -90,6 +95,41 @@ if (!commandMenuInitialized) {
       popupMenu.setItems(filtered)
       const caretRect = getCaretClientRect(textarea) || textarea.getBoundingClientRect()
       popupMenu.showAt(caretRect)
+    }
+
+    function openCreativePicker(textarea) {
+      const modal = document.getElementById('link-creative-modal')
+      if (!modal) return
+
+      const controller = window.Stimulus?.getControllerForElementAndIdentifier(modal, 'link-creative')
+      if (!controller) return
+
+      // Clear the command text (e.g. "/crea", "/creative") from textarea
+      const pos = textarea.selectionStart
+      const before = textarea.value.slice(0, pos)
+      const after = textarea.value.slice(pos)
+      const cleaned = before.replace(/^\/\S*\s*/, '')
+      textarea.value = cleaned + after
+      textarea.setSelectionRange(cleaned.length, cleaned.length)
+
+      const caretRect = getCaretClientRect(textarea) || textarea.getBoundingClientRect()
+      controller.open(
+        caretRect,
+        (item) => {
+          // Insert markdown link at cursor position
+          const link = `[${item.label}](/creatives/${item.id})`
+          const curPos = textarea.selectionStart
+          const beforeCur = textarea.value.slice(0, curPos)
+          const afterCur = textarea.value.slice(curPos)
+          textarea.value = beforeCur + link + ' ' + afterCur
+          const newPos = curPos + link.length + 1
+          textarea.setSelectionRange(newPos, newPos)
+          textarea.focus()
+        },
+        () => {
+          textarea.focus()
+        }
+      )
     }
 
     textarea.addEventListener('keydown', function (event) {

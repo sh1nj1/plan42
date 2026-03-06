@@ -106,6 +106,7 @@ en:
         work_args: "@agent_name workflow_context"
         compress_description: "Summarize all messages in the current topic and remove originals."
         compress_args: "[additional instructions]"
+        creative_description: "Insert a link to a creative. In AI chats, the linked creative tree is injected as context."
       calendar_command:
         event_created: 'event created: [Google Calendar event](%{url})'
         event_created_local: 'event created (local only - connect Google Calendar to sync)'

@@ -38,6 +38,13 @@ module Collavre
           label: "/compress",
           description: I18n.t("collavre.comments.command_menu.compress_description"),
           args: I18n.t("collavre.comments.command_menu.compress_args")
+        },
+        {
+          name: "creative",
+          label: "/creative",
+          type: "popup",
+          popup_type: "creative_picker",
+          description: I18n.t("collavre.comments.command_menu.creative_description")
         }
       ]
     end

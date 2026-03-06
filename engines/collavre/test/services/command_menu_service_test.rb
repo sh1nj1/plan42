@@ -17,6 +17,18 @@ module Collavre
       assert_equal "/topic", topic_item[:label]
     end
 
+    test "returns creative command with popup type" do
+      user = users(:one)
+      items = CommandMenuService.new(user: user).items
+
+      creative_item = items.find { |i| i[:name] == "creative" }
+
+      assert_not_nil creative_item, "Should include creative command"
+      assert_equal "/creative", creative_item[:label]
+      assert_equal "popup", creative_item[:type]
+      assert_equal "creative_picker", creative_item[:popup_type]
+    end
+
     test "format_args handles nil params" do
       service = CommandMenuService.new(user: users(:one))
       assert_nil service.send(:format_args, nil)

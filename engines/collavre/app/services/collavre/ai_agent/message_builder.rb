@@ -17,6 +17,7 @@ module Collavre
         messages = []
 
         append_creative_context(messages)
+        append_referenced_creative_contexts(messages)
         append_chat_history(messages)
         append_trigger_message(messages)
 
@@ -42,6 +43,33 @@ module Collavre
         topic_info = topic ? "\nTopic: #{topic.name} (id: #{topic.id})" : ""
 
         messages << { role: "user", parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
+      end
+
+      def append_referenced_creative_contexts(messages)
+        content = @context.dig("comment", "content")
+        return unless content
+
+        current_creative_id = @context.dig("creative", "id")
+        children_level = @agent.creative_children_level
+        max_depth = 1 + children_level
+
+        # Extract creative IDs from markdown links like [title](/creatives/123)
+        content.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.uniq.each do |id_str|
+          creative_id = id_str.to_i
+          next if creative_id == current_creative_id
+
+          creative = Creative.find_by(id: creative_id)
+          next unless creative
+
+          markdown = ApplicationController.helpers.render_creative_tree_markdown(
+            [ creative ], 1, true, max_depth: max_depth
+          )
+
+          messages << {
+            role: "user",
+            parts: [ { text: "Referenced Creative (id: #{creative.id}):\n#{markdown}" } ]
+          }
+        end
       end
 
       def append_chat_history(messages)
