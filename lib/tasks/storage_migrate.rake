@@ -62,15 +62,10 @@ namespace :storage do
 
     ActiveStorage::Blob.where(service_name: "local").find_each do |blob|
       # Determine owner: extract user_id based on attachment record_type
+      # For variant blobs (ActiveStorage::VariantRecord), trace back to the
+      # original blob's attachment to find the owning user.
       attachment = blob.attachments.first
-      user_id = if attachment
-                  case attachment.record_type
-                  when "Collavre::Comment"
-                    attachment.record&.user_id
-                  when "Collavre::User"
-                    attachment.record_id
-                  end
-      end
+      user_id = resolve_user_id(attachment)
 
       # Generate new S3 key with user-prefixed folder
       new_key = if user_id
@@ -107,5 +102,30 @@ namespace :storage do
     puts "  Skipped (file missing): #{skipped}"
     puts "  Failed: #{failed}"
     puts "  Total: #{total}"
+  end
+
+  # Resolve the owning user_id from an attachment.
+  # For variant blobs, traces back through:
+  #   VariantRecord → original blob → attachment → user
+  def resolve_user_id(attachment)
+    return nil unless attachment
+
+    case attachment.record_type
+    when "Collavre::Comment"
+      attachment.record&.user_id
+    when "Collavre::User"
+      attachment.record_id
+    when "ActiveStorage::VariantRecord"
+      # Variant blob: VariantRecord belongs_to :blob (the original)
+      variant_record = attachment.record
+      return nil unless variant_record
+
+      original_blob = variant_record.blob
+      return nil unless original_blob
+
+      # Find the original blob's attachment to determine the user
+      original_attachment = original_blob.attachments.first
+      resolve_user_id(original_attachment)
+    end
   end
 end
