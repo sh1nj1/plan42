@@ -1,6 +1,8 @@
 module Collavre
   module Comments
     class WorkflowExecutor
+      include Concerns::WorkflowSupport
+
       def self.advance!(parent_task)
         new(parent_task).advance!
       end
@@ -199,24 +201,7 @@ module Collavre
       end
 
       def post_notice(content)
-        comment_id = @parent_task.trigger_event_payload&.dig("comment", "id")
-        unless comment_id
-          Rails.logger.warn("[WorkflowExecutor] post_notice: no comment_id in trigger_event_payload: #{@parent_task.trigger_event_payload.inspect}")
-          return
-        end
-
-        original_comment = Comment.find_by(id: comment_id)
-        unless original_comment
-          Rails.logger.warn("[WorkflowExecutor] post_notice: comment #{comment_id} not found")
-          return
-        end
-
-        Rails.logger.info("[WorkflowExecutor] post_notice: posting to creative #{original_comment.creative_id}")
-        original_comment.creative.comments.create!(
-          content: content,
-          user: @parent_task.agent,
-          topic_id: original_comment.topic_id
-        )
+        post_workflow_notice(@parent_task, content)
       end
 
       def build_subtask_context(creative)
@@ -271,73 +256,20 @@ module Collavre
       end
 
       def resolve_workflow_context
-        # Use cached rendered context if available (avoids re-rendering in job context)
-        cached = @state["rendered_workflow_context"]
-        return cached if cached.present?
-
-        context_text = @parent_task.workflow_context.to_s.strip
-        creative_id = context_text[/\A\d+\z/]
-
-        resolved = if creative_id
-                     context_creative = Creative.find_by(id: creative_id)
-                     if context_creative
-                       markdown = render_creative_markdown(context_creative)
-                       markdown.presence || context_text
-                     else
-                       context_text
-                     end
-        else
-                     context_text
-        end
-
-        # Cache for subsequent sub-tasks
-        @state["rendered_workflow_context"] = resolved
-        @parent_task.update!(workflow_state: @state)
-
-        resolved
+        resolve_workflow_context_from_task(@parent_task, @state)
       end
 
       def render_creative_markdown(creative)
-        max_depth = @parent_task.agent.creative_children_level + 1
-        result = ApplicationController.helpers.render_creative_tree_markdown(
-          [ creative ], 1, true, max_depth: max_depth
-        )
-        Rails.logger.info("[WorkflowExecutor] render_creative_markdown: creative=#{creative.id} result_length=#{result&.length}")
-        result
-      rescue StandardError => e
-        Rails.logger.error("[WorkflowExecutor] render_creative_markdown FAILED: creative=#{creative.id} error=#{e.class}: #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}")
-        nil
+        render_creative_markdown_for_task(@parent_task, creative)
       end
 
       def find_original_user
-        comment_id = @parent_task.trigger_event_payload&.dig("comment", "id")
-        comment = Comment.find_by(id: comment_id) if comment_id
-
-        # Try: comment author → stored user_id → creative owner → agent (last resort)
-        user = comment&.user
-        user ||= User.find_by(id: @parent_task.trigger_event_payload&.dig("comment", "user_id"))
-        user ||= @parent_task.creative&.user
-        user ||= @parent_task.agent
-
-        Rails.logger.warn("[WorkflowExecutor] Using fallback user (#{user&.class}:#{user&.id}) for task ##{@parent_task.id}") unless comment&.user
-
-        user
+        find_original_user_from_task(@parent_task)
       end
 
       def refilter_pending(creative_ids)
         return [] if creative_ids.empty?
-
-        # Skip creatives with active tasks (done/failed/cancelled allow re-work)
-        active = Task.where(creative_id: creative_ids)
-                     .where(status: %w[running queued pending pending_approval])
-                     .pluck(:creative_id)
-
-        # Skip creatives already completed (progress >= 1.0)
-        completed = Creative.where(id: creative_ids)
-                            .where("progress >= 1.0")
-                            .pluck(:id)
-
-        creative_ids - (active + completed).uniq
+        creative_ids - filter_active_or_completed(creative_ids)
       end
     end
   end
