@@ -214,9 +214,10 @@ class AiAgentJobTest < ActiveJob::TestCase
     end
 
     # Temporarily set cancel check interval to 0 so it checks on every chunk
-    original_interval = AiAgentService::CANCEL_CHECK_INTERVAL
-    AiAgentService.send(:remove_const, :CANCEL_CHECK_INTERVAL)
-    AiAgentService.const_set(:CANCEL_CHECK_INTERVAL, 0)
+    lifecycle_klass = Collavre::AiAgent::AgentLifecycleManager
+    original_interval = lifecycle_klass::CANCEL_CHECK_INTERVAL
+    lifecycle_klass.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    lifecycle_klass.const_set(:CANCEL_CHECK_INTERVAL, 0)
 
     AiClient.stub :new, cancelling_client.new do
       AiAgentJob.perform_now(task)
@@ -225,8 +226,9 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_equal "cancelled", task.reload.status
     assert_includes task.task_actions.pluck(:action_type), "cancelled"
   ensure
-    AiAgentService.send(:remove_const, :CANCEL_CHECK_INTERVAL)
-    AiAgentService.const_set(:CANCEL_CHECK_INTERVAL, original_interval)
+    lifecycle_klass = Collavre::AiAgent::AgentLifecycleManager
+    lifecycle_klass.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    lifecycle_klass.const_set(:CANCEL_CHECK_INTERVAL, original_interval)
   end
 
   test "triggers dequeue_next_for_topic on completion" do
