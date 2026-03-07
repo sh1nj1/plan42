@@ -40,6 +40,9 @@ module Collavre
       tz = request.env["omniauth.params"] && request.env["omniauth.params"]["timezone"]
       user.update(timezone: tz) if tz.present? && user.timezone != tz
 
+      return_to = session[:return_to_after_authenticating]
+      reset_session
+      session[:return_to_after_authenticating] = return_to if return_to
       start_new_session_for(user)
       redirect_to after_authentication_url
     end
