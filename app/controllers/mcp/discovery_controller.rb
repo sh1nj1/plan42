@@ -1,7 +1,21 @@
 module Mcp
   class DiscoveryController < ApplicationController
+    # CSRF protection is skipped because these are read-only OAuth/MCP discovery endpoints
+    # that must be publicly accessible without session state. MCP clients and OAuth libraries
+    # need to fetch these metadata endpoints before establishing any session.
+    # See RFC 8414 (OAuth 2.0 Authorization Server Metadata) for spec details.
     skip_before_action :verify_authenticity_token
+
+    # These endpoints serve public OAuth/MCP discovery metadata and must be accessible
+    # without authentication per RFC 8414 and MCP specification requirements.
     allow_unauthenticated_access
+
+    # Rate limiting to prevent abuse of public endpoints
+    # Allow 60 requests per minute per IP address
+    rate_limit to: 60, within: 1.minute, with: -> {
+      render json: { error: I18n.t("mcp.discovery.rate_limit_exceeded") },
+             status: :too_many_requests
+    }
 
     def oauth_protected_resource
       render json: {

@@ -1,0 +1,4 @@
+ko:
+  mcp:
+    discovery:
+      rate_limit_exceeded: "요청 횟수 제한을 초과했습니다. 잠시 후 다시 시도해주세요."
