@@ -1,6 +1,8 @@
 module Collavre
   module Comments
     class WorkCommand
+      include Concerns::WorkflowSupport
+
       def initialize(comment:, user:)
         @comment = comment
         @user = user
@@ -113,24 +115,8 @@ module Collavre
         dfs_ids.reject { |id| id == creative.id }
       end
 
-      def dfs_traverse(node, &block)
-        yield node
-        node.children.order(:sequence).each { |child| dfs_traverse(child, &block) }
-      end
-
       def filter_already_tasked(creative_ids)
-        # Skip creatives with currently active tasks.
-        # Done/failed/cancelled tasks allow re-work.
-        active = Task.where(creative_id: creative_ids)
-                     .where(status: %w[running queued pending pending_approval])
-                     .pluck(:creative_id)
-
-        # Skip creatives already marked as completed (progress >= 1.0)
-        completed = Creative.where(id: creative_ids)
-                            .where("progress >= 1.0")
-                            .pluck(:id)
-
-        (active + completed).uniq
+        filter_active_or_completed(creative_ids)
       end
 
       def create_parent_task(worker, supervisor, workflow_text, pending_ids)
