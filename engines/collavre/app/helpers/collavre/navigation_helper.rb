@@ -103,7 +103,7 @@ module Collavre
 
     def render_nav_raw(item)
       content = resolve_nav_value(item[:content])
-      return "".html_safe if content.nil?
+      return safe_join([]) if content.nil?
       content.respond_to?(:html_safe?) && content.html_safe? ? content : ERB::Util.html_escape(content)
     end
 

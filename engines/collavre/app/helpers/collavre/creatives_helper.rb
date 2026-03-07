@@ -13,8 +13,11 @@ module Collavre
         suffix = " 🗓#{label.target_date}" if label.type == "Plan" and !name_only
         index += 1
         content_tag(:span, class: "tag") do
-          (index == 1 ? "" : " ").html_safe +
-          link_to("##{strip_tags(label.name)}", collavre.creatives_path(tags: [ label.id ]), class: class_name ? class_name: "", title: strip_tags(label.name)) + suffix
+          safe_join([
+            (index == 1 ? "" : " "),
+            link_to("##{strip_tags(label.name)}", collavre.creatives_path(tags: [ label.id ]), class: class_name ? class_name: "", title: strip_tags(label.name)),
+            suffix
+          ].compact)
         end
       end)
     end
@@ -67,9 +70,14 @@ module Collavre
             class: classes.join(" ")
           )
         else
-          "".html_safe
+          safe_join([])
         end
-        render_progress_value(progress_value) + comment_part + "<br />".html_safe + (creative.tags ? render_creative_tags(creative) : "".html_safe)
+        safe_join([
+          render_progress_value(progress_value),
+          comment_part,
+          tag.br,
+          (creative.tags ? render_creative_tags(creative) : safe_join([]))
+        ])
       end
     end
 
