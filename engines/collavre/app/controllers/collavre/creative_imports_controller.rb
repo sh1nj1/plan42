@@ -1,5 +1,7 @@
 module Collavre
   class CreativeImportsController < ApplicationController
+    # Allow unauthenticated access so we can return JSON 401 instead of HTML redirect
+    # for API/fetch callers (import_controller.js uses csrfFetch with Accept: application/json)
     allow_unauthenticated_access only: :create
 
     def create
