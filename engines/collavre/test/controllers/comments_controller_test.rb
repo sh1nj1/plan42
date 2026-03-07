@@ -9,6 +9,21 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     post session_path, params: { email: @user.email, password: "password" }
   end
 
+  private
+
+  # Helper to ensure users(:two) has at least read access to the creative
+  def grant_read_access_to_other_user(creative = @creative, user: users(:two), permission: :read)
+    user.update!(email_verified_at: Time.current) unless user.email_verified_at?
+    share = CreativeShare.find_by(creative: creative, user: user)
+    if share
+      share.update!(permission: permission) if share.permission.to_s < permission.to_s
+    else
+      CreativeShare.create!(creative: creative, user: user, shared_by: @user, permission: permission)
+    end
+  end
+
+  public
+
   test "convert markdown comment to sub creatives" do
     comment = @creative.comments.create!(content: "- First\n- Second", user: @user)
     assert_difference("Creative.count", 2) do
@@ -148,6 +163,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
   test "approver can execute private comment action" do
     approver = users(:two)
     approver.update!(email_verified_at: Time.current)
+    grant_read_access_to_other_user(user: approver, permission: :write)
 
     action_payload = {
       "action" => "update_creative",
@@ -586,6 +602,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     non_admin = users(:two)
     non_admin.update!(email_verified_at: Time.current)
+    grant_read_access_to_other_user(user: non_admin)
 
     # Sign in as non-admin
     delete session_path
@@ -635,6 +652,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
   test "non-approver receives 403 (not 422) for blank action payload" do
     non_approver = users(:two)
     non_approver.update!(email_verified_at: Time.current)
+    grant_read_access_to_other_user(user: non_approver)
 
     comment = @creative.comments.create!(
       content: "Needs approval",
@@ -663,6 +681,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
   test "approve action performs authz check before content validation" do
     non_approver = users(:two)
     non_approver.update!(email_verified_at: Time.current)
+    grant_read_access_to_other_user(user: non_approver)
 
     # Comment with NO action (invalid state usually, but possible via direct DB creation or bugs)
     comment = @creative.comments.create!(
@@ -690,6 +709,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
   test "non-approver receives 403 (not 422) for invalid action payload" do
     non_approver = users(:two)
     non_approver.update!(email_verified_at: Time.current)
+    grant_read_access_to_other_user(user: non_approver)
 
     comment = @creative.comments.create!(
       content: "Needs approval",
@@ -718,6 +738,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
   test "non-approver cannot repair invalid action" do
     non_approver = users(:two)
     non_approver.update!(email_verified_at: Time.current)
+    grant_read_access_to_other_user(user: non_approver)
 
     comment = @creative.comments.create!(
       content: "Broken action",
@@ -835,7 +856,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
   test "participants returns can_share false for non-admin shared user" do
     other = users(:two)
     other.update!(email_verified_at: Time.current)
-    Collavre::CreativeShare.create!(creative: @creative, user: other, permission: :feedback)
+    grant_read_access_to_other_user(user: other, permission: :feedback)
 
     # Login as the shared user
     post session_path, params: { email: other.email, password: "password" }

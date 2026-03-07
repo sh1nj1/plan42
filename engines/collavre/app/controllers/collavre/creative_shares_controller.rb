@@ -3,6 +3,11 @@ module Collavre
     def create
       @creative = Creative.find(params[:creative_id]).effective_origin
 
+      unless @creative.has_permission?(Current.user, :admin)
+        flash[:alert] = t("collavre.creatives.errors.no_permission")
+        redirect_back(fallback_location: creatives_path) and return
+      end
+
       user = nil
       if params[:user_email].present?
         user = User.find_by(email: params[:user_email])
@@ -66,6 +71,14 @@ module Collavre
 
     def destroy
       @creative_share = CreativeShare.find(params[:id])
+      unless @creative_share.creative.has_permission?(Current.user, :admin)
+        respond_to do |format|
+          format.html { redirect_back fallback_location: main_app.root_path, alert: t("collavre.creatives.errors.no_permission") }
+          format.json { render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden }
+        end
+        return
+      end
+
       @creative_share.destroy
       # remove linked creative if it exists
       linked_creative = Creative.find_by(origin_id: @creative_share.creative_id, user_id: @creative_share.user_id)
