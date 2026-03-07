@@ -23,7 +23,7 @@ module Tools
         unless creative.has_permission?(Current.user, :read)
           return { error: "No read permission on this Creative", id: creative_id }
         end
-        tasks = tasks.where("key LIKE ?", "cron_#{creative_id}_%")
+        tasks = tasks.where("key LIKE ?", "cron_#{creative_id.to_i}_%")
       end
 
       results = tasks.filter_map do |task|
