@@ -1,10 +1,15 @@
 module Collavre
   class CreativesController < ApplicationController
+    include Collavre::Concerns::SlideViewable
+    include Collavre::Concerns::Exportable
+    include Collavre::Concerns::TreeManageable
+    include Collavre::Concerns::Shareable
+
     # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
     # Removed unauthenticated access to index and show actions
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
-    before_action :set_creative, only: %i[ show edit update destroy request_permission parent_suggestions slide_view unconvert ]
+    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert ]
 
     def index
       respond_to do |format|
@@ -145,22 +150,6 @@ module Collavre
       end
     end
 
-    def slide_view
-      unless @creative.has_permission?(Current.user, :read)
-        if Current.user
-          redirect_to creatives_path, alert: t("collavre.creatives.errors.no_permission")
-        else
-          request_authentication
-        end
-        return
-      end
-
-      @slide_ids = []
-      @root_depth = @creative.ancestors.count
-      build_slide_ids(@creative)
-      render layout: "collavre/slide"
-    end
-
     def new
       @creative = Creative.new
       if params[:parent_id].present?
@@ -256,163 +245,6 @@ module Collavre
       ).call
     end
 
-    def request_permission
-      creative = @creative.effective_origin
-      if creative.user == Current.user || creative.has_permission?(Current.user, :read)
-        return head :unprocessable_entity
-      end
-
-      short_title = helpers.strip_tags(creative.effective_origin.description).truncate(10)
-
-      InboxItem.create!(
-        owner: creative.user,
-        message_key: "inbox.permission_requested",
-        message_params: { user: Current.user.display_name, short_title: short_title },
-        link: creative_url(
-          creative,
-          Rails.application.config.action_mailer.default_url_options.merge(share_request: Current.user.email)
-        )
-      )
-
-      head :ok
-    end
-
-
-
-    def reorder
-      dragged_ids = Array(params[:dragged_ids]).map(&:presence).compact
-      target_id = params[:target_id]
-      direction = params[:direction]
-
-      if dragged_ids.any?
-        reorderer.reorder_multiple(
-          dragged_ids: dragged_ids,
-          target_id: target_id,
-          direction: direction
-        )
-      else
-        reorderer.reorder(
-          dragged_id: params[:dragged_id],
-          target_id: target_id,
-          direction: direction
-        )
-      end
-      head :ok
-    rescue ::Creatives::Reorderer::Error
-      head :unprocessable_entity
-    end
-
-    def link_drop
-      result = reorderer.link_drop(
-        dragged_id: params[:dragged_id],
-        target_id: params[:target_id],
-        direction: params[:direction]
-      )
-
-      new_creative = result.new_creative
-      level = new_creative.ancestors.count + 1
-      nodes = build_tree(
-        [ new_creative ],
-        params: params,
-        expanded_state_map: {},
-        level: level
-      )
-
-      render json: {
-        nodes: nodes,
-        creative_id: new_creative.id,
-        parent_id: result.parent&.id,
-        direction: result.direction
-      }
-    rescue ::Creatives::Reorderer::Error
-      head :unprocessable_entity
-    end
-
-    def append_as_parent
-      @parent_creative = Creative.find_by(id: params[:parent_id]).parent
-      redirect_to new_creative_path(parent_id: @parent_creative&.id, child_id: params[:parent_id], tags: params[:tags])
-    end
-
-    def append_below
-      target = Creative.find_by(id: params[:creative_id])
-      redirect_to new_creative_path(parent_id: target&.parent_id, after_id: target&.id, tags: params[:tags])
-    end
-
-    def children
-      parent = Creative.find(params[:id])
-      effective = parent.effective_origin
-      # user_id for expanded_state lookup - use owner's state for anonymous users
-      state_user_id = Current.user&.id || effective.user_id
-
-      # HTTP caching disabled for children endpoint:
-      # Response depends on child updates, permission changes (CreativeSharesCache),
-      # and CreativeExpandedState. Tracking all dependencies reliably is expensive
-      # (requires descendant_ids query). Stale 304 responses could leak data after
-      # permission revocation. Re-enable when a cheap version key mechanism exists.
-      # Use private + no-store to prevent any caching (proxy or browser).
-      response.headers["Cache-Control"] = "private, no-store"
-
-      has_filters = params[:tags].present? || params[:min_progress].present? || params[:max_progress].present?
-      if has_filters
-        result = ::Creatives::IndexQuery.new(user: Current.user, params: params.merge(id: params[:id])).call
-        render_children_json(parent, state_user_id, result.allowed_creative_ids, result.progress_map)
-      else
-        render_children_json(parent, state_user_id, nil, nil)
-      end
-    end
-
-    def unconvert
-      base_creative = @creative.effective_origin
-      parent = base_creative.parent
-      if parent.nil?
-        render json: { error: t("collavre.creatives.index.unconvert_no_parent") }, status: :unprocessable_entity and return
-      end
-
-      unless parent.has_permission?(Current.user, :feedback)
-        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
-      end
-
-      unless base_creative.has_permission?(Current.user, :admin)
-        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
-      end
-
-      markdown = helpers.render_creative_tree_markdown([ base_creative ])
-      comment = nil
-
-      ActiveRecord::Base.transaction do
-        comment = parent.effective_origin.comments.create!(content: markdown, user: Current.user)
-        base_creative.descendants.each(&:destroy!)
-        base_creative.destroy!
-      end
-
-      render json: { comment_id: comment.id }, status: :created
-    rescue ActiveRecord::RecordInvalid => e
-      render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
-    end
-
-    def export_markdown
-      creatives = if params[:parent_id]
-        parent_creative = Creative.find(params[:parent_id])
-        effective_origin = parent_creative.effective_origin
-        unless parent_creative.has_permission?(Current.user, :read) &&
-               effective_origin.has_permission?(Current.user, :read)
-          render plain: t("collavre.creatives.errors.no_permission"), status: :forbidden and return
-        end
-        [ effective_origin ]
-      else
-        Creative.where(parent_id: nil).map(&:effective_origin).uniq.select do |creative|
-          creative.has_permission?(Current.user, :read)
-        end
-      end
-
-      if creatives.empty?
-        render plain: t("collavre.creatives.errors.no_permission"), status: :forbidden and return
-      end
-
-      markdown = helpers.render_creative_tree_markdown(creatives)
-      send_data markdown, filename: "creatives.md", type: "text/markdown"
-    end
-
     private
       def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil)
         ::Creatives::TreeBuilder.new(
@@ -449,18 +281,6 @@ module Collavre
           params[:unassigned].present?
       end
 
-      def build_slide_ids(node)
-        return unless node.has_permission?(Current.user, :read)
-
-        @slide_ids << node.id
-        children = node.children.order(:sequence)
-        if node.origin_id.present?
-          linked_children = node.linked_children
-          children = (children + linked_children).uniq.sort_by(&:sequence)
-        end
-        children.each { |child| build_slide_ids(child) }
-      end
-
       def serialize_creatives(collection)
         if params[:simple].present?
           collection.map { |c| { id: c.id, description: c.effective_description(nil, false), progress: c.progress } }
@@ -471,27 +291,6 @@ module Collavre
 
       def reorderer
         @reorderer ||= ::Creatives::Reorderer.new(user: Current.user)
-      end
-
-      def render_children_json(parent, user_id, allowed_ids, progress_map)
-        expanded_state_map = CreativeExpandedState
-                                .where(user_id: user_id, creative_id: parent.id)
-                                .first&.expanded_status || {}
-        children = parent.children_with_permission(Current.user)
-
-        level = params[:level].to_i
-        json_level = level.zero? ? 1 : level
-        render json: {
-          creatives: build_tree(
-            children,
-            params: params,
-            expanded_state_map: expanded_state_map,
-            level: json_level,
-            select_mode: params[:select_mode] == "1",
-            allowed_creative_ids: allowed_ids,
-            progress_map: progress_map
-          )
-        }
       end
 
       def enforce_creatives_login_policy
