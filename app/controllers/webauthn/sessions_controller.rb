@@ -28,6 +28,9 @@ module Webauthn
 
           if credential.user.email_verified?
             handle_invitation_for(credential.user) if params[:invite_token].present?
+            return_to = session[:return_to_after_authenticating]
+            reset_session
+            session[:return_to_after_authenticating] = return_to if return_to
             start_new_session_for credential.user
             render json: { status: "ok", redirect_url: after_authentication_url }, status: :ok
           else

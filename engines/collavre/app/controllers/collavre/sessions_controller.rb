@@ -28,6 +28,9 @@ module Collavre
         if user.email_verified?
           user.reset_failed_login_attempts!
           handle_invitation_for(user) if params[:invite_token].present?
+          return_to = session[:return_to_after_authenticating]
+          reset_session
+          session[:return_to_after_authenticating] = return_to if return_to
           start_new_session_for user
           tz = params[:timezone]
           user.update(timezone: tz) if tz.present? && user.timezone != tz
