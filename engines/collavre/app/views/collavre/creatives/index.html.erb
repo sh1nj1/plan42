@@ -151,7 +151,7 @@
         end +
         content_tag(:template, data: { part: "progress" }) do
           if @overall_progress.nil?
-            "".html_safe
+            safe_join([])
           else
             render_progress_value(@overall_progress)
           end
