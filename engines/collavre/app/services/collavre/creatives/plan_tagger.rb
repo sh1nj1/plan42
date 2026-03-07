@@ -3,9 +3,10 @@ module Creatives
   class PlanTagger
     Result = Struct.new(:success?, :message, keyword_init: true)
 
-    def initialize(plan_id:, creative_ids: [])
+    def initialize(plan_id:, creative_ids: [], user: nil)
       @plan = Plan.find_by(id: plan_id)
       @creative_ids = Array(creative_ids).map(&:presence).compact
+      @user = user
     end
 
     def apply
@@ -31,10 +32,20 @@ module Creatives
 
     private
 
-    attr_reader :plan, :creative_ids
+    attr_reader :plan, :creative_ids, :user
 
     def creatives
-      Creative.where(id: creative_ids)
+      all_creatives = Creative.where(id: creative_ids)
+      return all_creatives unless user
+
+      # Scope to creatives the user has write permission for via creative_shares
+      permitted_ids = all_creatives.joins(:creative_shares)
+                                   .where(creative_shares: { user_id: user.id })
+                                   .where("creative_shares.permission IN (?)", %w[write admin])
+                                   .pluck(:id)
+      # Also include creatives owned by the user
+      owned_ids = all_creatives.where(user_id: user.id).pluck(:id)
+      Creative.where(id: (permitted_ids + owned_ids).uniq)
     end
 
     def valid?

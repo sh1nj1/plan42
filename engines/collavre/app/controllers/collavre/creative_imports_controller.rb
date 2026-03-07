@@ -8,6 +8,10 @@ module Collavre
       end
 
       parent = params[:parent_id].present? ? Creative.find_by(id: params[:parent_id]) : nil
+      if parent && !parent.has_permission?(Current.user, :write)
+        render json: { error: I18n.t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
+      end
+
       created = ::Creatives::Importer.new(file: params[:markdown], user: Current.user, parent: parent).call
 
       if created.any?

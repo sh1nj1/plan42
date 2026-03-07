@@ -51,7 +51,7 @@ module Collavre
     private
 
     def tagger
-      ::Creatives::PlanTagger.new(plan_id: params[:plan_id], creative_ids: parsed_creative_ids)
+      ::Creatives::PlanTagger.new(plan_id: params[:plan_id], creative_ids: parsed_creative_ids, user: Current.user)
     end
 
     def parsed_creative_ids

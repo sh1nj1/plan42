@@ -458,6 +458,9 @@ module Collavre
 
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin
+      unless @creative.has_permission?(Current.user, :read)
+        render json: { error: I18n.t("collavre.creatives.errors.no_permission") }, status: :forbidden
+      end
     end
 
     def set_comment

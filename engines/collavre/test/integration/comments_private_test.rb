@@ -5,6 +5,7 @@ class CommentsPrivateTest < ActionDispatch::IntegrationTest
     @user1 = User.create!(email: "user1@example.com", password: TEST_PASSWORD, name: "User1")
     @user2 = User.create!(email: "user2@example.com", password: TEST_PASSWORD, name: "User2")
     @creative = Creative.create!(user: @user1, description: "Some creative")
+    CreativeShare.create!(creative: @creative, user: @user2, shared_by: @user1, permission: :read)
     @creative.comments.create!(user: @user1, content: "public")
     @creative.comments.create!(user: @user1, content: "secret", private: true)
   end
