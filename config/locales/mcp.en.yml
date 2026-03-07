@@ -1,0 +1,4 @@
+en:
+  mcp:
+    discovery:
+      rate_limit_exceeded: "Rate limit exceeded. Please try again later."
