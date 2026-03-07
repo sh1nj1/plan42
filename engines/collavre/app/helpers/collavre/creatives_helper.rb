@@ -1,10 +1,5 @@
 module Collavre
   module CreativesHelper
-    # Shared toggle button symbol helper
-    def toggle_button_symbol(expanded: false)
-      expanded ? "\u25BC" : "\u25B6" # ▼ or ▶
-    end
-
     def render_tags(labels, class_name = nil, name_only = false)
       return "" if labels&.empty? or labels.nil?
 
