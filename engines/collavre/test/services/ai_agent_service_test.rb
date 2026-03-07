@@ -201,9 +201,9 @@ class AiAgentServiceTest < ActiveSupport::TestCase
       block.call(" more")
     end
 
-    original_interval = AiAgentService::CANCEL_CHECK_INTERVAL
-    AiAgentService.send(:remove_const, :CANCEL_CHECK_INTERVAL)
-    AiAgentService.const_set(:CANCEL_CHECK_INTERVAL, 0)
+    original_interval = Collavre::AiAgent::AgentLifecycleManager::CANCEL_CHECK_INTERVAL
+    Collavre::AiAgent::AgentLifecycleManager.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    Collavre::AiAgent::AgentLifecycleManager.const_set(:CANCEL_CHECK_INTERVAL, 0)
 
     assert_raises(Collavre::CancelledError) do
       AiClient.stub :new, mock_client do
@@ -211,8 +211,8 @@ class AiAgentServiceTest < ActiveSupport::TestCase
       end
     end
 
-    AiAgentService.send(:remove_const, :CANCEL_CHECK_INTERVAL)
-    AiAgentService.const_set(:CANCEL_CHECK_INTERVAL, original_interval)
+    Collavre::AiAgent::AgentLifecycleManager.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    Collavre::AiAgent::AgentLifecycleManager.const_set(:CANCEL_CHECK_INTERVAL, original_interval)
 
     # Placeholder should contain partial content
     reply = @creative.comments.where(user: @agent).order(:created_at).last
