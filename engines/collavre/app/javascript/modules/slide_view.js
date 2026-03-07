@@ -1,4 +1,5 @@
 import { createSubscription } from '../services/cable'
+import DOMPurify from 'dompurify'
 
 document.addEventListener('DOMContentLoaded', function() {
   var container = document.getElementById('slide-view');
@@ -59,7 +60,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         contentEl.innerHTML = '';
         var el = document.createElement(tag);
-        el.innerHTML = data.description;
+        el.innerHTML = DOMPurify.sanitize(data.description);
         contentEl.appendChild(el);
         if (captionEl) {
           captionEl.textContent = data.prompt || '';
