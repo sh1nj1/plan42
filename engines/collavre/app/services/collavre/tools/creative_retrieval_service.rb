@@ -75,16 +75,17 @@ module Tools
 
     def search_creatives(query)
       sanitized = Creative.sanitize_sql_like(query)
+      pattern = "%#{sanitized}%"
 
       # Scope search to user's own + shared creatives via permission cache
       accessible_ids = accessible_creative_ids
 
       desc_ids = Creative.where(id: accessible_ids)
-                         .where("description LIKE ?", "%#{sanitized}%")
+                         .where("description LIKE ?", pattern)
                          .pluck(:id)
 
       comment_ids = Comment.where(creative_id: accessible_ids)
-                           .where("content LIKE ?", "%#{sanitized}%")
+                           .where("content LIKE ?", pattern)
                            .pluck(:creative_id)
 
       combined_ids = (desc_ids | comment_ids)
