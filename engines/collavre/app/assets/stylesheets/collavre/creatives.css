@@ -435,7 +435,10 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     background-color: var(--border-drag-over);
 }
 
-.creative-row:hover {
+.creative-row:hover,
+.creative-row.level-1:hover,
+.creative-row.level-2:hover,
+.creative-row.level-3:hover {
     background-color: var(--border-color);
 }
 
