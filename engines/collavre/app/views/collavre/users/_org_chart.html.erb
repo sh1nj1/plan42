@@ -1,6 +1,35 @@
 <div class="org-chart">
   <p class="text-muted"><%= t('collavre.contacts.org_chart.description') %></p>
 
+  <script>
+    function orgChartUpdatePermission(select) {
+      const url = select.dataset.updateUrl;
+      const csrf = select.dataset.csrf;
+      const permission = select.value;
+      const originalClass = select.className;
+
+      // Update visual class
+      select.className = select.className.replace(/org-chart-permission-\w+/g, '');
+      select.classList.add('org-chart-permission-select', 'org-chart-permission-' + permission);
+
+      fetch(url, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrf,
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ permission: permission })
+      }).then(response => {
+        if (!response.ok) throw new Error('Failed');
+      }).catch(() => {
+        select.className = originalClass;
+        alert('<%= j t("collavre.creatives.errors.no_permission") %>');
+        location.reload();
+      });
+    }
+  </script>
+
   <% if org_chart_roots.present? %>
     <div class="org-chart-tree">
       <% org_chart_roots.each do |creative| %>

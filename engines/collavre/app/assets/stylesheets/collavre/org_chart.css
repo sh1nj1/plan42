@@ -175,7 +175,7 @@ details[open] > .org-chart-creative-row::before {
 }
 
 .org-chart-permission-admin {
-    background-color: var(--color-brand);
+    background-color: var(--color-danger);
     color: white;
 }
 
@@ -211,6 +211,53 @@ details[open] > .org-chart-creative-row::before {
 
 .org-chart-direction-incoming {
     color: var(--color-warning);
+}
+
+/* Permission select dropdown */
+.org-chart-permission-select {
+    font-size: var(--text-0);
+    padding: 2px 6px;
+    border-radius: var(--radius-round);
+    border: 1px solid transparent;
+    cursor: pointer;
+    appearance: auto;
+    white-space: nowrap;
+}
+
+.org-chart-permission-select.org-chart-permission-admin {
+    background-color: var(--color-danger);
+    color: white;
+}
+
+.org-chart-permission-select.org-chart-permission-write {
+    background-color: var(--color-success);
+    color: white;
+}
+
+.org-chart-permission-select.org-chart-permission-feedback {
+    background-color: var(--color-warning);
+    color: var(--text-primary);
+}
+
+.org-chart-permission-select.org-chart-permission-read {
+    background-color: var(--text-muted);
+    color: white;
+}
+
+.org-chart-permission-select.org-chart-permission-no_access {
+    background-color: var(--surface-input);
+    color: var(--text-muted);
+}
+
+/* Manage permissions button on creative row */
+.org-chart-manage-btn {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    margin-left: auto;
+}
+
+.org-chart-creative-row:hover .org-chart-manage-btn {
+    opacity: 1;
 }
 
 /* Member action buttons */

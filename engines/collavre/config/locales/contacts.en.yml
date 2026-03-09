@@ -22,6 +22,7 @@ en:
         shared_with_me: Shared with you
         no_members: No shared members
         view_profile: Profile
+        manage_permissions: Permissions
         permissions:
           admin: Admin
           write: Write

@@ -22,6 +22,7 @@ ko:
         shared_with_me: 상대가 공유
         no_members: 공유된 멤버 없음
         view_profile: 프로필
+        manage_permissions: 권한 설정
         permissions:
           admin: 관리자
           write: 편집

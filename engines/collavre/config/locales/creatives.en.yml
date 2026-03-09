@@ -121,6 +121,7 @@ en:
         inline_close_tooltip: Close editor (Esc)
       share:
         shared: Creative shared successfully.
+        permission_updated: Permission updated successfully.
         already_shared_in_parent: Creative already shared in parent creative.
         can_not_share_by_no_access_in_parent: You can not share by no access in parent
           creative.

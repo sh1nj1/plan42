@@ -1,6 +1,7 @@
 <% shares = org_chart_shares.fetch(creative.id, []) %>
 <% children = org_chart_children.fetch(creative.id, []) %>
 <% has_content = shares.any? || children.any? %>
+<% is_admin = creative.user_id == Current.user.id || shares.any? { |s| s.user_id == Current.user.id && s.permission == "admin" } %>
 
 <details class="org-chart-group" <%= 'open' if depth == 0 %>>
   <summary class="org-chart-creative-row org-chart-depth-<%= depth %>">
@@ -10,6 +11,11 @@
         class: "org-chart-creative-link" %>
     <% if creative.user_id == Current.user.id %>
       <span class="org-chart-owner-badge"><%= t('collavre.contacts.org_chart.owner') %></span>
+    <% end %>
+    <% if is_admin %>
+      <%= link_to t('collavre.contacts.org_chart.manage_permissions'),
+          collavre.creative_path(creative, anchor: "share"),
+          class: "btn btn-xs btn-secondary org-chart-manage-btn" %>
     <% end %>
   </summary>
 
@@ -31,9 +37,23 @@
               </div>
             </div>
             <div class="org-chart-member-meta">
-              <span class="org-chart-permission-badge org-chart-permission-<%= share.permission %>">
-                <%= t("collavre.contacts.org_chart.permissions.#{share.permission}") %>
-              </span>
+              <% if is_admin %>
+                <select class="org-chart-permission-select org-chart-permission-<%= share.permission %>"
+                        data-share-id="<%= share.id %>"
+                        data-update-url="<%= collavre.creative_creative_share_path(creative, share) %>"
+                        data-csrf="<%= form_authenticity_token %>"
+                        onchange="orgChartUpdatePermission(this)">
+                  <% %w[admin write feedback read no_access].each do |perm| %>
+                    <option value="<%= perm %>" <%= 'selected' if share.permission == perm %>>
+                      <%= t("collavre.contacts.org_chart.permissions.#{perm}") %>
+                    </option>
+                  <% end %>
+                </select>
+              <% else %>
+                <span class="org-chart-permission-badge org-chart-permission-<%= share.permission %>">
+                  <%= t("collavre.contacts.org_chart.permissions.#{share.permission}") %>
+                </span>
+              <% end %>
               <% if share.shared_by_id == Current.user.id %>
                 <span class="org-chart-direction org-chart-direction-outgoing">
                   <%= t('collavre.contacts.org_chart.shared_by_me') %>
