@@ -100,13 +100,13 @@
           <div class="org-chart-member-row org-chart-invitation-row">
             <%# Column 1: Invitation info %>
             <div class="org-chart-member-info">
-              <div class="avatar-wrapper" style="width: 32px; height: 32px;">
+              <div class="avatar-wrapper" style="width: 24px; height: 24px;">
                 <%= image_tag asset_path("default_avatar.svg"),
-                    alt: '', width: 32, height: 32,
+                    alt: '', width: 24, height: 24,
                     class: 'avatar',
                     title: invitation.email,
                     style: 'border-radius:50%;vertical-align:middle;' %>
-                <span class="avatar-initial" style="font-size: 16px;"><%= invitation.email[0].upcase %></span>
+                <span class="avatar-initial" style="font-size: 12px;"><%= invitation.email[0].upcase %></span>
               </div>
               <div class="org-chart-member-name-group">
                 <span class="org-chart-member-email"><%= invitation.email %></span>
