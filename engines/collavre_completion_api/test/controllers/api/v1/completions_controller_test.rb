@@ -39,14 +39,24 @@ module CollavreCompletionApi
           assert_match(/messages is required/, body.dig("error", "message"))
         end
 
-        test "returns 400 with invalid model format" do
+        test "returns 400 with non-existent email username model" do
           post "/api/v1/chat/completions",
-               params: { model: "gpt-4", messages: [ { role: "user", content: "hi" } ] }.to_json,
+               params: { model: "nonexistent", messages: [ { role: "user", content: "hi" } ] }.to_json,
                headers: auth_headers
 
           assert_response :bad_request
           body = JSON.parse(response.body)
           assert_match(/Invalid model/, body.dig("error", "message"))
+        end
+
+        test "resolves agent by email username" do
+          post "/api/v1/chat/completions",
+               params: { model: "bot", messages: [ { role: "user", content: "hi" } ] }.to_json,
+               headers: auth_headers
+
+          # Agent resolved successfully — should not return "Invalid model" error
+          body = JSON.parse(response.body)
+          refute_equal "Invalid model", body.dig("error", "message")
         end
 
         test "returns 400 with non-existent agent" do
