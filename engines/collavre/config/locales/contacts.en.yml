@@ -33,7 +33,7 @@ en:
         invite_cancelled: Invitation cancelled.
         add_ai_agent: Add AI Agent
         add_ai_agent_to: "This AI Agent will be added to \"%{creative}\" with feedback permission."
-        unassigned_users: Unassigned Users
+        unassigned_users: Unassigned AI Agents
         permissions:
           admin: Admin
           write: Write

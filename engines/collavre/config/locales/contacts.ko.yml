@@ -33,7 +33,7 @@ ko:
         invite_cancelled: 초대가 취소되었습니다.
         add_ai_agent: AI Agent 추가
         add_ai_agent_to: "이 AI Agent는 \"%{creative}\"에 피드백 권한으로 추가됩니다."
-        unassigned_users: 미할당 사용자
+        unassigned_users: 미할당 AI Agent
         permissions:
           admin: 관리자
           write: 편집

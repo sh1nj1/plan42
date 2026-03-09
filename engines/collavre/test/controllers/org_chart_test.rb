@@ -357,4 +357,34 @@ class OrgChartTest < ActionDispatch::IntegrationTest
   ensure
     invitation&.destroy
   end
+
+  test "intermediate depth creatives render in tree even without shares" do
+    sign_in_as(@owner, password: "password")
+
+    # Create A > B > C structure
+    grandchild = Collavre::Creative.create!(
+      user: @owner,
+      description: "Deep Task",
+      parent: @child_creative
+    )
+
+    # Share only on grandchild (C), nothing on child (B)
+    Collavre::CreativeShare.create!(
+      creative: grandchild,
+      user: @third_user,
+      shared_by: @owner,
+      permission: :read
+    )
+    Collavre::Creatives::PermissionCacheBuilder.rebuild_for_creative(grandchild)
+
+    get collavre.user_path(@owner, tab: "contacts")
+    assert_response :success
+
+    # All three levels should be rendered
+    assert_includes response.body, "Project Alpha"
+    assert_includes response.body, "API Design"
+    assert_includes response.body, "Deep Task"
+  ensure
+    grandchild&.destroy
+  end
 end

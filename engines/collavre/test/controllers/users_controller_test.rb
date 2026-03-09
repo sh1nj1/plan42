@@ -206,26 +206,39 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_equal I18n.t("collavre.users.destroy.not_authorized"), flash[:alert]
   end
 
-  test "unassigned users appear in org chart contacts tab" do
+  test "unassigned AI agents appear in org chart, regular users do not" do
     sign_in_as(@admin, password: "password")
 
-    # Create a contact user not shared to any creative
-    unassigned_user = User.create!(
-      email: "unassigned@example.com",
+    # Create an unassigned AI agent owned by admin
+    ai_agent = User.create!(
+      name: "UnassignedBot",
+      email: "unassigned-bot@ai.local",
       password: "password",
-      password_confirmation: "password",
-      name: "Unassigned User"
+      llm_vendor: "google",
+      llm_model: "gemini-2.5-flash",
+      system_prompt: "You are a bot.",
+      created_by_id: @admin.id,
+      email_verified_at: Time.current
     )
 
-    Collavre::Contact.ensure(user: @admin, contact_user: unassigned_user)
+    # Create a regular unassigned contact (should NOT appear)
+    regular_user = User.create!(
+      email: "regular-unassigned@example.com",
+      password: "password",
+      password_confirmation: "password",
+      name: "Regular Unassigned"
+    )
+    Collavre::Contact.ensure(user: @admin, contact_user: regular_user)
 
     get collavre.user_path(@admin, tab: "contacts")
     assert_response :success
 
-    assert_includes response.body, unassigned_user.email,
-                    "Admin should see unassigned user in org chart"
-    assert_includes response.body, unassigned_user.name,
-                    "Admin should see unassigned user's name in org chart"
+    assert_includes response.body, ai_agent.email,
+                    "Admin should see unassigned AI agent in org chart"
+    assert_includes response.body, ai_agent.name,
+                    "Admin should see unassigned AI agent's name in org chart"
+    refute_includes response.body, regular_user.email,
+                    "Regular unassigned contact should NOT appear in org chart"
   end
 
   test "mention search includes feedback permitted users even if not searchable" do
