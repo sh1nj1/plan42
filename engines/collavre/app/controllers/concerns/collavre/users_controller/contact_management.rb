@@ -53,7 +53,8 @@ module Collavre
         .pluck(:creative_id)
 
       # Walk up to root for any non-root shared creatives
-      shared_root_ids = Collavre::Creative.where(id: shared_creative_ids).map { |c| c.root.id }.uniq
+      shared_creatives = Collavre::Creative.where(id: shared_creative_ids)
+      shared_root_ids = shared_creatives.filter_map { |c| c.parent_id.nil? ? c.id : c.root.id }.uniq
 
       shared_roots = Collavre::Creative.where(id: shared_root_ids)
                                        .where.not(user_id: Current.user.id)

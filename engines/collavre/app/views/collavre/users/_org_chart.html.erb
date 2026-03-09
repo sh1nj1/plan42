@@ -58,12 +58,6 @@
             if (e.target === modal) orgChartCloseShareModal();
           };
 
-          // Re-initialize Stimulus controllers for the loaded content
-          if (window.Stimulus) {
-            const app = window.Stimulus;
-            // Stimulus auto-connects controllers when elements are added to DOM
-          }
-
           // Initialize invite link button
           const inviteLinkBtn = document.getElementById('creative-invite-link');
           if (inviteLinkBtn) {
