@@ -40,6 +40,59 @@ module Collavre
 
     private
 
+    def prepare_org_chart
+      # Root creatives owned by current user
+      my_roots = Collavre::Creative.where(user_id: Current.user.id, parent_id: nil)
+                                   .order(:sequence, :id)
+
+      # All creatives shared with current user (including non-root)
+      shared_creative_ids = Collavre::CreativeShare
+        .joins(:creative)
+        .where(user_id: Current.user.id)
+        .where.not(permission: :no_access)
+        .pluck(:creative_id)
+
+      # Walk up to root for any non-root shared creatives
+      shared_creatives = Collavre::Creative.where(id: shared_creative_ids)
+      shared_root_ids = shared_creatives.filter_map { |c| c.parent_id.nil? ? c.id : c.root.id }.uniq
+
+      shared_roots = Collavre::Creative.where(id: shared_root_ids)
+                                       .where.not(user_id: Current.user.id)
+                                       .order(:sequence, :id)
+
+      @org_chart_roots = (my_roots + shared_roots).uniq
+
+      # Collect all descendant IDs for preloading
+      all_creative_ids = @org_chart_roots.flat_map { |root| root.self_and_descendants.pluck(:id) }.uniq
+
+      # Preload shares for all creatives in the tree (including no_access)
+      shares = Collavre::CreativeShare
+        .where(creative_id: all_creative_ids)
+        .includes(user: [ avatar_attachment: :blob ], shared_by: [ avatar_attachment: :blob ])
+
+      @org_chart_shares = shares.group_by(&:creative_id)
+
+      # Preload pending invitations for all creatives in the tree
+      pending_invitations = Collavre::Invitation
+        .where(creative_id: all_creative_ids, accepted_at: nil)
+        .where("expires_at > ?", Time.current)
+        .order(created_at: :desc)
+
+      @org_chart_invitations = pending_invitations.group_by(&:creative_id)
+
+      # Preload children grouped by parent_id
+      all_creatives = Collavre::Creative.where(id: all_creative_ids).order(:sequence, :id)
+      @org_chart_children = all_creatives.group_by(&:parent_id)
+
+      # Unassigned AI Agents: owned by current user but not in any CreativeShare
+      assigned_user_ids = shares.map(&:user_id).uniq
+      @org_chart_unassigned = Collavre::User.where(created_by_id: Current.user.id)
+                                            .where.not(id: assigned_user_ids)
+                                            .where.not(llm_vendor: [ nil, "" ])
+                                            .includes(avatar_attachment: :blob)
+                                            .order(:name)
+    end
+
     def prepare_contacts
       per_page = 10
       @contact_page = [ params[:contact_page].to_i, 1 ].max

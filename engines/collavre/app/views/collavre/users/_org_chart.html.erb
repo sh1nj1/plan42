@@ -1,0 +1,64 @@
+<div class="org-chart" data-controller="org-chart">
+  <p class="text-muted"><%= t('collavre.contacts.org_chart.description') %></p>
+
+  <%# Container for dynamically loaded share modal %>
+  <div data-org-chart-target="shareContainer"></div>
+
+  <% if org_chart_roots.present? %>
+    <div class="org-chart-tree">
+      <% org_chart_roots.each do |creative| %>
+        <%= render partial: 'collavre/users/org_chart_node', locals: {
+          creative: creative,
+          org_chart_shares: org_chart_shares,
+          org_chart_invitations: org_chart_invitations,
+          org_chart_children: org_chart_children,
+          depth: 0
+        } %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if org_chart_unassigned.present? %>
+    <div class="org-chart-unassigned">
+      <h3 class="org-chart-unassigned-title"><%= t('collavre.contacts.org_chart.unassigned_users') %></h3>
+      <div class="org-chart-members">
+        <% org_chart_unassigned.each do |user| %>
+          <div class="org-chart-member-row">
+            <div class="org-chart-member-info">
+              <%= render Collavre::AvatarComponent.new(
+                user: user,
+                size: 24,
+                classes: 'avatar'
+              ) %>
+              <div class="org-chart-member-name-group">
+                <%= link_to user.display_name, collavre.user_path(user), class: "org-chart-member-name" %>
+                <span class="org-chart-member-email"><%= user.email %></span>
+              </div>
+            </div>
+            <div class="org-chart-member-actions">
+              <%= link_to t('collavre.users.edit_ai.link'),
+                  collavre.edit_ai_user_path(user),
+                  class: "btn btn-xs btn-secondary" %>
+              <%= link_to t('collavre.users.copy_ai.link'),
+                  collavre.new_ai_users_path(copy_from: user.id),
+                  class: "btn btn-xs btn-secondary" %>
+              <%= button_to t('collavre.users.destroy.delete_ai_user'),
+                  collavre.user_path(user),
+                  method: :delete,
+                  form: { data: { turbo_confirm: t('collavre.users.destroy.confirm_ai') } },
+                  class: "btn btn-xs btn-danger" %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+
+  <% if org_chart_roots.blank? && org_chart_unassigned.blank? %>
+    <p class="text-muted"><%= t('collavre.contacts.org_chart.empty_state') %></p>
+  <% end %>
+
+  <div class="org-chart-global-actions">
+    <%= link_to t('collavre.users.add_ai_user'), collavre.new_ai_users_path, class: "btn btn-primary" %>
+  </div>
+</div>

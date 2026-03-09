@@ -14,3 +14,29 @@ ko:
         page_info: "%{current}/%{total} 페이지"
       notices:
         removed: 사용자 관리 목록에서 제거했습니다.
+      org_chart:
+        description: 크리에이티브별 공유 멤버를 한눈에 확인합니다.
+        empty_state: 아직 크리에이티브가 없습니다.
+        owner: 소유자
+        shared_by_me: 내가 공유
+        shared_with_me: 상대가 공유
+        shared_by_user: "%{user} 공유"
+        no_members: 공유된 멤버 없음
+        view_profile: 프로필
+        manage_permissions: 권한 설정
+        unshare: 공유 해제
+        unshare_confirm: "%{user}의 공유를 해제하시겠습니까?"
+        pending_invitations: 초대 중
+        pending_status: 초대 중
+        cancel_invite: 초대 해제
+        cancel_invite_confirm: "%{email}의 초대를 취소하시겠습니까?"
+        invite_cancelled: 초대가 취소되었습니다.
+        add_ai_agent: AI Agent 추가
+        add_ai_agent_to: "이 AI Agent는 \"%{creative}\"에 피드백 권한으로 추가됩니다."
+        unassigned_users: 미할당 AI Agent
+        permissions:
+          admin: 관리자
+          write: 편집
+          feedback: 피드백
+          read: 읽기
+          no_access: 접근 불가

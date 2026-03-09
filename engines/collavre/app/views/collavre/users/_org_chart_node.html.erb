@@ -1,0 +1,164 @@
+<% shares = org_chart_shares.fetch(creative.id, []) %>
+<% invitations = org_chart_invitations.fetch(creative.id, []) %>
+<% children = org_chart_children.fetch(creative.id, []) %>
+<% has_content = shares.any? || invitations.any? || children.any? %>
+<% is_admin = creative.user_id == Current.user.id || shares.any? { |s| s.user_id == Current.user.id && s.permission == "admin" } %>
+
+<details class="org-chart-group" <%= 'open' if depth == 0 %>>
+  <summary class="org-chart-creative-row org-chart-depth-<%= depth %>">
+    <span class="org-chart-creative-icon"><%= depth == 0 ? '📂' : '📁' %></span>
+    <%= link_to strip_tags(creative.description.to_s).truncate(60),
+        collavre.creative_path(creative),
+        class: "org-chart-creative-link" %>
+    <% if creative.user_id == Current.user.id %>
+      <span class="org-chart-owner-badge"><%= t('collavre.contacts.org_chart.owner') %></span>
+    <% else %>
+      <% my_share = shares.find { |s| s.user_id == Current.user.id } %>
+      <% if my_share&.shared_by %>
+        <span class="org-chart-direction org-chart-direction-incoming">
+          <%= t('collavre.contacts.org_chart.shared_by_user', user: my_share.shared_by.display_name) %>
+        </span>
+      <% end %>
+    <% end %>
+    <% if is_admin %>
+      <button type="button"
+              class="btn btn-xs btn-secondary org-chart-manage-btn"
+              data-shares-url="<%= collavre.creative_creative_shares_path(creative) %>"
+              data-action="click->org-chart#openShareModal">
+        <%= t('collavre.contacts.org_chart.manage_permissions') %>
+      </button>
+      <%= link_to t('collavre.contacts.org_chart.add_ai_agent'),
+          collavre.new_ai_users_path(creative_id: creative.id),
+          class: "btn btn-xs btn-secondary org-chart-manage-btn" %>
+    <% end %>
+  </summary>
+
+  <div class="org-chart-content">
+    <% if shares.any? %>
+      <div class="org-chart-members org-chart-indent-<%= depth %>">
+        <% shares.sort_by { |s| Collavre::CreativeShare.permissions[s.permission] }.reverse.each do |share| %>
+          <% next unless share.user %>
+          <div class="org-chart-member-row">
+            <%# Column 1: User info %>
+            <div class="org-chart-member-info">
+              <%= render Collavre::AvatarComponent.new(
+                user: share.user,
+                size: 24,
+                classes: "avatar org-chart-avatar"
+              ) %>
+              <div class="org-chart-member-name-group">
+                <%= link_to share.user.display_name, collavre.user_path(share.user), class: "org-chart-member-name" %>
+                <span class="org-chart-member-email"><%= share.user.email %></span>
+              </div>
+            </div>
+
+            <%# Column 2: Permission %>
+            <div class="org-chart-member-permission">
+              <% if is_admin %>
+                <select class="org-chart-permission-select org-chart-permission-<%= share.permission %>"
+                        data-share-id="<%= share.id %>"
+                        data-update-url="<%= collavre.creative_creative_share_path(creative, share) %>"
+                        data-action="change->org-chart#updatePermission">
+                  <% %w[admin write feedback read no_access].each do |perm| %>
+                    <option value="<%= perm %>" <%= 'selected' if share.permission == perm %>>
+                      <%= t("collavre.contacts.org_chart.permissions.#{perm}") %>
+                    </option>
+                  <% end %>
+                </select>
+              <% else %>
+                <span class="org-chart-permission-badge org-chart-permission-<%= share.permission %>">
+                  <%= t("collavre.contacts.org_chart.permissions.#{share.permission}") %>
+                </span>
+              <% end %>
+            </div>
+
+            <%# Column 3: Actions %>
+            <div class="org-chart-member-actions">
+              <% if share.user.ai_user? && share.user.created_by_id == Current.user.id %>
+                <%= link_to t('collavre.users.edit_ai.link'), collavre.edit_ai_user_path(share.user), class: "btn btn-xs btn-secondary" %>
+                <%= link_to t('collavre.users.copy_ai.link'), collavre.new_ai_users_path(copy_from: share.user.id), class: "btn btn-xs btn-secondary" %>
+                <%= button_to t('collavre.users.destroy.delete_ai_user'),
+                    collavre.user_path(share.user),
+                    method: :delete,
+                    form: { data: { turbo_confirm: t('collavre.users.destroy.confirm_ai') } },
+                    class: "btn btn-xs btn-danger" %>
+              <% end %>
+              <%= link_to t('collavre.contacts.org_chart.view_profile'), collavre.user_path(share.user), class: "btn btn-xs btn-secondary" %>
+              <% if is_admin %>
+                <%= button_to t('collavre.contacts.org_chart.unshare'),
+                    collavre.creative_creative_share_path(creative, share),
+                    method: :delete,
+                    form: { data: { turbo_confirm: t('collavre.contacts.org_chart.unshare_confirm', user: share.user.display_name) } },
+                    class: "btn btn-xs btn-danger" %>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+
+    <% if invitations.any? && is_admin %>
+      <div class="org-chart-members org-chart-indent-<%= depth %>">
+        <% invitations.each do |invitation| %>
+          <div class="org-chart-member-row org-chart-invitation-row">
+            <%# Column 1: Invitation info %>
+            <div class="org-chart-member-info">
+              <div class="avatar-wrapper" style="width: 24px; height: 24px;">
+                <%= image_tag asset_path("default_avatar.svg"),
+                    alt: '', width: 24, height: 24,
+                    class: 'avatar',
+                    title: invitation.email,
+                    style: 'border-radius:50%;vertical-align:middle;' %>
+                <span class="avatar-initial" style="font-size: 12px;"><%= invitation.email[0].upcase %></span>
+              </div>
+              <div class="org-chart-member-name-group">
+                <span class="org-chart-member-email"><%= invitation.email %></span>
+                <span class="org-chart-pending-badge"><%= t('collavre.contacts.org_chart.pending_status') %></span>
+              </div>
+            </div>
+
+            <%# Column 2: Permission %>
+            <div class="org-chart-member-permission">
+              <select class="org-chart-permission-select org-chart-permission-<%= invitation.permission %>"
+                      data-update-url="<%= collavre.creative_invitation_path(creative, invitation) %>"
+                      data-action="change->org-chart#updatePermission">
+                <% %w[admin write feedback read no_access].each do |perm| %>
+                  <option value="<%= perm %>" <%= 'selected' if invitation.permission == perm %>>
+                    <%= t("collavre.contacts.org_chart.permissions.#{perm}") %>
+                  </option>
+                <% end %>
+              </select>
+            </div>
+
+            <%# Column 3: Actions %>
+            <div class="org-chart-member-actions">
+              <%= button_to t('collavre.contacts.org_chart.cancel_invite'),
+                  collavre.creative_invitation_path(creative, invitation),
+                  method: :delete,
+                  form: { data: { turbo_confirm: t('collavre.contacts.org_chart.cancel_invite_confirm', email: invitation.email) } },
+                  class: "btn btn-xs btn-danger" %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+
+    <% if children.any? %>
+      <div class="org-chart-children org-chart-indent-<%= depth %>">
+        <% children.each do |child| %>
+          <%= render partial: 'collavre/users/org_chart_node', locals: {
+            creative: child,
+            org_chart_shares: org_chart_shares,
+            org_chart_invitations: org_chart_invitations,
+            org_chart_children: org_chart_children,
+            depth: depth + 1
+          } %>
+        <% end %>
+      </div>
+    <% end %>
+
+    <% unless has_content %>
+      <p class="org-chart-no-members org-chart-indent-<%= depth %>"><%= t('collavre.contacts.org_chart.no_members') %></p>
+    <% end %>
+  </div>
+</details>

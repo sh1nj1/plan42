@@ -14,3 +14,29 @@ en:
         page_info: Page %{current} of %{total}
       notices:
         removed: User removed from your managed users.
+      org_chart:
+        description: View your creatives and shared members at a glance.
+        empty_state: No creatives yet.
+        owner: Owner
+        shared_by_me: Shared by you
+        shared_with_me: Shared with you
+        shared_by_user: "Shared by %{user}"
+        no_members: No shared members
+        view_profile: Profile
+        manage_permissions: Permissions
+        unshare: Unshare
+        unshare_confirm: "Remove sharing for %{user}?"
+        pending_invitations: Pending Invitations
+        pending_status: Pending
+        cancel_invite: Cancel Invite
+        cancel_invite_confirm: "Cancel invitation for %{email}?"
+        invite_cancelled: Invitation cancelled.
+        add_ai_agent: Add AI Agent
+        add_ai_agent_to: "This AI Agent will be added to \"%{creative}\" with feedback permission."
+        unassigned_users: Unassigned AI Agents
+        permissions:
+          admin: Admin
+          write: Write
+          feedback: Feedback
+          read: Read
+          no_access: No access

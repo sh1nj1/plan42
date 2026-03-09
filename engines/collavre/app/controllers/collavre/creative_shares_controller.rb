@@ -1,5 +1,21 @@
 module Collavre
   class CreativeSharesController < ApplicationController
+    def index
+      @creative = Creative.find(params[:creative_id])
+      unless @creative.has_permission?(Current.user, :admin)
+        head :forbidden and return
+      end
+
+      @shared_list = CreativeShare.where(creative: @creative)
+                                  .includes(user: [ avatar_attachment: :blob ])
+
+      @pending_invitations = Invitation.where(creative: @creative, accepted_at: nil)
+                                       .where("expires_at > ?", Time.current)
+                                       .order(created_at: :desc)
+
+      render partial: "collavre/creatives/share_modal", layout: false
+    end
+
     def create
       @creative = Creative.find(params[:creative_id]).effective_origin
 
@@ -67,6 +83,29 @@ module Collavre
         flash[:alert] = share.errors.full_messages.to_sentence
       end
       redirect_back(fallback_location: creatives_path)
+    end
+
+    def update
+      @creative_share = CreativeShare.find(params[:id])
+      unless @creative_share.creative.has_permission?(Current.user, :admin)
+        respond_to do |format|
+          format.html { redirect_back fallback_location: main_app.root_path, alert: t("collavre.creatives.errors.no_permission") }
+          format.json { render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden }
+        end
+        return
+      end
+
+      if @creative_share.update(permission: params[:permission])
+        respond_to do |format|
+          format.html { redirect_back fallback_location: main_app.root_path, notice: t("collavre.creatives.share.permission_updated") }
+          format.json { render json: { permission: @creative_share.permission }, status: :ok }
+        end
+      else
+        respond_to do |format|
+          format.html { redirect_back fallback_location: main_app.root_path, alert: @creative_share.errors.full_messages.to_sentence }
+          format.json { render json: { error: @creative_share.errors.full_messages.to_sentence }, status: :unprocessable_entity }
+        end
+      end
     end
 
     def destroy

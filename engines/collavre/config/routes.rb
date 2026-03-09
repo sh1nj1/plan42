@@ -49,7 +49,8 @@ Collavre::Engine.routes.draw do
   resource :creative_plan, only: [ :create, :destroy ], controller: "creative_plans"
 
   resources :creatives do
-    resources :creative_shares, only: [ :create, :destroy ]
+    resources :creative_shares, only: [ :index, :create, :update, :destroy ]
+    resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"
     resources :topics, only: [ :index, :create, :update, :destroy ] do
       collection do
         post :reorder
