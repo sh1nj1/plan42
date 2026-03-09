@@ -280,3 +280,14 @@ details[open] > .org-chart-creative-row::before {
 .org-chart-member-row {
     min-width: max-content;
 }
+
+/* Pending invitation styles */
+.org-chart-pending-badge {
+    font-size: var(--text-00);
+    color: var(--color-warning);
+    font-weight: var(--weight-5);
+}
+
+.org-chart-invitation-row {
+    opacity: 0.85;
+}

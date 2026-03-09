@@ -230,4 +230,131 @@ class OrgChartTest < ActionDispatch::IntegrationTest
       delete collavre.creative_creative_share_path(@root_creative, @share_root)
     end
   end
+
+  # --- Pending Invitations ---
+
+  test "org chart shows pending invitations for admin" do
+    invitation = Collavre::Invitation.create!(
+      inviter: @owner,
+      creative: @root_creative,
+      email: "newbie@example.com",
+      permission: :write
+    )
+
+    sign_in_as(@owner, password: "password")
+    get collavre.user_path(@owner, tab: "org_chart")
+
+    assert_response :success
+    assert_includes response.body, "newbie@example.com"
+    assert_includes response.body, I18n.t("collavre.contacts.org_chart.pending_status")
+  ensure
+    invitation&.destroy
+  end
+
+  test "org chart does not show expired invitations" do
+    expired = Collavre::Invitation.create!(
+      inviter: @owner,
+      creative: @root_creative,
+      email: "expired@example.com",
+      permission: :read,
+      expires_at: 1.day.ago
+    )
+
+    sign_in_as(@owner, password: "password")
+    get collavre.user_path(@owner, tab: "org_chart")
+
+    assert_response :success
+    refute_includes response.body, "expired@example.com"
+  ensure
+    expired&.destroy
+  end
+
+  test "admin can update invitation permission" do
+    invitation = Collavre::Invitation.create!(
+      inviter: @owner,
+      creative: @root_creative,
+      email: "invited@example.com",
+      permission: :read
+    )
+
+    sign_in_as(@owner, password: "password")
+    patch collavre.creative_invitation_path(@root_creative, invitation),
+          params: { permission: "write" },
+          headers: { "Accept" => "application/json" },
+          as: :json
+
+    assert_response :success
+    assert_equal "write", invitation.reload.permission
+  ensure
+    invitation&.destroy
+  end
+
+  test "non-admin cannot update invitation permission" do
+    invitation = Collavre::Invitation.create!(
+      inviter: @owner,
+      creative: @root_creative,
+      email: "invited@example.com",
+      permission: :read
+    )
+
+    sign_in_as(@third_user, password: "password")
+    patch collavre.creative_invitation_path(@root_creative, invitation),
+          params: { permission: "admin" },
+          headers: { "Accept" => "application/json" },
+          as: :json
+
+    assert_response :forbidden
+    assert_equal "read", invitation.reload.permission
+  ensure
+    invitation&.destroy
+  end
+
+  test "admin can cancel invitation" do
+    invitation = Collavre::Invitation.create!(
+      inviter: @owner,
+      creative: @root_creative,
+      email: "cancel-me@example.com",
+      permission: :write
+    )
+
+    sign_in_as(@owner, password: "password")
+    assert_difference("Collavre::Invitation.count", -1) do
+      delete collavre.creative_invitation_path(@root_creative, invitation)
+    end
+  end
+
+  test "non-admin cannot cancel invitation" do
+    invitation = Collavre::Invitation.create!(
+      inviter: @owner,
+      creative: @root_creative,
+      email: "protected@example.com",
+      permission: :read
+    )
+
+    sign_in_as(@third_user, password: "password")
+    assert_no_difference("Collavre::Invitation.count") do
+      delete collavre.creative_invitation_path(@root_creative, invitation)
+    end
+  ensure
+    invitation&.destroy
+  end
+
+  test "share modal shows pending invitations" do
+    invitation = Collavre::Invitation.create!(
+      inviter: @owner,
+      creative: @root_creative,
+      email: "modal-test@example.com",
+      permission: :feedback
+    )
+
+    sign_in_as(@owner, password: "password")
+    get collavre.creative_creative_shares_path(@root_creative),
+        headers: { "Accept" => "text/html" }
+
+    assert_response :success
+    assert_includes response.body, "modal-test@example.com"
+    assert_includes response.body, I18n.t("collavre.contacts.org_chart.pending_status")
+  ensure
+    invitation&.destroy
+  end
 end

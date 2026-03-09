@@ -17,6 +17,7 @@ module Collavre
         @shared_with_me = {}
         @org_chart_roots = []
         @org_chart_shares = {}
+        @org_chart_invitations = {}
         @org_chart_children = {}
       end
     end

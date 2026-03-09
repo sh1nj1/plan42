@@ -26,6 +26,11 @@ ko:
         manage_permissions: 권한 설정
         unshare: 공유 해제
         unshare_confirm: "%{user}의 공유를 해제하시겠습니까?"
+        pending_invitations: 초대 중
+        pending_status: 초대 중
+        cancel_invite: 초대 해제
+        cancel_invite_confirm: "%{email}의 초대를 취소하시겠습니까?"
+        invite_cancelled: 초대가 취소되었습니다.
         permissions:
           admin: 관리자
           write: 편집

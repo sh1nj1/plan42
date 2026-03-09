@@ -9,6 +9,10 @@ module Collavre
       @shared_list = CreativeShare.where(creative: @creative)
                                   .includes(user: [ avatar_attachment: :blob ])
 
+      @pending_invitations = Invitation.where(creative: @creative, accepted_at: nil)
+                                       .where("expires_at > ?", Time.current)
+                                       .order(created_at: :desc)
+
       render partial: "collavre/creatives/share_modal", layout: false
     end
 

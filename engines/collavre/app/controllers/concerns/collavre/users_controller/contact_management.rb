@@ -72,6 +72,14 @@ module Collavre
 
       @org_chart_shares = shares.group_by(&:creative_id)
 
+      # Preload pending invitations for all creatives in the tree
+      pending_invitations = Collavre::Invitation
+        .where(creative_id: all_creative_ids, accepted_at: nil)
+        .where("expires_at > ?", Time.current)
+        .order(created_at: :desc)
+
+      @org_chart_invitations = pending_invitations.group_by(&:creative_id)
+
       # Preload children grouped by parent_id
       all_creatives = Collavre::Creative.where(id: all_creative_ids).order(:sequence, :id)
       @org_chart_children = all_creatives.group_by(&:parent_id)

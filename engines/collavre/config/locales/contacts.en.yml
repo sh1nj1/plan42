@@ -26,6 +26,11 @@ en:
         manage_permissions: Permissions
         unshare: Unshare
         unshare_confirm: "Remove sharing for %{user}?"
+        pending_invitations: Pending Invitations
+        pending_status: Pending
+        cancel_invite: Cancel Invite
+        cancel_invite_confirm: "Cancel invitation for %{email}?"
+        invite_cancelled: Invitation cancelled.
         permissions:
           admin: Admin
           write: Write
