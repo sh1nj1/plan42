@@ -485,10 +485,18 @@ class OrgChartTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     # Linked creative should appear with origin's description (via effective_description)
-    # Both origin and linked show "Origin Creative" — verify linked creative's path exists
     assert_select "a[href='#{collavre.creative_path(linked)}']", text: /Origin Creative/
     # Origin shares user should be visible under the linked creative
     assert_includes response.body, @other_user.display_name
+    # Linked creative should show Owner badge (from origin's user_id)
+    # and Permissions button pointing to origin's shares
+    assert_select "a[href='#{collavre.creative_path(linked)}']" do |links|
+      # Find the details group containing the linked creative
+      details = links.first.ancestors.find { |n| n.name == "details" }
+      assert details, "Expected <details> wrapper for linked creative"
+      assert_match(/Owner/, details.text) if details
+      assert_match(/Permissions/, details.text) if details
+    end
   ensure
     linked&.destroy
     origin&.destroy
