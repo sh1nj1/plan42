@@ -1,32 +1,8 @@
 <div class="org-chart">
   <p class="text-muted"><%= t('collavre.contacts.org_chart.description') %></p>
 
-  <%# Share modal %>
-  <div id="org-chart-share-modal" class="org-chart-modal" style="display:none;">
-    <div class="popup-box org-chart-modal-box">
-      <button type="button" class="popup-close-btn" onclick="orgChartCloseShareModal()">&times;</button>
-      <h2 id="org-chart-share-title"></h2>
-
-      <form id="org-chart-share-form" method="post">
-        <%= csrf_meta_tags %>
-        <div style="margin-bottom:1em; position:relative;">
-          <label><%= t('collavre.creatives.index.user_email') %></label>
-          <input type="email" name="user_email" id="org-chart-share-email" autocomplete="off" />
-        </div>
-        <div style="margin-bottom:1em;">
-          <select name="permission" id="org-chart-share-permission">
-            <option value="read"><%= t('collavre.contacts.org_chart.permissions.read') %></option>
-            <option value="feedback"><%= t('collavre.contacts.org_chart.permissions.feedback') %></option>
-            <option value="write" selected><%= t('collavre.contacts.org_chart.permissions.write') %></option>
-            <option value="admin"><%= t('collavre.contacts.org_chart.permissions.admin') %></option>
-          </select>
-        </div>
-        <button type="submit" class="btn btn-primary"><%= t('collavre.creatives.index.share') %></button>
-      </form>
-
-      <div id="org-chart-share-list" style="margin-top:1em;"></div>
-    </div>
-  </div>
+  <%# Container for dynamically loaded share modal %>
+  <div id="org-chart-share-container"></div>
 
   <script>
     function orgChartUpdatePermission(select) {
@@ -56,75 +32,82 @@
     }
 
     function orgChartOpenShareModal(btn) {
-      const creativeId = btn.dataset.creativeId;
-      const creativeName = btn.dataset.creativeName;
       const sharesUrl = btn.dataset.sharesUrl;
-      const createUrl = btn.dataset.createUrl;
-      const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+      const container = document.getElementById('org-chart-share-container');
 
-      document.getElementById('org-chart-share-title').textContent =
-        '<%= j t("collavre.contacts.org_chart.manage_permissions") %>: ' + creativeName;
-
-      const form = document.getElementById('org-chart-share-form');
-      form.action = createUrl;
-      form.onsubmit = function(e) {
-        e.preventDefault();
-        const formData = new FormData(form);
-        fetch(createUrl, {
-          method: 'POST',
-          headers: { 'X-CSRF-Token': csrf, 'Accept': 'text/html' },
-          body: formData
-        }).then(() => {
-          orgChartLoadShares(sharesUrl, csrf);
-          document.getElementById('org-chart-share-email').value = '';
-        });
-      };
-
-      orgChartLoadShares(sharesUrl, csrf);
-
-      const modal = document.getElementById('org-chart-share-modal');
-      modal.style.display = 'flex';
-      document.body.classList.add('no-scroll');
-    }
-
-    function orgChartLoadShares(url, csrf) {
-      fetch(url, {
-        headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrf }
+      fetch(sharesUrl, {
+        headers: { 'Accept': 'text/html' }
       })
-      .then(r => r.json())
-      .then(shares => {
-        const list = document.getElementById('org-chart-share-list');
-        if (shares.length === 0) {
-          list.innerHTML = '<p class="text-muted"><%= j t("collavre.contacts.org_chart.no_members") %></p>';
-          return;
+      .then(r => r.text())
+      .then(html => {
+        container.innerHTML = html;
+
+        const modal = document.getElementById('share-creative-modal');
+        if (modal) {
+          modal.style.display = 'flex';
+          document.body.classList.add('no-scroll');
+
+          // Bind close button
+          const closeBtn = document.getElementById('close-share-modal');
+          if (closeBtn) {
+            closeBtn.onclick = function() { orgChartCloseShareModal(); };
+          }
+
+          // Close on backdrop click
+          modal.onclick = function(e) {
+            if (e.target === modal) orgChartCloseShareModal();
+          };
+
+          // Re-initialize Stimulus controllers for the loaded content
+          if (window.Stimulus) {
+            const app = window.Stimulus;
+            // Stimulus auto-connects controllers when elements are added to DOM
+          }
+
+          // Initialize invite link button
+          const inviteLinkBtn = document.getElementById('creative-invite-link');
+          if (inviteLinkBtn) {
+            inviteLinkBtn.onclick = function() {
+              const creativeId = inviteLinkBtn.dataset.creativeId;
+              const permissionSelect = document.getElementById('share-permission');
+              const permission = permissionSelect ? permissionSelect.value : 'read';
+              const permissionLabel = permissionSelect ? permissionSelect.options[permissionSelect.selectedIndex].text : '';
+              const noAccessMessage = inviteLinkBtn.dataset.noAccessMessage;
+              const copiedTemplate = inviteLinkBtn.dataset.copiedTemplate;
+
+              if (permission === 'no_access') {
+                alert(noAccessMessage);
+                return;
+              }
+              fetch('/invite', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content
+                },
+                body: JSON.stringify({ creative_id: creativeId, permission: permission })
+              }).then(r => r.json()).then(data => {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  navigator.clipboard.writeText(data.url).then(function() {
+                    alert(copiedTemplate.replace('__PERMISSION__', permissionLabel));
+                  });
+                }
+              });
+            };
+          }
         }
-        const permLabels = {
-          admin: '<%= j t("collavre.contacts.org_chart.permissions.admin") %>',
-          write: '<%= j t("collavre.contacts.org_chart.permissions.write") %>',
-          feedback: '<%= j t("collavre.contacts.org_chart.permissions.feedback") %>',
-          read: '<%= j t("collavre.contacts.org_chart.permissions.read") %>',
-          no_access: '<%= j t("collavre.contacts.org_chart.permissions.no_access") %>'
-        };
-        list.innerHTML = '<strong><%= j t("collavre.creatives.index.shared_with") %>:</strong>' +
-          '<ul class="share-grid">' + shares.map(s =>
-            '<li>' +
-              '<span>' + (s.user_name || '') + '</span>' +
-              '<span>' + (s.user_email || '') + '</span>' +
-              '<span>' + (permLabels[s.permission] || s.permission) + '</span>' +
-            '</li>'
-          ).join('') + '</ul>';
       });
     }
 
     function orgChartCloseShareModal() {
-      document.getElementById('org-chart-share-modal').style.display = 'none';
-      document.body.classList.remove('no-scroll');
+      const modal = document.getElementById('share-creative-modal');
+      if (modal) {
+        modal.style.display = 'none';
+        document.body.classList.remove('no-scroll');
+      }
+      document.getElementById('org-chart-share-container').innerHTML = '';
       location.reload();
     }
-
-    document.getElementById('org-chart-share-modal')?.addEventListener('click', function(e) {
-      if (e.target === this) orgChartCloseShareModal();
-    });
   </script>
 
   <% if org_chart_roots.present? %>

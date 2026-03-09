@@ -15,10 +15,7 @@
     <% if is_admin %>
       <button type="button"
               class="btn btn-xs btn-secondary org-chart-manage-btn"
-              data-creative-id="<%= creative.id %>"
-              data-creative-name="<%= strip_tags(creative.description.to_s).truncate(40) %>"
               data-shares-url="<%= collavre.creative_creative_shares_path(creative) %>"
-              data-create-url="<%= collavre.creative_creative_shares_path(creative) %>"
               onclick="orgChartOpenShareModal(this)">
         <%= t('collavre.contacts.org_chart.manage_permissions') %>
       </button>
