@@ -1,6 +1,33 @@
 <div class="org-chart">
   <p class="text-muted"><%= t('collavre.contacts.org_chart.description') %></p>
 
+  <%# Share modal %>
+  <div id="org-chart-share-modal" class="org-chart-modal" style="display:none;">
+    <div class="popup-box org-chart-modal-box">
+      <button type="button" class="popup-close-btn" onclick="orgChartCloseShareModal()">&times;</button>
+      <h2 id="org-chart-share-title"></h2>
+
+      <form id="org-chart-share-form" method="post">
+        <%= csrf_meta_tags %>
+        <div style="margin-bottom:1em; position:relative;">
+          <label><%= t('collavre.creatives.index.user_email') %></label>
+          <input type="email" name="user_email" id="org-chart-share-email" autocomplete="off" />
+        </div>
+        <div style="margin-bottom:1em;">
+          <select name="permission" id="org-chart-share-permission">
+            <option value="read"><%= t('collavre.contacts.org_chart.permissions.read') %></option>
+            <option value="feedback"><%= t('collavre.contacts.org_chart.permissions.feedback') %></option>
+            <option value="write" selected><%= t('collavre.contacts.org_chart.permissions.write') %></option>
+            <option value="admin"><%= t('collavre.contacts.org_chart.permissions.admin') %></option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary"><%= t('collavre.creatives.index.share') %></button>
+      </form>
+
+      <div id="org-chart-share-list" style="margin-top:1em;"></div>
+    </div>
+  </div>
+
   <script>
     function orgChartUpdatePermission(select) {
       const url = select.dataset.updateUrl;
@@ -8,7 +35,6 @@
       const permission = select.value;
       const originalClass = select.className;
 
-      // Update visual class
       select.className = select.className.replace(/org-chart-permission-\w+/g, '');
       select.classList.add('org-chart-permission-select', 'org-chart-permission-' + permission);
 
@@ -28,6 +54,77 @@
         location.reload();
       });
     }
+
+    function orgChartOpenShareModal(btn) {
+      const creativeId = btn.dataset.creativeId;
+      const creativeName = btn.dataset.creativeName;
+      const sharesUrl = btn.dataset.sharesUrl;
+      const createUrl = btn.dataset.createUrl;
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+
+      document.getElementById('org-chart-share-title').textContent =
+        '<%= j t("collavre.contacts.org_chart.manage_permissions") %>: ' + creativeName;
+
+      const form = document.getElementById('org-chart-share-form');
+      form.action = createUrl;
+      form.onsubmit = function(e) {
+        e.preventDefault();
+        const formData = new FormData(form);
+        fetch(createUrl, {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': csrf, 'Accept': 'text/html' },
+          body: formData
+        }).then(() => {
+          orgChartLoadShares(sharesUrl, csrf);
+          document.getElementById('org-chart-share-email').value = '';
+        });
+      };
+
+      orgChartLoadShares(sharesUrl, csrf);
+
+      const modal = document.getElementById('org-chart-share-modal');
+      modal.style.display = 'flex';
+      document.body.classList.add('no-scroll');
+    }
+
+    function orgChartLoadShares(url, csrf) {
+      fetch(url, {
+        headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrf }
+      })
+      .then(r => r.json())
+      .then(shares => {
+        const list = document.getElementById('org-chart-share-list');
+        if (shares.length === 0) {
+          list.innerHTML = '<p class="text-muted"><%= j t("collavre.contacts.org_chart.no_members") %></p>';
+          return;
+        }
+        const permLabels = {
+          admin: '<%= j t("collavre.contacts.org_chart.permissions.admin") %>',
+          write: '<%= j t("collavre.contacts.org_chart.permissions.write") %>',
+          feedback: '<%= j t("collavre.contacts.org_chart.permissions.feedback") %>',
+          read: '<%= j t("collavre.contacts.org_chart.permissions.read") %>',
+          no_access: '<%= j t("collavre.contacts.org_chart.permissions.no_access") %>'
+        };
+        list.innerHTML = '<strong><%= j t("collavre.creatives.index.shared_with") %>:</strong>' +
+          '<ul class="share-grid">' + shares.map(s =>
+            '<li>' +
+              '<span>' + (s.user_name || '') + '</span>' +
+              '<span>' + (s.user_email || '') + '</span>' +
+              '<span>' + (permLabels[s.permission] || s.permission) + '</span>' +
+            '</li>'
+          ).join('') + '</ul>';
+      });
+    }
+
+    function orgChartCloseShareModal() {
+      document.getElementById('org-chart-share-modal').style.display = 'none';
+      document.body.classList.remove('no-scroll');
+      location.reload();
+    }
+
+    document.getElementById('org-chart-share-modal')?.addEventListener('click', function(e) {
+      if (e.target === this) orgChartCloseShareModal();
+    });
   </script>
 
   <% if org_chart_roots.present? %>

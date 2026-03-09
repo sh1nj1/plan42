@@ -272,6 +272,26 @@ details[open] > .org-chart-creative-row::before {
     color: var(--text-muted);
 }
 
+/* Share modal */
+.org-chart-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 10000;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.4);
+}
+
+.org-chart-modal-box {
+    min-width: 360px;
+    max-width: 90vw;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
 .org-chart-no-members {
     color: var(--text-muted);
     font-size: var(--text-0);

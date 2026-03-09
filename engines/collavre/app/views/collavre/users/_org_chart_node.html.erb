@@ -13,9 +13,15 @@
       <span class="org-chart-owner-badge"><%= t('collavre.contacts.org_chart.owner') %></span>
     <% end %>
     <% if is_admin %>
-      <%= link_to t('collavre.contacts.org_chart.manage_permissions'),
-          collavre.creative_path(creative, open_share: true),
-          class: "btn btn-xs btn-secondary org-chart-manage-btn" %>
+      <button type="button"
+              class="btn btn-xs btn-secondary org-chart-manage-btn"
+              data-creative-id="<%= creative.id %>"
+              data-creative-name="<%= strip_tags(creative.description.to_s).truncate(40) %>"
+              data-shares-url="<%= collavre.creative_creative_shares_path(creative) %>"
+              data-create-url="<%= collavre.creative_creative_shares_path(creative) %>"
+              onclick="orgChartOpenShareModal(this)">
+        <%= t('collavre.contacts.org_chart.manage_permissions') %>
+      </button>
     <% end %>
   </summary>
 

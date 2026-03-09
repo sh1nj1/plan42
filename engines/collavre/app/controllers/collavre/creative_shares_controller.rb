@@ -1,5 +1,26 @@
 module Collavre
   class CreativeSharesController < ApplicationController
+    def index
+      @creative = Creative.find(params[:creative_id])
+      unless @creative.has_permission?(Current.user, :read)
+        render json: { error: "forbidden" }, status: :forbidden and return
+      end
+
+      shares = CreativeShare.where(creative: @creative)
+                            .where.not(permission: :no_access)
+                            .includes(:user, :shared_by)
+
+      render json: shares.map { |s|
+        {
+          id: s.id,
+          user_name: s.user&.display_name,
+          user_email: s.user&.email,
+          permission: s.permission,
+          shared_by_name: s.shared_by&.display_name
+        }
+      }
+    end
+
     def create
       @creative = Creative.find(params[:creative_id]).effective_origin
 
