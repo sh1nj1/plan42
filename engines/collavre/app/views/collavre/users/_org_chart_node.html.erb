@@ -14,7 +14,7 @@
     <% end %>
     <% if is_admin %>
       <%= link_to t('collavre.contacts.org_chart.manage_permissions'),
-          collavre.creative_path(creative, anchor: "share"),
+          collavre.creative_path(creative, open_share: true),
           class: "btn btn-xs btn-secondary org-chart-manage-btn" %>
     <% end %>
   </summary>
@@ -66,6 +66,12 @@
               <div class="org-chart-member-actions">
                 <% if share.user.ai_user? && share.user.created_by_id == Current.user.id %>
                   <%= link_to t('collavre.users.edit_ai.link'), collavre.edit_ai_user_path(share.user), class: "btn btn-xs btn-secondary" %>
+                  <%= link_to t('collavre.users.copy_ai.link'), collavre.new_ai_users_path(copy_from: share.user.id), class: "btn btn-xs btn-secondary" %>
+                  <%= button_to t('collavre.users.destroy.delete_ai_user'),
+                      collavre.user_path(share.user),
+                      method: :delete,
+                      form: { data: { turbo_confirm: t('collavre.users.destroy.confirm_ai') } },
+                      class: "btn btn-xs btn-danger" %>
                 <% end %>
                 <%= link_to t('collavre.contacts.org_chart.view_profile'), collavre.user_path(share.user), class: "btn btn-xs btn-secondary" %>
                 <% if is_admin %>
