@@ -7,15 +7,8 @@ module Collavre
       @active_tab = params[:tab].presence || "profile"
       @active_tab = "contacts" if @active_tab == "org_chart"
       if Current.user
-        prepare_contacts
         prepare_org_chart
       else
-        @contacts = Collavre::Contact.none
-        @contact_page = 1
-        @total_contact_pages = 1
-        @last_login_map = {}
-        @shared_by_me = {}
-        @shared_with_me = {}
         @org_chart_roots = []
         @org_chart_shares = {}
         @org_chart_invitations = {}

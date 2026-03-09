@@ -36,6 +36,24 @@ module Collavre
     has_many :calendar_events, class_name: "Collavre::CalendarEvent", dependent: :destroy
     has_many :labels, class_name: "Collavre::Label", dependent: :destroy
 
+    # Returns IDs of creatives that have at least one active share and are
+    # accessible by the given user (owned or shared with/by them).
+    def self.shared_accessible_ids(user)
+      own_ids = where(user_id: user.id).pluck(:id)
+      shared_ids = CreativeShare
+        .where.not(permission: :no_access)
+        .where("user_id = :uid OR shared_by_id = :uid", uid: user.id)
+        .pluck(:creative_id)
+
+      accessible_ids = (own_ids | shared_ids).uniq
+
+      CreativeShare
+        .where(creative_id: accessible_ids)
+        .where.not(permission: :no_access)
+        .pluck(:creative_id)
+        .uniq
+    end
+
     validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }, unless: -> { origin_id.present? }
 
     validate :progress_cannot_change_if_has_origin, on: :update
