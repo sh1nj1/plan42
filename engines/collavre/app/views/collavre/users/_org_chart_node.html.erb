@@ -25,6 +25,7 @@
         <% shares.sort_by { |s| Collavre::CreativeShare.permissions[s.permission] }.reverse.each do |share| %>
           <% next unless share.user %>
           <div class="org-chart-member-row">
+            <%# Column 1: User info %>
             <div class="org-chart-member-info">
               <%= render Collavre::AvatarComponent.new(
                 user: share.user,
@@ -36,7 +37,9 @@
                 <span class="org-chart-member-email"><%= share.user.email %></span>
               </div>
             </div>
-            <div class="org-chart-member-meta">
+
+            <%# Column 2: Permission %>
+            <div class="org-chart-member-permission">
               <% if is_admin %>
                 <select class="org-chart-permission-select org-chart-permission-<%= share.permission %>"
                         data-share-id="<%= share.id %>"
@@ -54,6 +57,10 @@
                   <%= t("collavre.contacts.org_chart.permissions.#{share.permission}") %>
                 </span>
               <% end %>
+            </div>
+
+            <%# Column 3: Share direction %>
+            <div class="org-chart-member-direction">
               <% if share.shared_by_id == Current.user.id %>
                 <span class="org-chart-direction org-chart-direction-outgoing">
                   <%= t('collavre.contacts.org_chart.shared_by_me') %>
@@ -63,25 +70,27 @@
                   <%= t('collavre.contacts.org_chart.shared_with_me') %>
                 </span>
               <% end %>
-              <div class="org-chart-member-actions">
-                <% if share.user.ai_user? && share.user.created_by_id == Current.user.id %>
-                  <%= link_to t('collavre.users.edit_ai.link'), collavre.edit_ai_user_path(share.user), class: "btn btn-xs btn-secondary" %>
-                  <%= link_to t('collavre.users.copy_ai.link'), collavre.new_ai_users_path(copy_from: share.user.id), class: "btn btn-xs btn-secondary" %>
-                  <%= button_to t('collavre.users.destroy.delete_ai_user'),
-                      collavre.user_path(share.user),
-                      method: :delete,
-                      form: { data: { turbo_confirm: t('collavre.users.destroy.confirm_ai') } },
-                      class: "btn btn-xs btn-danger" %>
-                <% end %>
-                <%= link_to t('collavre.contacts.org_chart.view_profile'), collavre.user_path(share.user), class: "btn btn-xs btn-secondary" %>
-                <% if is_admin %>
-                  <%= button_to t('collavre.contacts.org_chart.unshare'),
-                      collavre.creative_creative_share_path(creative, share),
-                      method: :delete,
-                      form: { data: { turbo_confirm: t('collavre.contacts.org_chart.unshare_confirm', user: share.user.display_name) } },
-                      class: "btn btn-xs btn-danger" %>
-                <% end %>
-              </div>
+            </div>
+
+            <%# Column 4: Actions %>
+            <div class="org-chart-member-actions">
+              <% if share.user.ai_user? && share.user.created_by_id == Current.user.id %>
+                <%= link_to t('collavre.users.edit_ai.link'), collavre.edit_ai_user_path(share.user), class: "btn btn-xs btn-secondary" %>
+                <%= link_to t('collavre.users.copy_ai.link'), collavre.new_ai_users_path(copy_from: share.user.id), class: "btn btn-xs btn-secondary" %>
+                <%= button_to t('collavre.users.destroy.delete_ai_user'),
+                    collavre.user_path(share.user),
+                    method: :delete,
+                    form: { data: { turbo_confirm: t('collavre.users.destroy.confirm_ai') } },
+                    class: "btn btn-xs btn-danger" %>
+              <% end %>
+              <%= link_to t('collavre.contacts.org_chart.view_profile'), collavre.user_path(share.user), class: "btn btn-xs btn-secondary" %>
+              <% if is_admin %>
+                <%= button_to t('collavre.contacts.org_chart.unshare'),
+                    collavre.creative_creative_share_path(creative, share),
+                    method: :delete,
+                    form: { data: { turbo_confirm: t('collavre.contacts.org_chart.unshare_confirm', user: share.user.display_name) } },
+                    class: "btn btn-xs btn-danger" %>
+              <% end %>
             </div>
           </div>
         <% end %>

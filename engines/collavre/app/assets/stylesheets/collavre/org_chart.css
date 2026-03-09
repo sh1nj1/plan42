@@ -83,6 +83,11 @@ details[open] > .org-chart-creative-row::before {
     white-space: nowrap;
 }
 
+/* Manage permissions button on creative row */
+.org-chart-manage-btn {
+    margin-left: auto;
+}
+
 .org-chart-content {
     border-top: 1px solid var(--border-color);
 }
@@ -110,24 +115,25 @@ details[open] > .org-chart-creative-row::before {
     padding: 0;
 }
 
+/* Grid layout for column alignment */
 .org-chart-member-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
     align-items: center;
-    justify-content: space-between;
     padding: var(--space-1) var(--space-3);
-    gap: var(--space-2);
+    gap: var(--space-3);
 }
 
 .org-chart-member-row:hover {
     background-color: var(--surface-input);
 }
 
+/* Column 1: User info (avatar + name + email) */
 .org-chart-member-info {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
-    flex: 1;
 }
 
 .org-chart-member-name-group {
@@ -159,11 +165,28 @@ details[open] > .org-chart-creative-row::before {
     text-overflow: ellipsis;
 }
 
-.org-chart-member-meta {
+/* Column 2: Permission badge/select */
+.org-chart-member-permission {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    flex-shrink: 0;
+    justify-content: center;
+    min-width: 80px;
+}
+
+/* Column 3: Share direction */
+.org-chart-member-direction {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 80px;
+}
+
+/* Column 4: Actions */
+.org-chart-member-actions {
+    display: flex;
+    gap: var(--space-1);
+    justify-content: flex-end;
+    min-width: 120px;
 }
 
 /* Permission badges */
@@ -249,29 +272,6 @@ details[open] > .org-chart-creative-row::before {
     color: var(--text-muted);
 }
 
-/* Manage permissions button on creative row */
-.org-chart-manage-btn {
-    opacity: 0;
-    transition: opacity 0.15s ease;
-    margin-left: auto;
-}
-
-.org-chart-creative-row:hover .org-chart-manage-btn {
-    opacity: 1;
-}
-
-/* Member action buttons */
-.org-chart-member-actions {
-    display: flex;
-    gap: var(--space-1);
-    opacity: 0;
-    transition: opacity 0.15s ease;
-}
-
-.org-chart-member-row:hover .org-chart-member-actions {
-    opacity: 1;
-}
-
 .org-chart-no-members {
     color: var(--text-muted);
     font-size: var(--text-0);
@@ -282,12 +282,18 @@ details[open] > .org-chart-creative-row::before {
 /* Responsive */
 @media (max-width: 600px) {
     .org-chart-member-row {
-        flex-direction: column;
-        align-items: flex-start;
+        grid-template-columns: 1fr;
         gap: var(--space-1);
     }
 
-    .org-chart-member-meta {
-        padding-left: calc(24px + var(--space-2));
+    .org-chart-member-direction,
+    .org-chart-member-permission {
+        justify-content: flex-start;
+        min-width: auto;
+    }
+
+    .org-chart-member-actions {
+        justify-content: flex-start;
+        min-width: auto;
     }
 }
