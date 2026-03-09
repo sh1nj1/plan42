@@ -45,13 +45,15 @@ module Collavre
       my_roots = Collavre::Creative.where(user_id: Current.user.id, parent_id: nil)
                                    .order(:sequence, :id)
 
-      # Root creatives shared with current user (directly shared roots only)
-      shared_root_ids = Collavre::CreativeShare
+      # All creatives shared with current user (including non-root)
+      shared_creative_ids = Collavre::CreativeShare
         .joins(:creative)
         .where(user_id: Current.user.id)
         .where.not(permission: :no_access)
-        .where(creatives: { parent_id: nil })
         .pluck(:creative_id)
+
+      # Walk up to root for any non-root shared creatives
+      shared_root_ids = Collavre::Creative.where(id: shared_creative_ids).map { |c| c.root.id }.uniq
 
       shared_roots = Collavre::Creative.where(id: shared_root_ids)
                                        .where.not(user_id: Current.user.id)

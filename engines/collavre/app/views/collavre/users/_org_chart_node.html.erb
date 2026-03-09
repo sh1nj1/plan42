@@ -11,6 +11,13 @@
         class: "org-chart-creative-link" %>
     <% if creative.user_id == Current.user.id %>
       <span class="org-chart-owner-badge"><%= t('collavre.contacts.org_chart.owner') %></span>
+      <span class="org-chart-direction org-chart-direction-outgoing">
+        <%= t('collavre.contacts.org_chart.shared_by_me') %>
+      </span>
+    <% else %>
+      <span class="org-chart-direction org-chart-direction-incoming">
+        <%= t('collavre.contacts.org_chart.shared_with_me') %>
+      </span>
     <% end %>
     <% if is_admin %>
       <button type="button"
@@ -62,20 +69,7 @@
               <% end %>
             </div>
 
-            <%# Column 3: Share direction %>
-            <div class="org-chart-member-direction">
-              <% if share.shared_by_id == Current.user.id %>
-                <span class="org-chart-direction org-chart-direction-outgoing">
-                  <%= t('collavre.contacts.org_chart.shared_by_me') %>
-                </span>
-              <% elsif share.shared_by_id.present? %>
-                <span class="org-chart-direction org-chart-direction-incoming">
-                  <%= t('collavre.contacts.org_chart.shared_with_me') %>
-                </span>
-              <% end %>
-            </div>
-
-            <%# Column 4: Actions %>
+            <%# Column 3: Actions %>
             <div class="org-chart-member-actions">
               <% if share.user.ai_user? && share.user.created_by_id == Current.user.id %>
                 <%= link_to t('collavre.users.edit_ai.link'), collavre.edit_ai_user_path(share.user), class: "btn btn-xs btn-secondary" %>

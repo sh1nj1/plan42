@@ -118,7 +118,7 @@ details[open] > .org-chart-creative-row::before {
 /* Grid layout for column alignment */
 .org-chart-member-row {
     display: grid;
-    grid-template-columns: 1fr auto auto auto;
+    grid-template-columns: 1fr auto auto;
     align-items: center;
     padding: var(--space-1) var(--space-3);
     gap: var(--space-3);
@@ -173,15 +173,7 @@ details[open] > .org-chart-creative-row::before {
     min-width: 80px;
 }
 
-/* Column 3: Share direction */
-.org-chart-member-direction {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 80px;
-}
-
-/* Column 4: Actions */
+/* Column 3: Actions */
 .org-chart-member-actions {
     display: flex;
     gap: var(--space-1);
