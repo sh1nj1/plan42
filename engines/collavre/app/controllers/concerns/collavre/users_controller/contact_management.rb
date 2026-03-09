@@ -55,11 +55,24 @@ module Collavre
       @org_chart_roots = all_creatives.select { |c| c.parent_id.nil? || !all_tree_ids.include?(c.parent_id) }
       @org_chart_children = all_creatives.select { |c| c.parent_id.present? && all_tree_ids.include?(c.parent_id) }.group_by(&:parent_id)
 
-      # 4. Preload shares
+      # 4. Preload shares (including origin shares for linked creatives)
+      origin_ids = all_creatives.filter_map(&:origin_id).uniq
+      share_lookup_ids = (all_tree_ids.to_a + origin_ids).uniq
       shares = Collavre::CreativeShare
-        .where(creative_id: all_tree_ids.to_a)
+        .where(creative_id: share_lookup_ids)
         .includes(user: [ avatar_attachment: :blob ], shared_by: [ avatar_attachment: :blob ])
-      @org_chart_shares = shares.group_by(&:creative_id)
+      shares_by_creative = shares.group_by(&:creative_id)
+
+      # Map shares: linked creatives inherit from origin if they have no direct shares
+      @org_chart_shares = {}
+      all_creatives.each do |c|
+        direct = shares_by_creative.fetch(c.id, [])
+        if direct.empty? && c.origin_id.present?
+          @org_chart_shares[c.id] = shares_by_creative.fetch(c.origin_id, [])
+        else
+          @org_chart_shares[c.id] = direct
+        end
+      end
 
       # 5. Preload pending invitations
       @org_chart_invitations = Collavre::Invitation

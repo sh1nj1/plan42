@@ -458,4 +458,38 @@ class OrgChartTest < ActionDispatch::IntegrationTest
     leaf&.destroy
     mid&.destroy
   end
+
+  test "linked creative shows origin shares" do
+    # Create origin creative with shares
+    origin = Collavre::Creative.create!(
+      user: @owner,
+      description: "Origin Creative"
+    )
+    Collavre::CreativeShare.create!(
+      creative: origin,
+      user: @other_user,
+      shared_by: @owner,
+      permission: :write
+    )
+    Collavre::Creatives::PermissionCacheBuilder.rebuild_for_creative(origin)
+
+    # Create linked creative (origin_id set)
+    linked = Collavre::Creative.create!(
+      user: @owner,
+      description: "Linked Creative",
+      origin_id: origin.id
+    )
+
+    sign_in_as(@owner, password: "password")
+    get collavre.user_path(@owner, tab: "contacts")
+    assert_response :success
+
+    # Linked creative should appear (inherits origin shares)
+    assert_includes response.body, "Linked Creative"
+    # Origin shares user should be visible under the linked creative
+    assert_includes response.body, @other_user.display_name
+  ensure
+    linked&.destroy
+    origin&.destroy
+  end
 end
