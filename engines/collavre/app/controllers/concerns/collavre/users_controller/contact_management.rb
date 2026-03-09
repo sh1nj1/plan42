@@ -65,10 +65,9 @@ module Collavre
       # Collect all descendant IDs for preloading
       all_creative_ids = @org_chart_roots.flat_map { |root| root.self_and_descendants.pluck(:id) }.uniq
 
-      # Preload shares for all creatives in the tree
+      # Preload shares for all creatives in the tree (including no_access)
       shares = Collavre::CreativeShare
         .where(creative_id: all_creative_ids)
-        .where.not(permission: :no_access)
         .includes(user: [ avatar_attachment: :blob ], shared_by: [ avatar_attachment: :blob ])
 
       @org_chart_shares = shares.group_by(&:creative_id)

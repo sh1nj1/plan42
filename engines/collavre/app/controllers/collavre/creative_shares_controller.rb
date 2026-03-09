@@ -7,7 +7,6 @@ module Collavre
       end
 
       @shared_list = CreativeShare.where(creative: @creative)
-                                  .where.not(permission: :no_access)
                                   .includes(user: [ avatar_attachment: :blob ])
 
       render partial: "collavre/creatives/share_modal", layout: false
