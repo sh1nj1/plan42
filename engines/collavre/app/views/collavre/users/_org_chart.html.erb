@@ -16,7 +16,46 @@
         } %>
       <% end %>
     </div>
-  <% else %>
+  <% end %>
+
+  <% if org_chart_unassigned.present? %>
+    <div class="org-chart-unassigned">
+      <h3 class="org-chart-unassigned-title"><%= t('collavre.contacts.org_chart.unassigned_users') %></h3>
+      <div class="org-chart-members">
+        <% org_chart_unassigned.each do |user| %>
+          <div class="org-chart-member-row">
+            <div class="org-chart-member-info">
+              <%= render Collavre::AvatarComponent.new(
+                user: user,
+                size: 24,
+                classes: 'avatar'
+              ) %>
+              <div class="org-chart-member-name-group">
+                <%= link_to user.display_name, collavre.user_path(user), class: "org-chart-member-name" %>
+                <span class="org-chart-member-email"><%= user.email %></span>
+              </div>
+            </div>
+            <div class="org-chart-member-actions">
+              <%= link_to t('collavre.contacts.org_chart.view_profile'),
+                  collavre.user_path(user),
+                  class: "btn btn-xs btn-secondary" %>
+              <% if user.ai_user? && user.created_by_id == Current.user.id %>
+                <%= link_to t('collavre.users.edit_ai.link'),
+                    collavre.edit_ai_user_path(user),
+                    class: "btn btn-xs btn-secondary" %>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+
+  <% if org_chart_roots.blank? && org_chart_unassigned.blank? %>
     <p class="text-muted"><%= t('collavre.contacts.org_chart.empty_state') %></p>
   <% end %>
+
+  <div class="org-chart-global-actions">
+    <%= link_to t('collavre.users.add_ai_user'), collavre.new_ai_users_path, class: "btn btn-primary" %>
+  </div>
 </div>

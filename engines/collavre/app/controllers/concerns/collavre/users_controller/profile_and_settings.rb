@@ -5,6 +5,7 @@ module Collavre
     def show
       @user = Collavre::User.find(params[:id])
       @active_tab = params[:tab].presence || "profile"
+      @active_tab = "contacts" if @active_tab == "org_chart"
       if Current.user
         prepare_contacts
         prepare_org_chart
@@ -19,6 +20,7 @@ module Collavre
         @org_chart_shares = {}
         @org_chart_invitations = {}
         @org_chart_children = {}
+        @org_chart_unassigned = []
       end
     end
 

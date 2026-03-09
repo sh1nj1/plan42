@@ -51,7 +51,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
 
   test "org chart tab displays owned creatives" do
     sign_in_as(@owner, password: "password")
-    get collavre.user_path(@owner, tab: "org_chart")
+    get collavre.user_path(@owner, tab: "contacts")
 
     assert_response :success
     assert_includes response.body, "Project Alpha"
@@ -60,7 +60,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
 
   test "org chart tab displays shared creatives" do
     sign_in_as(@owner, password: "password")
-    get collavre.user_path(@owner, tab: "org_chart")
+    get collavre.user_path(@owner, tab: "contacts")
 
     assert_response :success
     assert_includes response.body, "External Project"
@@ -68,7 +68,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
 
   test "org chart tab shows shared members" do
     sign_in_as(@owner, password: "password")
-    get collavre.user_path(@owner, tab: "org_chart")
+    get collavre.user_path(@owner, tab: "contacts")
 
     assert_response :success
     assert_includes response.body, @other_user.display_name
@@ -78,7 +78,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
 
   test "org chart tab shows permission badges" do
     sign_in_as(@owner, password: "password")
-    get collavre.user_path(@owner, tab: "org_chart")
+    get collavre.user_path(@owner, tab: "contacts")
 
     assert_response :success
     assert_includes response.body, I18n.t("collavre.contacts.org_chart.permissions.admin")
@@ -87,7 +87,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
 
   test "org chart tab shows owner badge for owned creatives" do
     sign_in_as(@owner, password: "password")
-    get collavre.user_path(@owner, tab: "org_chart")
+    get collavre.user_path(@owner, tab: "contacts")
 
     assert_response :success
     assert_includes response.body, I18n.t("collavre.contacts.org_chart.owner")
@@ -95,7 +95,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
 
   test "org chart tab shows sharer name for shared creatives" do
     sign_in_as(@owner, password: "password")
-    get collavre.user_path(@owner, tab: "org_chart")
+    get collavre.user_path(@owner, tab: "contacts")
 
     assert_response :success
     # External Project was shared by @other_user
@@ -105,7 +105,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
   test "org chart shows non-root shared creatives by walking up to root" do
     # @third_user only has share on child_creative (not root)
     sign_in_as(@third_user, password: "password")
-    get collavre.user_path(@third_user, tab: "org_chart")
+    get collavre.user_path(@third_user, tab: "contacts")
 
     assert_response :success
     # Should see root creative (walked up from child)
@@ -115,7 +115,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
 
   test "org chart shows permission select for admin users" do
     sign_in_as(@owner, password: "password")
-    get collavre.user_path(@owner, tab: "org_chart")
+    get collavre.user_path(@owner, tab: "contacts")
 
     assert_response :success
     assert_select "select.org-chart-permission-select"
@@ -123,7 +123,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
 
   test "org chart shows permission badge (not select) for non-admin users" do
     sign_in_as(@third_user, password: "password")
-    get collavre.user_path(@third_user, tab: "org_chart")
+    get collavre.user_path(@third_user, tab: "contacts")
 
     assert_response :success
     assert_select "span.org-chart-permission-badge"
@@ -132,7 +132,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
 
   test "org chart shows manage permissions button for admin" do
     sign_in_as(@owner, password: "password")
-    get collavre.user_path(@owner, tab: "org_chart")
+    get collavre.user_path(@owner, tab: "contacts")
 
     assert_response :success
     assert_includes response.body, I18n.t("collavre.contacts.org_chart.manage_permissions")
@@ -147,7 +147,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
     )
 
     sign_in_as(@owner, password: "password")
-    get collavre.user_path(@owner, tab: "org_chart")
+    get collavre.user_path(@owner, tab: "contacts")
 
     assert_response :success
     assert_includes response.body, I18n.t("collavre.contacts.org_chart.permissions.no_access")
@@ -158,7 +158,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
   test "org chart empty state for user with no creatives" do
     new_user = User.create!(email: "empty@example.com", password: "password", name: "Empty User")
     sign_in_as(new_user, password: "password")
-    get collavre.user_path(new_user, tab: "org_chart")
+    get collavre.user_path(new_user, tab: "contacts")
 
     assert_response :success
     assert_includes response.body, I18n.t("collavre.contacts.org_chart.empty_state")
@@ -242,7 +242,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
     )
 
     sign_in_as(@owner, password: "password")
-    get collavre.user_path(@owner, tab: "org_chart")
+    get collavre.user_path(@owner, tab: "contacts")
 
     assert_response :success
     assert_includes response.body, "newbie@example.com"
@@ -261,7 +261,7 @@ class OrgChartTest < ActionDispatch::IntegrationTest
     )
 
     sign_in_as(@owner, password: "password")
-    get collavre.user_path(@owner, tab: "org_chart")
+    get collavre.user_path(@owner, tab: "contacts")
 
     assert_response :success
     refute_includes response.body, "expired@example.com"

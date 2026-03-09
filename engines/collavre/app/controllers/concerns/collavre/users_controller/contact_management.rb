@@ -83,6 +83,14 @@ module Collavre
       # Preload children grouped by parent_id
       all_creatives = Collavre::Creative.where(id: all_creative_ids).order(:sequence, :id)
       @org_chart_children = all_creatives.group_by(&:parent_id)
+
+      # Unassigned contacts: users in Contact but not in any CreativeShare for current user's creatives
+      assigned_user_ids = shares.map(&:user_id).uniq
+      contact_user_ids = Collavre::Contact.where(user_id: Current.user.id).pluck(:contact_user_id)
+      unassigned_ids = contact_user_ids - assigned_user_ids - [ Current.user.id ]
+      @org_chart_unassigned = Collavre::User.where(id: unassigned_ids)
+                                            .includes(avatar_attachment: :blob)
+                                            .order(:name)
     end
 
     def prepare_contacts

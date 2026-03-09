@@ -27,6 +27,9 @@
               data-action="click->org-chart#openShareModal">
         <%= t('collavre.contacts.org_chart.manage_permissions') %>
       </button>
+      <%= link_to t('collavre.contacts.org_chart.add_ai_agent'),
+          collavre.new_ai_users_path(creative_id: creative.id),
+          class: "btn btn-xs btn-secondary org-chart-manage-btn" %>
     <% end %>
   </summary>
 

@@ -44,6 +44,7 @@ module Collavre
 
       if @user.save
         Collavre::Contact.ensure(user: Current.user, contact_user: @user)
+        share_ai_agent_to_creative(@user, params[:creative_id])
         redirect_to user_path(Current.user, tab: "contacts"), notice: I18n.t("collavre.users.create_ai.success")
       else
         flash.now[:alert] = @user.errors.full_messages.to_sentence
@@ -97,6 +98,21 @@ module Collavre
       unless allowed
         fallback = user_path(Current.user, tab: "contacts")
         redirect_back fallback_location: fallback, alert: I18n.t("collavre.users.destroy.not_authorized")
+      end
+    end
+
+    def share_ai_agent_to_creative(user, creative_id)
+      return if creative_id.blank?
+
+      creative = Collavre::Creative.find_by(id: creative_id)
+      return unless creative&.has_permission?(Current.user, :admin)
+
+      Collavre::CreativeShare.find_or_create_by!(
+        creative: creative,
+        user: user
+      ) do |share|
+        share.shared_by = Current.user
+        share.permission = :feedback
       end
     end
   end

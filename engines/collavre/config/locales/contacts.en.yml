@@ -31,6 +31,9 @@ en:
         cancel_invite: Cancel Invite
         cancel_invite_confirm: "Cancel invitation for %{email}?"
         invite_cancelled: Invitation cancelled.
+        add_ai_agent: Add AI Agent
+        add_ai_agent_to: "This AI Agent will be added to \"%{creative}\" with feedback permission."
+        unassigned_users: Unassigned Users
         permissions:
           admin: Admin
           write: Write

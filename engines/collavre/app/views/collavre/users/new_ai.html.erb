@@ -2,6 +2,15 @@
 <h1 class="text-center" style="margin-top: 0;"><%= t('collavre.users.new_ai.title') %></h1>
 
 <%= form_with url: collavre.create_ai_users_path, class: "stacked-form" do |form| %>
+  <% if params[:creative_id].present? %>
+    <%= form.hidden_field :creative_id, value: params[:creative_id] %>
+    <% creative = Collavre::Creative.find_by(id: params[:creative_id]) %>
+    <% if creative %>
+      <div class="form-group">
+        <p class="text-muted"><%= t('collavre.contacts.org_chart.add_ai_agent_to', creative: creative.plain_description) %></p>
+      </div>
+    <% end %>
+  <% end %>
   <div class="form-group">
     <%= form.label :ai_id, t('collavre.users.new_ai.id_label') %>
     <%= form.text_field :ai_id, required: true, class: "stacked-form-control", placeholder: "e.g. my_bot", value: @copy_source ? "#{@copy_source.email.split('@').first}_copy" : nil %>

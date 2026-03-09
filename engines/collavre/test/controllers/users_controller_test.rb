@@ -206,46 +206,26 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_equal I18n.t("collavre.users.destroy.not_authorized"), flash[:alert]
   end
 
-  test "prepare_contacts includes shares on origin creatives for linked creatives" do
+  test "unassigned users appear in org chart contacts tab" do
     sign_in_as(@admin, password: "password")
 
-    # Create an origin creative owned by regular_user
-    origin_creative = Creative.create!(user: @regular_user, description: "Origin creative")
-
-    # Create a linked creative owned by admin (pointing to origin)
-    Creative.create!(
-      user: @admin,
-      description: "Linked creative",
-      origin_id: origin_creative.id
-    )
-
-    # Create another user who will be shared with
-    shared_user = User.create!(
-      email: "shared@example.com",
+    # Create a contact user not shared to any creative
+    unassigned_user = User.create!(
+      email: "unassigned@example.com",
       password: "password",
       password_confirmation: "password",
-      name: "Shared User"
+      name: "Unassigned User"
     )
 
-    # Share the origin creative with shared_user (shared_by regular_user)
-    CreativeShare.create!(
-      creative: origin_creative,
-      user: shared_user,
-      permission: :feedback,
-      shared_by: @regular_user
-    )
+    Collavre::Contact.ensure(user: @admin, contact_user: unassigned_user)
 
-    # Access the user show page contacts tab to trigger prepare_contacts
     get collavre.user_path(@admin, tab: "contacts")
     assert_response :success
 
-    # Verify that shared_user appears in the contacts list
-    # This confirms that the admin sees shared_user because they own a linked creative
-    # that points to origin_creative, which is shared with shared_user
-    assert_includes response.body, shared_user.email,
-                    "Admin should see shared_user in contacts because they own a linked creative"
-    assert_includes response.body, shared_user.name,
-                    "Admin should see shared_user's name in contacts"
+    assert_includes response.body, unassigned_user.email,
+                    "Admin should see unassigned user in org chart"
+    assert_includes response.body, unassigned_user.name,
+                    "Admin should see unassigned user's name in org chart"
   end
 
   test "mention search includes feedback permitted users even if not searchable" do
@@ -325,7 +305,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_equal I18n.t("collavre.users.create_ai.success"), flash[:notice]
   end
 
-  test "ai user creator sees delete button in contacts" do
+  test "ai user creator sees edit button in org chart" do
     sign_in_as(@regular_user, password: "password")
 
     ai_user = User.create!(
@@ -339,15 +319,16 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       email_verified_at: Time.current
     )
 
-    Contact.ensure(user: @regular_user, contact_user: ai_user)
+    creative = Collavre::Creative.create!(user: @regular_user, description: "TestProject")
+    Collavre::CreativeShare.create!(creative: creative, user: ai_user, shared_by: @regular_user, permission: :feedback)
+    Collavre::Creatives::PermissionCacheBuilder.rebuild_for_creative(creative)
 
     get collavre.user_path(@regular_user, tab: "contacts")
     assert_response :success
-    assert_includes response.body, I18n.t("collavre.users.destroy.delete_ai_user")
-    assert_includes response.body, I18n.t("collavre.users.destroy.confirm_ai")
+    assert_includes response.body, I18n.t("collavre.users.edit_ai.link")
   end
 
-  test "non creator does not see delete button for ai user contact" do
+  test "non creator does not see edit button for ai user in org chart" do
     sign_in_as(@regular_user, password: "password")
 
     creator = User.create!(
@@ -368,11 +349,13 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       email_verified_at: Time.current
     )
 
-    Contact.ensure(user: @regular_user, contact_user: ai_user)
+    creative = Collavre::Creative.create!(user: @regular_user, description: "TestProject2")
+    Collavre::CreativeShare.create!(creative: creative, user: ai_user, shared_by: @regular_user, permission: :feedback)
+    Collavre::Creatives::PermissionCacheBuilder.rebuild_for_creative(creative)
 
     get collavre.user_path(@regular_user, tab: "contacts")
     assert_response :success
-    refute_includes response.body, I18n.t("collavre.users.destroy.delete_ai_user")
+    refute_includes response.body, I18n.t("collavre.users.edit_ai.link")
   end
   test "search with scope contacts returns contact users" do
     sign_in_as(@admin, password: "password")
