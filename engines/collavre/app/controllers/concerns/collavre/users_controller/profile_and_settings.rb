@@ -7,6 +7,7 @@ module Collavre
       @active_tab = params[:tab].presence || "profile"
       if Current.user
         prepare_contacts
+        prepare_org_chart
       else
         @contacts = Collavre::Contact.none
         @contact_page = 1
@@ -14,6 +15,8 @@ module Collavre
         @last_login_map = {}
         @shared_by_me = {}
         @shared_with_me = {}
+        @org_chart_roots = []
+        @org_chart_shares = {}
       end
     end
 

@@ -1,0 +1,60 @@
+<div class="org-chart">
+  <p class="text-muted"><%= t('collavre.contacts.org_chart.description') %></p>
+
+  <% if org_chart_roots.present? %>
+    <div class="org-chart-tree">
+      <% org_chart_roots.each do |creative| %>
+        <div class="org-chart-group">
+          <div class="org-chart-creative-row">
+            <%= link_to collavre.creative_path(creative), class: "org-chart-creative-link" do %>
+              <span class="org-chart-creative-icon">📂</span>
+              <span class="org-chart-creative-title"><%= strip_tags(creative.description.to_s).truncate(60) %></span>
+            <% end %>
+            <% if creative.user_id == Current.user.id %>
+              <span class="org-chart-owner-badge"><%= t('collavre.contacts.org_chart.owner') %></span>
+            <% end %>
+          </div>
+
+          <% shares = org_chart_shares.fetch(creative.id, []) %>
+          <% if shares.any? %>
+            <div class="org-chart-members">
+              <% shares.sort_by { |s| Collavre::CreativeShare.permissions[s.permission] }.reverse.each do |share| %>
+                <% next unless share.user %>
+                <div class="org-chart-member-row">
+                  <div class="org-chart-member-info">
+                    <%= render Collavre::AvatarComponent.new(
+                      user: share.user,
+                      size: 24,
+                      classes: "avatar org-chart-avatar"
+                    ) %>
+                    <span class="org-chart-member-name"><%= share.user.display_name %></span>
+                  </div>
+                  <div class="org-chart-member-meta">
+                    <span class="org-chart-permission-badge org-chart-permission-<%= share.permission %>">
+                      <%= t("collavre.contacts.org_chart.permissions.#{share.permission}") %>
+                    </span>
+                    <% if share.shared_by_id == Current.user.id %>
+                      <span class="org-chart-direction org-chart-direction-outgoing">
+                        <%= t('collavre.contacts.org_chart.shared_by_me') %>
+                      </span>
+                    <% elsif share.shared_by_id.present? %>
+                      <span class="org-chart-direction org-chart-direction-incoming">
+                        <%= t('collavre.contacts.org_chart.shared_with_me') %>
+                      </span>
+                    <% end %>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          <% else %>
+            <div class="org-chart-members">
+              <p class="org-chart-no-members"><%= t('collavre.contacts.org_chart.no_members') %></p>
+            </div>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  <% else %>
+    <p class="text-muted"><%= t('collavre.contacts.org_chart.empty_state') %></p>
+  <% end %>
+</div>

@@ -14,3 +14,16 @@ en:
         page_info: Page %{current} of %{total}
       notices:
         removed: User removed from your managed users.
+      org_chart:
+        description: View your creatives and shared members at a glance.
+        empty_state: No creatives yet.
+        owner: Owner
+        shared_by_me: Shared by you
+        shared_with_me: Shared with you
+        no_members: No shared members
+        permissions:
+          admin: Admin
+          write: Write
+          feedback: Feedback
+          read: Read
+          no_access: No access

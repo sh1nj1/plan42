@@ -80,6 +80,7 @@ ko:
       tabs:
         profile: 프로파일
         user_management: 사용자 관리
+        org_chart: 조직도
       profile: 프로파일
       avatar: 아바타
       avatar_url: 아바타 URL

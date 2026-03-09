@@ -10,6 +10,9 @@
     <button class="tab-button <%= 'active' if active_tab == 'contacts' %>" data-action="click->tabs#switch" data-tabs-tab-param="contacts" data-tabs-target="tabButton">
       <%= t('collavre.users.tabs.user_management') %>
     </button>
+    <button class="tab-button <%= 'active' if active_tab == 'org_chart' %>" data-action="click->tabs#switch" data-tabs-tab-param="org_chart" data-tabs-target="tabButton">
+      <%= t('collavre.users.tabs.org_chart') %>
+    </button>
   </div>
 
 <div class="tab-panels">
@@ -137,6 +140,13 @@
         shared_with_me: @shared_with_me,
         contact_page: @contact_page,
         total_contact_pages: @total_contact_pages
+      } %>
+    </section>
+
+    <section class="tab-panel <%= 'active' if active_tab == 'org_chart' %>" data-tabs-target="panel" data-tab-name="org_chart">
+      <%= render partial: 'collavre/users/org_chart', locals: {
+        org_chart_roots: @org_chart_roots,
+        org_chart_shares: @org_chart_shares
       } %>
     </section>
   </div>
