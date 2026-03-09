@@ -1,8 +1,9 @@
-<% shares = org_chart_shares.fetch(creative.id, []) %>
-<% invitations = org_chart_invitations.fetch(creative.id, []) %>
+<% effective = creative.origin_id? ? creative.effective_origin : creative %>
+<% shares = org_chart_shares.fetch(effective.id, []) %>
+<% invitations = org_chart_invitations.fetch(effective.id, []) %>
 <% children = org_chart_children.fetch(creative.id, []) %>
 <% has_content = shares.any? || invitations.any? || children.any? %>
-<% is_admin = creative.user_id == Current.user.id || shares.any? { |s| s.user_id == Current.user.id && s.permission == "admin" } %>
+<% is_admin = effective.user_id == Current.user.id || shares.any? { |s| s.user_id == Current.user.id && s.permission == "admin" } %>
 
 <details class="org-chart-group" <%= 'open' if depth == 0 %>>
   <summary class="org-chart-creative-row <%= 'org-chart-depth-0' if depth == 0 %>" style="--depth: <%= depth %>">
@@ -10,7 +11,7 @@
     <%= link_to strip_tags(creative.effective_description.to_s).truncate(60),
         collavre.creative_path(creative),
         class: "org-chart-creative-link" %>
-    <% if creative.user_id == Current.user.id %>
+    <% if effective.user_id == Current.user.id %>
       <span class="org-chart-owner-badge"><%= t('collavre.contacts.org_chart.owner') %></span>
     <% else %>
       <% my_share = shares.find { |s| s.user_id == Current.user.id } %>
@@ -23,12 +24,12 @@
     <% if is_admin %>
       <button type="button"
               class="btn btn-xs btn-secondary org-chart-manage-btn"
-              data-shares-url="<%= collavre.creative_creative_shares_path(creative) %>"
+              data-shares-url="<%= collavre.creative_creative_shares_path(effective) %>"
               data-action="click->org-chart#openShareModal">
         <%= t('collavre.contacts.org_chart.manage_permissions') %>
       </button>
       <%= link_to t('collavre.contacts.org_chart.add_ai_agent'),
-          collavre.new_ai_users_path(creative_id: creative.id),
+          collavre.new_ai_users_path(creative_id: effective.id),
           class: "btn btn-xs btn-secondary org-chart-manage-btn" %>
     <% end %>
   </summary>
@@ -57,7 +58,7 @@
               <% if is_admin %>
                 <select class="org-chart-permission-select org-chart-permission-<%= share.permission %>"
                         data-share-id="<%= share.id %>"
-                        data-update-url="<%= collavre.creative_creative_share_path(creative, share) %>"
+                        data-update-url="<%= collavre.creative_creative_share_path(effective, share) %>"
                         data-action="change->org-chart#updatePermission">
                   <% %w[admin write feedback read no_access].each do |perm| %>
                     <option value="<%= perm %>" <%= 'selected' if share.permission == perm %>>
@@ -86,7 +87,7 @@
               <%= link_to t('collavre.contacts.org_chart.view_profile'), collavre.user_path(share.user), class: "btn btn-xs btn-secondary" %>
               <% if is_admin %>
                 <%= button_to t('collavre.contacts.org_chart.unshare'),
-                    collavre.creative_creative_share_path(creative, share),
+                    collavre.creative_creative_share_path(effective, share),
                     method: :delete,
                     form: { data: { turbo_confirm: t('collavre.contacts.org_chart.unshare_confirm', user: share.user.display_name) } },
                     class: "btn btn-xs btn-danger" %>
@@ -120,7 +121,7 @@
             <%# Column 2: Permission %>
             <div class="org-chart-member-permission">
               <select class="org-chart-permission-select org-chart-permission-<%= invitation.permission %>"
-                      data-update-url="<%= collavre.creative_invitation_path(creative, invitation) %>"
+                      data-update-url="<%= collavre.creative_invitation_path(effective, invitation) %>"
                       data-action="change->org-chart#updatePermission">
                 <% %w[admin write feedback read no_access].each do |perm| %>
                   <option value="<%= perm %>" <%= 'selected' if invitation.permission == perm %>>
@@ -133,7 +134,7 @@
             <%# Column 3: Actions %>
             <div class="org-chart-member-actions">
               <%= button_to t('collavre.contacts.org_chart.cancel_invite'),
-                  collavre.creative_invitation_path(creative, invitation),
+                  collavre.creative_invitation_path(effective, invitation),
                   method: :delete,
                   form: { data: { turbo_confirm: t('collavre.contacts.org_chart.cancel_invite_confirm', email: invitation.email) } },
                   class: "btn btn-xs btn-danger" %>
