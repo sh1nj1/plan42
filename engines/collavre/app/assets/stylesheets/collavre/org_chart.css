@@ -279,21 +279,12 @@ details[open] > .org-chart-creative-row::before {
     margin: 0;
 }
 
-/* Responsive */
-@media (max-width: 600px) {
-    .org-chart-member-row {
-        grid-template-columns: 1fr;
-        gap: var(--space-1);
-    }
+/* Horizontal scroll instead of wrapping */
+.org-chart-members {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
 
-    .org-chart-member-direction,
-    .org-chart-member-permission {
-        justify-content: flex-start;
-        min-width: auto;
-    }
-
-    .org-chart-member-actions {
-        justify-content: flex-start;
-        min-width: auto;
-    }
+.org-chart-member-row {
+    min-width: max-content;
 }
