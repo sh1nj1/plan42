@@ -65,7 +65,7 @@
                 </div>
               </span>
               <span><%= invitation.email %></span>
-              <span><%= t("collavre.creatives.index.permission_#{invitation.permission}") %> — <span class="text-warning"><%= t('collavre.contacts.org_chart.pending_status') %></span></span>
+              <span><%= t("collavre.creatives.index.permission_#{invitation.permission}") %></span>
               <span>
                 <%= button_to '×', collavre.creative_invitation_path(@parent_creative || @creative, invitation), method: :delete, form: { data: { turbo_confirm: t('collavre.contacts.org_chart.cancel_invite_confirm', email: invitation.email) } }, class: 'delete-share-btn' %>
               </span>
