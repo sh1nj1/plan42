@@ -1,6 +1,4 @@
 <div class="org-chart" data-controller="org-chart">
-  <p class="text-muted"><%= t('collavre.contacts.org_chart.description') %></p>
-
   <%# Container for dynamically loaded share modal %>
   <div data-org-chart-target="shareContainer"></div>
 
@@ -67,7 +65,4 @@
     <p class="text-muted"><%= t('collavre.contacts.org_chart.empty_state') %></p>
   <% end %>
 
-  <div class="org-chart-global-actions">
-    <%= link_to t('collavre.users.add_ai_user'), collavre.new_ai_users_path, class: "btn btn-primary" %>
-  </div>
 </div>
