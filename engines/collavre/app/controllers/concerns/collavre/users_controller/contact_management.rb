@@ -59,14 +59,20 @@ module Collavre
 
       @org_chart_roots = (my_roots + shared_roots).uniq
 
-      # Preload shares for all root creatives
-      root_ids = @org_chart_roots.map(&:id)
+      # Collect all descendant IDs for preloading
+      all_creative_ids = @org_chart_roots.flat_map { |root| root.self_and_descendants.pluck(:id) }.uniq
+
+      # Preload shares for all creatives in the tree
       shares = Collavre::CreativeShare
-        .where(creative_id: root_ids)
+        .where(creative_id: all_creative_ids)
         .where.not(permission: :no_access)
         .includes(user: [ avatar_attachment: :blob ], shared_by: [ avatar_attachment: :blob ])
 
       @org_chart_shares = shares.group_by(&:creative_id)
+
+      # Preload children grouped by parent_id
+      all_creatives = Collavre::Creative.where(id: all_creative_ids).order(:sequence, :id)
+      @org_chart_children = all_creatives.group_by(&:parent_id)
     end
 
     def prepare_contacts

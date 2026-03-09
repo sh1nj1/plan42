@@ -146,7 +146,8 @@
     <section class="tab-panel <%= 'active' if active_tab == 'org_chart' %>" data-tabs-target="panel" data-tab-name="org_chart">
       <%= render partial: 'collavre/users/org_chart', locals: {
         org_chart_roots: @org_chart_roots,
-        org_chart_shares: @org_chart_shares
+        org_chart_shares: @org_chart_shares,
+        org_chart_children: @org_chart_children
       } %>
     </section>
   </div>
