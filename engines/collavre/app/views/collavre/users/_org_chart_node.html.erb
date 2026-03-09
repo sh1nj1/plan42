@@ -11,13 +11,13 @@
         class: "org-chart-creative-link" %>
     <% if creative.user_id == Current.user.id %>
       <span class="org-chart-owner-badge"><%= t('collavre.contacts.org_chart.owner') %></span>
-      <span class="org-chart-direction org-chart-direction-outgoing">
-        <%= t('collavre.contacts.org_chart.shared_by_me') %>
-      </span>
     <% else %>
-      <span class="org-chart-direction org-chart-direction-incoming">
-        <%= t('collavre.contacts.org_chart.shared_with_me') %>
-      </span>
+      <% my_share = shares.find { |s| s.user_id == Current.user.id } %>
+      <% if my_share&.shared_by %>
+        <span class="org-chart-direction org-chart-direction-incoming">
+          <%= t('collavre.contacts.org_chart.shared_by_user', user: my_share.shared_by.display_name) %>
+        </span>
+      <% end %>
     <% end %>
     <% if is_admin %>
       <button type="button"

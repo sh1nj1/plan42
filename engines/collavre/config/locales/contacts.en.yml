@@ -20,6 +20,7 @@ en:
         owner: Owner
         shared_by_me: Shared by you
         shared_with_me: Shared with you
+        shared_by_user: "Shared by %{user}"
         no_members: No shared members
         view_profile: Profile
         manage_permissions: Permissions
