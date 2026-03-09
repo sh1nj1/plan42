@@ -23,6 +23,8 @@ ko:
         no_members: 공유된 멤버 없음
         view_profile: 프로필
         manage_permissions: 권한 설정
+        unshare: 공유 해제
+        unshare_confirm: "%{user}의 공유를 해제하시겠습니까?"
         permissions:
           admin: 관리자
           write: 편집

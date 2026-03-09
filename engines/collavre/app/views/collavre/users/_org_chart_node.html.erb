@@ -68,6 +68,13 @@
                   <%= link_to t('collavre.users.edit_ai.link'), collavre.edit_ai_user_path(share.user), class: "btn btn-xs btn-secondary" %>
                 <% end %>
                 <%= link_to t('collavre.contacts.org_chart.view_profile'), collavre.user_path(share.user), class: "btn btn-xs btn-secondary" %>
+                <% if is_admin %>
+                  <%= button_to t('collavre.contacts.org_chart.unshare'),
+                      collavre.creative_creative_share_path(creative, share),
+                      method: :delete,
+                      form: { data: { turbo_confirm: t('collavre.contacts.org_chart.unshare_confirm', user: share.user.display_name) } },
+                      class: "btn btn-xs btn-danger" %>
+                <% end %>
               </div>
             </div>
           </div>

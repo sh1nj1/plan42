@@ -23,6 +23,8 @@ en:
         no_members: No shared members
         view_profile: Profile
         manage_permissions: Permissions
+        unshare: Unshare
+        unshare_confirm: "Remove sharing for %{user}?"
         permissions:
           admin: Admin
           write: Write
