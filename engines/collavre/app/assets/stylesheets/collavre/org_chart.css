@@ -52,12 +52,21 @@ details[open] > .org-chart-creative-row::before {
     background-color: transparent;
     font-weight: var(--weight-5);
     font-size: 0.95em;
+    padding-left: var(--space-5);
 }
 
 .org-chart-depth-2 {
     background-color: transparent;
     font-weight: var(--weight-4);
     font-size: 0.9em;
+    padding-left: calc(var(--space-5) * 2);
+}
+
+.org-chart-depth-3 {
+    background-color: transparent;
+    font-weight: var(--weight-4);
+    font-size: 0.85em;
+    padding-left: calc(var(--space-5) * 3);
 }
 
 .org-chart-creative-link {
@@ -98,17 +107,22 @@ details[open] > .org-chart-creative-row::before {
 
 .org-chart-indent-0 .org-chart-member-row,
 .org-chart-indent-0.org-chart-no-members {
-    padding-left: var(--space-5);
+    padding-left: calc(var(--space-5) + var(--space-4));
 }
 
 .org-chart-indent-1 .org-chart-member-row,
 .org-chart-indent-1.org-chart-no-members {
-    padding-left: calc(var(--space-5) + var(--space-4));
+    padding-left: calc(var(--space-5) * 2 + var(--space-4));
 }
 
 .org-chart-indent-2 .org-chart-member-row,
 .org-chart-indent-2.org-chart-no-members {
-    padding-left: calc(var(--space-5) + var(--space-4) * 2);
+    padding-left: calc(var(--space-5) * 3 + var(--space-4));
+}
+
+.org-chart-indent-3 .org-chart-member-row,
+.org-chart-indent-3.org-chart-no-members {
+    padding-left: calc(var(--space-5) * 4 + var(--space-4));
 }
 
 .org-chart-children {

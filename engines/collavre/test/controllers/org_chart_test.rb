@@ -387,4 +387,75 @@ class OrgChartTest < ActionDispatch::IntegrationTest
   ensure
     grandchild&.destroy
   end
+
+  # --- Creatives without shares should not appear ---
+
+  test "creatives without any shares are not displayed" do
+    # Create a creative with NO shares
+    no_share_creative = Collavre::Creative.create!(
+      user: @owner,
+      description: "Empty Project No Shares"
+    )
+
+    sign_in_as(@owner, password: "password")
+    get collavre.user_path(@owner, tab: "contacts")
+    assert_response :success
+
+    assert_not_includes response.body, "Empty Project No Shares"
+  ensure
+    no_share_creative&.destroy
+  end
+
+  test "child creative without shares is not displayed even if parent has shares" do
+    # @root_creative has shares, but add a child with NO shares
+    lonely_child = Collavre::Creative.create!(
+      user: @owner,
+      description: "Lonely Child No Shares",
+      parent: @root_creative
+    )
+
+    sign_in_as(@owner, password: "password")
+    get collavre.user_path(@owner, tab: "contacts")
+    assert_response :success
+
+    # Root should appear (has shares), but lonely child should not
+    assert_includes response.body, "Project Alpha"
+    assert_not_includes response.body, "Lonely Child No Shares"
+  ensure
+    lonely_child&.destroy
+  end
+
+  test "only creatives on share path are displayed in tree" do
+    # A > B > C structure where A and C have shares but B does not
+    mid = Collavre::Creative.create!(
+      user: @owner,
+      description: "Middle No Direct Share",
+      parent: @root_creative
+    )
+    leaf = Collavre::Creative.create!(
+      user: @owner,
+      description: "Leaf With Share",
+      parent: mid
+    )
+    Collavre::CreativeShare.create!(
+      creative: leaf,
+      user: @third_user,
+      shared_by: @owner,
+      permission: :read
+    )
+    Collavre::Creatives::PermissionCacheBuilder.rebuild_for_creative(leaf)
+
+    sign_in_as(@owner, password: "password")
+    get collavre.user_path(@owner, tab: "contacts")
+    assert_response :success
+
+    # Root (has shares) and leaf (has shares) should appear
+    # Middle should also appear as path connector
+    assert_includes response.body, "Project Alpha"
+    assert_includes response.body, "Middle No Direct Share"
+    assert_includes response.body, "Leaf With Share"
+  ensure
+    leaf&.destroy
+    mid&.destroy
+  end
 end
