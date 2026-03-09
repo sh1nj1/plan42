@@ -6,9 +6,19 @@ module Collavre
       @user = Collavre::User.find(params[:id])
       @active_tab = params[:tab].presence || "profile"
       @active_tab = "contacts" if @active_tab == "org_chart"
+      @contacts_view = params[:contacts_view].presence || "list"
       if Current.user
-        prepare_org_chart
+        if @contacts_view == "org_chart"
+          prepare_org_chart
+        else
+          prepare_contacts
+        end
       else
+        @contacts = []
+        @shared_by_me = {}
+        @shared_with_me = {}
+        @total_contact_pages = 1
+        @contact_page = 1
         @org_chart_roots = []
         @org_chart_shares = {}
         @org_chart_invitations = {}

@@ -307,9 +307,13 @@ details[open] > .org-chart-creative-row::before {
     margin-bottom: var(--space-2);
 }
 
-/* Global action bar */
-.org-chart-global-actions {
-    margin-top: var(--space-4);
-    padding-top: var(--space-3);
-    border-top: 1px solid var(--color-border);
+/* View switcher */
+.contacts-view-switcher {
+    display: flex;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+}
+
+.contacts-description {
+    margin: 0 0 var(--space-2) 0;
 }

@@ -130,13 +130,38 @@
   </section>
 
     <section class="tab-panel <%= 'active' if active_tab == 'contacts' %>" data-tabs-target="panel" data-tab-name="contacts">
-      <%= render partial: 'collavre/users/org_chart', locals: {
-        org_chart_roots: @org_chart_roots,
-        org_chart_shares: @org_chart_shares,
-        org_chart_invitations: @org_chart_invitations,
-        org_chart_children: @org_chart_children,
-        org_chart_unassigned: @org_chart_unassigned
-      } %>
+      <div class="flex-row-center-between">
+        <div class="contacts-view-switcher">
+        <%= link_to t('collavre.contacts.views.list'),
+            collavre.user_path(Current.user, tab: 'contacts', contacts_view: 'list'),
+            class: "btn btn-xs #{@contacts_view == 'list' ? 'btn-primary' : 'btn-secondary'}" %>
+        <%= link_to t('collavre.contacts.views.org_chart'),
+            collavre.user_path(Current.user, tab: 'contacts', contacts_view: 'org_chart'),
+            class: "btn btn-xs #{@contacts_view == 'org_chart' ? 'btn-primary' : 'btn-secondary'}" %>
+        </div>
+        <div>
+          <p class="text-muted contacts-description"><%= t('collavre.contacts.description') %></p>
+          <%= link_to t('collavre.users.add_ai_user'), collavre.new_ai_users_path, class: "primary-action-button" %>
+        </div>
+      </div>
+
+      <% if @contacts_view == 'org_chart' %>
+        <%= render partial: 'collavre/users/org_chart', locals: {
+          org_chart_roots: @org_chart_roots,
+          org_chart_shares: @org_chart_shares,
+          org_chart_invitations: @org_chart_invitations,
+          org_chart_children: @org_chart_children,
+          org_chart_unassigned: @org_chart_unassigned
+        } %>
+      <% else %>
+        <%= render partial: 'collavre/users/contact_list', locals: {
+          contacts: @contacts,
+          shared_by_me: @shared_by_me,
+          shared_with_me: @shared_with_me,
+          contact_page: @contact_page,
+          total_contact_pages: @total_contact_pages
+        } %>
+      <% end %>
     </section>
   </div>
 </div>

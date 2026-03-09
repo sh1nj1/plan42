@@ -8,6 +8,9 @@ en:
       table:
         shared_creatives: Creatives you shared
         shared_with_me: Creatives shared with you
+      views:
+        list: List
+        org_chart: Org Chart
       pagination:
         prev: Previous
         next: Next

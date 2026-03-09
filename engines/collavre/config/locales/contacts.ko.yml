@@ -8,6 +8,9 @@ ko:
       table:
         shared_creatives: 공유한 크리에이티브
         shared_with_me: 공유된 크리에이티브
+      views:
+        list: 리스트
+        org_chart: 조직도
       pagination:
         prev: 이전
         next: 다음
