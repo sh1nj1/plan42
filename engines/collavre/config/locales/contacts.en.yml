@@ -17,6 +17,8 @@ en:
       org_chart:
         description: View your creatives and shared members at a glance.
         empty_state: No creatives yet.
+        expand_all: Expand All
+        collapse_all: Collapse All
         owner: Owner
         shared_by_me: Shared by you
         shared_with_me: Shared with you

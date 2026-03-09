@@ -38,6 +38,7 @@ module Collavre
 
     # Returns IDs of creatives that have at least one active share and are
     # accessible by the given user (owned or shared with/by them).
+    # Includes linked creatives whose origin has shares.
     def self.shared_accessible_ids(user)
       own_ids = where(user_id: user.id).pluck(:id)
       shared_ids = CreativeShare
@@ -47,11 +48,20 @@ module Collavre
 
       accessible_ids = (own_ids | shared_ids).uniq
 
-      CreativeShare
+      # Direct shares on accessible creatives
+      directly_shared = CreativeShare
         .where(creative_id: accessible_ids)
         .where.not(permission: :no_access)
         .pluck(:creative_id)
-        .uniq
+
+      # Linked creatives whose origin has shares
+      origin_shared = where(id: accessible_ids)
+        .where.not(origin_id: nil)
+        .joins("INNER JOIN creative_shares ON creative_shares.creative_id = creatives.origin_id")
+        .where.not(creative_shares: { permission: :no_access })
+        .pluck(:id)
+
+      (directly_shared | origin_shared).uniq
     end
 
     validates :progress, numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 }, unless: -> { origin_id.present? }

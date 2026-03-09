@@ -5,6 +5,15 @@
   <div data-org-chart-target="shareContainer"></div>
 
   <% if org_chart_roots.present? %>
+    <div class="org-chart-toolbar">
+      <button type="button" class="btn btn-xs btn-secondary"
+              data-action="click->org-chart#toggleAll"
+              data-org-chart-target="toggleAllBtn"
+              data-expand-text="<%= t('collavre.contacts.org_chart.expand_all') %>"
+              data-collapse-text="<%= t('collavre.contacts.org_chart.collapse_all') %>">
+        <%= t('collavre.contacts.org_chart.expand_all') %>
+      </button>
+    </div>
     <div class="org-chart-tree">
       <% org_chart_roots.each do |creative| %>
         <%= render partial: 'collavre/users/org_chart_node', locals: {

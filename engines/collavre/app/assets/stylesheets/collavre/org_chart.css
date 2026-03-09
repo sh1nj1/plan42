@@ -43,30 +43,20 @@ details[open] > .org-chart-creative-row::before {
     transform: rotate(90deg);
 }
 
+.org-chart-creative-row {
+    --depth: 0;
+    padding-left: calc(var(--space-5) * var(--depth));
+}
+
 .org-chart-depth-0 {
     background-color: var(--surface-section);
     font-weight: var(--weight-6);
 }
 
-.org-chart-depth-1 {
-    background-color: transparent;
-    font-weight: var(--weight-5);
-    font-size: 0.95em;
-    padding-left: var(--space-5);
-}
-
-.org-chart-depth-2 {
+.org-chart-creative-row:not(.org-chart-depth-0) {
     background-color: transparent;
     font-weight: var(--weight-4);
-    font-size: 0.9em;
-    padding-left: calc(var(--space-5) * 2);
-}
-
-.org-chart-depth-3 {
-    background-color: transparent;
-    font-weight: var(--weight-4);
-    font-size: 0.85em;
-    padding-left: calc(var(--space-5) * 3);
+    font-size: max(0.85em, 1em - var(--depth) * 0.05em);
 }
 
 .org-chart-creative-link {
@@ -105,24 +95,21 @@ details[open] > .org-chart-creative-row::before {
     padding: var(--space-1) 0;
 }
 
-.org-chart-indent-0 .org-chart-member-row,
-.org-chart-indent-0.org-chart-no-members {
-    padding-left: calc(var(--space-5) + var(--space-4));
+.org-chart-members,
+.org-chart-children,
+.org-chart-no-members {
+    --indent: 0;
 }
 
-.org-chart-indent-1 .org-chart-member-row,
-.org-chart-indent-1.org-chart-no-members {
-    padding-left: calc(var(--space-5) * 2 + var(--space-4));
+.org-chart-members .org-chart-member-row,
+.org-chart-no-members {
+    padding-left: calc(var(--space-5) * (var(--indent) + 1) + var(--space-4));
 }
 
-.org-chart-indent-2 .org-chart-member-row,
-.org-chart-indent-2.org-chart-no-members {
-    padding-left: calc(var(--space-5) * 3 + var(--space-4));
-}
-
-.org-chart-indent-3 .org-chart-member-row,
-.org-chart-indent-3.org-chart-no-members {
-    padding-left: calc(var(--space-5) * 4 + var(--space-4));
+.org-chart-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--space-2);
 }
 
 .org-chart-children {

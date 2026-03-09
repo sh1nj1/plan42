@@ -17,6 +17,8 @@ ko:
       org_chart:
         description: 크리에이티브별 공유 멤버를 한눈에 확인합니다.
         empty_state: 아직 크리에이티브가 없습니다.
+        expand_all: 전체 펼침
+        collapse_all: 전체 접기
         owner: 소유자
         shared_by_me: 내가 공유
         shared_with_me: 상대가 공유

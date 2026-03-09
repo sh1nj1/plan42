@@ -5,7 +5,7 @@
 <% is_admin = creative.user_id == Current.user.id || shares.any? { |s| s.user_id == Current.user.id && s.permission == "admin" } %>
 
 <details class="org-chart-group" <%= 'open' if depth == 0 %>>
-  <summary class="org-chart-creative-row org-chart-depth-<%= depth %>">
+  <summary class="org-chart-creative-row <%= 'org-chart-depth-0' if depth == 0 %>" style="--depth: <%= depth %>">
     <span class="org-chart-creative-icon"><%= depth == 0 ? '📂' : '📁' %></span>
     <%= link_to strip_tags(creative.description.to_s).truncate(60),
         collavre.creative_path(creative),
@@ -35,7 +35,7 @@
 
   <div class="org-chart-content">
     <% if shares.any? %>
-      <div class="org-chart-members org-chart-indent-<%= depth %>">
+      <div class="org-chart-members" style="--indent: <%= depth %>">
         <% shares.sort_by { |s| Collavre::CreativeShare.permissions[s.permission] }.reverse.each do |share| %>
           <% next unless share.user %>
           <div class="org-chart-member-row">
@@ -98,7 +98,7 @@
     <% end %>
 
     <% if invitations.any? && is_admin %>
-      <div class="org-chart-members org-chart-indent-<%= depth %>">
+      <div class="org-chart-members" style="--indent: <%= depth %>">
         <% invitations.each do |invitation| %>
           <div class="org-chart-member-row org-chart-invitation-row">
             <%# Column 1: Invitation info %>
@@ -144,7 +144,7 @@
     <% end %>
 
     <% if children.any? %>
-      <div class="org-chart-children org-chart-indent-<%= depth %>">
+      <div class="org-chart-children" style="--indent: <%= depth %>">
         <% children.each do |child| %>
           <%= render partial: 'collavre/users/org_chart_node', locals: {
             creative: child,
@@ -158,7 +158,7 @@
     <% end %>
 
     <% unless has_content %>
-      <p class="org-chart-no-members org-chart-indent-<%= depth %>"><%= t('collavre.contacts.org_chart.no_members') %></p>
+      <p class="org-chart-no-members" style="--indent: <%= depth %>"><%= t('collavre.contacts.org_chart.no_members') %></p>
     <% end %>
   </div>
 </details>
