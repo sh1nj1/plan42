@@ -23,7 +23,7 @@
       <button type="button"
               class="btn btn-xs btn-secondary org-chart-manage-btn"
               data-shares-url="<%= collavre.creative_creative_shares_path(creative) %>"
-              onclick="orgChartOpenShareModal(this)">
+              data-action="click->org-chart#openShareModal">
         <%= t('collavre.contacts.org_chart.manage_permissions') %>
       </button>
     <% end %>
@@ -54,8 +54,7 @@
                 <select class="org-chart-permission-select org-chart-permission-<%= share.permission %>"
                         data-share-id="<%= share.id %>"
                         data-update-url="<%= collavre.creative_creative_share_path(creative, share) %>"
-                        data-csrf="<%= form_authenticity_token %>"
-                        onchange="orgChartUpdatePermission(this)">
+                        data-action="change->org-chart#updatePermission">
                   <% %w[admin write feedback read no_access].each do |perm| %>
                     <option value="<%= perm %>" <%= 'selected' if share.permission == perm %>>
                       <%= t("collavre.contacts.org_chart.permissions.#{perm}") %>
