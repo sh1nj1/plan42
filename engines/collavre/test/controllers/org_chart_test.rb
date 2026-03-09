@@ -484,8 +484,9 @@ class OrgChartTest < ActionDispatch::IntegrationTest
     get collavre.user_path(@owner, tab: "contacts")
     assert_response :success
 
-    # Linked creative should appear (inherits origin shares)
-    assert_includes response.body, "Linked Creative"
+    # Linked creative should appear with origin's description (via effective_description)
+    # Both origin and linked show "Origin Creative" — verify linked creative's path exists
+    assert_select "a[href='#{collavre.creative_path(linked)}']", text: /Origin Creative/
     # Origin shares user should be visible under the linked creative
     assert_includes response.body, @other_user.display_name
   ensure

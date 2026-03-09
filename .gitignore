@@ -41,6 +41,7 @@
 vendor/bundle
 /app/assets/builds/*
 !/app/assets/builds/.keep
+/engines/collavre/app/assets/builds
 
 /node_modules
 
