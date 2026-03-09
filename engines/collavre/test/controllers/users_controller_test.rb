@@ -230,7 +230,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     )
     Collavre::Contact.ensure(user: @admin, contact_user: regular_user)
 
-    get collavre.user_path(@admin, tab: "contacts")
+    get collavre.user_path(@admin, tab: "contacts", contacts_view: "org_chart")
     assert_response :success
 
     assert_includes response.body, ai_agent.email,
