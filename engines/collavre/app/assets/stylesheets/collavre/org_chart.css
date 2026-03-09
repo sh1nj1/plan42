@@ -83,12 +83,6 @@ details[open] > .org-chart-creative-row::before {
     white-space: nowrap;
 }
 
-.org-chart-count {
-    font-size: var(--text-0);
-    color: var(--text-muted);
-    white-space: nowrap;
-}
-
 .org-chart-content {
     border-top: 1px solid var(--border-color);
 }
@@ -136,10 +130,33 @@ details[open] > .org-chart-creative-row::before {
     flex: 1;
 }
 
+.org-chart-member-name-group {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    min-width: 0;
+    overflow: hidden;
+}
+
 .org-chart-member-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--text-primary);
+    text-decoration: none;
+    font-weight: var(--weight-5);
+}
+
+.org-chart-member-name:hover {
+    color: var(--color-link);
+}
+
+.org-chart-member-email {
+    font-size: var(--text-0);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .org-chart-member-meta {
@@ -194,6 +211,18 @@ details[open] > .org-chart-creative-row::before {
 
 .org-chart-direction-incoming {
     color: var(--color-warning);
+}
+
+/* Member action buttons */
+.org-chart-member-actions {
+    display: flex;
+    gap: var(--space-1);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.org-chart-member-row:hover .org-chart-member-actions {
+    opacity: 1;
 }
 
 .org-chart-no-members {

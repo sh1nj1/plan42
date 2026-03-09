@@ -11,9 +11,6 @@
     <% if creative.user_id == Current.user.id %>
       <span class="org-chart-owner-badge"><%= t('collavre.contacts.org_chart.owner') %></span>
     <% end %>
-    <% if has_content %>
-      <span class="org-chart-count"><%= shares.size %><%= " + #{children.size}" if children.any? %></span>
-    <% end %>
   </summary>
 
   <div class="org-chart-content">
@@ -28,7 +25,10 @@
                 size: 24,
                 classes: "avatar org-chart-avatar"
               ) %>
-              <span class="org-chart-member-name"><%= share.user.display_name %></span>
+              <div class="org-chart-member-name-group">
+                <%= link_to share.user.display_name, collavre.user_path(share.user), class: "org-chart-member-name" %>
+                <span class="org-chart-member-email"><%= share.user.email %></span>
+              </div>
             </div>
             <div class="org-chart-member-meta">
               <span class="org-chart-permission-badge org-chart-permission-<%= share.permission %>">
@@ -43,6 +43,12 @@
                   <%= t('collavre.contacts.org_chart.shared_with_me') %>
                 </span>
               <% end %>
+              <div class="org-chart-member-actions">
+                <% if share.user.ai_user? && share.user.created_by_id == Current.user.id %>
+                  <%= link_to t('collavre.users.edit_ai.link'), collavre.edit_ai_user_path(share.user), class: "btn btn-xs btn-secondary" %>
+                <% end %>
+                <%= link_to t('collavre.contacts.org_chart.view_profile'), collavre.user_path(share.user), class: "btn btn-xs btn-secondary" %>
+              </div>
             </div>
           </div>
         <% end %>
