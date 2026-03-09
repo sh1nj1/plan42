@@ -66,8 +66,9 @@ module CollavreCompletionApi
             # Legacy format: collavre/{id}
             Collavre::User.find_by(id: model_param.sub("collavre/", ""))
           else
-            # Email username format
-            Collavre::User.where("email LIKE ?", "#{model_param}@%").first
+            # Email username format — sanitize to prevent LIKE wildcard injection
+            sanitized = ActiveRecord::Base.sanitize_sql_like(model_param)
+            Collavre::User.where("email LIKE ?", "#{sanitized}@%").first
           end
 
           return nil unless agent&.ai_user?
