@@ -47,6 +47,36 @@ module CollavreCompletionApi
           Collavre::Current.user
         end
 
+        # Model ID format: email username (before @)
+        # e.g., "devbot" for devbot@collavre.local
+        # Falls back to "collavre/{id}" if email is blank
+        def agent_model_id(agent)
+          if agent.email.present?
+            agent.email.split("@").first
+          else
+            "collavre/#{agent.id}"
+          end
+        end
+
+        # Resolve agent from model parameter (email username or legacy collavre/id format)
+        def resolve_agent_by_model(model_param)
+          return nil if model_param.blank?
+
+          agent = if model_param.start_with?("collavre/")
+            # Legacy format: collavre/{id}
+            Collavre::User.find_by(id: model_param.sub("collavre/", ""))
+          else
+            # Email username format — sanitize to prevent LIKE wildcard injection
+            sanitized = ActiveRecord::Base.sanitize_sql_like(model_param)
+            Collavre::User.where("email LIKE ?", "#{sanitized}@%").first
+          end
+
+          return nil unless agent&.ai_user?
+          return nil unless agent.created_by_id == current_user.id || agent.searchable?
+
+          agent
+        end
+
         def collavre_creative
           @collavre_creative ||= begin
             creative_id = request.headers["X-Collavre-Creative"]

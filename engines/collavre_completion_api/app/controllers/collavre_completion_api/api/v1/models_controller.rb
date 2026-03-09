@@ -9,7 +9,7 @@ module CollavreCompletionApi
 
           models = ai_agents.map do |agent|
             {
-              id: "collavre/#{agent.id}",
+              id: agent_model_id(agent),
               object: "model",
               created: agent.created_at.to_i,
               owned_by: "collavre",

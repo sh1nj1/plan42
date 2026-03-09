@@ -32,7 +32,7 @@ module CollavreCompletionApi
           assert body["data"].is_a?(Array)
 
           model_ids = body["data"].map { |m| m["id"] }
-          assert_includes model_ids, "collavre/#{@ai_bot.id}"
+          assert_includes model_ids, "bot"
         end
 
         test "returns 401 without token" do
@@ -66,7 +66,7 @@ module CollavreCompletionApi
           assert_response :success
           body = JSON.parse(response.body)
           model_ids = body["data"].map { |m| m["id"] }
-          refute_includes model_ids, "collavre/#{@ai_bot.id}"
+          refute_includes model_ids, "bot"
         end
 
         test "includes searchable agents for other users" do
@@ -83,7 +83,7 @@ module CollavreCompletionApi
           assert_response :success
           body = JSON.parse(response.body)
           model_ids = body["data"].map { |m| m["id"] }
-          assert_includes model_ids, "collavre/#{@ai_bot.id}"
+          assert_includes model_ids, "bot"
         end
       end
     end

@@ -39,7 +39,7 @@ module CollavreCompletionApi
               context: { creative: collavre_creative, user: current_user }
             )
 
-            model_name = params[:model] || "collavre/#{agent.id}"
+            model_name = params[:model] || agent_model_id(agent)
 
             if stream
               stream_response(client, contents, model_name)
@@ -51,20 +51,7 @@ module CollavreCompletionApi
           private
 
           def resolve_agent
-            model_param = params[:model].to_s
-
-            return nil unless model_param.start_with?("collavre/")
-
-            ai_id = model_param.sub("collavre/", "")
-            agent = Collavre::User.find_by(id: ai_id)
-            return nil unless agent&.ai_user?
-            return nil unless agent_accessible?(agent)
-
-            agent
-          end
-
-          def agent_accessible?(agent)
-            agent.created_by_id == current_user.id || agent.searchable?
+            resolve_agent_by_model(params[:model].to_s)
           end
 
           def build_system_prompt(messages, agent)
