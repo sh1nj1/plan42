@@ -99,7 +99,10 @@ export function initializeCreativeRowEditor() {
     const afterInput = document.getElementById('inline-after-id');
     const childInput = document.getElementById('inline-child-id');
     const originIdInput = document.getElementById('inline-origin-id');
+    const kindInput = document.getElementById('inline-creative-kind');
+    const dataInput = document.getElementById('inline-creative-data');
 
+    let currentKind = null; // Track the kind of the currently edited creative
     let lexicalEditor = null;
     if (editorContainer) {
       try {
@@ -250,7 +253,7 @@ export function initializeCreativeRowEditor() {
       const progressValue = hasProgress ? Number(row.dataset.progressValue ?? 0) : 0;
       const parentId = tree.dataset?.parentId || '';
 
-      return {
+      const payload = {
         id: id,
         description,
         description_raw_html: rawHtml,
@@ -258,6 +261,12 @@ export function initializeCreativeRowEditor() {
         parent_id: parentId,
         progress: Number.isNaN(progressValue) ? 0 : progressValue
       };
+      // Include kind and data from the creative-tree-row element
+      if (row.kind) payload.kind = row.kind;
+      if (row.dataset?.creativeData) {
+        try { payload.data = JSON.parse(row.dataset.creativeData); } catch (_) { /* ignore */ }
+      }
+      return payload;
     }
 
     function isHtmlEmpty(html) {
@@ -275,6 +284,10 @@ export function initializeCreativeRowEditor() {
       form.action = `/creatives/${creativeId}`;
       if (methodInput) methodInput.value = 'patch';
       form.dataset.creativeId = creativeId;
+      // Set kind and data
+      currentKind = data.kind || null;
+      if (kindInput) kindInput.value = currentKind || '';
+      if (dataInput) dataInput.value = data.data ? JSON.stringify(data.data) : '';
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
       lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
@@ -1643,6 +1656,18 @@ export function initializeCreativeRowEditor() {
 
     function onLexicalChange(html) {
       descriptionInput.value = html;
+      // For kind=null or kind=json, store Lexical raw JSON in data
+      if (!currentKind || currentKind === 'json') {
+        const editorStateJSON = lexicalEditor?.getEditorStateJSON?.();
+        if (editorStateJSON && dataInput) {
+          dataInput.value = JSON.stringify({
+            format: 'lexical',
+            content: editorStateJSON
+          });
+          // Auto-set kind to json when data is present
+          if (kindInput && !currentKind) kindInput.value = 'json';
+        }
+      }
       // Mark as dirty if content changed from original
       isDirty = (html !== originalContent);
       scheduleSave();

@@ -166,5 +166,46 @@ module Collavre
       assert_equal parent_menu.id, child_menu.parent_id
       assert_includes parent_menu.children, child_menu
     end
+
+    # --- kind: "json" tests ---
+
+    test "kind json preserves description when data is present" do
+      creative = Creative.create!(
+        kind: "json",
+        description: "<p>Hello World</p>",
+        data: { "format" => "lexical", "content" => { "root" => {} } },
+        user: @user
+      )
+      assert_equal "<p>Hello World</p>", creative.description.to_s
+      assert_equal "lexical", creative.data["format"]
+    end
+
+    test "kind json parses string data" do
+      creative = Creative.new(
+        kind: "json",
+        description: "<p>Test</p>",
+        data: '{"format":"lexical","content":{"root":{}}}',
+        user: @user
+      )
+      creative.valid?
+      assert creative.data.is_a?(Hash)
+      assert_equal "lexical", creative.data["format"]
+    end
+
+    test "kind json does not overwrite description from data" do
+      creative = Creative.create!(
+        kind: "json",
+        description: "<p>Original</p>",
+        data: { "format" => "lexical", "content" => {} },
+        user: @user
+      )
+      creative.update!(description: "<p>Updated</p>")
+      assert_equal "<p>Updated</p>", creative.description.to_s
+    end
+
+    test "CreativeRenderers::Json render returns nil" do
+      result = Collavre::CreativeRenderers::Json.render({ "format" => "lexical" })
+      assert_nil result
+    end
   end
 end

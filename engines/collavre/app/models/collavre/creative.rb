@@ -25,6 +25,7 @@ module Collavre
     scope :of_kind, ->(kind) { where(kind: kind) }
     scope :menus, -> { of_kind("menu") }
 
+    before_validation :parse_data_if_string
     before_validation :render_description_from_data, if: -> { kind.present? }
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
@@ -183,11 +184,19 @@ module Collavre
       descendants.update_all(updated_at: Time.current)
     end
 
+    def parse_data_if_string
+      self.data = JSON.parse(data) if data.is_a?(String) && data.present?
+    rescue JSON::ParserError
+      # Keep as-is if invalid JSON
+    end
+
     def render_description_from_data
       renderer = Collavre::CreativeRenderers.for(kind)
       return unless renderer
 
-      self.description = renderer.render(data)
+      rendered = renderer.render(data)
+      # nil means "keep existing description" (e.g., kind: "json" where HTML comes from editor)
+      self.description = rendered unless rendered.nil?
     end
 
     def menu_kind?

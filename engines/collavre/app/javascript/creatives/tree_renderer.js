@@ -123,6 +123,9 @@ function applyRowProperties(row, node) {
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'origin_id')) {
     setDatasetValue(row, 'originId', inlinePayload.origin_id ?? '')
   }
+  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'data') && inlinePayload.data) {
+    setDatasetValue(row, 'creativeData', JSON.stringify(inlinePayload.data))
+  }
 
   if (dirty && typeof row.requestUpdate === 'function') {
     row.requestUpdate()

@@ -320,7 +320,7 @@ module Collavre
       end
 
       def creative_params
-        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id)
+        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :kind, :data)
       end
 
       def any_filter_active?
