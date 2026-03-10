@@ -265,6 +265,48 @@ class NavigationHelperTest < ActionView::TestCase
     assert_equal "", html
   end
 
+  test "navigation_items_for merges Creative menu items with registry items" do
+    Navigation::Registry.instance.register(
+      key: :home, label: "Home", type: :button, path: -> { "/" }, priority: 100
+    )
+
+    Collavre::Current.user = users(:one)
+    Collavre::Creative.create!(
+      kind: "menu",
+      data: { "key" => "custom_link", "label" => "Custom", "path" => "/custom", "section" => "main", "order" => 200 },
+      user: users(:one)
+    )
+
+    items = navigation_items_for(:main)
+    keys = items.map { |i| i[:key] }
+
+    assert_includes keys, :home
+    assert_includes keys, :custom_link
+  ensure
+    Collavre::MenuService.invalidate!
+  end
+
+  test "Creative menu items override registry items with same key" do
+    Navigation::Registry.instance.register(
+      key: :home, label: "Old Home", type: :button, path: -> { "/" }, priority: 100
+    )
+
+    Collavre::Current.user = users(:one)
+    Collavre::Creative.create!(
+      kind: "menu",
+      data: { "key" => "home", "label" => "New Home", "path" => "/new", "section" => "main", "order" => 100 },
+      user: users(:one)
+    )
+
+    items = navigation_items_for(:main)
+    home_items = items.select { |i| i[:key] == :home }
+
+    assert_equal 1, home_items.size
+    assert_equal "New Home", home_items.first[:label]
+  ensure
+    Collavre::MenuService.invalidate!
+  end
+
   test "render_navigation_item renders popup type as dropdown" do
     Navigation::Registry.instance.register(
       key: :test_popup,
