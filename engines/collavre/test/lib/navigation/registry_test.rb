@@ -212,4 +212,5 @@ class Navigation::RegistryTest < ActiveSupport::TestCase
     assert_equal :popup, item[:type]
     assert_equal 2, item[:children].size
   end
+
 end

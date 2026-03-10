@@ -11,7 +11,8 @@ module Collavre
     end
 
     after_save :touch_subtree_on_move, if: :saved_change_to_parent_id?
-
+    after_commit :invalidate_menu_cache, if: :menu_kind?
+    after_destroy :invalidate_menu_cache, if: :menu_kind?
 
     include Linkable
     include Permissible
@@ -187,6 +188,14 @@ module Collavre
       return unless renderer
 
       self.description = renderer.render(data)
+    end
+
+    def menu_kind?
+      kind == "menu"
+    end
+
+    def invalidate_menu_cache
+      Collavre::MenuService.invalidate!
     end
   end
 end

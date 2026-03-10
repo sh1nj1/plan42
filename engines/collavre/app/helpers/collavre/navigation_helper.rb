@@ -3,10 +3,24 @@
 module Collavre
   module NavigationHelper
     # Get visible navigation items for a section
+    # Merges code-defined items (NavigationRegistry) with Creative-based items (MenuService)
+    # Creative items with a matching key override code-defined items
     def navigation_items_for(section, desktop: true)
-      Navigation::Registry.instance
-        .items_for_section(section)
-        .select { |item| navigation_item_visible?(item, desktop: desktop) }
+      registry_items = Navigation::Registry.instance
+                         .items_for_section(section)
+
+      # Merge Creative-based menu items (override by key)
+      creative_items = creative_navigation_items_for(section)
+      if creative_items.any?
+        creative_keys = creative_items.map { |i| i[:key] }.to_set
+        # Keep registry items that aren't overridden by creative items
+        merged = registry_items.reject { |i| creative_keys.include?(i[:key]) }
+        merged.concat(creative_items)
+        merged.sort_by! { |i| i[:priority] }
+        registry_items = merged
+      end
+
+      registry_items.select { |item| navigation_item_visible?(item, desktop: desktop) }
     end
 
     # Check if a navigation item should be visible
@@ -160,6 +174,14 @@ module Collavre
       options[:id] = item[:html_id] if item[:html_id]
       options[:data] = item[:data] if item[:data]
       options
+    end
+
+    # Fetch Creative-based menu items converted to NavigationRegistry format
+    def creative_navigation_items_for(section)
+      Collavre::MenuService.navigation_items_for(section, user: Current.user)
+    rescue StandardError => e
+      Rails.logger.debug("NavigationHelper: Failed to load creative menus: #{e.message}")
+      []
     end
   end
 end
