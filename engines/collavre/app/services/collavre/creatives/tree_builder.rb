@@ -115,6 +115,7 @@ module Creatives
           id: creative.id,
           dom_id: "creative-#{creative.id}",
           parent_id: creative.parent_id,
+          kind: creative.kind,
           level: level,
           select_mode: !!select_mode,
           can_write: cached_can_write?(creative),
@@ -182,11 +183,14 @@ module Creatives
     end
 
     def inline_editor_payload_for(creative)
-      {
+      payload = {
         description_raw_html: creative.effective_description(nil, true),
         progress: creative.progress,
-        origin_id: creative.origin_id
+        origin_id: creative.origin_id,
+        kind: creative.kind
       }
+      payload[:data] = creative.data if creative.kind.present? && creative.data.present?
+      payload
     end
 
     def children_container_payload(creative, filtered_children, child_level:, children_nodes:, expanded:, load_children_now:)

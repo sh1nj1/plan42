@@ -59,6 +59,19 @@ function applyRowProperties(row, node) {
     }
   }
 
+  // Set kind attribute
+  if (node.kind != null) {
+    if (row.kind !== node.kind) {
+      row.kind = node.kind
+      row.setAttribute('kind', node.kind)
+      dirty = true
+    }
+  } else if (row.hasAttribute?.('kind')) {
+    row.kind = null
+    row.removeAttribute('kind')
+    dirty = true
+  }
+
   updateBooleanAttr('selectMode', 'select-mode', node.select_mode)
   updateBooleanAttr('canWrite', 'can-write', node.can_write)
   updateBooleanAttr('hasChildren', 'has-children', node.has_children)
