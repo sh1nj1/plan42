@@ -610,3 +610,38 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 .comments-btn .badge[data-count="0"] {
     background: var(--color-brand);
 }
+/* Kind badge for typed creatives */
+.creative-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.85em;
+  margin-right: 0.3em;
+  opacity: 0.8;
+  vertical-align: middle;
+}
+
+/* Kind-specific row styling */
+creative-tree-row[kind="menu"] .creative-content {
+  border-left: 2px solid var(--color-brand, #3b82f6);
+  padding-left: 0.4em;
+}
+
+creative-tree-row[kind="agent"] .creative-content {
+  border-left: 2px solid #8b5cf6;
+  padding-left: 0.4em;
+}
+
+creative-tree-row[kind="tool"] .creative-content {
+  border-left: 2px solid #f59e0b;
+  padding-left: 0.4em;
+}
+
+creative-tree-row[kind="workflow"] .creative-content {
+  border-left: 2px solid #10b981;
+  padding-left: 0.4em;
+}
+
+creative-tree-row[kind="settings"] .creative-content {
+  border-left: 2px solid #6b7280;
+  padding-left: 0.4em;
+}

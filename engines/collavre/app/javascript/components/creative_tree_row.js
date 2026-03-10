@@ -10,6 +10,7 @@ class CreativeTreeRow extends LitElement {
     creativeId: { attribute: "creative-id" },
     parentId: { attribute: "parent-id" },
     domId: { attribute: "dom-id" },
+    kind: { attribute: "kind", reflect: true },
     selectMode: { type: Boolean, attribute: "select-mode", reflect: true },
     canWrite: { type: Boolean, attribute: "can-write" },
     level: { type: Number, attribute: "level" },
@@ -32,6 +33,7 @@ class CreativeTreeRow extends LitElement {
     this.creativeId = null;
     this.parentId = null;
     this.domId = null;
+    this.kind = null;
     this.selectMode = false;
     this.canWrite = false;
     this.level = 1;
@@ -292,9 +294,10 @@ class CreativeTreeRow extends LitElement {
   _renderContent() {
     const level = Number(this.level) || 1;
     // Toggle is now rendered outside
+    const kindBadge = this.kind ? this._renderKindBadge() : nothing;
     const content = html`
       <div class="creative-content" @click=${this._handleContentClick}>
-        ${unsafeHTML(this.descriptionHtml || "")}
+        ${kindBadge}${unsafeHTML(this.descriptionHtml || "")}
       </div>
     `;
     const indicator = this.loadingChildren ? this._renderLoadingIndicator() : nothing;
@@ -334,6 +337,20 @@ class CreativeTreeRow extends LitElement {
         ${bullet}${content}${indicator}
       </div>
     `;
+  }
+
+  static KIND_ICONS = {
+    menu: '📋',
+    json: '📄',
+    tool: '🔧',
+    agent: '🤖',
+    workflow: '⚡',
+    settings: '⚙️'
+  };
+
+  _renderKindBadge() {
+    const icon = CreativeTreeRow.KIND_ICONS[this.kind] || '📎';
+    return html`<span class="creative-kind-badge" title="${this.kind}">${icon}</span>`;
   }
 
   _renderLoadingIndicator() {
