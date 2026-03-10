@@ -102,6 +102,15 @@ export function initializeCreativeRowEditor() {
     const kindInput = document.getElementById('inline-creative-kind');
     const dataInput = document.getElementById('inline-creative-data');
 
+    // Menu editor elements
+    const menuEditor = document.getElementById('menu-editor');
+    const menuLabelInput = document.getElementById('menu-editor-label');
+    const menuPathInput = document.getElementById('menu-editor-path');
+    const menuIconInput = document.getElementById('menu-editor-icon');
+    const menuSectionSelect = document.getElementById('menu-editor-section');
+    const menuOrderInput = document.getElementById('menu-editor-order');
+    const menuRequiresAuthCheckbox = document.getElementById('menu-editor-requires-auth');
+
     let currentKind = null; // Track the kind of the currently edited creative
     let lexicalEditor = null;
     if (editorContainer) {
@@ -288,9 +297,15 @@ export function initializeCreativeRowEditor() {
       currentKind = data.kind || null;
       if (kindInput) kindInput.value = currentKind || '';
       if (dataInput) dataInput.value = data.data ? JSON.stringify(data.data) : '';
+
+      // Switch editor based on kind
+      switchEditor(currentKind, data.data);
+
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
-      lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
+      if (currentKind !== 'menu') {
+        lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
+      }
       pendingSave = false;
       // Track original content for dirty state detection
       originalContent = content;
@@ -1652,6 +1667,67 @@ export function initializeCreativeRowEditor() {
       pendingSave = true;
       clearTimeout(saveTimer);
       saveTimer = setTimeout(saveForm, 5000);
+    }
+
+    // Switch between Lexical editor and kind-specific editors
+    function switchEditor(kind, data) {
+      if (kind === 'menu') {
+        // Show menu editor, hide Lexical
+        if (editorContainer) editorContainer.style.display = 'none';
+        if (menuEditor) menuEditor.style.display = '';
+        populateMenuEditor(data);
+        // Bind change events for auto-save
+        bindMenuEditorEvents();
+      } else {
+        // Show Lexical, hide menu editor
+        if (editorContainer) editorContainer.style.display = '';
+        if (menuEditor) menuEditor.style.display = 'none';
+      }
+    }
+
+    function populateMenuEditor(data) {
+      const d = (typeof data === 'string') ? JSON.parse(data || '{}') : (data || {});
+      if (menuLabelInput) menuLabelInput.value = d.label || '';
+      if (menuPathInput) menuPathInput.value = d.path || '';
+      if (menuIconInput) menuIconInput.value = d.icon || '';
+      if (menuSectionSelect) menuSectionSelect.value = d.section || 'main';
+      if (menuOrderInput) menuOrderInput.value = d.order || '';
+      if (menuRequiresAuthCheckbox) menuRequiresAuthCheckbox.checked = !!d.requires_auth;
+    }
+
+    function collectMenuData() {
+      const data = {};
+      if (menuLabelInput?.value) data.label = menuLabelInput.value;
+      if (menuPathInput?.value) data.path = menuPathInput.value;
+      if (menuIconInput?.value) data.icon = menuIconInput.value;
+      if (menuSectionSelect?.value) data.section = menuSectionSelect.value;
+      if (menuOrderInput?.value) data.order = parseInt(menuOrderInput.value, 10);
+      data.requires_auth = menuRequiresAuthCheckbox?.checked || false;
+      // Preserve key if it existed
+      const currentData = JSON.parse(dataInput?.value || '{}');
+      if (currentData.key) data.key = currentData.key;
+      return data;
+    }
+
+    let menuEditorBound = false;
+    function bindMenuEditorEvents() {
+      if (menuEditorBound) return;
+      menuEditorBound = true;
+      const inputs = [menuLabelInput, menuPathInput, menuIconInput, menuSectionSelect, menuOrderInput, menuRequiresAuthCheckbox];
+      inputs.forEach(input => {
+        if (!input) return;
+        const event = input.type === 'checkbox' ? 'change' : 'input';
+        input.addEventListener(event, onMenuEditorChange);
+      });
+    }
+
+    function onMenuEditorChange() {
+      const data = collectMenuData();
+      if (dataInput) dataInput.value = JSON.stringify(data);
+      // Also update description for rendering
+      descriptionInput.value = `<p>${data.icon || ''} ${data.label || ''}</p>`;
+      isDirty = true;
+      scheduleSave();
     }
 
     function onLexicalChange(html) {

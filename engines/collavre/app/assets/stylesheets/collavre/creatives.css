@@ -611,3 +611,36 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     background: var(--color-brand);
 }
 
+/* Menu editor */
+.menu-editor {
+  padding: 0.5em 0.8em;
+}
+.menu-editor-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+}
+.menu-editor-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+  font-size: 0.85em;
+  color: var(--text-2, #555);
+}
+.menu-editor-input {
+  padding: 0.3em 0.5em;
+  border: 1px solid var(--surface-3, #ddd);
+  border-radius: var(--radius-2, 4px);
+  font-size: 0.95em;
+}
+.menu-editor-row {
+  display: flex;
+  gap: 0.5em;
+}
+.menu-editor-row > label {
+  flex: 1;
+}
+.menu-editor-label input[type="checkbox"] {
+  margin-right: 0.3em;
+}
+

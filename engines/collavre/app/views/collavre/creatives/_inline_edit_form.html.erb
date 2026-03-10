@@ -16,6 +16,35 @@
          data-direct-upload-url="<%= main_app.rails_direct_uploads_url %>"
          data-blob-url-template="<%= main_app.rails_service_blob_url(':signed_id', ':filename') %>"
          data-placeholder="<%= t('collavre.creatives.inline_editor.placeholder') %>"></div>
+    <div id="menu-editor" class="menu-editor" style="display:none;">
+      <div class="menu-editor-fields">
+        <label class="menu-editor-label"><%= t('collavre.creatives.menu_editor.label') %>
+          <input type="text" id="menu-editor-label" class="menu-editor-input" placeholder="<%= t('collavre.creatives.menu_editor.label_placeholder') %>" />
+        </label>
+        <label class="menu-editor-label"><%= t('collavre.creatives.menu_editor.path') %>
+          <input type="text" id="menu-editor-path" class="menu-editor-input" placeholder="/path" />
+        </label>
+        <label class="menu-editor-label"><%= t('collavre.creatives.menu_editor.icon') %>
+          <input type="text" id="menu-editor-icon" class="menu-editor-input" placeholder="home" />
+        </label>
+        <div class="menu-editor-row">
+          <label class="menu-editor-label"><%= t('collavre.creatives.menu_editor.section') %>
+            <select id="menu-editor-section" class="menu-editor-input">
+              <option value="main">main</option>
+              <option value="search">search</option>
+              <option value="user">user</option>
+            </select>
+          </label>
+          <label class="menu-editor-label"><%= t('collavre.creatives.menu_editor.order') %>
+            <input type="number" id="menu-editor-order" class="menu-editor-input" placeholder="100" />
+          </label>
+        </div>
+        <label class="menu-editor-label">
+          <input type="checkbox" id="menu-editor-requires-auth" />
+          <%= t('collavre.creatives.menu_editor.requires_auth') %>
+        </label>
+      </div>
+    </div>
     <div id="actions-inline-editor" style="padding: 0px 8px;">
       <div style="margin-top:0.5em;display:flex;align-items:center;gap:0.5em;">
         <input type="hidden" name="creative[progress]" value="0">
