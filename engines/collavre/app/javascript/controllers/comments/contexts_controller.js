@@ -21,6 +21,7 @@ export default class extends Controller {
     async onPopupOpened({ creativeId }) {
         this._hasBeenManuallyToggled = false
         this.listVisible = false
+        this._updateListVisibility()
         await this.loadContexts()
     }
 
