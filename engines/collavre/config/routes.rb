@@ -55,6 +55,9 @@ Collavre::Engine.routes.draw do
       collection do
         post :reorder
       end
+      member do
+        patch :move
+      end
     end
     resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
       member do

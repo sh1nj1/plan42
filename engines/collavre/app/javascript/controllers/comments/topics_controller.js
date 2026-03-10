@@ -15,11 +15,14 @@ export default class extends Controller {
             this.subscribe()
         }
         this.handleNewMessage = this.handleNewMessage.bind(this)
+        this.handleTopicMoved = this.handleTopicMoved.bind(this)
         window.addEventListener('comments--topics:new-message', this.handleNewMessage)
+        window.addEventListener('collavre:topic-moved', this.handleTopicMoved)
     }
 
     disconnect() {
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
+        window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
         this.unsubscribe()
     }
 
@@ -169,6 +172,11 @@ export default class extends Controller {
 
         this.draggingTopicId = topicId
         event.dataTransfer.setData('application/x-topic-id', topicId)
+        // Include topic move data so creative tree rows can accept this drop
+        event.dataTransfer.setData('application/x-topic-move', JSON.stringify({
+            topicId,
+            sourceCreativeId: this.creativeId
+        }))
         event.dataTransfer.effectAllowed = 'move'
 
         requestAnimationFrame(() => {
@@ -480,6 +488,19 @@ export default class extends Controller {
         const activeEl = this.listTarget.querySelector('.topic-tag.active')
         if (activeEl) {
             activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+        }
+    }
+
+    handleTopicMoved(event) {
+        const { sourceCreativeId, topicId } = event.detail
+        // Reload topics if the moved topic belonged to the currently viewed creative
+        if (String(sourceCreativeId) === String(this.creativeId)) {
+            // If we were viewing the moved topic, switch to Main
+            if (String(this.currentTopicId) === String(topicId)) {
+                this.currentTopicId = ""
+                this.dispatch("change", { detail: { topicId: "" } })
+            }
+            this.loadTopics()
         }
     }
 

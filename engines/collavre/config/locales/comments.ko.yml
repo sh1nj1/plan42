@@ -5,6 +5,9 @@ ko:
       delete_confirm: 이 토픽의 모든 메시지가 삭제됩니다. 확실합니까?
       new_placeholder: 새 토픽
       no_permission: 이 작업을 수행할 권한이 없습니다.
+      move:
+        no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.
+        duplicate_name: "'%{name}' 토픽이 대상 크리에이티브에 이미 존재합니다."
     github_auth:
       login_first: 먼저 로그인해주세요.
       connected: Github 계정이 연동되었습니다.
