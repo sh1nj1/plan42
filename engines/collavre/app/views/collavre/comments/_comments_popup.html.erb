@@ -55,6 +55,12 @@
     <h3 id="comments-popup-title" data-comments--popup-target="title"><%= fullscreen && creative.present? ? creative.creative_snippet : t('collavre.comments.comments') %></h3>
     <span data-integration-badges class="integration-badges"></span>
     <div class="comments-popup-actions">
+      <button class="comments-popup-action context-toggle-btn"
+              data-comments--contexts-target="toggleButton"
+              data-action="click->comments--contexts#toggleVisibility"
+              type="button"
+              title="<%= t('collavre.contexts.toggle_label', default: 'Contexts') %>"
+              style="display:none;">🔗</button>
       <button class="comments-popup-action comments-popup-fullscreen"
               data-comments--popup-target="fullscreenButton"
               data-action="click->comments--popup#toggleFullscreen"
@@ -70,7 +76,7 @@
       <button id="close-comments-btn" data-comments--popup-target="closeButton" class="popup-close-btn" type="button">&times;</button>
     </div>
   </div>
-  <div id="comment-contexts" data-comments--contexts-target="list" class="comment-contexts-list"
+  <div id="comment-contexts" data-comments--contexts-target="list" class="comment-contexts-list" style="display:none;"
        data-inherited-label="<%= t('collavre.contexts.inherited_label', default: 'Inherited from parent') %>"></div>
   <div id="comment-participants" data-comments--presence-target="participants" data-comments--mention-menu-target="participants"></div>
   <div id="comment-topics" data-comments--topics-target="list" class="comment-topics-list"

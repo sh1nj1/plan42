@@ -1006,9 +1006,26 @@ body.chat-fullscreen {
     color: var(--color-text);
 }
 
-/* Reduce title margin when contexts are present */
-.comments-popup-header + .comment-contexts-list:not(:empty) {
-    margin-top: -0.25em;
+/* Context toggle button in header */
+.context-toggle-btn {
+    font-size: 0.75em;
+    padding: 0.15em 0.4em;
+    border-radius: 8px;
+    background: none;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.context-toggle-btn:hover {
+    background: var(--color-secondary-background);
+}
+
+.context-toggle-btn.context-toggle-active {
+    background: var(--color-secondary-active);
+    color: white;
+    border-color: var(--color-secondary-active);
 }
 
 .comment-topics-list {

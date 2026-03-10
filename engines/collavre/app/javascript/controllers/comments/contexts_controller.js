@@ -1,12 +1,13 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-    static targets = ["list"]
+    static targets = ["list", "toggleButton"]
 
     connect() {
         this.contexts = []
         this.canManage = false
         this.draggingContextId = null
+        this.listVisible = false
     }
 
     disconnect() {
@@ -18,6 +19,8 @@ export default class extends Controller {
     }
 
     async onPopupOpened({ creativeId }) {
+        this._hasBeenManuallyToggled = false
+        this.listVisible = false
         await this.loadContexts()
     }
 
@@ -46,16 +49,57 @@ export default class extends Controller {
         }
     }
 
+    toggleVisibility() {
+        this._hasBeenManuallyToggled = true
+        this.listVisible = !this.listVisible
+        this._updateListVisibility()
+    }
+
+    _updateListVisibility() {
+        if (!this.hasListTarget) return
+        this.listTarget.style.display = this.listVisible ? '' : 'none'
+
+        // Update toggle button active state
+        if (this.hasToggleButtonTarget) {
+            this.toggleButtonTarget.classList.toggle('context-toggle-active', this.listVisible)
+        }
+    }
+
+    _updateToggleButton() {
+        if (!this.hasToggleButtonTarget) return
+
+        const hasContexts = this.contexts.length > 0
+        const showButton = hasContexts || this.canManage
+        this.toggleButtonTarget.style.display = showButton ? '' : 'none'
+
+        // Show badge count when hidden and has contexts
+        if (hasContexts && !this.listVisible) {
+            const activeCount = this.contexts.filter(c => !c.disabled).length
+            this.toggleButtonTarget.textContent = `🔗 ${activeCount}`
+        } else {
+            this.toggleButtonTarget.textContent = '🔗'
+        }
+
+        // Auto-show if contexts exist, auto-hide if empty
+        if (hasContexts && !this._hasBeenManuallyToggled) {
+            this.listVisible = true
+            this._updateListVisibility()
+        } else if (!hasContexts && !this.canManage) {
+            this.listVisible = false
+            this._updateListVisibility()
+        }
+    }
+
     renderContexts() {
         if (!this.hasListTarget) return
+
+        this._updateToggleButton()
 
         if (this.contexts.length === 0 && !this.canManage) {
             this.listTarget.innerHTML = ''
             this.listTarget.style.display = 'none'
             return
         }
-
-        this.listTarget.style.display = ''
 
         const dragActions = this.canManage
             ? 'dragstart->comments--contexts#handleDragStart dragend->comments--contexts#handleDragEnd'
