@@ -294,10 +294,9 @@ class CreativeTreeRow extends LitElement {
   _renderContent() {
     const level = Number(this.level) || 1;
     // Toggle is now rendered outside
-    const kindBadge = this.kind ? this._renderKindBadge() : nothing;
     const content = html`
       <div class="creative-content" @click=${this._handleContentClick}>
-        ${kindBadge}${unsafeHTML(this.descriptionHtml || "")}
+        ${unsafeHTML(this.descriptionHtml || "")}
       </div>
     `;
     const indicator = this.loadingChildren ? this._renderLoadingIndicator() : nothing;
@@ -339,19 +338,6 @@ class CreativeTreeRow extends LitElement {
     `;
   }
 
-  static KIND_ICONS = {
-    menu: '📋',
-    json: '📄',
-    tool: '🔧',
-    agent: '🤖',
-    workflow: '⚡',
-    settings: '⚙️'
-  };
-
-  _renderKindBadge() {
-    const icon = CreativeTreeRow.KIND_ICONS[this.kind] || '📎';
-    return html`<span class="creative-kind-badge" title="${this.kind}">${icon}</span>`;
-  }
 
   _renderLoadingIndicator() {
     return html`
