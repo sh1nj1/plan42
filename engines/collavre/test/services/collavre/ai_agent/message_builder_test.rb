@@ -103,7 +103,7 @@ module Collavre
         assert_nil context_msg, "Should not include disabled context creative"
       end
 
-      test "skips self context when disabled_self_context is true" do
+      test "injects only ancestry chain when disabled_self_context is true" do
         @creative.update!(data: { "disabled_self_context" => true })
 
         context = {
@@ -114,8 +114,14 @@ module Collavre
         builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
         messages = builder.build
 
-        creative_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Creative (id:") }
-        assert_nil creative_msg, "Should not include self creative context when disabled"
+        # Should NOT include full subtree
+        full_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Creative (id:") }
+        assert_nil full_msg, "Should not include full creative subtree when disabled"
+
+        # Should include ancestry path
+        ancestry_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Current Creative (id:") }
+        assert_not_nil ancestry_msg, "Should include ancestry chain when self-context disabled"
+        assert_includes ancestry_msg[:parts].first[:text], "Path:"
       end
 
       test "deduplicates context and referenced creatives" do

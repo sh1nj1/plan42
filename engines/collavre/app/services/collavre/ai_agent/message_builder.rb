@@ -35,21 +35,31 @@ module Collavre
         creative = Creative.find_by(id: creative_id)
         return unless creative
 
-        # Skip self-context if disabled
         effective = creative.effective_origin(Set.new)
-        return if effective.data&.dig("disabled_self_context") == true
-
-        children_level = @agent.creative_children_level
-        max_depth = 1 + children_level
-        markdown = ApplicationController.helpers.render_creative_tree_markdown(
-          [ creative ], 1, true, max_depth: max_depth
-        )
-
         topic = current_topic
         topic_info = topic ? "\nTopic: #{topic.name} (id: #{topic.id})" : ""
 
-        @injected_creative_ids << creative.id
-        messages << { role: "user", parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
+        if effective.data&.dig("disabled_self_context") == true
+          # Self-context disabled: inject only the ancestry chain so the AI
+          # knows where in the hierarchy the conversation is happening
+          ancestry = build_ancestry_chain(creative)
+          @injected_creative_ids << creative.id
+          messages << { role: "user", parts: [ { text: "Current Creative (id: #{creative.id}):#{topic_info}\nPath: #{ancestry}" } ] }
+        else
+          # Full self-context: inject the creative subtree
+          children_level = @agent.creative_children_level
+          max_depth = 1 + children_level
+          markdown = ApplicationController.helpers.render_creative_tree_markdown(
+            [ creative ], 1, true, max_depth: max_depth
+          )
+
+          @injected_creative_ids << creative.id
+          messages << { role: "user", parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
+        end
+      end
+
+      def build_ancestry_chain(creative)
+        creative.self_and_ancestors.reverse.map { |c| c.creative_snippet }.join(" > ")
       end
 
       def append_context_creatives(messages)
