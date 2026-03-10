@@ -101,6 +101,18 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, json["disabled_self_context"]
   end
 
+  test "GET contexts excludes self from context list to prevent duplicates" do
+    # Parent has feature_a as context → feature_a should not see itself in contexts list
+    @features.update!(data: { "context_ids" => [ @feature_a.id, @development.id ] })
+
+    get contexts_creative_path(@feature_a), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    json = JSON.parse(response.body)
+    context_ids = json["contexts"].map { |c| c["id"] }
+    refute_includes context_ids, @feature_a.id, "Self creative should be excluded from contexts"
+    assert_includes context_ids, @development.id, "Other contexts should still be present"
+  end
+
   test "PATCH update_contexts requires admin permission" do
     regular_user = users(:two)
     sign_in_as(regular_user, password: "password")

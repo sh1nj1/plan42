@@ -60,7 +60,7 @@ module Collavre
         effective_origin = creative.effective_origin(Set.new)
         context_ids = effective_origin.effective_context_ids
         disabled_ids = Array(effective_origin.data&.dig("disabled_context_ids"))
-        active_ids = context_ids - disabled_ids - [ creative_id ]
+        active_ids = context_ids - disabled_ids - [ creative_id, effective_origin.id ]
         return if active_ids.empty?
 
         children_level = @agent.creative_children_level

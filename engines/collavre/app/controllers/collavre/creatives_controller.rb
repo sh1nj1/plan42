@@ -235,8 +235,8 @@ module Collavre
 
     def contexts
       creative = @creative.effective_origin(Set.new)
-      own_ids = creative.context_ids
-      inherited_ids = (creative.effective_context_ids - own_ids).uniq
+      own_ids = creative.context_ids - [ creative.id ]
+      inherited_ids = (creative.effective_context_ids - own_ids - [ creative.id ]).uniq
       own_creatives = Creative.where(id: own_ids).index_by(&:id)
       inherited_creatives = Creative.where(id: inherited_ids).index_by(&:id)
 
