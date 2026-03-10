@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_25_074416) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_09_062530) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -223,6 +223,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_25_074416) do
     t.datetime "created_at", null: false
     t.json "data", default: {}, null: false
     t.text "description", limit: 4294967295
+    t.string "kind"
     t.integer "origin_id"
     t.integer "parent_id"
     t.float "progress", default: 0.0
@@ -230,6 +231,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_25_074416) do
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["data"], name: "index_creatives_on_data"
+    t.index ["kind"], name: "index_creatives_on_kind"
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
