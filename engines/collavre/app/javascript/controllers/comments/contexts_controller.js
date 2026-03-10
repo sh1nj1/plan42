@@ -213,6 +213,10 @@ export default class extends Controller {
     }
 
     async _addContextId(creativeId) {
+        // Prevent adding self as context
+        const selfId = parseInt(this.creativeId)
+        if (creativeId === selfId) return
+
         const ownContexts = this.contexts.filter(c => !c.inherited)
         const existingIds = ownContexts.map(c => c.id)
 

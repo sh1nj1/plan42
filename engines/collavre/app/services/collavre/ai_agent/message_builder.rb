@@ -59,7 +59,7 @@ module Collavre
       end
 
       def build_ancestry_chain(creative)
-        creative.self_and_ancestors.reverse.map { |c| c.creative_snippet }.join(" > ")
+        creative.self_and_ancestors.reverse.map(&:creative_snippet).join(" > ")
       end
 
       def append_context_creatives(messages)
