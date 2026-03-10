@@ -34,6 +34,10 @@ module Collavre
         creative = Creative.find_by(id: creative_id)
         return unless creative
 
+        # Skip self-context if disabled
+        effective = creative.effective_origin(Set.new)
+        return if effective.data&.dig("disabled_self_context") == true
+
         children_level = @agent.creative_children_level
         max_depth = 1 + children_level
         markdown = ApplicationController.helpers.render_creative_tree_markdown(

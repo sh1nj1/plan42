@@ -43,6 +43,7 @@ export default class extends Controller {
                 const data = await response.json()
                 this.contexts = data.contexts || []
                 this.canManage = data.can_manage || false
+                this._selfContextDisabled = data.disabled_self_context || false
                 this.renderContexts()
             }
         } catch (e) {
@@ -69,23 +70,25 @@ export default class extends Controller {
     _updateToggleButton() {
         if (!this.hasToggleButtonTarget) return
 
-        const hasContexts = this.contexts.length > 0
-        const showButton = hasContexts || this.canManage
-        this.toggleButtonTarget.style.display = showButton ? '' : 'none'
+        const hasLinkedContexts = this.contexts.length > 0
+        // Always show button (self-context toggle is always available)
+        this.toggleButtonTarget.style.display = ''
 
-        // Show badge count when hidden and has contexts
-        if (hasContexts && !this.listVisible) {
-            const activeCount = this.contexts.filter(c => !c.disabled).length
-            this.toggleButtonTarget.textContent = `🔗 ${activeCount}`
+        // Show badge count when hidden
+        if (!this.listVisible) {
+            const activeLinked = this.contexts.filter(c => !c.disabled).length
+            const selfActive = this.selfContextDisabled ? 0 : 1
+            const total = activeLinked + selfActive
+            this.toggleButtonTarget.textContent = `🔗 ${total}`
         } else {
             this.toggleButtonTarget.textContent = '🔗'
         }
 
-        // Auto-show if contexts exist, auto-hide if empty
-        if (hasContexts && !this._hasBeenManuallyToggled) {
+        // Auto-show if linked contexts exist, otherwise keep hidden
+        if (hasLinkedContexts && !this._hasBeenManuallyToggled) {
             this.listVisible = true
             this._updateListVisibility()
-        } else if (!hasContexts && !this.canManage) {
+        } else if (!hasLinkedContexts && !this.canManage && !this._hasBeenManuallyToggled) {
             this.listVisible = false
             this._updateListVisibility()
         }
@@ -96,12 +99,6 @@ export default class extends Controller {
 
         this._updateToggleButton()
 
-        if (this.contexts.length === 0 && !this.canManage) {
-            this.listTarget.innerHTML = ''
-            this.listTarget.style.display = 'none'
-            return
-        }
-
         const dragActions = this.canManage
             ? 'dragstart->comments--contexts#handleDragStart dragend->comments--contexts#handleDragEnd'
             : ''
@@ -110,6 +107,16 @@ export default class extends Controller {
             : ''
 
         let html = ''
+
+        // Current creative self-context toggle (always first)
+        const selfDisabled = this.selfContextDisabled
+        const selfClass = selfDisabled ? 'context-disabled' : ''
+        const selfLabel = this._escapeHtml(this.currentCreativeSnippet || 'Self')
+        html += `<span class="context-chip context-self ${selfClass}"
+                      data-action="click->comments--contexts#toggleSelfContext"
+                      title="${this.selfContextLabel}">
+                    📌 ${selfLabel}
+                 </span>`
 
         this.contexts.forEach(ctx => {
             const disabledClass = ctx.disabled ? 'context-disabled' : ''
@@ -138,6 +145,43 @@ export default class extends Controller {
 
     get inheritedLabel() {
         return this.listTarget.dataset.inheritedLabel || 'Inherited from parent'
+    }
+
+    get selfContextLabel() {
+        return this.listTarget.dataset.selfContextLabel || 'Current creative context'
+    }
+
+    get currentCreativeSnippet() {
+        const popup = this.element.closest('#comments-popup')
+        return popup?.querySelector('#comments-popup-title')?.textContent?.trim()
+    }
+
+    get selfContextDisabled() {
+        return this._selfContextDisabled || false
+    }
+
+    toggleSelfContext(event) {
+        this._selfContextDisabled = !this._selfContextDisabled
+        this.renderContexts()
+        this._saveSelfContextState()
+    }
+
+    async _saveSelfContextState() {
+        const creativeId = this.creativeId
+        if (!creativeId) return
+
+        try {
+            await fetch(`/creatives/${creativeId}/update_contexts`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({ disabled_self_context: this._selfContextDisabled })
+            })
+        } catch (e) {
+            console.error('Error saving self context state', e)
+        }
     }
 
     toggleContext(event) {

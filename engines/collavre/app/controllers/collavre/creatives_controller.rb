@@ -256,7 +256,11 @@ module Collavre
         { id: c.id, description: c.creative_snippet, inherited: true, disabled: disabled_ids.include?(cid) }
       end
 
-      render json: { contexts: inherited + own, can_manage: creative.has_permission?(Current.user, :admin) }
+      render json: {
+        contexts: inherited + own,
+        can_manage: creative.has_permission?(Current.user, :admin),
+        disabled_self_context: creative.data&.dig("disabled_self_context") == true
+      }
     end
 
     def update_contexts
@@ -270,6 +274,13 @@ module Collavre
       current_data["context_ids"] = Array(params[:context_ids]).map(&:to_i) if params.key?(:context_ids)
       current_data["disabled_context_ids"] = Array(params[:disabled_context_ids]).map(&:to_i) if params.key?(:disabled_context_ids)
       current_data.delete("disabled_context_ids") if current_data["disabled_context_ids"]&.empty?
+      if params.key?(:disabled_self_context)
+        if ActiveModel::Type::Boolean.new.cast(params[:disabled_self_context])
+          current_data["disabled_self_context"] = true
+        else
+          current_data.delete("disabled_self_context")
+        end
+      end
 
       if creative.update(data: current_data)
         head :ok

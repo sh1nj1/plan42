@@ -70,6 +70,37 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
     refute @features.data.key?("disabled_context_ids")
   end
 
+  test "PATCH update_contexts sets disabled_self_context" do
+    patch update_contexts_creative_path(@features), params: {
+      disabled_self_context: true
+    }, headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    @features.reload
+    assert_equal true, @features.data["disabled_self_context"]
+  end
+
+  test "PATCH update_contexts clears disabled_self_context when false" do
+    @features.update!(data: { "disabled_self_context" => true })
+
+    patch update_contexts_creative_path(@features), params: {
+      disabled_self_context: false
+    }, headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    @features.reload
+    refute @features.data.key?("disabled_self_context")
+  end
+
+  test "GET contexts returns disabled_self_context flag" do
+    @features.update!(data: { "disabled_self_context" => true })
+
+    get contexts_creative_path(@features), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal true, json["disabled_self_context"]
+  end
+
   test "PATCH update_contexts requires admin permission" do
     regular_user = users(:two)
     sign_in_as(regular_user, password: "password")

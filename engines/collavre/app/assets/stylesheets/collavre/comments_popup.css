@@ -939,6 +939,18 @@ body.chat-fullscreen {
     background: var(--color-border);
 }
 
+.context-chip.context-self {
+    background: var(--color-secondary-active);
+    color: white;
+    border-color: var(--color-secondary-active);
+}
+
+.context-chip.context-self.context-disabled {
+    background: var(--color-secondary-background);
+    color: var(--color-text-muted);
+    border-color: var(--color-border);
+}
+
 .context-chip.context-disabled {
     opacity: 0.4;
     text-decoration: line-through;

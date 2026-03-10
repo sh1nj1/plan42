@@ -103,6 +103,21 @@ module Collavre
         assert_nil context_msg, "Should not include disabled context creative"
       end
 
+      test "skips self context when disabled_self_context is true" do
+        @creative.update!(data: { "disabled_self_context" => true })
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Do something" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        messages = builder.build
+
+        creative_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Creative (id:") }
+        assert_nil creative_msg, "Should not include self creative context when disabled"
+      end
+
       test "handles message without creative links" do
         context = {
           "comment" => {
