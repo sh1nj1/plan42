@@ -10,10 +10,6 @@ export default class extends Controller {
         this.listVisible = false
     }
 
-    disconnect() {
-        // cleanup
-    }
-
     get creativeId() {
         return this.element.closest('#comments-popup')?.dataset?.creativeId
     }
@@ -167,21 +163,7 @@ export default class extends Controller {
     }
 
     async _saveSelfContextState() {
-        const creativeId = this.creativeId
-        if (!creativeId) return
-
-        try {
-            await fetch(`/creatives/${creativeId}/update_contexts`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
-                },
-                body: JSON.stringify({ disabled_self_context: this._selfContextDisabled })
-            })
-        } catch (e) {
-            console.error('Error saving self context state', e)
-        }
+        await this._patchContexts({ disabled_self_context: this._selfContextDisabled })
     }
 
     toggleContext(event) {
@@ -326,6 +308,15 @@ export default class extends Controller {
 
     // --- API calls ---
     async _updateContextIds(ids) {
+        await this._patchContexts({ context_ids: ids })
+    }
+
+    async _saveDisabledState() {
+        const disabledIds = this.contexts.filter(c => c.disabled).map(c => c.id)
+        await this._patchContexts({ disabled_context_ids: disabledIds })
+    }
+
+    async _patchContexts(params) {
         const creativeId = this.creativeId
         if (!creativeId) return
 
@@ -336,34 +327,14 @@ export default class extends Controller {
                     'Content-Type': 'application/json',
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
                 },
-                body: JSON.stringify({ context_ids: ids })
+                body: JSON.stringify(params)
             })
 
             if (!response.ok) {
-                console.error('Failed to update context IDs')
+                console.error('Failed to update contexts', params)
             }
         } catch (e) {
-            console.error('Error updating context IDs', e)
-        }
-    }
-
-    async _saveDisabledState() {
-        const creativeId = this.creativeId
-        if (!creativeId) return
-
-        const disabledIds = this.contexts.filter(c => c.disabled).map(c => c.id)
-
-        try {
-            await fetch(`/creatives/${creativeId}/update_contexts`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
-                },
-                body: JSON.stringify({ disabled_context_ids: disabledIds })
-            })
-        } catch (e) {
-            console.error('Error saving disabled state', e)
+            console.error('Error updating contexts', e)
         }
     }
 

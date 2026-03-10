@@ -90,7 +90,6 @@ module Collavre
         content = @context.dig("comment", "content")
         return unless content
 
-        current_creative_id = @context.dig("creative", "id")
         children_level = @agent.creative_children_level
         max_depth = 1 + children_level
 
