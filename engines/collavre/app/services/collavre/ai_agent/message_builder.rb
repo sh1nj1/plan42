@@ -15,6 +15,7 @@ module Collavre
 
       def build
         messages = []
+        @injected_creative_ids = Set.new
 
         append_creative_context(messages)
         append_context_creatives(messages)
@@ -47,6 +48,7 @@ module Collavre
         topic = current_topic
         topic_info = topic ? "\nTopic: #{topic.name} (id: #{topic.id})" : ""
 
+        @injected_creative_ids << creative.id
         messages << { role: "user", parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
       end
 
@@ -67,9 +69,12 @@ module Collavre
         max_depth = 1 + children_level
 
         active_ids.each do |ctx_id|
+          next if @injected_creative_ids.include?(ctx_id)
+
           ctx = Creative.find_by(id: ctx_id)
           next unless ctx
 
+          @injected_creative_ids << ctx_id
           markdown = ApplicationController.helpers.render_creative_tree_markdown(
             [ ctx ], 1, true, max_depth: max_depth
           )
@@ -92,11 +97,12 @@ module Collavre
         # Extract creative IDs from markdown links like [title](/creatives/123)
         content.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.uniq.each do |id_str|
           creative_id = id_str.to_i
-          next if creative_id == current_creative_id
+          next if @injected_creative_ids.include?(creative_id)
 
           creative = Creative.find_by(id: creative_id)
           next unless creative
 
+          @injected_creative_ids << creative_id
           markdown = ApplicationController.helpers.render_creative_tree_markdown(
             [ creative ], 1, true, max_depth: max_depth
           )

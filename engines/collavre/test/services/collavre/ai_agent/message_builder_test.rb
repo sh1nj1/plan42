@@ -118,6 +118,34 @@ module Collavre
         assert_nil creative_msg, "Should not include self creative context when disabled"
       end
 
+      test "deduplicates context and referenced creatives" do
+        dev_rules = Creative.create!(
+          description: "<p>Dev Rules</p>",
+          user: @user,
+          progress: 1.0
+        )
+
+        # Same creative as both context AND referenced via markdown link
+        @creative.update!(data: { "context_ids" => [ dev_rules.id ] })
+
+        context = {
+          "comment" => {
+            "id" => @comment.id,
+            "content" => "Check [Dev Rules](/creatives/#{dev_rules.id})"
+          },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        messages = builder.build
+
+        # Should appear as Context Creative, NOT also as Referenced Creative
+        context_msgs = messages.select { |m| m[:parts]&.first&.dig(:text)&.include?("Context Creative") }
+        referenced_msgs = messages.select { |m| m[:parts]&.first&.dig(:text)&.include?("Referenced Creative") }
+        assert_equal 1, context_msgs.size, "Should inject context creative once"
+        assert_empty referenced_msgs, "Should not duplicate as referenced creative"
+      end
+
       test "handles message without creative links" do
         context = {
           "comment" => {
