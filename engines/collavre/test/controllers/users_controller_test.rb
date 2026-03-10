@@ -206,6 +206,40 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_equal I18n.t("collavre.users.destroy.not_authorized"), flash[:alert]
   end
 
+  test "destroying user with hierarchical creatives succeeds (closure_tree leaf-first)" do
+    sign_in_as(@admin, password: "password")
+
+    target_user = User.create!(
+      name: "DeleteMe",
+      email: "deleteme@example.com",
+      password: "password",
+      email_verified_at: Time.current
+    )
+    ai_agent = User.create!(
+      name: "AgentToDelete",
+      email: "agent-delete@ai.local",
+      password: "password",
+      llm_vendor: "google",
+      llm_model: "gemini-2.5-flash",
+      system_prompt: "Bot",
+      created_by_id: target_user.id,
+      email_verified_at: Time.current
+    )
+
+    root = Creative.create!(user: target_user, description: "Root")
+    child = Creative.create!(user: target_user, description: "Child", parent: root)
+    grandchild = Creative.create!(user: target_user, description: "Grandchild", parent: child)
+    root2 = Creative.create!(user: target_user, description: "Root2")
+    _linked = Creative.create!(user: target_user, parent: root2, origin_id: child.id)
+
+    assert_difference("User.count", -2) do
+      delete collavre.user_path(ai_agent)
+      delete collavre.user_path(target_user)
+    end
+
+    assert_equal 0, Creative.where(user_id: target_user.id).count
+  end
+
   test "unassigned AI agents appear in org chart, regular users do not" do
     sign_in_as(@admin, password: "password")
 
@@ -230,7 +264,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     )
     Collavre::Contact.ensure(user: @admin, contact_user: regular_user)
 
-    get collavre.user_path(@admin, tab: "contacts")
+    get collavre.user_path(@admin, tab: "contacts", contacts_view: "org_chart")
     assert_response :success
 
     assert_includes response.body, ai_agent.email,
