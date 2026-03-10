@@ -1,0 +1,5 @@
+---
+ko:
+  collavre:
+    contexts:
+      inherited_label: "상위에서 상속됨"

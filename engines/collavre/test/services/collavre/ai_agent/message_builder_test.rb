@@ -56,6 +56,53 @@ module Collavre
         assert_empty referenced_msgs, "Should not include current creative as referenced"
       end
 
+      test "appends context creatives from effective_context_ids" do
+        dev_rules = Creative.create!(
+          description: "<p>Dev Rules</p>",
+          user: @user,
+          progress: 1.0
+        )
+
+        # Set context_ids on creative's data
+        @creative.update!(data: { "context_ids" => [ dev_rules.id ] })
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Implement feature X" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        messages = builder.build
+
+        context_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.include?("Context Creative") }
+        assert_not_nil context_msg, "Should include context creative"
+        assert_includes context_msg[:parts].first[:text], "Dev Rules"
+      end
+
+      test "excludes disabled context creatives" do
+        dev_rules = Creative.create!(
+          description: "<p>Dev Rules</p>",
+          user: @user,
+          progress: 1.0
+        )
+
+        @creative.update!(data: {
+          "context_ids" => [ dev_rules.id ],
+          "disabled_context_ids" => [ dev_rules.id ]
+        })
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Implement feature X" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        messages = builder.build
+
+        context_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.include?("Context Creative") }
+        assert_nil context_msg, "Should not include disabled context creative"
+      end
+
       test "handles message without creative links" do
         context = {
           "comment" => {

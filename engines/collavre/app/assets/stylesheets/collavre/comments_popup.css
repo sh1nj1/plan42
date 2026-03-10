@@ -895,6 +895,122 @@ body.chat-fullscreen {
     filter: grayscale(1);
 }
 
+/* --- Context Chips --- */
+.comment-contexts-list {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.4em;
+    padding: 0.25em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    min-height: 0;
+}
+
+.comment-contexts-list:empty {
+    display: none;
+}
+
+.comment-contexts-list::-webkit-scrollbar {
+    display: none;
+}
+
+.context-chip {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: var(--space-1);
+    padding: 0.15em 0.5em;
+    border-radius: 10px;
+    background: var(--color-secondary-background);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    font-size: 0.75em;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    height: 22px;
+    box-sizing: border-box;
+}
+
+.context-chip:hover {
+    background: var(--color-border);
+}
+
+.context-chip.context-disabled {
+    opacity: 0.4;
+    text-decoration: line-through;
+}
+
+.context-chip.context-inherited {
+    border-style: dashed;
+}
+
+.context-chip.context-dragging {
+    opacity: 0.5;
+}
+
+.context-chip.context-drag-over-left {
+    border-left: 3px solid var(--color-active);
+    margin-left: -1px;
+}
+
+.context-chip.context-drag-over-right {
+    border-right: 3px solid var(--color-active);
+    margin-right: -1px;
+}
+
+.context-chip[draggable="true"] {
+    cursor: grab;
+}
+
+.context-chip[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.delete-context-btn {
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 0.9em;
+    padding: 0 0.15em;
+    line-height: 1;
+    margin-left: 0.1em;
+}
+
+.delete-context-btn:hover {
+    color: var(--color-danger);
+}
+
+.add-context-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--color-secondary-background);
+    border: 1px dashed var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 0.85em;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-context-btn:hover {
+    background: var(--color-border);
+    color: var(--color-text);
+}
+
+/* Reduce title margin when contexts are present */
+.comments-popup-header + .comment-contexts-list:not(:empty) {
+    margin-top: -0.25em;
+}
+
 .comment-topics-list {
     display: flex;
     flex-wrap: nowrap;

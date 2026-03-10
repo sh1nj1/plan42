@@ -126,6 +126,10 @@ export default class extends Controller {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--topics')
   }
 
+  get contextsController() {
+    return this.application.getControllerForElementAndIdentifier(this.element, 'comments--contexts')
+  }
+
   handleCreativeClick(event) {
     const button = event.detail?.button
     const creativeId = event.detail?.creativeId
@@ -211,6 +215,9 @@ export default class extends Controller {
     if (this.mentionMenuController) {
       this.mentionMenuController.onPopupOpened({ creativeId })
     }
+    if (this.contextsController) {
+      this.contextsController.onPopupOpened({ creativeId })
+    }
   }
 
   close() {
@@ -228,6 +235,9 @@ export default class extends Controller {
     }
     if (this.topicsController) {
       this.topicsController.onPopupClosed()
+    }
+    if (this.contextsController) {
+      this.contextsController.onPopupClosed()
     }
 
     // Dispatch event for integrations

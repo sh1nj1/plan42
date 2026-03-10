@@ -74,6 +74,29 @@ module Collavre
     after_destroy :update_parent_progress
     after_save :update_mcp_tools
 
+    # --- Context IDs ---
+    # Returns the directly-configured context creative IDs for this creative.
+    def context_ids
+      Array(data&.dig("context_ids"))
+    end
+
+    # Returns the effective context IDs: own + inherited from ancestors (deduplicated).
+    def effective_context_ids(visited_ids = Set.new)
+      return [] if visited_ids.include?(id)
+
+      visited_ids.add(id)
+      own = context_ids
+      parent_ctx = parent&.effective_context_ids(visited_ids) || []
+      (own + parent_ctx).uniq
+    end
+
+    # Returns context creatives (excludes self to avoid duplication).
+    def context_creatives
+      ids = effective_context_ids
+      ids -= [ id ]
+      Creative.where(id: ids)
+    end
+
     # Compatibility helper: ancestry gem exposes `subtree_ids`, while
     # closure_tree typically uses `self_and_descendants`.
     def subtree_ids
