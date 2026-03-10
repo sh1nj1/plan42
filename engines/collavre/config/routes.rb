@@ -97,6 +97,8 @@ Collavre::Engine.routes.draw do
       post :unconvert
       get :parent_suggestions
       get :slide_view
+      get :contexts
+      patch :update_contexts
     end
   end
 

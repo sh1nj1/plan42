@@ -15,8 +15,10 @@ module Collavre
 
       def build
         messages = []
+        @injected_creative_ids = Set.new
 
         append_creative_context(messages)
+        append_context_creatives(messages)
         append_referenced_creative_contexts(messages)
         append_chat_history(messages)
         append_trigger_message(messages)
@@ -33,34 +35,83 @@ module Collavre
         creative = Creative.find_by(id: creative_id)
         return unless creative
 
-        children_level = @agent.creative_children_level
-        max_depth = 1 + children_level
-        markdown = ApplicationController.helpers.render_creative_tree_markdown(
-          [ creative ], 1, true, max_depth: max_depth
-        )
-
+        effective = creative.effective_origin(Set.new)
         topic = current_topic
         topic_info = topic ? "\nTopic: #{topic.name} (id: #{topic.id})" : ""
 
-        messages << { role: "user", parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
+        if effective.data&.dig("disabled_self_context") == true
+          # Self-context disabled: inject only the ancestry chain so the AI
+          # knows where in the hierarchy the conversation is happening
+          ancestry = build_ancestry_chain(creative)
+          @injected_creative_ids << creative.id
+          messages << { role: "user", parts: [ { text: "Current Creative (id: #{creative.id}):#{topic_info}\nPath: #{ancestry}" } ] }
+        else
+          # Full self-context: inject the creative subtree
+          children_level = @agent.creative_children_level
+          max_depth = 1 + children_level
+          markdown = ApplicationController.helpers.render_creative_tree_markdown(
+            [ creative ], 1, true, max_depth: max_depth
+          )
+
+          @injected_creative_ids << creative.id
+          messages << { role: "user", parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
+        end
+      end
+
+      def build_ancestry_chain(creative)
+        creative.self_and_ancestors.reverse.map(&:creative_snippet).join(" > ")
+      end
+
+      def append_context_creatives(messages)
+        creative_id = @context.dig("creative", "id")
+        return unless creative_id
+
+        creative = Creative.find_by(id: creative_id)
+        return unless creative
+
+        effective_origin = creative.effective_origin(Set.new)
+        context_ids = effective_origin.effective_context_ids
+        disabled_ids = Array(effective_origin.data&.dig("disabled_context_ids"))
+        active_ids = context_ids - disabled_ids - [ creative_id, effective_origin.id ]
+        return if active_ids.empty?
+
+        children_level = @agent.creative_children_level
+        max_depth = 1 + children_level
+
+        active_ids.each do |ctx_id|
+          next if @injected_creative_ids.include?(ctx_id)
+
+          ctx = Creative.find_by(id: ctx_id)
+          next unless ctx
+
+          @injected_creative_ids << ctx_id
+          markdown = ApplicationController.helpers.render_creative_tree_markdown(
+            [ ctx ], 1, true, max_depth: max_depth
+          )
+
+          messages << {
+            role: "user",
+            parts: [ { text: "Context Creative (id: #{ctx.id}):\n#{markdown}" } ]
+          }
+        end
       end
 
       def append_referenced_creative_contexts(messages)
         content = @context.dig("comment", "content")
         return unless content
 
-        current_creative_id = @context.dig("creative", "id")
         children_level = @agent.creative_children_level
         max_depth = 1 + children_level
 
         # Extract creative IDs from markdown links like [title](/creatives/123)
         content.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.uniq.each do |id_str|
           creative_id = id_str.to_i
-          next if creative_id == current_creative_id
+          next if @injected_creative_ids.include?(creative_id)
 
           creative = Creative.find_by(id: creative_id)
           next unless creative
 
+          @injected_creative_ids << creative_id
           markdown = ApplicationController.helpers.render_creative_tree_markdown(
             [ creative ], 1, true, max_depth: max_depth
           )

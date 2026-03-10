@@ -9,7 +9,7 @@ module Collavre
     # Removed unauthenticated access to index and show actions
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
-    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert ]
+    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts ]
 
     def index
       respond_to do |format|
@@ -230,6 +230,62 @@ module Collavre
           format.html { render :edit, status: :unprocessable_entity }
           format.json { render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity }
         end
+      end
+    end
+
+    def contexts
+      creative = @creative.effective_origin(Set.new)
+      own_ids = creative.context_ids - [ creative.id ]
+      inherited_ids = (creative.effective_context_ids - own_ids - [ creative.id ]).uniq
+      own_creatives = Creative.where(id: own_ids).index_by(&:id)
+      inherited_creatives = Creative.where(id: inherited_ids).index_by(&:id)
+
+      disabled_ids = Array(creative.data&.dig("disabled_context_ids"))
+
+      own = own_ids.filter_map do |cid|
+        c = own_creatives[cid]
+        next unless c
+
+        { id: c.id, description: c.creative_snippet, inherited: false, disabled: disabled_ids.include?(cid) }
+      end
+
+      inherited = inherited_ids.filter_map do |cid|
+        c = inherited_creatives[cid]
+        next unless c
+
+        { id: c.id, description: c.creative_snippet, inherited: true, disabled: disabled_ids.include?(cid) }
+      end
+
+      render json: {
+        contexts: inherited + own,
+        can_manage: creative.has_permission?(Current.user, :admin),
+        disabled_self_context: creative.data&.dig("disabled_self_context") == true
+      }
+    end
+
+    def update_contexts
+      creative = @creative.effective_origin(Set.new)
+      unless creative.has_permission?(Current.user, :admin)
+        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
+        return
+      end
+
+      current_data = (creative.data || {}).dup
+      current_data["context_ids"] = Array(params[:context_ids]).map(&:to_i) if params.key?(:context_ids)
+      current_data["disabled_context_ids"] = Array(params[:disabled_context_ids]).map(&:to_i) if params.key?(:disabled_context_ids)
+      current_data.delete("disabled_context_ids") if current_data["disabled_context_ids"]&.empty?
+      if params.key?(:disabled_self_context)
+        if ActiveModel::Type::Boolean.new.cast(params[:disabled_self_context])
+          current_data["disabled_self_context"] = true
+        else
+          current_data.delete("disabled_self_context")
+        end
+      end
+
+      if creative.update(data: current_data)
+        head :ok
+      else
+        render json: { errors: creative.errors.full_messages }, status: :unprocessable_entity
       end
     end
 

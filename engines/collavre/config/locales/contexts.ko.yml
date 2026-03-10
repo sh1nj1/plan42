@@ -1,0 +1,7 @@
+---
+ko:
+  collavre:
+    contexts:
+      inherited_label: "상위에서 상속됨"
+      toggle_label: "컨텍스트"
+      self_context_label: "현재 크리에이티브 컨텍스트"

@@ -1,0 +1,7 @@
+---
+en:
+  collavre:
+    contexts:
+      inherited_label: "Inherited from parent"
+      toggle_label: "Contexts"
+      self_context_label: "Current creative context"
