@@ -24,7 +24,7 @@ import {
   hasDraggedState,
 } from './state';
 import { createMoveContext, applyMove, revertMove } from './operations';
-import { sendNewOrder, sendLinkedCreative } from '../../lib/api/drag_drop';
+import { sendNewOrder, sendLinkedCreative, sendTopicMove } from '../../lib/api/drag_drop';
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 
 const childZoneRatio = 0.3;
@@ -541,6 +541,17 @@ export function handleDragOver(event) {
     clearDragHighlight(lastRow);
   }
   if (!tree || tree.draggable === false) return;
+
+  // Topic move drag: always show as child drop target
+  if (event.dataTransfer.types.includes('application/x-topic-move')) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    tree.classList.add('drag-over', 'drag-over-child', 'child-drop-indicator-active');
+    tree.classList.remove('drag-over-top', 'drag-over-bottom');
+    setLastDragOverRow(tree);
+    return;
+  }
+
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
 
@@ -599,6 +610,36 @@ function resetDrag() {
 export function handleDrop(event) {
   const targetTree = event.target.closest(DRAGGABLE_SELECTOR);
   const targetId = targetTree ? targetTree.id : '';
+
+  // Handle topic move drop
+  const topicMoveData = event.dataTransfer.getData('application/x-topic-move');
+  if (topicMoveData && targetTree) {
+    event.preventDefault();
+    clearDragHighlight(targetTree);
+    clearDragHighlight(getLastDragOverRow());
+
+    try {
+      const { topicId, sourceCreativeId } = JSON.parse(topicMoveData);
+      const targetCreativeId = targetId.replace('creative-', '');
+
+      if (sourceCreativeId === targetCreativeId) return;
+
+      sendTopicMove({ topicId, sourceCreativeId, targetCreativeId })
+        .then(() => {
+          // Dispatch event so topic list refreshes
+          window.dispatchEvent(new CustomEvent('collavre:topic-moved', {
+            detail: { topicId, sourceCreativeId, targetCreativeId }
+          }));
+        })
+        .catch((error) => {
+          console.error('Failed to move topic', error);
+          alert(error.message || 'Failed to move topic');
+        });
+    } catch (error) {
+      console.error('Failed to parse topic move data', error);
+    }
+    return;
+  }
 
   // Capture visual state before clearing highlights to ensure WYSIWYG
   const isVisualTop = targetTree && targetTree.classList.contains('drag-over-top');

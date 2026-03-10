@@ -17,6 +17,23 @@ export function sendNewOrder({ draggedId, draggedIds, targetId, direction }) {
   });
 }
 
+export function sendTopicMove({ topicId, sourceCreativeId, targetCreativeId }) {
+  return csrfFetch(`/creatives/${sourceCreativeId}/topics/${topicId}/move`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ target_creative_id: targetCreativeId }),
+  }).then((response) => {
+    if (!response.ok) {
+      return response.json().then((data) => {
+        throw new Error(data.error || 'Failed to move topic');
+      });
+    }
+    return response.json();
+  });
+}
+
 export function sendLinkedCreative({ draggedId, targetId, direction }) {
   return csrfFetch('/creatives/link_drop', {
     method: 'POST',

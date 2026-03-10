@@ -63,6 +63,40 @@ module Collavre
       head :no_content
     end
 
+    def move
+      unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
+        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
+      end
+
+      topic = @creative.topics.find(params[:id])
+      target_creative = Creative.find(params[:target_creative_id]).effective_origin
+
+      unless target_creative.has_permission?(Current.user, :write) || target_creative.user == Current.user
+        render json: { error: I18n.t("collavre.topics.move.no_target_permission") }, status: :forbidden and return
+      end
+
+      # Check for duplicate topic name in target creative
+      if target_creative.topics.where(name: topic.name).exists?
+        render json: { error: I18n.t("collavre.topics.move.duplicate_name", name: topic.name) }, status: :unprocessable_entity and return
+      end
+
+      Topic.transaction do
+        topic.comments.update_all(creative_id: target_creative.id)
+        topic.update!(creative: target_creative)
+      end
+
+      TopicsChannel.broadcast_to(
+        @creative,
+        { action: "deleted", topic_id: topic.id }
+      )
+      TopicsChannel.broadcast_to(
+        target_creative,
+        { action: "created", topic: topic.slice(:id, :name) }
+      )
+
+      render json: { success: true, topic: topic.slice(:id, :name), target_creative_id: target_creative.id }
+    end
+
     def reorder
       unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
         render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return

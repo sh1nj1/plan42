@@ -73,6 +73,50 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "should move topic with comments to another creative" do
+    target_creative = creatives(:root_parent)
+    comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "test comment")
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    @topic.reload
+    comment.reload
+    assert_equal target_creative.id, @topic.creative_id
+    assert_equal target_creative.id, comment.creative_id, "Comment should move with topic"
+  end
+
+  test "should not move topic without permission on source creative" do
+    other_user = users(:two)
+    sign_in_as other_user, password: "password"
+
+    target_creative = creatives(:root_parent)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :forbidden
+  end
+
+  test "should not move topic without write permission on target creative" do
+    target_creative = creatives(:root_parent)
+    target_creative.update!(user: users(:two))
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :forbidden
+  end
+
+  test "should not move topic if duplicate name exists in target" do
+    target_creative = creatives(:root_parent)
+    target_creative.topics.create!(name: @topic.name, user: @user)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(response.body)
+    assert json["error"].include?(@topic.name)
+  end
+
   test "new topic should be created at the end after reordering" do
     # Create initial topics
     topic2 = @creative.topics.create!(name: "Topic 2", user: @user)
