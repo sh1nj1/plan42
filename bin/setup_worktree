@@ -61,4 +61,11 @@ while IFS= read -r resource || [ -n "$resource" ]; do
 done < "$RESOURCES_FILE"
 
 echo ""
+
+# Build JS/CSS assets so Propshaft can find them
+if [ -f "$CURRENT/package.json" ]; then
+  echo "📦 Building assets (npm run build)..."
+  (cd "$CURRENT" && npm run build 2>&1) || echo "   ⚠️  npm run build failed — run manually if needed"
+fi
+
 echo "🎉 Worktree setup complete!"
