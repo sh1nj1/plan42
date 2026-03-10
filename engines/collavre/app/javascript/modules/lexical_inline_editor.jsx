@@ -126,6 +126,14 @@ export function createInlineEditor(container, {
       const ids = Array.from(deletedAttachmentsRef.current || [])
       deletedAttachmentsRef.current = []
       return ids
+    },
+    getEditorStateJSON() {
+      if (!editorInstance) return null
+      try {
+        return editorInstance.getEditorState().toJSON()
+      } catch (_) {
+        return null
+      }
     }
   }
 }
