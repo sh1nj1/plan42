@@ -39,8 +39,9 @@ module Collavre
                                  dependent: :nullify, inverse_of: :approver
     has_many :comment_reactions, class_name: "Collavre::CommentReaction", dependent: :destroy
 
-    # Creatives must be destroyed AFTER all associations that reference them
-    has_many :creatives, class_name: "Collavre::Creative", dependent: :destroy
+    # Leaf-first destroy to avoid closure_tree find(parent_id) errors
+    has_many :creatives, class_name: "Collavre::Creative", dependent: nil
+    before_destroy :destroy_creatives_leaf_first
 
     belongs_to :creator, class_name: "Collavre::User", foreign_key: "created_by_id", optional: true
     has_many :created_ai_users, class_name: "Collavre::User", foreign_key: "created_by_id", dependent: :destroy
@@ -232,6 +233,14 @@ module Collavre
 
       unless user_themes.exists?(id: theme)
         errors.add(:theme, "is invalid")
+      end
+    end
+
+    # Destroy creatives deepest-first so closure_tree always finds its parent
+    def destroy_creatives_leaf_first
+      all_creatives = creatives.flat_map { |c| c.self_and_descendants.to_a }.uniq
+      all_creatives.sort_by { |c| -c.self_and_ancestors.count }.each do |c|
+        c.reload.destroy! if Creative.exists?(c.id)
       end
     end
   end
