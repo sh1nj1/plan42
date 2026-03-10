@@ -3,36 +3,10 @@
 module Collavre
   module Seeds
     class MenuSeeds
-      MENU_ITEMS = [
-        {
-          key: "home",
-          label: "Home",
-          path: "/",
-          icon: "home",
-          section: "main",
-          order: 110
-        },
-        {
-          key: "plans",
-          label: "Plans",
-          path: "/plans",
-          icon: "folder",
-          section: "main",
-          order: 120,
-          permissions: ["user"],
-          requires_auth: true
-        },
-        {
-          key: "inbox",
-          label: "Inbox",
-          path: "/inbox",
-          icon: "inbox",
-          section: "main",
-          order: 150,
-          permissions: ["user"],
-          requires_auth: true
-        }
-      ].freeze
+      # Example Creative-based menu items.
+      # These do NOT overlap with NavigationRegistry items (home, plans, inbox etc.).
+      # Registry items use partials/components; Creative menus are simpler link-based items.
+      MENU_ITEMS = [].freeze
 
       def self.seed!
         new.seed!
@@ -46,7 +20,7 @@ module Collavre
           seed_menu_item(menu_data, system_user)
         end
 
-        Rails.logger.info "Menu seeds created successfully"
+        Rails.logger.info "Menu seeds completed (#{MENU_ITEMS.size} items)"
       end
 
       private
@@ -56,7 +30,6 @@ module Collavre
       end
 
       def seed_menu_item(menu_data, user)
-        # Find by key in JSON data column
         existing = Creative.menus.find_by(
           "json_extract(data, '$.key') = ?", menu_data[:key]
         )
