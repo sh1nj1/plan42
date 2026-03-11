@@ -24,8 +24,8 @@
     <% if is_admin %>
       <button type="button"
               class="btn btn-xs btn-secondary org-chart-manage-btn"
-              data-shares-url="<%= collavre.creative_creative_shares_path(effective) %>"
-              data-action="click->org-chart#openShareModal">
+              data-share-modal-url-param="<%= collavre.creative_creative_shares_path(effective) %>"
+              data-action="click->share-modal#open">
         <%= t('collavre.contacts.org_chart.manage_permissions') %>
       </button>
       <%= link_to t('collavre.contacts.org_chart.add_ai_agent'),

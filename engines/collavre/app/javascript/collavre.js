@@ -11,7 +11,6 @@ import "./modules/export_to_markdown"
 import "./modules/plans_menu"
 import "./modules/inbox_panel"
 import "./modules/creative_guide"
-import "./modules/share_modal"
 import "./modules/creative_row_editor"
 import "./modules/slide_view"
 
