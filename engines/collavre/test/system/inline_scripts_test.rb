@@ -188,20 +188,20 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     visit collavre.creative_path(creative)
 
-    # Modal should be hidden initially
-    assert_selector "#share-creative-modal", visible: :hidden
+    # Modal is loaded via AJAX, so it should not be in the DOM initially
+    assert_no_selector "#share-creative-modal"
 
-    # Click share button
+    # Click share button to load and open the modal
     find("#share-creative-btn").click
 
-    # Modal should become visible
+    # Modal should become visible after AJAX load
     assert_selector "#share-creative-modal", visible: :visible
 
     # Click close button
     find("#close-share-modal").click
 
-    # Modal should be hidden again
-    assert_selector "#share-creative-modal", visible: :hidden
+    # Modal should be hidden after closing
+    assert_no_selector "#share-creative-modal", visible: :visible, wait: 5
   end
 
   test "share modal closes when clicking on backdrop" do
@@ -213,13 +213,10 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_selector "#share-creative-modal", visible: :visible
 
     # Click on the modal backdrop (the modal element itself, not the popup-box inside)
-    # We need to click at a position that's on the backdrop, not the inner content
-    modal = find("#share-creative-modal")
-    # Execute JavaScript to click on the modal backdrop directly
     page.execute_script("document.getElementById('share-creative-modal').click()")
 
-    # Modal should be hidden
-    assert_selector "#share-creative-modal[style*='display: none']", visible: :all, wait: 5
+    # Modal should be hidden after clicking backdrop
+    assert_no_selector "#share-creative-modal", visible: :visible, wait: 5
   end
 
   test "timezone is auto-detected on login page" do
