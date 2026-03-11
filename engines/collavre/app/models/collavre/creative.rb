@@ -26,6 +26,7 @@ module Collavre
     scope :menus, -> { of_kind("menu") }
 
     before_validation :parse_data_if_string
+    before_validation :auto_set_kind_from_editor_mode
     before_validation :render_description_from_data, if: -> { kind.present? }
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
@@ -33,7 +34,7 @@ module Collavre
 
     has_closure_tree order: :sequence, name_column: :description, hierarchy_table_name: "creative_hierarchies"
 
-    attr_accessor :filtered_progress
+    attr_accessor :filtered_progress, :editor_mode
 
     belongs_to :user, class_name: Collavre.configuration.user_class_name, optional: true
 
@@ -188,6 +189,14 @@ module Collavre
       self.data = JSON.parse(data) if data.is_a?(String) && data.present?
     rescue JSON::ParserError
       # Keep as-is if invalid JSON
+    end
+
+    def auto_set_kind_from_editor_mode
+      return unless editor_mode == "data"
+      return if kind.present?
+
+      # Data mode editing without explicit kind defaults to "json"
+      self.kind = "json" if data.present?
     end
 
     def render_description_from_data

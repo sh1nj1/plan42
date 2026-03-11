@@ -108,6 +108,7 @@ export function initializeCreativeRowEditor() {
     const editorModeHtmlBtn = document.getElementById('editor-mode-html');
     const editorModeDataBtn = document.getElementById('editor-mode-data');
     const kindInputField = document.getElementById('inline-kind-input');
+    const editorModeInput = document.getElementById('inline-editor-mode');
     let editorMode = 'html'; // 'html' or 'data'
 
     let currentKind = null; // Track the kind of the currently edited creative
@@ -1682,6 +1683,7 @@ export function initializeCreativeRowEditor() {
     // Editor mode toggle: html (Lexical) vs data (YAML textarea)
     function setEditorMode(mode) {
       editorMode = mode;
+      if (editorModeInput) editorModeInput.value = mode;
       if (mode === 'data') {
         // Show YAML editor + kind input, hide Lexical
         if (editorContainer) editorContainer.style.display = 'none';
