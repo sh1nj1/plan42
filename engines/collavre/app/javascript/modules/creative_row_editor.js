@@ -1975,7 +1975,6 @@ export function initializeCreativeRowEditor() {
               .then(function (response) {
                 if (response.ok) {
                   metadataPopup.style.display = 'none';
-                  alert('Metadata saved successfully');
                 } else {
                   return response.json().then(function (data) {
                     alert('Failed to save metadata: ' + (data.error || 'Unknown error'));
