@@ -12,12 +12,14 @@ export default class extends Controller {
 
     this.handleKeydown = this.handleKeydown.bind(this)
     document.addEventListener("keydown", this.handleKeydown)
+    this.refreshTimer = null
 
     this.checkOpenShareParam()
   }
 
   disconnect() {
     document.removeEventListener("keydown", this.handleKeydown)
+    if (this.refreshTimer) clearTimeout(this.refreshTimer)
     if (this.globalContainer) {
       this.globalContainer.remove()
     }
@@ -85,6 +87,11 @@ export default class extends Controller {
 
   // Private
 
+  get #errorFallbackMessage() {
+    const modal = document.getElementById("share-creative-modal")
+    return modal?.dataset?.errorMessage || "An error occurred"
+  }
+
   #initializeModal() {
     const modal = document.getElementById("share-creative-modal")
     if (!modal) return
@@ -136,20 +143,18 @@ export default class extends Controller {
       })
         .then(r => r.json().then(data => ({ status: r.status, data })))
         .then(({ status, data }) => {
-          // Remove pending entry
           if (pendingEl) pendingEl.remove()
 
           if (status >= 200 && status < 300) {
             this.#showMessage(data.notice, "success")
-            // Refresh to get accurate server-rendered list
-            this.#refreshModal()
+            this.#debouncedRefresh()
           } else {
             this.#showMessage(data.error, "error")
           }
         })
         .catch(() => {
           if (pendingEl) pendingEl.remove()
-          this.#showMessage("An error occurred", "error")
+          this.#showMessage(this.#errorFallbackMessage, "error")
         })
     })
   }
@@ -159,7 +164,6 @@ export default class extends Controller {
     const modal = document.getElementById("share-creative-modal")
     if (!modal) return null
 
-    // Find or create the shared list section
     let listSection = modal.querySelector(".share-grid")
     if (!listSection) {
       const popupBox = modal.querySelector(".popup-box")
@@ -177,12 +181,32 @@ export default class extends Controller {
 
     const li = document.createElement("li")
     li.className = "share-modal-pending"
-    li.innerHTML = `
-      <span><span class="avatar share-avatar" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:var(--surface-3,#ddd);text-align:center;line-height:20px;font-size:10px;">${email[0].toUpperCase()}</span></span>
-      <span>${this.#escapeHtml(email)}</span>
-      <span style="opacity:0.5">${this.#escapeHtml(permission)}</span>
-      <span><span class="share-modal-spinner"></span></span>
-    `
+
+    // Build DOM elements instead of innerHTML to avoid XSS
+    const avatarSpan = document.createElement("span")
+    const avatar = document.createElement("span")
+    avatar.className = "avatar share-avatar"
+    Object.assign(avatar.style, {
+      display: "inline-block", width: "20px", height: "20px",
+      borderRadius: "50%", background: "var(--surface-3,#ddd)",
+      textAlign: "center", lineHeight: "20px", fontSize: "10px"
+    })
+    avatar.textContent = email[0].toUpperCase()
+    avatarSpan.appendChild(avatar)
+
+    const emailSpan = document.createElement("span")
+    emailSpan.textContent = email
+
+    const permSpan = document.createElement("span")
+    permSpan.style.opacity = "0.5"
+    permSpan.textContent = permission
+
+    const spinnerSpan = document.createElement("span")
+    const spinner = document.createElement("span")
+    spinner.className = "share-modal-spinner"
+    spinnerSpan.appendChild(spinner)
+
+    li.append(avatarSpan, emailSpan, permSpan, spinnerSpan)
     listSection.appendChild(li)
     return li
   }
@@ -191,7 +215,6 @@ export default class extends Controller {
     const modal = document.getElementById("share-creative-modal")
     if (!modal) return
 
-    // Find all delete forms
     const deleteForms = modal.querySelectorAll("form")
     deleteForms.forEach(form => {
       const methodInput = form.querySelector("input[name='_method'][value='delete']")
@@ -200,13 +223,11 @@ export default class extends Controller {
       form.addEventListener("submit", (e) => {
         e.preventDefault()
 
-        // Check for confirm dialog - turbo_confirm can be on the form or button
         const confirmMessage = form.dataset.turboConfirm
           || form.querySelector("button[type='submit']")?.dataset?.turboConfirm
           || form.querySelector("button")?.dataset?.confirm
         if (confirmMessage && !window.confirm(confirmMessage)) return
 
-        // Optimistic UI: fade out the parent li
         const listItem = form.closest("li")
         if (listItem) {
           listItem.style.opacity = "0.3"
@@ -222,12 +243,9 @@ export default class extends Controller {
         })
           .then(r => {
             if (r.ok) {
-              // Optimistic: remove the item
               if (listItem) listItem.remove()
-              // Refresh in background for accuracy
-              this.#refreshModal()
+              this.#debouncedRefresh()
             } else {
-              // Revert optimistic change
               if (listItem) {
                 listItem.style.opacity = "1"
                 listItem.style.pointerEvents = ""
@@ -242,10 +260,15 @@ export default class extends Controller {
               listItem.style.opacity = "1"
               listItem.style.pointerEvents = ""
             }
-            this.#showMessage("An error occurred", "error")
+            this.#showMessage(this.#errorFallbackMessage, "error")
           })
       })
     })
+  }
+
+  #debouncedRefresh() {
+    if (this.refreshTimer) clearTimeout(this.refreshTimer)
+    this.refreshTimer = setTimeout(() => this.#refreshModal(), 300)
   }
 
   #refreshModal() {
@@ -330,12 +353,6 @@ export default class extends Controller {
           console.error("Failed to create invite link", err)
         })
     }
-  }
-
-  #escapeHtml(str) {
-    const div = document.createElement("div")
-    div.textContent = str
-    return div.innerHTML
   }
 
   #dispatchEvent(eventName) {
