@@ -39,6 +39,8 @@ export default class extends Controller {
       return
     }
 
+    this.currentSharesUrl = sharesUrl
+
     fetch(sharesUrl, {
       headers: { "Accept": "text/html" }
     })
@@ -77,10 +79,8 @@ export default class extends Controller {
   checkOpenShareParam() {
     const params = new URLSearchParams(window.location.search)
     if (params.get("open_share") === "true") {
-      // Find a share button to trigger
       const shareBtn = document.getElementById("share-creative-btn")
       if (shareBtn) {
-        // Dispatch a click event to open the modal
         shareBtn.click()
       }
     }
@@ -106,8 +106,132 @@ export default class extends Controller {
       if (e.target === modal) this.close()
     }
 
+    // Intercept share form submit
+    this.#initializeForm()
+
+    // Intercept all delete forms (share delete + invitation cancel)
+    this.#initializeDeleteForms()
+
     // Initialize invite link button
     this.#initializeInviteLink()
+  }
+
+  #initializeForm() {
+    const form = document.getElementById("share-creative-form")
+    if (!form) return
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault()
+      const formData = new FormData(form)
+      const submitBtn = form.querySelector("button[type='submit']")
+      if (submitBtn) submitBtn.disabled = true
+
+      fetch(form.action, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content
+        },
+        body: formData
+      })
+        .then(r => r.json().then(data => ({ status: r.status, data })))
+        .then(({ status, data }) => {
+          if (status >= 200 && status < 300) {
+            this.#showMessage(data.notice, "success")
+            this.#refreshModal()
+          } else {
+            this.#showMessage(data.error, "error")
+            if (submitBtn) submitBtn.disabled = false
+          }
+        })
+        .catch(() => {
+          this.#showMessage("An error occurred", "error")
+          if (submitBtn) submitBtn.disabled = false
+        })
+    })
+  }
+
+  #initializeDeleteForms() {
+    const modal = document.getElementById("share-creative-modal")
+    if (!modal) return
+
+    // Find all delete forms (button_to generates forms with method=post and hidden _method=delete)
+    const deleteForms = modal.querySelectorAll("form:has(input[name='_method'][value='delete'])")
+    deleteForms.forEach(form => {
+      form.addEventListener("submit", (e) => {
+        e.preventDefault()
+
+        // Handle turbo_confirm
+        const confirmMessage = form.dataset.turboConfirm
+        if (confirmMessage && !confirm(confirmMessage)) return
+
+        const submitBtn = form.querySelector("button[type='submit'], input[type='submit']")
+        if (submitBtn) submitBtn.disabled = true
+
+        fetch(form.action, {
+          method: "DELETE",
+          headers: {
+            "Accept": "application/json",
+            "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content
+          }
+        })
+          .then(r => {
+            if (r.ok) {
+              this.#refreshModal()
+            } else {
+              return r.json().then(data => {
+                this.#showMessage(data.error, "error")
+                if (submitBtn) submitBtn.disabled = false
+              })
+            }
+          })
+          .catch(() => {
+            this.#showMessage("An error occurred", "error")
+            if (submitBtn) submitBtn.disabled = false
+          })
+      })
+    })
+  }
+
+  #refreshModal() {
+    if (!this.currentSharesUrl) return
+
+    fetch(this.currentSharesUrl, {
+      headers: { "Accept": "text/html" }
+    })
+      .then(r => r.text())
+      .then(html => {
+        this.container.innerHTML = html
+        this.#initializeModal()
+      })
+      .catch(err => {
+        console.error("share-modal: Failed to refresh modal", err)
+      })
+  }
+
+  #showMessage(text, type) {
+    if (!text) return
+    const modal = document.getElementById("share-creative-modal")
+    if (!modal) return
+
+    // Remove existing message
+    const existing = modal.querySelector(".share-modal-message")
+    if (existing) existing.remove()
+
+    const msg = document.createElement("div")
+    msg.className = `share-modal-message share-modal-message-${type}`
+    msg.textContent = text
+
+    // Insert after the h2 title
+    const title = modal.querySelector("h2")
+    if (title) {
+      title.insertAdjacentElement("afterend", msg)
+    } else {
+      modal.querySelector(".popup-box")?.prepend(msg)
+    }
+
+    // Auto-remove after 4 seconds
+    setTimeout(() => msg.remove(), 4000)
   }
 
   #initializeInviteLink() {
@@ -145,8 +269,8 @@ export default class extends Controller {
             copyPromise = navigator.clipboard.writeText(data.url)
           }
           if (copyPromise) {
-            copyPromise.then(function() {
-              alert(copiedTemplate.replace("__PERMISSION__", permissionLabel))
+            copyPromise.then(() => {
+              this.#showMessage(copiedTemplate.replace("__PERMISSION__", permissionLabel), "success")
             })
           }
         })

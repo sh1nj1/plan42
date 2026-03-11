@@ -20,8 +20,11 @@ module Collavre
       @creative = Creative.find(params[:creative_id]).effective_origin
 
       unless @creative.has_permission?(Current.user, :admin)
-        flash[:alert] = t("collavre.creatives.errors.no_permission")
-        redirect_back(fallback_location: creatives_path) and return
+        respond_to do |format|
+          format.html { redirect_back fallback_location: creatives_path, alert: t("collavre.creatives.errors.no_permission") }
+          format.json { render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden }
+        end
+        return
       end
 
       user = nil
@@ -30,14 +33,20 @@ module Collavre
         unless user
           invitation = Invitation.create!(email: params[:user_email], inviter: Current.user, creative: @creative, permission: params[:permission])
           InvitationMailer.with(invitation: invitation).invite.deliver_later
-          flash[:notice] = t("collavre.invites.invite_sent")
-          redirect_back(fallback_location: creatives_path) and return
+          respond_to do |format|
+            format.html { redirect_back fallback_location: creatives_path, notice: t("collavre.invites.invite_sent") }
+            format.json { render json: { notice: t("collavre.invites.invite_sent") }, status: :created }
+          end
+          return
         end
 
         # Restrict sharing non-searchable AI agents to their owners only
         if user.ai_user? && !user.searchable? && user.created_by_id != Current.user.id
-          flash[:alert] = t("collavre.creatives.share.cannot_share_private_ai_agent")
-          redirect_back(fallback_location: creatives_path) and return
+          respond_to do |format|
+            format.html { redirect_back fallback_location: creatives_path, alert: t("collavre.creatives.share.cannot_share_private_ai_agent") }
+            format.json { render json: { error: t("collavre.creatives.share.cannot_share_private_ai_agent") }, status: :forbidden }
+          end
+          return
         end
       end
 
@@ -57,14 +66,18 @@ module Collavre
       Rails.logger.debug "### closest_parent_share = #{closest_parent_share.inspect}, is_param_no_access: #{is_param_no_access}"
       if closest_parent_share.present?
         if closest_parent_share.permission == :no_access.to_s
-          flash[:alert] = t("collavre.creatives.share.can_not_share_by_no_access_in_parent")
-          redirect_back(fallback_location: creatives_path) and return
+          respond_to do |format|
+            format.html { redirect_back fallback_location: creatives_path, alert: t("collavre.creatives.share.can_not_share_by_no_access_in_parent") }
+            format.json { render json: { error: t("collavre.creatives.share.can_not_share_by_no_access_in_parent") }, status: :unprocessable_entity }
+          end
+          return
         else
-          if is_param_no_access
-            # can set!
-          else
-            flash[:alert] = t("collavre.creatives.share.already_shared_in_parent")
-            redirect_back(fallback_location: creatives_path) and return
+          unless is_param_no_access
+            respond_to do |format|
+              format.html { redirect_back fallback_location: creatives_path, alert: t("collavre.creatives.share.already_shared_in_parent") }
+              format.json { render json: { error: t("collavre.creatives.share.already_shared_in_parent") }, status: :unprocessable_entity }
+            end
+            return
           end
         end
       end
@@ -78,11 +91,16 @@ module Collavre
           Contact.ensure(user: Current.user, contact_user: user)
           Contact.ensure(user: @creative.user, contact_user: user)
         end
-        flash[:notice] = t("collavre.creatives.share.shared")
+        respond_to do |format|
+          format.html { redirect_back fallback_location: creatives_path, notice: t("collavre.creatives.share.shared") }
+          format.json { render json: { notice: t("collavre.creatives.share.shared") }, status: :created }
+        end
       else
-        flash[:alert] = share.errors.full_messages.to_sentence
+        respond_to do |format|
+          format.html { redirect_back fallback_location: creatives_path, alert: share.errors.full_messages.to_sentence }
+          format.json { render json: { error: share.errors.full_messages.to_sentence }, status: :unprocessable_entity }
+        end
       end
-      redirect_back(fallback_location: creatives_path)
     end
 
     def update
