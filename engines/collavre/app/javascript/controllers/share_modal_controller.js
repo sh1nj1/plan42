@@ -326,13 +326,16 @@ export default class extends Controller {
         return
       }
 
+      const emailInput = document.getElementById("share-user-email")
+      const email = emailInput ? emailInput.value.trim() : ""
+
       fetch("/invite", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content
         },
-        body: JSON.stringify({ creative_id: creativeId, permission })
+        body: JSON.stringify({ creative_id: creativeId, permission, email: email || undefined })
       })
         .then(r => r.json())
         .then(data => {
