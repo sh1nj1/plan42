@@ -132,14 +132,6 @@ en:
         no_permission: You do not have permission to perform this action.
       inline_editor:
         placeholder: Describe the creative…
-      menu_editor:
-        label: Label
-        label_placeholder: Menu item name
-        path: Path
-        icon: Icon
-        section: Section
-        order: Order
-        requires_auth: Requires authentication
       edit_title: Edit creative
       edit:
         inline_editor_only_html: Editing creatives now happens directly in the inline

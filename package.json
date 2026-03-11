@@ -37,6 +37,7 @@
     "@rails/actiontext": "^8.0.201",
     "dompurify": "^3.3.0",
     "firebase": "^12.2.1",
+    "js-yaml": "^4.1.1",
     "lexical": "^0.38.2",
     "lit": "^3.1.2",
     "marked": "^16.4.1",

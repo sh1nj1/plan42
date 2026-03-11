@@ -1,3 +1,4 @@
+import yaml from 'js-yaml'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
 import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
@@ -102,14 +103,11 @@ export function initializeCreativeRowEditor() {
     const kindInput = document.getElementById('inline-creative-kind');
     const dataInput = document.getElementById('inline-creative-data');
 
-    // Menu editor elements
-    const menuEditor = document.getElementById('menu-editor');
-    const menuLabelInput = document.getElementById('menu-editor-label');
-    const menuPathInput = document.getElementById('menu-editor-path');
-    const menuIconInput = document.getElementById('menu-editor-icon');
-    const menuSectionSelect = document.getElementById('menu-editor-section');
-    const menuOrderInput = document.getElementById('menu-editor-order');
-    const menuRequiresAuthCheckbox = document.getElementById('menu-editor-requires-auth');
+    // Data YAML editor + mode toggle
+    const dataYamlEditor = document.getElementById('data-yaml-editor');
+    const editorModeHtmlBtn = document.getElementById('editor-mode-html');
+    const editorModeDataBtn = document.getElementById('editor-mode-data');
+    let editorMode = 'html'; // 'html' or 'data'
 
     let currentKind = null; // Track the kind of the currently edited creative
     let lexicalEditor = null;
@@ -298,14 +296,12 @@ export function initializeCreativeRowEditor() {
       if (kindInput) kindInput.value = currentKind || '';
       if (dataInput) dataInput.value = data.data ? JSON.stringify(data.data) : '';
 
-      // Switch editor based on kind
-      switchEditor(currentKind, data.data);
+      // Reset to html mode on load
+      setEditorMode('html');
 
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
-      if (currentKind !== 'menu') {
-        lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
-      }
+      lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
       pendingSave = false;
       // Track original content for dirty state detection
       originalContent = content;
@@ -1669,65 +1665,65 @@ export function initializeCreativeRowEditor() {
       saveTimer = setTimeout(saveForm, 5000);
     }
 
-    // Switch between Lexical editor and kind-specific editors
-    function switchEditor(kind, data) {
-      if (kind === 'menu') {
-        // Show menu editor, hide Lexical
+    // Editor mode toggle: html (Lexical) vs data (YAML textarea)
+    function setEditorMode(mode) {
+      editorMode = mode;
+      if (mode === 'data') {
+        // Show YAML editor, hide Lexical
         if (editorContainer) editorContainer.style.display = 'none';
-        if (menuEditor) menuEditor.style.display = '';
-        populateMenuEditor(data);
-        // Bind change events for auto-save
-        bindMenuEditorEvents();
+        if (dataYamlEditor) {
+          dataYamlEditor.style.display = '';
+          // Load current data as YAML
+          const currentData = dataInput?.value ? JSON.parse(dataInput.value || '{}') : {};
+          dataYamlEditor.value = yaml.dump(currentData, { indent: 2, lineWidth: -1 });
+        }
+        if (editorModeHtmlBtn) editorModeHtmlBtn.classList.remove('active');
+        if (editorModeDataBtn) editorModeDataBtn.classList.add('active');
       } else {
-        // Show Lexical, hide menu editor
+        // Show Lexical, hide YAML editor
         if (editorContainer) editorContainer.style.display = '';
-        if (menuEditor) menuEditor.style.display = 'none';
+        if (dataYamlEditor) dataYamlEditor.style.display = 'none';
+        if (editorModeHtmlBtn) editorModeHtmlBtn.classList.add('active');
+        if (editorModeDataBtn) editorModeDataBtn.classList.remove('active');
       }
     }
 
-    function populateMenuEditor(data) {
-      const d = (typeof data === 'string') ? JSON.parse(data || '{}') : (data || {});
-      if (menuLabelInput) menuLabelInput.value = d.label || '';
-      if (menuPathInput) menuPathInput.value = d.path || '';
-      if (menuIconInput) menuIconInput.value = d.icon || '';
-      if (menuSectionSelect) menuSectionSelect.value = d.section || 'main';
-      if (menuOrderInput) menuOrderInput.value = d.order || '';
-      if (menuRequiresAuthCheckbox) menuRequiresAuthCheckbox.checked = !!d.requires_auth;
-    }
-
-    function collectMenuData() {
-      const data = {};
-      if (menuLabelInput?.value) data.label = menuLabelInput.value;
-      if (menuPathInput?.value) data.path = menuPathInput.value;
-      if (menuIconInput?.value) data.icon = menuIconInput.value;
-      if (menuSectionSelect?.value) data.section = menuSectionSelect.value;
-      if (menuOrderInput?.value) data.order = parseInt(menuOrderInput.value, 10);
-      data.requires_auth = menuRequiresAuthCheckbox?.checked || false;
-      // Preserve key if it existed
-      const currentData = JSON.parse(dataInput?.value || '{}');
-      if (currentData.key) data.key = currentData.key;
-      return data;
-    }
-
-    let menuEditorBound = false;
-    function bindMenuEditorEvents() {
-      if (menuEditorBound) return;
-      menuEditorBound = true;
-      const inputs = [menuLabelInput, menuPathInput, menuIconInput, menuSectionSelect, menuOrderInput, menuRequiresAuthCheckbox];
-      inputs.forEach(input => {
-        if (!input) return;
-        const event = input.type === 'checkbox' ? 'change' : 'input';
-        input.addEventListener(event, onMenuEditorChange);
+    // Bind toggle buttons
+    if (editorModeHtmlBtn) {
+      editorModeHtmlBtn.addEventListener('click', () => {
+        if (editorMode === 'data') {
+          // Save YAML back to data input before switching
+          syncYamlToDataInput();
+        }
+        setEditorMode('html');
       });
     }
+    if (editorModeDataBtn) {
+      editorModeDataBtn.addEventListener('click', () => setEditorMode('data'));
+    }
 
-    function onMenuEditorChange() {
-      const data = collectMenuData();
-      if (dataInput) dataInput.value = JSON.stringify(data);
-      // Also update description for rendering
-      descriptionInput.value = `<p>${data.icon || ''} ${data.label || ''}</p>`;
-      isDirty = true;
-      scheduleSave();
+    // Sync YAML textarea content to data hidden input
+    function syncYamlToDataInput() {
+      if (!dataYamlEditor || !dataInput) return;
+      try {
+        const parsed = yaml.load(dataYamlEditor.value);
+        if (parsed && typeof parsed === 'object') {
+          dataInput.value = JSON.stringify(parsed);
+          // Auto-set kind if not set
+          if (kindInput && !kindInput.value) kindInput.value = currentKind || '';
+        }
+      } catch (e) {
+        console.warn('YAML parse error:', e.message);
+      }
+    }
+
+    // Auto-save on YAML editor changes
+    if (dataYamlEditor) {
+      dataYamlEditor.addEventListener('input', () => {
+        syncYamlToDataInput();
+        isDirty = true;
+        scheduleSave();
+      });
     }
 
     function onLexicalChange(html) {

@@ -119,14 +119,6 @@ ko:
         no_permission: 이 작업을 수행할 권한이 없습니다.
       inline_editor:
         placeholder: 크리에이티브를 설명해주세요…
-      menu_editor:
-        label: 레이블
-        label_placeholder: 메뉴 항목 이름
-        path: 경로
-        icon: 아이콘
-        section: 섹션
-        order: 순서
-        requires_auth: 인증 필요
       edit_title: 크리에이티브 수정
       edit:
         inline_editor_only_html: 크리에이티브 수정은 인라인 편집기에서 바로 진행하세요.
