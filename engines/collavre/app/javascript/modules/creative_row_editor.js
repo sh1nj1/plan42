@@ -312,7 +312,13 @@ export function initializeCreativeRowEditor() {
       updateActionButtonStates();
       // Reload metadata if the popup is open
       if (isMetadataPopupVisible()) {
-        loadMetadataForCreative(creativeId);
+        if (data.data !== undefined) {
+          // Use data already fetched from API response — avoids extra request
+          const yamlStr = yaml.dump(data.data || {}, { lineWidth: -1 });
+          metadataEditor.value = yamlStr;
+        } else {
+          loadMetadataForCreative(creativeId);
+        }
       }
     }
 
