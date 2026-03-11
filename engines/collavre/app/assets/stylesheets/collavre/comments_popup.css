@@ -976,6 +976,21 @@ body.chat-fullscreen {
     cursor: grabbing;
 }
 
+.navigate-context-btn {
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 0.9em;
+    padding: 0 0.15em;
+    line-height: 1;
+    margin-left: 0.1em;
+}
+
+.navigate-context-btn:hover {
+    color: var(--color-active);
+}
+
 .delete-context-btn {
     background: none;
     border: none;
