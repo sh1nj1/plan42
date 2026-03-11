@@ -115,6 +115,43 @@
   color: var(--danger);
 }
 
+.share-modal-message {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-2);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-0);
+  animation: share-modal-message-fade 4s ease-in-out;
+}
+.share-modal-message-success {
+  background: var(--success-bg, #d4edda);
+  color: var(--success-text, #155724);
+  border: 1px solid var(--success-border, #c3e6cb);
+}
+.share-modal-message-error {
+  background: var(--danger-bg, #f8d7da);
+  color: var(--danger-text, #721c24);
+  border: 1px solid var(--danger-border, #f5c6cb);
+}
+@keyframes share-modal-message-fade {
+  0%, 80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.share-modal-pending {
+  opacity: 0.6;
+}
+.share-modal-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--text-muted, #999);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: share-spinner 0.6s linear infinite;
+}
+@keyframes share-spinner {
+  to { transform: rotate(360deg); }
+}
+
 #github-integration-modal .github-modal-status {
   color: var(--text-muted);
   margin-bottom: 1em;

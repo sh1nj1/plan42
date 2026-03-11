@@ -222,22 +222,14 @@ export default class extends Controller {
       addBtn.className = 'add-participant-btn'
       addBtn.textContent = '+'
       addBtn.title = this.element.dataset.addParticipantText || 'Add user'
-      addBtn.addEventListener('click', () => this.openShareModal())
+      addBtn.dataset.action = 'click->share-modal#open'
+      addBtn.dataset.shareModalUrlParam = `/creatives/${this.creativeId}/creative_shares`
       this.participantsTarget.appendChild(addBtn)
     }
 
     this.updateReadReceiptPresence(presentIds)
   }
 
-  openShareModal() {
-    const modal = document.getElementById('share-creative-modal')
-    if (modal) {
-      modal.style.display = 'flex'
-      document.body.classList.add('no-scroll')
-    } else if (this.creativeId) {
-      window.location.href = `/creatives/${this.creativeId}?open_comments=true&open_share=true`
-    }
-  }
 
   renderTypingIndicator() {
     if (!this.hasTypingIndicatorTarget) return

@@ -2,7 +2,7 @@
 <% fullscreen = local_assigns.fetch(:fullscreen, false) %>
 <% auto_fullscreen = local_assigns.fetch(:auto_fullscreen, false) %>
 <% creative = local_assigns[:creative] %>
-<div id="comments-popup" data-controller="comments--popup comments--list comments--form comments--presence comments--mention-menu comments--topics comments--contexts" class="popup-box"
+<div id="comments-popup" data-controller="comments--popup comments--list comments--form comments--presence comments--mention-menu comments--topics comments--contexts share-modal" class="popup-box"
      data-fullscreen="<%= fullscreen %>"
      <% if auto_fullscreen %>data-auto-fullscreen="true"<% end %>
      data-fullscreen-label="<%= t('collavre.comments.fullscreen', default: 'Full screen') %>"
@@ -80,6 +80,7 @@
        data-inherited-label="<%= t('collavre.contexts.inherited_label', default: 'Inherited from parent') %>"
        data-self-context-label="<%= t('collavre.contexts.self_context_label', default: 'Current creative context') %>"
        data-navigate-label="<%= t('collavre.contexts.navigate_label', default: 'Go to creative') %>"></div>
+  <div data-share-modal-target="container"></div>
   <div id="comment-participants" data-comments--presence-target="participants" data-comments--mention-menu-target="participants"></div>
   <div id="comment-topics" data-comments--topics-target="list" class="comment-topics-list"
        data-confirm-delete-text="<%= t('collavre.topics.delete_confirm') %>"

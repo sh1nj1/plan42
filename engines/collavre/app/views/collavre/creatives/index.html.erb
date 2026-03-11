@@ -1,6 +1,6 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 
-<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--set-plan-modal"
+<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--set-plan-modal share-modal"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"
      data-creatives--import-uploading-value="<%= t('collavre.creatives.index.import_uploading') %>"
      data-creatives--import-success-value="<%= t('collavre.creatives.index.import_success') %>"
@@ -61,9 +61,9 @@
   <%= render 'mobile_actions_menu', current_creative: current_creative, can_manage_integrations: can_manage_integrations %>
 </div>
 
-<% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
-  <%= render 'share_modal' %>
-<% end %>
+  <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
+    <div data-share-modal-target="container"></div>
+  <% end %>
 
   <%= render 'import_upload_zone' %>
 
