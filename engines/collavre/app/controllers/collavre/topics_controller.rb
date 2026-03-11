@@ -3,10 +3,13 @@ module Collavre
     before_action :set_creative
 
     def index
-      can_manage = @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
+      is_owner = @creative.user == Current.user
+      can_manage = @creative.has_permission?(Current.user, :admin) || is_owner
+      can_create_topic = can_manage || @creative.has_permission?(Current.user, :write)
       render json: {
         topics: @creative.topics.order(:created_at),
-        can_manage: can_manage
+        can_manage: can_manage,
+        can_create_topic: can_create_topic
       }
     end
 

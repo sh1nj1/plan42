@@ -24,8 +24,12 @@ class CreativeShareSystemTest < ApplicationSystemTestCase
 
     visit collavre.creative_path(@creative)
 
-    assert_selector "#share-creative-modal", text: I18n.t("collavre.creatives.index.shared_with"), visible: :all
-    assert_selector "#share-creative-modal", text: "User1", visible: :all
-    assert_selector "#share-creative-modal", text: "Read", visible: :all
+    # Share modal is loaded via AJAX when share button is clicked
+    find("#share-creative-btn").click
+    assert_selector "#share-creative-modal", visible: :visible
+
+    assert_selector "#share-creative-modal", text: I18n.t("collavre.creatives.index.shared_with")
+    assert_selector "#share-creative-modal", text: "User1"
+    assert_selector "#share-creative-modal", text: "Read"
   end
 end
