@@ -587,6 +587,15 @@ export default class extends Controller {
         targetButton = row?.querySelector('.comments-btn')
       }
 
+      // Scroll the creative row into view instantly BEFORE calculating positions,
+      // so getBoundingClientRect returns viewport-visible coordinates
+      if (targetButton) {
+        const row = targetButton.closest('creative-tree-row')
+        if (row) {
+          row.scrollIntoView({ behavior: 'instant', block: 'center' })
+        }
+      }
+
       if (targetButton) {
         this.currentButton = targetButton
         const btnRect = targetButton.getBoundingClientRect()
@@ -698,13 +707,6 @@ export default class extends Controller {
       }
       this._previousUrl = null
 
-      // Scroll the selected creative row into view after exiting fullscreen
-      if (creativeId) {
-        requestAnimationFrame(() => {
-          const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
-          row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        })
-      }
     }
 
     // Scroll to bottom after layout change
