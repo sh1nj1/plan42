@@ -1203,12 +1203,26 @@ export function initializeCreativeRowEditor() {
         shouldPersistProgress = progressValueChanged();
       }
 
+      // Capture data and kind values before they change
+      const currentData = dataInput ? dataInput.value : '';
+      const currentKindValue = kindInput ? kindInput.value : '';
+      const currentEditorMode = editorModeInput ? editorModeInput.value : 'html';
+
       // Build request body
       // Note: before_id and after_id must be top-level params, not nested under creative[]
       // because CreativesController reads params[:before_id] and params[:after_id] for positioning
       const body = {
         'creative[description]': currentContent
       };
+
+      // Always include data and kind (may have been edited in data mode)
+      if (currentData) {
+        body['creative[data]'] = currentData;
+      }
+      if (currentKindValue) {
+        body['creative[kind]'] = currentKindValue;
+      }
+      body['creative[editor_mode]'] = currentEditorMode;
 
       if (shouldPersistProgress) {
         body['creative[progress]'] = currentProgress;
