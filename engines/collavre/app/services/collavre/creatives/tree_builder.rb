@@ -189,7 +189,7 @@ module Creatives
         origin_id: creative.origin_id,
         kind: creative.kind
       }
-      payload[:data] = creative.data if creative.kind.present? && creative.data.present?
+      payload[:data] = creative.data if creative.data.present?
       payload
     end
 

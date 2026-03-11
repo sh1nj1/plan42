@@ -1635,6 +1635,11 @@ export function initializeCreativeRowEditor() {
           if (childInput) childInput.value = childId || '';
           resetOriginTracking();
           descriptionInput.value = '';
+          // Reset kind, data, and editor mode for new creative
+          currentKind = null;
+          if (kindInput) kindInput.value = '';
+          if (dataInput) dataInput.value = '';
+          setEditorMode('html');
           lexicalEditor.reset(`new-${Date.now()}`);
           setProgressState(0);
           originalProgress = 0;

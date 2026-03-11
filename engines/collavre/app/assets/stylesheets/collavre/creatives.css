@@ -636,24 +636,32 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 /* Editor mode toggle */
 .editor-mode-toggle {
   display: inline-flex;
-  border: 1px solid var(--surface-3, #ddd);
-  border-radius: var(--radius-2, 4px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2);
   overflow: hidden;
-  margin-left: 0.5em;
+  margin-left: var(--space-2);
 }
 .editor-mode-btn {
-  padding: 0.15em 0.5em;
-  font-size: 0.75em;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-0);
   border: none;
-  background: var(--surface-1, #f5f5f5);
-  color: var(--text-2, #666);
+  background: var(--surface-bg);
+  color: var(--text-color-secondary, #666);
   cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+.editor-mode-btn:hover {
+  background: var(--surface-section);
 }
 .editor-mode-btn + .editor-mode-btn {
-  border-left: 1px solid var(--surface-3, #ddd);
+  border-left: 1px solid var(--border-color);
 }
 .editor-mode-btn.active {
-  background: var(--color-brand, #3b82f6);
-  color: white;
+  background: var(--color-brand);
+  color: #fff;
+}
+.editor-mode-btn.active:hover {
+  background: var(--color-brand);
 }
 
