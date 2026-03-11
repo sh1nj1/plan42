@@ -610,3 +610,26 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 .comments-btn .badge[data-count="0"] {
     background: var(--color-brand);
 }
+
+/* Metadata popup styles */
+.metadata-popup {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    z-index: 100;
+    background: var(--surface-1, #fff);
+    border: 1px solid var(--surface-3, #ddd);
+    border-radius: var(--radius-2, 8px);
+    padding: var(--space-3, 12px);
+    box-shadow: var(--shadow-3, 0 4px 12px rgba(0,0,0,0.15));
+    min-width: 300px;
+    max-width: 500px;
+}
+
+.metadata-popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-2, 8px);
+    font-weight: var(--weight-6, 600);
+}

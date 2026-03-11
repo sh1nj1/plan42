@@ -27,6 +27,9 @@
                  data-children-alert-message="<%= t('collavre.creatives.index.progress_complete_children_alert') %>">
           <span id="inline-progress-value"><%= t('collavre.creatives.index.progress_incomplete') %></span>
         </label>
+        <button type="button" id="inline-metadata-btn" class="creative-action-btn" title="<%= t('collavre.creatives.index.metadata_tooltip') %>" style="margin-left:0.5em;font-family:monospace;font-size:0.9em;">
+          { }
+        </button>
       </div>
       <div style="margin-top:0.5em;">
         <button type="button" id="inline-move-up" class="creative-action-btn" title="<%= t('collavre.creatives.index.inline_move_up_tooltip') %>">
@@ -91,6 +94,16 @@
       </div>
       <button type="button" id="inline-recommend-parent" class="creative-action-btn" style="margin-top:0.5em;" title="<%= t('collavre.creatives.index.recommend_parent') %>">✨<%= t('collavre.creatives.index.recommend_parent') %></button>
       <select id="parent-suggestions" size="5" style="display:none;margin-top:0.5em;width:100%;"></select>
+      <div id="metadata-popup" style="display:none;" class="metadata-popup">
+        <div class="metadata-popup-header">
+          <span><%= t('collavre.creatives.index.metadata_title') %></span>
+          <button type="button" id="metadata-popup-close" class="creative-action-btn">&times;</button>
+        </div>
+        <textarea id="metadata-yaml-editor" rows="12" style="width:100%;font-family:monospace;font-size:0.85em;"></textarea>
+        <button type="button" id="metadata-save-btn" class="creative-action-btn" style="margin-top:0.5em;">
+          <%= t('collavre.creatives.index.metadata_save') %>
+        </button>
+      </div>
     </div>
   </form>
 </div>

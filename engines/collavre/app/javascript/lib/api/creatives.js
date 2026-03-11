@@ -65,6 +65,17 @@ export function unconvert(id) {
   })
 }
 
+export function updateMetadata(id, data) {
+  const body = new FormData()
+  body.append('data', JSON.stringify(data))
+
+  return csrfFetch(`/creatives/${id}/update_metadata`, {
+    method: 'PATCH',
+    headers: JSON_HEADERS,
+    body,
+  })
+}
+
 const creativesApi = {
   get,
   parentSuggestions,
@@ -74,6 +85,7 @@ const creativesApi = {
   linkExisting,
   destroy,
   unconvert,
+  updateMetadata,
 }
 
 export default creativesApi

@@ -9,7 +9,7 @@ module Collavre
     # Removed unauthenticated access to index and show actions
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
-    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts ]
+    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata ]
 
     def index
       respond_to do |format|
@@ -143,7 +143,8 @@ module Collavre
               progress_html: view_context.render_creative_progress(@creative),
               depth: depth,
               prompt: @creative.prompt_for(Current.user),
-              has_children: children_count > 0
+              has_children: children_count > 0,
+              data: @creative.effective_origin(Set.new).data
             }
           end
         end
@@ -283,6 +284,26 @@ module Collavre
       end
 
       if creative.update(data: current_data)
+        head :ok
+      else
+        render json: { errors: creative.errors.full_messages }, status: :unprocessable_entity
+      end
+    end
+
+    def update_metadata
+      creative = @creative.effective_origin(Set.new)
+      unless creative.has_permission?(Current.user, :admin)
+        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
+        return
+      end
+
+      new_data = begin
+        JSON.parse(params[:data])
+      rescue JSON::ParserError => e
+        render json: { error: "Invalid JSON: #{e.message}" }, status: :unprocessable_entity
+        return
+      end
+      if creative.update(data: new_data)
         head :ok
       else
         render json: { errors: creative.errors.full_messages }, status: :unprocessable_entity

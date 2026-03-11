@@ -99,6 +99,7 @@ Collavre::Engine.routes.draw do
       get :slide_view
       get :contexts
       patch :update_contexts
+      patch :update_metadata
     end
   end
 
