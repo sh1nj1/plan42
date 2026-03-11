@@ -13,6 +13,8 @@
                 right 0.25s ease, bottom 0.25s ease, border-radius 0.25s ease,
                 box-shadow 0.25s ease, padding 0.25s ease;
     max-width: calc(100vw - 0.5em) !important;
+    overscroll-behavior: contain;
+    overflow: hidden;
 }
 
 body.chat-fullscreen {
