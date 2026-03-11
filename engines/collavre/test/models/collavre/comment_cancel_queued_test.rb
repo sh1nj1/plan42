@@ -13,7 +13,7 @@ module Collavre
         email: "ai-agent-test@example.com",
         password: "password123",
         llm_vendor: "google",
-        llm_model: "gemini-2.5-flash"
+        llm_model: "gemini-3-flash-preview"
       )
     end
 

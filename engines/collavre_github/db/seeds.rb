@@ -121,7 +121,7 @@ module CollavreGithub
     end
 
     def default_llm_model
-      ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-2.5-flash")
+      ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3-flash-preview")
     end
   end
 end

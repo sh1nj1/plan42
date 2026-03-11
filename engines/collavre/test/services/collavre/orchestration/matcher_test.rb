@@ -182,7 +182,7 @@ module Collavre
           password: "password",
           name: "Other Agent",
           llm_vendor: "gemini",
-          llm_model: "gemini-2.5-flash",
+          llm_model: "gemini-3-flash-preview",
           searchable: true,
           routing_expression: 'event_name == "comment_created"'
         )
