@@ -52,6 +52,24 @@ module Collavre
       assert Collavre::Comment.exists?(original.id), "Original quoted comment should not be affected"
     end
 
+    test "destroying review comment nullifies review_comment_id on comment_versions" do
+      original = Collavre::Comment.create!(creative: @creative, content: "original", user: @user)
+      review_comment = Collavre::Comment.create!(
+        creative: @creative, content: "review feedback", user: @user,
+        quoted_comment_id: original.id
+      )
+      version = Collavre::CommentVersion.create!(
+        comment: original, content: "revised content", version_number: 1,
+        review_comment: review_comment
+      )
+
+      assert_nothing_raised { review_comment.destroy! }
+
+      version.reload
+      assert_nil version.review_comment_id, "review_comment_id should be nullified when review comment is deleted"
+      assert Collavre::CommentVersion.exists?(version.id), "Version itself should not be deleted"
+    end
+
     test "destroying comment with selected_version succeeds" do
       comment = Collavre::Comment.create!(creative: @creative, content: "test", user: @user)
       version = Collavre::CommentVersion.create!(

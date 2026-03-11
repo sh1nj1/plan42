@@ -25,6 +25,7 @@ module Collavre
     has_many :activity_logs, class_name: "Collavre::ActivityLog", dependent: :destroy
     has_many :comment_reactions, class_name: "Collavre::CommentReaction", dependent: :destroy
     has_many :comment_versions, class_name: "Collavre::CommentVersion", dependent: :destroy
+    has_many :review_versions, class_name: "Collavre::CommentVersion", foreign_key: :review_comment_id, dependent: :nullify
     has_many :inbox_items, class_name: "Collavre::InboxItem", dependent: :nullify
     has_many :quoting_comments, class_name: "Collavre::Comment", foreign_key: :quoted_comment_id, dependent: :destroy
     belongs_to :selected_version, class_name: "Collavre::CommentVersion", optional: true
