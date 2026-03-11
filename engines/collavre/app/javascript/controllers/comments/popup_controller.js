@@ -158,7 +158,6 @@ export default class extends Controller {
 
     this.showPopup()
     this.updatePosition()
-    document.body.classList.add('no-scroll')
 
     await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
 
@@ -257,7 +256,6 @@ export default class extends Controller {
     this.element.style.top = ''
     this.element.style.bottom = ''
     delete this.element.dataset.resized
-    document.body.classList.remove('no-scroll')
   }
 
   prepareSize() {
