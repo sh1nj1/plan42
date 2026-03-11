@@ -119,6 +119,9 @@ en:
         inline_level_down_tooltip: Indent / add as child (Ctrl/Cmd+Shift+.)
         inline_level_up_tooltip: Outdent / move up a level (Ctrl/Cmd+Shift+,)
         inline_close_tooltip: Close editor (Esc)
+        metadata_tooltip: Edit metadata
+        metadata_title: Metadata
+        metadata_save: Save
       share:
         shared: Creative shared successfully.
         permission_updated: Permission updated successfully.

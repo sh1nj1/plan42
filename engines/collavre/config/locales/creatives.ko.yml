@@ -107,6 +107,9 @@ ko:
         inline_level_down_tooltip: 들여쓰기 / 자식으로 이동 (Ctrl/Cmd+Shift+.)
         inline_level_up_tooltip: 내어쓰기 / 상위로 이동 (Ctrl/Cmd+Shift+,)
         inline_close_tooltip: 편집기 닫기 (Esc)
+        metadata_tooltip: 메타데이터 편집
+        metadata_title: 메타데이터
+        metadata_save: 저장
       share:
         shared: 크리에이티브가 성공적으로 공유되었습니다.
         permission_updated: 권한이 성공적으로 변경되었습니다.

@@ -4,6 +4,7 @@ import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $i
 import { createInlineEditor } from './lexical_inline_editor'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
 import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
+import yaml from 'js-yaml'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
 
@@ -99,6 +100,11 @@ export function initializeCreativeRowEditor() {
     const afterInput = document.getElementById('inline-after-id');
     const childInput = document.getElementById('inline-child-id');
     const originIdInput = document.getElementById('inline-origin-id');
+    const metadataBtn = document.getElementById('inline-metadata-btn');
+    const metadataPopup = document.getElementById('metadata-popup');
+    const metadataEditor = document.getElementById('metadata-yaml-editor');
+    const metadataSaveBtn = document.getElementById('metadata-save-btn');
+    const metadataCloseBtn = document.getElementById('metadata-popup-close');
 
     let lexicalEditor = null;
     if (editorContainer) {
@@ -304,6 +310,16 @@ export function initializeCreativeRowEditor() {
       originalProgress = normalizedProgress;
       lexicalEditor.focus();
       updateActionButtonStates();
+      // Reload metadata if the popup is open
+      if (isMetadataPopupVisible()) {
+        if (data.data !== undefined) {
+          // Use data already fetched from API response — avoids extra request
+          const yamlStr = yaml.dump(data.data || {}, { lineWidth: -1 });
+          metadataEditor.value = yamlStr;
+        } else {
+          loadMetadataForCreative(creativeId);
+        }
+      }
     }
 
     function siblingTreeRow(row, direction) {
@@ -1924,6 +1940,78 @@ export function initializeCreativeRowEditor() {
             unconvertBtn.disabled = false;
           });
       });
+    }
+
+    // Metadata editor handlers
+    function loadMetadataForCreative(creativeId) {
+      if (!creativeId || !metadataPopup || !metadataEditor) return;
+      creativesApi.get(creativeId)
+        .then(function (data) {
+          const metadataObj = data.data || {};
+          const yamlStr = yaml.dump(metadataObj, { lineWidth: -1 });
+          metadataEditor.value = yamlStr;
+        })
+        .catch(function (error) {
+          console.error('Failed to load metadata:', error);
+          alert('Failed to load metadata');
+        });
+    }
+
+    function isMetadataPopupVisible() {
+      return metadataPopup && metadataPopup.style.display !== 'none';
+    }
+
+    if (metadataBtn && metadataPopup && metadataEditor) {
+      metadataBtn.addEventListener('click', function () {
+        const creativeId = form.dataset.creativeId;
+        if (!creativeId) return;
+
+        if (isMetadataPopupVisible()) {
+          metadataPopup.style.display = 'none';
+          return;
+        }
+
+        loadMetadataForCreative(creativeId);
+        metadataPopup.style.display = 'block';
+      });
+
+      if (metadataCloseBtn) {
+        metadataCloseBtn.addEventListener('click', function () {
+          metadataPopup.style.display = 'none';
+        });
+      }
+
+      if (metadataSaveBtn) {
+        metadataSaveBtn.addEventListener('click', function () {
+          const creativeId = form.dataset.creativeId;
+          if (!creativeId) return;
+
+          try {
+            // Parse YAML back to JSON
+            const yamlStr = metadataEditor.value;
+            const parsedData = yaml.load(yamlStr) || {};
+
+            // Send PATCH request
+            creativesApi.updateMetadata(creativeId, parsedData)
+              .then(function (response) {
+                if (response.ok) {
+                  metadataPopup.style.display = 'none';
+                } else {
+                  return response.json().then(function (data) {
+                    alert('Failed to save metadata: ' + (data.error || 'Unknown error'));
+                  });
+                }
+              })
+              .catch(function (error) {
+                console.error('Failed to save metadata:', error);
+                alert('Failed to save metadata');
+              });
+          } catch (error) {
+            console.error('YAML parse error:', error);
+            alert('Invalid YAML format: ' + error.message);
+          }
+        });
+      }
     }
   });
 }
