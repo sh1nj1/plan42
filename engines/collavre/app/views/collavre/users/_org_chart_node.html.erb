@@ -108,9 +108,9 @@
                 <%= image_tag asset_path("default_avatar.svg"),
                     alt: '', width: 24, height: 24,
                     class: 'avatar',
-                    title: invitation.email,
+                    title: invitation.email.to_s,
                     style: 'border-radius:50%;vertical-align:middle;' %>
-                <span class="avatar-initial" style="font-size: 12px;"><%= invitation.email[0].upcase %></span>
+                <span class="avatar-initial" style="font-size: 12px;"><%= invitation.email.to_s[0]&.upcase %></span>
               </div>
               <div class="org-chart-member-name-group">
                 <span class="org-chart-member-email"><%= invitation.email %></span>

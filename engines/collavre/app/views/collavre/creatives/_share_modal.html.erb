@@ -59,9 +59,9 @@
                   <%= image_tag asset_path("default_avatar.svg"),
                       alt: '', width: 20, height: 20,
                       class: 'avatar share-avatar',
-                      title: invitation.email,
+                      title: invitation.email.to_s,
                       style: 'border-radius:50%;vertical-align:middle;' %>
-                  <span class="avatar-initial" style="font-size: 10px;"><%= invitation.email[0].upcase %></span>
+                  <span class="avatar-initial" style="font-size: 10px;"><%= invitation.email.to_s[0]&.upcase %></span>
                 </div>
               </span>
               <span><%= invitation.email %></span>
