@@ -15,6 +15,9 @@ module Collavre
       @creatives = []
       @shared_list = @creative.all_shared_users
       @auto_fullscreen = true
+      # Set params[:id] so the tree URL in creatives/index loads children of this
+      # creative instead of the root list.
+      params[:id] = @creative.id.to_s
       # Prepend creatives prefix so partials like 'add_button' resolve to collavre/creatives/_add_button
       lookup_context.prefixes.prepend "collavre/creatives"
       render "collavre/creatives/index"

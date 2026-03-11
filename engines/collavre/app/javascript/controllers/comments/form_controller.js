@@ -1,6 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
+import { refreshCsrfToken } from '../../lib/api/csrf_fetch'
 import ReviewQuotesStore from './review_quotes_store'
 
 export default class extends Controller {
@@ -243,13 +244,26 @@ export default class extends Controller {
       method = 'PATCH'
     }
 
-    fetch(url, {
+    const doFetch = () => fetch(url, {
       method,
       headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
       body: formData,
     })
+
+    doFetch()
       .then((response) => {
         if (response.ok) return response.text()
+        // On 422, the CSRF token may have gone stale (e.g. after an OS
+        // window switch).  Refresh the token and retry once before giving up.
+        if (response.status === 422 && !this._hasRetried) {
+          this._hasRetried = true
+          return refreshCsrfToken().then(() => doFetch()).then((retryResp) => {
+            if (retryResp.ok) return retryResp.text()
+            return retryResp.json().then((json) => {
+              throw new Error(json.errors?.join(', ') || 'Unable to save comment')
+            })
+          })
+        }
         return response.json().then((json) => {
           throw new Error(json.errors?.join(', ') || 'Unable to save comment')
         })
@@ -305,6 +319,7 @@ export default class extends Controller {
         alert(error?.message || 'Failed to submit comment')
       })
       .finally(() => {
+        this._hasRetried = false
         this.setSendingState(false)
       })
   }
@@ -647,13 +662,24 @@ export default class extends Controller {
     }
 
     const url = `/creatives/${this.creativeId}/comments`
-    fetch(url, {
+    const doFetch = () => fetch(url, {
       method: 'POST',
       headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
       body: formData,
     })
+
+    doFetch()
       .then((response) => {
         if (response.ok) return response.text()
+        if (response.status === 422 && !this._hasRetried) {
+          this._hasRetried = true
+          return refreshCsrfToken().then(() => doFetch()).then((retryResp) => {
+            if (retryResp.ok) return retryResp.text()
+            return retryResp.json().then((json) => {
+              throw new Error(json.errors?.join(', ') || 'Unable to save comment')
+            })
+          })
+        }
         return response.json().then((json) => {
           throw new Error(json.errors?.join(', ') || 'Unable to save comment')
         })
@@ -673,6 +699,7 @@ export default class extends Controller {
         alert(error?.message || 'Failed to send question')
       })
       .finally(() => {
+        this._hasRetried = false
         this.sending = false
       })
 

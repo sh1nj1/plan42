@@ -3,6 +3,7 @@ import { copyTextToClipboard } from '../../utils/clipboard'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
+import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
 export default class extends Controller {
@@ -242,6 +243,10 @@ export default class extends Controller {
       urlParams.set('topic_id', this.currentTopicId)
     }
     return fetch(`/creatives/${this.creativeId}/comments?${urlParams.toString()}`).then((response) => {
+      // Keep the CSRF meta tag in sync with the session cookie.
+      // This is critical after the browser returns from a background/frozen state.
+      updateCsrfTokenFromResponse(response)
+
       const serverTopicId = response.headers.get("X-Topic-Id")
       if (serverTopicId !== null && serverTopicId !== undefined) {
         // Server says we are in this topic. 
