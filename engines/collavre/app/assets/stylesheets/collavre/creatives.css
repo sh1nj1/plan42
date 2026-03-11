@@ -611,25 +611,71 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     background: var(--color-brand);
 }
 
-/* Metadata popup styles */
+/* Metadata popup styles — mirrors #comments-popup positioning */
 .metadata-popup {
     position: absolute;
-    bottom: 100%;
-    left: 0;
-    z-index: 100;
-    background: var(--surface-1, #fff);
-    border: 1px solid var(--surface-3, #ddd);
-    border-radius: var(--radius-2, 8px);
-    padding: var(--space-3, 12px);
-    box-shadow: var(--shadow-3, 0 4px 12px rgba(0,0,0,0.15));
-    min-width: 300px;
-    max-width: 500px;
+    right: 2em;
+    z-index: var(--layer-modal);
+    width: 400px;
+    max-width: calc(100vw - 1em);
+    max-height: 60vh;
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-3);
+    padding: var(--space-3);
+    box-shadow: var(--shadow-3);
+    display: flex;
+    flex-direction: column;
 }
 
 .metadata-popup-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: var(--space-2, 8px);
-    font-weight: var(--weight-6, 600);
+    margin-bottom: var(--space-2);
+    font-weight: var(--weight-6);
+    color: var(--text-primary);
+}
+
+.metadata-popup-header button {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: var(--text-3);
+    color: var(--text-muted);
+    padding: 0;
+    line-height: 1;
+}
+
+.metadata-popup-header button:hover {
+    color: var(--text-primary);
+}
+
+#metadata-yaml-editor {
+    flex: 1;
+    width: 100%;
+    min-height: 200px;
+    box-sizing: border-box;
+    font-family: var(--font-mono);
+    font-size: var(--text-0);
+    line-height: var(--leading-2);
+    padding: var(--space-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2);
+    background: var(--surface-input);
+    color: var(--text-primary);
+    resize: vertical;
+}
+
+#metadata-save-btn {
+    margin-top: var(--space-2);
+    align-self: flex-end;
+}
+
+@media (max-width: 768px) {
+    .metadata-popup {
+        right: 0.5em;
+        left: 0.5em;
+        width: auto;
+    }
 }
