@@ -34,8 +34,10 @@ export default class extends Controller {
     this.handleWindowFocus = this.handleWindowFocus.bind(this)
     this.handleVisibilityChange = this.handleVisibilityChange.bind(this)
     this.handlePopState = this.handlePopState.bind(this)
+    this.handlePopupWheel = this.handlePopupWheel.bind(this)
 
     document.addEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
+    this.element.addEventListener('wheel', this.handlePopupWheel, { passive: false })
     window.addEventListener('online', this.handleOnline)
     window.addEventListener('focus', this.handleWindowFocus)
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
@@ -90,6 +92,7 @@ export default class extends Controller {
   disconnect() {
     this.clearPendingOpenFromUrl()
     document.removeEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
+    this.element.removeEventListener('wheel', this.handlePopupWheel)
     window.removeEventListener('online', this.handleOnline)
     window.removeEventListener('focus', this.handleWindowFocus)
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
@@ -158,7 +161,6 @@ export default class extends Controller {
 
     this.showPopup()
     this.updatePosition()
-    document.body.classList.add('no-scroll')
 
     await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
 
@@ -257,7 +259,6 @@ export default class extends Controller {
     this.element.style.top = ''
     this.element.style.bottom = ''
     delete this.element.dataset.resized
-    document.body.classList.remove('no-scroll')
   }
 
   prepareSize() {
@@ -294,12 +295,10 @@ export default class extends Controller {
   updatePosition() {
     if (this.isFullscreen() || !this.currentButton || this.isMobile() || this.element.dataset.resized === 'true') return
     const rect = this.currentButton.getBoundingClientRect()
-    const scrollY = window.scrollY || window.pageYOffset
-    let top = rect.bottom + scrollY + 4
+    let top = rect.bottom + 4
     const bottom = top + this.element.offsetHeight
-    const viewportBottom = scrollY + window.innerHeight
-    if (bottom > viewportBottom) {
-      top = Math.max(scrollY + 4, viewportBottom - this.element.offsetHeight - 4)
+    if (bottom > window.innerHeight) {
+      top = Math.max(4, window.innerHeight - this.element.offsetHeight - 4)
     }
     this.element.style.top = `${top}px`
     this.element.style.right = `${window.innerWidth - rect.right + 24}px`
@@ -313,8 +312,8 @@ export default class extends Controller {
     this.resizeStartY = event.clientY
     this.startWidth = rect.width
     this.startHeight = rect.height
-    this.startLeft = rect.left + window.scrollX
-    this.startTop = rect.top + window.scrollY
+    this.startLeft = rect.left
+    this.startTop = rect.top
     this.startBottom = this.startTop + this.startHeight
     // this.reservedHeight = this.computeReservedHeight()
     this.element.style.left = `${this.startLeft}px`
@@ -410,6 +409,32 @@ export default class extends Controller {
   handleVisibilityChange() {
     if (!document.hidden && this.element.style.display === 'flex') {
       this.listController?.loadInitialComments()
+    }
+  }
+
+  // Prevent wheel events on the popup from scrolling the background creative list
+  handlePopupWheel(event) {
+    if (this.isFullscreen()) return // fullscreen already blocks body scroll via CSS
+
+    if (!this.hasListTarget) {
+      event.preventDefault()
+      return
+    }
+
+    const { scrollTop, scrollHeight, clientHeight } = this.listTarget
+    const isScrollingDown = event.deltaY > 0
+    const atTop = scrollTop <= 0
+    const atBottom = scrollTop + clientHeight >= scrollHeight - 1
+
+    // If the scrollable area has no overflow, or we're at the boundary, block propagation
+    if (scrollHeight <= clientHeight) {
+      event.preventDefault()
+      return
+    }
+
+    // At boundaries, prevent the event from reaching the background
+    if ((isScrollingDown && atBottom) || (!isScrollingDown && atTop)) {
+      event.preventDefault()
     }
   }
 
@@ -545,17 +570,13 @@ export default class extends Controller {
       }
 
       // Desktop: animated exit to target position
-      // Calculate target position using the same logic as updatePosition()
-      // so cleanup can apply it directly without calling updatePosition() (which would cause a snap)
-      const scrollY = window.scrollY || window.pageYOffset
-
-      // Final absolute-position values (what updatePosition would set)
-      let finalTop = ''      // px string with scrollY included
+      // Calculate target position using viewport-relative coords (popup is position: fixed)
+      let finalTop = ''      // px string (viewport-relative)
       let finalRight = ''    // px string
       let finalWidth = savedStyles?.width || ''
       let finalHeight = savedStyles?.height || ''
 
-      // Fixed-position animation targets (viewport-relative)
+      // Animation targets (viewport-relative, same as final since popup is fixed)
       let animTop, animLeft, animWidth, animHeight
 
       // Try to find the comment button for precise positioning
@@ -563,6 +584,15 @@ export default class extends Controller {
       if (!targetButton && creativeId) {
         const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
         targetButton = row?.querySelector('.comments-btn')
+      }
+
+      // Scroll the creative row into view instantly BEFORE calculating positions,
+      // so getBoundingClientRect returns viewport-visible coordinates
+      if (targetButton) {
+        const row = targetButton.closest('creative-tree-row')
+        if (row) {
+          row.scrollIntoView({ behavior: 'instant', block: 'center' })
+        }
       }
 
       if (targetButton) {
@@ -573,28 +603,25 @@ export default class extends Controller {
         animWidth = parseFloat(finalWidth) || 420
         animHeight = parseFloat(finalHeight) || 640
 
-        // Calculate top in absolute coords (with scrollY) — same as updatePosition
-        let absTop = btnRect.bottom + scrollY + 4
-        const absBottom = absTop + animHeight
-        const viewportBottom = scrollY + window.innerHeight
-        if (absBottom > viewportBottom) {
-          absTop = Math.max(scrollY + 4, viewportBottom - animHeight - 4)
+        // Calculate top in viewport coords — same as updatePosition
+        let top = btnRect.bottom + 4
+        const bottom = top + animHeight
+        if (bottom > window.innerHeight) {
+          top = Math.max(4, window.innerHeight - animHeight - 4)
         }
 
-        // Store final absolute-position values for cleanup
-        finalTop = `${absTop}px`
+        finalTop = `${top}px`
         finalRight = `${rightPx}px`
 
-        // Convert to fixed coordinates for animation
-        animTop = absTop - scrollY
+        animTop = top
         animLeft = window.innerWidth - rightPx - animWidth
       } else if (savedStyles && Object.values(savedStyles).some(v => v)) {
-        // Fallback to saved styles
+        // Fallback to saved styles (already viewport-relative since popup is fixed)
         const rightVal = parseFloat(savedStyles.right) || 32
         animWidth = parseFloat(savedStyles.width) || 420
         animHeight = parseFloat(savedStyles.height) || 640
         animLeft = savedStyles.left ? parseFloat(savedStyles.left) : (window.innerWidth - rightVal - animWidth)
-        animTop = parseFloat(savedStyles.top) ? (parseFloat(savedStyles.top) - scrollY) : 100
+        animTop = parseFloat(savedStyles.top) || 100
 
         finalTop = savedStyles.top || ''
         finalRight = savedStyles.right || ''
@@ -634,14 +661,12 @@ export default class extends Controller {
 
       const cleanup = () => {
         el.removeEventListener('transitionend', cleanup)
-        // Switch from fixed back to default (absolute) positioning
-        // Apply the pre-calculated absolute coords directly — no updatePosition() needed
+        // Popup is always position: fixed — just apply final coords
         el.style.transition = 'none'
         el.style.position = ''
         el.style.bottom = ''
 
         if (targetButton) {
-          // Set absolute coords matching updatePosition output
           el.style.top = finalTop
           el.style.right = finalRight
           el.style.left = ''
@@ -681,13 +706,6 @@ export default class extends Controller {
       }
       this._previousUrl = null
 
-      // Scroll the selected creative row into view after exiting fullscreen
-      if (creativeId) {
-        requestAnimationFrame(() => {
-          const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
-          row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        })
-      }
     }
 
     // Scroll to bottom after layout change
