@@ -7,6 +7,7 @@ export default class extends Controller {
     connect() {
         this.topics = []
         this.canManageTopics = false
+        this.canCreateTopic = false
         this.subscribedCreativeId = null
         this.topicsSubscription = null
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
@@ -62,9 +63,11 @@ export default class extends Controller {
                 const data = await response.json()
                 const topics = Array.isArray(data) ? data : data.topics
                 const canManage = Array.isArray(data) ? false : data.can_manage
+                const canCreateTopic = Array.isArray(data) ? false : (data.can_create_topic ?? canManage)
                 this.topics = topics
                 this.canManageTopics = canManage
-                this.renderTopics(this.topics, this.canManageTopics)
+                this.canCreateTopic = canCreateTopic
+                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
                 this.restoreSelection()
             }
         } catch (e) {
@@ -88,7 +91,7 @@ export default class extends Controller {
         }
     }
 
-    renderTopics(topics, canManage = false) {
+    renderTopics(topics, canManage = false, canCreateTopic = canManage) {
         const dragActions = canManage
             ? 'dragstart->comments--topics#handleTopicDragStart dragend->comments--topics#handleTopicDragEnd'
             : ''
@@ -117,8 +120,8 @@ export default class extends Controller {
             html += `</span>`
         })
 
-        // Add create button container
-        if (canManage) {
+        // Add create button container (write permission is sufficient for topic creation)
+        if (canCreateTopic) {
             html += `<span class="topic-creation-container" data-comments--topics-target="creationContainer">
                   <button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>
                  </span>`
@@ -258,7 +261,7 @@ export default class extends Controller {
 
         // Update local state and UI immediately
         this.topics = topics
-        this.renderTopics(topics, this.canManageTopics)
+        this.renderTopics(topics, this.canManageTopics, this.canCreateTopic)
         this.restoreSelection()
 
         // Send to server
@@ -454,7 +457,7 @@ export default class extends Controller {
                 if (index !== -1) {
                     this.topics[index] = updatedTopic
                 }
-                this.renderTopics(this.topics, this.canManageTopics)
+                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
                 this.restoreSelection()
             } else {
                 alert("Failed to update topic")
@@ -622,7 +625,7 @@ export default class extends Controller {
         if (exists) return
 
         this.topics = [...topics, data.topic]
-        this.renderTopics(this.topics, this.canManageTopics)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
         this.restoreSelection()
     }
 
@@ -643,7 +646,7 @@ export default class extends Controller {
         })
 
         this.topics = reorderedTopics
-        this.renderTopics(this.topics, this.canManageTopics)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
         this.restoreSelection()
     }
 
@@ -653,7 +656,7 @@ export default class extends Controller {
         if (index === -1) return
 
         this.topics[index] = updatedTopic
-        this.renderTopics(this.topics, this.canManageTopics)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
         this.restoreSelection()
     }
 
@@ -670,7 +673,7 @@ export default class extends Controller {
             this.dispatch("change", { detail: { topicId: "" } })
         }
 
-        this.renderTopics(this.topics, this.canManageTopics)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
         this.restoreSelection()
     }
 }
