@@ -611,21 +611,26 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     background: var(--color-brand);
 }
 
-/* Data YAML editor */
+/* Data YAML editor — matches Lexical editor layout */
 .data-yaml-editor {
   width: 100%;
   min-height: 120px;
-  padding: 0.5em;
+  padding: var(--space-2, 0.5em);
+  margin: 0;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   font-size: 0.85em;
-  line-height: 1.4;
-  border: 1px solid var(--surface-3, #ddd);
-  border-radius: var(--radius-2, 4px);
+  line-height: 1.5;
+  background: var(--surface-section, var(--surface-bg, #fff));
+  border: none;
+  border-radius: 8px;
   resize: vertical;
   tab-size: 2;
   white-space: pre;
   overflow-wrap: normal;
   overflow-x: auto;
+  outline: none;
+  color: var(--text-1, #333);
+  box-sizing: border-box;
 }
 
 /* Editor mode toggle */

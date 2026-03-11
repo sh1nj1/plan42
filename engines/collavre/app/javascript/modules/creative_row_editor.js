@@ -296,12 +296,15 @@ export function initializeCreativeRowEditor() {
       if (kindInput) kindInput.value = currentKind || '';
       if (dataInput) dataInput.value = data.data ? JSON.stringify(data.data) : '';
 
-      // Reset to html mode on load
-      setEditorMode('html');
+      // Auto-select editor mode: non-html kinds default to data (YAML) mode
+      const isHtmlKind = !currentKind || currentKind === 'json';
+      setEditorMode(isHtmlKind ? 'html' : 'data');
 
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
-      lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
+      if (isHtmlKind) {
+        lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
+      }
       pendingSave = false;
       // Track original content for dirty state detection
       originalContent = content;
