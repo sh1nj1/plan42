@@ -310,6 +310,10 @@ export function initializeCreativeRowEditor() {
       originalProgress = normalizedProgress;
       lexicalEditor.focus();
       updateActionButtonStates();
+      // Reload metadata if the popup is open
+      if (isMetadataPopupVisible()) {
+        loadMetadataForCreative(creativeId);
+      }
     }
 
     function siblingTreeRow(row, direction) {
@@ -1933,25 +1937,36 @@ export function initializeCreativeRowEditor() {
     }
 
     // Metadata editor handlers
+    function loadMetadataForCreative(creativeId) {
+      if (!creativeId || !metadataPopup || !metadataEditor) return;
+      creativesApi.get(creativeId)
+        .then(function (data) {
+          const metadataObj = data.data || {};
+          const yamlStr = yaml.dump(metadataObj, { lineWidth: -1 });
+          metadataEditor.value = yamlStr;
+        })
+        .catch(function (error) {
+          console.error('Failed to load metadata:', error);
+          alert('Failed to load metadata');
+        });
+    }
+
+    function isMetadataPopupVisible() {
+      return metadataPopup && metadataPopup.style.display !== 'none';
+    }
+
     if (metadataBtn && metadataPopup && metadataEditor) {
       metadataBtn.addEventListener('click', function () {
         const creativeId = form.dataset.creativeId;
         if (!creativeId) return;
 
-        // Fetch the creative's data via API
-        creativesApi.get(creativeId)
-          .then(function (data) {
-            const metadataObj = data.data || {};
-            // Convert JSON to YAML string
-            const yamlStr = yaml.dump(metadataObj, { lineWidth: -1 });
-            metadataEditor.value = yamlStr;
-            // Show popup
-            metadataPopup.style.display = 'block';
-          })
-          .catch(function (error) {
-            console.error('Failed to load metadata:', error);
-            alert('Failed to load metadata');
-          });
+        if (isMetadataPopupVisible()) {
+          metadataPopup.style.display = 'none';
+          return;
+        }
+
+        loadMetadataForCreative(creativeId);
+        metadataPopup.style.display = 'block';
       });
 
       if (metadataCloseBtn) {
