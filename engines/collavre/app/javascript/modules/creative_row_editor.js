@@ -104,12 +104,12 @@ export function initializeCreativeRowEditor() {
     const dataInput = document.getElementById('inline-creative-data');
 
     // Data YAML editor + mode toggle
-    const dataYamlEditor = document.getElementById('data-yaml-editor');
     const editorModeHtmlBtn = document.getElementById('editor-mode-html');
     const editorModeDataBtn = document.getElementById('editor-mode-data');
     const kindInputField = document.getElementById('inline-kind-input');
     const editorModeInput = document.getElementById('inline-editor-mode');
     let editorMode = 'html'; // 'html' or 'data'
+    let savedHtmlBeforeDataMode = ''; // preserve HTML when switching to data mode
 
     let currentKind = null; // Track the kind of the currently edited creative
     let lexicalEditor = null;
@@ -956,7 +956,7 @@ export function initializeCreativeRowEditor() {
 
         // Ensure YAML data is synced before saving
         if (editorMode === 'data') {
-          syncYamlToDataInput();
+          syncYamlFromLexical();
         }
 
         const method = methodInput.value === 'patch' ? 'PATCH' : 'POST';
@@ -1682,17 +1682,26 @@ export function initializeCreativeRowEditor() {
 
     // Editor mode toggle: html (Lexical) vs data (YAML textarea)
     function setEditorMode(mode) {
+      const previousMode = editorMode;
       editorMode = mode;
       if (editorModeInput) editorModeInput.value = mode;
+
       if (mode === 'data') {
-        // Show YAML editor + kind input, hide Lexical
-        if (editorContainer) editorContainer.style.display = 'none';
-        if (dataYamlEditor) {
-          dataYamlEditor.style.display = '';
-          // Load current data as YAML
-          const currentData = dataInput?.value ? JSON.parse(dataInput.value || '{}') : {};
-          dataYamlEditor.value = yaml.dump(currentData, { indent: 2, lineWidth: -1 });
+        // Save current HTML before switching so we can restore it
+        if (previousMode === 'html') {
+          savedHtmlBeforeDataMode = descriptionInput.value || '';
         }
+        // Hide toolbar
+        if (editorContainer) {
+          editorContainer.classList.add('data-mode');
+        }
+        // Load data as YAML into Lexical (plain text)
+        const currentData = dataInput?.value ? JSON.parse(dataInput.value || '{}') : {};
+        const yamlText = yaml.dump(currentData, { indent: 2, lineWidth: -1 });
+        if (lexicalEditor) {
+          lexicalEditor.loadPlainText(yamlText);
+        }
+        // Show kind input
         if (kindInputField) {
           kindInputField.style.display = '';
           kindInputField.value = currentKind || '';
@@ -1700,9 +1709,19 @@ export function initializeCreativeRowEditor() {
         if (editorModeHtmlBtn) editorModeHtmlBtn.classList.remove('active');
         if (editorModeDataBtn) editorModeDataBtn.classList.add('active');
       } else {
-        // Show Lexical, hide YAML editor + kind input
-        if (editorContainer) editorContainer.style.display = '';
-        if (dataYamlEditor) dataYamlEditor.style.display = 'none';
+        // Sync YAML back to data input before switching
+        if (previousMode === 'data') {
+          syncYamlFromLexical();
+        }
+        // Show toolbar
+        if (editorContainer) {
+          editorContainer.classList.remove('data-mode');
+        }
+        // Restore HTML content
+        if (lexicalEditor && savedHtmlBeforeDataMode) {
+          lexicalEditor.load(savedHtmlBeforeDataMode);
+        }
+        // Hide kind input
         if (kindInputField) kindInputField.style.display = 'none';
         if (editorModeHtmlBtn) editorModeHtmlBtn.classList.add('active');
         if (editorModeDataBtn) editorModeDataBtn.classList.remove('active');
@@ -1712,10 +1731,6 @@ export function initializeCreativeRowEditor() {
     // Bind toggle buttons
     if (editorModeHtmlBtn) {
       editorModeHtmlBtn.addEventListener('click', () => {
-        if (editorMode === 'data') {
-          // Save YAML back to data input before switching
-          syncYamlToDataInput();
-        }
         setEditorMode('html');
       });
     }
@@ -1723,28 +1738,19 @@ export function initializeCreativeRowEditor() {
       editorModeDataBtn.addEventListener('click', () => setEditorMode('data'));
     }
 
-    // Sync YAML textarea content to data hidden input
-    function syncYamlToDataInput() {
-      if (!dataYamlEditor || !dataInput) return;
+    // Sync YAML from Lexical plain text to data hidden input
+    function syncYamlFromLexical() {
+      if (!lexicalEditor || !dataInput) return;
       try {
-        const parsed = yaml.load(dataYamlEditor.value);
+        const yamlText = lexicalEditor.getPlainText();
+        const parsed = yaml.load(yamlText);
         if (parsed && typeof parsed === 'object') {
           dataInput.value = JSON.stringify(parsed);
-          // Auto-set kind if not set
           if (kindInput && !kindInput.value) kindInput.value = currentKind || '';
         }
       } catch (e) {
         console.warn('YAML parse error:', e.message);
       }
-    }
-
-    // Auto-save on YAML editor changes
-    if (dataYamlEditor) {
-      dataYamlEditor.addEventListener('input', () => {
-        syncYamlToDataInput();
-        isDirty = true;
-        scheduleSave();
-      });
     }
 
     // Sync kind input field to hidden kindInput
@@ -1759,6 +1765,15 @@ export function initializeCreativeRowEditor() {
     }
 
     function onLexicalChange(html) {
+      if (editorMode === 'data') {
+        // In data mode, Lexical contains YAML plain text → sync to data input
+        syncYamlFromLexical();
+        isDirty = true;
+        scheduleSave();
+        return;
+      }
+
+      // HTML mode — normal rich text behavior
       descriptionInput.value = html;
       // For kind=null or kind=json, store Lexical raw JSON in data
       // Merge with existing data to preserve context_ids etc.

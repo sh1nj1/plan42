@@ -17,7 +17,7 @@
          data-direct-upload-url="<%= main_app.rails_direct_uploads_url %>"
          data-blob-url-template="<%= main_app.rails_service_blob_url(':signed_id', ':filename') %>"
          data-placeholder="<%= t('collavre.creatives.inline_editor.placeholder') %>"></div>
-    <textarea id="data-yaml-editor" class="data-yaml-editor" style="display:none;" spellcheck="false"></textarea>
+    <%# Data mode reuses the Lexical editor (toolbar hidden, plain text YAML) %>
     <div id="actions-inline-editor" style="padding: 0px 8px;">
       <div style="margin-top:0.5em;display:flex;align-items:center;gap:0.5em;">
         <input type="hidden" name="creative[progress]" value="0">

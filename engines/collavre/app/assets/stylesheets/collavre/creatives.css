@@ -612,25 +612,16 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 }
 
 /* Data YAML editor — matches Lexical editor layout */
-.data-yaml-editor {
-  width: 100%;
-  min-height: 120px;
-  padding: var(--space-2, 0.5em);
-  margin: 0;
+/* Data mode: hide toolbar, use monospace font in Lexical */
+.data-mode .lexical-toolbar {
+  display: none !important;
+}
+.data-mode .lexical-content-editable {
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   font-size: 0.85em;
   line-height: 1.5;
-  background: var(--surface-section, var(--surface-bg, #fff));
-  border: none;
-  border-radius: 8px;
-  resize: vertical;
   tab-size: 2;
-  white-space: pre;
-  overflow-wrap: normal;
-  overflow-x: auto;
-  outline: none;
-  color: var(--text-1, #333);
-  box-sizing: border-box;
+  white-space: pre-wrap;
 }
 
 /* Editor mode toggle */

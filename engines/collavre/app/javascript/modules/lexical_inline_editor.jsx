@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client"
-import { $getRoot } from "lexical"
+import { $getRoot, $createParagraphNode, $createTextNode } from "lexical"
 import InlineLexicalEditor from "../components/InlineLexicalEditor"
 
 const DEFAULT_KEY = "creative-inline-editor"
@@ -134,6 +134,30 @@ export function createInlineEditor(container, {
       } catch (_) {
         return null
       }
+    },
+    getPlainText() {
+      if (!editorInstance) return ''
+      let text = ''
+      editorInstance.getEditorState().read(() => {
+        text = $getRoot().getTextContent()
+      })
+      return text
+    },
+    loadPlainText(text) {
+      if (!editorInstance) return
+      editorInstance.update(() => {
+        const root = $getRoot()
+        root.clear()
+        const lines = (text || '').split('\n')
+        lines.forEach(line => {
+          const paragraph = $createParagraphNode()
+          paragraph.append($createTextNode(line))
+          root.append(paragraph)
+        })
+      })
+    },
+    getEditor() {
+      return editorInstance
     }
   }
 }
