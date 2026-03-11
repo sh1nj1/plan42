@@ -161,7 +161,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       email: "mybot@ai.local",
       password: "password",
       llm_vendor: "google",
-      llm_model: "gemini-2.5-flash",
+      llm_model: "gemini-3-flash-preview",
       system_prompt: "You are a bot.",
       created_by_id: @regular_user.id,
       email_verified_at: Time.current
@@ -191,7 +191,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       email: "mybot2@ai.local",
       password: "password",
       llm_vendor: "google",
-      llm_model: "gemini-2.5-flash",
+      llm_model: "gemini-3-flash-preview",
       system_prompt: "You are a bot.",
       created_by_id: creator.id,
       email_verified_at: Time.current
@@ -220,7 +220,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       email: "agent-delete@ai.local",
       password: "password",
       llm_vendor: "google",
-      llm_model: "gemini-2.5-flash",
+      llm_model: "gemini-3-flash-preview",
       system_prompt: "Bot",
       created_by_id: target_user.id,
       email_verified_at: Time.current
@@ -249,7 +249,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       email: "unassigned-bot@ai.local",
       password: "password",
       llm_vendor: "google",
-      llm_model: "gemini-2.5-flash",
+      llm_model: "gemini-3-flash-preview",
       system_prompt: "You are a bot.",
       created_by_id: @admin.id,
       email_verified_at: Time.current
@@ -360,7 +360,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       email: "mybot3@ai.local",
       password: "password",
       llm_vendor: "google",
-      llm_model: "gemini-2.5-flash",
+      llm_model: "gemini-3-flash-preview",
       system_prompt: "You are a bot.",
       created_by_id: @regular_user.id,
       email_verified_at: Time.current
@@ -390,7 +390,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       email: "otherbot@ai.local",
       password: "password",
       llm_vendor: "google",
-      llm_model: "gemini-2.5-flash",
+      llm_model: "gemini-3-flash-preview",
       system_prompt: "You are a bot.",
       created_by_id: creator.id,
       email_verified_at: Time.current

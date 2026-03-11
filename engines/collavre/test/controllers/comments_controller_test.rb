@@ -519,7 +519,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
       email: "aibot@ai.local",
       password: SecureRandom.hex(32),
       llm_vendor: "google",
-      llm_model: "gemini-2.5-flash",
+      llm_model: "gemini-3-flash-preview",
       system_prompt: "I am a bot",
       email_verified_at: Time.current
     )

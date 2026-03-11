@@ -86,7 +86,7 @@ module Collavre
     end
 
     def default_model
-      "gemini-2.5-flash"
+      "gemini-3-flash-preview"
     end
   end
 end
