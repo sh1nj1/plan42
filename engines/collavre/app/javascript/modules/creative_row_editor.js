@@ -948,9 +948,14 @@ export function initializeCreativeRowEditor() {
         if (saving) return savePromise;
         clearTimeout(saveTimer);
 
-        if (isHtmlEmpty(descriptionInput.value)) {
+        if (isHtmlEmpty(descriptionInput.value) && !(editorMode === 'data' && dataInput && dataInput.value)) {
           pendingSave = false;
           return Promise.resolve();
+        }
+
+        // Ensure YAML data is synced before saving
+        if (editorMode === 'data') {
+          syncYamlToDataInput();
         }
 
         const method = methodInput.value === 'patch' ? 'PATCH' : 'POST';
