@@ -1737,10 +1737,14 @@ export function initializeCreativeRowEditor() {
     function onLexicalChange(html) {
       descriptionInput.value = html;
       // For kind=null or kind=json, store Lexical raw JSON in data
+      // Merge with existing data to preserve context_ids etc.
       if (!currentKind || currentKind === 'json') {
         const editorStateJSON = lexicalEditor?.getEditorStateJSON?.();
         if (editorStateJSON && dataInput) {
+          let existingData = {};
+          try { existingData = JSON.parse(dataInput.value || '{}'); } catch (e) { /* ignore */ }
           dataInput.value = JSON.stringify({
+            ...existingData,
             format: 'lexical',
             content: editorStateJSON
           });
