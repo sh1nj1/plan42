@@ -105,15 +105,19 @@
             <%# Column 1: Invitation info %>
             <div class="org-chart-member-info">
               <div class="avatar-wrapper" style="width: 24px; height: 24px;">
-                <%= image_tag asset_path("default_avatar.svg"),
-                    alt: '', width: 24, height: 24,
-                    class: 'avatar',
-                    title: invitation.email,
-                    style: 'border-radius:50%;vertical-align:middle;' %>
-                <span class="avatar-initial" style="font-size: 12px;"><%= invitation.email[0].upcase %></span>
+                <% if invitation.email.present? %>
+                  <%= image_tag asset_path("default_avatar.svg"),
+                      alt: '', width: 24, height: 24,
+                      class: 'avatar',
+                      title: invitation.email,
+                      style: 'border-radius:50%;vertical-align:middle;' %>
+                  <span class="avatar-initial" style="font-size: 12px;"><%= invitation.email[0]&.upcase %></span>
+                <% else %>
+                  <span class="avatar" style="display:inline-block;width:24px;height:24px;border-radius:50%;background:var(--surface-3,#ddd);text-align:center;line-height:24px;font-size:12px;">🔗</span>
+                <% end %>
               </div>
               <div class="org-chart-member-name-group">
-                <span class="org-chart-member-email"><%= invitation.email %></span>
+                <span class="org-chart-member-email"><%= invitation.email.presence || t('collavre.creatives.share.public_invite') %></span>
                 <span class="org-chart-pending-badge"><%= t('collavre.contacts.org_chart.pending_status') %></span>
               </div>
             </div>
@@ -136,7 +140,7 @@
               <%= button_to t('collavre.contacts.org_chart.cancel_invite'),
                   collavre.creative_invitation_path(effective, invitation),
                   method: :delete,
-                  form: { data: { turbo_confirm: t('collavre.contacts.org_chart.cancel_invite_confirm', email: invitation.email) } },
+                  form: { data: { turbo_confirm: t('collavre.contacts.org_chart.cancel_invite_confirm', email: invitation.email.presence || t('collavre.creatives.share.public_invite')) } },
                   class: "btn btn-xs btn-danger" %>
             </div>
           </div>

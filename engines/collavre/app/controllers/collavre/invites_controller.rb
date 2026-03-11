@@ -8,7 +8,8 @@ module Collavre
       permission = params[:permission] || :read
       invitation = Invitation.create!(inviter: Current.user,
                                       creative: creative,
-                                      permission: permission)
+                                      permission: permission,
+                                      email: params[:email].presence)
       render json: { url: invite_url(token: invitation.generate_token_for(:invite)) }
     end
 
