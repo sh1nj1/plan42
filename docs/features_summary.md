@@ -21,6 +21,7 @@
 ### Creative Edit
 *   **Inline Editing**: Edit text directly on the page.
 *   **Rich Text**: Support for styling and formatting.
+*   **Metadata Editor**: Edit creative's `data` JSON as YAML via popup. Toggle with `{ }` button next to completion checkbox. Auto-reloads on navigation. Requires write permission.
 
 ### Linked Creative
 *   **Origin Linking**: A creative involves an origin_id can be placed in multiple locations.
