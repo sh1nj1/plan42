@@ -96,6 +96,7 @@ body.chat-fullscreen {
 #comments-list {
     padding-top: 0.5em;
     overflow-y: auto;
+    overscroll-behavior: contain;
     /* height: 380px; */
     flex-grow: 1;
     /* align to vertical bottom */

@@ -34,8 +34,10 @@ export default class extends Controller {
     this.handleWindowFocus = this.handleWindowFocus.bind(this)
     this.handleVisibilityChange = this.handleVisibilityChange.bind(this)
     this.handlePopState = this.handlePopState.bind(this)
+    this.handlePopupWheel = this.handlePopupWheel.bind(this)
 
     document.addEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
+    this.element.addEventListener('wheel', this.handlePopupWheel, { passive: false })
     window.addEventListener('online', this.handleOnline)
     window.addEventListener('focus', this.handleWindowFocus)
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
@@ -90,6 +92,7 @@ export default class extends Controller {
   disconnect() {
     this.clearPendingOpenFromUrl()
     document.removeEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
+    this.element.removeEventListener('wheel', this.handlePopupWheel)
     window.removeEventListener('online', this.handleOnline)
     window.removeEventListener('focus', this.handleWindowFocus)
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
@@ -406,6 +409,33 @@ export default class extends Controller {
   handleVisibilityChange() {
     if (!document.hidden && this.element.style.display === 'flex') {
       this.listController?.loadInitialComments()
+    }
+  }
+
+  // Prevent wheel events on the popup from scrolling the background creative list
+  handlePopupWheel(event) {
+    if (this.isFullscreen()) return // fullscreen already blocks body scroll via CSS
+
+    const scrollable = this.element.querySelector('#comments-list')
+    if (!scrollable) {
+      event.preventDefault()
+      return
+    }
+
+    const { scrollTop, scrollHeight, clientHeight } = scrollable
+    const isScrollingDown = event.deltaY > 0
+    const atTop = scrollTop <= 0
+    const atBottom = scrollTop + clientHeight >= scrollHeight - 1
+
+    // If the scrollable area has no overflow, or we're at the boundary, block propagation
+    if (scrollHeight <= clientHeight) {
+      event.preventDefault()
+      return
+    }
+
+    // At boundaries, prevent the event from reaching the background
+    if ((isScrollingDown && atBottom) || (!isScrollingDown && atTop)) {
+      event.preventDefault()
     }
   }
 
