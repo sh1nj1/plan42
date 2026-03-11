@@ -292,7 +292,7 @@ module Collavre
 
     def update_metadata
       creative = @creative.effective_origin(Set.new)
-      unless creative.has_permission?(Current.user, :admin)
+      unless creative.has_permission?(Current.user, :write)
         render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
         return
       end
