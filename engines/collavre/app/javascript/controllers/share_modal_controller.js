@@ -4,18 +4,15 @@ export default class extends Controller {
   static targets = ["container"]
 
   connect() {
-    // Create global container appended to body for proper z-index stacking
     if (!this.hasContainerTarget) {
       this.globalContainer = document.createElement("div")
       this.globalContainer.dataset.shareModalTarget = "container"
       document.body.appendChild(this.globalContainer)
     }
 
-    // Listen for escape key
     this.handleKeydown = this.handleKeydown.bind(this)
     document.addEventListener("keydown", this.handleKeydown)
 
-    // Check for open_share query param
     this.checkOpenShareParam()
   }
 
@@ -95,24 +92,17 @@ export default class extends Controller {
     modal.style.display = "flex"
     document.body.classList.add("no-scroll")
 
-    // Bind close button
     const closeBtn = document.getElementById("close-share-modal")
     if (closeBtn) {
       closeBtn.onclick = () => this.close()
     }
 
-    // Close on backdrop click
     modal.onclick = (e) => {
       if (e.target === modal) this.close()
     }
 
-    // Intercept share form submit
     this.#initializeForm()
-
-    // Intercept all delete forms (share delete + invitation cancel)
-    this.#initializeDeleteForms()
-
-    // Initialize invite link button
+    this.#initializeDeleteButtons()
     this.#initializeInviteLink()
   }
 
@@ -123,8 +113,18 @@ export default class extends Controller {
     form.addEventListener("submit", (e) => {
       e.preventDefault()
       const formData = new FormData(form)
+      const email = formData.get("user_email")
+      const permission = formData.get("permission")
       const submitBtn = form.querySelector("button[type='submit']")
       if (submitBtn) submitBtn.disabled = true
+
+      // Optimistic UI: add a pending entry immediately
+      const pendingEl = this.#addPendingEntry(email, permission)
+
+      // Clear the email input
+      const emailInput = form.querySelector("#share-user-email")
+      if (emailInput) emailInput.value = ""
+      if (submitBtn) submitBtn.disabled = false
 
       fetch(form.action, {
         method: "POST",
@@ -136,37 +136,82 @@ export default class extends Controller {
       })
         .then(r => r.json().then(data => ({ status: r.status, data })))
         .then(({ status, data }) => {
+          // Remove pending entry
+          if (pendingEl) pendingEl.remove()
+
           if (status >= 200 && status < 300) {
             this.#showMessage(data.notice, "success")
+            // Refresh to get accurate server-rendered list
             this.#refreshModal()
           } else {
             this.#showMessage(data.error, "error")
-            if (submitBtn) submitBtn.disabled = false
           }
         })
         .catch(() => {
+          if (pendingEl) pendingEl.remove()
           this.#showMessage("An error occurred", "error")
-          if (submitBtn) submitBtn.disabled = false
         })
     })
   }
 
-  #initializeDeleteForms() {
+  #addPendingEntry(email, permission) {
+    if (!email) return null
+    const modal = document.getElementById("share-creative-modal")
+    if (!modal) return null
+
+    // Find or create the shared list section
+    let listSection = modal.querySelector(".share-grid")
+    if (!listSection) {
+      const popupBox = modal.querySelector(".popup-box")
+      if (!popupBox) return null
+      const section = document.createElement("div")
+      section.style.marginTop = "1em"
+      const strong = document.createElement("strong")
+      strong.textContent = "..."
+      section.appendChild(strong)
+      listSection = document.createElement("ul")
+      listSection.className = "share-grid"
+      section.appendChild(listSection)
+      popupBox.appendChild(section)
+    }
+
+    const li = document.createElement("li")
+    li.className = "share-modal-pending"
+    li.innerHTML = `
+      <span><span class="avatar share-avatar" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:var(--surface-3,#ddd);text-align:center;line-height:20px;font-size:10px;">${email[0].toUpperCase()}</span></span>
+      <span>${this.#escapeHtml(email)}</span>
+      <span style="opacity:0.5">${this.#escapeHtml(permission)}</span>
+      <span><span class="share-modal-spinner"></span></span>
+    `
+    listSection.appendChild(li)
+    return li
+  }
+
+  #initializeDeleteButtons() {
     const modal = document.getElementById("share-creative-modal")
     if (!modal) return
 
-    // Find all delete forms (button_to generates forms with method=post and hidden _method=delete)
-    const deleteForms = modal.querySelectorAll("form:has(input[name='_method'][value='delete'])")
+    // Find all delete forms
+    const deleteForms = modal.querySelectorAll("form")
     deleteForms.forEach(form => {
+      const methodInput = form.querySelector("input[name='_method'][value='delete']")
+      if (!methodInput) return
+
       form.addEventListener("submit", (e) => {
         e.preventDefault()
 
-        // Handle turbo_confirm
+        // Check for confirm dialog - turbo_confirm can be on the form or button
         const confirmMessage = form.dataset.turboConfirm
-        if (confirmMessage && !confirm(confirmMessage)) return
+          || form.querySelector("button[type='submit']")?.dataset?.turboConfirm
+          || form.querySelector("button")?.dataset?.confirm
+        if (confirmMessage && !window.confirm(confirmMessage)) return
 
-        const submitBtn = form.querySelector("button[type='submit'], input[type='submit']")
-        if (submitBtn) submitBtn.disabled = true
+        // Optimistic UI: fade out the parent li
+        const listItem = form.closest("li")
+        if (listItem) {
+          listItem.style.opacity = "0.3"
+          listItem.style.pointerEvents = "none"
+        }
 
         fetch(form.action, {
           method: "DELETE",
@@ -177,17 +222,27 @@ export default class extends Controller {
         })
           .then(r => {
             if (r.ok) {
+              // Optimistic: remove the item
+              if (listItem) listItem.remove()
+              // Refresh in background for accuracy
               this.#refreshModal()
             } else {
+              // Revert optimistic change
+              if (listItem) {
+                listItem.style.opacity = "1"
+                listItem.style.pointerEvents = ""
+              }
               return r.json().then(data => {
                 this.#showMessage(data.error, "error")
-                if (submitBtn) submitBtn.disabled = false
               })
             }
           })
           .catch(() => {
+            if (listItem) {
+              listItem.style.opacity = "1"
+              listItem.style.pointerEvents = ""
+            }
             this.#showMessage("An error occurred", "error")
-            if (submitBtn) submitBtn.disabled = false
           })
       })
     })
@@ -214,7 +269,6 @@ export default class extends Controller {
     const modal = document.getElementById("share-creative-modal")
     if (!modal) return
 
-    // Remove existing message
     const existing = modal.querySelector(".share-modal-message")
     if (existing) existing.remove()
 
@@ -222,7 +276,6 @@ export default class extends Controller {
     msg.className = `share-modal-message share-modal-message-${type}`
     msg.textContent = text
 
-    // Insert after the h2 title
     const title = modal.querySelector("h2")
     if (title) {
       title.insertAdjacentElement("afterend", msg)
@@ -230,7 +283,6 @@ export default class extends Controller {
       modal.querySelector(".popup-box")?.prepend(msg)
     }
 
-    // Auto-remove after 4 seconds
     setTimeout(() => msg.remove(), 4000)
   }
 
@@ -278,6 +330,12 @@ export default class extends Controller {
           console.error("Failed to create invite link", err)
         })
     }
+  }
+
+  #escapeHtml(str) {
+    const div = document.createElement("div")
+    div.textContent = str
+    return div.innerHTML
   }
 
   #dispatchEvent(eventName) {
