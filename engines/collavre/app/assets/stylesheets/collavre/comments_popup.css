@@ -1,6 +1,6 @@
 #comments-popup {
     display: none;
-    position: absolute;
+    position: fixed;
     right: 2em;
     /* top: 10em; */
     z-index: var(--layer-modal);
