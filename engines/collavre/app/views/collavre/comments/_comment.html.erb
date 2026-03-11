@@ -66,7 +66,9 @@
       </button>
     </div>
   <% if comment.quoted_text.present? %>
-    <div class="comment-quoted-block">
+    <div class="comment-quoted-block"
+         data-quoted-comment-id="<%= comment.quoted_comment_id %>"
+         data-action="click->comment#scrollToQuotedComment">
       <blockquote class="comment-quoted-text"><%= comment.quoted_text %></blockquote>
     </div>
   <% end %>

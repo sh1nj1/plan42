@@ -203,6 +203,12 @@ body.chat-fullscreen {
 .comment-quoted-block {
     margin-top: 0.3em;
     margin-bottom: 0.2em;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+.comment-quoted-block:hover {
+    opacity: 0.8;
 }
 
 .comment-quoted-text,

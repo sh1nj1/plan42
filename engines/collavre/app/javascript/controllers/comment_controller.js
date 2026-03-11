@@ -376,6 +376,19 @@ export default class extends Controller {
 
   // Selection change listener and replace button logic removed — unified into review
 
+  scrollToQuotedComment(event) {
+    event.preventDefault()
+    const quotedCommentId = event.currentTarget.dataset.quotedCommentId
+    if (!quotedCommentId) return
+
+    const targetComment = document.getElementById(`comment_${quotedCommentId}`)
+    if (!targetComment) return
+
+    targetComment.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    targetComment.classList.add('highlight-flash')
+    setTimeout(() => targetComment.classList.remove('highlight-flash'), 2000)
+  }
+
   updateReactionsUI(reactionsData) {
     let reactionsContainer = this.element.querySelector('.comment-reactions')
 
