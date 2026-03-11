@@ -644,15 +644,16 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 .editor-mode-btn {
   padding: var(--space-1) var(--space-2);
   font-size: var(--text-0);
+  font-weight: 500;
   border: none;
-  background: var(--surface-bg);
-  color: var(--text-color-secondary, #666);
+  background: var(--surface-section);
+  color: var(--text-primary, #333);
   cursor: pointer;
   line-height: 1;
   transition: background 0.15s, color 0.15s;
 }
 .editor-mode-btn:hover {
-  background: var(--surface-section);
+  background: var(--border-color);
 }
 .editor-mode-btn + .editor-mode-btn {
   border-left: 1px solid var(--border-color);
@@ -663,5 +664,25 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 }
 .editor-mode-btn.active:hover {
   background: var(--color-brand);
+}
+
+/* Kind text input (visible in data mode) */
+.kind-input {
+  margin-left: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-0);
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2);
+  background: var(--surface-section);
+  color: var(--text-primary, #333);
+  width: 8em;
+  outline: none;
+}
+.kind-input:focus {
+  border-color: var(--color-brand);
+}
+.kind-input::placeholder {
+  color: var(--border-color);
 }
 

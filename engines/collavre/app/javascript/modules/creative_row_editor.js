@@ -107,6 +107,7 @@ export function initializeCreativeRowEditor() {
     const dataYamlEditor = document.getElementById('data-yaml-editor');
     const editorModeHtmlBtn = document.getElementById('editor-mode-html');
     const editorModeDataBtn = document.getElementById('editor-mode-data');
+    const kindInputField = document.getElementById('inline-kind-input');
     let editorMode = 'html'; // 'html' or 'data'
 
     let currentKind = null; // Track the kind of the currently edited creative
@@ -1677,7 +1678,7 @@ export function initializeCreativeRowEditor() {
     function setEditorMode(mode) {
       editorMode = mode;
       if (mode === 'data') {
-        // Show YAML editor, hide Lexical
+        // Show YAML editor + kind input, hide Lexical
         if (editorContainer) editorContainer.style.display = 'none';
         if (dataYamlEditor) {
           dataYamlEditor.style.display = '';
@@ -1685,12 +1686,17 @@ export function initializeCreativeRowEditor() {
           const currentData = dataInput?.value ? JSON.parse(dataInput.value || '{}') : {};
           dataYamlEditor.value = yaml.dump(currentData, { indent: 2, lineWidth: -1 });
         }
+        if (kindInputField) {
+          kindInputField.style.display = '';
+          kindInputField.value = currentKind || '';
+        }
         if (editorModeHtmlBtn) editorModeHtmlBtn.classList.remove('active');
         if (editorModeDataBtn) editorModeDataBtn.classList.add('active');
       } else {
-        // Show Lexical, hide YAML editor
+        // Show Lexical, hide YAML editor + kind input
         if (editorContainer) editorContainer.style.display = '';
         if (dataYamlEditor) dataYamlEditor.style.display = 'none';
+        if (kindInputField) kindInputField.style.display = 'none';
         if (editorModeHtmlBtn) editorModeHtmlBtn.classList.add('active');
         if (editorModeDataBtn) editorModeDataBtn.classList.remove('active');
       }
@@ -1729,6 +1735,17 @@ export function initializeCreativeRowEditor() {
     if (dataYamlEditor) {
       dataYamlEditor.addEventListener('input', () => {
         syncYamlToDataInput();
+        isDirty = true;
+        scheduleSave();
+      });
+    }
+
+    // Sync kind input field to hidden kindInput
+    if (kindInputField) {
+      kindInputField.addEventListener('input', () => {
+        const val = kindInputField.value.trim().toLowerCase();
+        currentKind = val || null;
+        if (kindInput) kindInput.value = val;
         isDirty = true;
         scheduleSave();
       });
