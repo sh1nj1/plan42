@@ -1,3 +1,49 @@
+## v0.7.0 (2026-03-12)
+
+### Changes
+- 586723a6 fix: cascade delete quoting comments when quoted comment is destroyed (#959)
+- 3c05b9b2 fix: allow write-permission users to create topics in UI (#958)
+- dc0d02ae feat: upgrade AI model from gemini-2.5-flash to gemini-3-flash-preview
+- 1633a387 refactor: remove self-reflection feature, keep confidence output (#955)
+- f09b1497 fix: prevent background creative list from scrolling through chat popup (#956)
+- 42580b44 fix: share modal XSS, debounce refresh, and i18n error message (#954)
+- 3a1b694a merge: resolve conflict with main (add navigate_label + share-modal container)
+- c29a978e fix: optimistic UI for share modal and fix delete confirm dialog
+- 9d035f68 feat: convert share modal forms to fetch-based submission
+- 2a6a0be8 feat: unify share modal into reusable Stimulus controller
+- 48be412f feat: add navigate button (→) to context chips (#952)
+- da37b427 fix: load child creatives instead of root list when entering chat fullscreen directly (#950)
+- cff7b489 fix: refresh CSRF token after OS window switch to prevent 422 (#951)
+- 037ffbec feat: add metadata editor to creative inline editor (#947)
+- 4f0b2071 feat: allow background creative scrolling while chat popup is open (#948)
+- 47f2a9b7 fix: decode HTML entities in creative_snippet (#944)
+- e1eff6c4 fix: prevent context chips from being clipped and reduce title padding (#941)
+- 0b36850d feat: creative context injection with inheritance (#939)
+- d146bf0d feat: drag and drop topics to move between creatives (#936)
+- 7bacc169 fix: destroy user with hierarchical creatives (closure_tree leaf-first) (#937)
+- 0e0c386c feat: add list/org-chart view switcher for contacts tab (#934)
+- 995af318 fix: use origin ownership and shares for linked creatives in org chart (#933)
+- b5da08f5 fix: use effective_description for linked creatives in org chart (#932)
+- 280d898c fix: support deep tree indentation, linked creative shares, and expand/collapse all (#931)
+- 486c1ffd fix: only show creatives with actual shares in org chart (#930)
+- ff1bf372 feat: replace contacts tab with org chart view (#924)
+- 0651f478 fix: restore creative-row hover background on level-1/2/3 rows (#923)
+- 5b31ec3d refactor: apply SRP to AI agent orchestration services (#921)
+- acc2f90d fix: convert SQL string interpolation to parameterized queries (#920)
+- c2fcda10 fix: replace html_safe with safe_join and content_tag (#919)
+- 42b52433 refactor: extract users_controller concerns for better organization (#918)
+- 2a838694 refactor: split comments_controller into concerns (#917)
+- c5d24694 refactor: extract creatives controller concerns (#916)
+- 422fafa9 refactor: extract common logic from workflow_executor and work_command (#915)
+- 450f4f9f chore: remove unused helper method toggle_button_symbol (#914)
+- 701839a0 chore: remove 4 unused JavaScript modules (#913)
+- c4d1b291 chore: remove 3 unused view partials (#922)
+- 902ada30 refactor: simplify authentication flow in creative_imports_controller (#911)
+- fc5dd51d fix: add authorization checks to prevent IDOR in creative controllers (#910)
+- c26ef291 fix: add reset_session before session creation to prevent session fixation (#909)
+- 0e6df808 fix: replace html_safe with sanitize in slide_view to prevent XSS (#908)
+- 77adc8f6 feat: add /creative command for linking creatives in chat (#907)
+
 ## v0.6.0 (2026-03-05)
 
 ### Changes

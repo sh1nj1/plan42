@@ -1,3 +1,8 @@
+## v0.3.2 (2026-03-12)
+
+### Changes
+- dc0d02ae feat: upgrade AI model from gemini-2.5-flash to gemini-3-flash-preview
+
 ## v0.3.0 (2026-02-20)
 
 ### Changes
