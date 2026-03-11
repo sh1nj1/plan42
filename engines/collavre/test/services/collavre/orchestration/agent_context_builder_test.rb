@@ -510,7 +510,6 @@ module Collavre
       def mock_policy_resolver(overrides = {})
         resolver = Minitest::Mock.new
         resolver.expect(:collaboration_config, overrides)
-        resolver.expect(:self_reflection_enabled?, false)
         resolver
       end
     end

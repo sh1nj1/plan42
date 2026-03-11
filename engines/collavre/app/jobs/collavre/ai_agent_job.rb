@@ -53,51 +53,32 @@ module Collavre
       begin
         response_content = AiAgentService.new(task).call
 
-        # Evaluate self-reflection if enabled
-        reflection_result = evaluate_self_reflection(task, response_content)
+        # Workflow subtasks with empty responses should retry, then fail
+        if task.parent_task_id.present? && response_content.blank?
+          max_retries = 2
+          current_retry = task.retry_count || 0
 
-        case reflection_result.action
-        when :retry
-          # Schedule retry with delay - don't release resources yet
-          schedule_self_reflection_retry(task, reflection_result, response_content)
-          Rails.logger.info(
-            "[AiAgentJob] Task #{task.id} scheduled for retry " \
-            "(attempt #{task.retry_count + 1}, confidence: #{reflection_result.confidence})"
-          )
-          nil # Exit without releasing resources or dequeuing
-        when :escalate
-          # Escalate to admins
-          Orchestration::SelfReflectionEvaluator.new(task, response_content: response_content).escalate!(reflection_result)
-          tracker.release!(job_id || task.id, tokens_used: 0)
-          Rails.logger.info("[AiAgentJob] Task #{task.id} escalated after max retries")
-        else # :done
-          # Workflow subtasks with empty responses should retry, then fail
-          if task.parent_task_id.present? && response_content.blank?
-            max_retries = 2
-            current_retry = task.retry_count || 0
-
-            if current_retry < max_retries
-              task.update!(retry_count: current_retry + 1, status: "pending")
-              tracker.release!(job_id || task.id, tokens_used: 0)
-              Rails.logger.warn(
-                "[AiAgentJob] Workflow subtask #{task.id} returned empty response, " \
-                "retrying (#{current_retry + 1}/#{max_retries})"
-              )
-              AiAgentJob.set(wait: 5.seconds).perform_later(task)
-            else
-              task.update!(status: "failed")
-              tracker.release!(job_id || task.id, tokens_used: 0)
-              Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-                task, error_message: "Agent returned empty response after #{max_retries} retries"
-              )
-            end
-          else
-            task.update!(status: "done")
+          if current_retry < max_retries
+            task.update!(retry_count: current_retry + 1, status: "pending")
             tracker.release!(job_id || task.id, tokens_used: 0)
-            # Advance workflow after releasing resources to avoid deadlock
-            if task.parent_task_id.present?
-              Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
-            end
+            Rails.logger.warn(
+              "[AiAgentJob] Workflow subtask #{task.id} returned empty response, " \
+              "retrying (#{current_retry + 1}/#{max_retries})"
+            )
+            AiAgentJob.set(wait: 5.seconds).perform_later(task)
+          else
+            task.update!(status: "failed")
+            tracker.release!(job_id || task.id, tokens_used: 0)
+            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+              task, error_message: "Agent returned empty response after #{max_retries} retries"
+            )
+          end
+        else
+          task.update!(status: "done")
+          tracker.release!(job_id || task.id, tokens_used: 0)
+          # Advance workflow after releasing resources to avoid deadlock
+          if task.parent_task_id.present?
+            Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
           end
         end
       rescue ApprovalPendingError
@@ -122,17 +103,6 @@ module Collavre
           Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
         end
       end
-    end
-
-    private
-
-    def evaluate_self_reflection(task, response_content)
-      Orchestration::SelfReflectionEvaluator.new(task, response_content: response_content).evaluate
-    end
-
-    def schedule_self_reflection_retry(task, result, response_content)
-      evaluator = Orchestration::SelfReflectionEvaluator.new(task, response_content: response_content)
-      evaluator.schedule_retry!(result)
     end
   end
 end
