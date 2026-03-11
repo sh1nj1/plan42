@@ -125,6 +125,8 @@ export default class extends Controller {
                           title="${ctx.inherited ? this.inheritedLabel : ''}">
                         🔗 ${this._escapeHtml(ctx.description)}`
 
+            html += `<button class="navigate-context-btn" data-action="click->comments--contexts#navigateToContext" data-context-id="${ctx.id}" title="${this.navigateLabel}">\u2192</button>`
+
             if (this.canManage && !ctx.inherited) {
                 html += `<button class="delete-context-btn" data-action="click->comments--contexts#removeContext" data-context-id="${ctx.id}">&times;</button>`
             }
@@ -147,6 +149,10 @@ export default class extends Controller {
         return this.listTarget.dataset.selfContextLabel || 'Current creative context'
     }
 
+    get navigateLabel() {
+        return this.listTarget.dataset.navigateLabel || 'Go to creative'
+    }
+
     get currentCreativeSnippet() {
         const popup = this.element.closest('#comments-popup')
         return popup?.querySelector('#comments-popup-title')?.textContent?.trim()
@@ -166,8 +172,15 @@ export default class extends Controller {
         await this._patchContexts({ disabled_self_context: this._selfContextDisabled })
     }
 
+    navigateToContext(event) {
+        event.stopPropagation()
+        const contextId = event.currentTarget.dataset.contextId
+        if (!contextId) return
+        window.location.href = `/creatives/${contextId}`
+    }
+
     toggleContext(event) {
-        if (event.target.closest('.delete-context-btn')) return
+        if (event.target.closest('.delete-context-btn') || event.target.closest('.navigate-context-btn')) return
 
         const contextId = parseInt(event.currentTarget.dataset.contextId)
         if (!contextId) return

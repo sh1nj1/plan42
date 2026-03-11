@@ -5,3 +5,4 @@ en:
       inherited_label: "Inherited from parent"
       toggle_label: "Contexts"
       self_context_label: "Current creative context"
+      navigate_label: "Go to creative"
