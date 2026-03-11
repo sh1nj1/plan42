@@ -416,13 +416,12 @@ export default class extends Controller {
   handlePopupWheel(event) {
     if (this.isFullscreen()) return // fullscreen already blocks body scroll via CSS
 
-    const scrollable = this.element.querySelector('#comments-list')
-    if (!scrollable) {
+    if (!this.hasListTarget) {
       event.preventDefault()
       return
     }
 
-    const { scrollTop, scrollHeight, clientHeight } = scrollable
+    const { scrollTop, scrollHeight, clientHeight } = this.listTarget
     const isScrollingDown = event.deltaY > 0
     const atTop = scrollTop <= 0
     const atBottom = scrollTop + clientHeight >= scrollHeight - 1
