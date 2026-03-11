@@ -125,7 +125,7 @@ export default class extends Controller {
                           title="${ctx.inherited ? this.inheritedLabel : ''}">
                         🔗 ${this._escapeHtml(ctx.description)}`
 
-            html += `<button class="navigate-context-btn" data-action="click->comments--contexts#navigateToContext" data-context-id="${ctx.id}" title="Go to creative">→</button>`
+            html += `<button class="navigate-context-btn" data-action="click->comments--contexts#navigateToContext" data-context-id="${ctx.id}" title="${this.navigateLabel}">\u2192</button>`
 
             if (this.canManage && !ctx.inherited) {
                 html += `<button class="delete-context-btn" data-action="click->comments--contexts#removeContext" data-context-id="${ctx.id}">&times;</button>`
@@ -147,6 +147,10 @@ export default class extends Controller {
 
     get selfContextLabel() {
         return this.listTarget.dataset.selfContextLabel || 'Current creative context'
+    }
+
+    get navigateLabel() {
+        return this.listTarget.dataset.navigateLabel || 'Go to creative'
     }
 
     get currentCreativeSnippet() {
