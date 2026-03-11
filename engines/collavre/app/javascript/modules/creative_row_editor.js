@@ -298,14 +298,21 @@ export function initializeCreativeRowEditor() {
       if (kindInput) kindInput.value = currentKind || '';
       if (dataInput) dataInput.value = data.data ? JSON.stringify(data.data) : '';
 
-      // Auto-select editor mode: non-html kinds default to data (YAML) mode
-      const isHtmlKind = !currentKind || currentKind === 'json';
-      setEditorMode(isHtmlKind ? 'html' : 'data');
-
+      // Reset saved HTML when loading a new creative
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
+      savedHtmlBeforeDataMode = content;
+
+      // Auto-select editor mode: non-html kinds default to data (YAML) mode
+      const isHtmlKind = !currentKind || currentKind === 'json';
+      // Force html mode first to ensure Lexical is in correct state, then switch if needed
+      editorMode = 'html';
       if (isHtmlKind) {
         lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
+        setEditorMode('html');
+      } else {
+        lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
+        setEditorMode('data');
       }
       pendingSave = false;
       // Track original content for dirty state detection
@@ -1158,6 +1165,11 @@ export function initializeCreativeRowEditor() {
       // Check both isDirty (text changes) and pendingSave (progress/structure changes)
       if (!isDirty && !pendingSave) return;
 
+      // Sync data from Lexical before capturing values
+      if (editorMode === 'data') {
+        syncYamlFromLexical();
+      }
+
       const creativeId = form.dataset?.creativeId;
       if (!creativeId) return;
 
@@ -1173,7 +1185,8 @@ export function initializeCreativeRowEditor() {
 
       // Prevent saving empty content, matching saveForm behavior
       // This avoids overwriting existing descriptions with empty strings during quick navigation
-      if (isHtmlEmpty(currentContent)) {
+      // But allow save in data mode when data input has content
+      if (isHtmlEmpty(currentContent) && !(editorMode === 'data' && dataInput && dataInput.value)) {
         pendingSave = false;
         return;
       }
