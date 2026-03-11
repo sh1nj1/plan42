@@ -104,6 +104,5 @@ module Collavre
         end
       end
     end
-
   end
 end
