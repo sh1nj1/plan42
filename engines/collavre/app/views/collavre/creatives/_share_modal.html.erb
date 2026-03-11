@@ -56,18 +56,22 @@
             <li>
               <span>
                 <div class="avatar-wrapper" style="width: 20px; height: 20px; display: inline-block;">
-                  <%= image_tag asset_path("default_avatar.svg"),
-                      alt: '', width: 20, height: 20,
-                      class: 'avatar share-avatar',
-                      title: invitation.email.to_s,
-                      style: 'border-radius:50%;vertical-align:middle;' %>
-                  <span class="avatar-initial" style="font-size: 10px;"><%= invitation.email.to_s[0]&.upcase %></span>
+                  <% if invitation.email.present? %>
+                    <%= image_tag asset_path("default_avatar.svg"),
+                        alt: '', width: 20, height: 20,
+                        class: 'avatar share-avatar',
+                        title: invitation.email,
+                        style: 'border-radius:50%;vertical-align:middle;' %>
+                    <span class="avatar-initial" style="font-size: 10px;"><%= invitation.email[0]&.upcase %></span>
+                  <% else %>
+                    <span class="avatar share-avatar" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:var(--surface-3,#ddd);text-align:center;line-height:20px;font-size:10px;">🔗</span>
+                  <% end %>
                 </div>
               </span>
-              <span><%= invitation.email %></span>
+              <span><%= invitation.email.presence || t('collavre.creatives.share.public_invite') %></span>
               <span><%= t("collavre.creatives.index.permission_#{invitation.permission}") %></span>
               <span>
-                <%= button_to '×', collavre.creative_invitation_path(@parent_creative || @creative, invitation), method: :delete, form: { data: { turbo_confirm: t('collavre.contacts.org_chart.cancel_invite_confirm', email: invitation.email) } }, class: 'delete-share-btn' %>
+                <%= button_to '×', collavre.creative_invitation_path(@parent_creative || @creative, invitation), method: :delete, form: { data: { turbo_confirm: t('collavre.contacts.org_chart.cancel_invite_confirm', email: invitation.email.presence || t('collavre.creatives.share.public_invite')) } }, class: 'delete-share-btn' %>
               </span>
             </li>
           <% end %>

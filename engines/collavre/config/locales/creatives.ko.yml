@@ -114,6 +114,7 @@ ko:
         shared: 크리에이티브가 성공적으로 공유되었습니다.
         permission_updated: 권한이 성공적으로 변경되었습니다.
         network_error: 네트워크 오류가 발생했습니다. 다시 시도해주세요.
+        public_invite: 공개 초대
         already_shared_in_parent: 크리에이티브가 상위 크리에이티브에 이미 공유되었습니다.
         can_not_share_by_no_access_in_parent: 상위 크리에이티브에 접근 금지가 있어서 공유할 수 없습니다.
         cannot_share_private_ai_agent: AI Agent 소유자만 공유할 수 있습니다.

@@ -351,6 +351,8 @@ export default class extends Controller {
               this.#showMessage(copiedTemplate.replace("__PERMISSION__", permissionLabel), "success")
             })
           }
+          // Refresh modal to show the new invitation in the list
+          this.#debouncedRefresh()
         })
         .catch(err => {
           console.error("Failed to create invite link", err)
