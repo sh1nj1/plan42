@@ -148,10 +148,13 @@ export default class extends Controller {
     }
 
     const requestTopicId = this.currentTopicId || ""
+    const requestCreativeId = this.creativeId
 
     this.fetchComments(params).then((html) => {
-      // If topic changed while fetching (e.g. deep link detection), discard this stale response.
-      // The topic change event will have triggered a new load.
+      // Discard stale responses if creative or topic changed while fetching.
+      // This prevents a race condition where switching creatives causes
+      // the old creative's comments to overwrite the new creative's list.
+      if (this.creativeId !== requestCreativeId) return
       if (String(this.currentTopicId || "") !== String(requestTopicId)) return
 
       this.listTarget.innerHTML = html
