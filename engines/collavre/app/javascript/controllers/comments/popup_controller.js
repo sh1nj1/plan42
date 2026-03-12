@@ -199,6 +199,14 @@ export default class extends Controller {
   }
 
   async notifyChildControllers({ creativeId, canComment, highlightId }) {
+    // Pre-set creativeId on list controller BEFORE loading topics.
+    // Topics loading triggers a change event that list controller handles.
+    // Without this, list controller still holds the previous creative's ID
+    // and would fetch comments for the wrong creative (race condition).
+    if (this.listController) {
+      this.listController.creativeId = creativeId
+    }
+
     // Load topics first to establish context
     if (this.topicsController) {
       await this.topicsController.onPopupOpened({ creativeId })
