@@ -687,7 +687,7 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     font-size: var(--text-2);
     padding: var(--space-1) var(--space-2);
     opacity: 0.5;
-    transition: opacity var(--ease-2) 0.2s;
+    transition: opacity 0.2s var(--ease-2);
 }
 .archive-toggle-btn:hover {
     opacity: 0.8;
