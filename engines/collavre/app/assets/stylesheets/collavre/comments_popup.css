@@ -1279,9 +1279,9 @@ body.chat-fullscreen {
 .topic-archived-toggle {
     display: inline-flex;
     align-items: center;
-    padding: 0.15em 0.5em;
-    border-radius: 8px;
-    font-size: 0.85em;
+    padding: 0.15em var(--space-2);
+    border-radius: var(--radius-3);
+    font-size: var(--text-0);
     cursor: pointer;
     opacity: 0.6;
     border: 1px dashed var(--border-color);
@@ -1298,8 +1298,8 @@ body.chat-fullscreen {
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 0.7em;
-    padding: 0 2px;
+    font-size: var(--text-00);
+    padding: 0 var(--space-1);
     opacity: 0.6;
     vertical-align: middle;
 }
@@ -1308,7 +1308,7 @@ body.chat-fullscreen {
     opacity: 1;
 }
 .delete-topic-btn {
-    margin-left: 2px;
+    margin-left: var(--space-1);
 }
 
 /* Selection action bar */
