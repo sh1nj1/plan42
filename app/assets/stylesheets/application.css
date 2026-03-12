@@ -585,8 +585,13 @@ input[type="password"] {
     border-radius: 8px 8px 0 0;
     cursor: pointer;
     font-weight: 600;
+    font-size: inherit;
+    font-family: inherit;
     border-bottom: none;
     box-shadow: inset 0 -1px 0 var(--color-border);
+    text-decoration: none;
+    display: inline-block;
+    line-height: normal;
 }
 
 .tab-button.active {
