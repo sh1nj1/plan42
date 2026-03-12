@@ -128,6 +128,7 @@ export default class extends Controller {
 
   onPopupOpened({ creativeId, canComment }) {
     this.creativeId = creativeId
+    this.currentTopicId = null // Reset stale topic from previous creative
     this.element.dataset.creativeId = creativeId || ''
     this.formTarget.style.display = canComment ? '' : 'none'
     this.resetForm()
