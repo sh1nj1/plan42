@@ -86,9 +86,10 @@ export default class extends Controller {
             }
         }
 
-        if (lastTopicId) {
-            this.selectTopic("")
-        }
+        // Always dispatch change event to ensure form controller gets the correct topic.
+        // Without this, switching to a creative with no stored topic leaves the form
+        // controller with a stale topic_id from the previous creative.
+        this.selectTopic("")
     }
 
     renderTopics(topics, canManage = false, canCreateTopic = canManage) {
