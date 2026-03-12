@@ -156,6 +156,10 @@ module Collavre
     end
 
     def create
+      if @creative.archived?
+        render json: { error: I18n.t("collavre.comments.archived_creative") }, status: :forbidden and return
+      end
+
       unless @creative.has_permission?(Current.user, :feedback)
         render json: { error: I18n.t("collavre.comments.no_permission") }, status: :forbidden and return
       end

@@ -110,7 +110,7 @@ module Collavre
     end
 
     def archive
-      unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
+      unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
         render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
       end
 
@@ -125,7 +125,7 @@ module Collavre
     end
 
     def unarchive
-      unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
+      unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
         render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
       end
 

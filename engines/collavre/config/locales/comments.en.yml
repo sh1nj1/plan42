@@ -28,6 +28,7 @@ en:
       delete_button: Delete
       not_owner: Only the comment owner can modify this.
       no_permission: You do not have permission to comment.
+      archived_creative: This creative is archived. Comments are disabled.
       convert_not_allowed: Only the comment owner or a creative admin can convert
         this message.
       convert_button: Convert
