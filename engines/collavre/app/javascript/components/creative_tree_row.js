@@ -23,6 +23,7 @@ class CreativeTreeRow extends LitElement {
     editOffIconHtml: { state: true },
     originLinkHtml: { state: true },
     isTitle: { type: Boolean, attribute: "is-title", reflect: true },
+    archived: { type: Boolean, attribute: "archived", reflect: true },
     loadingChildren: { type: Boolean, attribute: "loading-children", reflect: true },
     _loadingDotsState: { state: true }
   };

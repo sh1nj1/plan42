@@ -57,6 +57,8 @@ Collavre::Engine.routes.draw do
       end
       member do
         patch :move
+        patch :archive
+        patch :unarchive
       end
     end
     resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
@@ -95,6 +97,8 @@ Collavre::Engine.routes.draw do
       post :share, to: "creatives#share", as: :share_creative
       post :request_permission, to: "creatives#request_permission"
       post :unconvert
+      patch :archive
+      patch :unarchive
       get :parent_suggestions
       get :slide_view
       get :contexts

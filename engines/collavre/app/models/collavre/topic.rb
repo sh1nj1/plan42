@@ -7,11 +7,27 @@ module Collavre
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
 
+    # --- Archive scopes ---
+    scope :active, -> { where(archived_at: nil) }
+    scope :archived, -> { where.not(archived_at: nil) }
+
     validates :name, presence: true, uniqueness: { scope: :creative_id }
 
     before_create :set_default_position
 
     default_scope { order(:position) }
+
+    def archived?
+      archived_at.present?
+    end
+
+    def archive!
+      update!(archived_at: Time.current)
+    end
+
+    def unarchive!
+      update!(archived_at: nil)
+    end
 
     private
 

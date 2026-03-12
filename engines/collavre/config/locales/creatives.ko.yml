@@ -11,6 +11,11 @@ ko:
         append_as_parent_creative: 상위에 추가
         append_below_creative: 아래에 추가
         delete: 삭제
+        archive: 아카이브
+        archive_confirm: 이 항목과 모든 하위 항목을 아카이브할까요?
+        unarchive: 복원
+        show_archived: 아카이브 표시
+        hide_archived: 아카이브 숨기기
         delete_only_this: 이 항목만 삭제
         delete_with_children: 이 항목과 모든 하위 항목 삭제
         are_you_sure: 정말 삭제하시겠습니까?

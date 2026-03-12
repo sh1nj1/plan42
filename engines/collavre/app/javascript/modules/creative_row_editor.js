@@ -86,6 +86,7 @@ export function initializeCreativeRowEditor() {
     const levelDownBtn = document.getElementById('inline-level-down');
     const levelUpBtn = document.getElementById('inline-level-up');
     const deletePopupToggle = document.getElementById('inline-delete-popup-toggle');
+    const archiveBtn = document.getElementById('inline-archive');
     const deleteBtn = document.getElementById('inline-delete');
     const deleteWithChildrenBtn = document.getElementById('inline-delete-with-children');
     const linkBtn = document.getElementById('inline-link');
@@ -677,6 +678,7 @@ export function initializeCreativeRowEditor() {
       if (levelUpBtn) levelUpBtn.disabled = !canLevelUp;
 
       if (deletePopupToggle) deletePopupToggle.disabled = !hasCreativeId;
+      if (archiveBtn) archiveBtn.disabled = !hasCreativeId;
       if (deleteBtn) deleteBtn.disabled = !hasCreativeId;
       if (deleteWithChildrenBtn) deleteWithChildrenBtn.disabled = !hasCreativeId;
       if (linkBtn) linkBtn.disabled = !hasCreativeId || linkBtn.style.display === 'none';
@@ -1846,6 +1848,27 @@ export function initializeCreativeRowEditor() {
 
     if (levelUpBtn) {
       levelUpBtn.addEventListener('click', levelUp);
+    }
+
+    if (archiveBtn) {
+      archiveBtn.addEventListener('click', function () {
+        if (!currentCreativeId) return;
+        if (confirm(archiveBtn.dataset.confirm)) {
+          creativesApi.archive(currentCreativeId)
+            .then(res => {
+              if (res.ok) {
+                const row = document.querySelector(`creative-tree-row[creative-id="${currentCreativeId}"]`);
+                if (row) {
+                  // Remove the row and its children container
+                  const childrenContainer = document.getElementById(`creative-children-${currentCreativeId}`);
+                  if (childrenContainer) childrenContainer.remove();
+                  row.remove();
+                }
+                closeEditor();
+              }
+            });
+        }
+      });
     }
 
     if (deleteBtn) {

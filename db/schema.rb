@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_25_074416) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_13_011922) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -220,6 +220,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_25_074416) do
   end
 
   create_table "creatives", force: :cascade do |t|
+    t.datetime "archived_at"
     t.datetime "created_at", null: false
     t.json "data", default: {}, null: false
     t.text "description", limit: 4294967295
@@ -229,6 +230,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_25_074416) do
     t.integer "sequence", default: 0, null: false
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
+    t.index ["archived_at"], name: "index_creatives_on_archived_at", where: "archived_at IS NOT NULL"
     t.index ["data"], name: "index_creatives_on_data"
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
@@ -734,12 +736,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_25_074416) do
   end
 
   create_table "topics", force: :cascade do |t|
+    t.datetime "archived_at"
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
     t.string "name", null: false
     t.integer "position", default: 0, null: false
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
+    t.index ["archived_at"], name: "index_topics_on_archived_at", where: "archived_at IS NOT NULL"
     t.index ["creative_id", "name"], name: "index_topics_on_creative_id_and_name", unique: true
     t.index ["creative_id", "position"], name: "index_topics_on_creative_id_and_position"
     t.index ["creative_id"], name: "index_topics_on_creative_id"

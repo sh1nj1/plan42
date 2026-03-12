@@ -5,6 +5,9 @@ en:
       delete_confirm: This will delete all messages in this topic. Are you sure?
       new_placeholder: New Topic
       no_permission: You don't have permission to perform this action.
+      archive: Archive
+      unarchive: Restore
+      archived_topics: "Archived topics (%{count})"
       move:
         no_target_permission: You don't have write permission on the target creative.
         duplicate_name: A topic named '%{name}' already exists in the target creative.

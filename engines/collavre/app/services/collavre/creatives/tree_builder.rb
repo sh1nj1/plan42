@@ -121,6 +121,7 @@ module Creatives
           has_children: filtered_children.any?,
           expanded: expanded,
           is_root: creative.parent.nil?,
+          archived: creative.archived?,
           link_url: view_context.collavre.creative_path(creative),
           templates: template_payload_for(creative),
           inline_editor_payload: inline_editor_payload_for(creative),
@@ -148,6 +149,7 @@ module Creatives
       return [] if raw_params["comment"] == "true" || raw_params["search"].present?
 
       children = creative.children_with_permission(user)
+      children = children.select { |c| !c.archived? } unless raw_params["show_archived"]
       if allowed_creative_ids
         children.select { |c| allowed_creative_ids.include?(c.id.to_s) }
       else

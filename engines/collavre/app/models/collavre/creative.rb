@@ -22,6 +22,10 @@ module Collavre
 
     has_closure_tree order: :sequence, name_column: :description, hierarchy_table_name: "creative_hierarchies"
 
+    # --- Archive scopes ---
+    scope :active, -> { where(archived_at: nil) }
+    scope :archived, -> { where.not(archived_at: nil) }
+
     attr_accessor :filtered_progress
 
     belongs_to :user, class_name: Collavre.configuration.user_class_name, optional: true
@@ -140,6 +144,30 @@ module Collavre
         if old_parent_id && (old_parent = Creative.find_by(id: old_parent_id))
           Collavre::Creatives::ProgressService.new(old_parent).update_progress_from_children!
         end
+      end
+    end
+
+    # --- Archive ---
+    def archived?
+      archived_at.present?
+    end
+
+    def archive!
+      now = Time.current
+      self.class.transaction do
+        self_and_descendants.update_all(archived_at: now)
+        reload
+        parent&.reload
+        Collavre::Creatives::ProgressService.new(parent).update_progress_from_children! if parent
+      end
+    end
+
+    def unarchive!
+      self.class.transaction do
+        self_and_descendants.update_all(archived_at: nil)
+        reload
+        parent&.reload
+        Collavre::Creatives::ProgressService.new(parent).update_progress_from_children! if parent
       end
     end
 

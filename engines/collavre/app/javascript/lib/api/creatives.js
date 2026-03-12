@@ -58,6 +58,18 @@ export function destroy(id, withChildren = false) {
   })
 }
 
+export function archive(id) {
+  return csrfFetch(`/creatives/${id}/archive`, {
+    method: 'PATCH',
+  })
+}
+
+export function unarchive(id) {
+  return csrfFetch(`/creatives/${id}/unarchive`, {
+    method: 'PATCH',
+  })
+}
+
 export function unconvert(id) {
   return csrfFetch(`/creatives/${id}/unconvert`, {
     method: 'POST',
@@ -84,6 +96,8 @@ const creativesApi = {
   save,
   linkExisting,
   destroy,
+  archive,
+  unarchive,
   unconvert,
   updateMetadata,
 }

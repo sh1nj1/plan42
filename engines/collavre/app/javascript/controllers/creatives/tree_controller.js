@@ -20,6 +20,7 @@ export default class extends Controller {
     this.queueAlignmentUpdate()
     window.addEventListener('resize', this.handleResize)
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
+    this._setupArchiveToggle()
   }
 
   disconnect() {
@@ -29,6 +30,33 @@ export default class extends Controller {
     }
     window.removeEventListener('resize', this.handleResize)
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
+    if (this._archiveToggleHandler) {
+      document.getElementById('toggle-archived-btn')?.removeEventListener('click', this._archiveToggleHandler)
+    }
+  }
+
+  _setupArchiveToggle() {
+    const btn = document.getElementById('toggle-archived-btn')
+    if (!btn) return
+
+    this._showingArchived = false
+    this._archiveToggleHandler = () => {
+      this._showingArchived = !this._showingArchived
+      btn.classList.toggle('active', this._showingArchived)
+      btn.title = this._showingArchived ? (btn.dataset.hideText || '') : (btn.dataset.showText || '')
+
+      const url = new URL(this.urlValue, window.location.origin)
+      if (this._showingArchived) {
+        url.searchParams.set('show_archived', 'true')
+      } else {
+        url.searchParams.delete('show_archived')
+      }
+      this.urlValue = url.pathname + url.search
+      this.element.innerHTML = ''
+      delete this.element.dataset.loaded
+      this.load()
+    }
+    btn.addEventListener('click', this._archiveToggleHandler)
   }
 
   load() {

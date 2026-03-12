@@ -112,8 +112,11 @@ module Creatives
       creative = Creative.find_by(id: params[:id])
       return empty_result unless creative && readable?(creative)
 
+      children = creative.children_with_permission(user, :read)
+      children = children.select { |c| !c.archived? } unless params[:show_archived]
+
       {
-        creatives: creative.children_with_permission(user, :read),
+        creatives: children,
         parent: creative,
         allowed_ids: nil,
         overall_progress: nil,
@@ -122,8 +125,11 @@ module Creatives
     end
 
     def handle_root_query
+      roots = Creative.where(user: user).roots
+      roots = roots.where(archived_at: nil) unless params[:show_archived]
+
       {
-        creatives: Creative.where(user: user).roots,
+        creatives: roots,
         parent: nil,
         allowed_ids: nil,
         overall_progress: nil,

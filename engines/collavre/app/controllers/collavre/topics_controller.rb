@@ -6,10 +6,19 @@ module Collavre
       is_owner = @creative.user == Current.user
       can_manage = @creative.has_permission?(Current.user, :admin) || is_owner
       can_create_topic = can_manage || @creative.has_permission?(Current.user, :write)
+
+      topics = if params[:include_archived]
+                 @creative.topics.order(:created_at)
+      else
+                 @creative.topics.active.order(:created_at)
+      end
+      archived_count = @creative.topics.archived.count
+
       render json: {
-        topics: @creative.topics.order(:created_at),
+        topics: topics,
         can_manage: can_manage,
-        can_create_topic: can_create_topic
+        can_create_topic: can_create_topic,
+        archived_count: archived_count
       }
     end
 
@@ -98,6 +107,36 @@ module Collavre
       )
 
       render json: { success: true, topic: topic.slice(:id, :name), target_creative_id: target_creative.id }
+    end
+
+    def archive
+      unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
+        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
+      end
+
+      topic = @creative.topics.find(params[:id])
+      topic.archive!
+
+      TopicsChannel.broadcast_to(
+        @creative,
+        { action: "archived", topic: topic.slice(:id, :name) }
+      )
+      render json: { success: true }
+    end
+
+    def unarchive
+      unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
+        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
+      end
+
+      topic = @creative.topics.find(params[:id])
+      topic.unarchive!
+
+      TopicsChannel.broadcast_to(
+        @creative,
+        { action: "unarchived", topic: topic.slice(:id, :name, :archived_at) }
+      )
+      render json: { success: true }
     end
 
     def reorder
