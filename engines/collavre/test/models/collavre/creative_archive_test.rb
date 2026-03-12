@@ -60,6 +60,43 @@ module Collavre
       assert_in_delta 0.5, @parent.progress, 0.01
     end
 
+    test "archive! on linked creative also archives origin" do
+      origin = Creative.create!(description: "Origin", user: @user)
+      linked = Creative.create!(description: "Linked", user: @user, parent: @parent, origin_id: origin.id)
+
+      linked.archive!
+
+      origin.reload
+      linked.reload
+      assert origin.archived?, "Origin should be archived when linked creative is archived"
+      assert linked.archived?, "Linked creative should be archived"
+    end
+
+    test "archive! on origin also archives linked creatives" do
+      origin = Creative.create!(description: "Origin", user: @user, parent: @parent)
+      linked = Creative.create!(description: "Linked", user: @user, origin_id: origin.id)
+
+      origin.archive!
+
+      origin.reload
+      linked.reload
+      assert origin.archived?
+      assert linked.archived?, "Linked creative should be archived when origin is archived"
+    end
+
+    test "unarchive! on linked creative also unarchives origin" do
+      origin = Creative.create!(description: "Origin", user: @user)
+      linked = Creative.create!(description: "Linked", user: @user, parent: @parent, origin_id: origin.id)
+
+      linked.archive!
+      linked.unarchive!
+
+      origin.reload
+      linked.reload
+      assert_not origin.archived?
+      assert_not linked.archived?
+    end
+
     test "unarchive! recalculates parent progress including restored child" do
       @child1.archive!
       @parent.reload
