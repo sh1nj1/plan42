@@ -1,3 +1,8 @@
+## v0.3.3 (2026-03-12)
+
+### Changes
+- f782b351 fix: move host-app migrations to their respective engines (#963)
+
 ## v0.3.2 (2026-03-12)
 
 ### Changes
