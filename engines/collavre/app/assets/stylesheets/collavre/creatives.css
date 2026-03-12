@@ -698,6 +698,12 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     border-radius: var(--radius-2);
 }
 
+/* Archive button in popup menu — match height with sibling delete buttons */
+#inline-archive {
+    line-height: 1.4;
+    font-size: inherit;
+}
+
 /* Archived creative row */
 creative-tree-row[archived] .creative-tree {
     opacity: 0.5;
