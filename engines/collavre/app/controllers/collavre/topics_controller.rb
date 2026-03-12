@@ -7,18 +7,14 @@ module Collavre
       can_manage = @creative.has_permission?(Current.user, :admin) || is_owner
       can_create_topic = can_manage || @creative.has_permission?(Current.user, :write)
 
-      topics = if params[:include_archived]
-                 @creative.topics.order(:created_at)
-               else
-                 @creative.topics.active.order(:created_at)
-               end
-      archived_count = @creative.topics.archived.count
+      active_topics = @creative.topics.active.order(:created_at)
+      archived_topics = @creative.topics.archived.order(:created_at)
 
       render json: {
-        topics: topics,
+        topics: active_topics,
+        archived_topics: archived_topics,
         can_manage: can_manage,
-        can_create_topic: can_create_topic,
-        archived_count: archived_count
+        can_create_topic: can_create_topic
       }
     end
 

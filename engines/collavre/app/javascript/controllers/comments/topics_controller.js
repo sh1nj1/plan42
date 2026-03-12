@@ -58,30 +58,16 @@ export default class extends Controller {
         if (!this.creativeId) return
 
         try {
-            // Load active topics
             const response = await fetch(`/creatives/${this.creativeId}/topics`)
             if (response.ok) {
                 const data = await response.json()
                 const topics = Array.isArray(data) ? data : data.topics
                 const canManage = Array.isArray(data) ? false : data.can_manage
                 const canCreateTopic = Array.isArray(data) ? false : (data.can_create_topic ?? canManage)
-                const archivedCount = data.archived_count || 0
                 this.topics = topics
                 this.canManageTopics = canManage
                 this.canCreateTopic = canCreateTopic
-
-                // Load archived topics if showing or count > 0
-                if (archivedCount > 0) {
-                    const archivedResponse = await fetch(`/creatives/${this.creativeId}/topics?include_archived=true`)
-                    if (archivedResponse.ok) {
-                        const archivedData = await archivedResponse.json()
-                        const allTopics = Array.isArray(archivedData) ? archivedData : archivedData.topics
-                        const activeIds = new Set(topics.map(t => String(t.id)))
-                        this.archivedTopics = allTopics.filter(t => !activeIds.has(String(t.id)))
-                    }
-                } else {
-                    this.archivedTopics = []
-                }
+                this.archivedTopics = data.archived_topics || []
 
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
                 this.restoreSelection()
