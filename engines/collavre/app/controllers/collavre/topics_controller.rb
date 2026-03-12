@@ -9,9 +9,9 @@ module Collavre
 
       topics = if params[:include_archived]
                  @creative.topics.order(:created_at)
-      else
+               else
                  @creative.topics.active.order(:created_at)
-      end
+               end
       archived_count = @creative.topics.archived.count
 
       render json: {

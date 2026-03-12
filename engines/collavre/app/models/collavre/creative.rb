@@ -156,17 +156,21 @@ module Collavre
       now = Time.current
       self.class.transaction do
         # Archive self and descendants
-        self_and_descendants.update_all(archived_at: now)
+        self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
 
         # If this is a linked creative, also archive the origin and its descendants
         origin = effective_origin(Set.new)
         if origin != self
-          origin.self_and_descendants.update_all(archived_at: now)
+          origin.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
+          # Archive all other linked creatives of the origin
+          origin.linked_creatives.where.not(id: id).find_each do |linked|
+            linked.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
+          end
         end
 
         # Also archive any linked creatives that point to this one
         linked_creatives.find_each do |linked|
-          linked.self_and_descendants.update_all(archived_at: now)
+          linked.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
         end
 
         reload
@@ -178,17 +182,21 @@ module Collavre
     def unarchive!
       self.class.transaction do
         # Unarchive self and descendants
-        self_and_descendants.update_all(archived_at: nil)
+        self_and_descendants.where.not(archived_at: nil).update_all(archived_at: nil)
 
         # If this is a linked creative, also unarchive the origin and its descendants
         origin = effective_origin(Set.new)
         if origin != self
-          origin.self_and_descendants.update_all(archived_at: nil)
+          origin.self_and_descendants.where.not(archived_at: nil).update_all(archived_at: nil)
+          # Unarchive all other linked creatives of the origin
+          origin.linked_creatives.where.not(id: id).find_each do |linked|
+            linked.self_and_descendants.where.not(archived_at: nil).update_all(archived_at: nil)
+          end
         end
 
         # Also unarchive any linked creatives that point to this one
         linked_creatives.find_each do |linked|
-          linked.self_and_descendants.update_all(archived_at: nil)
+          linked.self_and_descendants.where.not(archived_at: nil).update_all(archived_at: nil)
         end
 
         reload
