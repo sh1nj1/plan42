@@ -90,6 +90,6 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     visit collavre.creative_comment_path(@child, comment)
 
     assert_selector "#comments-popup", visible: :visible
-    assert_selector "#comment_#{comment.id}.highlight-flash", wait: 5
+    assert_selector "#comment_#{comment.id}[data-highlighted='true']", wait: 5
   end
 end

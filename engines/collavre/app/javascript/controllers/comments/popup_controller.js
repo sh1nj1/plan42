@@ -203,13 +203,23 @@ export default class extends Controller {
     // Topics loading triggers a change event that list controller handles.
     // Without this, list controller still holds the previous creative's ID
     // and would fetch comments for the wrong creative (race condition).
+    //
+    // Also suppress topic-change-triggered loads during topic initialization.
+    // Without this, the topic change event fires loadInitialComments() before
+    // onPopupOpened sets highlightAfterLoad, causing a race where the non-highlight
+    // load can overwrite the deep-link highlight load.
     if (this.listController) {
       this.listController.creativeId = creativeId
+      this.listController.suppressTopicChangeLoad = true
     }
 
     // Load topics first to establish context
     if (this.topicsController) {
       await this.topicsController.onPopupOpened({ creativeId })
+    }
+
+    if (this.listController) {
+      this.listController.suppressTopicChangeLoad = false
     }
 
     if (this.formController) {
