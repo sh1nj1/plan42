@@ -138,7 +138,7 @@ module Creatives
     end
 
     def determine_scope
-      if params[:id]
+      base_scope = if params[:id]
         base = Creative.find_by(id: params[:id])&.effective_origin
         return Creative.none unless base
 
@@ -169,6 +169,10 @@ module Creatives
       else
         Creative.where(origin_id: nil)  # Only real creatives (not shells)
       end
+
+      # Exclude archived creatives from all filters/search unless explicitly requested
+      base_scope = base_scope.where(archived_at: nil) unless params[:show_archived]
+      base_scope
     end
 
     def determine_start_nodes(allowed_ids)
