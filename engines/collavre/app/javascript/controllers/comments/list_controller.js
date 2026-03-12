@@ -59,6 +59,13 @@ export default class extends Controller {
   }
 
   handleTopicChange(event) {
+    // During notifyChildControllers, topic loading fires change events before
+    // onPopupOpened sets up highlightAfterLoad. Suppress these to avoid a
+    // race where a non-highlight load overwrites the deep-link highlight load.
+    if (this.suppressTopicChangeLoad) {
+      this.currentTopicId = event.detail.topicId
+      return
+    }
     this.currentTopicId = event.detail.topicId
     this.resetToLatest()
   }
@@ -310,6 +317,7 @@ export default class extends Controller {
     if (!comment) return
     comment.scrollIntoView({ behavior: 'auto', block: 'center' })
     comment.classList.add('highlight-flash')
+    comment.dataset.highlighted = 'true'
     window.setTimeout(() => comment.classList.remove('highlight-flash'), 2000)
   }
 
