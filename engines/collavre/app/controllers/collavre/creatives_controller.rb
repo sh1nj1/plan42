@@ -373,7 +373,8 @@ module Collavre
           params[:due_after].present? ||
           params[:has_due_date].present? ||
           params[:assignee_id].present? ||
-          params[:unassigned].present?
+          params[:unassigned].present? ||
+          params[:show_archived].present?
       end
 
       def serialize_creatives(collection)

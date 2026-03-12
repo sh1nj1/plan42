@@ -60,7 +60,13 @@ module Collavre
       end
 
       # Apply the Topic Filter
-      scope = scope.where(topic_id: effective_topic_id) if effective_topic_id.present?
+      if effective_topic_id.present?
+        scope = scope.where(topic_id: effective_topic_id)
+      else
+        # Main view: exclude comments from archived topics
+        archived_topic_ids = @creative.topics.archived.pluck(:id)
+        scope = scope.where.not(topic_id: archived_topic_ids) if archived_topic_ids.any?
+      end
 
       # Default order: Newest first (created_at DESC)
       # This matches the column-reverse layout where the first item in the list is the visual bottom (Newest).

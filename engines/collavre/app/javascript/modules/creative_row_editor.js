@@ -1852,15 +1852,16 @@ export function initializeCreativeRowEditor() {
 
     if (archiveBtn) {
       archiveBtn.addEventListener('click', function () {
-        if (!currentCreativeId) return;
+        const creativeId = form.dataset.creativeId;
+        if (!creativeId) return;
         if (confirm(archiveBtn.dataset.confirm)) {
-          creativesApi.archive(currentCreativeId)
+          creativesApi.archive(creativeId)
             .then(res => {
               if (res.ok) {
-                const row = document.querySelector(`creative-tree-row[creative-id="${currentCreativeId}"]`);
+                const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`);
                 if (row) {
                   // Remove the row and its children container
-                  const childrenContainer = document.getElementById(`creative-children-${currentCreativeId}`);
+                  const childrenContainer = document.getElementById(`creative-children-${creativeId}`);
                   if (childrenContainer) childrenContainer.remove();
                   row.remove();
                 }
