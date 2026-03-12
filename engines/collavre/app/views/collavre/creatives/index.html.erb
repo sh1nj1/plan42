@@ -52,11 +52,11 @@
     <button id="delete-selection-btn" class="danger-link" style="display:none;" data-confirm="<%= t('collavre.creatives.index.are_you_sure_delete_selection') %>" data-action="click->creatives--select-mode#deleteSelected" data-creatives--select-mode-target="deleteButton"><%= t('collavre.creatives.index.delete_selection') %></button>
   <% end %>
   <button id="expand-all-btn" class="expand-btn" style="width: 36px;" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" data-action="click->creatives--expansion#toggleAll" data-creatives--expansion-target="expand"><span aria-hidden="true">▼</span></button>
-  <% if authenticated? %>
-    <button id="toggle-archived-btn" class="archive-toggle-btn" title="<%= t('collavre.creatives.index.show_archived') %>" data-show-text="<%= t('collavre.creatives.index.show_archived') %>" data-hide-text="<%= t('collavre.creatives.index.hide_archived') %>"><span aria-hidden="true">📦</span></button>
-  <% end %>
   <button id="toggle-edit-btn" class="edit-toggle-btn mobile-only" aria-label="<%= t('.edit') %>" title="<%= t('.edit') %>">
     <span aria-hidden="true"><%= svg_tag 'edit.svg', class: 'icon-edit', width: 16, height: 16 %></span></button>
+  <% if authenticated? %>
+    <button id="toggle-archived-btn" class="archive-toggle-btn desktop-only" title="<%= t('collavre.creatives.index.show_archived') %>" data-show-text="<%= t('collavre.creatives.index.show_archived') %>" data-hide-text="<%= t('collavre.creatives.index.hide_archived') %>"><span aria-hidden="true">📦</span></button>
+  <% end %>
   <% if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
     <button id="import-markdown-btn" class="import-btn desktop-only" data-action="click->creatives--import#toggle" data-creatives--import-target="toggle"><%= t('.import_markdown') %></button>
   <% end %>

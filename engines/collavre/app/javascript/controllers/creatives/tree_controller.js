@@ -32,18 +32,31 @@ export default class extends Controller {
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
     if (this._archiveToggleHandler) {
       document.getElementById('toggle-archived-btn')?.removeEventListener('click', this._archiveToggleHandler)
+      document.getElementById('toggle-archived-btn-mobile')?.removeEventListener('click', this._archiveToggleHandler)
     }
   }
 
   _setupArchiveToggle() {
     const btn = document.getElementById('toggle-archived-btn')
-    if (!btn) return
+    const mobileBtn = document.getElementById('toggle-archived-btn-mobile')
+    if (!btn && !mobileBtn) return
 
     this._showingArchived = false
-    this._archiveToggleHandler = () => {
+
+    const toggle = () => {
       this._showingArchived = !this._showingArchived
-      btn.classList.toggle('active', this._showingArchived)
-      btn.title = this._showingArchived ? (btn.dataset.hideText || '') : (btn.dataset.showText || '')
+
+      // Update desktop button
+      if (btn) {
+        btn.classList.toggle('active', this._showingArchived)
+        btn.title = this._showingArchived ? (btn.dataset.hideText || '') : (btn.dataset.showText || '')
+      }
+
+      // Update mobile button text
+      if (mobileBtn) {
+        const label = this._showingArchived ? (mobileBtn.dataset.hideText || '') : (mobileBtn.dataset.showText || '')
+        mobileBtn.textContent = '📦 ' + label
+      }
 
       const url = new URL(this.urlValue, window.location.origin)
       if (this._showingArchived) {
@@ -56,7 +69,10 @@ export default class extends Controller {
       delete this.element.dataset.loaded
       this.load()
     }
-    btn.addEventListener('click', this._archiveToggleHandler)
+
+    this._archiveToggleHandler = toggle
+    if (btn) btn.addEventListener('click', toggle)
+    if (mobileBtn) mobileBtn.addEventListener('click', toggle)
   }
 
   load() {
