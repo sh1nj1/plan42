@@ -1,3 +1,8 @@
+## v0.7.1 (2026-03-12)
+
+### Changes
+- 99ae4fa3 fix: reset stale topic_id when switching creatives in chat (#961)
+
 ## v0.7.0 (2026-03-12)
 
 ### Changes
