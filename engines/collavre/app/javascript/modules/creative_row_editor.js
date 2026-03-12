@@ -678,7 +678,13 @@ export function initializeCreativeRowEditor() {
       if (levelUpBtn) levelUpBtn.disabled = !canLevelUp;
 
       if (deletePopupToggle) deletePopupToggle.disabled = !hasCreativeId;
-      if (archiveBtn) archiveBtn.disabled = !hasCreativeId;
+      if (archiveBtn) {
+        archiveBtn.disabled = !hasCreativeId;
+        // Toggle label between Archive / Restore based on creative state
+        const targetRow = hasCreativeId ? document.querySelector(`creative-tree-row[creative-id="${form.dataset.creativeId}"]`) : null;
+        const isArchived = targetRow?.hasAttribute('archived');
+        archiveBtn.textContent = isArchived ? (archiveBtn.dataset.restoreLabel || 'Restore') : (archiveBtn.dataset.archiveLabel || 'Archive');
+      }
       if (deleteBtn) deleteBtn.disabled = !hasCreativeId;
       if (deleteWithChildrenBtn) deleteWithChildrenBtn.disabled = !hasCreativeId;
       if (linkBtn) linkBtn.disabled = !hasCreativeId || linkBtn.style.display === 'none';
@@ -1854,20 +1860,32 @@ export function initializeCreativeRowEditor() {
       archiveBtn.addEventListener('click', function () {
         const creativeId = form.dataset.creativeId;
         if (!creativeId) return;
-        if (confirm(archiveBtn.dataset.confirm)) {
-          creativesApi.archive(creativeId)
-            .then(res => {
-              if (res.ok) {
-                const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`);
-                if (row) {
-                  // Remove the row and its children container
-                  const childrenContainer = document.getElementById(`creative-children-${creativeId}`);
-                  if (childrenContainer) childrenContainer.remove();
-                  row.remove();
+        const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`);
+        const isArchived = row?.hasAttribute('archived');
+        const confirmMsg = isArchived ? archiveBtn.dataset.restoreConfirm : archiveBtn.dataset.confirm;
+
+        if (confirm(confirmMsg)) {
+          const apiCall = isArchived ? creativesApi.unarchive(creativeId) : creativesApi.archive(creativeId);
+          apiCall.then(res => {
+            if (res.ok) {
+              if (!isArchived) {
+                // Archiving: remove from view
+                const childrenContainer = document.getElementById(`creative-children-${creativeId}`);
+                if (childrenContainer) childrenContainer.remove();
+                if (row) row.remove();
+              } else {
+                // Restoring: reload tree to show updated state
+                const treeEl = document.querySelector('[data-controller="creatives--tree"]');
+                if (treeEl) {
+                  treeEl.innerHTML = '';
+                  delete treeEl.dataset.loaded;
+                  const ctrl = window.Stimulus?.getControllerForElementAndIdentifier(treeEl, 'creatives--tree');
+                  if (ctrl) ctrl.load();
                 }
-                closeEditor();
               }
-            });
+              closeEditor();
+            }
+          });
         }
       });
     }

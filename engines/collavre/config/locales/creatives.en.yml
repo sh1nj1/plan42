@@ -13,6 +13,7 @@ en:
         delete: Delete
         archive: Archive
         archive_confirm: Archive this item and all children?
+        unarchive_confirm: Restore this creative from archive?
         unarchive: Restore
         show_archived: Show archived
         hide_archived: Hide archived
