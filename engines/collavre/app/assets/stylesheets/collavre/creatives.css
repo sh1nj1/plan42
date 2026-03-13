@@ -316,13 +316,16 @@ creative-tree-row.show-edit .creative-row {
 .creative-toggle-btn {
     width: 16px;
     height: 16px;
-    font-size: 14px;
     margin-right: 4px;
     margin-top: 4px;
     /* Align with text */
     visibility: hidden;
     /* Hidden by default on desktop */
     /* Total width is 20px (16 + 4) */
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 
