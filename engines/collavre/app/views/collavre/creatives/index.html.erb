@@ -55,7 +55,7 @@
   <button id="toggle-edit-btn" class="edit-toggle-btn mobile-only" aria-label="<%= t('.edit') %>" title="<%= t('.edit') %>">
     <span aria-hidden="true"><%= svg_tag 'edit.svg', class: 'icon-edit', width: 16, height: 16 %></span></button>
   <% if authenticated? %>
-    <button id="toggle-archived-btn" class="archive-toggle-btn desktop-only" title="<%= t('collavre.creatives.index.show_archived') %>" data-show-text="<%= t('collavre.creatives.index.show_archived') %>" data-hide-text="<%= t('collavre.creatives.index.hide_archived') %>"><span aria-hidden="true">📦</span></button>
+    <button id="toggle-archived-btn" class="archive-toggle-btn desktop-only" title="<%= t('collavre.creatives.index.show_archived') %>" data-show-text="<%= t('collavre.creatives.index.show_archived') %>" data-hide-text="<%= t('collavre.creatives.index.hide_archived') %>"><span aria-hidden="true"><%= svg_tag 'archive.svg', width: 16, height: 16 %></span></button>
   <% end %>
   <% if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
     <button id="import-markdown-btn" class="import-btn desktop-only" data-action="click->creatives--import#toggle" data-creatives--import-target="toggle"><%= t('.import_markdown') %></button>
