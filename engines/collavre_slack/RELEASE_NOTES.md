@@ -1,3 +1,9 @@
+## v0.2.2 (2026-03-13)
+
+### Changes
+- 6b16f533 fix(slack): prevent WebMock from blocking HTTP in other engines' tests
+- 7db1fee3 feat(slack): paginate channel list and add channel search (#970)
+
 ## v0.2.1 (2026-02-11)
 
 ### Changes

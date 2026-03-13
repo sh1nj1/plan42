@@ -34,7 +34,7 @@ PATH
 PATH
   remote: engines/collavre_slack
   specs:
-    collavre_slack (0.2.1)
+    collavre_slack (0.2.2)
       collavre
       faraday
       faraday-retry
