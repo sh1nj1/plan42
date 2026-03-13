@@ -64,7 +64,8 @@ html.creative-alignment-ready .page-title {
     background: var(--surface-section);
     border: 1px solid var(--border-color);
     padding: 0.5em;
-    box-shadow: 0 2px 8px var(--border-color);
+    box-shadow: var(--shadow-3);
+    border-radius: var(--radius-2);
     min-width: 220px;
 }
 
@@ -104,11 +105,11 @@ creative-tree-row.show-edit .creative-row {
     position: fixed;
     display: none;
     pointer-events: none;
-    background: rgba(33, 150, 243, 0.9);
+    background: color-mix(in srgb, var(--color-active) 90%, transparent);
     color: var(--text-on-badge);
     font-size: var(--text-0);
     padding: 2px 8px;
-    border-radius: 4px;
+    border-radius: var(--radius-2);
     transform: translate(-50%, -170%);
     z-index: 9999;
     font-weight: var(--weight-6);
@@ -165,7 +166,8 @@ creative-tree-row.show-edit .creative-row {
 .creative-row:hover .creative-content {
     text-decoration: underline;
     text-decoration-color: var(--color-link);
-    text-decoration-thickness: 4px;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
     cursor: pointer;
 }
 
@@ -307,7 +309,7 @@ creative-tree-row.show-edit .creative-row {
 #voice-comments-btn.voice-input-active {
     background-color: var(--color-brand);
     color: var(--surface-bg);
-    border-radius: 6px;
+    border-radius: var(--radius-2);
     padding: 4px 8px;
 }
 
@@ -439,7 +441,7 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 .creative-row.level-1:hover,
 .creative-row.level-2:hover,
 .creative-row.level-3:hover {
-    background-color: var(--border-color);
+    background-color: var(--surface-hover);
 }
 
 .creative-progress {
@@ -474,7 +476,7 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 
 .creative-origin-link:hover,
 .creative-origin-link:focus {
-    background-color: var(--border-color);
+    background-color: var(--surface-hover);
 }
 
 .creative-origin-link-icon {

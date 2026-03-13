@@ -9,6 +9,12 @@
     max-height: 80vh;
     min-width: 200px;
     min-height: 200px;
+    background: var(--surface-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-3);
+    box-shadow: var(--shadow-3);
+    padding: 1em;
+    flex-direction: column;
     transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease,
                 right 0.25s ease, bottom 0.25s ease, border-radius 0.25s ease,
                 box-shadow 0.25s ease, padding 0.25s ease;
@@ -365,7 +371,7 @@ body.chat-fullscreen {
     padding: 0.3em 0.8em;
     font-size: 0.85em;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-2);
     white-space: nowrap;
 }
 
@@ -570,7 +576,7 @@ body.chat-fullscreen {
 .comment-action-json {
     background: var(--color-section-bg);
     border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border-radius: var(--radius-2);
     margin-top: 0.4em;
     padding: 0.5em;
     white-space: pre-wrap;
@@ -588,7 +594,7 @@ body.chat-fullscreen {
 .comment-action-edit-textarea {
     width: 100%;
     border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border-radius: var(--radius-2);
     padding: 0.5em;
     font-family: var(--font-family-monospace, 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace);
     font-size: 0.9em;
@@ -657,8 +663,8 @@ body.chat-fullscreen {
 }
 
 .comment-status-label.pending-label {
-    background-color: color-mix(in srgb, orange 20%, transparent);
-    color: orange;
+    background-color: color-mix(in srgb, var(--color-warning) 20%, transparent);
+    color: var(--color-warning);
 }
 
 .comment-action-container {
@@ -731,7 +737,7 @@ body.chat-fullscreen {
     background: var(--color-section-bg);
     color: var(--color-text);
     border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border-radius: var(--radius-2);
     padding: 0.2em 0.6em;
     font-size: 0.75em;
     opacity: 0;
@@ -753,7 +759,7 @@ body.chat-fullscreen {
     gap: 0.35em;
     background: var(--color-section-bg);
     border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border-radius: var(--radius-2);
     padding: 0.2em 0.4em;
     margin-right: 0.25em;
     margin-top: 0.2em;
@@ -784,7 +790,7 @@ body.chat-fullscreen {
 .comment-attachment-image {
     max-width: 100%;
     height: auto;
-    border-radius: 4px;
+    border-radius: var(--radius-2);
     border: 1px solid var(--color-border);
 }
 
@@ -944,7 +950,7 @@ body.chat-fullscreen {
 }
 
 .context-chip:hover {
-    background: var(--color-border);
+    background: var(--surface-hover);
 }
 
 .context-chip.context-disabled {
@@ -1088,7 +1094,7 @@ body.chat-fullscreen {
 }
 
 .topic-tag:hover {
-    background: var(--color-border);
+    background: var(--surface-hover);
 }
 
 .topic-tag.active {
@@ -1170,7 +1176,7 @@ body.chat-fullscreen {
     padding: var(--space-2) var(--space-3);
     background-color: var(--color-active);
     color: white;
-    border-radius: 4px;
+    border-radius: var(--radius-2);
     font-size: 0.9em;
     font-weight: 500;
     white-space: nowrap;
@@ -1349,7 +1355,7 @@ body.chat-fullscreen {
 }
 
 .selection-action-bar-btn:hover {
-    background: var(--surface-hover, rgba(0, 0, 0, 0.05));
+    background: var(--surface-hover);
 }
 
 .selection-action-delete:hover {
@@ -1441,7 +1447,7 @@ body.chat-fullscreen {
 /* Blinking cursor inline at the end of streaming content */
 .streaming-cursor {
     animation: streaming-blink 1s infinite;
-    color: var(--color-text, #333);
+    color: var(--text-primary);
     margin-left: 1px;
     font-weight: normal;
 }
@@ -1452,11 +1458,11 @@ body.chat-fullscreen {
 }
 
 .review-hint {
-    background: var(--surface-3, #333);
-    color: var(--text-1, #fff);
-    padding: var(--space-2, 4px) var(--space-3, 8px);
-    border-radius: var(--radius-2, 4px);
-    font-size: var(--text-0, 0.75rem);
+    background: var(--surface-btn);
+    color: var(--text-on-btn);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-2);
+    font-size: var(--text-0);
     white-space: nowrap;
     z-index: var(--layer-important, 999);
     animation: review-hint-fade 3s ease-out forwards;

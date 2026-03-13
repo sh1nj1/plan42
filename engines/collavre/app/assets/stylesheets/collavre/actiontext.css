@@ -61,7 +61,7 @@
   padding: 0.4rem 0.5rem;
   background: var(--surface-bg);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   box-shadow: var(--shadow-3);
 }
 
@@ -208,7 +208,7 @@
   display: block;
   background: var(--color-code-bg);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   color: var(--color-code-text);
   font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.9em;
@@ -404,7 +404,7 @@
 .lexical-attachment__caption-input {
   width: 100%;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   padding: var(--space-2) 0.6rem;
   font-size: 0.9rem;
   background: var(--surface-section);
