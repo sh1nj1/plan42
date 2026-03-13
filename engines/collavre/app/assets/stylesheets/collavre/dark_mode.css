@@ -79,7 +79,12 @@ body.dark-mode {
 /* ============================================================================
  * BASE ELEMENT STYLES
  * ============================================================================ */
+html {
+  scroll-behavior: smooth;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
 
   /* Collapse decorative transitions to instant; state changes still
      apply but without visible motion (hover bg, theme switch, etc.). */
