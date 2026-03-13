@@ -112,8 +112,11 @@ module Creatives
       creative = Creative.find_by(id: params[:id])
       return empty_result unless creative && readable?(creative)
 
+      children = creative.children_with_permission(user, :read)
+      children = children.select { |c| !c.archived? } unless params[:show_archived]
+
       {
-        creatives: creative.children_with_permission(user, :read),
+        creatives: children,
         parent: creative,
         allowed_ids: nil,
         overall_progress: nil,
@@ -122,8 +125,11 @@ module Creatives
     end
 
     def handle_root_query
+      roots = Creative.where(user: user).roots
+      roots = roots.where(archived_at: nil) unless params[:show_archived]
+
       {
-        creatives: Creative.where(user: user).roots,
+        creatives: roots,
         parent: nil,
         allowed_ids: nil,
         overall_progress: nil,
@@ -132,7 +138,7 @@ module Creatives
     end
 
     def determine_scope
-      if params[:id]
+      base_scope = if params[:id]
         base = Creative.find_by(id: params[:id])&.effective_origin
         return Creative.none unless base
 
@@ -163,6 +169,10 @@ module Creatives
       else
         Creative.where(origin_id: nil)  # Only real creatives (not shells)
       end
+
+      # Exclude archived creatives from all filters/search unless explicitly requested
+      base_scope = base_scope.where(archived_at: nil) unless params[:show_archived]
+      base_scope
     end
 
     def determine_start_nodes(allowed_ids)

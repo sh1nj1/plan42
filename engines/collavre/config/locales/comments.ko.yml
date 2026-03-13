@@ -5,6 +5,9 @@ ko:
       delete_confirm: 이 토픽의 모든 메시지가 삭제됩니다. 확실합니까?
       new_placeholder: 새 토픽
       no_permission: 이 작업을 수행할 권한이 없습니다.
+      archive: 아카이브
+      unarchive: 복원
+      archived_topics: "아카이브된 토픽 (%{count}개)"
       move:
         no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.
         duplicate_name: "'%{name}' 토픽이 대상 크리에이티브에 이미 존재합니다."
@@ -25,6 +28,7 @@ ko:
       delete_button: 삭제
       not_owner: 댓글 소유자만 수정할 수 있습니다.
       no_permission: 댓글을 추가할 권한이 없습니다.
+      archived_creative: 아카이브된 크리에이티브입니다. 채팅이 비활성화되었습니다.
       convert_not_allowed: 댓글 소유자 또는 크리에이티브 관리자만 이 메시지를 전환할 수 있습니다.
       convert_button: 전환
       convert_to_creative: 하위 크리에이티브로 전환

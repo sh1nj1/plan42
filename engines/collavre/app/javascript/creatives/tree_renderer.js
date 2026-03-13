@@ -64,6 +64,7 @@ function applyRowProperties(row, node) {
   updateBooleanAttr('hasChildren', 'has-children', node.has_children)
   updateBooleanAttr('expanded', 'expanded', node.expanded)
   updateBooleanAttr('isRoot', 'is-root', node.is_root)
+  updateBooleanAttr('archived', 'archived', node.archived)
 
   if (node.link_url) {
     if (row.linkUrl !== node.link_url) {

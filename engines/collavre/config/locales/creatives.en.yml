@@ -11,6 +11,12 @@ en:
         append_as_parent_creative: New upper-creative
         append_below_creative: Add below
         delete: Delete
+        archive: Archive
+        archive_confirm: Archive this item and all children?
+        unarchive_confirm: Restore this creative from archive?
+        unarchive: Restore
+        show_archived: Show archived
+        hide_archived: Hide archived
         delete_only_this: Delete only this Creative
         delete_with_children: Delete this Creative and all its children
         are_you_sure: Are you sure?

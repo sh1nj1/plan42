@@ -67,6 +67,8 @@ export default class extends Controller {
                 this.topics = topics
                 this.canManageTopics = canManage
                 this.canCreateTopic = canCreateTopic
+                this.archivedTopics = data.archived_topics || []
+
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
                 this.restoreSelection()
             }
@@ -115,11 +117,27 @@ export default class extends Controller {
                         #${topic.name}`
 
             if (canManage) {
+                html += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="📦">📦</button>`
                 html += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
             }
 
             html += `</span>`
         })
+
+        // Archived topics section
+        if (this.archivedTopics && this.archivedTopics.length > 0) {
+            html += `<span class="topic-archived-toggle" data-action="click->comments--topics#toggleArchivedTopics">
+                      📦 ${this.archivedTopics.length}
+                     </span>`
+            if (this.showingArchived) {
+                this.archivedTopics.forEach(topic => {
+                    html += `<span class="topic-tag topic-archived" data-id="${topic.id}">
+                              #${topic.name}
+                              ${canManage ? `<button class="unarchive-topic-btn" data-action="click->comments--topics#unarchiveTopic" data-id="${topic.id}" title="Restore">↩</button>` : ''}
+                             </span>`
+                })
+            }
+        }
 
         // Add create button container (write permission is sufficient for topic creation)
         if (canCreateTopic) {
@@ -321,6 +339,63 @@ export default class extends Controller {
         } catch (e) {
             console.error("Error deleting topic", e)
         }
+    }
+
+    async archiveTopic(event) {
+        event.stopPropagation()
+        const topicId = event.target.dataset.id
+        if (!topicId) return
+
+        try {
+            const response = await fetch(`/creatives/${this.creativeId}/topics/${topicId}/archive`, {
+                method: 'PATCH',
+                headers: {
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                }
+            })
+
+            if (response.ok) {
+                if (String(this.currentTopicId) === String(topicId)) {
+                    this.currentTopicId = ""
+                    this.dispatch("change", { detail: { topicId: "" } })
+                }
+                this.loadTopics()
+            } else {
+                alert("Failed to archive topic")
+            }
+        } catch (e) {
+            console.error("Error archiving topic", e)
+        }
+    }
+
+    async unarchiveTopic(event) {
+        event.stopPropagation()
+        const topicId = event.target.dataset.id
+        if (!topicId) return
+
+        try {
+            const response = await fetch(`/creatives/${this.creativeId}/topics/${topicId}/unarchive`, {
+                method: 'PATCH',
+                headers: {
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                }
+            })
+
+            if (response.ok) {
+                this.loadTopics()
+            } else {
+                alert("Failed to restore topic")
+            }
+        } catch (e) {
+            console.error("Error restoring topic", e)
+        }
+    }
+
+    toggleArchivedTopics(event) {
+        event.stopPropagation()
+        this.showingArchived = !this.showingArchived
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+        this.restoreSelection()
     }
 
     showInput(event) {
@@ -611,6 +686,11 @@ export default class extends Controller {
 
         if (action === "updated" && data.topic) {
             this.updateTopicInList(data.topic)
+            return
+        }
+
+        if (action === "archived" || action === "unarchived") {
+            this.loadTopics()
             return
         }
 

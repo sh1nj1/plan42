@@ -34,7 +34,9 @@ module Collavre
       end
 
       content_tag(:div, class: "creative-row-end") do
-        comment_part = if creative.has_permission?(Current.user, :feedback)
+        comment_part = if creative.archived?
+          safe_join([])
+        elsif creative.has_permission?(Current.user, :feedback)
           origin = creative.effective_origin
           comments_count = origin.comments.size
           pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)

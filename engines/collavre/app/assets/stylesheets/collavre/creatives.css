@@ -679,3 +679,29 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
         width: auto;
     }
 }
+/* Archive toggle button */
+.archive-toggle-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: var(--text-2);
+    padding: var(--space-1) var(--space-2);
+    opacity: 0.5;
+    transition: opacity 0.2s var(--ease-2);
+}
+.archive-toggle-btn:hover {
+    opacity: 0.8;
+}
+.archive-toggle-btn.active {
+    opacity: 1.0;
+    background: var(--surface-input);
+    border-radius: var(--radius-2);
+}
+
+/* Archived creative row */
+creative-tree-row[archived] .creative-tree {
+    opacity: 0.5;
+}
+creative-tree-row[archived] .creative-row {
+    background-color: var(--surface-input);
+}

@@ -22,6 +22,10 @@ module Collavre
 
     has_closure_tree order: :sequence, name_column: :description, hierarchy_table_name: "creative_hierarchies"
 
+    # --- Archive scopes ---
+    scope :active, -> { where(archived_at: nil) }
+    scope :archived, -> { where.not(archived_at: nil) }
+
     attr_accessor :filtered_progress
 
     belongs_to :user, class_name: Collavre.configuration.user_class_name, optional: true
@@ -140,6 +144,64 @@ module Collavre
         if old_parent_id && (old_parent = Creative.find_by(id: old_parent_id))
           Collavre::Creatives::ProgressService.new(old_parent).update_progress_from_children!
         end
+      end
+    end
+
+    # --- Archive ---
+    def archived?
+      archived_at.present?
+    end
+
+    def archive!
+      now = Time.current
+      self.class.transaction do
+        # Archive self and descendants
+        self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
+
+        # If this is a linked creative, also archive the origin and its descendants
+        origin = effective_origin(Set.new)
+        if origin != self
+          origin.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
+          # Archive all other linked creatives of the origin
+          origin.linked_creatives.where.not(id: id).find_each do |linked|
+            linked.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
+          end
+        end
+
+        # Also archive any linked creatives that point to this one
+        linked_creatives.find_each do |linked|
+          linked.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
+        end
+
+        reload
+        parent&.reload
+        Collavre::Creatives::ProgressService.new(parent).update_progress_from_children! if parent
+      end
+    end
+
+    def unarchive!
+      self.class.transaction do
+        # Unarchive self and descendants
+        self_and_descendants.where.not(archived_at: nil).update_all(archived_at: nil)
+
+        # If this is a linked creative, also unarchive the origin and its descendants
+        origin = effective_origin(Set.new)
+        if origin != self
+          origin.self_and_descendants.where.not(archived_at: nil).update_all(archived_at: nil)
+          # Unarchive all other linked creatives of the origin
+          origin.linked_creatives.where.not(id: id).find_each do |linked|
+            linked.self_and_descendants.where.not(archived_at: nil).update_all(archived_at: nil)
+          end
+        end
+
+        # Also unarchive any linked creatives that point to this one
+        linked_creatives.find_each do |linked|
+          linked.self_and_descendants.where.not(archived_at: nil).update_all(archived_at: nil)
+        end
+
+        reload
+        parent&.reload
+        Collavre::Creatives::ProgressService.new(parent).update_progress_from_children! if parent
       end
     end
 
