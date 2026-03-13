@@ -1,3 +1,11 @@
+## v0.8.0 (2026-03-13)
+
+### Changes
+- 8178cd47 feat: add archive/unarchive for creatives and chat topics (#960)
+- 4db8c251 fix: prevent race condition in deep-link comment highlighting (#967)
+- 7129bb1d refactor: extract collavre engine stylesheets into helper (#966)
+- a2d3b691 fix: prevent stale comments when switching creative chat windows (#965)
+
 ## v0.7.2 (2026-03-12)
 
 ### Changes
