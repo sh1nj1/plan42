@@ -18,7 +18,7 @@ module CollavreSlack
         )
         .to_return(
           status: 200,
-          body: { ok: true, channels: [{ id: "C01", name: "general" }], response_metadata: { next_cursor: "" } }.to_json,
+          body: { ok: true, channels: [ { id: "C01", name: "general" } ], response_metadata: { next_cursor: "" } }.to_json,
           headers: { "Content-Type" => "application/json" }
         )
 
@@ -44,7 +44,7 @@ module CollavreSlack
     # -- list_all_channels (pagination) ---------------------------------------
 
     test "list_all_channels fetches single page" do
-      page = [{ id: "C01", name: "general" }, { id: "C02", name: "random" }]
+      page = [ { id: "C01", name: "general" }, { id: "C02", name: "random" } ]
 
       stub_request(:get, "https://slack.com/api/conversations.list")
         .with(query: { "limit" => "200", "types" => "public_channel,private_channel" })
@@ -60,9 +60,9 @@ module CollavreSlack
     end
 
     test "list_all_channels paginates through multiple pages" do
-      page1 = [{ id: "C01", name: "general" }, { id: "C02", name: "random" }]
-      page2 = [{ id: "C03", name: "engineering" }]
-      page3 = [{ id: "C04", name: "design" }]
+      page1 = [ { id: "C01", name: "general" }, { id: "C02", name: "random" } ]
+      page2 = [ { id: "C03", name: "engineering" } ]
+      page3 = [ { id: "C04", name: "design" } ]
 
       # Page 1: no cursor, returns next_cursor
       stub_request(:get, "https://slack.com/api/conversations.list")
@@ -116,7 +116,7 @@ module CollavreSlack
         .with(query: hash_including("limit" => "200"))
         .to_return(
           status: 200,
-          body: { ok: true, channels: [{ id: "C01", name: "general" }], response_metadata: {} }.to_json,
+          body: { ok: true, channels: [ { id: "C01", name: "general" } ], response_metadata: {} }.to_json,
           headers: { "Content-Type" => "application/json" }
         )
 
@@ -129,7 +129,7 @@ module CollavreSlack
         .with(query: hash_including("limit" => "200"))
         .to_return(
           status: 200,
-          body: { ok: true, channels: [{ id: "C01", name: "general" }] }.to_json,
+          body: { ok: true, channels: [ { id: "C01", name: "general" } ] }.to_json,
           headers: { "Content-Type" => "application/json" }
         )
 
@@ -145,7 +145,7 @@ module CollavreSlack
         .with(query: { "limit" => "200", "types" => "public_channel,private_channel" })
         .to_return(
           status: 200,
-          body: { ok: true, channels: [{ id: "C01", name: "general" }], response_metadata: { next_cursor: "cursor_2" } }.to_json,
+          body: { ok: true, channels: [ { id: "C01", name: "general" } ], response_metadata: { next_cursor: "cursor_2" } }.to_json,
           headers: { "Content-Type" => "application/json" }
         )
 

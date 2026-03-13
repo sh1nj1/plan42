@@ -85,7 +85,7 @@ module CollavreSlack
         .with(query: hash_including("limit" => "200"))
         .to_return(
           status: 200,
-          body: { ok: true, channels: [{ id: "C01", name: "general" }, { id: "C02", name: "random" }], response_metadata: { next_cursor: "" } }.to_json,
+          body: { ok: true, channels: [ { id: "C01", name: "general" }, { id: "C02", name: "random" } ], response_metadata: { next_cursor: "" } }.to_json,
           headers: { "Content-Type" => "application/json" }
         )
 

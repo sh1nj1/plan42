@@ -2,6 +2,9 @@ ENV["RAILS_ENV"] ||= "test"
 require_relative "../../../test/test_helper"
 require "collavre_slack"
 require "webmock/minitest"
+# Allow net connections by default so other engines' tests are not affected.
+# collavre_slack tests rely on explicit stub_request() calls to intercept Slack API requests.
+WebMock.allow_net_connect!
 
 module CollavreSlackTestHelpers
   def create_user(email: "user@example.com", name: "Test User")
