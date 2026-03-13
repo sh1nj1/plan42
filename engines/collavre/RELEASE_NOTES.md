@@ -1,3 +1,8 @@
+## v0.8.1 (2026-03-13)
+
+### Changes
+- afa9be45 fix: use TreeFormatter.plain_description in new_ai view (#968)
+
 ## v0.8.0 (2026-03-13)
 
 ### Changes
