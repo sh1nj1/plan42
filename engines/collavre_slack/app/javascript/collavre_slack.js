@@ -1,3 +1,5 @@
+import { filterChannels, reconcileSelection, buildChannelViewModels } from './slack_channel_list.js';
+
 let slackIntegrationInitialized = false;
 
 if (!slackIntegrationInitialized) {
@@ -23,6 +25,7 @@ if (!slackIntegrationInitialized) {
     const addChannelBtn = document.getElementById('slack-add-channel-btn');
     const connectMessage = document.getElementById('slack-connect-message');
     const channelListEl = document.getElementById('slack-channel-list');
+    const channelSearchEl = document.getElementById('slack-channel-search');
     const channelSummaryEl = document.getElementById('slack-channel-summary');
 
     let creativeId = null;
@@ -250,21 +253,32 @@ if (!slackIntegrationInitialized) {
         });
     }
 
-    function renderChannelList() {
+    function renderChannelList(filter) {
       if (!channelListEl) return;
 
       channelListEl.innerHTML = '';
 
       if (availableChannels.length === 0) {
-        channelListEl.innerHTML = '<p style="padding:0.5em;color:var(--color-text-secondary);">No channels available</p>';
+        channelListEl.innerHTML = `<p style="padding:0.5em;color:var(--color-text-secondary);">${modal.dataset.noChannelsAvailable || 'No channels available'}</p>`;
         return;
       }
 
-      availableChannels.forEach(function (channel) {
+      const filtered = filterChannels(availableChannels, filter);
+
+      // Clear selection if the selected channel is not in the filtered results
+      selectedChannel = reconcileSelection(selectedChannel, filtered);
+      nextBtn.disabled = !selectedChannel;
+
+      if (filtered.length === 0) {
+        channelListEl.innerHTML = `<p style="padding:0.5em;color:var(--color-text-secondary);">${modal.dataset.noMatchingChannels || 'No matching channels'}</p>`;
+        return;
+      }
+
+      const viewModels = buildChannelViewModels(filtered, existingLinks, selectedChannel);
+
+      viewModels.forEach(function ({ channel, isLinked, isSelected }) {
         const div = document.createElement('div');
         div.className = 'slack-channel-item';
-
-        const isLinked = existingLinks.some(link => link.channel_id === channel.id);
 
         const linkedLabel = modal.dataset.linkedLabel || '(linked)';
         div.innerHTML = `
@@ -272,9 +286,13 @@ if (!slackIntegrationInitialized) {
           ${isLinked ? `<span style="color:green;margin-left:0.5em;">${linkedLabel}</span>` : ''}
         `;
 
+        if (isSelected) {
+          div.classList.add('active');
+        }
+
         if (!isLinked) {
           div.addEventListener('click', function () {
-            document.querySelectorAll('.slack-channel-item').forEach(el => {
+            channelListEl.querySelectorAll('.slack-channel-item').forEach(el => {
               el.classList.remove('active');
             });
             div.classList.add('active');
@@ -396,6 +414,7 @@ if (!slackIntegrationInitialized) {
       clearError();
       if (currentStep === 'connect') {
         currentStep = 'channels';
+        if (channelSearchEl) channelSearchEl.value = '';
         renderChannelList();
       } else if (currentStep === 'channels') {
         if (!selectedChannel) {
@@ -410,10 +429,17 @@ if (!slackIntegrationInitialized) {
 
     finishBtn.addEventListener('click', performLink);
 
+    if (channelSearchEl) {
+      channelSearchEl.addEventListener('input', function () {
+        renderChannelList(this.value);
+      });
+    }
+
     if (addChannelBtn) {
       addChannelBtn.addEventListener('click', function () {
         currentStep = 'channels';
         selectedChannel = null;
+        if (channelSearchEl) channelSearchEl.value = '';
         renderChannelList();
         updateStep();
       });
@@ -437,7 +463,7 @@ if (!slackIntegrationInitialized) {
             if (data.connected) {
               availableChannels = data.channels || [];
               existingLinks = data.links || [];
-              renderChannelList();
+              renderChannelList(channelSearchEl ? channelSearchEl.value : '');
             }
           })
           .catch(error => {

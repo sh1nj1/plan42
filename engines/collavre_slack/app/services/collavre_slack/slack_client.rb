@@ -28,8 +28,26 @@ module CollavreSlack
       parse_response(response)
     end
 
-    def list_channels
-      get("conversations.list", limit: 1000, types: "public_channel,private_channel")
+    def list_channels(cursor: nil)
+      params = { limit: 200, types: "public_channel,private_channel" }
+      params[:cursor] = cursor if cursor.present?
+      get("conversations.list", params)
+    end
+
+    def list_all_channels
+      channels = []
+      cursor = nil
+
+      loop do
+        response = list_channels(cursor: cursor)
+        break unless response[:ok]
+
+        channels.concat(Array(response[:channels]))
+        cursor = response.dig(:response_metadata, :next_cursor)
+        break if cursor.blank?
+      end
+
+      channels
     end
 
     def list_messages(channel:, oldest: nil, cursor: nil)

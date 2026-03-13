@@ -1,6 +1,7 @@
 ENV["RAILS_ENV"] ||= "test"
 require_relative "../../../test/test_helper"
 require "collavre_slack"
+require "webmock/minitest"
 
 module CollavreSlackTestHelpers
   def create_user(email: "user@example.com", name: "Test User")
@@ -19,6 +20,29 @@ module CollavreSlackTestHelpers
       progress: 0.0,
       user: user
     )
+  end
+
+  # Stub Slack conversations.list with pagination support
+  def stub_slack_channels(*pages, token: "xoxb-test-token")
+    pages.each_with_index do |page, index|
+      next_cursor = index < pages.size - 1 ? "cursor_page_#{index + 1}" : ""
+      cursor_param = index == 0 ? nil : "cursor_page_#{index}"
+
+      query = { "limit" => "200", "types" => "public_channel,private_channel" }
+      query["cursor"] = cursor_param if cursor_param
+
+      stub_request(:get, "https://slack.com/api/conversations.list")
+        .with(query: hash_including(query), headers: { "Authorization" => "Bearer #{token}" })
+        .to_return(
+          status: 200,
+          body: {
+            ok: true,
+            channels: page,
+            response_metadata: { next_cursor: next_cursor }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
   end
 end
 
