@@ -7,7 +7,7 @@
     <% creative = Collavre::Creative.find_by(id: params[:creative_id]) %>
     <% if creative %>
       <div class="form-group">
-        <p class="text-muted"><%= t('collavre.contacts.org_chart.add_ai_agent_to', creative: creative.plain_description) %></p>
+        <p class="text-muted"><%= t('collavre.contacts.org_chart.add_ai_agent_to', creative: Collavre::Creatives::TreeFormatter.plain_description(creative)) %></p>
       </div>
     <% end %>
   <% end %>
