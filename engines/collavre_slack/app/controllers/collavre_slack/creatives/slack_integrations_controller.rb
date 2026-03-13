@@ -86,10 +86,7 @@ module CollavreSlack
 
       def fetch_channels(slack_account)
         client = SlackClient.new(access_token: slack_account.access_token)
-        response = client.list_channels
-        return [] unless response[:ok]
-
-        (response[:channels] || []).map do |channel|
+        client.list_all_channels.map do |channel|
           { id: channel[:id], name: channel[:name] }
         end
       rescue StandardError => e
