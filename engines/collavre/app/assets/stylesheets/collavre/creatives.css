@@ -702,9 +702,9 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     color: var(--text-primary);
 }
 .archive-toggle-btn.active {
-    background: var(--color-btn-bg);
-    color: var(--color-btn-text);
-    border-color: var(--color-btn-bg);
+    background: var(--color-active);
+    color: var(--color-badge-text);
+    border-color: var(--color-active);
 }
 
 /* Archived creative row */
