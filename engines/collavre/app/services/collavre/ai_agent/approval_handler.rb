@@ -64,6 +64,14 @@ module Collavre
         )
       end
 
+      def generate_approval_summary(error)
+        ApprovalSummaryGenerator.new(
+          tool_name: error.tool_name,
+          arguments: error.tool_arguments,
+          creative: @creative
+        ).generate
+      end
+
       def create_approval_comment(error)
         return unless @creative
 
@@ -86,11 +94,17 @@ module Collavre
                          I18n.t("collavre.ai_agent.approval.no_arguments")
         end
 
+        summary = generate_approval_summary(error)
+
         content = I18n.t(
           "collavre.ai_agent.approval.message",
           tool_name: error.tool_name,
           arguments: args_display
         )
+
+        if summary.present?
+          content += "\n#{I18n.t('collavre.ai_agent.approval.summary_header')}\n#{summary}\n"
+        end
 
         original_comment = Comment.find_by(id: @context.dig("comment", "id"))
         topic_id = original_comment&.topic_id
