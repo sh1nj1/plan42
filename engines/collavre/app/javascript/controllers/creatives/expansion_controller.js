@@ -78,10 +78,10 @@ export default class extends Controller {
   updateExpandButton() {
     if (!this.hasExpandTarget) return
     const button = this.expandTarget
-    const icon = button.querySelector('span')
-    if (icon) {
-      icon.textContent = this.allExpanded ? '▶' : '▼'
-    }
+    const expandIcon = button.querySelector('.icon-expand')
+    const collapseIcon = button.querySelector('.icon-collapse')
+    if (expandIcon) expandIcon.style.display = this.allExpanded ? 'none' : ''
+    if (collapseIcon) collapseIcon.style.display = this.allExpanded ? '' : 'none'
     const expandText = button.dataset.expandText
     const collapseText = button.dataset.collapseText
     button.ariaLabel = this.allExpanded ? collapseText : expandText

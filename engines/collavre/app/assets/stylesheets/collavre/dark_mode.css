@@ -79,6 +79,40 @@ body.dark-mode {
 /* ============================================================================
  * BASE ELEMENT STYLES
  * ============================================================================ */
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  /* Collapse decorative transitions to instant; state changes still
+     apply but without visible motion (hover bg, theme switch, etc.). */
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+  }
+
+  /* Disable decorative/non-essential animations entirely so that
+     elements styled with animation end up in their *final* keyframe
+     state (via forwards fill) rather than flickering.
+     Infinite animations (spinners, streaming dots) stop on their
+     current frame and become static — which is the correct reduced-
+     motion behaviour. */
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  /* Keep timed-visibility elements (toasts, hints) fully visible
+     instead of letting the collapsed fade-out hide them instantly. */
+  .share-modal-message,
+  .review-hint,
+  .comment-copy-notice.visible {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}
+
 body {
   background: var(--surface-bg);
   color: var(--text-primary);
@@ -96,6 +130,7 @@ nav {
 
 a {
   color: var(--color-link);
+  transition: color 0.15s;
 }
 
 main,
@@ -107,9 +142,27 @@ button,
 input[type="button"],
 input[type="submit"] {
   border: none;
-  border-radius: 1px;
+  border-radius: var(--radius-2);
   padding: 2px 4px;
-  transition: background 0.3s, color 0.3s;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+
+/* --- Global active press feedback --- */
+button:active:not(:disabled),
+input[type="button"]:active:not(:disabled),
+input[type="submit"]:active:not(:disabled),
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* --- Global focus-visible ring --- */
+button:focus-visible,
+input[type="button"]:focus-visible,
+input[type="submit"]:focus-visible,
+a:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--color-active);
+  outline-offset: 2px;
 }
 
 /* ============================================================================
@@ -127,7 +180,7 @@ input[type="submit"] {
   font-weight: 500;
   line-height: 1.4;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-2, 4px);
+  border-radius: var(--radius-2);
   background: var(--surface-btn);
   color: var(--text-on-btn);
   cursor: pointer;

@@ -64,7 +64,8 @@ html.creative-alignment-ready .page-title {
     background: var(--surface-section);
     border: 1px solid var(--border-color);
     padding: 0.5em;
-    box-shadow: 0 2px 8px var(--border-color);
+    box-shadow: var(--shadow-3);
+    border-radius: var(--radius-2);
     min-width: 220px;
 }
 
@@ -104,11 +105,11 @@ creative-tree-row.show-edit .creative-row {
     position: fixed;
     display: none;
     pointer-events: none;
-    background: rgba(33, 150, 243, 0.9);
+    background: color-mix(in srgb, var(--color-active) 90%, transparent);
     color: var(--text-on-badge);
     font-size: var(--text-0);
     padding: 2px 8px;
-    border-radius: 4px;
+    border-radius: var(--radius-2);
     transform: translate(-50%, -170%);
     z-index: 9999;
     font-weight: var(--weight-6);
@@ -165,7 +166,8 @@ creative-tree-row.show-edit .creative-row {
 .creative-row:hover .creative-content {
     text-decoration: underline;
     text-decoration-color: var(--color-link);
-    text-decoration-thickness: 4px;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
     cursor: pointer;
 }
 
@@ -307,20 +309,23 @@ creative-tree-row.show-edit .creative-row {
 #voice-comments-btn.voice-input-active {
     background-color: var(--color-brand);
     color: var(--surface-bg);
-    border-radius: 6px;
+    border-radius: var(--radius-2);
     padding: 4px 8px;
 }
 
 .creative-toggle-btn {
     width: 16px;
     height: 16px;
-    font-size: 14px;
     margin-right: 4px;
     margin-top: 4px;
     /* Align with text */
     visibility: hidden;
     /* Hidden by default on desktop */
     /* Total width is 20px (16 + 4) */
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 
@@ -439,7 +444,7 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 .creative-row.level-1:hover,
 .creative-row.level-2:hover,
 .creative-row.level-3:hover {
-    background-color: var(--border-color);
+    background-color: var(--surface-hover);
 }
 
 .creative-progress {
@@ -474,7 +479,7 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 
 .creative-origin-link:hover,
 .creative-origin-link:focus {
-    background-color: var(--border-color);
+    background-color: var(--surface-hover);
 }
 
 .creative-origin-link-icon {
@@ -682,20 +687,24 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 /* Archive toggle button */
 .archive-toggle-btn {
     background: none;
-    border: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-2);
     cursor: pointer;
-    font-size: var(--text-2);
     padding: var(--space-1) var(--space-2);
-    opacity: 0.5;
-    transition: opacity 0.2s var(--ease-2);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
 }
 .archive-toggle-btn:hover {
-    opacity: 0.8;
+    background: var(--surface-input);
+    color: var(--text-primary);
 }
 .archive-toggle-btn.active {
-    opacity: 1.0;
-    background: var(--surface-input);
-    border-radius: var(--radius-2);
+    background: var(--color-active);
+    color: var(--color-badge-text);
+    border-color: var(--color-active);
 }
 
 /* Archived creative row */

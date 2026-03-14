@@ -55,7 +55,9 @@ export default class extends Controller {
       // Update mobile button text
       if (mobileBtn) {
         const label = this._showingArchived ? (mobileBtn.dataset.hideText || '') : (mobileBtn.dataset.showText || '')
-        mobileBtn.textContent = '📦 ' + label
+        const iconSpan = mobileBtn.querySelector('span')
+        const iconHtml = iconSpan ? iconSpan.outerHTML + ' ' : ''
+        mobileBtn.innerHTML = iconHtml + label
       }
 
       const url = new URL(this.urlValue, window.location.origin)

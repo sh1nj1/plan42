@@ -1,6 +1,9 @@
 import { Controller } from "@hotwired/stimulus"
 import { createSubscription } from "../../services/cable"
 
+const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
+const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
+
 export default class extends Controller {
     static targets = ["list"]
 
@@ -117,7 +120,7 @@ export default class extends Controller {
                         #${topic.name}`
 
             if (canManage) {
-                html += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="📦">📦</button>`
+                html += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
                 html += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
             }
 
@@ -127,13 +130,13 @@ export default class extends Controller {
         // Archived topics section
         if (this.archivedTopics && this.archivedTopics.length > 0) {
             html += `<span class="topic-archived-toggle" data-action="click->comments--topics#toggleArchivedTopics">
-                      📦 ${this.archivedTopics.length}
+                      ${ICON_ARCHIVE} ${this.archivedTopics.length}
                      </span>`
             if (this.showingArchived) {
                 this.archivedTopics.forEach(topic => {
                     html += `<span class="topic-tag topic-archived" data-id="${topic.id}">
                               #${topic.name}
-                              ${canManage ? `<button class="unarchive-topic-btn" data-action="click->comments--topics#unarchiveTopic" data-id="${topic.id}" title="Restore">↩</button>` : ''}
+                              ${canManage ? `<button class="unarchive-topic-btn" data-action="click->comments--topics#unarchiveTopic" data-id="${topic.id}" title="Restore">${ICON_RESTORE}</button>` : ''}
                              </span>`
                 })
             }
@@ -316,7 +319,7 @@ export default class extends Controller {
         const confirmText = this.listTarget.dataset.confirmDeleteText || "This will delete all messages in this topic. Are you sure?"
         if (!confirm(confirmText)) return
 
-        const topicId = event.target.dataset.id
+        const topicId = event.currentTarget.dataset.id
         if (!topicId) return
 
         try {
@@ -343,7 +346,7 @@ export default class extends Controller {
 
     async archiveTopic(event) {
         event.stopPropagation()
-        const topicId = event.target.dataset.id
+        const topicId = event.currentTarget.dataset.id
         if (!topicId) return
 
         try {
@@ -370,7 +373,7 @@ export default class extends Controller {
 
     async unarchiveTopic(event) {
         event.stopPropagation()
-        const topicId = event.target.dataset.id
+        const topicId = event.currentTarget.dataset.id
         if (!topicId) return
 
         try {
