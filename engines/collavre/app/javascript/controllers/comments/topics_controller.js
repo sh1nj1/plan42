@@ -319,7 +319,7 @@ export default class extends Controller {
         const confirmText = this.listTarget.dataset.confirmDeleteText || "This will delete all messages in this topic. Are you sure?"
         if (!confirm(confirmText)) return
 
-        const topicId = event.target.dataset.id
+        const topicId = event.currentTarget.dataset.id
         if (!topicId) return
 
         try {
@@ -346,7 +346,7 @@ export default class extends Controller {
 
     async archiveTopic(event) {
         event.stopPropagation()
-        const topicId = event.target.dataset.id
+        const topicId = event.currentTarget.dataset.id
         if (!topicId) return
 
         try {
@@ -373,7 +373,7 @@ export default class extends Controller {
 
     async unarchiveTopic(event) {
         event.stopPropagation()
-        const topicId = event.target.dataset.id
+        const topicId = event.currentTarget.dataset.id
         if (!topicId) return
 
         try {
