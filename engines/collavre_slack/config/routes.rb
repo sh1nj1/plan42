@@ -3,7 +3,11 @@ CollavreSlack::Engine.routes.draw do
   get "/auth/slack/callback", to: "slack_auth#callback"
 
   resources :creatives, only: [] do
-    resources :slack_integrations, module: :creatives, only: [ :index, :create, :destroy ]
+    resources :slack_integrations, module: :creatives, only: [ :index, :create, :destroy ] do
+      collection do
+        get :badge
+      end
+    end
     resources :slack_messages, only: [ :create ]
   end
 

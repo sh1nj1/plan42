@@ -497,25 +497,45 @@ if (!slackIntegrationInitialized) {
       badge = document.createElement('span');
       badge.setAttribute('data-slack-badge', '');
       badge.className = 'slack-channel-badge';
-      badge.style.cssText = 'display:none;font-size:0.75em;background:#4A154B;color:white;padding:0.15em 0.5em;border-radius:4px;margin-left:0.5em;';
       badgeContainer.appendChild(badge);
     }
+
+    // Remove any existing tooltip
+    const existingTooltip = badgeContainer.querySelector('[data-slack-tooltip]');
+    if (existingTooltip) existingTooltip.remove();
 
     // Hide badge initially
     badge.style.display = 'none';
     badge.textContent = '';
 
     try {
-      const response = await fetch(`/slack/creatives/${creativeId}/slack_integrations`, {
+      const response = await fetch(`/slack/creatives/${creativeId}/slack_integrations/badge`, {
         headers: { Accept: 'application/json' }
       });
       if (!response.ok) return;
 
       const data = await response.json();
       if (data.links && data.links.length > 0) {
-        const channelNames = data.links.map(link => `#${link.channel_name}`).join(', ');
-        badge.textContent = `Slack: ${channelNames}`;
+        badge.textContent = 'Slack';
         badge.style.display = 'inline-block';
+        badge.title = data.links.map(link => `#${link.channel_name}`).join(', ');
+
+        // Create tooltip element for click display
+        const tooltip = document.createElement('span');
+        tooltip.setAttribute('data-slack-tooltip', '');
+        tooltip.className = 'slack-channel-tooltip';
+        tooltip.textContent = data.links.map(link => `#${link.channel_name}`).join(', ');
+        badgeContainer.appendChild(tooltip);
+
+        badge.addEventListener('click', function (e) {
+          e.stopPropagation();
+          tooltip.classList.toggle('visible');
+        });
+
+        // Close tooltip when clicking elsewhere
+        document.addEventListener('click', function closeTooltip() {
+          tooltip.classList.remove('visible');
+        }, { once: false });
       }
     } catch (error) {
       console.warn('Failed to load Slack badge:', error);
@@ -531,5 +551,7 @@ if (!slackIntegrationInitialized) {
       badge.style.display = 'none';
       badge.textContent = '';
     }
+    const tooltip = badgeContainer.querySelector('[data-slack-tooltip]');
+    if (tooltip) tooltip.remove();
   });
 }
