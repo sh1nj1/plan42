@@ -1285,6 +1285,7 @@ body.chat-fullscreen {
 .topic-archived-toggle {
     display: inline-flex;
     align-items: center;
+    gap: 0.3em;
     padding: 0.15em var(--space-2);
     border-radius: var(--radius-3);
     font-size: var(--text-0);
@@ -1304,10 +1305,11 @@ body.chat-fullscreen {
     background: none;
     border: none;
     cursor: pointer;
-    font-size: var(--text-00);
     padding: 0 var(--space-1);
     opacity: 0.6;
-    vertical-align: middle;
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary);
 }
 .archive-topic-btn:hover,
 .unarchive-topic-btn:hover {
