@@ -35,7 +35,7 @@ module Collavre
         @context = @task.trigger_event_payload
       end
 
-      test "approval comment includes AI-generated summary when available" do
+      test "approval comment includes summary when provided" do
         handler = ApprovalHandler.new(
           task: @task,
           agent: @agent,
@@ -43,15 +43,10 @@ module Collavre
           creative: @creative
         )
 
-        mock_generator = Object.new
-        mock_generator.define_singleton_method(:generate) {
-          "Updates the description of creative #42 to 'New description'."
-        }
+        summary = "Updates the description of creative #42 to 'New description'."
 
-        ApprovalSummaryGenerator.stub(:new, ->(**_args) { mock_generator }) do
-          assert_difference "Comment.count", 1 do
-            handler.handle(@error)
-          end
+        assert_difference "Comment.count", 1 do
+          handler.handle(@error, summary: summary)
         end
 
         comment = Comment.last
@@ -59,7 +54,7 @@ module Collavre
         assert_includes comment.content, "Updates the description of creative #42"
       end
 
-      test "approval comment works without summary when generation fails" do
+      test "approval comment works without summary" do
         handler = ApprovalHandler.new(
           task: @task,
           agent: @agent,
@@ -67,13 +62,25 @@ module Collavre
           creative: @creative
         )
 
-        mock_generator = Object.new
-        mock_generator.define_singleton_method(:generate) { nil }
+        assert_difference "Comment.count", 1 do
+          handler.handle(@error, summary: nil)
+        end
 
-        ApprovalSummaryGenerator.stub(:new, ->(**_args) { mock_generator }) do
-          assert_difference "Comment.count", 1 do
-            handler.handle(@error)
-          end
+        comment = Comment.last
+        refute_includes comment.content, I18n.t("collavre.ai_agent.approval.summary_header")
+        assert_includes comment.content, "update_creative"
+      end
+
+      test "approval comment works when summary is not passed" do
+        handler = ApprovalHandler.new(
+          task: @task,
+          agent: @agent,
+          context: @context,
+          creative: @creative
+        )
+
+        assert_difference "Comment.count", 1 do
+          handler.handle(@error)
         end
 
         comment = Comment.last
@@ -89,12 +96,7 @@ module Collavre
           creative: @creative
         )
 
-        mock_generator = Object.new
-        mock_generator.define_singleton_method(:generate) { nil }
-
-        ApprovalSummaryGenerator.stub(:new, ->(**_args) { mock_generator }) do
-          handler.handle(@error)
-        end
+        handler.handle(@error)
 
         comment = Comment.last
         action = JSON.parse(comment.action)
@@ -112,12 +114,7 @@ module Collavre
           creative: @creative
         )
 
-        mock_generator = Object.new
-        mock_generator.define_singleton_method(:generate) { nil }
-
-        ApprovalSummaryGenerator.stub(:new, ->(**_args) { mock_generator }) do
-          handler.handle(@error)
-        end
+        handler.handle(@error)
 
         @task.reload
         assert_equal "pending_approval", @task.status

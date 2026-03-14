@@ -13,7 +13,7 @@ module Collavre
         @reply_comment = reply_comment
       end
 
-      def handle(error)
+      def handle(error, summary: nil)
         cleanup_placeholder
 
         broadcast_idle
@@ -22,7 +22,7 @@ module Collavre
 
         log_action(error)
 
-        create_approval_comment(error)
+        create_approval_comment(error, summary: summary)
       end
 
       private
@@ -64,15 +64,7 @@ module Collavre
         )
       end
 
-      def generate_approval_summary(error)
-        ApprovalSummaryGenerator.new(
-          tool_name: error.tool_name,
-          arguments: error.tool_arguments,
-          creative: @creative
-        ).generate
-      end
-
-      def create_approval_comment(error)
+      def create_approval_comment(error, summary: nil)
         return unless @creative
 
         approver = @creative.user || User.find_by(id: @context.dig("comment", "user_id"))
@@ -93,8 +85,6 @@ module Collavre
         else
                          I18n.t("collavre.ai_agent.approval.no_arguments")
         end
-
-        summary = generate_approval_summary(error)
 
         content = I18n.t(
           "collavre.ai_agent.approval.message",

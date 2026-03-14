@@ -18,6 +18,15 @@ en:
           Please approve or reject this action.
         no_arguments: "(no arguments)"
         summary_header: "📝 **Summary:**"
+        summary_prompt: |
+          Summarize what the following tool call will do in 1-2 concise sentences for a human reviewer.
+          Be specific: mention key parameters, target resources, and the intended effect.
+
+          Tool: %{tool_name}
+          Arguments:
+          ```json
+          %{arguments}
+          ```
       a2a:
         request_header: "## ⚡ Agent Request"
         request_description: "This message is a request from another AI Agent (@%{sender_name}, %{sender_type})."

@@ -62,10 +62,11 @@ module Collavre
         @streamer.content
       end
     rescue ApprovalPendingError => e
+      summary = generate_approval_summary(e)
       AiAgent::ApprovalHandler.new(
         task: @task, agent: @agent, context: @context,
         creative: @creative, reply_comment: @reply_comment
-      ).handle(e)
+      ).handle(e, summary: summary)
       raise
     rescue CancelledError
       handle_cancelled
@@ -192,6 +193,25 @@ module Collavre
         result: result,
         status: "done"
       )
+    end
+
+    def generate_approval_summary(error)
+      api_key = @agent.llm_api_key.presence || ENV["GEMINI_API_KEY"]
+      return nil if api_key.blank?
+
+      prompt = I18n.t(
+        "collavre.ai_agent.approval.summary_prompt",
+        tool_name: error.tool_name,
+        arguments: error.tool_arguments.present? ? JSON.pretty_generate(error.tool_arguments) : "(none)"
+      )
+
+      chat = RubyLLM.context { |config| config.gemini_api_key = api_key }
+                     .chat(model: @agent.llm_model)
+      response = chat.ask(prompt)
+      response&.content&.strip.presence
+    rescue StandardError => e
+      Rails.logger.warn("Approval summary generation failed: #{e.class} #{e.message}")
+      nil
     end
 
     def build_agent_context(creative)
