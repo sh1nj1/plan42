@@ -1053,7 +1053,7 @@ body.chat-fullscreen {
 
 .context-toggle-btn.context-toggle-active {
     background: var(--color-secondary-active);
-    color: white;
+    color: var(--color-badge-text);
     border-color: var(--color-secondary-active);
 }
 
@@ -1099,7 +1099,7 @@ body.chat-fullscreen {
 
 .topic-tag.active {
     background: var(--color-secondary-active);
-    color: white;
+    color: var(--color-badge-text);
     border-color: var(--color-secondary-active);
 }
 
@@ -1114,7 +1114,7 @@ body.chat-fullscreen {
     top: -8px;
     right: -10px;
     background-color: var(--color-danger);
-    color: white;
+    color: var(--color-badge-text);
     font-size: 0.6em;
     padding: 0.1em 0.4em;
     border-radius: 8px;
@@ -1124,7 +1124,7 @@ body.chat-fullscreen {
 /* Drag and drop styles for moving comments to topics */
 .topic-tag.drag-over {
     background-color: var(--color-active);
-    color: white;
+    color: var(--color-badge-text);
     border-color: var(--color-active);
     transform: scale(1.05);
     transition: all 0.15s ease;
@@ -1175,7 +1175,7 @@ body.chat-fullscreen {
     left: -1000px;
     padding: var(--space-2) var(--space-3);
     background-color: var(--color-active);
-    color: white;
+    color: var(--color-badge-text);
     border-radius: var(--radius-2);
     font-size: 0.9em;
     font-weight: 500;
