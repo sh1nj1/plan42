@@ -15,7 +15,7 @@ module Tools
     tool_param :progress, description: "Set to 1.0 to mark a leaf Creative as complete. Only 1.0 is allowed; partial progress and updates on parent Creatives are rejected.", required: false
     tool_param :parent_id, description: "New parent Creative ID to move this Creative under. Use null/0 to make it a root Creative.", required: false
 
-    sig { params(id: Integer, description: T.nilable(String), progress: T.nilable(Float), parent_id: T.nilable(Integer)).returns(T::Hash[Symbol, T.untyped]) }
+    sig { params(id: Integer, description: T.nilable(String), progress: T.nilable(Numeric), parent_id: T.nilable(Integer)).returns(T::Hash[Symbol, T.untyped]) }
     def call(id:, description: nil, progress: nil, parent_id: nil)
       raise "Current.user is required" unless Current.user
 
