@@ -224,8 +224,8 @@ export default class extends Controller {
         const originalClass = select.className
 
         // Update visual class immediately
-        select.className = select.className.replace(/org-chart-permission-\w+/g, "")
-        select.classList.add("org-chart-permission-select", "share-modal-permission-select", `org-chart-permission-${permission}`)
+        select.className = select.className.replace(/share-modal-permission-\w+/g, "")
+        select.classList.add("share-modal-permission-select", `share-modal-permission-${permission}`)
 
         fetch(url, {
           method: "PATCH",

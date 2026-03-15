@@ -166,11 +166,10 @@
   100% { opacity: 0; }
 }
 
-/* Override org-chart pill styles inside share modal */
-#share-creative-modal .share-modal-permission-select {
+.share-modal-permission-select {
   width: auto;
   padding: 0.4em 1.5em 0.4em 0.5em;
-  font-size: 1rem;
+  font-size: 16px; /* prevent iOS zoom on focus */
   min-height: 2.2em;
   border-radius: var(--radius-2);
   border: 1px solid var(--border-color);
@@ -181,11 +180,17 @@
   cursor: pointer;
 }
 
-#share-creative-modal .share-modal-permission-select[disabled] {
+.share-modal-permission-select[disabled] {
   opacity: 0.6;
   cursor: default;
-  background: var(--surface-3, #333);
+  background: var(--surface-3, #eee);
 }
+
+.share-modal-permission-admin { color: var(--color-danger); font-weight: var(--weight-6); }
+.share-modal-permission-write { color: var(--color-success); }
+.share-modal-permission-feedback { color: var(--color-warning); }
+.share-modal-permission-read { color: var(--text-muted); }
+.share-modal-permission-no_access { color: var(--text-muted); opacity: 0.7; }
 
 .share-inherited-link {
   font-size: var(--text-0);
