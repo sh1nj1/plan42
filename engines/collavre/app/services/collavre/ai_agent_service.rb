@@ -48,8 +48,8 @@ module Collavre
         @lifecycle_manager.broadcast_status("thinking")
 
         # Execute AI chat with streaming
-        client = build_ai_client(system_prompt)
-        stream_response(client, messages)
+        @client = build_ai_client(system_prompt)
+        stream_response(@client, messages)
 
         log_action("completion", { response: @streamer.content })
 
@@ -196,8 +196,7 @@ module Collavre
     end
 
     def generate_approval_summary(error)
-      api_key = @agent.llm_api_key.presence || ENV["GEMINI_API_KEY"]
-      return nil if api_key.blank?
+      return nil unless @client
 
       prompt = I18n.t(
         "collavre.ai_agent.approval.summary_prompt",
@@ -205,13 +204,7 @@ module Collavre
         arguments: error.tool_arguments.present? ? JSON.pretty_generate(error.tool_arguments) : "(none)"
       )
 
-      chat = RubyLLM.context { |config| config.gemini_api_key = api_key }
-                     .chat(model: @agent.llm_model)
-      response = chat.ask(prompt)
-      response&.content&.strip.presence
-    rescue StandardError => e
-      Rails.logger.warn("Approval summary generation failed: #{e.class} #{e.message}")
-      nil
+      @client.ask(prompt)
     end
 
     def build_agent_context(creative)

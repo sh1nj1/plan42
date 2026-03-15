@@ -57,10 +57,10 @@ module Collavre
         Rails.logger.warn "Unsupported LLM vendor '#{@vendor}'. Attempting to use default (google)."
       end
 
-      conversation = build_conversation(tools)
-      add_messages(conversation, contents)
+      @conversation = build_conversation(tools)
+      add_messages(@conversation, contents)
 
-      response = conversation.complete do |chunk|
+      response = @conversation.complete do |chunk|
         delta = extract_chunk_content(chunk)
         next if delta.blank?
 
@@ -83,7 +83,8 @@ module Collavre
 
       response_content.presence
     rescue ApprovalPendingError
-      raise # Re-raise approval errors without catching them
+      # Preserve conversation for follow-up (e.g. generating approval summary)
+      raise
     rescue CancelledError
       raise # Re-raise cancellation errors without catching them
     rescue StandardError => e
@@ -97,13 +98,28 @@ module Collavre
       @last_input_tokens = input_tokens || 0
       @last_output_tokens = output_tokens || 0
       log_interaction(
-        messages: conversation.messages.to_a || Array(contents),
-        tools: conversation.tools.to_a,
+        messages: @conversation&.messages&.to_a || Array(contents),
+        tools: @conversation&.tools&.to_a || [],
         response_content: response_content.presence,
         error_message: error_message,
         input_tokens: input_tokens,
         output_tokens: output_tokens
       )
+    end
+
+    # Ask a follow-up question using the existing conversation context.
+    # Used to generate approval summaries with full conversation history.
+    # Returns the response content string, or nil on failure.
+    def ask(prompt)
+      return nil unless @conversation
+
+      # Disable tool calls for summary generation to avoid recursive approval
+      @conversation.with_tools(replace: true)
+      response = @conversation.ask(prompt)
+      response&.content&.strip.presence
+    rescue StandardError => e
+      Rails.logger.warn("AiClient#ask failed: #{e.class} #{e.message}")
+      nil
     end
 
     private
