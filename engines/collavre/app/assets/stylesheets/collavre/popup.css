@@ -102,7 +102,7 @@
 }
 
 .popup-box input:not([type="radio"]):not([type="checkbox"]),
-.popup-box select {
+.popup-box select:not(.share-modal-permission-select) {
   width: 100%;
   box-sizing: border-box;
 }
@@ -164,6 +164,28 @@
 @keyframes share-modal-message-fade {
   0%, 80% { opacity: 1; }
   100% { opacity: 0; }
+}
+
+.share-modal-permission-select {
+  width: auto;
+  padding: 0.15em 0.3em;
+  font-size: var(--text-0);
+  border-radius: var(--radius-1);
+}
+
+.share-modal-permission-select[disabled] {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.share-inherited-link {
+  font-size: var(--text-0);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.share-inherited-link:hover {
+  color: var(--text-link);
 }
 
 .share-modal-pending {

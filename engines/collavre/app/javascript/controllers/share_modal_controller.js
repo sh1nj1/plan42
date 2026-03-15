@@ -109,6 +109,7 @@ export default class extends Controller {
     }
 
     this.#initializeForm()
+    this.#initializePermissionSelects()
     this.#initializeDeleteButtons()
     this.#initializeInviteLink()
   }
@@ -209,6 +210,40 @@ export default class extends Controller {
     li.append(avatarSpan, emailSpan, permSpan, spinnerSpan)
     listSection.appendChild(li)
     return li
+  }
+
+  #initializePermissionSelects() {
+    const modal = document.getElementById("share-creative-modal")
+    if (!modal) return
+
+    const selects = modal.querySelectorAll(".share-modal-permission-select:not([disabled])")
+    selects.forEach(select => {
+      select.addEventListener("change", (e) => {
+        const url = select.dataset.updateUrl
+        const permission = select.value
+        const originalClass = select.className
+
+        // Update visual class immediately
+        select.className = select.className.replace(/org-chart-permission-\w+/g, "")
+        select.classList.add("org-chart-permission-select", "share-modal-permission-select", `org-chart-permission-${permission}`)
+
+        fetch(url, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content,
+            "Accept": "application/json"
+          },
+          body: JSON.stringify({ permission })
+        }).then(response => {
+          if (!response.ok) throw new Error("Failed")
+          this.#showMessage(null, "success") // silent success
+        }).catch(() => {
+          select.className = originalClass
+          this.#showMessage(this.#errorFallbackMessage, "error")
+        })
+      })
+    })
   }
 
   #initializeDeleteButtons() {

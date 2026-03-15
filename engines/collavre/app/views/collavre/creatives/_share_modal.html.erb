@@ -21,7 +21,7 @@
         <select name="permission" id="share-permission">
           <option value="no_access"><%= t('collavre.creatives.index.permission_no_access') %></option>
           <option value="read"><%= t('collavre.creatives.index.permission_read') %></option>
-          <option value="feedback"><%= t('collavre.creatives.index.permission_feedback') %></option>
+          <option value="feedback" selected><%= t('collavre.creatives.index.permission_feedback') %></option>
           <option value="write"><%= t('collavre.creatives.index.permission_write') %></option>
           <option value="admin"><%= t('collavre.creatives.index.permission_admin') %></option>
         </select>
@@ -39,9 +39,51 @@
                 <%= render Collavre::AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
               </span>
               <span><%= share.user&.display_name || (share.user_id.nil? ? t('collavre.creatives.index.public_share') : t('collavre.creatives.index.unknown_user')) %></span>
-              <span><%= t("collavre.creatives.index.permission_#{share.permission}") %></span>
+              <span>
+                <select class="org-chart-permission-select org-chart-permission-<%= share.permission %> share-modal-permission-select"
+                        data-share-id="<%= share.id %>"
+                        data-update-url="<%= collavre.creative_creative_share_path(@parent_creative || @creative, share) %>">
+                  <% %w[admin write feedback read no_access].each do |perm| %>
+                    <option value="<%= perm %>" <%= 'selected' if share.permission == perm %>>
+                      <%= t("collavre.contacts.org_chart.permissions.#{perm}") %>
+                    </option>
+                  <% end %>
+                </select>
+              </span>
               <span>
                 <%= button_to '×', collavre.creative_creative_share_path(@parent_creative || @creative, share), method: :delete, form: { data: { turbo_confirm: t('collavre.creatives.index.are_you_sure_delete_share') } }, class: 'delete-share-btn' %>
+              </span>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+    <% if @inherited_shares.present? && @inherited_shares.any? %>
+      <div style="margin-top:1em;">
+        <strong><%= t('collavre.creatives.share.inherited_permissions') %>:</strong>
+        <ul class="share-grid">
+          <% @inherited_shares.each do |entry| %>
+            <% share = entry[:share] %>
+            <% source = entry[:source_creative] %>
+            <li>
+              <span>
+                <%= render Collavre::AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
+              </span>
+              <span><%= share.user&.display_name || t('collavre.creatives.index.unknown_user') %></span>
+              <span>
+                <select class="org-chart-permission-select org-chart-permission-<%= share.permission %> share-modal-permission-select" disabled>
+                  <% %w[admin write feedback read no_access].each do |perm| %>
+                    <option value="<%= perm %>" <%= 'selected' if share.permission == perm %>>
+                      <%= t("collavre.contacts.org_chart.permissions.#{perm}") %>
+                    </option>
+                  <% end %>
+                </select>
+              </span>
+              <span>
+                <% source_name = ActionController::Base.helpers.strip_tags(source.effective_description.to_s).truncate(30) %>
+                <%= link_to t('collavre.creatives.share.inherited_from', name: source_name),
+                    collavre.creative_path(source),
+                    class: 'share-inherited-link' %>
               </span>
             </li>
           <% end %>
