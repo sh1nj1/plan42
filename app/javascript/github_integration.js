@@ -509,7 +509,10 @@ if (!githubIntegrationInitialized) {
       const left = window.screenX + Math.max(0, (window.outerWidth - width) / 2);
       const top = window.screenY + Math.max(0, (window.outerHeight - height) / 2);
 
-      // Store creative_id in session before opening OAuth popup
+      // Open popup synchronously to avoid browser popup blocking
+      window.open('', 'github-auth-window', `width=${width},height=${height},left=${left},top=${top}`);
+
+      // Store creative_id in session, then submit OAuth form into the already-open popup
       fetch('/github/auth/store_creative', {
         method: 'POST',
         headers: {
@@ -517,11 +520,7 @@ if (!githubIntegrationInitialized) {
           'X-CSRF-Token': csrfToken()
         },
         body: JSON.stringify({ creative_id: creativeId })
-      }).then(function () {
-        window.open('', 'github-auth-window', `width=${width},height=${height},left=${left},top=${top}`);
-        loginForm.submit();
-      }).catch(function () {
-        window.open('', 'github-auth-window', `width=${width},height=${height},left=${left},top=${top}`);
+      }).finally(function () {
         loginForm.submit();
       });
     });

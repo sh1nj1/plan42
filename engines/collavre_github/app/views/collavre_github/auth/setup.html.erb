@@ -77,7 +77,12 @@
        data-creative-id="<%= @creative_id %>"
        data-success-message="<%= t('collavre_github.integration.saved') %>"
        data-webhook-url-label="<%= t('collavre_github.integration.webhook_url_label') %>"
-       data-webhook-secret-label="<%= t('collavre_github.integration.webhook_secret_label') %>">
+       data-webhook-secret-label="<%= t('collavre_github.integration.webhook_secret_label') %>"
+       data-no-orgs="<%= t('collavre_github.setup.no_orgs') %>"
+       data-no-repos="<%= t('collavre_github.setup.no_repos') %>"
+       data-load-orgs-error="<%= t('collavre_github.setup.load_orgs_error') %>"
+       data-load-repos-error="<%= t('collavre_github.setup.load_repos_error') %>"
+       data-save-error="<%= t('collavre_github.setup.save_error') %>">
     <h2><%= t('collavre_github.integration.title') %></h2>
 
     <!-- Step 1: Organization -->
@@ -128,6 +133,11 @@
       var successMessage = wizard.dataset.successMessage;
       var webhookUrlLabel = wizard.dataset.webhookUrlLabel;
       var webhookSecretLabel = wizard.dataset.webhookSecretLabel;
+      var noOrgsMsg = wizard.dataset.noOrgs;
+      var noReposMsg = wizard.dataset.noRepos;
+      var loadOrgsError = wizard.dataset.loadOrgsError;
+      var loadReposError = wizard.dataset.loadReposError;
+      var saveErrorMsg = wizard.dataset.saveError;
 
       var steps = ['organization', 'repositories', 'summary', 'done'];
       var currentStepIndex = 0;
@@ -191,7 +201,7 @@
             var orgs = data.organizations || [];
             orgList.innerHTML = '';
             if (!orgs.length) {
-              orgList.innerHTML = '<p style="padding:0.5em;color:#999;">No organizations found.</p>';
+              orgList.innerHTML = '<p style="padding:0.5em;color:#999;">' + noOrgsMsg + '</p>';
               return;
             }
             orgs.forEach(function(org) {
@@ -217,7 +227,7 @@
           })
           .catch(function() {
             orgList.innerHTML = '';
-            showError('Failed to load organizations.');
+            showError(loadOrgsError);
           });
       }
 
@@ -234,7 +244,7 @@
             var repos = data.repositories || [];
             repoList.innerHTML = '';
             if (!repos.length) {
-              repoList.innerHTML = '<p style="padding:0.5em;color:#999;">No repositories found.</p>';
+              repoList.innerHTML = '<p style="padding:0.5em;color:#999;">' + noReposMsg + '</p>';
               return;
             }
             repos.forEach(function(repo) {
@@ -264,7 +274,7 @@
           })
           .catch(function() {
             repoList.innerHTML = '';
-            showError('Failed to load repositories.');
+            showError(loadReposError);
           });
       }
 
@@ -323,7 +333,7 @@
           .then(function(r) { return r.json().then(function(body) { return { ok: r.ok, body: body }; }); })
           .then(function(result) {
             if (!result.ok) {
-              showError(result.body.error || 'Failed to save integration.');
+              showError(result.body.error || saveErrorMsg);
               return;
             }
             webhookDetails = result.body.webhooks || {};
@@ -333,7 +343,7 @@
             showStep(steps.indexOf('done'));
           })
           .catch(function() {
-            showError('Failed to save integration.');
+            showError(saveErrorMsg);
           });
       }
 

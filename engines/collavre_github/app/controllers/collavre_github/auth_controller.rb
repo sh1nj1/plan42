@@ -42,6 +42,11 @@ module CollavreGithub
         return
       end
 
+      unless @creative.has_permission?(Current.user, :admin)
+        render plain: I18n.t("collavre_github.errors.forbidden"), status: :forbidden
+        return
+      end
+
       render layout: false
     end
 

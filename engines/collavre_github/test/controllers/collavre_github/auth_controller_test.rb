@@ -53,6 +53,15 @@ module CollavreGithub
       assert_response :not_found
     end
 
+    test "setup returns forbidden for user without admin permission" do
+      other_user = create_user(email: "other-github@example.com", name: "Other User")
+      sign_in_as(other_user)
+
+      get "/github/auth/setup", params: { creative_id: @creative.id }
+
+      assert_response :forbidden
+    end
+
     test "callback redirects to setup when creative_id in session" do
       sign_in_as(@user)
 

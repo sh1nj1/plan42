@@ -26,6 +26,11 @@ en:
     setup:
       loading: "Loading..."
       close: "Close"
+      no_orgs: "No organizations found."
+      no_repos: "No repositories found."
+      load_orgs_error: "Failed to load organizations."
+      load_repos_error: "Failed to load repositories."
+      save_error: "Failed to save integration."
     auth:
       login_first: "Please log in first to connect your GitHub account"
       connected: "GitHub account connected successfully"
