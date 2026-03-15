@@ -23,6 +23,9 @@ en:
       summary: "The following repositories will be linked to this Creative:"
       webhook_instructions: "Configure each repository with the webhook details below."
       summary_empty: "No repositories selected."
+    setup:
+      loading: "Loading..."
+      close: "Close"
     auth:
       login_first: "Please log in first to connect your GitHub account"
       connected: "GitHub account connected successfully"

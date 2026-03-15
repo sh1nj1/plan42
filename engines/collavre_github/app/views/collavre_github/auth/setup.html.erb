@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="<%= form_authenticity_token %>">
+  <title><%= t('collavre_github.integration.title') %></title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      padding: 2em;
+      line-height: 1.5;
+    }
+    .wizard-container {
+      max-width: 520px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+      padding: 2em;
+    }
+    h2 { margin-bottom: 0.5em; font-size: 1.3em; }
+    .step { display: none; }
+    .step.active { display: block; }
+    .step-subtext { color: #666; margin-bottom: 1em; font-size: 0.95em; }
+    .list-box {
+      max-height: 280px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 0.5em;
+      margin-bottom: 1em;
+    }
+    .list-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+      padding: 0.5em 0.4em;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .list-item:hover { background: #f0f0f0; }
+    .list-item input { flex-shrink: 0; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.6em 1.2em;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.95em;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: #f0f0f0; }
+    .btn-primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+    .footer { display: flex; justify-content: space-between; margin-top: 1.5em; }
+    .footer-right { display: flex; gap: 0.5em; margin-left: auto; }
+    .error-msg { color: #dc2626; font-weight: 600; margin: 0.5em 0; display: none; }
+    .success-msg { color: #16a34a; font-weight: 600; margin: 0.5em 0; text-align: center; }
+    .loading { text-align: center; padding: 2em; color: #999; }
+    .summary-list { padding-left: 1.2em; }
+    .summary-list li { margin-bottom: 0.3em; }
+    .webhook-detail { margin-top: 0.3em; font-size: 0.85em; }
+    .webhook-detail code { background: #f1f5f9; padding: 0.2em 0.4em; border-radius: 3px; word-break: break-all; }
+    .close-btn { margin-top: 1em; width: 100%; }
+  </style>
+</head>
+<body>
+  <div class="wizard-container" id="wizard"
+       data-creative-id="<%= @creative_id %>"
+       data-success-message="<%= t('collavre_github.integration.saved') %>"
+       data-webhook-url-label="<%= t('collavre_github.integration.webhook_url_label') %>"
+       data-webhook-secret-label="<%= t('collavre_github.integration.webhook_secret_label') %>">
+    <h2><%= t('collavre_github.integration.title') %></h2>
+
+    <!-- Step 1: Organization -->
+    <div class="step active" id="step-organization">
+      <p class="step-subtext"><%= t('collavre_github.integration.choose_org') %></p>
+      <div id="org-list" class="list-box">
+        <div class="loading"><%= t('collavre_github.setup.loading', default: 'Loading...') %></div>
+      </div>
+    </div>
+
+    <!-- Step 2: Repositories -->
+    <div class="step" id="step-repositories">
+      <p class="step-subtext"><%= t('collavre_github.integration.choose_repo') %></p>
+      <div id="repo-list" class="list-box">
+        <div class="loading"><%= t('collavre_github.setup.loading', default: 'Loading...') %></div>
+      </div>
+    </div>
+
+    <!-- Step 3: Summary -->
+    <div class="step" id="step-summary">
+      <p class="step-subtext"><%= t('collavre_github.integration.summary') %></p>
+      <p id="webhook-instructions" class="step-subtext" style="display:none;"><%= t('collavre_github.integration.webhook_instructions') %></p>
+      <ul id="summary-repos" class="summary-list"></ul>
+      <p id="summary-empty" style="display:none;color:#999;"><%= t('collavre_github.integration.summary_empty') %></p>
+    </div>
+
+    <!-- Step 4: Done -->
+    <div class="step" id="step-done">
+      <p class="success-msg"><%= t('collavre_github.integration.saved') %></p>
+      <button type="button" id="close-btn" class="btn btn-primary close-btn"><%= t('collavre_github.setup.close', default: 'Close') %></button>
+    </div>
+
+    <div id="wizard-error" class="error-msg"></div>
+
+    <div class="footer" id="wizard-footer">
+      <button type="button" id="prev-btn" class="btn" style="display:none;"><%= t('app.previous', default: 'Previous') %></button>
+      <div class="footer-right">
+        <button type="button" id="next-btn" class="btn btn-primary" disabled><%= t('app.next', default: 'Next') %></button>
+        <button type="button" id="finish-btn" class="btn btn-primary" style="display:none;"><%= t('app.finish', default: 'Finish') %></button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var wizard = document.getElementById('wizard');
+      var creativeId = wizard.dataset.creativeId;
+      var successMessage = wizard.dataset.successMessage;
+      var webhookUrlLabel = wizard.dataset.webhookUrlLabel;
+      var webhookSecretLabel = wizard.dataset.webhookSecretLabel;
+
+      var steps = ['organization', 'repositories', 'summary', 'done'];
+      var currentStepIndex = 0;
+      var selectedOrg = null;
+      var selectedRepos = new Set();
+      var webhookDetails = {};
+
+      var prevBtn = document.getElementById('prev-btn');
+      var nextBtn = document.getElementById('next-btn');
+      var finishBtn = document.getElementById('finish-btn');
+      var errorEl = document.getElementById('wizard-error');
+      var footer = document.getElementById('wizard-footer');
+
+      function csrfToken() {
+        return document.querySelector('meta[name="csrf-token"]')?.content;
+      }
+
+      function showStep(index) {
+        currentStepIndex = index;
+        steps.forEach(function(s, i) {
+          var el = document.getElementById('step-' + s);
+          if (el) el.className = 'step' + (i === index ? ' active' : '');
+        });
+
+        if (steps[index] === 'done') {
+          footer.style.display = 'none';
+          return;
+        }
+        footer.style.display = 'flex';
+
+        prevBtn.style.display = index > 0 ? 'inline-flex' : 'none';
+
+        if (steps[index] === 'summary') {
+          nextBtn.style.display = 'none';
+          finishBtn.style.display = 'inline-flex';
+          updateSummary();
+        } else {
+          nextBtn.style.display = 'inline-flex';
+          finishBtn.style.display = 'none';
+          nextBtn.disabled = (steps[index] === 'organization' && !selectedOrg);
+        }
+      }
+
+      function showError(msg) {
+        errorEl.textContent = msg;
+        errorEl.style.display = 'block';
+      }
+
+      function clearError() {
+        errorEl.textContent = '';
+        errorEl.style.display = 'none';
+      }
+
+      function loadOrganizations() {
+        var orgList = document.getElementById('org-list');
+        orgList.innerHTML = '<div class="loading">Loading...</div>';
+
+        fetch('/github/account/organizations', { headers: { Accept: 'application/json' } })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            var orgs = data.organizations || [];
+            orgList.innerHTML = '';
+            if (!orgs.length) {
+              orgList.innerHTML = '<p style="padding:0.5em;color:#999;">No organizations found.</p>';
+              return;
+            }
+            orgs.forEach(function(org) {
+              var label = document.createElement('label');
+              label.className = 'list-item';
+
+              var input = document.createElement('input');
+              input.type = 'radio';
+              input.name = 'org';
+              input.value = org.login;
+              input.addEventListener('change', function() {
+                selectedOrg = org.login;
+                nextBtn.disabled = false;
+              });
+
+              var span = document.createElement('span');
+              span.textContent = org.name || org.login;
+
+              label.appendChild(input);
+              label.appendChild(span);
+              orgList.appendChild(label);
+            });
+          })
+          .catch(function() {
+            orgList.innerHTML = '';
+            showError('Failed to load organizations.');
+          });
+      }
+
+      function loadRepositories() {
+        var repoList = document.getElementById('repo-list');
+        repoList.innerHTML = '<div class="loading">Loading...</div>';
+
+        var params = new URLSearchParams({ organization: selectedOrg });
+        if (creativeId) params.append('creative_id', creativeId);
+
+        fetch('/github/account/repositories?' + params.toString(), { headers: { Accept: 'application/json' } })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            var repos = data.repositories || [];
+            repoList.innerHTML = '';
+            if (!repos.length) {
+              repoList.innerHTML = '<p style="padding:0.5em;color:#999;">No repositories found.</p>';
+              return;
+            }
+            repos.forEach(function(repo) {
+              var label = document.createElement('label');
+              label.className = 'list-item';
+
+              var input = document.createElement('input');
+              input.type = 'checkbox';
+              input.value = repo.full_name;
+              input.checked = selectedRepos.has(repo.full_name) || repo.selected;
+              if (input.checked) selectedRepos.add(repo.full_name);
+              input.addEventListener('change', function() {
+                if (input.checked) {
+                  selectedRepos.add(repo.full_name);
+                } else {
+                  selectedRepos.delete(repo.full_name);
+                }
+              });
+
+              var span = document.createElement('span');
+              span.textContent = repo.full_name;
+
+              label.appendChild(input);
+              label.appendChild(span);
+              repoList.appendChild(label);
+            });
+          })
+          .catch(function() {
+            repoList.innerHTML = '';
+            showError('Failed to load repositories.');
+          });
+      }
+
+      function updateSummary() {
+        var summaryList = document.getElementById('summary-repos');
+        var summaryEmpty = document.getElementById('summary-empty');
+        var instructions = document.getElementById('webhook-instructions');
+        summaryList.innerHTML = '';
+
+        var repos = Array.from(selectedRepos);
+        if (!repos.length) {
+          summaryEmpty.style.display = 'block';
+          if (instructions) instructions.style.display = 'none';
+          return;
+        }
+        summaryEmpty.style.display = 'none';
+        if (instructions) instructions.style.display = 'block';
+
+        repos.forEach(function(fullName) {
+          var li = document.createElement('li');
+          var strong = document.createElement('strong');
+          strong.textContent = fullName;
+          li.appendChild(strong);
+
+          var details = webhookDetails[fullName];
+          if (details) {
+            if (details.url) {
+              var urlDiv = document.createElement('div');
+              urlDiv.className = 'webhook-detail';
+              urlDiv.innerHTML = '<span style="font-weight:600;">' + webhookUrlLabel + ': </span><code>' + details.url + '</code>';
+              li.appendChild(urlDiv);
+            }
+            if (details.secret) {
+              var secretDiv = document.createElement('div');
+              secretDiv.className = 'webhook-detail';
+              secretDiv.innerHTML = '<span style="font-weight:600;">' + webhookSecretLabel + ': </span><code>' + details.secret + '</code>';
+              li.appendChild(secretDiv);
+            }
+          }
+          summaryList.appendChild(li);
+        });
+      }
+
+      function saveSelection() {
+        clearError();
+        var payload = { repositories: Array.from(selectedRepos) };
+
+        fetch('/github/creatives/' + creativeId + '/integration', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken()
+          },
+          body: JSON.stringify(payload)
+        })
+          .then(function(r) { return r.json().then(function(body) { return { ok: r.ok, body: body }; }); })
+          .then(function(result) {
+            if (!result.ok) {
+              showError(result.body.error || 'Failed to save integration.');
+              return;
+            }
+            webhookDetails = result.body.webhooks || {};
+
+            // Notify parent window and show done step
+            notifyParent();
+            showStep(steps.indexOf('done'));
+          })
+          .catch(function() {
+            showError('Failed to save integration.');
+          });
+      }
+
+      function notifyParent() {
+        try {
+          if (window.opener) {
+            window.opener.postMessage({ type: 'githubConnected' }, window.location.origin);
+          }
+        } catch (e) {
+          // Ignore cross-origin errors
+        }
+      }
+
+      // Navigation
+      prevBtn.addEventListener('click', function() {
+        clearError();
+        if (currentStepIndex > 0) {
+          showStep(currentStepIndex - 1);
+          if (steps[currentStepIndex] === 'repositories') loadRepositories();
+        }
+      });
+
+      nextBtn.addEventListener('click', function() {
+        clearError();
+        var nextIndex = currentStepIndex + 1;
+        showStep(nextIndex);
+        if (steps[nextIndex] === 'repositories') loadRepositories();
+      });
+
+      finishBtn.addEventListener('click', function() {
+        saveSelection();
+      });
+
+      document.getElementById('close-btn').addEventListener('click', function() {
+        window.close();
+      });
+
+      // Initial load
+      loadOrganizations();
+    })();
+  </script>
+</body>
+</html>

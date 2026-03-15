@@ -21,7 +21,33 @@ module CollavreGithub
       account.avatar_url = auth.info.image
       account.save!
 
-      redirect_to collavre.creatives_path, notice: I18n.t("collavre_github.auth.connected")
+      creative_id = session.delete(:github_creative_id)
+      if creative_id.present?
+        redirect_to setup_auth_path(creative_id: creative_id)
+      else
+        redirect_to collavre.creatives_path, notice: I18n.t("collavre_github.auth.connected")
+      end
+    end
+
+    def setup
+      @creative_id = params[:creative_id]
+      unless @creative_id.present?
+        render plain: I18n.t("collavre_github.integration.missing_creative"), status: :bad_request
+        return
+      end
+
+      @creative = Collavre::Creative.find_by(id: @creative_id)
+      unless @creative
+        render plain: I18n.t("collavre_github.integration.missing_creative"), status: :not_found
+        return
+      end
+
+      render layout: false
+    end
+
+    def store_creative
+      session[:github_creative_id] = params[:creative_id]
+      head :ok
     end
   end
 end

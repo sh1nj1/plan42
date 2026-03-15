@@ -508,8 +508,22 @@ if (!githubIntegrationInitialized) {
       const height = Number(loginBtn.dataset.windowHeight) || 700;
       const left = window.screenX + Math.max(0, (window.outerWidth - width) / 2);
       const top = window.screenY + Math.max(0, (window.outerHeight - height) / 2);
-      window.open('', 'github-auth-window', `width=${width},height=${height},left=${left},top=${top}`);
-      loginForm.submit();
+
+      // Store creative_id in session before opening OAuth popup
+      fetch('/github/auth/store_creative', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken()
+        },
+        body: JSON.stringify({ creative_id: creativeId })
+      }).then(function () {
+        window.open('', 'github-auth-window', `width=${width},height=${height},left=${left},top=${top}`);
+        loginForm.submit();
+      }).catch(function () {
+        window.open('', 'github-auth-window', `width=${width},height=${height},left=${left},top=${top}`);
+        loginForm.submit();
+      });
     });
 
     deleteBtn?.addEventListener('click', function () {
