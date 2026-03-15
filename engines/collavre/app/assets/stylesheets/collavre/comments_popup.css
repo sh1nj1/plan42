@@ -949,6 +949,12 @@ body.chat-fullscreen {
     box-sizing: border-box;
 }
 
+.context-chip svg,
+.context-toggle-btn svg {
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
 .context-chip:hover {
     background: var(--surface-hover);
 }

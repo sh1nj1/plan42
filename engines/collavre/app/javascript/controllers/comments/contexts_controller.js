@@ -3,6 +3,9 @@ import { Controller } from "@hotwired/stimulus"
 export default class extends Controller {
     static targets = ["list", "toggleButton"]
 
+    static ICON_CONTEXT_LINK = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
+    static ICON_CONTEXT_PIN = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>'
+
     connect() {
         this.contexts = []
         this.canManage = false
@@ -75,9 +78,9 @@ export default class extends Controller {
             const activeLinked = this.contexts.filter(c => !c.disabled).length
             const selfActive = this.selfContextDisabled ? 0 : 1
             const total = activeLinked + selfActive
-            this.toggleButtonTarget.textContent = `🔗 ${total}`
+            this.toggleButtonTarget.innerHTML = `${this.constructor.ICON_CONTEXT_LINK} ${total}`
         } else {
-            this.toggleButtonTarget.textContent = '🔗'
+            this.toggleButtonTarget.innerHTML = this.constructor.ICON_CONTEXT_LINK
         }
 
         // Auto-show if linked contexts exist, otherwise keep hidden
@@ -111,7 +114,7 @@ export default class extends Controller {
         html += `<span class="context-chip context-self ${selfClass}"
                       data-action="click->comments--contexts#toggleSelfContext"
                       title="${this.selfContextLabel}">
-                    📌 ${selfLabel}
+                    ${this.constructor.ICON_CONTEXT_PIN} ${selfLabel}
                  </span>`
 
         this.contexts.forEach(ctx => {
@@ -123,7 +126,7 @@ export default class extends Controller {
                           data-action="click->comments--contexts#toggleContext ${dragActions} ${reorderActions}"
                           data-context-id="${ctx.id}"
                           title="${ctx.inherited ? this.inheritedLabel : ''}">
-                        🔗 ${this._escapeHtml(ctx.description)}`
+                        ${this.constructor.ICON_CONTEXT_LINK} ${this._escapeHtml(ctx.description)}`
 
             html += `<button class="navigate-context-btn" data-action="click->comments--contexts#navigateToContext" data-context-id="${ctx.id}" title="${this.navigateLabel}">\u2192</button>`
 

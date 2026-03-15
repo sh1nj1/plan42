@@ -60,7 +60,7 @@
               data-action="click->comments--contexts#toggleVisibility"
               type="button"
               title="<%= t('collavre.contexts.toggle_label', default: 'Contexts') %>"
-              style="display:none;">🔗</button>
+              style="display:none;"><%= svg_tag "context-link.svg", class: "comments-popup-action-icon", width: 16, height: 16 %></button>
       <button class="comments-popup-action comments-popup-fullscreen"
               data-comments--popup-target="fullscreenButton"
               data-action="click->comments--popup#toggleFullscreen"
