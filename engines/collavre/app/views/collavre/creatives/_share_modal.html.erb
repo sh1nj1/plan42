@@ -39,16 +39,21 @@
                 <%= render Collavre::AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
               </span>
               <span><%= share.user&.display_name || (share.user_id.nil? ? t('collavre.creatives.index.public_share') : t('collavre.creatives.index.unknown_user')) %></span>
-              <span>
-                <select class="share-modal-permission-select share-modal-permission-<%= share.permission %>"
+              <span class="share-perm-wrapper">
+                <button type="button"
+                        class="share-perm-btn share-perm-<%= share.permission %>"
                         data-share-id="<%= share.id %>"
-                        data-update-url="<%= collavre.creative_creative_share_path(@parent_creative || @creative, share) %>">
+                        data-update-url="<%= collavre.creative_creative_share_path(@parent_creative || @creative, share) %>"
+                        data-current="<%= share.permission %>">
+                  <%= t("collavre.contacts.org_chart.permissions.#{share.permission}") %>
+                </button>
+                <div class="share-perm-dropdown" style="display:none;">
                   <% %w[admin write feedback read no_access].each do |perm| %>
-                    <option value="<%= perm %>" <%= 'selected' if share.permission == perm %>>
+                    <button type="button" class="share-perm-option share-perm-<%= perm %>" data-value="<%= perm %>">
                       <%= t("collavre.contacts.org_chart.permissions.#{perm}") %>
-                    </option>
+                    </button>
                   <% end %>
-                </select>
+                </div>
               </span>
               <span>
                 <%= button_to '×', collavre.creative_creative_share_path(@parent_creative || @creative, share), method: :delete, form: { data: { turbo_confirm: t('collavre.creatives.index.are_you_sure_delete_share') } }, class: 'delete-share-btn' %>
@@ -71,13 +76,9 @@
               </span>
               <span><%= share.user&.display_name || t('collavre.creatives.index.unknown_user') %></span>
               <span>
-                <select class="share-modal-permission-select share-modal-permission-<%= share.permission %>" disabled>
-                  <% %w[admin write feedback read no_access].each do |perm| %>
-                    <option value="<%= perm %>" <%= 'selected' if share.permission == perm %>>
-                      <%= t("collavre.contacts.org_chart.permissions.#{perm}") %>
-                    </option>
-                  <% end %>
-                </select>
+                <span class="share-perm-badge share-perm-<%= share.permission %>">
+                  <%= t("collavre.contacts.org_chart.permissions.#{share.permission}") %>
+                </span>
               </span>
               <span>
                 <% source_name = source.creative_snippet %>

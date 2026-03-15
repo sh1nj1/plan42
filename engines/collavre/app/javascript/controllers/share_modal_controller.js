@@ -216,46 +216,58 @@ export default class extends Controller {
     const modal = document.getElementById("share-creative-modal")
     if (!modal) return
 
-    // Fix mobile native picker positioning inside position:fixed modal
-    const allSelects = modal.querySelectorAll(".share-modal-permission-select")
-    allSelects.forEach(select => {
-      select.addEventListener("focus", () => {
-        // Temporarily switch to absolute positioning so mobile browser
-        // can correctly anchor the native picker to the select element
-        modal.style.position = "absolute"
-        modal.style.top = window.scrollY + "px"
-      })
-      select.addEventListener("blur", () => {
-        modal.style.position = "fixed"
-        modal.style.top = "0"
-      })
+    // Close any open dropdown when clicking outside
+    modal.addEventListener("click", (e) => {
+      if (!e.target.closest(".share-perm-wrapper")) {
+        modal.querySelectorAll(".share-perm-dropdown").forEach(d => d.style.display = "none")
+      }
     })
 
-    const selects = modal.querySelectorAll(".share-modal-permission-select:not([disabled])")
-    selects.forEach(select => {
-      select.addEventListener("change", (e) => {
-        const url = select.dataset.updateUrl
-        const permission = select.value
-        const originalClass = select.className
+    const buttons = modal.querySelectorAll(".share-perm-btn")
+    buttons.forEach(btn => {
+      const wrapper = btn.closest(".share-perm-wrapper")
+      const dropdown = wrapper.querySelector(".share-perm-dropdown")
 
-        // Update visual class immediately
-        select.className = select.className.replace(/share-modal-permission-\w+/g, "")
-        select.classList.add("share-modal-permission-select", `share-modal-permission-${permission}`)
+      // Toggle dropdown on button click
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation()
+        // Close other dropdowns
+        modal.querySelectorAll(".share-perm-dropdown").forEach(d => {
+          if (d !== dropdown) d.style.display = "none"
+        })
+        dropdown.style.display = dropdown.style.display === "none" ? "block" : "none"
+      })
 
-        fetch(url, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content,
-            "Accept": "application/json"
-          },
-          body: JSON.stringify({ permission })
-        }).then(response => {
-          if (!response.ok) throw new Error("Failed")
-          this.#showMessage(null, "success") // silent success
-        }).catch(() => {
-          select.className = originalClass
-          this.#showMessage(this.#errorFallbackMessage, "error")
+      // Handle option selection
+      dropdown.querySelectorAll(".share-perm-option").forEach(option => {
+        option.addEventListener("click", (e) => {
+          e.stopPropagation()
+          const permission = option.dataset.value
+          const url = btn.dataset.updateUrl
+          const originalText = btn.textContent
+          const originalClass = btn.className
+
+          // Update button immediately
+          btn.textContent = option.textContent.trim()
+          btn.className = `share-perm-btn share-perm-${permission}`
+          btn.dataset.current = permission
+          dropdown.style.display = "none"
+
+          fetch(url, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content,
+              "Accept": "application/json"
+            },
+            body: JSON.stringify({ permission })
+          }).then(response => {
+            if (!response.ok) throw new Error("Failed")
+          }).catch(() => {
+            btn.textContent = originalText
+            btn.className = originalClass
+            this.#showMessage(this.#errorFallbackMessage, "error")
+          })
         })
       })
     })
