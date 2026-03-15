@@ -75,8 +75,9 @@
         <button type="button" id="export-markdown-btn" class="popup-menu-item" data-parent-creative-id="<%= @parent_creative&.id %>" data-error="<%= t('collavre.creatives.index.export_failed') %>">
           <span aria-hidden="true"><%= svg_tag 'arrow-up.svg', width: 16, height: 16 %></span> <%= t('.export_markdown') %>
         </button>
+        <%# Archive toggle hidden - UI moved to search popup, kept for tree_controller.js compatibility %>
         <% if authenticated? %>
-          <button type="button" id="toggle-archived-btn" class="popup-menu-item" title="<%= t('collavre.creatives.index.show_archived') %>" data-show-text="<%= t('collavre.creatives.index.show_archived') %>" data-hide-text="<%= t('collavre.creatives.index.hide_archived') %>">
+          <button type="button" id="toggle-archived-btn" class="popup-menu-item" style="display:none;" title="<%= t('collavre.creatives.index.show_archived') %>" data-show-text="<%= t('collavre.creatives.index.show_archived') %>" data-hide-text="<%= t('collavre.creatives.index.hide_archived') %>">
             <span aria-hidden="true"><%= svg_tag 'archive.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.show_archived') %>
           </button>
         <% end %>

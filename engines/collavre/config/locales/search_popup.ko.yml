@@ -1,0 +1,6 @@
+---
+ko:
+  collavre:
+    search_popup:
+      progress_filter: "진행 상태"
+      other_filters: "필터"

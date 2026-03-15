@@ -151,45 +151,7 @@ module Collavre
           mobile: false
         )
 
-        Navigation::Registry.instance.register(
-          key: :progress_filter,
-          label: "",
-          type: :component,
-          component: Collavre::ProgressFilterComponent,
-          component_args: {
-            current_state: -> {
-              if params[:min_progress] == "1" && params[:max_progress] == "1"
-                :complete
-              elsif params[:min_progress] == "0" && params[:max_progress] == "0.99"
-                :incomplete
-              else
-                :all
-              end
-            },
-            states: [
-              { name: -> { I18n.t("app.filter_complete") }, value: :complete },
-              { name: -> { I18n.t("app.filter_incomplete") }, value: :incomplete },
-              { name: -> { I18n.t("app.filter_all") }, value: :all }
-            ]
-          },
-          priority: 130,
-          requires_auth: true
-        )
-
-        Navigation::Registry.instance.register(
-          key: :comment_filter,
-          label: "",
-          type: :component,
-          component: Collavre::ProgressFilterComponent,
-          component_args: {
-            current_state: -> { params[:comment] == "true" ? :comment : nil },
-            states: [
-              { name: -> { I18n.t("app.filter_comments") }, value: :comment }
-            ]
-          },
-          priority: 140,
-          requires_auth: true
-        )
+        # Progress filter and comment filter moved into search popup (search_form partial)
 
         Navigation::Registry.instance.register(
           key: :inbox,

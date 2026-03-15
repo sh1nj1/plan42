@@ -1,6 +1,84 @@
-<form action="<%= collavre.creatives_path %>" method="get">
-  <% if params[:id].present? %>
-    <input type="hidden" name="id" value="<%= params[:id] %>" />
-  <% end %>
-  <input type="text" id="search" class="shared-input-surface" name="search" value="<%= params[:search] %>" placeholder="<%= t('app.search_placeholder') %>" />
-</form>
+<div class="search-popup-wrapper" data-controller="search-popup">
+  <%
+    raw_url = begin; request.original_url; rescue; request.url; end
+    url = URI.parse(raw_url)
+    url_params = Rack::Utils.parse_query(url.query || '')
+    has_progress = url_params['min_progress'].present? || url_params['max_progress'].present?
+    has_comment = url_params['comment'] == 'true'
+    has_archived = url_params['show_archived'] == 'true'
+    has_search = url_params['search'].present?
+    active_count = [has_progress, has_comment, has_archived].count(true)
+
+    progress_state = if url_params['min_progress'] == '1' && url_params['max_progress'] == '1'
+                       :complete
+                     elsif url_params['min_progress'] == '0' && url_params['max_progress'] == '0.99'
+                       :incomplete
+                     else
+                       :all
+                     end
+  %>
+
+  <button type="button" class="search-popup-trigger shared-input-surface" data-action="click->search-popup#toggle">
+    <span class="search-popup-trigger-icon" aria-hidden="true"><%= svg_tag 'search.svg', width: 16, height: 16 rescue '🔍' %></span>
+    <span class="search-popup-trigger-text"><%= has_search ? params[:search] : t('app.search_placeholder') %></span>
+    <% if active_count > 0 %>
+      <span class="search-popup-badge"><%= active_count %></span>
+    <% end %>
+  </button>
+
+  <div class="search-popup-dropdown" data-search-popup-target="popup">
+    <form action="<%= collavre.creatives_path %>" method="get" class="search-popup-form">
+      <% if params[:id].present? %>
+        <input type="hidden" name="id" value="<%= params[:id] %>" />
+      <% end %>
+      <div class="search-popup-input-row">
+        <input type="text"
+               id="search"
+               class="search-popup-input shared-input-surface"
+               name="search"
+               value="<%= params[:search] %>"
+               placeholder="<%= t('app.search_placeholder') %>"
+               autocomplete="off"
+               data-search-popup-target="input"
+               data-action="keydown->search-popup#submitSearch" />
+      </div>
+    </form>
+
+    <div class="search-popup-filters">
+      <div class="search-popup-filter-section">
+        <span class="search-popup-filter-label"><%= t('collavre.search_popup.progress_filter') %></span>
+        <div class="search-popup-filter-buttons">
+          <button type="button"
+                  class="search-popup-filter-btn<%= ' active' if progress_state == :all %>"
+                  data-filter="all"
+                  data-action="click->search-popup#applyProgressFilter"><%= t('app.filter_all') %></button>
+          <button type="button"
+                  class="search-popup-filter-btn<%= ' active' if progress_state == :incomplete %>"
+                  data-filter="incomplete"
+                  data-action="click->search-popup#applyProgressFilter"><%= t('app.filter_incomplete') %></button>
+          <button type="button"
+                  class="search-popup-filter-btn<%= ' active' if progress_state == :complete %>"
+                  data-filter="complete"
+                  data-action="click->search-popup#applyProgressFilter"><%= t('app.filter_complete') %></button>
+        </div>
+      </div>
+
+      <div class="search-popup-filter-section">
+        <span class="search-popup-filter-label"><%= t('collavre.search_popup.other_filters') %></span>
+        <div class="search-popup-filter-buttons">
+          <button type="button"
+                  class="search-popup-filter-btn<%= ' active' if has_comment %>"
+                  data-action="click->search-popup#applyCommentFilter"><%= t('app.filter_comments') %></button>
+          <% if authenticated? %>
+            <button type="button"
+                    class="search-popup-filter-btn<%= ' active' if has_archived %>"
+                    data-search-popup-target="archiveToggle"
+                    data-show-text="<%= t('collavre.creatives.index.show_archived') %>"
+                    data-hide-text="<%= t('collavre.creatives.index.hide_archived') %>"
+                    data-action="click->search-popup#toggleArchive"><%= has_archived ? t('collavre.creatives.index.hide_archived') : t('collavre.creatives.index.show_archived') %></button>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
