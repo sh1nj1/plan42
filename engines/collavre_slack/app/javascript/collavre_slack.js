@@ -490,10 +490,14 @@ if (!slackIntegrationInitialized) {
   // Store references for cleanup to avoid handler accumulation across popup opens
   let slackBadgeClickHandler = null;
   let slackDocumentClickHandler = null;
+  let slackBadgeRequestId = 0; // Guard against stale async responses
 
   document.addEventListener('comments-popup:opened', async function (event) {
     const { creativeId, badgeContainer } = event.detail;
     if (!badgeContainer || !creativeId) return;
+
+    // Increment request id to invalidate any in-flight fetch
+    const currentRequestId = ++slackBadgeRequestId;
 
     // Create or find slack badge element
     let badge = badgeContainer.querySelector('[data-slack-badge]');
@@ -526,6 +530,10 @@ if (!slackIntegrationInitialized) {
       const response = await fetch(`/slack/creatives/${creativeId}/slack_integrations/badge`, {
         headers: { Accept: 'application/json' }
       });
+
+      // Discard response if a newer popup open has occurred
+      if (currentRequestId !== slackBadgeRequestId) return;
+
       if (!response.ok) return;
 
       const data = await response.json();
