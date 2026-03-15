@@ -211,7 +211,7 @@
   tree_params = params.to_unsafe_h.slice(
     "id", "tags", "min_progress", "max_progress", "search", "comment",
     "has_comments", "due_before", "due_after", "has_due_date",
-    "assignee_id", "unassigned", "show_archived"
+    "assignee_id", "unassigned", "show_archived", "search_mode"
   ).merge(format: :json)
   tree_url = creatives_path(tree_params)
 %>

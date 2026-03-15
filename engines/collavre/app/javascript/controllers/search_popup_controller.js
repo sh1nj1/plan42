@@ -89,6 +89,22 @@ export default class extends Controller {
     window.location.href = query ? `${url.pathname}?${query}` : url.pathname
   }
 
+  // Toggle search mode (flat/tree)
+  applySearchMode(event) {
+    event.preventDefault()
+    const mode = event.currentTarget.dataset.mode
+    if (!mode) return
+
+    const url = new URL(window.location.href)
+    if (mode === 'tree') {
+      url.searchParams.set('search_mode', 'tree')
+    } else {
+      url.searchParams.delete('search_mode')
+    }
+    const query = url.searchParams.toString()
+    window.location.href = query ? `${url.pathname}?${query}` : url.pathname
+  }
+
   // Toggle archive visibility
   toggleArchive(event) {
     event.preventDefault()

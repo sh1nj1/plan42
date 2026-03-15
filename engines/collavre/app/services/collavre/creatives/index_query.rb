@@ -73,8 +73,9 @@ module Creatives
       return empty_result if result.matched_ids.empty?
 
       # For search/comment filters, return matched items directly (flat results sorted by relevance)
+      # Unless search_mode=tree is specified, which returns tree structure instead
       # For other filters (tags, progress), return tree start nodes
-      if params[:search].present? || params[:comment] == "true"
+      if (params[:search].present? || params[:comment] == "true") && params[:search_mode] != "tree"
         matched_creatives = Creative.where(id: result.matched_ids.to_a)
           .order(:sequence)
           .select { |c| readable?(c) }

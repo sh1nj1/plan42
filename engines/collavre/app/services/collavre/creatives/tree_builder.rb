@@ -146,7 +146,7 @@ module Creatives
     end
 
     def filtered_children_for(creative)
-      return [] if raw_params["comment"] == "true" || raw_params["search"].present?
+      return [] if raw_params["comment"] == "true" || (raw_params["search"].present? && raw_params["search_mode"] != "tree")
 
       children = creative.children_with_permission(user)
       children = children.select { |c| !c.archived? } unless raw_params["show_archived"]

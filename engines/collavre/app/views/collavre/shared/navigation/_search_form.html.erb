@@ -7,7 +7,8 @@
     has_comment = url_params['comment'] == 'true'
     has_archived = url_params['show_archived'] == 'true'
     has_search = url_params['search'].present?
-    active_count = [has_progress, has_comment, has_archived].count(true)
+    search_mode = url_params['search_mode'] || 'flat'
+    active_count = [has_progress, has_comment, has_archived, search_mode == 'tree'].count(true)
 
     progress_state = if url_params['min_progress'] == '1' && url_params['max_progress'] == '1'
                        :complete
@@ -60,6 +61,20 @@
                   class="search-popup-filter-btn<%= ' active' if progress_state == :complete %>"
                   data-filter="complete"
                   data-action="click->search-popup#applyProgressFilter"><%= t('app.filter_complete') %></button>
+        </div>
+      </div>
+
+      <div class="search-popup-filter-section">
+        <span class="search-popup-filter-label"><%= t('collavre.search_popup.search_results') %></span>
+        <div class="search-popup-filter-buttons">
+          <button type="button"
+                  class="search-popup-filter-btn<%= ' active' if search_mode == 'flat' %>"
+                  data-mode="flat"
+                  data-action="click->search-popup#applySearchMode"><%= t('collavre.search_popup.flat_view') %></button>
+          <button type="button"
+                  class="search-popup-filter-btn<%= ' active' if search_mode == 'tree' %>"
+                  data-mode="tree"
+                  data-action="click->search-popup#applySearchMode"><%= t('collavre.search_popup.tree_view') %></button>
         </div>
       </div>
 

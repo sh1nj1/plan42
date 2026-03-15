@@ -3,4 +3,7 @@ ko:
   collavre:
     search_popup:
       progress_filter: "진행 상태"
+      search_results: "검색 결과"
+      flat_view: "플랫"
+      tree_view: "트리"
       other_filters: "필터"
