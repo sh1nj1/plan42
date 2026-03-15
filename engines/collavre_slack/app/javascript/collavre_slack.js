@@ -487,9 +487,17 @@ if (!slackIntegrationInitialized) {
   });
 
   // Slack badge for comments popup
+  // Store references for cleanup to avoid handler accumulation across popup opens
+  let slackBadgeClickHandler = null;
+  let slackDocumentClickHandler = null;
+  let slackBadgeRequestId = 0; // Guard against stale async responses
+
   document.addEventListener('comments-popup:opened', async function (event) {
     const { creativeId, badgeContainer } = event.detail;
     if (!badgeContainer || !creativeId) return;
+
+    // Increment request id to invalidate any in-flight fetch
+    const currentRequestId = ++slackBadgeRequestId;
 
     // Create or find slack badge element
     let badge = badgeContainer.querySelector('[data-slack-badge]');
@@ -497,25 +505,61 @@ if (!slackIntegrationInitialized) {
       badge = document.createElement('span');
       badge.setAttribute('data-slack-badge', '');
       badge.className = 'slack-channel-badge';
-      badge.style.cssText = 'display:none;font-size:0.75em;background:#4A154B;color:white;padding:0.15em 0.5em;border-radius:4px;margin-left:0.5em;';
       badgeContainer.appendChild(badge);
     }
+
+    // Clean up previous handlers before re-registering
+    if (slackBadgeClickHandler) {
+      badge.removeEventListener('click', slackBadgeClickHandler);
+      slackBadgeClickHandler = null;
+    }
+    if (slackDocumentClickHandler) {
+      document.removeEventListener('click', slackDocumentClickHandler);
+      slackDocumentClickHandler = null;
+    }
+
+    // Remove any existing tooltip
+    const existingTooltip = badgeContainer.querySelector('[data-slack-tooltip]');
+    if (existingTooltip) existingTooltip.remove();
 
     // Hide badge initially
     badge.style.display = 'none';
     badge.textContent = '';
 
     try {
-      const response = await fetch(`/slack/creatives/${creativeId}/slack_integrations`, {
+      const response = await fetch(`/slack/creatives/${creativeId}/slack_integrations/badge`, {
         headers: { Accept: 'application/json' }
       });
+
+      // Discard response if a newer popup open has occurred
+      if (currentRequestId !== slackBadgeRequestId) return;
+
       if (!response.ok) return;
 
       const data = await response.json();
       if (data.links && data.links.length > 0) {
-        const channelNames = data.links.map(link => `#${link.channel_name}`).join(', ');
-        badge.textContent = `Slack: ${channelNames}`;
+        badge.textContent = 'Slack';
         badge.style.display = 'inline-block';
+        badge.title = data.links.map(link => `#${link.channel_name}`).join(', ');
+
+        // Create tooltip element for click display
+        const tooltip = document.createElement('span');
+        tooltip.setAttribute('data-slack-tooltip', '');
+        tooltip.className = 'slack-channel-tooltip';
+        tooltip.textContent = data.links.map(link => `#${link.channel_name}`).join(', ');
+        badgeContainer.appendChild(tooltip);
+
+        slackBadgeClickHandler = function (e) {
+          e.stopPropagation();
+          tooltip.classList.toggle('visible');
+        };
+        badge.addEventListener('click', slackBadgeClickHandler);
+
+        // Close tooltip when clicking elsewhere
+        slackDocumentClickHandler = function () {
+          tooltip.classList.remove('visible');
+        };
+        document.addEventListener('click', slackDocumentClickHandler);
       }
     } catch (error) {
       console.warn('Failed to load Slack badge:', error);
@@ -526,10 +570,23 @@ if (!slackIntegrationInitialized) {
     const { badgeContainer } = event.detail;
     if (!badgeContainer) return;
 
+    // Invalidate any in-flight badge fetch so late responses are discarded
+    slackBadgeRequestId++;
+
     const badge = badgeContainer.querySelector('[data-slack-badge]');
     if (badge) {
       badge.style.display = 'none';
       badge.textContent = '';
+      if (slackBadgeClickHandler) {
+        badge.removeEventListener('click', slackBadgeClickHandler);
+        slackBadgeClickHandler = null;
+      }
     }
+    if (slackDocumentClickHandler) {
+      document.removeEventListener('click', slackDocumentClickHandler);
+      slackDocumentClickHandler = null;
+    }
+    const tooltip = badgeContainer.querySelector('[data-slack-tooltip]');
+    if (tooltip) tooltip.remove();
   });
 }

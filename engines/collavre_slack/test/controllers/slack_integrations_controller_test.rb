@@ -100,6 +100,42 @@ module CollavreSlack
       assert_equal "C01", data["links"].first["channel_id"]
     end
 
+    test "badge returns only linked channel names without Slack API call" do
+      sign_in_as(@user)
+
+      SlackChannelLink.create!(
+        creative: @creative.effective_origin,
+        slack_account: @slack_account,
+        channel_id: "C01",
+        channel_name: "general",
+        created_by: @user
+      )
+
+      # No Slack API stubs — badge should NOT call Slack API
+      get CollavreSlack::Engine.routes.url_helpers.badge_creative_slack_integrations_path(@creative),
+          headers: { "Accept" => "application/json" }
+
+      assert_response :success
+
+      data = JSON.parse(response.body)
+      assert_equal 1, data["links"].size
+      assert_equal "general", data["links"].first["channel_name"]
+      assert_nil data["channels"]
+      assert_nil data["connected"]
+    end
+
+    test "badge returns empty links when no channel is linked" do
+      sign_in_as(@user)
+
+      get CollavreSlack::Engine.routes.url_helpers.badge_creative_slack_integrations_path(@creative),
+          headers: { "Accept" => "application/json" }
+
+      assert_response :success
+
+      data = JSON.parse(response.body)
+      assert_equal 0, data["links"].size
+    end
+
     test "index handles Slack API error gracefully" do
       sign_in_as(@user)
 

@@ -60,6 +60,17 @@ module CollavreSlack
         end
       end
 
+      # Lightweight endpoint for badge display — returns only existing links, no Slack API calls
+      def badge
+        target_creative = @creative.effective_origin
+        links = SlackChannelLink.where(creative: target_creative)
+        render json: {
+          links: links.map { |link|
+            { channel_name: link.channel_name }
+          }
+        }
+      end
+
       def destroy
         link = SlackChannelLink.find(params[:id])
         # Check against origin creative

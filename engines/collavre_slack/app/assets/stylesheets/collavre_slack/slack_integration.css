@@ -24,3 +24,36 @@
   background: var(--color-drag-over);
   border-left: 3px solid var(--color-secondary-active);
 }
+
+/* Slack badge in comments popup header */
+.slack-channel-badge {
+  display: none;
+  font-size: 0.7em;
+  font-weight: 600;
+  background: #4A154B;
+  color: white;
+  padding: 0.15em 0.45em;
+  border-radius: 4px;
+  margin-left: 0.5em;
+  cursor: pointer;
+  white-space: nowrap;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+
+.slack-channel-badge:hover {
+  background: #611f64;
+}
+
+.slack-channel-tooltip {
+  display: none;
+  font-size: 0.75em;
+  color: var(--color-text-secondary);
+  margin-left: 0.4em;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.slack-channel-tooltip.visible {
+  display: inline;
+}
