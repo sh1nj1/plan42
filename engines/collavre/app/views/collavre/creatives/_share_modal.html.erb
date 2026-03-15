@@ -58,7 +58,7 @@
         </ul>
       </div>
     <% end %>
-    <% if @inherited_shares.present? && @inherited_shares.any? %>
+    <% if @inherited_shares.any? %>
       <div style="margin-top:1em;">
         <strong><%= t('collavre.creatives.share.inherited_permissions') %>:</strong>
         <ul class="share-grid">
@@ -67,9 +67,13 @@
             <% source = entry[:source_creative] %>
             <li>
               <span>
-                <%= render Collavre::AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
+                <% if share.user %>
+                  <%= render Collavre::AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
+                <% else %>
+                  <span class="avatar share-avatar" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:var(--surface-3,#ddd);text-align:center;line-height:20px;font-size:10px;">🌐</span>
+                <% end %>
               </span>
-              <span><%= share.user&.display_name || t('collavre.creatives.index.unknown_user') %></span>
+              <span><%= share.user&.display_name || t('collavre.creatives.index.public_share') %></span>
               <span>
                 <select class="org-chart-permission-select org-chart-permission-<%= share.permission %> share-modal-permission-select" disabled>
                   <% %w[admin write feedback read no_access].each do |perm| %>
