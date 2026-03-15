@@ -135,6 +135,7 @@ en:
         public_invite: Public Invite
         inherited_permissions: Inherited Permissions
         inherited_from: "Inherited from %{name}"
+        inherited_short: Inherited
         already_shared_in_parent: Creative already shared in parent creative.
         can_not_share_by_no_access_in_parent: You can not share by no access in parent
           creative.

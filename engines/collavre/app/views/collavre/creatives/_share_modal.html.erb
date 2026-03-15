@@ -80,10 +80,11 @@
                 </select>
               </span>
               <span>
-                <% source_name = ActionController::Base.helpers.strip_tags(source.effective_description.to_s).truncate(30) %>
-                <%= link_to t('collavre.creatives.share.inherited_from', name: source_name),
-                    collavre.creative_path(source),
-                    class: 'share-inherited-link' %>
+                <% source_name = source.creative_snippet %>
+                <%= link_to collavre.creative_path(source), class: 'share-inherited-link' do %>
+                  <span class="share-inherited-short"><%= t('collavre.creatives.share.inherited_short') %></span>
+                  <span class="share-inherited-full"><%= t('collavre.creatives.share.inherited_from', name: source_name) %></span>
+                <% end %>
               </span>
             </li>
           <% end %>

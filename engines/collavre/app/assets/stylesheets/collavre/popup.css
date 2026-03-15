@@ -188,6 +188,19 @@
   color: var(--text-link);
 }
 
+.share-inherited-short {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .share-inherited-short {
+    display: inline;
+  }
+  .share-inherited-full {
+    display: none;
+  }
+}
+
 .share-modal-pending {
   opacity: 0.6;
 }
