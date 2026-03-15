@@ -11,25 +11,23 @@
 
 /* Share popup specific tweaks */
 #share-creative-modal .popup-box {
-  max-height: 80vh;
+  max-height: calc(100vh - 2em);
   overflow-y: auto;
-  margin: auto;
+  margin: 1em auto;
 }
 
 #share-creative-modal .share-grid {
-  max-height: 40vh;
+  max-height: 30vh;
   overflow-y: auto;
 }
 
 @media (max-width: 768px) {
   #share-creative-modal .popup-box {
-    max-height: calc(100vh - 2em);
     max-width: calc(100vw - 1em) !important;
-    margin: 1em auto;
   }
 
   #share-creative-modal .share-grid {
-    max-height: 35vh;
+    max-height: 25vh;
   }
 }
 
