@@ -570,6 +570,9 @@ if (!slackIntegrationInitialized) {
     const { badgeContainer } = event.detail;
     if (!badgeContainer) return;
 
+    // Invalidate any in-flight badge fetch so late responses are discarded
+    slackBadgeRequestId++;
+
     const badge = badgeContainer.querySelector('[data-slack-badge]');
     if (badge) {
       badge.style.display = 'none';
