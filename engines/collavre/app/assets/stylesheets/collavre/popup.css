@@ -13,11 +13,24 @@
 #share-creative-modal .popup-box {
   max-height: 80vh;
   overflow-y: auto;
+  margin: auto;
 }
 
 #share-creative-modal .share-grid {
   max-height: 40vh;
   overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+  #share-creative-modal .popup-box {
+    max-height: calc(100vh - 2em);
+    max-width: calc(100vw - 1em) !important;
+    margin: 1em auto;
+  }
+
+  #share-creative-modal .share-grid {
+    max-height: 35vh;
+  }
 }
 
 /* Ensure autocomplete popup inside share modal works without mention_menu.css */
