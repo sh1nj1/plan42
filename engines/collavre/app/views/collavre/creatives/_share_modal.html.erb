@@ -1,6 +1,6 @@
 <!-- Share Creative Modal -->
-<div id="share-creative-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10000;align-items:center;justify-content:center;overflow-y:auto;" data-creative-id="<%= (@parent_creative || @creative).id %>" data-error-message="<%= t('collavre.creatives.share.network_error') %>">
-  <div class="popup-box" style="min-width:320px;max-width:90vw;">
+<div id="share-creative-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10000;justify-content:center;overflow-y:auto;padding:1em 0;" data-creative-id="<%= (@parent_creative || @creative).id %>" data-error-message="<%= t('collavre.creatives.share.network_error') %>">
+  <div class="popup-box" style="min-width:320px;max-width:90vw;max-height:calc(100vh - 2em);overflow-y:auto;margin:auto;flex-shrink:0;">
     <button type="button" id="close-share-modal" class="popup-close-btn">&times;</button>
     <h2><%= t('collavre.creatives.index.share_creative') %></h2>
     <form id="share-creative-form" action="<%= collavre.creative_creative_shares_path(@parent_creative || @creative) %>" method="post" data-controller="share-invite">
