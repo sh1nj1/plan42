@@ -13,7 +13,7 @@ module Collavre
         @reply_comment = reply_comment
       end
 
-      def handle(error)
+      def handle(error, summary: nil)
         cleanup_placeholder
 
         broadcast_idle
@@ -22,7 +22,7 @@ module Collavre
 
         log_action(error)
 
-        create_approval_comment(error)
+        create_approval_comment(error, summary: summary)
       end
 
       private
@@ -64,7 +64,7 @@ module Collavre
         )
       end
 
-      def create_approval_comment(error)
+      def create_approval_comment(error, summary: nil)
         return unless @creative
 
         approver = @creative.user || User.find_by(id: @context.dig("comment", "user_id"))
@@ -91,6 +91,10 @@ module Collavre
           tool_name: error.tool_name,
           arguments: args_display
         )
+
+        if summary.present?
+          content += "\n#{I18n.t('collavre.ai_agent.approval.summary_header')}\n#{summary}\n"
+        end
 
         original_comment = Comment.find_by(id: @context.dig("comment", "id"))
         topic_id = original_comment&.topic_id

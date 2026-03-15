@@ -20,7 +20,15 @@ class AiClientTest < ActiveSupport::TestCase
     def with_tool(*)
     end
 
+    def with_tools(*tools, replace: false, choice: nil, calls: nil)
+      self
+    end
+
     def on_tool_call(&block)
+    end
+
+    def ask(prompt)
+      OpenStruct.new(content: "Summary: #{prompt.truncate(50)}")
     end
 
     def add_message(role:, content:)
@@ -237,6 +245,60 @@ class AiClientTest < ActiveSupport::TestCase
     msg = conversation.messages_added.first
     assert_equal "user", msg["role"]
     assert_equal [ { "text" => "hello" } ], msg["parts"]
+  end
+
+  test "ask uses existing conversation for follow-up" do
+    conversation = FakeConversation.new
+
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: "system",
+      llm_api_key: "api-key"
+    )
+
+    # Simulate a chat that sets up @conversation
+    client.stub(:build_conversation, conversation) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ]) { |_| }
+    end
+
+    # Now ask a follow-up using the same conversation
+    result = client.ask("Summarize what this tool does")
+    assert_includes result, "Summary:"
+    assert_includes result, "Summarize what this tool does"
+  end
+
+  test "ask returns nil when no conversation exists" do
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: "system",
+      llm_api_key: "api-key"
+    )
+
+    result = client.ask("test")
+    assert_nil result
+  end
+
+  test "ask returns nil on error" do
+    conversation = FakeConversation.new
+    def conversation.ask(_prompt)
+      raise StandardError, "API error"
+    end
+
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: "system",
+      llm_api_key: "api-key"
+    )
+
+    client.stub(:build_conversation, conversation) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ]) { |_| }
+    end
+
+    result = client.ask("test")
+    assert_nil result
   end
 
   test "logs error details when chat fails" do

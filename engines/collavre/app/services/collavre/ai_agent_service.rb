@@ -48,8 +48,8 @@ module Collavre
         @lifecycle_manager.broadcast_status("thinking")
 
         # Execute AI chat with streaming
-        client = build_ai_client(system_prompt)
-        stream_response(client, messages)
+        @client = build_ai_client(system_prompt)
+        stream_response(@client, messages)
 
         log_action("completion", { response: @streamer.content })
 
@@ -62,10 +62,11 @@ module Collavre
         @streamer.content
       end
     rescue ApprovalPendingError => e
+      summary = generate_approval_summary(e)
       AiAgent::ApprovalHandler.new(
         task: @task, agent: @agent, context: @context,
         creative: @creative, reply_comment: @reply_comment
-      ).handle(e)
+      ).handle(e, summary: summary)
       raise
     rescue CancelledError
       handle_cancelled
@@ -192,6 +193,18 @@ module Collavre
         result: result,
         status: "done"
       )
+    end
+
+    def generate_approval_summary(error)
+      return nil unless @client
+
+      prompt = I18n.t(
+        "collavre.ai_agent.approval.summary_prompt",
+        tool_name: error.tool_name,
+        arguments: error.tool_arguments.present? ? JSON.pretty_generate(error.tool_arguments) : "(none)"
+      )
+
+      @client.ask(prompt)
     end
 
     def build_agent_context(creative)
