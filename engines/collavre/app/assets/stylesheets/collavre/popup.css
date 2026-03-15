@@ -166,17 +166,25 @@
   100% { opacity: 0; }
 }
 
-.share-modal-permission-select {
+/* Override org-chart pill styles inside share modal */
+#share-creative-modal .share-modal-permission-select {
   width: auto;
-  padding: 0.35em 0.5em;
-  font-size: var(--text-1);
+  padding: 0.4em 1.5em 0.4em 0.5em;
+  font-size: 1rem;
+  min-height: 2.2em;
   border-radius: var(--radius-2);
-  min-height: 2em;
+  border: 1px solid var(--border-color);
+  background: var(--surface-input, var(--surface-bg));
+  color: var(--text-primary);
+  appearance: auto;
+  -webkit-appearance: menulist;
+  cursor: pointer;
 }
 
-.share-modal-permission-select[disabled] {
-  opacity: 0.7;
+#share-creative-modal .share-modal-permission-select[disabled] {
+  opacity: 0.6;
   cursor: default;
+  background: var(--surface-3, #333);
 }
 
 .share-inherited-link {
