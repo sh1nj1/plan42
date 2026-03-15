@@ -216,6 +216,21 @@ export default class extends Controller {
     const modal = document.getElementById("share-creative-modal")
     if (!modal) return
 
+    // Fix mobile native picker positioning inside position:fixed modal
+    const allSelects = modal.querySelectorAll(".share-modal-permission-select")
+    allSelects.forEach(select => {
+      select.addEventListener("focus", () => {
+        // Temporarily switch to absolute positioning so mobile browser
+        // can correctly anchor the native picker to the select element
+        modal.style.position = "absolute"
+        modal.style.top = window.scrollY + "px"
+      })
+      select.addEventListener("blur", () => {
+        modal.style.position = "fixed"
+        modal.style.top = "0"
+      })
+    })
+
     const selects = modal.querySelectorAll(".share-modal-permission-select:not([disabled])")
     selects.forEach(select => {
       select.addEventListener("change", (e) => {
