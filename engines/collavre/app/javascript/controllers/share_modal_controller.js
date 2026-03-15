@@ -216,58 +216,30 @@ export default class extends Controller {
     const modal = document.getElementById("share-creative-modal")
     if (!modal) return
 
-    // Close any open dropdown when clicking outside
-    modal.addEventListener("click", (e) => {
-      if (!e.target.closest(".share-perm-wrapper")) {
-        modal.querySelectorAll(".share-perm-dropdown").forEach(d => d.style.display = "none")
-      }
-    })
+    const selects = modal.querySelectorAll(".share-modal-permission-select:not([disabled])")
+    selects.forEach(select => {
+      select.addEventListener("change", () => {
+        const url = select.dataset.updateUrl
+        const permission = select.value
+        const originalClass = select.className
 
-    const buttons = modal.querySelectorAll(".share-perm-btn")
-    buttons.forEach(btn => {
-      const wrapper = btn.closest(".share-perm-wrapper")
-      const dropdown = wrapper.querySelector(".share-perm-dropdown")
+        // Update visual class immediately
+        select.className = select.className.replace(/org-chart-permission-\w+/g, "")
+        select.classList.add("org-chart-permission-select", "share-modal-permission-select", `org-chart-permission-${permission}`)
 
-      // Toggle dropdown on button click
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation()
-        // Close other dropdowns
-        modal.querySelectorAll(".share-perm-dropdown").forEach(d => {
-          if (d !== dropdown) d.style.display = "none"
-        })
-        dropdown.style.display = dropdown.style.display === "none" ? "block" : "none"
-      })
-
-      // Handle option selection
-      dropdown.querySelectorAll(".share-perm-option").forEach(option => {
-        option.addEventListener("click", (e) => {
-          e.stopPropagation()
-          const permission = option.dataset.value
-          const url = btn.dataset.updateUrl
-          const originalText = btn.textContent
-          const originalClass = btn.className
-
-          // Update button immediately
-          btn.textContent = option.textContent.trim()
-          btn.className = `share-perm-btn share-perm-${permission}`
-          btn.dataset.current = permission
-          dropdown.style.display = "none"
-
-          fetch(url, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content,
-              "Accept": "application/json"
-            },
-            body: JSON.stringify({ permission })
-          }).then(response => {
-            if (!response.ok) throw new Error("Failed")
-          }).catch(() => {
-            btn.textContent = originalText
-            btn.className = originalClass
-            this.#showMessage(this.#errorFallbackMessage, "error")
-          })
+        fetch(url, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content,
+            "Accept": "application/json"
+          },
+          body: JSON.stringify({ permission })
+        }).then(response => {
+          if (!response.ok) throw new Error("Failed")
+        }).catch(() => {
+          select.className = originalClass
+          this.#showMessage(this.#errorFallbackMessage, "error")
         })
       })
     })
