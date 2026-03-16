@@ -121,6 +121,12 @@ export default class extends Controller {
     const popupBox = modal.querySelector(".popup-box")
     if (!popupBox) return
 
+    // Ensure the overlay is properly styled for centering
+    modal.style.display = "flex"
+    modal.style.alignItems = "center"
+    modal.style.justifyContent = "center"
+
+    // Constrain popup-box height to viewport
     const maxH = window.innerHeight - 32 // 16px margin top + bottom
     popupBox.style.maxHeight = `${maxH}px`
     popupBox.style.overflowY = "auto"
