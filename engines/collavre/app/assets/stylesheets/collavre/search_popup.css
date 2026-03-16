@@ -121,4 +121,14 @@
   .search-popup-trigger .search-popup-trigger-label {
     display: none;
   }
+
+  /* Keep button height consistent when label is hidden */
+  .search-popup-trigger .search-popup-trigger-icon {
+    line-height: 2.1;
+  }
+
+  /* Popup full width on mobile */
+  .search-popup-dropdown {
+    width: calc(100vw - 2rem);
+  }
 }
