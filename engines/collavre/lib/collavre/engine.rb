@@ -110,10 +110,10 @@ module Collavre
         Navigation::Registry.instance.register(
           key: :search,
           label: "app.search_placeholder",
-          section: :search,
+          section: :main,
           type: :partial,
           partial: "collavre/shared/navigation/search_form",
-          priority: 10
+          priority: 105
         )
 
         # ============================================

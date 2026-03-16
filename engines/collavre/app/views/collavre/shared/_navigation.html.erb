@@ -1,9 +1,4 @@
 <nav>
-  <%# Search Section %>
-  <% navigation_items_for(:search).each do |item| %>
-    <%= render_navigation_item(item) %>
-  <% end %>
-
   <%# Mobile Plans Button (special: outside popup) %>
   <% if (mobile_plans = Navigation::Registry.instance.find(:mobile_plans)) && navigation_item_visible?(mobile_plans, desktop: false) %>
     <%= render_navigation_item(mobile_plans, mobile: true) %>

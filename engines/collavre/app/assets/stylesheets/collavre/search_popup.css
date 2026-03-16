@@ -3,24 +3,14 @@
   position: relative;
 }
 
+/* Trigger inherits nav button styles from application.css (nav button {}).
+   Only override what's specific to the search trigger. */
 .search-popup-trigger {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   cursor: pointer;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: none;
-  color: var(--text-secondary);
-  font-size: var(--text-0);
   white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
-}
-
-.search-popup-trigger:hover {
-  background: var(--surface-input);
-  color: var(--text-primary);
 }
 
 .search-popup-trigger-icon {
@@ -58,7 +48,7 @@
   z-index: var(--layer-popup, 100);
   min-width: 280px;
   max-width: 360px;
-  background: var(--surface-1);
+  background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-3, 8px);
   box-shadow: var(--shadow-3);
