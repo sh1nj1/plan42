@@ -212,6 +212,10 @@
   opacity: 0.6;
 }
 
+.share-inherited-item {
+  opacity: 0.8;
+}
+
 .share-pending-item {
   opacity: 0.7;
 }

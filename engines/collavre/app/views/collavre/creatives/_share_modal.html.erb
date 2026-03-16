@@ -29,11 +29,12 @@
       <button type="submit" class="btn btn-primary" data-share-invite-target="submit" data-share="<%= t('collavre.creatives.index.share') %>" data-invite="<%= t('collavre.creatives.index.invite') %>"><%= t('collavre.creatives.index.share') %></button>
       <button type="button" id="creative-invite-link" class="btn btn-secondary" data-creative-id="<%= (@parent_creative || @creative).id %>" data-no-access-message="<%= t('collavre.creatives.index.invite_link_no_access') %>" data-copied-template="<%= t('collavre.creatives.index.invite_link_copied_permission', permission: '__PERMISSION__') %>"><%= t('collavre.creatives.index.invite_link') %></button>
     </form>
-    <% has_shares = @shared_list.any? || (defined?(@pending_invitations) && @pending_invitations.any?) %>
-    <% if has_shares %>
+    <% has_any_shares = @shared_list.any? || (defined?(@pending_invitations) && @pending_invitations.any?) || @inherited_shares.any? %>
+    <% if has_any_shares %>
       <div style="margin-top:1em;">
         <strong><%= t('collavre.creatives.index.shared_with') %>:</strong>
         <ul class="share-grid">
+          <%# Direct shares %>
           <% @shared_list.each do |share| %>
             <li>
               <span>
@@ -56,6 +57,39 @@
               </span>
             </li>
           <% end %>
+          <%# Inherited shares %>
+          <% @inherited_shares.each do |entry| %>
+            <% share = entry[:share] %>
+            <% source = entry[:source_creative] %>
+            <li class="share-inherited-item">
+              <span>
+                <% if share.user %>
+                  <%= render Collavre::AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
+                <% else %>
+                  <span class="avatar share-avatar" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:var(--surface-3,#ddd);text-align:center;line-height:20px;font-size:10px;">🌐</span>
+                <% end %>
+              </span>
+              <span>
+                <%= share.user&.display_name || t('collavre.creatives.index.public_share') %>
+                <% source_name = source.creative_snippet %>
+                <%= link_to collavre.creative_path(source), class: 'share-inherited-link' do %>
+                  <span class="share-inherited-short"><%= t('collavre.creatives.share.inherited_short') %></span>
+                  <span class="share-inherited-full"><%= t('collavre.creatives.share.inherited_from', name: source_name) %></span>
+                <% end %>
+              </span>
+              <span>
+                <select class="org-chart-permission-select org-chart-permission-<%= share.permission %> share-modal-permission-select" disabled>
+                  <% %w[admin write feedback read no_access].each do |perm| %>
+                    <option value="<%= perm %>" <%= 'selected' if share.permission == perm %>>
+                      <%= t("collavre.contacts.org_chart.permissions.#{perm}") %>
+                    </option>
+                  <% end %>
+                </select>
+              </span>
+              <span></span>
+            </li>
+          <% end %>
+          <%# Pending invitations %>
           <% if defined?(@pending_invitations) && @pending_invitations.any? %>
             <% @pending_invitations.each do |invitation| %>
               <li class="share-pending-item">
@@ -83,43 +117,6 @@
                 </span>
               </li>
             <% end %>
-          <% end %>
-        </ul>
-      </div>
-    <% end %>
-    <% if @inherited_shares.any? %>
-      <div style="margin-top:1em;">
-        <strong><%= t('collavre.creatives.share.inherited_permissions') %>:</strong>
-        <ul class="share-grid">
-          <% @inherited_shares.each do |entry| %>
-            <% share = entry[:share] %>
-            <% source = entry[:source_creative] %>
-            <li>
-              <span>
-                <% if share.user %>
-                  <%= render Collavre::AvatarComponent.new(user: share.user, size: 20, classes: 'avatar share-avatar') %>
-                <% else %>
-                  <span class="avatar share-avatar" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:var(--surface-3,#ddd);text-align:center;line-height:20px;font-size:10px;">🌐</span>
-                <% end %>
-              </span>
-              <span><%= share.user&.display_name || t('collavre.creatives.index.public_share') %></span>
-              <span>
-                <select class="org-chart-permission-select org-chart-permission-<%= share.permission %> share-modal-permission-select" disabled>
-                  <% %w[admin write feedback read no_access].each do |perm| %>
-                    <option value="<%= perm %>" <%= 'selected' if share.permission == perm %>>
-                      <%= t("collavre.contacts.org_chart.permissions.#{perm}") %>
-                    </option>
-                  <% end %>
-                </select>
-              </span>
-              <span>
-                <% source_name = source.creative_snippet %>
-                <%= link_to collavre.creative_path(source), class: 'share-inherited-link' do %>
-                  <span class="share-inherited-short"><%= t('collavre.creatives.share.inherited_short') %></span>
-                  <span class="share-inherited-full"><%= t('collavre.creatives.share.inherited_from', name: source_name) %></span>
-                <% end %>
-              </span>
-            </li>
           <% end %>
         </ul>
       </div>
