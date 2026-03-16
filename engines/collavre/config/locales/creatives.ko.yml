@@ -120,7 +120,7 @@ ko:
         shared: 크리에이티브가 성공적으로 공유되었습니다.
         permission_updated: 권한이 성공적으로 변경되었습니다.
         network_error: 네트워크 오류가 발생했습니다. 다시 시도해주세요.
-        public_invite: 공개 초대
+        public_invite: 공개
         inherited_permissions: 상속된 권한
         inherited_from: "%{name}에서 상속"
         inherited_short: 상속

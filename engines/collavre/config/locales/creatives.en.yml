@@ -132,7 +132,7 @@ en:
         shared: Creative shared successfully.
         permission_updated: Permission updated successfully.
         network_error: A network error occurred. Please try again.
-        public_invite: Public Invite
+        public_invite: Public
         inherited_permissions: Inherited Permissions
         inherited_from: "Inherited from %{name}"
         inherited_short: Inherited
