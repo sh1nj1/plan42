@@ -29,7 +29,8 @@
       <button type="submit" class="btn btn-primary" data-share-invite-target="submit" data-share="<%= t('collavre.creatives.index.share') %>" data-invite="<%= t('collavre.creatives.index.invite') %>"><%= t('collavre.creatives.index.share') %></button>
       <button type="button" id="creative-invite-link" class="btn btn-secondary" data-creative-id="<%= (@parent_creative || @creative).id %>" data-no-access-message="<%= t('collavre.creatives.index.invite_link_no_access') %>" data-copied-template="<%= t('collavre.creatives.index.invite_link_copied_permission', permission: '__PERMISSION__') %>"><%= t('collavre.creatives.index.invite_link') %></button>
     </form>
-    <% if @shared_list.any? %>
+    <% has_shares = @shared_list.any? || (defined?(@pending_invitations) && @pending_invitations.any?) %>
+    <% if has_shares %>
       <div style="margin-top:1em;">
         <strong><%= t('collavre.creatives.index.shared_with') %>:</strong>
         <ul class="share-grid">
@@ -54,6 +55,34 @@
                 <%= button_to '×', collavre.creative_creative_share_path(@parent_creative || @creative, share), method: :delete, form: { data: { turbo_confirm: t('collavre.creatives.index.are_you_sure_delete_share') } }, class: 'delete-share-btn' %>
               </span>
             </li>
+          <% end %>
+          <% if defined?(@pending_invitations) && @pending_invitations.any? %>
+            <% @pending_invitations.each do |invitation| %>
+              <li class="share-pending-item">
+                <span>
+                  <div class="avatar-wrapper" style="width: 20px; height: 20px; display: inline-block;">
+                    <% if invitation.email.present? %>
+                      <%= image_tag asset_path("default_avatar.svg"),
+                          alt: '', width: 20, height: 20,
+                          class: 'avatar share-avatar',
+                          title: invitation.email,
+                          style: 'border-radius:50%;vertical-align:middle;' %>
+                      <span class="avatar-initial" style="font-size: 10px;"><%= invitation.email[0]&.upcase %></span>
+                    <% else %>
+                      <span class="avatar share-avatar" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:var(--surface-3,#ddd);text-align:center;line-height:20px;font-size:10px;">🔗</span>
+                    <% end %>
+                  </div>
+                </span>
+                <span>
+                  <%= invitation.email.presence || t('collavre.creatives.share.public_invite') %>
+                  <span class="share-pending-badge"><%= t('collavre.contacts.org_chart.pending_status') %></span>
+                </span>
+                <span><%= t("collavre.creatives.index.permission_#{invitation.permission}") %></span>
+                <span>
+                  <%= button_to '×', collavre.creative_invitation_path(@parent_creative || @creative, invitation), method: :delete, form: { data: { turbo_confirm: t('collavre.contacts.org_chart.cancel_invite_confirm', email: invitation.email.presence || t('collavre.creatives.share.public_invite')) } }, class: 'delete-share-btn' %>
+                </span>
+              </li>
+            <% end %>
           <% end %>
         </ul>
       </div>
@@ -89,36 +118,6 @@
                   <span class="share-inherited-short"><%= t('collavre.creatives.share.inherited_short') %></span>
                   <span class="share-inherited-full"><%= t('collavre.creatives.share.inherited_from', name: source_name) %></span>
                 <% end %>
-              </span>
-            </li>
-          <% end %>
-        </ul>
-      </div>
-    <% end %>
-    <% if defined?(@pending_invitations) && @pending_invitations.any? %>
-      <div style="margin-top:1em;">
-        <strong><%= t('collavre.contacts.org_chart.pending_invitations') %>:</strong>
-        <ul class="share-grid">
-          <% @pending_invitations.each do |invitation| %>
-            <li>
-              <span>
-                <div class="avatar-wrapper" style="width: 20px; height: 20px; display: inline-block;">
-                  <% if invitation.email.present? %>
-                    <%= image_tag asset_path("default_avatar.svg"),
-                        alt: '', width: 20, height: 20,
-                        class: 'avatar share-avatar',
-                        title: invitation.email,
-                        style: 'border-radius:50%;vertical-align:middle;' %>
-                    <span class="avatar-initial" style="font-size: 10px;"><%= invitation.email[0]&.upcase %></span>
-                  <% else %>
-                    <span class="avatar share-avatar" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:var(--surface-3,#ddd);text-align:center;line-height:20px;font-size:10px;">🔗</span>
-                  <% end %>
-                </div>
-              </span>
-              <span><%= invitation.email.presence || t('collavre.creatives.share.public_invite') %></span>
-              <span><%= t("collavre.creatives.index.permission_#{invitation.permission}") %></span>
-              <span>
-                <%= button_to '×', collavre.creative_invitation_path(@parent_creative || @creative, invitation), method: :delete, form: { data: { turbo_confirm: t('collavre.contacts.org_chart.cancel_invite_confirm', email: invitation.email.presence || t('collavre.creatives.share.public_invite')) } }, class: 'delete-share-btn' %>
               </span>
             </li>
           <% end %>

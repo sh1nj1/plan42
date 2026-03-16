@@ -211,6 +211,21 @@
 .share-modal-pending {
   opacity: 0.6;
 }
+
+.share-pending-item {
+  opacity: 0.7;
+}
+
+.share-pending-badge {
+  display: inline-block;
+  font-size: 0.75em;
+  color: var(--text-muted);
+  background: var(--surface-3, #eee);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-2, 4px);
+  margin-left: 0.3em;
+  vertical-align: middle;
+}
 .share-modal-spinner {
   display: inline-block;
   width: 12px;
