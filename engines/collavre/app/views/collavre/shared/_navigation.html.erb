@@ -4,9 +4,14 @@
     <%= render_navigation_item(mobile_plans, mobile: true) %>
   <% end %>
 
+  <%# Search Button (always visible, both desktop and mobile) %>
+  <% if (search_item = Navigation::Registry.instance.find(:search)) && navigation_item_visible?(search_item) %>
+    <%= render_navigation_item(search_item) %>
+  <% end %>
+
   <%# Desktop Navigation %>
   <div class="desktop-only">
-    <% navigation_items_for(:main, desktop: true).each do |item| %>
+    <% navigation_items_for(:main, desktop: true).reject { |i| i[:key] == :search }.each do |item| %>
       <%= render_navigation_item(item) %>
     <% end %>
   </div>
@@ -18,7 +23,7 @@
         menu_id: 'mobile-more-menu',
         align: :right
       ) do %>
-    <% navigation_items_for(:main, desktop: false).reject { |i| i[:key] == :mobile_plans }.each do |item| %>
+    <% navigation_items_for(:main, desktop: false).reject { |i| i[:key] == :mobile_plans || i[:key] == :search }.each do |item| %>
       <%= render_mobile_navigation_item(item) %>
     <% end %>
   <% end %>
