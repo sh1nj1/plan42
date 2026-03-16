@@ -1,3 +1,15 @@
+## v0.8.2 (2026-03-16)
+
+### Changes
+- da02ef96 fix(ui): unify design tokens, improve dark mode contrast, and add accessibility polish
+- 7bd5367e fix: unify chat header section spacing (#979)
+- f2c05986 feat: show inherited permissions in share modal with inline editing (#978)
+- 536fb0d5 feat: replace emoji icons with SVG icons in chat contexts (#976)
+- a1e3b7fb feat: add AI-generated summary to tool approval messages (#973)
+- fb5b243e fix: use Numeric instead of Float in tool service Sorbet sigs (#975)
+- ff9697b2 fix: remove global smooth scroll to fix back navigation scroll restoration (#974)
+- 2aa5075a Feat/chevron icon (#971)
+
 ## v0.8.1 (2026-03-13)
 
 ### Changes

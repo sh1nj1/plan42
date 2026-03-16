@@ -1,3 +1,8 @@
+## v0.2.3 (2026-03-16)
+
+### Changes
+- 0eaee5d8 fix: compact Slack badge with click-to-reveal channel name (#972)
+
 ## v0.2.2 (2026-03-13)
 
 ### Changes
