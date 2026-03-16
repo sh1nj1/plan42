@@ -49,24 +49,39 @@
   z-index: var(--layer-popup, 100);
   width: 360px;
   max-width: calc(100vw - 2rem);
+  box-sizing: border-box;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-3, 8px);
   box-shadow: var(--shadow-3);
   padding: var(--space-3);
+  /* Reset nav button styles that leak into dropdown children */
+  font-size: initial;
+  line-height: normal;
+  text-align: left;
 }
 
 .search-popup-dropdown.open {
   display: block;
 }
 
+.search-popup-form {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .search-popup-input-row {
   margin-bottom: var(--space-3);
 }
 
-.search-popup-input {
-  width: 100%;
+.search-popup-dropdown input.search-popup-input {
+  display: block;
+  width: 100% !important;
+  min-width: 0;
   box-sizing: border-box;
+  font-size: var(--text-1, 1rem);
+  padding: var(--space-2);
 }
 
 .search-popup-filters {
