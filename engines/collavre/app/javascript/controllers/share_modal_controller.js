@@ -111,6 +111,11 @@ export default class extends Controller {
       if (e.target === modal) this.close()
     }
 
+    // Prevent touch events from propagating to underlying elements (e.g., chat swipe-to-close)
+    modal.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true })
+    modal.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: true })
+    modal.addEventListener("touchend", (e) => e.stopPropagation(), { passive: true })
+
     this.#initializeForm()
     this.#initializePermissionSelects()
     this.#initializeDeleteButtons()
