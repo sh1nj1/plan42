@@ -1,6 +1,6 @@
 /* Search Popup */
 .search-popup-wrapper {
-  position: relative;
+  position: static;
 }
 
 /* Trigger inherits nav button styles from application.css (nav button {}).
@@ -42,12 +42,13 @@
 
 .search-popup-dropdown {
   display: none;
-  position: absolute;
-  top: calc(100% + var(--space-1));
-  left: 0;
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: var(--layer-popup, 100);
-  min-width: 280px;
-  max-width: 360px;
+  width: 360px;
+  max-width: calc(100vw - 2rem);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-3, 8px);
@@ -117,18 +118,8 @@
   border-color: var(--color-active);
 }
 
-/* Mobile: make popup full-width */
+/* Mobile */
 @media (max-width: 768px) {
-  .search-popup-dropdown {
-    left: 0;
-    right: 0;
-    min-width: unset;
-    max-width: unset;
-    position: fixed;
-    top: auto;
-    margin-top: var(--space-1);
-  }
-
   .search-popup-trigger .search-popup-trigger-text {
     display: none;
   }
