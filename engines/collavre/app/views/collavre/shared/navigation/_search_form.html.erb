@@ -89,9 +89,6 @@
           <% if authenticated? %>
             <button type="button"
                     class="search-popup-filter-btn<%= ' active' if has_archived %>"
-                    data-search-popup-target="archiveToggle"
-                    data-show-text="<%= t('collavre.creatives.index.show_archived') %>"
-                    data-hide-text="<%= t('collavre.creatives.index.hide_archived') %>"
                     data-action="click->search-popup#toggleArchive"><%= has_archived ? t('collavre.creatives.index.hide_archived') : t('collavre.creatives.index.show_archived') %></button>
           <% end %>
         </div>

@@ -1,7 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 
 export default class extends Controller {
-  static targets = ['input', 'popup', 'archiveToggle']
+  static targets = ['input', 'popup']
 
   connect() {
     this._outsideClickHandler = (e) => {
@@ -16,12 +16,6 @@ export default class extends Controller {
     }
     document.addEventListener('keydown', this._escHandler)
 
-    // Sync archive toggle state from URL
-    const url = new URL(window.location.href)
-    if (this.hasArchiveToggleTarget) {
-      this._archiveActive = url.searchParams.get('show_archived') === 'true'
-      this._updateArchiveButton()
-    }
   }
 
   disconnect() {
@@ -105,33 +99,17 @@ export default class extends Controller {
     window.location.href = query ? `${url.pathname}?${query}` : url.pathname
   }
 
-  // Toggle archive visibility
+  // Toggle archive visibility via URL parameter
   toggleArchive(event) {
     event.preventDefault()
-    this._archiveActive = !this._archiveActive
-    this._updateArchiveButton()
-
-    // Dispatch event for tree_controller to pick up
-    const customEvent = new CustomEvent('search-popup:archive-toggle', {
-      bubbles: true,
-      detail: { showArchived: this._archiveActive }
-    })
-    this.element.dispatchEvent(customEvent)
-
-    // Also update the hidden toggle-archived-btn for tree_controller compatibility
-    const hiddenBtn = document.getElementById('toggle-archived-btn')
-    if (hiddenBtn) {
-      hiddenBtn.click()
+    const url = new URL(window.location.href)
+    if (url.searchParams.get('show_archived') === 'true') {
+      url.searchParams.delete('show_archived')
+    } else {
+      url.searchParams.set('show_archived', 'true')
     }
-  }
-
-  _updateArchiveButton() {
-    if (!this.hasArchiveToggleTarget) return
-    const btn = this.archiveToggleTarget
-    btn.classList.toggle('active', this._archiveActive)
-    const showText = btn.dataset.showText || ''
-    const hideText = btn.dataset.hideText || ''
-    btn.textContent = this._archiveActive ? hideText : showText
+    const query = url.searchParams.toString()
+    window.location.href = query ? `${url.pathname}?${query}` : url.pathname
   }
 
   _applyFilters(overrides = {}) {
