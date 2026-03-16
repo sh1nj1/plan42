@@ -99,6 +99,9 @@ export default class extends Controller {
     modal.style.display = "flex"
     document.body.classList.add("no-scroll")
 
+    // Constrain popup-box within viewport
+    this.#constrainModalHeight(modal)
+
     const closeBtn = document.getElementById("close-share-modal")
     if (closeBtn) {
       closeBtn.onclick = () => this.close()
@@ -112,6 +115,15 @@ export default class extends Controller {
     this.#initializePermissionSelects()
     this.#initializeDeleteButtons()
     this.#initializeInviteLink()
+  }
+
+  #constrainModalHeight(modal) {
+    const popupBox = modal.querySelector(".popup-box")
+    if (!popupBox) return
+
+    const maxH = window.innerHeight - 32 // 16px margin top + bottom
+    popupBox.style.maxHeight = `${maxH}px`
+    popupBox.style.overflowY = "auto"
   }
 
   #initializeForm() {
