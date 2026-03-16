@@ -297,3 +297,28 @@ input[type="datetime-local"]::-webkit-datetime-edit-minute-field {
 .inline-block {
   display: inline-block;
 }
+
+/* --- Dark mode: stronger glow for visibility on dark backgrounds --- */
+body.dark-mode #comments-popup {
+  box-shadow: var(--shadow-3),
+              0 0 8px color-mix(in srgb, var(--color-active) 45%, transparent),
+              0 0 20px color-mix(in srgb, var(--color-active) 25%, transparent);
+}
+
+body.dark-mode creative-tree-row.chat-active .creative-row {
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-active) 45%, transparent),
+              0 0 20px color-mix(in srgb, var(--color-active) 25%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not(.light-mode):not(.dark-mode) #comments-popup {
+    box-shadow: var(--shadow-3),
+                0 0 8px color-mix(in srgb, var(--color-active) 45%, transparent),
+                0 0 20px color-mix(in srgb, var(--color-active) 25%, transparent);
+  }
+
+  body:not(.light-mode):not(.dark-mode) creative-tree-row.chat-active .creative-row {
+    box-shadow: 0 0 8px color-mix(in srgb, var(--color-active) 45%, transparent),
+                0 0 20px color-mix(in srgb, var(--color-active) 25%, transparent);
+  }
+}
