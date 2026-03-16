@@ -5,12 +5,20 @@
 
 /* Trigger inherits nav button styles from application.css (nav button {}).
    Only override what's specific to the search trigger. */
+/* Match nav button height: use inline-block (not inline-flex) so line-height
+   determines the box height, same as sibling nav buttons like "...".
+   inline-flex would shrink to icon content height. */
 .search-popup-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
+  display: inline-block;
   cursor: pointer;
   white-space: nowrap;
+  vertical-align: middle;
+  text-align: center;
+}
+
+.search-popup-trigger .search-popup-trigger-icon,
+.search-popup-trigger .search-popup-trigger-label {
+  vertical-align: middle;
 }
 
 .search-popup-trigger-icon {
@@ -135,11 +143,6 @@
 @media (max-width: 768px) {
   .search-popup-trigger .search-popup-trigger-label {
     display: none;
-  }
-
-  /* Keep button height consistent when label is hidden */
-  .search-popup-trigger .search-popup-trigger-icon {
-    line-height: 2.1;
   }
 
   /* Popup full width on mobile */
