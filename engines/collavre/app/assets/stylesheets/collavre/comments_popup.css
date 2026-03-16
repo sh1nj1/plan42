@@ -51,7 +51,7 @@ body.chat-fullscreen {
     align-items: center;
     justify-content: space-between;
     gap: 0.75em;
-    padding-bottom: 0.5em;
+    padding-bottom: var(--space-1);
 }
 
 .comments-popup-header h3 {
@@ -126,7 +126,7 @@ body.chat-fullscreen {
     flex-wrap: nowrap;
     align-items: center;
     gap: 0.5em;
-    padding: 0.5em 0;
+    padding: var(--space-1) 0;
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none; /* Firefox */
@@ -845,7 +845,7 @@ body.chat-fullscreen {
 }
 
 #comment-participants {
-    padding: 0.5em 0;
+    padding: var(--space-1) 0;
     min-height: 20px;
     display: flex;
     align-items: center;
@@ -915,7 +915,7 @@ body.chat-fullscreen {
     flex-wrap: nowrap;
     align-items: center;
     gap: 0.4em;
-    padding: 0.5em 0;
+    padding: var(--space-1) 0;
     overflow-x: auto;
     overflow-y: visible;
     scrollbar-width: none;
@@ -1068,7 +1068,7 @@ body.chat-fullscreen {
     flex-wrap: nowrap;
     align-items: center;
     gap: 0.5em;
-    padding: 0.5em 0;
+    padding: var(--space-1) 0;
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none; /* Firefox */
