@@ -157,6 +157,8 @@ export default class extends Controller {
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.titleTarget.textContent = snippet
 
+    this._markChatActiveRow(resolvedCreativeId)
+
     this.prepareSize()
 
     this.showPopup()
@@ -183,6 +185,8 @@ export default class extends Controller {
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.titleTarget.textContent = snippet
+
+    this._markChatActiveRow(resolvedCreativeId)
 
     this.showPopup()
 
@@ -267,6 +271,8 @@ export default class extends Controller {
         badgeContainer: this.element.querySelector('[data-integration-badges]')
       }
     }))
+
+    this._clearChatActiveRow()
 
     this.element.style.display = 'none'
     this.element.classList.remove('open')
@@ -854,5 +860,18 @@ export default class extends Controller {
       window.clearTimeout(this.openFromUrlTimeout)
       this.openFromUrlTimeout = null
     }
+  }
+
+  _markChatActiveRow(creativeId) {
+    this._clearChatActiveRow()
+    if (!creativeId) return
+    const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
+    if (row) row.classList.add('chat-active')
+  }
+
+  _clearChatActiveRow() {
+    document.querySelectorAll('creative-tree-row.chat-active').forEach(el => {
+      el.classList.remove('chat-active')
+    })
   }
 }

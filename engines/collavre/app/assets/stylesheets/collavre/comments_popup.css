@@ -10,9 +10,11 @@
     min-width: 200px;
     min-height: 200px;
     background: var(--surface-bg);
-    border: 1px solid var(--border-color);
+    border: var(--border-1) solid var(--color-active);
     border-radius: var(--radius-3);
-    box-shadow: var(--shadow-3);
+    box-shadow: var(--shadow-3),
+                0 0 6px color-mix(in srgb, var(--color-active) 25%, transparent),
+                0 0 14px color-mix(in srgb, var(--color-active) 12%, transparent);
     padding: 1em;
     flex-direction: column;
     transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease,

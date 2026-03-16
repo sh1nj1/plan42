@@ -440,6 +440,13 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     background-color: var(--border-drag-over);
 }
 
+creative-tree-row.chat-active .creative-row {
+    border: var(--border-1) solid var(--color-active);
+    border-radius: var(--radius-2);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--color-active) 25%, transparent),
+                0 0 14px color-mix(in srgb, var(--color-active) 12%, transparent);
+}
+
 .creative-row:hover,
 .creative-row.level-1:hover,
 .creative-row.level-2:hover,
