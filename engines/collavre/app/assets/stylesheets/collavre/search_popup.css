@@ -6,22 +6,20 @@
 .search-popup-trigger {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   cursor: pointer;
-  min-width: 140px;
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-2);
-  background: var(--surface-input);
+  background: none;
   color: var(--text-secondary);
   font-size: var(--text-0);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  transition: background 0.15s, color 0.15s;
 }
 
 .search-popup-trigger:hover {
-  border-color: var(--color-active);
+  background: var(--surface-input);
   color: var(--text-primary);
 }
 
@@ -141,7 +139,7 @@
     margin-top: var(--space-1);
   }
 
-  .search-popup-trigger {
-    min-width: 100px;
+  .search-popup-trigger .search-popup-trigger-text {
+    display: none;
   }
 }
