@@ -1,3 +1,10 @@
+## v0.8.3 (2026-03-16)
+
+### Changes
+- 83d30f02 feat: add glowing border effect to chat popup and active creative row (#983)
+- 4944e5cb fix: hide chevron toggle for leaf nodes without children container (#984)
+- 0321af0d fix: remove global scroll-behavior smooth to prevent scroll animation on back navigation (#980)
+
 ## v0.8.2 (2026-03-16)
 
 ### Changes
