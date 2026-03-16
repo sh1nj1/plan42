@@ -2,6 +2,7 @@
 ko:
   collavre:
     search_popup:
+      search: "검색"
       progress_filter: "진행 상태"
       search_results: "검색 결과"
       flat_view: "플랫"

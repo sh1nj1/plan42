@@ -82,11 +82,9 @@
 }
 
 .search-popup-filter-label {
-  font-size: var(--text-00, 11px);
+  font-size: var(--text-0, 0.875rem);
   font-weight: var(--weight-6, 600);
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--text-primary);
 }
 
 .search-popup-filter-buttons {
@@ -120,7 +118,7 @@
 
 /* Mobile */
 @media (max-width: 768px) {
-  .search-popup-trigger .search-popup-trigger-text {
+  .search-popup-trigger .search-popup-trigger-label {
     display: none;
   }
 }

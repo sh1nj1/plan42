@@ -2,6 +2,7 @@
 en:
   collavre:
     search_popup:
+      search: "Search"
       progress_filter: "Progress"
       search_results: "Search results"
       flat_view: "Flat"

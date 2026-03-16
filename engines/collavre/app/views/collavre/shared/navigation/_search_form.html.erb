@@ -21,9 +21,7 @@
 
   <button type="button" class="search-popup-trigger" data-action="click->search-popup#toggle" aria-label="<%= t('app.search_placeholder') %>">
     <span class="search-popup-trigger-icon" aria-hidden="true"><%= svg_tag 'search.svg', width: 16, height: 16 rescue '🔍' %></span>
-    <% if has_search %>
-      <span class="search-popup-trigger-text"><%= params[:search] %></span>
-    <% end %>
+    <span class="search-popup-trigger-label"><%= t('collavre.search_popup.search') %></span>
     <% if active_count > 0 %>
       <span class="search-popup-badge"><%= active_count %></span>
     <% end %>
