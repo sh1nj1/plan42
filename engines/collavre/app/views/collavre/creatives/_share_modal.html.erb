@@ -1,5 +1,5 @@
 <!-- Share Creative Modal -->
-<div id="share-creative-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10000;align-items:center;justify-content:center;" data-creative-id="<%= (@parent_creative || @creative).id %>" data-error-message="<%= t('collavre.creatives.share.network_error') %>">
+<div id="share-creative-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:10000;align-items:center;justify-content:center;background:rgba(0,0,0,0.3);" data-creative-id="<%= (@parent_creative || @creative).id %>" data-error-message="<%= t('collavre.creatives.share.network_error') %>">
   <div class="popup-box" style="min-width:320px;max-width:90vw;">
     <button type="button" id="close-share-modal" class="popup-close-btn">&times;</button>
     <h2><%= t('collavre.creatives.index.share_creative') %></h2>
