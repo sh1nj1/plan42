@@ -100,6 +100,7 @@ export default class extends Controller {
     const childrenDiv = this.childrenContainerFor(row)
     this.ensureLoaded(row, childrenDiv).then((hasChildren) => {
       if (!hasChildren || !childrenDiv) {
+        row.hasChildren = false
         this.collapseRow(row, { persist: false })
         return
       }
@@ -177,6 +178,13 @@ export default class extends Controller {
 
   syncInitialState(row) {
     const childrenDiv = this.childrenContainerFor(row)
+
+    // If the row claims it has children but no children container exists,
+    // correct the hasChildren flag so the chevron is hidden.
+    if (row.hasChildren && !childrenDiv) {
+      row.hasChildren = false
+    }
+
     const shouldExpand =
       this.allExpanded ||
       row.expanded ||
