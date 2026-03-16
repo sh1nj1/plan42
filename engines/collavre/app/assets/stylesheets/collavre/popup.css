@@ -219,13 +219,10 @@
 .share-pending-badge {
   display: inline-block;
   font-size: var(--text-00);
-  color: var(--text-on-badge);
-  background: var(--text-muted);
-  padding: 0.15em 0.4em;
-  border-radius: var(--radius-2, 4px);
+  color: var(--color-warning);
+  font-weight: var(--weight-5);
   margin-left: 0.3em;
   vertical-align: middle;
-  line-height: 1.4;
 }
 .share-modal-spinner {
   display: inline-block;
