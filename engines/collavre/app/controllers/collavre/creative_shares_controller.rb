@@ -9,6 +9,9 @@ module Collavre
       @shared_list = CreativeShare.where(creative: @creative)
                                   .includes(user: [ avatar_attachment: :blob ])
 
+      # Build inherited shares from ancestor creatives
+      @inherited_shares = build_inherited_shares(@creative)
+
       @pending_invitations = Invitation.where(creative: @creative, accepted_at: nil)
                                        .where("expires_at > ?", Time.current)
                                        .order(created_at: :desc)
@@ -150,6 +153,30 @@ module Collavre
 
       def all_descendants(creative)
         creative.children.flat_map { |child| [ child ] + all_descendants(child) }
+      end
+
+      # Returns inherited shares from ancestor creatives.
+      # Each entry is a hash with :share, :source_creative keys.
+      # Only includes the closest (most specific) share per user.
+      def build_inherited_shares(creative)
+        ancestors = creative.ancestors
+        return [] if ancestors.empty?
+
+        ancestor_ids = ancestors.pluck(:id)
+        direct_user_ids = CreativeShare.where(creative: creative).pluck(:user_id).compact
+
+        ancestor_shares = CreativeShare
+          .where(creative_id: ancestor_ids)
+          .where.not(user_id: direct_user_ids) # Exclude users who already have direct shares
+          .includes(:creative, user: [ avatar_attachment: :blob ])
+
+        # Group by user_id and pick the closest ancestor share
+        ancestor_shares.group_by(&:user_id).filter_map do |_user_id, shares|
+          closest = CreativeShare.closest_parent_share(ancestor_ids, shares)
+          next unless closest && closest.permission != "no_access"
+
+          { share: closest, source_creative: closest.creative }
+        end
       end
   end
 end

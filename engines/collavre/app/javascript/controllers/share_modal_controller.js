@@ -99,6 +99,9 @@ export default class extends Controller {
     modal.style.display = "flex"
     document.body.classList.add("no-scroll")
 
+    // Constrain popup-box within viewport
+    this.#constrainModalHeight(modal)
+
     const closeBtn = document.getElementById("close-share-modal")
     if (closeBtn) {
       closeBtn.onclick = () => this.close()
@@ -108,9 +111,30 @@ export default class extends Controller {
       if (e.target === modal) this.close()
     }
 
+    // Prevent touch events from propagating to underlying elements (e.g., chat swipe-to-close)
+    modal.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true })
+    modal.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: true })
+    modal.addEventListener("touchend", (e) => e.stopPropagation(), { passive: true })
+
     this.#initializeForm()
+    this.#initializePermissionSelects()
     this.#initializeDeleteButtons()
     this.#initializeInviteLink()
+  }
+
+  #constrainModalHeight(modal) {
+    const popupBox = modal.querySelector(".popup-box")
+    if (!popupBox) return
+
+    // Ensure the overlay is properly styled for centering
+    modal.style.display = "flex"
+    modal.style.alignItems = "center"
+    modal.style.justifyContent = "center"
+
+    // Constrain popup-box height to viewport
+    const maxH = window.innerHeight - 32 // 16px margin top + bottom
+    popupBox.style.maxHeight = `${maxH}px`
+    popupBox.style.overflowY = "auto"
   }
 
   #initializeForm() {
@@ -209,6 +233,39 @@ export default class extends Controller {
     li.append(avatarSpan, emailSpan, permSpan, spinnerSpan)
     listSection.appendChild(li)
     return li
+  }
+
+  #initializePermissionSelects() {
+    const modal = document.getElementById("share-creative-modal")
+    if (!modal) return
+
+    const selects = modal.querySelectorAll(".share-modal-permission-select:not([disabled])")
+    selects.forEach(select => {
+      select.addEventListener("change", () => {
+        const url = select.dataset.updateUrl
+        const permission = select.value
+        const originalClass = select.className
+
+        // Update visual class immediately
+        select.className = select.className.replace(/org-chart-permission-\w+/g, "")
+        select.classList.add("org-chart-permission-select", "share-modal-permission-select", `org-chart-permission-${permission}`)
+
+        fetch(url, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content,
+            "Accept": "application/json"
+          },
+          body: JSON.stringify({ permission })
+        }).then(response => {
+          if (!response.ok) throw new Error("Failed")
+        }).catch(() => {
+          select.className = originalClass
+          this.#showMessage(this.#errorFallbackMessage, "error")
+        })
+      })
+    })
   }
 
   #initializeDeleteButtons() {

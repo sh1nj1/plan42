@@ -387,6 +387,12 @@ export default class extends Controller {
 
   handleTouchStart(event) {
     if (!this.isMobile()) return
+    // Ignore swipe when share modal is open
+    const shareModal = document.getElementById("share-creative-modal")
+    if (shareModal && shareModal.style.display === "flex") {
+      this.touchStartY = null
+      return
+    }
     if (!event.target.closest('#comments-list')) {
       this.touchStartY = event.touches[0].clientY
     } else {
