@@ -446,6 +446,9 @@ export default class extends Controller {
   handlePopupWheel(event) {
     if (this.isFullscreen()) return // fullscreen already blocks body scroll via CSS
 
+    // Don't interfere with scroll inside overlays (e.g., share modal)
+    if (event.target.closest('#share-creative-modal')) return
+
     if (!this.hasListTarget) {
       event.preventDefault()
       return
