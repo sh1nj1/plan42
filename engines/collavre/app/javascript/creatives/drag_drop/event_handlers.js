@@ -30,13 +30,13 @@ import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 const childZoneRatio = 0.3;
 const coordPrecision = 5;
 
-const TRANSFER_MIME_TYPE = 'application/x-plan42-creative';
-const DRAG_TOKEN_STORAGE_KEY = 'plan42.dragToken';
-const DROP_SIGNAL_STORAGE_KEY = 'plan42.dragDropSignal';
-const WINDOW_ID_SESSION_KEY = 'plan42.dragWindowId';
+const TRANSFER_MIME_TYPE = 'application/x-collavre-creative';
+const DRAG_TOKEN_STORAGE_KEY = 'collavre.dragToken';
+const DROP_SIGNAL_STORAGE_KEY = 'collavre.dragDropSignal';
+const WINDOW_ID_SESSION_KEY = 'collavre.dragWindowId';
 const INVALID_DROP_MESSAGE =
   'We could not verify that drop. Please refresh the page and try again.';
-const DROP_COMPLETED_EVENT = 'plan42:creative-drop-complete';
+const DROP_COMPLETED_EVENT = 'collavre:creative-drop-complete';
 
 let cachedDragToken;
 let cachedWindowId;

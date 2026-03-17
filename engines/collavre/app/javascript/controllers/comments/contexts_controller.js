@@ -1,6 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 
-const CREATIVE_MIME_TYPE = 'application/x-plan42-creative'
+const CREATIVE_MIME_TYPE = 'application/x-collavre-creative'
 
 export default class extends Controller {
     static targets = ["list", "toggleButton"]

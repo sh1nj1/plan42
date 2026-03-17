@@ -58,7 +58,7 @@ class ContextDropSystemTest < ApplicationSystemTestCase
 
       var dt = new DataTransfer();
       var payload = JSON.stringify({ creativeId: creativeId });
-      dt.setData('application/x-plan42-creative', payload);
+      dt.setData('application/x-collavre-creative', payload);
       dt.setData('text/plain', payload);
       var opts = { cancelable: true, bubbles: true, dataTransfer: dt };
 
