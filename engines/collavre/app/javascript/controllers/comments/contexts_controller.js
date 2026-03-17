@@ -13,9 +13,7 @@ export default class extends Controller {
         this.canManage = false
         this.draggingContextId = null
         this.listVisible = false
-        this._boundHandleExternalDragOver = this._handleExternalDragOver.bind(this)
-        this._boundHandleExternalDrop = this._handleExternalDrop.bind(this)
-        this._boundHandleExternalDragLeave = this._handleExternalDragLeave.bind(this)
+        // External drop zone handlers are now Stimulus actions on the list target
     }
 
     get creativeId() {
@@ -104,7 +102,7 @@ export default class extends Controller {
         if (!this.hasListTarget) return
 
         this._updateToggleButton()
-        this._bindDropZone()
+        // Drop zone is handled by Stimulus data-action on the list element
 
         const dragActions = this.canManage
             ? 'dragstart->comments--contexts#handleDragStart dragend->comments--contexts#handleDragEnd'
@@ -357,7 +355,7 @@ export default class extends Controller {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
                 },
                 body: JSON.stringify(params)
             })
@@ -377,14 +375,17 @@ export default class extends Controller {
         this._popupEl = popup
         this._boundPopupDragOver = this._handlePopupDragOver.bind(this)
         this._boundPopupDragLeave = this._handlePopupDragLeave.bind(this)
+        this._boundPopupDrop = this.handleExternalDrop.bind(this)
         popup.addEventListener('dragover', this._boundPopupDragOver)
         popup.addEventListener('dragleave', this._boundPopupDragLeave)
+        popup.addEventListener('drop', this._boundPopupDrop)
     }
 
     _unbindPopupDragDetection() {
         if (!this._popupEl) return
         this._popupEl.removeEventListener('dragover', this._boundPopupDragOver)
         this._popupEl.removeEventListener('dragleave', this._boundPopupDragLeave)
+        this._popupEl.removeEventListener('drop', this._boundPopupDrop)
         this._popupEl = null
     }
 
@@ -392,11 +393,16 @@ export default class extends Controller {
         if (this._isInternalReorder(event)) return
         if (!this._isCreativeDrag(event)) return
         if (!this.canManage) return
-        if (this.listVisible) return
 
-        // Auto-show context list when dragging a creative over the popup
-        this.listVisible = true
-        this._updateListVisibility()
+        // Must preventDefault to allow drop on the popup
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+
+        if (!this.listVisible) {
+            // Auto-show context list when dragging a creative over the popup
+            this.listVisible = true
+            this._updateListVisibility()
+        }
     }
 
     _handlePopupDragLeave(event) {
@@ -413,16 +419,6 @@ export default class extends Controller {
     }
 
     // --- Drop zone for adding creatives from tree ---
-    _bindDropZone() {
-        if (!this.hasListTarget) return
-        const list = this.listTarget
-        list.removeEventListener('dragover', this._boundHandleExternalDragOver)
-        list.removeEventListener('drop', this._boundHandleExternalDrop)
-        list.removeEventListener('dragleave', this._boundHandleExternalDragLeave)
-        list.addEventListener('dragover', this._boundHandleExternalDragOver)
-        list.addEventListener('drop', this._boundHandleExternalDrop)
-        list.addEventListener('dragleave', this._boundHandleExternalDragLeave)
-    }
 
     _isCreativeDrag(event) {
         return event.dataTransfer.types.includes(CREATIVE_MIME_TYPE) ||
@@ -433,7 +429,7 @@ export default class extends Controller {
         return event.dataTransfer.types.includes('application/x-context-id')
     }
 
-    _handleExternalDragOver(event) {
+    handleExternalDragOver(event) {
         if (this._isInternalReorder(event)) return
         if (!this._isCreativeDrag(event)) return
         if (!this.canManage) return
@@ -443,14 +439,14 @@ export default class extends Controller {
         this.listTarget.classList.add('context-drop-active')
     }
 
-    _handleExternalDragLeave(event) {
+    handleExternalDragLeave(event) {
         // Only remove highlight if truly leaving the list area
         if (!this.listTarget.contains(event.relatedTarget)) {
             this.listTarget.classList.remove('context-drop-active')
         }
     }
 
-    async _handleExternalDrop(event) {
+    async handleExternalDrop(event) {
         if (this._isInternalReorder(event)) return
         if (!this.canManage) return
 
