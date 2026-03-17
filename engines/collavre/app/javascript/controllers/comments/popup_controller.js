@@ -462,6 +462,21 @@ export default class extends Controller {
     // Don't interfere with scroll inside overlays (e.g., share modal)
     if (event.target.closest('#share-creative-modal')) return
 
+    // Allow scroll inside independently scrollable elements (action JSON, edit textarea, etc.)
+    const scrollableChild = event.target.closest('.comment-action-json, .comment-action-edit-textarea, .comment-action-body')
+    if (scrollableChild && scrollableChild.scrollHeight > scrollableChild.clientHeight) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollableChild
+      const isScrollingDown = event.deltaY > 0
+      const atTop = scrollTop <= 0
+      const atBottom = scrollTop + clientHeight >= scrollHeight - 1
+
+      // Only prevent if at boundary (to block propagation to background)
+      if ((isScrollingDown && atBottom) || (!isScrollingDown && atTop)) {
+        event.preventDefault()
+      }
+      return
+    }
+
     if (!this.hasListTarget) {
       event.preventDefault()
       return
