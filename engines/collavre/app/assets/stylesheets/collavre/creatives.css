@@ -167,13 +167,6 @@ creative-tree-row.show-edit .creative-row {
     cursor: pointer;
 }
 
-.creative-row:hover .creative-content::first-line {
-    text-decoration: underline;
-    text-decoration-color: var(--color-link);
-    text-decoration-thickness: 2px;
-    text-underline-offset: 2px;
-}
-
 @media (max-width: 768px) {
     .creative-content {
         min-width: min(50vw, var(--max-width) / 2);
