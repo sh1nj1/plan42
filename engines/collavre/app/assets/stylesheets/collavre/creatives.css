@@ -164,11 +164,14 @@ creative-tree-row.show-edit .creative-row {
 }
 
 .creative-row:hover .creative-content {
+    cursor: pointer;
+}
+
+.creative-row:hover .creative-content::first-line {
     text-decoration: underline;
     text-decoration-color: var(--color-link);
     text-decoration-thickness: 2px;
     text-underline-offset: 2px;
-    cursor: pointer;
 }
 
 @media (max-width: 768px) {
