@@ -16,6 +16,9 @@ class ContextDropSystemTest < ApplicationSystemTestCase
     sign_in_via_ui(@user)
   end
 
+  # NOTE: Uses synthetic DragEvent (dispatchEvent) because Selenium/Capybara
+  # cannot perform real HTML5 drag-and-drop. This validates the JS handler logic
+  # but cannot catch effectAllowed/dropEffect mismatches that only real drags expose.
   test "user can drop a creative onto the chat context area to add it" do
     visit root_path
 

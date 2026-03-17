@@ -449,7 +449,12 @@ export default class extends Controller {
 
     async handleExternalDrop(event) {
         if (this._isInternalReorder(event)) return
+        if (!this._isCreativeDrag(event)) return
         if (!this.canManage) return
+
+        // Always prevent default for creative drags to avoid browser navigation
+        event.preventDefault()
+        event.stopPropagation()
 
         this.listTarget.classList.remove('context-drop-active')
 
@@ -464,7 +469,7 @@ export default class extends Controller {
             } catch (e) { /* ignore */ }
         }
 
-        // Fallback to text/plain
+        // Fallback to text/plain (same drag data serialized to both MIME types)
         if (!creativeId) {
             const textData = event.dataTransfer.getData('text/plain')
             if (textData) {
@@ -477,8 +482,6 @@ export default class extends Controller {
 
         if (!creativeId) return
 
-        event.preventDefault()
-        event.stopPropagation()
         await this._addContextId(creativeId)
     }
 

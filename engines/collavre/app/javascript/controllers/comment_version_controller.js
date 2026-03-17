@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
+import { renderCommentMarkdown } from "../lib/utils/markdown"
 
 export default class extends Controller {
   static targets = ["prevBtn", "nextBtn", "indicator", "deleteBtn", "selectBtn"]
@@ -123,7 +124,10 @@ export default class extends Controller {
   setContentText(text) {
     const el = document.getElementById(this.contentTargetValue)
     const target = el?.querySelector(".comment-content") || el?.querySelector("[data-comment-target='content']")
-    if (target) target.textContent = text
+    if (target) {
+      target.innerHTML = renderCommentMarkdown(text)
+      target.dataset.rendered = "true"
+    }
   }
 
   updateButtons() {
