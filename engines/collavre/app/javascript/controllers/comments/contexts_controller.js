@@ -1,5 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 
+const CREATIVE_MIME_TYPE = 'application/x-collavre-creative'
+
 export default class extends Controller {
     static targets = ["list", "toggleButton"]
 
@@ -11,6 +13,7 @@ export default class extends Controller {
         this.canManage = false
         this.draggingContextId = null
         this.listVisible = false
+        // External drop zone handlers are now Stimulus actions on the list target
     }
 
     get creativeId() {
@@ -22,6 +25,7 @@ export default class extends Controller {
         this.listVisible = false
         this._updateListVisibility()
         await this.loadContexts()
+        this._bindPopupDragDetection()
     }
 
     onPopupClosed() {
@@ -30,6 +34,7 @@ export default class extends Controller {
         if (this.hasListTarget) {
             this.listTarget.innerHTML = ''
         }
+        this._unbindPopupDragDetection()
     }
 
     async loadContexts() {
@@ -97,6 +102,7 @@ export default class extends Controller {
         if (!this.hasListTarget) return
 
         this._updateToggleButton()
+        // Drop zone is handled by Stimulus data-action on the list element
 
         const dragActions = this.canManage
             ? 'dragstart->comments--contexts#handleDragStart dragend->comments--contexts#handleDragEnd'
@@ -295,10 +301,14 @@ export default class extends Controller {
     }
 
     async handleReorderDrop(event) {
-        event.preventDefault()
-
         const targetEl = event.currentTarget
         targetEl.classList.remove('context-drag-over-left', 'context-drag-over-right')
+
+        // If this is a creative drag (not a context reorder), let it bubble to the list handler
+        if (!event.dataTransfer.types.includes('application/x-context-id')) return
+
+        event.preventDefault()
+        event.stopPropagation()
 
         const draggedId = parseInt(event.dataTransfer.getData('application/x-context-id'))
         const targetId = parseInt(targetEl.dataset.contextId)
@@ -345,7 +355,7 @@ export default class extends Controller {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
                 },
                 body: JSON.stringify(params)
             })
@@ -356,6 +366,111 @@ export default class extends Controller {
         } catch (e) {
             console.error('Error updating contexts', e)
         }
+    }
+
+    // --- Auto-show context list when dragging creative over popup ---
+    _bindPopupDragDetection() {
+        const popup = this.element.closest('#comments-popup')
+        if (!popup) return
+        // Unbind any existing handlers first to prevent accumulation across opens
+        this._unbindPopupDragDetection()
+        this._popupEl = popup
+        this._boundPopupDragOver = this._handlePopupDragOver.bind(this)
+        this._boundPopupDragLeave = this._handlePopupDragLeave.bind(this)
+        this._boundPopupDrop = this.handleExternalDrop.bind(this)
+        popup.addEventListener('dragover', this._boundPopupDragOver)
+        popup.addEventListener('dragleave', this._boundPopupDragLeave)
+        popup.addEventListener('drop', this._boundPopupDrop)
+    }
+
+    _unbindPopupDragDetection() {
+        if (!this._popupEl) return
+        this._popupEl.removeEventListener('dragover', this._boundPopupDragOver)
+        this._popupEl.removeEventListener('dragleave', this._boundPopupDragLeave)
+        this._popupEl.removeEventListener('drop', this._boundPopupDrop)
+        this._popupEl = null
+    }
+
+    _handlePopupDragOver(event) {
+        if (this._isInternalReorder(event)) return
+        if (!this._isCreativeDrag(event)) return
+        if (!this.canManage) return
+
+        // Must preventDefault to allow drop on the popup
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+
+        if (!this.listVisible) {
+            // Auto-show context list when dragging a creative over the popup
+            this.listVisible = true
+            this._updateListVisibility()
+        }
+    }
+
+    _handlePopupDragLeave(event) {
+        if (!this._popupEl) return
+        // Only hide if leaving the popup entirely
+        if (this._popupEl.contains(event.relatedTarget)) return
+        if (this._hasBeenManuallyToggled) return
+
+        // Restore original state if no contexts
+        if (this.contexts.length === 0) {
+            this.listVisible = false
+            this._updateListVisibility()
+        }
+    }
+
+    // --- Drop zone for adding creatives from tree ---
+
+    _isCreativeDrag(event) {
+        return event.dataTransfer.types.includes(CREATIVE_MIME_TYPE)
+    }
+
+    _isInternalReorder(event) {
+        return event.dataTransfer.types.includes('application/x-context-id')
+    }
+
+    handleExternalDragOver(event) {
+        if (this._isInternalReorder(event)) return
+        if (!this._isCreativeDrag(event)) return
+        if (!this.canManage) return
+
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        this.listTarget.classList.add('context-drop-active')
+    }
+
+    handleExternalDragLeave(event) {
+        // Only remove highlight if truly leaving the list area
+        if (!this.listTarget.contains(event.relatedTarget)) {
+            this.listTarget.classList.remove('context-drop-active')
+        }
+    }
+
+    async handleExternalDrop(event) {
+        if (this._isInternalReorder(event)) return
+        if (!this._isCreativeDrag(event)) return
+        if (!this.canManage) return
+
+        // Always prevent default for creative drags to avoid browser navigation
+        event.preventDefault()
+        event.stopPropagation()
+
+        this.listTarget.classList.remove('context-drop-active')
+
+        let creativeId = null
+
+        const rawData = event.dataTransfer.getData(CREATIVE_MIME_TYPE)
+        if (rawData) {
+            try {
+                const parsed = JSON.parse(rawData)
+                creativeId = parseInt(parsed.creativeId)
+            } catch (e) { /* ignore */ }
+        }
+
+        if (!creativeId) return
+
+        await this._addContextId(creativeId)
     }
 
     _escapeHtml(text) {
