@@ -460,24 +460,12 @@ export default class extends Controller {
 
         let creativeId = null
 
-        // Try structured MIME type first
         const rawData = event.dataTransfer.getData(CREATIVE_MIME_TYPE)
         if (rawData) {
             try {
                 const parsed = JSON.parse(rawData)
                 creativeId = parseInt(parsed.creativeId)
             } catch (e) { /* ignore */ }
-        }
-
-        // Fallback to text/plain (same drag data serialized to both MIME types)
-        if (!creativeId) {
-            const textData = event.dataTransfer.getData('text/plain')
-            if (textData) {
-                try {
-                    const parsed = JSON.parse(textData)
-                    creativeId = parseInt(parsed.creativeId)
-                } catch (e) { /* ignore */ }
-            }
         }
 
         if (!creativeId) return
