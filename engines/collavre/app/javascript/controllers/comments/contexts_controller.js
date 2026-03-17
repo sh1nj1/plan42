@@ -372,6 +372,8 @@ export default class extends Controller {
     _bindPopupDragDetection() {
         const popup = this.element.closest('#comments-popup')
         if (!popup) return
+        // Unbind any existing handlers first to prevent accumulation across opens
+        this._unbindPopupDragDetection()
         this._popupEl = popup
         this._boundPopupDragOver = this._handlePopupDragOver.bind(this)
         this._boundPopupDragLeave = this._handlePopupDragLeave.bind(this)
@@ -396,7 +398,7 @@ export default class extends Controller {
 
         // Must preventDefault to allow drop on the popup
         event.preventDefault()
-        event.dataTransfer.dropEffect = 'copy'
+        event.dataTransfer.dropEffect = 'move'
 
         if (!this.listVisible) {
             // Auto-show context list when dragging a creative over the popup
@@ -421,8 +423,7 @@ export default class extends Controller {
     // --- Drop zone for adding creatives from tree ---
 
     _isCreativeDrag(event) {
-        return event.dataTransfer.types.includes(CREATIVE_MIME_TYPE) ||
-               event.dataTransfer.types.includes('text/plain')
+        return event.dataTransfer.types.includes(CREATIVE_MIME_TYPE)
     }
 
     _isInternalReorder(event) {
@@ -435,7 +436,7 @@ export default class extends Controller {
         if (!this.canManage) return
 
         event.preventDefault()
-        event.dataTransfer.dropEffect = 'copy'
+        event.dataTransfer.dropEffect = 'move'
         this.listTarget.classList.add('context-drop-active')
     }
 
