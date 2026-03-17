@@ -319,14 +319,27 @@ export default class extends Controller {
   updatePosition() {
     if (this.isFullscreen() || !this.currentButton || this.isMobile() || this.element.dataset.resized === 'true') return
     const rect = this.currentButton.getBoundingClientRect()
+    const popupWidth = this.element.offsetWidth
+    const popupHeight = this.element.offsetHeight
+    const gap = 8
+
     let top = rect.bottom + 4
-    const bottom = top + this.element.offsetHeight
+    const bottom = top + popupHeight
     if (bottom > window.innerHeight) {
-      top = Math.max(4, window.innerHeight - this.element.offsetHeight - 4)
+      top = Math.max(4, window.innerHeight - popupHeight - 4)
     }
     this.element.style.top = `${top}px`
-    this.element.style.right = `${window.innerWidth - rect.right + 24}px`
-    this.element.style.left = ''
+
+    // If there's enough space to the right of the button, align popup to the right
+    // so the creative list on the left remains visible
+    const spaceRight = window.innerWidth - rect.right - gap
+    if (spaceRight >= popupWidth) {
+      this.element.style.left = `${rect.right + gap}px`
+      this.element.style.right = ''
+    } else {
+      this.element.style.right = `${window.innerWidth - rect.right + 24}px`
+      this.element.style.left = ''
+    }
   }
 
   startResize(event, direction) {
@@ -631,7 +644,7 @@ export default class extends Controller {
       if (targetButton) {
         this.currentButton = targetButton
         const btnRect = targetButton.getBoundingClientRect()
-        const rightPx = window.innerWidth - btnRect.right + 24
+        const gap = 8
 
         animWidth = parseFloat(finalWidth) || 420
         animHeight = parseFloat(finalHeight) || 640
@@ -644,10 +657,20 @@ export default class extends Controller {
         }
 
         finalTop = `${top}px`
-        finalRight = `${rightPx}px`
 
-        animTop = top
-        animLeft = window.innerWidth - rightPx - animWidth
+        // Right-align if enough space to the right of the button
+        const spaceRight = window.innerWidth - btnRect.right - gap
+        if (spaceRight >= animWidth) {
+          this._exitToRight = true
+          animLeft = btnRect.right + gap
+          animTop = top
+        } else {
+          this._exitToRight = false
+          const rightPx = window.innerWidth - btnRect.right + 24
+          finalRight = `${rightPx}px`
+          animTop = top
+          animLeft = window.innerWidth - rightPx - animWidth
+        }
       } else if (savedStyles && Object.values(savedStyles).some(v => v)) {
         // Fallback to saved styles (already viewport-relative since popup is fixed)
         const rightVal = parseFloat(savedStyles.right) || 32
@@ -701,10 +724,15 @@ export default class extends Controller {
 
         if (targetButton) {
           el.style.top = finalTop
-          el.style.right = finalRight
-          el.style.left = ''
           el.style.width = finalWidth
           el.style.height = finalHeight
+          if (this._exitToRight) {
+            el.style.left = `${animLeft}px`
+            el.style.right = ''
+          } else {
+            el.style.right = finalRight
+            el.style.left = ''
+          }
         } else if (savedStyles) {
           el.style.top = ''
           el.style.left = ''
