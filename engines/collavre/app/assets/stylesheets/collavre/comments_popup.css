@@ -984,6 +984,12 @@ body.chat-fullscreen {
     margin-right: -1px;
 }
 
+.comment-contexts-list.context-drop-active {
+    outline: 2px dashed var(--color-link);
+    outline-offset: -2px;
+    background-color: color-mix(in srgb, var(--color-link) 8%, transparent);
+}
+
 .context-chip[draggable="true"] {
     cursor: grab;
 }
