@@ -7,11 +7,12 @@ module Collavre
       can_manage = @creative.has_permission?(Current.user, :admin) || is_owner
       can_create_topic = can_manage || @creative.has_permission?(Current.user, :write)
 
-      active_topics = @creative.topics.active.order(:created_at)
+      active_topics = @creative.topics.active.order(:created_at).to_a
+      preload_primary_agents(active_topics)
       archived_topics = @creative.topics.archived.order(:created_at)
 
       render json: {
-        topics: active_topics,
+        topics: active_topics.map { |t| topic_json(t) },
         archived_topics: archived_topics,
         can_manage: can_manage,
         can_create_topic: can_create_topic
@@ -167,6 +168,40 @@ module Collavre
 
     def topic_params
       params.require(:topic).permit(:name)
+    end
+
+    # Batch-load primary agents for all topics to avoid N+1 queries
+    def preload_primary_agents(topics)
+      topic_ids = topics.map(&:id)
+      return if topic_ids.empty?
+
+      policies = OrchestratorPolicy.where(
+        policy_type: "arbitration",
+        scope_type: "Topic",
+        scope_id: topic_ids
+      ).index_by { |p| p.scope_id.to_i }
+
+      agent_ids = policies.values.filter_map { |p| p.config&.dig("primary_agent_id") }
+      agents = agent_ids.present? ? User.where(id: agent_ids).includes(avatar_attachment: :blob).index_by(&:id) : {}
+
+      topics.each do |topic|
+        policy = policies[topic.id]
+        agent_id = policy&.config&.dig("primary_agent_id")
+        topic.instance_variable_set(:@_primary_agent, agents&.dig(agent_id))
+      end
+    end
+
+    def topic_json(topic)
+      data = topic.slice(:id, :name)
+      agent = topic.instance_variable_get(:@_primary_agent) || topic.primary_agent
+      if agent
+        data[:primary_agent] = {
+          id: agent.id,
+          name: agent.display_name,
+          avatar_url: view_context.user_avatar_url(agent, size: 20)
+        }
+      end
+      data
     end
   end
 end

@@ -114,10 +114,13 @@ export default class extends Controller {
             // Ensure comparison handles string/number difference
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
             const draggable = canManage ? 'draggable="true"' : ''
+            const agentAvatar = topic.primary_agent?.avatar_url
+                ? `<img src="${this.escapeAttr(topic.primary_agent.avatar_url)}" class="topic-agent-avatar" alt="${this.escapeAttr(topic.primary_agent.name)}" title="${this.escapeAttr(topic.primary_agent.name)}">`
+                : ''
             html += `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
                           data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}" 
                           data-id="${topic.id}">
-                        #${topic.name}`
+                        ${agentAvatar}#${topic.name}`
 
             if (canManage) {
                 html += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
@@ -710,7 +713,14 @@ export default class extends Controller {
 
         this.topics = [...topics, data.topic]
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
-        this.restoreSelection()
+
+        // Auto-select the new topic if created by the current user
+        const currentUserId = document.body.dataset.currentUserId
+        if (data.user_id && currentUserId && String(data.user_id) === String(currentUserId)) {
+            this.selectTopic(String(data.topic.id))
+        } else {
+            this.restoreSelection()
+        }
     }
 
     reorderTopicsFromServer(topicIds) {
@@ -759,5 +769,10 @@ export default class extends Controller {
 
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
         this.restoreSelection()
+    }
+
+    escapeAttr(str) {
+        if (!str) return ''
+        return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     }
 }

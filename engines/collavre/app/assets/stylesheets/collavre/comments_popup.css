@@ -1106,6 +1106,14 @@ body.chat-fullscreen {
     box-sizing: border-box;
 }
 
+.topic-agent-avatar {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
 .topic-tag:hover {
     background: var(--surface-hover);
 }

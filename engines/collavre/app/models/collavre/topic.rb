@@ -17,6 +17,18 @@ module Collavre
 
     default_scope { order(:position) }
 
+    # Returns the primary agent User for this topic (from orchestration policy)
+    def primary_agent
+      policy = OrchestratorPolicy.find_by(
+        policy_type: "arbitration",
+        scope_type: "Topic",
+        scope_id: id
+      )
+      return nil unless policy&.config&.dig("primary_agent_id")
+
+      User.find_by(id: policy.config["primary_agent_id"])
+    end
+
     def archived?
       archived_at.present?
     end
