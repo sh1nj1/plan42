@@ -108,19 +108,7 @@ module Collavre
       end
 
       def set_primary_agent(topic, agent)
-        policy = OrchestratorPolicy.find_or_initialize_by(
-          policy_type: "arbitration",
-          scope_type: "Topic",
-          scope_id: topic.id
-        )
-        policy.update!(
-          config: {
-            "strategy" => "primary_first",
-            "primary_agent_id" => agent.id
-          },
-          priority: 10,
-          enabled: true
-        )
+        topic.set_primary_agent!(agent)
       end
     end
   end
