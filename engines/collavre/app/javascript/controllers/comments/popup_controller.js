@@ -474,9 +474,11 @@ export default class extends Controller {
     // Don't interfere with scroll inside overlays (e.g., share modal)
     if (event.target.closest('#share-creative-modal')) return
 
-    // Allow scroll inside independently scrollable elements (action JSON, edit textarea, form textarea, review quotes, etc.)
-    const scrollableChild = event.target.closest('.comment-action-json, .comment-action-edit-textarea, .comment-action-body, #new-comment-form textarea, .review-quotes-container')
-    if (scrollableChild && scrollableChild.scrollHeight > scrollableChild.clientHeight) {
+    // Allow scroll inside any independently scrollable child element.
+    // Walk up from the event target to find any element (other than the main
+    // comments list, which is handled below) that can scroll on its own.
+    const scrollableChild = this._findScrollableAncestor(event.target)
+    if (scrollableChild) {
       const { scrollTop, scrollHeight, clientHeight } = scrollableChild
       const isScrollingDown = event.deltaY > 0
       const atTop = scrollTop <= 0
@@ -931,5 +933,26 @@ export default class extends Controller {
     document.querySelectorAll('creative-tree-row.chat-active').forEach(el => {
       el.classList.remove('chat-active')
     })
+  }
+
+  // Walk up from the target element to find the nearest scrollable ancestor
+  // that is NOT the main comments list (which has its own scroll handling).
+  // Returns the element if found, or null.
+  _findScrollableAncestor(target) {
+    let el = target
+    const listEl = this.hasListTarget ? this.listTarget : null
+
+    while (el && el !== this.element) {
+      // Skip the main comments list — it's handled separately
+      if (el === listEl) return null
+
+      const { overflowY } = getComputedStyle(el)
+      const scrollable = overflowY === 'auto' || overflowY === 'scroll'
+      if (scrollable && el.scrollHeight > el.clientHeight) {
+        return el
+      }
+      el = el.parentElement
+    }
+    return null
   }
 }
