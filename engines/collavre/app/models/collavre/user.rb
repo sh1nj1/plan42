@@ -77,7 +77,8 @@ module Collavre
       "context" => {
         "chat_history" => 50,
         "chat_history_size" => 100_000,
-        "creative_children_level" => nil
+        "creative_children_level" => nil,
+        "creative_ids" => []
       }
     }.freeze
 
@@ -103,6 +104,13 @@ module Collavre
 
     def chat_history_size_limit
       parsed_agent_conf.dig("context", "chat_history_size") || 100_000
+    end
+
+    # Returns the list of creative IDs configured as agent-level context.
+    # These are injected before creative-level context in AI message building.
+    def agent_context_creative_ids
+      ids = parsed_agent_conf.dig("context", "creative_ids")
+      Array(ids).map(&:to_i).reject(&:zero?)
     end
 
     # Returns the creative children depth level for AI context.

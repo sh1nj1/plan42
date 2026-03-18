@@ -55,10 +55,22 @@ module Collavre
 
     def edit_ai
       @available_tools = load_available_tools
+      @agent_context_creatives = load_agent_context_creatives
     end
 
     def update_ai
       ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :gateway_url, :searchable, :routing_expression, :agent_conf, tools: [])
+
+      # Merge agent_context_creative_ids into agent_conf YAML
+      if params[:user][:agent_context_creative_ids].present?
+        creative_ids = JSON.parse(params[:user][:agent_context_creative_ids]) rescue []
+        creative_ids = Array(creative_ids).map(&:to_i).reject(&:zero?)
+
+        conf = @user.parsed_agent_conf
+        conf["context"] ||= {}
+        conf["context"]["creative_ids"] = creative_ids
+        ai_params[:agent_conf] = conf.to_yaml
+      end
 
       if @user.update(ai_params)
         redirect_to edit_ai_user_path(@user), notice: I18n.t("collavre.users.update_ai.success")
@@ -70,6 +82,19 @@ module Collavre
     end
 
     private
+
+    def load_agent_context_creatives
+      ids = @user.agent_context_creative_ids
+      return [] if ids.empty?
+
+      creatives_by_id = Collavre::Creative.where(id: ids).index_by(&:id)
+      ids.filter_map do |id|
+        c = creatives_by_id[id]
+        next unless c
+
+        { id: c.id, description: c.creative_snippet }
+      end
+    end
 
     def load_available_tools
       Collavre::McpService.available_tools(Current.user).map do |tool|

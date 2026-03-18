@@ -152,6 +152,64 @@ module Collavre
         assert_empty referenced_msgs, "Should not duplicate as referenced creative"
       end
 
+      test "appends agent context creatives before other context" do
+        agent_ctx = Creative.create!(
+          description: "<p>Agent Dev Rules</p>",
+          user: @user,
+          progress: 1.0
+        )
+
+        @agent.update!(agent_conf: { "context" => { "creative_ids" => [ agent_ctx.id ] } }.to_yaml)
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Do something" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        messages = builder.build
+
+        agent_ctx_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.include?("Agent Context Creative") }
+        assert_not_nil agent_ctx_msg, "Should include agent context creative"
+        assert_includes agent_ctx_msg[:parts].first[:text], "Agent Dev Rules"
+
+        # Agent context should come before creative context
+        agent_idx = messages.index(agent_ctx_msg)
+        creative_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Creative (id:") }
+        creative_idx = messages.index(creative_msg)
+        assert agent_idx < creative_idx, "Agent context should come before creative context"
+      end
+
+      test "agent context creatives are deduplicated with creative context" do
+        shared_ctx = Creative.create!(
+          description: "<p>Shared Rules</p>",
+          user: @user,
+          progress: 1.0
+        )
+
+        # Same creative in both agent context and creative context
+        @agent.update!(agent_conf: { "context" => { "creative_ids" => [ shared_ctx.id ] } }.to_yaml)
+        @creative.update!(data: { "context_ids" => [ shared_ctx.id ] })
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Do something" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        messages = builder.build
+
+        # Should appear only once (as Agent Context Creative, not also as Context Creative)
+        agent_msgs = messages.select { |m| m[:parts]&.first&.dig(:text)&.include?("Agent Context Creative") }
+        context_msgs = messages.select { |m| m[:parts]&.first&.dig(:text)&.match?(/\AContext Creative/) }
+        assert_equal 1, agent_msgs.size, "Should inject agent context creative once"
+        assert_empty context_msgs, "Should not duplicate as regular context creative"
+      end
+
+      test "agent_context_creative_ids returns empty array when not configured" do
+        assert_equal [], @agent.agent_context_creative_ids
+      end
+
       test "handles message without creative links" do
         context = {
           "comment" => {

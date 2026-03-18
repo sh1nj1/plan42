@@ -17,6 +17,7 @@ module Collavre
         messages = []
         @injected_creative_ids = Set.new
 
+        append_agent_context_creatives(messages)
         append_creative_context(messages)
         append_context_creatives(messages)
         append_referenced_creative_contexts(messages)
@@ -27,6 +28,31 @@ module Collavre
       end
 
       private
+
+      def append_agent_context_creatives(messages)
+        creative_ids = @agent.agent_context_creative_ids
+        return if creative_ids.empty?
+
+        children_level = @agent.creative_children_level
+        max_depth = 1 + children_level
+
+        creative_ids.each do |ctx_id|
+          next if @injected_creative_ids.include?(ctx_id)
+
+          ctx = Creative.find_by(id: ctx_id)
+          next unless ctx
+
+          @injected_creative_ids << ctx_id
+          markdown = ApplicationController.helpers.render_creative_tree_markdown(
+            [ ctx ], 1, true, max_depth: max_depth
+          )
+
+          messages << {
+            role: "user",
+            parts: [ { text: "Agent Context Creative (id: #{ctx.id}):\n#{markdown}" } ]
+          }
+        end
+      end
 
       def append_creative_context(messages)
         creative_id = @context.dig("creative", "id")

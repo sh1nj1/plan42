@@ -44,6 +44,9 @@ ko:
         no_tools_found: 사용 가능한 도구가 없습니다.
         agent_conf_label: "에이전트 설정 (YAML)"
         agent_conf_help: "에이전트 동작을 위한 YAML 설정. chat_history: 최대 이전 메시지 수 (기본 50), chat_history_size: 최대 총 문자 수 (기본 100000), context.creative_children_level: 크리에이티브 컨텍스트에 포함할 자식 깊이 (기본 nil → 사용자 설정 따름, 0=자식 없음, 1=직접 자식, 2=손자까지)."
+        agent_context_creatives_title: "에이전트 컨텍스트 크리에이티브"
+        agent_context_creatives_description: "여기에 추가된 크리에이티브는 항상 이 에이전트의 컨텍스트로 포함되며, 크리에이티브 레벨 컨텍스트보다 높은 우선순위를 가집니다."
+        agent_context_creatives_empty: "설정된 컨텍스트 크리에이티브가 없습니다. 크리에이티브를 드래그하거나 +를 눌러 추가하세요."
         chat_title: 에이전트와 대화하기
         chat_placeholder: 에이전트를 테스트하려면 메시지를 입력하세요...
       update_ai:
