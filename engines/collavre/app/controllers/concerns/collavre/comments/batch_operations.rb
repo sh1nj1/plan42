@@ -43,7 +43,7 @@ module Collavre
           render json: { error: I18n.t("collavre.comments.merge.minimum_required") }, status: :unprocessable_entity and return
         end
 
-        unless @creative.has_permission?(Current.user, :write)
+        unless @creative.has_permission?(Current.user, :feedback)
           render json: { error: I18n.t("collavre.comments.merge.not_authorized") }, status: :forbidden and return
         end
 
@@ -55,6 +55,14 @@ module Collavre
 
         if comments.length != comment_ids.length
           render json: { error: I18n.t("collavre.comments.batch_delete_not_found") }, status: :not_found and return
+        end
+
+        # All comments must belong to the current user or their AI agents
+        my_ai_agent_ids = Current.user.created_ai_users.pluck(:id)
+        allowed_user_ids = [ Current.user.id ] + my_ai_agent_ids
+        unauthorized = comments.reject { |c| allowed_user_ids.include?(c.user_id) }
+        if unauthorized.any?
+          render json: { error: I18n.t("collavre.comments.merge.own_messages_only") }, status: :forbidden and return
         end
 
         MergeCommentsJob.perform_later(@creative.id, comment_ids, Current.user.id)
