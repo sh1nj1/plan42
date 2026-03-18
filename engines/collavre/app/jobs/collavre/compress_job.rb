@@ -31,23 +31,36 @@ module Collavre
         system_prompt += "\n\nAdditional instruction from the user: #{extra_prompt}"
       end
 
-      # Find an AI agent on this creative, or use default config
+      # Find an AI agent on this creative (no fallback — agent is required)
       agent = resolve_ai_agent(creative, topic_id)
 
+      unless agent
+        error_msg = I18n.t("collavre.comments.compress_command.no_agent")
+        creative.comments.create!(user: user, topic_id: topic_id, content: "⚠️ #{error_msg}")
+        Rails.logger.error("[CompressJob] No AI agent found for creative #{creative_id}, topic #{topic_id}")
+        return
+      end
+
       client = AiClient.new(
-        vendor: agent&.llm_vendor || default_vendor,
-        model: agent&.llm_model || default_model,
+        vendor: agent.llm_vendor,
+        model: agent.llm_model,
         system_prompt: system_prompt,
-        llm_api_key: agent&.llm_api_key || agent&.creator&.llm_api_key
+        llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
+        context: {
+          creative: creative,
+          user: agent,
+          topic_id: topic_id
+        }
       )
 
       summary = String.new
-      client.chat([ { role: "user", text: conversation } ]) do |delta|
+      result = client.chat([ { role: "user", text: conversation } ]) do |delta|
         summary << delta
       end
 
-      if summary.blank?
-        Rails.logger.error("[CompressJob] AI returned empty summary for topic #{topic_id}")
+      # AI call failed (returned nil) — do NOT delete original comments
+      if result.nil? || summary.blank?
+        Rails.logger.error("[CompressJob] AI call failed for topic #{topic_id}: #{summary.presence || 'empty response'}")
         return
       end
 
@@ -101,14 +114,6 @@ module Collavre
       context["creative"] = { "id" => creative.id }
       context["topic"] = { "id" => topic_id } if topic_id.present?
       context
-    end
-
-    def default_vendor
-      "google"
-    end
-
-    def default_model
-      "gemini-3-flash-preview"
     end
   end
 end
