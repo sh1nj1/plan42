@@ -44,6 +44,56 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     assert Collavre::Comment.exists?(@comment1.id)
   end
 
+  test "uses topic primary agent when OrchestratorPolicy defines one" do
+    # Create an AI agent
+    ai_agent = Collavre::User.create!(
+      name: "Test AI Agent",
+      email: "ai-compress-test@example.com",
+      password: "password123",
+      llm_vendor: "google",
+      llm_model: "gemini-3-flash-preview",
+      routing_expression: "true"
+    )
+
+    # Share the creative with the AI agent
+    Collavre::CreativeShare.create!(
+      creative: @creative.effective_origin,
+      user: ai_agent,
+      permission: :feedback
+    )
+
+    # Create a topic-level OrchestratorPolicy with primary_agent_id
+    Collavre::OrchestratorPolicy.create!(
+      policy_type: "arbitration",
+      scope_type: "Topic",
+      scope_id: @topic.id,
+      priority: 10,
+      config: { "strategy" => "primary_first", "primary_agent_id" => ai_agent.id },
+      enabled: true
+    )
+
+    captured_vendor = nil
+    captured_model = nil
+
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
+      block.call("Summary from primary agent.")
+      true
+    end
+
+    Collavre::AiClient.stub(:new, lambda { |**kwargs|
+      captured_vendor = kwargs[:vendor]
+      captured_model = kwargs[:model]
+      mock_client
+    }) do
+      Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
+    end
+
+    # Verify the primary agent's LLM config was used
+    assert_equal "google", captured_vendor
+    assert_equal "gemini-3-flash-preview", captured_model
+  end
+
   test "handles AI failure gracefully" do
     mock_client = Minitest::Mock.new
     mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
