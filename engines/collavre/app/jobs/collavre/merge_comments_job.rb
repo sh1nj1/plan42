@@ -13,9 +13,8 @@ module Collavre
       Use markdown formatting for readability.
     PROMPT
 
-    def perform(creative_id, comment_ids, user_id)
+    def perform(creative_id, comment_ids, user_id) # rubocop:disable Lint/UnusedMethodArgument -- user_id reserved for future audit/notification use
       creative = Creative.find(creative_id)
-      user = User.find(user_id)
 
       # Fetch comments in chronological order
       comments = creative.comments
@@ -55,12 +54,12 @@ module Collavre
         return
       end
 
-      # Update the first comment with merged content
-      target_comment.update!(content: merged_content)
-
-      # Delete the remaining comments
+      # Update the first comment and delete the rest atomically
       remaining_ids = comments[1..].map(&:id)
-      creative.comments.where(id: remaining_ids).destroy_all
+      ActiveRecord::Base.transaction do
+        target_comment.update!(content: merged_content)
+        creative.comments.where(id: remaining_ids).destroy_all
+      end
     rescue ActiveRecord::RecordNotFound => e
       Rails.logger.error("[MergeCommentsJob] Record not found: #{e.message}")
     end
