@@ -28,9 +28,16 @@ module Collavre
       topic.user = Current.user
 
       if topic.save
+        agent = nil
+        if params[:agent_id].present?
+          agent = User.find_by(id: params[:agent_id])
+          topic.set_primary_agent!(agent) if agent&.ai_user?
+        end
+
+        broadcast_data = agent ? topic_json_with_agent(topic, agent) : topic.slice(:id, :name)
         TopicsChannel.broadcast_to(
           @creative,
-          { action: "created", topic: topic.slice(:id, :name) }
+          { action: "created", topic: broadcast_data, user_id: Current.user.id }
         )
         render json: topic, status: :created
       else
@@ -166,25 +173,13 @@ module Collavre
       end
 
       topic = @creative.topics.find(params[:id])
-      agent = User.find(params[:agent_id])
+      agent = User.find_by(id: params[:agent_id])
 
-      unless agent.ai_user?
+      unless agent&.ai_user?
         render json: { error: I18n.t("collavre.topics.not_ai_agent") }, status: :unprocessable_entity and return
       end
 
-      policy = OrchestratorPolicy.find_or_initialize_by(
-        policy_type: "arbitration",
-        scope_type: "Topic",
-        scope_id: topic.id
-      )
-      policy.update!(
-        config: {
-          "strategy" => "primary_first",
-          "primary_agent_id" => agent.id
-        },
-        priority: 10,
-        enabled: true
-      )
+      topic.set_primary_agent!(agent)
 
       TopicsChannel.broadcast_to(
         @creative,

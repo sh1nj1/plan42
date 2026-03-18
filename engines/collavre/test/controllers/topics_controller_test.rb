@@ -117,6 +117,71 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert json["error"].include?(@topic.name)
   end
 
+  test "should set primary agent on topic" do
+    ai_agent = User.create!(
+      email: "agent@test.local", password: "password123", name: "TestAgent",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: ai_agent.id }, as: :json
+
+    assert_response :success
+    policy = Collavre::OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: @topic.id)
+    assert_equal ai_agent.id, policy.config["primary_agent_id"]
+  end
+
+  test "should replace existing primary agent" do
+    old_agent = User.create!(
+      email: "old@test.local", password: "password123", name: "OldAgent",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+    new_agent = User.create!(
+      email: "new@test.local", password: "password123", name: "NewAgent",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+    @topic.set_primary_agent!(old_agent)
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: new_agent.id }, as: :json
+
+    assert_response :success
+    policy = Collavre::OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: @topic.id)
+    assert_equal new_agent.id, policy.config["primary_agent_id"]
+  end
+
+  test "should reject non-AI user as primary agent" do
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: @user.id }, as: :json
+
+    assert_response :unprocessable_entity
+  end
+
+  test "should reject invalid agent_id" do
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: 999999 }, as: :json
+
+    assert_response :unprocessable_entity
+  end
+
+  test "should create topic with agent_id" do
+    ai_agent = User.create!(
+      email: "agent2@test.local", password: "password123", name: "Agent2",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+
+    assert_difference("Topic.count") do
+      post collavre.creative_topics_url(@creative),
+        params: { topic: { name: "Talk to Agent2" }, agent_id: ai_agent.id }, as: :json
+    end
+
+    assert_response :created
+    topic = @creative.topics.find_by(name: "Talk to Agent2")
+    assert topic.present?
+    policy = Collavre::OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: topic.id)
+    assert_equal ai_agent.id, policy.config["primary_agent_id"]
+  end
+
   test "new topic should be created at the end after reordering" do
     # Create initial topics
     topic2 = @creative.topics.create!(name: "Topic 2", user: @user)

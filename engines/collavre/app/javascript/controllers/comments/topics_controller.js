@@ -839,13 +839,11 @@ export default class extends Controller {
                     'Content-Type': 'application/json',
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
                 },
-                body: JSON.stringify({ topic: { name: topicName } })
+                body: JSON.stringify({ topic: { name: topicName }, agent_id: agent.id })
             })
 
             if (response.ok) {
                 const topic = await response.json()
-                // Set the agent as primary agent on the new topic
-                await this.setTopicPrimaryAgent(topic.id, agent)
                 this.currentTopicId = topic.id
                 await this.loadTopics()
                 this.dispatch("change", { detail: { topicId: topic.id } })
