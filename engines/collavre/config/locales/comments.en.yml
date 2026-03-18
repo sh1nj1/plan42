@@ -131,6 +131,7 @@ en:
         not_authorized: "You need write permission to compress a topic."
         topic_required: "The /compress command can only be used within a topic."
         nothing_to_compress: "No messages to compress in this topic."
+        no_agent: "No AI agent is available for this topic. Please assign an AI agent first."
         started: "⏳ Compressing topic messages..."
         summary_title: "Topic Summary — %{topic}"
         failed: "Compress failed"
