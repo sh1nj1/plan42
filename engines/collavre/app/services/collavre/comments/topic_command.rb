@@ -100,8 +100,10 @@ module Collavre
           Rails.application.routes.url_helpers.rails_blob_url(
             agent.avatar, only_path: true
           )
+        elsif agent.avatar_url.present?
+          agent.avatar_url
         else
-          agent.avatar_url.presence
+          ActionController::Base.helpers.asset_path("default_avatar.svg")
         end
       end
 
