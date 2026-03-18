@@ -75,6 +75,7 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
 
     captured_vendor = nil
     captured_model = nil
+    captured_context = nil
 
     mock_client = Minitest::Mock.new
     mock_client.expect(:chat, "Summary from primary agent.") do |messages, **kwargs, &block|
@@ -85,6 +86,7 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     Collavre::AiClient.stub(:new, lambda { |**kwargs|
       captured_vendor = kwargs[:vendor]
       captured_model = kwargs[:model]
+      captured_context = kwargs[:context]
       mock_client
     }) do
       Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
@@ -93,6 +95,11 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     # Verify the primary agent's LLM config was used
     assert_equal "google", captured_vendor
     assert_equal "gemini-3-flash-preview", captured_model
+
+    # Verify context includes the agent user (needed for OpenClaw adapter)
+    assert_equal ai_agent, captured_context[:user]
+    assert_equal @creative, captured_context[:creative]
+    assert_equal @topic.id, captured_context[:topic_id]
   end
 
   test "handles AI failure gracefully when chat returns nil with empty summary" do

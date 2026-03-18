@@ -38,7 +38,12 @@ module Collavre
         vendor: agent&.llm_vendor || default_vendor,
         model: agent&.llm_model || default_model,
         system_prompt: system_prompt,
-        llm_api_key: agent&.llm_api_key || agent&.creator&.llm_api_key
+        llm_api_key: agent&.llm_api_key || agent&.creator&.llm_api_key,
+        context: {
+          creative: creative,
+          user: agent,
+          topic_id: topic_id
+        }
       )
 
       summary = String.new
