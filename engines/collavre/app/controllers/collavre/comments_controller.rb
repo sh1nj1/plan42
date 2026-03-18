@@ -281,7 +281,8 @@ module Collavre
           name: u.display_name,
           avatar_url: view_context.user_avatar_url(u, size: 20),
           default_avatar: !u.avatar.attached? && u.avatar_url.blank?,
-          initial: u.display_name[0].upcase
+          initial: u.display_name[0].upcase,
+          ai_user: u.ai_user?
         }
       end
       render json: {

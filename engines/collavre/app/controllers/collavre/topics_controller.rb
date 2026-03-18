@@ -28,9 +28,16 @@ module Collavre
       topic.user = Current.user
 
       if topic.save
+        agent = nil
+        if params[:agent_id].present?
+          agent = User.find_by(id: params[:agent_id])
+          topic.set_primary_agent!(agent) if agent&.ai_user?
+        end
+
+        broadcast_data = agent ? topic_json_with_agent(topic, agent) : topic.slice(:id, :name)
         TopicsChannel.broadcast_to(
           @creative,
-          { action: "created", topic: topic.slice(:id, :name) }
+          { action: "created", topic: broadcast_data, user_id: Current.user.id }
         )
         render json: topic, status: :created
       else
@@ -160,6 +167,31 @@ module Collavre
       render json: { success: true }
     end
 
+    def set_primary_agent
+      unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
+        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
+      end
+
+      topic = @creative.topics.find(params[:id])
+      agent = User.find_by(id: params[:agent_id])
+
+      unless agent&.ai_user?
+        render json: { error: I18n.t("collavre.topics.not_ai_agent") }, status: :unprocessable_entity and return
+      end
+
+      topic.set_primary_agent!(agent)
+
+      TopicsChannel.broadcast_to(
+        @creative,
+        {
+          action: "updated",
+          topic: topic_json_with_agent(topic, agent)
+        }
+      )
+
+      render json: { success: true, topic: topic_json_with_agent(topic, agent) }
+    end
+
     private
 
     def set_creative
@@ -195,13 +227,23 @@ module Collavre
       data = topic.slice(:id, :name)
       agent = topic.instance_variable_get(:@_primary_agent) || topic.primary_agent
       if agent
-        data[:primary_agent] = {
-          id: agent.id,
-          name: agent.display_name,
-          avatar_url: view_context.user_avatar_url(agent, size: 20)
-        }
+        data[:primary_agent] = agent_json(agent)
       end
       data
+    end
+
+    def topic_json_with_agent(topic, agent)
+      data = topic.slice(:id, :name)
+      data[:primary_agent] = agent_json(agent)
+      data
+    end
+
+    def agent_json(agent)
+      {
+        id: agent.id,
+        name: agent.display_name,
+        avatar_url: view_context.user_avatar_url(agent, size: 20)
+      }
     end
   end
 end

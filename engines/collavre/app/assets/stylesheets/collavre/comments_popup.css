@@ -1114,6 +1114,22 @@ body.chat-fullscreen {
     flex-shrink: 0;
 }
 
+.ai-agent-draggable {
+    cursor: grab;
+}
+
+.ai-agent-draggable:active,
+.ai-agent-draggable.dragging {
+    cursor: grabbing;
+    opacity: 0.5;
+}
+
+.topic-creation-container.drag-over {
+    background: var(--color-active);
+    border-radius: 12px;
+    opacity: 0.8;
+}
+
 .topic-tag:hover {
     background: var(--surface-hover);
 }

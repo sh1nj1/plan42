@@ -29,6 +29,23 @@ module Collavre
       User.find_by(id: policy.config["primary_agent_id"])
     end
 
+    # Sets or replaces the primary agent for this topic
+    def set_primary_agent!(agent)
+      policy = OrchestratorPolicy.find_or_initialize_by(
+        policy_type: "arbitration",
+        scope_type: "Topic",
+        scope_id: id
+      )
+      policy.update!(
+        config: {
+          "strategy" => "primary_first",
+          "primary_agent_id" => agent.id
+        },
+        priority: 10,
+        enabled: true
+      )
+    end
+
     def archived?
       archived_at.present?
     end
