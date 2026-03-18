@@ -477,16 +477,28 @@ export default class extends Controller {
     // Allow scroll inside any independently scrollable child element.
     // Walk up from the event target to find any element (other than the main
     // comments list, which is handled below) that can scroll on its own.
-    const scrollableChild = this._findScrollableAncestor(event.target)
+    const { element: scrollableChild, axis } = this._findScrollableAncestor(event.target, event)
     if (scrollableChild) {
-      const { scrollTop, scrollHeight, clientHeight } = scrollableChild
-      const isScrollingDown = event.deltaY > 0
-      const atTop = scrollTop <= 0
-      const atBottom = scrollTop + clientHeight >= scrollHeight - 1
+      if (axis === 'x') {
+        // Horizontal scroll — check left/right boundaries
+        const { scrollLeft, scrollWidth, clientWidth } = scrollableChild
+        const isScrollingRight = event.deltaX > 0
+        const atLeft = scrollLeft <= 0
+        const atRight = scrollLeft + clientWidth >= scrollWidth - 1
 
-      // Only prevent if at boundary (to block propagation to background)
-      if ((isScrollingDown && atBottom) || (!isScrollingDown && atTop)) {
-        event.preventDefault()
+        if ((isScrollingRight && atRight) || (!isScrollingRight && atLeft)) {
+          event.preventDefault()
+        }
+      } else {
+        // Vertical scroll — check top/bottom boundaries
+        const { scrollTop, scrollHeight, clientHeight } = scrollableChild
+        const isScrollingDown = event.deltaY > 0
+        const atTop = scrollTop <= 0
+        const atBottom = scrollTop + clientHeight >= scrollHeight - 1
+
+        if ((isScrollingDown && atBottom) || (!isScrollingDown && atTop)) {
+          event.preventDefault()
+        }
       }
       return
     }
@@ -937,22 +949,43 @@ export default class extends Controller {
 
   // Walk up from the target element to find the nearest scrollable ancestor
   // that is NOT the main comments list (which has its own scroll handling).
-  // Returns the element if found, or null.
-  _findScrollableAncestor(target) {
+  // Detects both vertical and horizontal scrollable elements.
+  // Returns { element, axis } or { element: null, axis: null }.
+  _findScrollableAncestor(target, event) {
     let el = target
     const listEl = this.hasListTarget ? this.listTarget : null
+    const dominantAxis = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? 'x' : 'y'
 
     while (el && el !== this.element) {
       // Skip the main comments list — it's handled separately
-      if (el === listEl) return null
+      if (el === listEl) return { element: null, axis: null }
 
-      const { overflowY } = getComputedStyle(el)
-      const scrollable = overflowY === 'auto' || overflowY === 'scroll'
-      if (scrollable && el.scrollHeight > el.clientHeight) {
-        return el
+      const style = getComputedStyle(el)
+
+      // Check horizontal scroll first if dominant axis is horizontal
+      if (dominantAxis === 'x') {
+        const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
+        if (scrollableX && el.scrollWidth > el.clientWidth) {
+          return { element: el, axis: 'x' }
+        }
       }
+
+      // Check vertical scroll
+      const scrollableY = style.overflowY === 'auto' || style.overflowY === 'scroll'
+      if (scrollableY && el.scrollHeight > el.clientHeight) {
+        return { element: el, axis: 'y' }
+      }
+
+      // Also check horizontal if we haven't yet (non-dominant)
+      if (dominantAxis !== 'x') {
+        const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
+        if (scrollableX && el.scrollWidth > el.clientWidth) {
+          return { element: el, axis: 'x' }
+        }
+      }
+
       el = el.parentElement
     }
-    return null
+    return { element: null, axis: null }
   }
 }
