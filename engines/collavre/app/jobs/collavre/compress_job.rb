@@ -115,7 +115,5 @@ module Collavre
       context["topic"] = { "id" => topic_id } if topic_id.present?
       context
     end
-
-
   end
 end
