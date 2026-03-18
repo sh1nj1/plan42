@@ -37,6 +37,30 @@ module Collavre
         head :no_content
       end
 
+      def merge
+        comment_ids = Array(params[:comment_ids]).map(&:to_i).uniq
+        if comment_ids.size < 2
+          render json: { error: I18n.t("collavre.comments.merge.minimum_required") }, status: :unprocessable_entity and return
+        end
+
+        unless @creative.has_permission?(Current.user, :write)
+          render json: { error: I18n.t("collavre.comments.merge.not_authorized") }, status: :forbidden and return
+        end
+
+        visible_scope = @creative.comments.where(
+          "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
+          false, Current.user.id, Current.user.id
+        )
+        comments = visible_scope.where(id: comment_ids).to_a
+
+        if comments.length != comment_ids.length
+          render json: { error: I18n.t("collavre.comments.batch_delete_not_found") }, status: :not_found and return
+        end
+
+        MergeCommentsJob.perform_later(@creative.id, comment_ids, Current.user.id)
+        render json: { message: I18n.t("collavre.comments.merge.started") }, status: :accepted
+      end
+
       def move
         result = CommentMoveService.new(creative: @creative, user: Current.user).call(
           comment_ids: params[:comment_ids],

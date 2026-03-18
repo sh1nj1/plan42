@@ -521,6 +521,7 @@ export default class extends Controller {
       <div class="selection-action-bar-main">
         <span class="selection-action-bar-count">${i18n('selectionCountText', '{count}개 선택').replace('{count}', count)}</span>
         <button type="button" class="selection-action-bar-btn selection-action-delete" title="${i18n('selectionDeleteText', 'Delete')}">🗑 ${i18n('selectionDeleteText', 'Delete')}</button>
+        <button type="button" class="selection-action-bar-btn selection-action-merge" title="${i18n('selectionMergeText', 'Merge')}"${count < 2 ? ' disabled' : ''}>🔗 ${i18n('selectionMergeText', 'Merge')}</button>
         <button type="button" class="selection-action-bar-btn selection-action-move" title="${i18n('selectionMoveText', 'Move')}">📤 ${i18n('selectionMoveText', 'Move')}</button>
         <button type="button" class="selection-action-bar-btn selection-action-topic" title="${i18n('selectionTopicMoveText', 'Move to topic')}">🏷 ${i18n('selectionTopicMoveText', 'Move to topic')}</button>
         <button type="button" class="selection-action-bar-close" title="${i18n('selectionCloseText', 'Cancel')}">✕</button>
@@ -531,6 +532,7 @@ export default class extends Controller {
     `
 
     bar.querySelector('.selection-action-delete').addEventListener('click', (e) => { e.stopPropagation(); this.deleteSelectedComments() })
+    bar.querySelector('.selection-action-merge').addEventListener('click', (e) => { e.stopPropagation(); this.mergeSelectedComments() })
     bar.querySelector('.selection-action-move').addEventListener('click', (e) => this.openMoveModal(e))
     bar.querySelector('.selection-action-topic').addEventListener('click', (e) => this.openTopicSearchPopup(e))
     bar.querySelector('.selection-action-bar-close').addEventListener('click', () => this.clearSelection())
@@ -572,6 +574,34 @@ export default class extends Controller {
     } catch (error) {
       console.error('Error deleting comments:', error)
       alert('Failed to delete comments')
+    }
+  }
+
+  async mergeSelectedComments() {
+    if (this.selection.size < 2) return
+    const confirmText = this.element.dataset.mergeConfirmText || 'Merge the selected messages into one?'
+    if (!confirm(confirmText)) return
+
+    const commentIds = Array.from(this.selection)
+    try {
+      const response = await fetch(`/creatives/${this.creativeId}/comments/merge`, {
+        method: 'POST',
+        headers: {
+          'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ comment_ids: commentIds }),
+      })
+      if (response.ok || response.status === 202) {
+        this.clearSelection()
+        // Job is async — the merged comment will update via broadcast
+      } else {
+        const data = await response.json().catch(() => ({}))
+        alert(data.error || 'Failed to merge comments')
+      }
+    } catch (error) {
+      console.error('Error merging comments:', error)
+      alert('Failed to merge comments')
     }
   }
 

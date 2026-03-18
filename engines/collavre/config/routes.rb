@@ -82,6 +82,7 @@ Collavre::Engine.routes.draw do
         get :fullscreen
         post :move
         delete :batch_destroy
+        post :merge
         get :commands
       end
     end
