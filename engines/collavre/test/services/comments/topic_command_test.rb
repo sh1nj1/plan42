@@ -27,6 +27,36 @@ module Collavre
         assert Topic.exists?(creative: @creative, name: "My New Topic")
       end
 
+      test "broadcasts to TopicsChannel when topic is created" do
+        comment = create_comment('/topic "Broadcast Topic"')
+
+        broadcast_called = false
+        TopicsChannel.stub(:broadcast_to, ->(_creative, data) {
+          broadcast_called = true
+          assert_equal "created", data[:action]
+          assert_equal "Broadcast Topic", data[:topic][:name]
+        }) do
+          TopicCommand.new(comment: comment, user: @user).call
+        end
+
+        assert broadcast_called, "Expected TopicsChannel.broadcast_to to be called"
+        assert Topic.exists?(creative: @creative, name: "Broadcast Topic")
+      end
+
+      test "does not broadcast when topic already exists" do
+        Topic.create!(creative: @creative, user: @user, name: "Existing Broadcast Topic")
+        comment = create_comment('/topic "Existing Broadcast Topic"')
+
+        broadcast_called = false
+        TopicsChannel.stub(:broadcast_to, ->(_creative, _data) {
+          broadcast_called = true
+        }) do
+          TopicCommand.new(comment: comment, user: @user).call
+        end
+
+        refute broadcast_called, "Expected TopicsChannel.broadcast_to NOT to be called for existing topic"
+      end
+
       test "creates topic with smart quotes" do
         comment = create_comment('/topic "Smart Quotes Topic"')
 

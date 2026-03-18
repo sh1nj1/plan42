@@ -70,6 +70,8 @@ module Collavre
             name: data[:name]
           )
 
+          broadcast_topic_created(topic)
+
           if primary_agent
             set_primary_agent(topic, primary_agent)
             I18n.t("collavre.comments.topic_command.created_with_agent",
@@ -79,6 +81,13 @@ module Collavre
             I18n.t("collavre.comments.topic_command.created", name: topic.name)
           end
         end
+      end
+
+      def broadcast_topic_created(topic)
+        TopicsChannel.broadcast_to(
+          creative,
+          { action: "created", topic: topic.slice(:id, :name) }
+        )
       end
 
       def set_primary_agent(topic, agent)
