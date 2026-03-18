@@ -960,27 +960,27 @@ export default class extends Controller {
       // Skip the main comments list — it's handled separately
       if (el === listEl) return { element: null, axis: null }
 
-      const style = getComputedStyle(el)
+      // Cheap size checks first to avoid expensive getComputedStyle calls
+      const hasOverflowY = el.scrollHeight > el.clientHeight
+      const hasOverflowX = el.scrollWidth > el.clientWidth
 
-      // Check horizontal scroll first if dominant axis is horizontal
-      if (dominantAxis === 'x') {
-        const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
-        if (scrollableX && el.scrollWidth > el.clientWidth) {
-          return { element: el, axis: 'x' }
+      if (hasOverflowY || hasOverflowX) {
+        const style = getComputedStyle(el)
+
+        // Check dominant axis first for better matching
+        if (dominantAxis === 'x' && hasOverflowX) {
+          const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
+          if (scrollableX) return { element: el, axis: 'x' }
         }
-      }
 
-      // Check vertical scroll
-      const scrollableY = style.overflowY === 'auto' || style.overflowY === 'scroll'
-      if (scrollableY && el.scrollHeight > el.clientHeight) {
-        return { element: el, axis: 'y' }
-      }
+        if (hasOverflowY) {
+          const scrollableY = style.overflowY === 'auto' || style.overflowY === 'scroll'
+          if (scrollableY) return { element: el, axis: 'y' }
+        }
 
-      // Also check horizontal if we haven't yet (non-dominant)
-      if (dominantAxis !== 'x') {
-        const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
-        if (scrollableX && el.scrollWidth > el.clientWidth) {
-          return { element: el, axis: 'x' }
+        if (dominantAxis !== 'x' && hasOverflowX) {
+          const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
+          if (scrollableX) return { element: el, axis: 'x' }
         }
       }
 
