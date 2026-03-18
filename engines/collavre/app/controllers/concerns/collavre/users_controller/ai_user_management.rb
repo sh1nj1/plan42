@@ -64,6 +64,16 @@ module Collavre
     def update_ai
       ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :gateway_url, :searchable, :routing_expression, :agent_conf, tools: [])
 
+      # Preserve agent context creative_ids — they are managed via separate API
+      # and must not be lost when the form saves the YAML textarea
+      if ai_params[:agent_conf].present?
+        submitted_conf = YAML.safe_load(ai_params[:agent_conf], permitted_classes: []) rescue {}
+        current_creative_ids = @user.agent_context_creative_ids
+        submitted_conf["context"] ||= {}
+        submitted_conf["context"]["creative_ids"] = current_creative_ids
+        ai_params[:agent_conf] = submitted_conf.to_yaml
+      end
+
       if @user.update(ai_params)
         redirect_to edit_ai_user_path(@user), notice: I18n.t("collavre.users.update_ai.success")
       else
