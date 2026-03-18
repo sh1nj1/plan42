@@ -204,6 +204,28 @@ export default class extends Controller {
       if (user.email) img.dataset.email = user.email
       img.dataset.userId = user.id
       img.dataset.userName = user.name
+
+      // AI agents are draggable to topic tabs
+      if (user.ai_user) {
+        wrapper.draggable = true
+        wrapper.classList.add('ai-agent-draggable')
+        wrapper.dataset.agentId = user.id
+        wrapper.dataset.agentName = user.name
+        wrapper.dataset.agentAvatarUrl = user.avatar_url
+        wrapper.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData('application/x-agent-drop', JSON.stringify({
+            id: user.id,
+            name: user.name,
+            avatar_url: user.avatar_url
+          }))
+          e.dataTransfer.effectAllowed = 'copy'
+          wrapper.classList.add('dragging')
+        })
+        wrapper.addEventListener('dragend', () => {
+          wrapper.classList.remove('dragging')
+        })
+      }
+
       wrapper.appendChild(img)
 
       if (user.default_avatar) {

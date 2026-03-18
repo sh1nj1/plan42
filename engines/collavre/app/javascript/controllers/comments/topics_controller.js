@@ -147,7 +147,8 @@ export default class extends Controller {
 
         // Add create button container (write permission is sufficient for topic creation)
         if (canCreateTopic) {
-            html += `<span class="topic-creation-container" data-comments--topics-target="creationContainer">
+            html += `<span class="topic-creation-container" data-comments--topics-target="creationContainer"
+                          data-action="dragover->comments--topics#handleAddButtonDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleAddButtonDrop">
                   <button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>
                  </span>`
         }
@@ -156,11 +157,13 @@ export default class extends Controller {
     }
 
     handleDragOver(event) {
-        // Only accept comment drops
-        if (!event.dataTransfer.types.includes('application/x-comment-ids')) return
+        // Accept comment drops or agent drops
+        const isComment = event.dataTransfer.types.includes('application/x-comment-ids')
+        const isAgent = event.dataTransfer.types.includes('application/x-agent-drop')
+        if (!isComment && !isAgent) return
 
         event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
+        event.dataTransfer.dropEffect = isAgent ? 'copy' : 'move'
         event.currentTarget.classList.add('drag-over')
     }
 
@@ -172,6 +175,18 @@ export default class extends Controller {
         event.preventDefault()
         event.currentTarget.classList.remove('drag-over')
 
+        // Handle agent drop
+        const agentJson = event.dataTransfer.getData('application/x-agent-drop')
+        if (agentJson) {
+            const agent = JSON.parse(agentJson)
+            const targetTopicId = event.currentTarget.dataset.id
+            if (targetTopicId) {
+                await this.setTopicPrimaryAgent(targetTopicId, agent)
+            }
+            return
+        }
+
+        // Handle comment drop
         const commentIdsJson = event.dataTransfer.getData('application/x-comment-ids')
         if (!commentIdsJson) return
 
@@ -769,6 +784,77 @@ export default class extends Controller {
 
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
         this.restoreSelection()
+    }
+
+    handleAddButtonDragOver(event) {
+        if (!event.dataTransfer.types.includes('application/x-agent-drop')) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+        event.currentTarget.classList.add('drag-over')
+    }
+
+    async handleAddButtonDrop(event) {
+        event.preventDefault()
+        event.currentTarget.classList.remove('drag-over')
+
+        const agentJson = event.dataTransfer.getData('application/x-agent-drop')
+        if (!agentJson) return
+
+        const agent = JSON.parse(agentJson)
+        await this.createTopicWithAgent(agent)
+    }
+
+    async setTopicPrimaryAgent(topicId, agent) {
+        if (!this.creativeId) return
+
+        try {
+            const response = await fetch(`/creatives/${this.creativeId}/topics/${topicId}/set_primary_agent`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({ agent_id: agent.id })
+            })
+
+            if (!response.ok) {
+                const data = await response.json()
+                console.error('Failed to set primary agent:', data.error)
+            }
+            // Topic update comes via WebSocket broadcast
+        } catch (e) {
+            console.error('Error setting primary agent', e)
+        }
+    }
+
+    async createTopicWithAgent(agent) {
+        if (!this.creativeId) return
+
+        const topicName = `Talk to ${agent.name}`
+
+        try {
+            const response = await fetch(`/creatives/${this.creativeId}/topics`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({ topic: { name: topicName } })
+            })
+
+            if (response.ok) {
+                const topic = await response.json()
+                // Set the agent as primary agent on the new topic
+                await this.setTopicPrimaryAgent(topic.id, agent)
+                this.currentTopicId = topic.id
+                await this.loadTopics()
+                this.dispatch("change", { detail: { topicId: topic.id } })
+            } else {
+                console.error('Failed to create topic with agent')
+            }
+        } catch (e) {
+            console.error('Error creating topic with agent', e)
+        }
     }
 
     escapeAttr(str) {

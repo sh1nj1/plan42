@@ -59,6 +59,7 @@ Collavre::Engine.routes.draw do
         patch :move
         patch :archive
         patch :unarchive
+        patch :set_primary_agent
       end
     end
     resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
