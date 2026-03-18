@@ -89,10 +89,20 @@ module Collavre
           data[:topic][:primary_agent] = {
             id: agent.id,
             name: agent.display_name,
-            avatar_url: agent.avatar_url.presence
+            avatar_url: resolve_avatar_url(agent)
           }
         end
         TopicsChannel.broadcast_to(creative, data)
+      end
+
+      def resolve_avatar_url(agent)
+        if agent.avatar.attached?
+          Rails.application.routes.url_helpers.rails_blob_url(
+            agent.avatar, only_path: true
+          )
+        else
+          agent.avatar_url.presence
+        end
       end
 
       def set_primary_agent(topic, agent)

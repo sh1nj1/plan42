@@ -115,7 +115,7 @@ export default class extends Controller {
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
             const draggable = canManage ? 'draggable="true"' : ''
             const agentAvatar = topic.primary_agent?.avatar_url
-                ? `<img src="${topic.primary_agent.avatar_url}" class="topic-agent-avatar" alt="${topic.primary_agent.name}" title="${topic.primary_agent.name}">`
+                ? `<img src="${this.escapeAttr(topic.primary_agent.avatar_url)}" class="topic-agent-avatar" alt="${this.escapeAttr(topic.primary_agent.name)}" title="${this.escapeAttr(topic.primary_agent.name)}">`
                 : ''
             html += `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
                           data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}" 
@@ -769,5 +769,10 @@ export default class extends Controller {
 
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
         this.restoreSelection()
+    }
+
+    escapeAttr(str) {
+        if (!str) return ''
+        return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     }
 }
