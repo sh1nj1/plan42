@@ -70,24 +70,29 @@ module Collavre
             name: data[:name]
           )
 
-          broadcast_topic_created(topic)
-
           if primary_agent
             set_primary_agent(topic, primary_agent)
+            broadcast_topic_created(topic, primary_agent)
             I18n.t("collavre.comments.topic_command.created_with_agent",
                    name: topic.name,
                    agent: primary_agent.name)
           else
+            broadcast_topic_created(topic)
             I18n.t("collavre.comments.topic_command.created", name: topic.name)
           end
         end
       end
 
-      def broadcast_topic_created(topic)
-        TopicsChannel.broadcast_to(
-          creative,
-          { action: "created", topic: topic.slice(:id, :name), user_id: user.id }
-        )
+      def broadcast_topic_created(topic, agent = nil)
+        data = { action: "created", topic: topic.slice(:id, :name), user_id: user.id }
+        if agent
+          data[:topic][:primary_agent] = {
+            id: agent.id,
+            name: agent.display_name,
+            avatar_url: agent.avatar_url.presence
+          }
+        end
+        TopicsChannel.broadcast_to(creative, data)
       end
 
       def set_primary_agent(topic, agent)

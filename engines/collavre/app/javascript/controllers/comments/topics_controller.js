@@ -114,10 +114,13 @@ export default class extends Controller {
             // Ensure comparison handles string/number difference
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
             const draggable = canManage ? 'draggable="true"' : ''
+            const agentAvatar = topic.primary_agent?.avatar_url
+                ? `<img src="${topic.primary_agent.avatar_url}" class="topic-agent-avatar" alt="${topic.primary_agent.name}" title="${topic.primary_agent.name}">`
+                : ''
             html += `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
                           data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}" 
                           data-id="${topic.id}">
-                        #${topic.name}`
+                        ${agentAvatar}#${topic.name}`
 
             if (canManage) {
                 html += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`

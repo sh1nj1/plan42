@@ -11,7 +11,7 @@ module Collavre
       archived_topics = @creative.topics.archived.order(:created_at)
 
       render json: {
-        topics: active_topics,
+        topics: active_topics.map { |t| topic_json(t) },
         archived_topics: archived_topics,
         can_manage: can_manage,
         can_create_topic: can_create_topic
@@ -167,6 +167,19 @@ module Collavre
 
     def topic_params
       params.require(:topic).permit(:name)
+    end
+
+    def topic_json(topic)
+      data = topic.slice(:id, :name)
+      agent = topic.primary_agent
+      if agent
+        data[:primary_agent] = {
+          id: agent.id,
+          name: agent.display_name,
+          avatar_url: view_context.user_avatar_url(agent, size: 20)
+        }
+      end
+      data
     end
   end
 end

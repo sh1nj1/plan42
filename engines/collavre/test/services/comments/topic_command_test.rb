@@ -44,6 +44,22 @@ module Collavre
         assert Topic.exists?(creative: @creative, name: "Broadcast Topic")
       end
 
+      test "broadcasts with primary agent info when agent is mentioned" do
+        comment = create_comment('/topic "Agent Broadcast" @TestAgent: ')
+
+        broadcast_called = false
+        TopicsChannel.stub(:broadcast_to, ->(_creative, data) {
+          broadcast_called = true
+          assert_equal "created", data[:action]
+          assert data[:topic][:primary_agent].present?, "Expected primary_agent in broadcast"
+          assert_equal @ai_agent.id, data[:topic][:primary_agent][:id]
+        }) do
+          TopicCommand.new(comment: comment, user: @user).call
+        end
+
+        assert broadcast_called
+      end
+
       test "does not broadcast when topic already exists" do
         Topic.create!(creative: @creative, user: @user, name: "Existing Broadcast Topic")
         comment = create_comment('/topic "Existing Broadcast Topic"')
