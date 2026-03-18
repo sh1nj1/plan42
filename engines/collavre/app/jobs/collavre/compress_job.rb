@@ -42,12 +42,13 @@ module Collavre
       )
 
       summary = String.new
-      client.chat([ { role: "user", text: conversation } ]) do |delta|
+      result = client.chat([ { role: "user", text: conversation } ]) do |delta|
         summary << delta
       end
 
-      if summary.blank?
-        Rails.logger.error("[CompressJob] AI returned empty summary for topic #{topic_id}")
+      # AI call failed (returned nil) — do NOT delete original comments
+      if result.nil? || summary.blank?
+        Rails.logger.error("[CompressJob] AI call failed for topic #{topic_id}: #{summary.presence || 'empty response'}")
         return
       end
 

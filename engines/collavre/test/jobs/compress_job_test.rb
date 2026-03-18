@@ -12,9 +12,10 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
   end
 
   test "creates summary and deletes originals" do
+    summary_text = "This is the AI summary of the conversation."
     mock_client = Minitest::Mock.new
-    mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
-      block.call("This is the AI summary of the conversation.")
+    mock_client.expect(:chat, summary_text) do |messages, **kwargs, &block|
+      block.call(summary_text)
       true
     end
 
@@ -76,7 +77,7 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     captured_model = nil
 
     mock_client = Minitest::Mock.new
-    mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
+    mock_client.expect(:chat, "Summary from primary agent.") do |messages, **kwargs, &block|
       block.call("Summary from primary agent.")
       true
     end
@@ -94,15 +95,14 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     assert_equal "gemini-3-flash-preview", captured_model
   end
 
-  test "handles AI failure gracefully" do
+  test "handles AI failure gracefully when chat returns nil with empty summary" do
     mock_client = Minitest::Mock.new
     mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
-      # Return empty (AI failure)
+      # AI returns nothing
       true
     end
 
     Collavre::AiClient.stub(:new, mock_client) do
-      # Should not raise
       Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
     end
 
@@ -110,5 +110,27 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     assert Collavre::Comment.exists?(@comment1.id)
     assert Collavre::Comment.exists?(@comment2.id)
     assert Collavre::Comment.exists?(@comment3.id)
+  end
+
+  test "does not delete comments when AI yields error but returns nil" do
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
+      # Simulates OpenClaw adapter: yields error message but returns nil
+      block.call("Error: OpenClaw Gateway URL not configured")
+      true
+    end
+
+    Collavre::AiClient.stub(:new, mock_client) do
+      Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
+    end
+
+    # Original comments must NOT be deleted
+    assert Collavre::Comment.exists?(@comment1.id)
+    assert Collavre::Comment.exists?(@comment2.id)
+    assert Collavre::Comment.exists?(@comment3.id)
+
+    # No summary comment should be created
+    summary_comments = @creative.comments.where(topic: @topic).where.not(id: [ @comment1.id, @comment2.id, @comment3.id ])
+    assert_empty summary_comments
   end
 end
