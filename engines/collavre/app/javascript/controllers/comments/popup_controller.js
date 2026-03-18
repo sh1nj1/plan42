@@ -474,17 +474,31 @@ export default class extends Controller {
     // Don't interfere with scroll inside overlays (e.g., share modal)
     if (event.target.closest('#share-creative-modal')) return
 
-    // Allow scroll inside independently scrollable elements (action JSON, edit textarea, form textarea, review quotes, etc.)
-    const scrollableChild = event.target.closest('.comment-action-json, .comment-action-edit-textarea, .comment-action-body, #new-comment-form textarea, .review-quotes-container')
-    if (scrollableChild && scrollableChild.scrollHeight > scrollableChild.clientHeight) {
-      const { scrollTop, scrollHeight, clientHeight } = scrollableChild
-      const isScrollingDown = event.deltaY > 0
-      const atTop = scrollTop <= 0
-      const atBottom = scrollTop + clientHeight >= scrollHeight - 1
+    // Allow scroll inside any independently scrollable child element.
+    // Walk up from the event target to find any element (other than the main
+    // comments list, which is handled below) that can scroll on its own.
+    const { element: scrollableChild, axis } = this._findScrollableAncestor(event.target, event)
+    if (scrollableChild) {
+      if (axis === 'x') {
+        // Horizontal scroll — check left/right boundaries
+        const { scrollLeft, scrollWidth, clientWidth } = scrollableChild
+        const isScrollingRight = event.deltaX > 0
+        const atLeft = scrollLeft <= 0
+        const atRight = scrollLeft + clientWidth >= scrollWidth - 1
 
-      // Only prevent if at boundary (to block propagation to background)
-      if ((isScrollingDown && atBottom) || (!isScrollingDown && atTop)) {
-        event.preventDefault()
+        if ((isScrollingRight && atRight) || (!isScrollingRight && atLeft)) {
+          event.preventDefault()
+        }
+      } else {
+        // Vertical scroll — check top/bottom boundaries
+        const { scrollTop, scrollHeight, clientHeight } = scrollableChild
+        const isScrollingDown = event.deltaY > 0
+        const atTop = scrollTop <= 0
+        const atBottom = scrollTop + clientHeight >= scrollHeight - 1
+
+        if ((isScrollingDown && atBottom) || (!isScrollingDown && atTop)) {
+          event.preventDefault()
+        }
       }
       return
     }
@@ -931,5 +945,47 @@ export default class extends Controller {
     document.querySelectorAll('creative-tree-row.chat-active').forEach(el => {
       el.classList.remove('chat-active')
     })
+  }
+
+  // Walk up from the target element to find the nearest scrollable ancestor
+  // that is NOT the main comments list (which has its own scroll handling).
+  // Detects both vertical and horizontal scrollable elements.
+  // Returns { element, axis } or { element: null, axis: null }.
+  _findScrollableAncestor(target, event) {
+    let el = target
+    const listEl = this.hasListTarget ? this.listTarget : null
+    const dominantAxis = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? 'x' : 'y'
+
+    while (el && el !== this.element) {
+      // Skip the main comments list — it's handled separately
+      if (el === listEl) return { element: null, axis: null }
+
+      // Cheap size checks first to avoid expensive getComputedStyle calls
+      const hasOverflowY = el.scrollHeight > el.clientHeight
+      const hasOverflowX = el.scrollWidth > el.clientWidth
+
+      if (hasOverflowY || hasOverflowX) {
+        const style = getComputedStyle(el)
+
+        // Check dominant axis first for better matching
+        if (dominantAxis === 'x' && hasOverflowX) {
+          const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
+          if (scrollableX) return { element: el, axis: 'x' }
+        }
+
+        if (hasOverflowY) {
+          const scrollableY = style.overflowY === 'auto' || style.overflowY === 'scroll'
+          if (scrollableY) return { element: el, axis: 'y' }
+        }
+
+        if (dominantAxis !== 'x' && hasOverflowX) {
+          const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
+          if (scrollableX) return { element: el, axis: 'x' }
+        }
+      }
+
+      el = el.parentElement
+    }
+    return { element: null, axis: null }
   }
 }
