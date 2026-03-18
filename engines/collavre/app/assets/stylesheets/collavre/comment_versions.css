@@ -14,7 +14,8 @@
   padding: 0 var(--space-2, 0.25rem);
   font-size: var(--text-xs, 0.75rem);
   line-height: 1.6;
-  color: var(--text-color, #333);
+  color: var(--text-primary, #202123);
+  font-weight: bold;
 }
 
 .comment-version-btn:hover:not(:disabled) {
@@ -35,16 +36,18 @@
 
 .comment-version-delete-btn {
   background: none;
-  border: none;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: var(--radius-1, 4px);
   cursor: pointer;
-  color: var(--text-muted, #888);
+  color: var(--text-primary, #202123);
   font-size: var(--text-xs, 0.75rem);
-  padding: 0 var(--space-1, 0.125rem);
+  padding: 0 var(--space-2, 0.25rem);
   margin-left: var(--space-1, 0.125rem);
+  line-height: 1.6;
 }
 
-.comment-version-delete-btn:hover {
-  color: var(--danger-color, #e53e3e);
+.comment-version-delete-btn:hover:not(:disabled) {
+  background: var(--surface-hover, #f0f0f0);
 }
 
 .comment-version-selected {
@@ -59,6 +62,7 @@
   cursor: pointer;
   color: var(--primary-color, #4a90d9);
   font-size: var(--text-xs, 0.75rem);
+  font-weight: bold;
   padding: 0 var(--space-2, 0.25rem);
   margin-left: var(--space-1, 0.125rem);
   line-height: 1.6;

@@ -9,7 +9,7 @@
 }
 
 .comment-activity-log-block details>summary::marker {
-    color: var(--border-color);
+    color: var(--text-muted);
 }
 
 /* List container */
