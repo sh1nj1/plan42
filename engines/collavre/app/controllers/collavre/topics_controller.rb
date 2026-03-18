@@ -182,7 +182,7 @@ module Collavre
       ).index_by { |p| p.scope_id.to_i }
 
       agent_ids = policies.values.filter_map { |p| p.config&.dig("primary_agent_id") }
-      agents = User.where(id: agent_ids).includes(avatar_attachment: :blob).index_by(&:id) if agent_ids.present?
+      agents = agent_ids.present? ? User.where(id: agent_ids).includes(avatar_attachment: :blob).index_by(&:id) : {}
 
       topics.each do |topic|
         policy = policies[topic.id]
