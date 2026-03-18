@@ -45,12 +45,14 @@ module Collavre
       )
 
       merged_content = String.new
-      client.chat([ { role: "user", text: conversation } ]) do |delta|
+      result = client.chat([ { role: "user", text: conversation } ]) do |delta|
         merged_content << delta
       end
 
-      if merged_content.blank?
-        Rails.logger.error("[MergeCommentsJob] AI returned empty result for comments #{comment_ids}")
+      # AiClient returns nil on error (but still yields error text as delta).
+      # Check both: return value must be truthy AND content must be non-blank.
+      if result.nil? || merged_content.blank?
+        Rails.logger.error("[MergeCommentsJob] AI failed for comments #{comment_ids}")
         return
       end
 

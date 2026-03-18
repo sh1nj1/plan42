@@ -12,9 +12,10 @@ class Collavre::MergeCommentsJobTest < ActiveSupport::TestCase
   end
 
   test "merges comments into the first one and deletes the rest" do
+    merged_text = "Merged: all three messages synthesized into one."
     mock_client = Minitest::Mock.new
-    mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
-      block.call("Merged: all three messages synthesized into one.")
+    mock_client.expect(:chat, merged_text) do |messages, **kwargs, &block|
+      block.call(merged_text)
       true
     end
 
@@ -60,14 +61,33 @@ class Collavre::MergeCommentsJobTest < ActiveSupport::TestCase
     assert_equal "First message content", @comment1.reload.content
   end
 
+  test "preserves originals when AI returns error text but nil result" do
+    # Simulates the bug where AiClient yields error text as delta but returns nil
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
+      block.call("\n\n⚠️ AI Error: OpenClaw Gateway URL not configured")
+      true
+    end
+
+    Collavre::AiClient.stub(:new, mock_client) do
+      Collavre::MergeCommentsJob.perform_now(@creative.id, [ @comment1.id, @comment2.id, @comment3.id ], @user.id)
+    end
+
+    # All original comments should still exist — error text must NOT be saved
+    assert Collavre::Comment.exists?(@comment1.id)
+    assert Collavre::Comment.exists?(@comment2.id)
+    assert Collavre::Comment.exists?(@comment3.id)
+    assert_equal "First message content", @comment1.reload.content
+  end
+
   test "orders comments chronologically and uses the oldest as target" do
-    # Create comments in reverse order of IDs but with specific timestamps
     older = @creative.comments.create!(user: @user, content: "Older message", topic: @topic, created_at: 1.hour.ago)
     newer = @creative.comments.create!(user: @user, content: "Newer message", topic: @topic, created_at: Time.current)
 
+    merged_text = "Merged older and newer."
     mock_client = Minitest::Mock.new
-    mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
-      block.call("Merged older and newer.")
+    mock_client.expect(:chat, merged_text) do |messages, **kwargs, &block|
+      block.call(merged_text)
       true
     end
 
@@ -111,9 +131,10 @@ class Collavre::MergeCommentsJobTest < ActiveSupport::TestCase
 
     captured_vendor = nil
 
+    merged_text = "Merged by primary agent."
     mock_client = Minitest::Mock.new
-    mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
-      block.call("Merged by primary agent.")
+    mock_client.expect(:chat, merged_text) do |messages, **kwargs, &block|
+      block.call(merged_text)
       true
     end
 

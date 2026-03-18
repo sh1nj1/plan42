@@ -12,9 +12,10 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
   end
 
   test "creates summary and deletes originals" do
+    summary_text = "This is the AI summary of the conversation."
     mock_client = Minitest::Mock.new
-    mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
-      block.call("This is the AI summary of the conversation.")
+    mock_client.expect(:chat, summary_text) do |messages, **kwargs, &block|
+      block.call(summary_text)
       true
     end
 
@@ -75,9 +76,10 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     captured_vendor = nil
     captured_model = nil
 
+    summary_text = "Summary from primary agent."
     mock_client = Minitest::Mock.new
-    mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
-      block.call("Summary from primary agent.")
+    mock_client.expect(:chat, summary_text) do |messages, **kwargs, &block|
+      block.call(summary_text)
       true
     end
 
@@ -107,6 +109,25 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     end
 
     # Original comments should still exist
+    assert Collavre::Comment.exists?(@comment1.id)
+    assert Collavre::Comment.exists?(@comment2.id)
+    assert Collavre::Comment.exists?(@comment3.id)
+  end
+
+  test "preserves originals when AI returns error text but nil result" do
+    # Reproduces bug: AiClient yields error message as delta but returns nil
+    # (e.g. "OpenClaw Gateway URL not configured")
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
+      block.call("\n\n⚠️ AI Error: OpenClaw Gateway URL not configured")
+      true
+    end
+
+    Collavre::AiClient.stub(:new, mock_client) do
+      Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
+    end
+
+    # Original comments must NOT be deleted — error text should not be treated as summary
     assert Collavre::Comment.exists?(@comment1.id)
     assert Collavre::Comment.exists?(@comment2.id)
     assert Collavre::Comment.exists?(@comment3.id)
