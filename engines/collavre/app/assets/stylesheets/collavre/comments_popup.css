@@ -1397,6 +1397,15 @@ body.chat-fullscreen {
     background: var(--surface-hover);
 }
 
+.selection-action-bar-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.selection-action-bar-btn:disabled:hover {
+    background: none;
+}
+
 .selection-action-delete:hover {
     color: var(--color-danger);
 }

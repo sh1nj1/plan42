@@ -1,5 +1,7 @@
 module Collavre
   class CompressJob < ApplicationJob
+    include AiAgentResolvable
+
     queue_as :default
 
     def perform(creative_id, topic_id, user_id, extra_prompt = nil)
@@ -58,9 +60,10 @@ module Collavre
         summary << delta
       end
 
-      # AI call failed (returned nil) — do NOT delete original comments
+      # AiClient returns nil on error (but still yields error text as delta).
+      # Check both: return value must be truthy AND content must be non-blank.
       if result.nil? || summary.blank?
-        Rails.logger.error("[CompressJob] AI call failed for topic #{topic_id}: #{summary.presence || 'empty response'}")
+        Rails.logger.error("[CompressJob] AI failed for topic #{topic_id}")
         return
       end
 
@@ -83,37 +86,6 @@ module Collavre
       creative.comments.where(id: comment_ids_to_delete).destroy_all
     rescue ActiveRecord::RecordNotFound => e
       Rails.logger.error("[CompressJob] Record not found: #{e.message}")
-    end
-
-    private
-
-    # Resolve AI agent using orchestration rules:
-    # 1. Topic's primary agent (from OrchestratorPolicy)
-    # 2. Fallback: any AI agent with feedback permission on the creative
-    def resolve_ai_agent(creative, topic_id)
-      # Step 1: Check topic's primary agent via OrchestratorPolicy
-      if topic_id.present?
-        context = build_policy_context(creative, topic_id)
-        resolver = Orchestration::PolicyResolver.new(context)
-        primary_id = resolver.primary_agent_id
-
-        if primary_id.present?
-          agent = User.find_by(id: primary_id)
-          return agent if agent&.ai_user?
-        end
-      end
-
-      # Step 2: Fallback - find any AI agent with access
-      creative.effective_origin.all_shared_users(:feedback)
-        .map(&:user)
-        .find(&:ai_user?)
-    end
-
-    def build_policy_context(creative, topic_id)
-      context = {}
-      context["creative"] = { "id" => creative.id }
-      context["topic"] = { "id" => topic_id } if topic_id.present?
-      context
     end
   end
 end

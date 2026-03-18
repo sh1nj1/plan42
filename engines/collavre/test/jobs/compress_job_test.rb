@@ -12,7 +12,7 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
   end
 
   test "creates summary and deletes originals" do
-    ai_agent = create_ai_agent_for_creative
+    create_ai_agent_for_creative
 
     summary_text = "This is the AI summary of the conversation."
     mock_client = Minitest::Mock.new
@@ -79,9 +79,10 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     captured_model = nil
     captured_context = nil
 
+    summary_text = "Summary from primary agent."
     mock_client = Minitest::Mock.new
-    mock_client.expect(:chat, "Summary from primary agent.") do |messages, **kwargs, &block|
-      block.call("Summary from primary agent.")
+    mock_client.expect(:chat, summary_text) do |messages, **kwargs, &block|
+      block.call(summary_text)
       true
     end
 
@@ -140,7 +141,7 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     assert Collavre::Comment.exists?(@comment3.id)
   end
 
-  test "does not delete comments when AI yields error but returns nil" do
+  test "preserves originals when AI returns error text but nil result" do
     create_ai_agent_for_creative
 
     mock_client = Minitest::Mock.new
@@ -154,7 +155,7 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
       Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
     end
 
-    # Original comments must NOT be deleted
+    # Original comments must NOT be deleted — error text should not be treated as summary
     assert Collavre::Comment.exists?(@comment1.id)
     assert Collavre::Comment.exists?(@comment2.id)
     assert Collavre::Comment.exists?(@comment3.id)
