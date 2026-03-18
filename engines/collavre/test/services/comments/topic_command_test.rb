@@ -35,6 +35,7 @@ module Collavre
           broadcast_called = true
           assert_equal "created", data[:action]
           assert_equal "Broadcast Topic", data[:topic][:name]
+          assert_equal @user.id, data[:user_id]
         }) do
           TopicCommand.new(comment: comment, user: @user).call
         end

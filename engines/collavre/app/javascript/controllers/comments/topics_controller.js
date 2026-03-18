@@ -710,7 +710,14 @@ export default class extends Controller {
 
         this.topics = [...topics, data.topic]
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
-        this.restoreSelection()
+
+        // Auto-select the new topic if created by the current user
+        const currentUserId = document.body.dataset.currentUserId
+        if (data.user_id && currentUserId && String(data.user_id) === String(currentUserId)) {
+            this.selectTopic(String(data.topic.id))
+        } else {
+            this.restoreSelection()
+        }
     }
 
     reorderTopicsFromServer(topicIds) {

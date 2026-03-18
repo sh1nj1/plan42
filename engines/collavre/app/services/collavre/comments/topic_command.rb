@@ -86,7 +86,7 @@ module Collavre
       def broadcast_topic_created(topic)
         TopicsChannel.broadcast_to(
           creative,
-          { action: "created", topic: topic.slice(:id, :name) }
+          { action: "created", topic: topic.slice(:id, :name), user_id: user.id }
         )
       end
 
