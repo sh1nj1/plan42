@@ -388,7 +388,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal action_payload, JSON.parse(comment.reload.action)
   end
 
-  test "non approver cannot update comment action" do
+  test "creative admin can update action even if not the approver" do
     approver = users(:two)
     approver.update!(email_verified_at: Time.current)
 
@@ -403,6 +403,40 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
       action: JSON.generate(action_payload),
       approver: approver
     )
+
+    updated_payload = action_payload.merge("attributes" => { "progress" => 0.7 })
+
+    patch update_action_creative_comment_path(@creative, comment), params: {
+      comment: { action: JSON.generate(updated_payload) }
+    }
+
+    assert_response :success
+    comment.reload
+    assert_equal updated_payload, JSON.parse(comment.action)
+  end
+
+  test "non admin non approver cannot update comment action" do
+    approver = users(:two)
+    approver.update!(email_verified_at: Time.current)
+    # Create a third user who has only read access (not admin)
+    reader = users(:three)
+    reader.update!(email_verified_at: Time.current)
+    grant_read_access_to_other_user(@creative, user: reader, permission: :feedback)
+
+    action_payload = {
+      "action" => "update_creative",
+      "attributes" => { "progress" => 0.5 }
+    }
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: approver,
+      action: JSON.generate(action_payload),
+      approver: approver
+    )
+
+    # Log in as reader (non-admin, non-approver)
+    post session_path, params: { email: reader.email, password: "password" }
 
     patch update_action_creative_comment_path(@creative, comment), params: {
       comment: { action: JSON.generate(action_payload.merge("attributes" => { "progress" => 0.7 })) }
