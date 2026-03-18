@@ -6,6 +6,20 @@ class Collavre::MergeCommentsJobTest < ActiveSupport::TestCase
     @creative = Collavre::Creative.create!(description: "Merge Job Test", progress: 0.0, user: @user)
     @topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "merge-test")
 
+    # AI agent is required for merge (same as /compress)
+    @ai_agent = Collavre::User.create!(
+      name: "Merge AI Agent",
+      email: "ai-merge-setup@example.com",
+      password: "password123",
+      llm_vendor: "google",
+      llm_model: "gemini-3-flash-preview"
+    )
+    Collavre::CreativeShare.create!(
+      creative: @creative.effective_origin,
+      user: @ai_agent,
+      permission: :feedback
+    )
+
     @comment1 = @creative.comments.create!(user: @user, content: "First message content", topic: @topic)
     @comment2 = @creative.comments.create!(user: @user, content: "Second message content", topic: @topic)
     @comment3 = @creative.comments.create!(user: @user, content: "Third message content", topic: @topic)
@@ -146,5 +160,20 @@ class Collavre::MergeCommentsJobTest < ActiveSupport::TestCase
     end
 
     assert_equal "google", captured_vendor
+  end
+
+  test "does nothing when no AI agent is available" do
+    # Create a creative without any AI agent shared
+    creative_no_agent = Collavre::Creative.create!(description: "No Agent", progress: 0.0, user: @user)
+    topic = Collavre::Topic.create!(creative: creative_no_agent, user: @user, name: "no-agent-topic")
+    c1 = creative_no_agent.comments.create!(user: @user, content: "Message one", topic: topic)
+    c2 = creative_no_agent.comments.create!(user: @user, content: "Message two", topic: topic)
+
+    Collavre::MergeCommentsJob.perform_now(creative_no_agent.id, [ c1.id, c2.id ], @user.id)
+
+    # Both comments should still exist unchanged
+    assert Collavre::Comment.exists?(c1.id)
+    assert Collavre::Comment.exists?(c2.id)
+    assert_equal "Message one", c1.reload.content
   end
 end

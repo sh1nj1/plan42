@@ -34,14 +34,24 @@ module Collavre
         "#{author}: #{c.content}"
       end.join("\n\n")
 
-      # Resolve AI agent (same as /compress)
+      # Resolve AI agent (same as /compress — agent is required)
       agent = resolve_ai_agent(creative, topic_id)
 
+      unless agent
+        Rails.logger.error("[MergeCommentsJob] No AI agent found for creative #{creative_id}")
+        return
+      end
+
       client = AiClient.new(
-        vendor: agent&.llm_vendor || default_vendor,
-        model: agent&.llm_model || default_model,
+        vendor: agent.llm_vendor,
+        model: agent.llm_model,
         system_prompt: SYSTEM_PROMPT,
-        llm_api_key: agent&.llm_api_key || agent&.creator&.llm_api_key
+        llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
+        context: {
+          creative: creative,
+          user: agent,
+          topic_id: topic_id
+        }
       )
 
       merged_content = String.new
