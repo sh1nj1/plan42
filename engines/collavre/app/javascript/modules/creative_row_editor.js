@@ -1510,6 +1510,9 @@ export function initializeCreativeRowEditor() {
       }
 
       creativesApi.destroy(id, withChildren).then(() => {
+        document.dispatchEvent(new CustomEvent('creative-destroyed', {
+          detail: { creativeIds: [String(id)] }
+        }));
         const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
         const childrenTree = document.getElementById("creative-children-" + id)
         if (!withChildren && childrenTree && parentTree) {
