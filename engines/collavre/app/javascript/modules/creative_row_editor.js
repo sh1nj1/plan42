@@ -1510,6 +1510,19 @@ export function initializeCreativeRowEditor() {
       }
 
       creativesApi.destroy(id, withChildren).then(() => {
+        const destroyedIds = [String(id)];
+        if (withChildren) {
+          const childrenContainer = document.getElementById("creative-children-" + id);
+          if (childrenContainer) {
+            childrenContainer.querySelectorAll('creative-tree-row').forEach(row => {
+              const cid = row.getAttribute('creative-id');
+              if (cid) destroyedIds.push(cid);
+            });
+          }
+        }
+        document.dispatchEvent(new CustomEvent('creative-destroyed', {
+          detail: { creativeIds: destroyedIds }
+        }));
         const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
         const childrenTree = document.getElementById("creative-children-" + id)
         if (!withChildren && childrenTree && parentTree) {

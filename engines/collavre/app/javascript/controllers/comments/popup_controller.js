@@ -2,6 +2,7 @@ import { Controller } from '@hotwired/stimulus'
 
 const SIZE_STORAGE_KEY = 'commentsPopupSize'
 const CREATIVE_CLICK_EVENT = 'creative-comments-click'
+const CREATIVE_DESTROYED_EVENT = 'creative-destroyed'
 
 export default class extends Controller {
   static targets = [
@@ -24,6 +25,7 @@ export default class extends Controller {
     this.openFromUrlObserver = null
     this.openFromUrlTimeout = null
     this.handleCreativeClick = this.handleCreativeClick.bind(this)
+    this.handleCreativeDestroyed = this.handleCreativeDestroyed.bind(this)
     this.handleTouchStart = this.handleTouchStart.bind(this)
     this.handleTouchEnd = this.handleTouchEnd.bind(this)
     this.handleResizeMove = this.handleResizeMove.bind(this)
@@ -37,6 +39,7 @@ export default class extends Controller {
     this.handlePopupWheel = this.handlePopupWheel.bind(this)
 
     document.addEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
+    document.addEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
     this.element.addEventListener('wheel', this.handlePopupWheel, { passive: false })
     window.addEventListener('online', this.handleOnline)
     window.addEventListener('focus', this.handleWindowFocus)
@@ -92,6 +95,7 @@ export default class extends Controller {
   disconnect() {
     this.clearPendingOpenFromUrl()
     document.removeEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
+    document.removeEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
     this.element.removeEventListener('wheel', this.handlePopupWheel)
     window.removeEventListener('online', this.handleOnline)
     window.removeEventListener('focus', this.handleWindowFocus)
@@ -145,6 +149,14 @@ export default class extends Controller {
       return
     }
     this.open(button, { creativeId })
+  }
+
+  handleCreativeDestroyed(event) {
+    const destroyedIds = event.detail?.creativeIds || []
+    if (this.element.style.display !== 'flex') return
+    if (destroyedIds.includes(this.element.dataset.creativeId)) {
+      this.close()
+    }
   }
 
   async open(button, { creativeId, highlightId } = {}) {

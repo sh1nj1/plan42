@@ -97,6 +97,10 @@ export default class extends Controller {
       )
     )
 
+    document.dispatchEvent(new CustomEvent('creative-destroyed', {
+      detail: { creativeIds: ids.map(String) }
+    }))
+
     ids.forEach((id) => {
       const tree = document.getElementById(`creative-${id}`)
       if (tree) tree.remove()
