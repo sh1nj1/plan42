@@ -53,6 +53,11 @@ module Collavre
             end
           end
 
+          # Creative admins can also edit actions even if not the designated approver
+          if status_in_lock != :ok && @creative.has_permission?(Current.user, :admin)
+            status_in_lock = :ok
+          end
+
           if status_in_lock != :ok
             approver_mismatch_error = true
             status_error_key = case status_in_lock
