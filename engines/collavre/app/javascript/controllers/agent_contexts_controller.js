@@ -3,34 +3,25 @@ import { Controller } from "@hotwired/stimulus"
 /**
  * Manages agent-level context creatives in the AI agent edit form.
  * Reuses the same chip-based UI pattern as comments/contexts_controller.
- * Changes are stored in a hidden field and submitted with the form.
+ * All changes are persisted immediately via server API.
+ * - Adding: auto-grants read permission if needed; blocks if no_access.
+ * - Removing/reordering: updates agent_conf directly.
  */
 export default class extends Controller {
-    static targets = ["list", "hiddenField"]
+    static targets = ["list"]
     static values = {
-        creativeIds: { type: Array, default: [] },
+        userId: Number,
         initialData: { type: Array, default: [] }
     }
 
     static ICON_CONTEXT_LINK = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
 
     connect() {
-        this.contexts = []
+        this.contexts = (this.initialDataValue || []).map(d => ({
+            id: d.id,
+            description: d.description || `Creative #${d.id}`
+        }))
         this.draggingContextId = null
-        this._loadInitialData()
-    }
-
-    _loadInitialData() {
-        const initialData = this.initialDataValue
-        if (initialData.length > 0) {
-            this.contexts = initialData.map(d => ({
-                id: d.id,
-                description: d.description || `Creative #${d.id}`
-            }))
-        } else {
-            const ids = this.creativeIdsValue
-            this.contexts = ids.map(id => ({ id, description: `Creative #${id}` }))
-        }
         this._render()
     }
 
@@ -76,25 +67,52 @@ export default class extends Controller {
         const rect = addBtn?.getBoundingClientRect() || { top: 200, left: 200, bottom: 230, right: 230 }
 
         linkController.open(rect, (selectedCreative) => {
-            this._addCreativeId(selectedCreative.id, selectedCreative.label)
+            this._addCreativeViaApi(selectedCreative.id)
         })
     }
 
-    _addCreativeId(creativeId, label) {
+    async _addCreativeViaApi(creativeId) {
         const id = parseInt(creativeId)
         if (this.contexts.some(c => c.id === id)) return
 
-        this.contexts.push({ id, description: label || `Creative #${id}` })
-        this._syncHiddenField()
-        this._render()
+        try {
+            const response = await this._fetch(
+                `/users/${this.userIdValue}/add_agent_context_creative`,
+                'POST',
+                { creative_id: id }
+            )
+
+            if (response.ok) {
+                const data = await response.json()
+                this.contexts.push({ id: data.id, description: data.description })
+                this._render()
+            } else {
+                const data = await response.json().catch(() => ({}))
+                this._showError(data.error || 'Failed to add creative')
+            }
+        } catch (e) {
+            console.error('Error adding agent context creative', e)
+        }
     }
 
-    removeContext(event) {
+    async removeContext(event) {
         event.stopPropagation()
         const contextId = parseInt(event.currentTarget.dataset.contextId)
-        this.contexts = this.contexts.filter(c => c.id !== contextId)
-        this._syncHiddenField()
-        this._render()
+
+        try {
+            const response = await this._fetch(
+                `/users/${this.userIdValue}/remove_agent_context_creative`,
+                'DELETE',
+                { creative_id: contextId }
+            )
+
+            if (response.ok) {
+                this.contexts = this.contexts.filter(c => c.id !== contextId)
+                this._render()
+            }
+        } catch (e) {
+            console.error('Error removing agent context creative', e)
+        }
     }
 
     navigateToContext(event) {
@@ -151,7 +169,7 @@ export default class extends Controller {
         event.currentTarget.classList.remove('context-drag-over-left', 'context-drag-over-right')
     }
 
-    handleReorderDrop(event) {
+    async handleReorderDrop(event) {
         const targetEl = event.currentTarget
         targetEl.classList.remove('context-drag-over-left', 'context-drag-over-right')
 
@@ -165,23 +183,27 @@ export default class extends Controller {
 
         if (!draggedId || !targetId || draggedId === targetId) return
 
-        const ids = this.contexts.map(c => c.id)
-        const draggedIndex = ids.indexOf(draggedId)
-        const targetIndex = ids.indexOf(targetId)
+        const draggedIndex = this.contexts.findIndex(c => c.id === draggedId)
+        const targetIndex = this.contexts.findIndex(c => c.id === targetId)
         if (draggedIndex === -1 || targetIndex === -1) return
 
         const rect = targetEl.getBoundingClientRect()
         const midpoint = rect.left + rect.width / 2
         const insertBefore = event.clientX < midpoint
 
-        // Reorder
         const [dragged] = this.contexts.splice(draggedIndex, 1)
         let newIndex = this.contexts.findIndex(c => c.id === targetId)
         if (!insertBefore) newIndex += 1
         this.contexts.splice(newIndex, 0, dragged)
 
-        this._syncHiddenField()
         this._render()
+
+        // Persist new order
+        await this._fetch(
+            `/users/${this.userIdValue}/reorder_agent_context_creatives`,
+            'PATCH',
+            { creative_ids: this.contexts.map(c => c.id) }
+        )
     }
 
     // --- External drop (creative from tree) ---
@@ -199,7 +221,7 @@ export default class extends Controller {
         }
     }
 
-    handleExternalDrop(event) {
+    async handleExternalDrop(event) {
         if (!event.dataTransfer.types.includes('application/x-collavre-creative')) return
 
         event.preventDefault()
@@ -213,16 +235,31 @@ export default class extends Controller {
             const parsed = JSON.parse(rawData)
             const creativeId = parseInt(parsed.creativeId)
             if (creativeId) {
-                this._addCreativeId(creativeId)
+                await this._addCreativeViaApi(creativeId)
             }
         } catch (e) { /* ignore */ }
     }
 
-    _syncHiddenField() {
-        if (this.hasHiddenFieldTarget) {
-            const ids = this.contexts.map(c => c.id)
-            this.hiddenFieldTarget.value = JSON.stringify(ids)
-        }
+    // --- Helpers ---
+    async _fetch(url, method, body) {
+        return fetch(url, {
+            method,
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify(body)
+        })
+    }
+
+    _showError(message) {
+        // Brief inline error display
+        const errorEl = document.createElement('div')
+        errorEl.className = 'agent-context-error'
+        errorEl.textContent = message
+        errorEl.style.cssText = 'color: var(--color-error, #dc3545); font-size: 0.85em; margin-top: 4px;'
+        this.listTarget.parentNode.appendChild(errorEl)
+        setTimeout(() => errorEl.remove(), 4000)
     }
 
     _escapeHtml(text) {

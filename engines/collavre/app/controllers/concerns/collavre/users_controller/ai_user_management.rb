@@ -2,10 +2,13 @@ module Collavre
   module UsersController::AiUserManagement
     extend ActiveSupport::Concern
 
+    AGENT_CONTEXT_ACTIONS = [ :add_agent_context_creative, :remove_agent_context_creative,
+                              :reorder_agent_context_creatives ].freeze
+
     included do
-      before_action :set_user_for_ai_actions, only: [ :edit_ai, :update_ai ]
-      before_action :verify_ai_user, only: [ :edit_ai, :update_ai ]
-      before_action :verify_ai_user_authorization, only: [ :update_ai ]
+      before_action :set_user_for_ai_actions, only: [ :edit_ai, :update_ai ] + AGENT_CONTEXT_ACTIONS
+      before_action :verify_ai_user, only: [ :edit_ai, :update_ai ] + AGENT_CONTEXT_ACTIONS
+      before_action :verify_ai_user_authorization, only: [ :update_ai ] + AGENT_CONTEXT_ACTIONS
     end
 
     def new_ai
@@ -61,17 +64,6 @@ module Collavre
     def update_ai
       ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :gateway_url, :searchable, :routing_expression, :agent_conf, tools: [])
 
-      # Merge agent_context_creative_ids into agent_conf YAML
-      if params[:user][:agent_context_creative_ids].present?
-        creative_ids = JSON.parse(params[:user][:agent_context_creative_ids]) rescue []
-        creative_ids = Array(creative_ids).map(&:to_i).reject(&:zero?)
-
-        conf = @user.parsed_agent_conf
-        conf["context"] ||= {}
-        conf["context"]["creative_ids"] = creative_ids
-        ai_params[:agent_conf] = conf.to_yaml
-      end
-
       if @user.update(ai_params)
         redirect_to edit_ai_user_path(@user), notice: I18n.t("collavre.users.update_ai.success")
       else
@@ -81,7 +73,69 @@ module Collavre
       end
     end
 
+    def add_agent_context_creative
+      creative_id = params[:creative_id].to_i
+      creative = Collavre::Creative.find_by(id: creative_id)
+
+      unless creative
+        render json: { error: I18n.t("collavre.users.edit_ai.agent_context_creative_not_found") }, status: :not_found
+        return
+      end
+
+      # Check if agent has no_access — cannot add
+      existing_share = Collavre::CreativeShare.find_by(creative: creative.effective_origin(Set.new), user: @user)
+      if existing_share&.no_access?
+        render json: { error: I18n.t("collavre.users.edit_ai.agent_context_creative_no_access") }, status: :forbidden
+        return
+      end
+
+      # Auto-grant read permission if agent doesn't have it
+      ensure_agent_read_permission(creative, @user)
+
+      # Add to agent_conf
+      current_ids = @user.agent_context_creative_ids
+      unless current_ids.include?(creative_id)
+        current_ids << creative_id
+        update_agent_context_ids(current_ids)
+      end
+
+      render json: { id: creative.id, description: creative.creative_snippet }
+    end
+
+    def remove_agent_context_creative
+      creative_id = params[:creative_id].to_i
+      current_ids = @user.agent_context_creative_ids
+      current_ids.delete(creative_id)
+      update_agent_context_ids(current_ids)
+
+      render json: { success: true }
+    end
+
+    def reorder_agent_context_creatives
+      new_ids = Array(params[:creative_ids]).map(&:to_i).reject(&:zero?)
+      update_agent_context_ids(new_ids)
+
+      render json: { success: true }
+    end
+
     private
+
+    def ensure_agent_read_permission(creative, agent)
+      origin = creative.effective_origin(Set.new)
+      return if origin.has_permission?(agent, :read)
+
+      Collavre::CreativeShare.find_or_create_by!(creative: origin, user: agent) do |share|
+        share.shared_by = Current.user
+        share.permission = :read
+      end
+    end
+
+    def update_agent_context_ids(ids)
+      conf = @user.parsed_agent_conf
+      conf["context"] ||= {}
+      conf["context"]["creative_ids"] = ids
+      @user.update!(agent_conf: conf.to_yaml)
+    end
 
     def load_agent_context_creatives
       ids = @user.agent_context_creative_ids

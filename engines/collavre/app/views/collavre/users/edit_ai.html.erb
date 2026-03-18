@@ -88,7 +88,7 @@
     <p class="text-muted small"><%= t('collavre.users.edit_ai.agent_context_creatives_description') %></p>
 
     <div data-controller="agent-contexts"
-         data-agent-contexts-creative-ids-value="<%= @user.agent_context_creative_ids.to_json %>"
+         data-agent-contexts-user-id-value="<%= @user.id %>"
          data-agent-contexts-initial-data-value="<%= @agent_context_creatives.to_json %>">
       <div class="comment-contexts-list"
            data-agent-contexts-target="list"
@@ -96,10 +96,6 @@
            data-action="dragover->agent-contexts#handleExternalDragOver dragleave->agent-contexts#handleExternalDragLeave drop->agent-contexts#handleExternalDrop"
            style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-height: 36px; padding: 8px; border: 1px solid var(--border-color, #ddd); border-radius: var(--radius-2, 6px);">
       </div>
-      <input type="hidden"
-             name="user[agent_context_creative_ids]"
-             data-agent-contexts-target="hiddenField"
-             value="<%= @user.agent_context_creative_ids.to_json %>">
     </div>
   </div>
 

@@ -49,6 +49,8 @@ en:
         agent_context_creatives_title: "Agent Context Creatives"
         agent_context_creatives_description: "Creatives added here are always included as context for this agent, with higher priority than creative-level context."
         agent_context_creatives_empty: "No context creatives configured. Drag a creative here or click + to add."
+        agent_context_creative_not_found: "Creative not found."
+        agent_context_creative_no_access: "Cannot add this creative. The agent's access restriction must be removed first."
         chat_title: Chat with Agent
         chat_placeholder: Type a message to test the agent...
       update_ai:

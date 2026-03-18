@@ -13,6 +13,9 @@ Collavre::Engine.routes.draw do
     member do
       get :edit_ai
       patch :update_ai
+      post :add_agent_context_creative
+      delete :remove_agent_context_creative
+      patch :reorder_agent_context_creatives
       patch :grant_system_admin
       patch :revoke_system_admin
       patch :unlock

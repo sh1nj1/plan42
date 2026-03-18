@@ -47,6 +47,8 @@ ko:
         agent_context_creatives_title: "에이전트 컨텍스트 크리에이티브"
         agent_context_creatives_description: "여기에 추가된 크리에이티브는 항상 이 에이전트의 컨텍스트로 포함되며, 크리에이티브 레벨 컨텍스트보다 높은 우선순위를 가집니다."
         agent_context_creatives_empty: "설정된 컨텍스트 크리에이티브가 없습니다. 크리에이티브를 드래그하거나 +를 눌러 추가하세요."
+        agent_context_creative_not_found: "크리에이티브를 찾을 수 없습니다."
+        agent_context_creative_no_access: "이 크리에이티브를 추가할 수 없습니다. 에이전트의 접근 금지를 먼저 해제해야 합니다."
         chat_title: 에이전트와 대화하기
         chat_placeholder: 에이전트를 테스트하려면 메시지를 입력하세요...
       update_ai:
