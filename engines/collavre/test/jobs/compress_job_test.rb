@@ -12,6 +12,8 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
   end
 
   test "creates summary and deletes originals" do
+    ai_agent = create_ai_agent_for_creative
+
     summary_text = "This is the AI summary of the conversation."
     mock_client = Minitest::Mock.new
     mock_client.expect(:chat, summary_text) do |messages, **kwargs, &block|
@@ -102,7 +104,26 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     assert_equal @topic.id, captured_context[:topic_id]
   end
 
+  test "shows error message when no AI agent is available" do
+    # No AI agent shared with this creative
+    initial_count = @creative.comments.where(topic: @topic).count
+
+    Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
+
+    # Original comments should still exist
+    assert Collavre::Comment.exists?(@comment1.id)
+    assert Collavre::Comment.exists?(@comment2.id)
+    assert Collavre::Comment.exists?(@comment3.id)
+
+    # An error comment should be created
+    error_comment = @creative.comments.where(topic: @topic).order(created_at: :desc).first
+    assert_includes error_comment.content, I18n.t("collavre.comments.compress_command.no_agent")
+    assert_equal initial_count + 1, @creative.comments.where(topic: @topic).count
+  end
+
   test "handles AI failure gracefully when chat returns nil with empty summary" do
+    create_ai_agent_for_creative
+
     mock_client = Minitest::Mock.new
     mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
       # AI returns nothing
@@ -120,6 +141,8 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
   end
 
   test "does not delete comments when AI yields error but returns nil" do
+    create_ai_agent_for_creative
+
     mock_client = Minitest::Mock.new
     mock_client.expect(:chat, nil) do |messages, **kwargs, &block|
       # Simulates OpenClaw adapter: yields error message but returns nil
@@ -139,5 +162,24 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     # No summary comment should be created
     summary_comments = @creative.comments.where(topic: @topic).where.not(id: [ @comment1.id, @comment2.id, @comment3.id ])
     assert_empty summary_comments
+  end
+
+  private
+
+  def create_ai_agent_for_creative
+    agent = Collavre::User.create!(
+      name: "Compress AI Agent",
+      email: "ai-compress-helper@example.com",
+      password: "password123",
+      llm_vendor: "google",
+      llm_model: "gemini-3-flash-preview",
+      routing_expression: "true"
+    )
+    Collavre::CreativeShare.create!(
+      creative: @creative.effective_origin,
+      user: agent,
+      permission: :feedback
+    )
+    agent
   end
 end
