@@ -27,22 +27,43 @@ module Collavre
       topic = @creative.topics.build(topic_params)
       topic.user = Current.user
 
-      if topic.save
-        agent = nil
-        if params[:agent_id].present?
-          agent = User.find_by(id: params[:agent_id])
-          topic.set_primary_agent!(agent) if agent&.ai_user?
-        end
+      Topic.transaction do
+        if topic.save
+          agent = nil
+          if params[:agent_id].present?
+            agent = User.find_by(id: params[:agent_id])
+            topic.set_primary_agent!(agent) if agent&.ai_user?
+          end
 
-        broadcast_data = agent ? topic_json_with_agent(topic, agent) : topic.slice(:id, :name)
-        TopicsChannel.broadcast_to(
-          @creative,
-          { action: "created", topic: broadcast_data, user_id: Current.user.id }
-        )
-        render json: topic, status: :created
-      else
-        render json: { errors: topic.errors.full_messages }, status: :unprocessable_entity
+          # Move comments to the new topic if comment_ids provided
+          comment_ids = Array(params[:comment_ids]).map(&:presence).compact
+          if comment_ids.any?
+            CommentMoveService.new(creative: @creative, user: Current.user).call(
+              comment_ids: comment_ids,
+              target_topic_id: topic.id
+            )
+          end
+
+          broadcast_data = agent ? topic_json_with_agent(topic, agent) : topic.slice(:id, :name)
+          TopicsChannel.broadcast_to(
+            @creative,
+            { action: "created", topic: broadcast_data, user_id: Current.user.id }
+          )
+          render json: topic, status: :created
+        else
+          render json: { errors: topic.errors.full_messages }, status: :unprocessable_entity
+        end
       end
+    rescue CommentMoveService::MoveError => e
+      render json: { errors: [ e.message ] }, status: :unprocessable_entity
+    end
+
+    def next_name
+      unless @creative.has_permission?(Current.user, :read) || @creative.user == Current.user
+        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
+      end
+
+      render json: { name: generate_next_topic_name }
     end
 
     def update
@@ -200,6 +221,20 @@ module Collavre
 
     def topic_params
       params.require(:topic).permit(:name)
+    end
+
+    def generate_next_topic_name
+      prefix = I18n.t("collavre.topics.default_name_prefix")
+      existing_numbers = @creative.topics.active
+        .where("name LIKE ?", "#{Topic.sanitize_sql_like(prefix)}%")
+        .pluck(:name)
+        .filter_map { |n|
+          suffix = n.delete_prefix(prefix)
+          suffix.match?(/\A\d+\z/) ? suffix.to_i : nil
+        }
+
+      next_number = (existing_numbers.max || 0) + 1
+      "#{prefix}#{next_number}"
     end
 
     # Batch-load primary agents for all topics to avoid N+1 queries

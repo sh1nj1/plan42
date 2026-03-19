@@ -9,6 +9,8 @@ en:
       unarchive: Restore
       archived_topics: "Archived topics (%{count})"
       not_ai_agent: Only AI agents can be set as primary agent.
+      default_name_prefix: "Topic"
+      create_and_move: 'Create "%{name}" and move'
       move:
         no_target_permission: You don't have write permission on the target creative.
         duplicate_name: A topic named '%{name}' already exists in the target creative.
