@@ -421,6 +421,17 @@
   color: var(--text-muted);
 }
 
+/* ─── Demo: Theme-aware video switching ────────────────────────────────────── */
+.landing-demo-dark { display: none; }
+
+body.dark-mode .landing-demo-light { display: none; }
+body.dark-mode .landing-demo-dark { display: block; }
+
+@media (prefers-color-scheme: dark) {
+  body:not(.light-mode) .landing-demo-light { display: none; }
+  body:not(.light-mode) .landing-demo-dark { display: block; }
+}
+
 /* ─── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .landing-container {
