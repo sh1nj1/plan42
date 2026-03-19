@@ -159,8 +159,13 @@ body.chat-fullscreen {
     overflow-y: auto;
     min-height: calc(var(--text-1) * 1.5 * 2); /* 2 lines minimum */
     max-height: calc(var(--text-1) * 1.5 * 10); /* 10 lines maximum */
-    transition: height 0.1s ease-out;
+    transition: height 0.1s ease-out, border-color 0.15s ease-out, box-shadow 0.15s ease-out;
     /* Prevent iOS zoom on focus */
+}
+
+#new-comment-form.creative-drop-hover textarea {
+    border-color: var(--link);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--link) 25%, transparent);
 }
 
 #new-comment-form button[type="submit"] {

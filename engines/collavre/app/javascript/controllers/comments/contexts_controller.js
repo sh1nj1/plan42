@@ -377,7 +377,11 @@ export default class extends Controller {
         this._popupEl = popup
         this._boundPopupDragOver = this._handlePopupDragOver.bind(this)
         this._boundPopupDragLeave = this._handlePopupDragLeave.bind(this)
-        this._boundPopupDrop = this.handleExternalDrop.bind(this)
+        this._boundPopupDrop = (event) => {
+            // Skip if dropping on the comment form — let form_controller handle it
+            if (event.target.closest('#new-comment-form')) return
+            this.handleExternalDrop(event)
+        }
         popup.addEventListener('dragover', this._boundPopupDragOver)
         popup.addEventListener('dragleave', this._boundPopupDragLeave)
         popup.addEventListener('drop', this._boundPopupDrop)
@@ -395,6 +399,8 @@ export default class extends Controller {
         if (this._isInternalReorder(event)) return
         if (!this._isCreativeDrag(event)) return
         if (!this.canManage) return
+        // Skip if dragging over the comment form — let form_controller handle it
+        if (event.target.closest('#new-comment-form')) return
 
         // Must preventDefault to allow drop on the popup
         event.preventDefault()
