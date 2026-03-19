@@ -41,15 +41,14 @@ nav {
     justify-content: flex-end;
     align-items: center;
     flex-wrap: wrap;
-    font-size: 0.875em;
-    gap: 0.2rem;
+    font-size: var(--text-1);
+    gap: var(--space-1);
     max-width: var(--max-width);
     margin: 0 auto;
-    padding: 1rem;
+    padding: var(--space-3);
     background: var(--color-nav-bg);
     color: var(--color-nav-text);
     border-bottom: 1px solid var(--color-border);
-    box-shadow: var(--shadow-1);
     width: 100%;
     box-sizing: border-box;
 }
@@ -57,32 +56,37 @@ nav {
 nav a,
 nav button {
     min-width: 2em;
-    line-height: 2.1;
-    font-size: 1.125em;
-    background: var(--color-bg);
+    line-height: 1.5;
+    font-size: var(--text-1);
+    background: transparent;
     color: var(--color-nav-btn-text);
     text-decoration: none;
-    padding: 0.25em 0.6em;
-    border-radius: var(--radius-2);
-    border: 1px solid var(--color-border);
-    transition: background 0.15s;
+    padding: var(--space-1);
+    border-radius: var(--radius-3);
+    border: none;
+    transition: background 0.2s var(--ease-out-2), color 0.2s var(--ease-out-2);
 }
 
 /* progress filter button group */
 .progress-filter-group {
     display: flex;
+    gap: var(--space-1);
 }
 
 .progress-filter-btn {
-    border-radius: 0;
+    border-radius: var(--radius-3);
+    border: none;
+    background: transparent;
+    padding: var(--space-1) var(--space-2);
+    transition: background 0.2s var(--ease-out-2);
 }
 
 .progress-filter-btn:first-child {
-    border-radius: var(--radius-2) 0 0 var(--radius-2);
+    border-radius: var(--radius-3);
 }
 
 .progress-filter-btn:last-child {
-    border-radius: 0 var(--radius-2) var(--radius-2) 0;
+    border-radius: var(--radius-3);
 }
 
 .progress-filter-btn+.progress-filter-btn {
@@ -90,8 +94,9 @@ nav button {
 }
 
 .progress-filter-btn.active {
-    background: var(--color-btn-bg);
-    color: var(--color-btn-text);
+    background: var(--surface-hover);
+    color: var(--text-primary);
+    font-weight: var(--weight-5);
 }
 
 .creative-actions-row a,
@@ -108,7 +113,16 @@ nav button {
 }
 
 nav a:hover,
-nav button:hover,
+nav button:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+
+nav a:active,
+nav button:active {
+    background: color-mix(in srgb, var(--surface-hover) 80%, var(--text-primary) 5%);
+}
+
 .creative-actions-row a:hover,
 .creative-actions-row button:hover {
     filter: brightness(var(--hover-brightness));
@@ -118,11 +132,11 @@ nav button:hover,
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="file"]),
 select,
 textarea {
-    line-height: 2.1;
-    font-size: 1.125em;
+    line-height: 1.5;
+    font-size: var(--text-1);
     background: var(--color-input-bg);
     color: var(--color-input-text);
-    padding: 0.3em;
+    padding: var(--space-1);
     border-radius: var(--radius-2);
     border: 1px solid var(--color-border);
 }
@@ -131,6 +145,13 @@ input[type="submit"]:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     filter: grayscale(0.5);
+}
+
+nav #search {
+    border-radius: var(--radius-3);
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
+    margin-right: var(--space-1);
 }
 
 #search {
@@ -148,6 +169,16 @@ textarea:focus-visible {
     border-color: var(--color-link);
     box-shadow: 0 0 0 2px var(--color-link);
     outline: none;
+}
+
+/* Form inputs need more padding than compact nav inputs */
+.stacked-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="submit"]),
+.stacked-form select,
+.stacked-form textarea,
+.profile-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="submit"]),
+.profile-form select,
+.profile-form textarea {
+    padding: var(--space-2) var(--space-3);
 }
 
 .stacked-form {
@@ -211,10 +242,6 @@ main {
 @media (max-width: 768px) {
     main {
         padding: 0 0.3rem 4rem 0.3rem;
-    }
-
-    #search {
-        width: 8em;
     }
 }
 
@@ -449,7 +476,7 @@ button {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.75em;
+    padding: var(--space-2) var(--space-3);
     background: var(--color-nav-bg);
     color: var(--color-nav-text);
     border-bottom: 1px solid var(--color-border);
@@ -507,6 +534,27 @@ button {
     padding: var(--inbox-spacing);
 }
 
+/* ChatGPT-style popup menu overrides */
+nav .popup-menu-wrapper .popup-menu {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-3);
+    box-shadow: var(--shadow-2);
+    padding: var(--space-1);
+    background: var(--surface-section);
+}
+
+nav .popup-menu-item button,
+nav .popup-menu-item a {
+    border-radius: var(--radius-2);
+    padding: var(--space-1) var(--space-2);
+    transition: background 0.15s var(--ease-out-2);
+}
+
+nav .popup-menu-item button:hover,
+nav .popup-menu-item a:hover {
+    background: var(--surface-hover);
+}
+
 #inbox-menu-btn {
     position: relative;
 }
@@ -514,12 +562,15 @@ button {
 .badge {
     background: var(--color-badge-bg, red);
     color: var(--color-badge-text, white);
-    border-radius: 10px;
-    padding: 0 4px;
-    font-size: 0.75em;
-    line-height: 1.2;
-    margin-left: 0;
+    border-radius: var(--radius-round);
+    padding: 0 6px;
+    font-size: var(--text-00);
+    font-weight: var(--weight-6);
+    line-height: 1.4;
+    margin-left: var(--space-1);
     display: none;
+    min-width: 1.2em;
+    text-align: center;
 }
 
 /* Responsive visibility helpers */
@@ -534,6 +585,15 @@ button {
 }
 
 @media (max-width: 768px) {
+    nav {
+        padding: var(--space-3) var(--space-2);
+        gap: var(--space-1);
+    }
+
+    nav #search {
+        width: 8em;
+    }
+
     .desktop-only {
         display: none !important;
     }
