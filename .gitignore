@@ -56,3 +56,7 @@ vendor/bundle
 .claude
 
 .gstack/
+
+# Demo video assets
+public/collavre/
+engines/collavre/app/assets/videos/

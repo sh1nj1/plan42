@@ -80,10 +80,11 @@
     <div class="landing-container">
       <h2 class="landing-section-title"><%= t('collavre.landing.demo.title') %></h2>
       <div class="landing-demo-frame">
-        <div class="landing-demo-placeholder">
-          <span class="landing-demo-play">▶</span>
-          <p><%= t('collavre.landing.demo.placeholder') %></p>
-        </div>
+        <video class="landing-demo-video"
+               autoplay muted loop playsinline
+               poster="/collavre/demo-poster.jpg">
+          <source src="/collavre/demo.mp4" type="video/mp4">
+        </video>
       </div>
     </div>
   </section>
