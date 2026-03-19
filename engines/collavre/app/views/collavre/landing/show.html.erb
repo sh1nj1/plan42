@@ -103,10 +103,7 @@
     <div class="landing-container">
       <h2 class="landing-cta-title"><%= t('collavre.landing.cta.title') %></h2>
       <p class="landing-cta-sub"><%= t('collavre.landing.cta.subtitle') %></p>
-      <div class="landing-cta-actions">
-        <%= link_to t('collavre.landing.cta.start'), collavre.new_user_path, class: "landing-btn landing-btn-lg" %>
-        <%= link_to t('app.sign_in'), collavre.new_session_path, class: "landing-btn landing-btn-ghost landing-btn-lg" %>
-      </div>
+      <%= link_to t('collavre.landing.cta.start'), collavre.new_user_path, class: "landing-btn landing-btn-lg" %>
     </div>
   </section>
 
