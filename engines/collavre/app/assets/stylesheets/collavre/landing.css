@@ -13,6 +13,7 @@
 /* ─── Reset & Base ──────────────────────────────────────────────────────────── */
 .landing-page {
   overflow-x: hidden;
+  scroll-behavior: smooth;
 }
 
 .landing-page nav {

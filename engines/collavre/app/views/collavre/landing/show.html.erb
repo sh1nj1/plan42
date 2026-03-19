@@ -9,14 +9,14 @@
       <p class="landing-hero-sub"><%= t('collavre.landing.hero.subline') %></p>
       <p class="landing-hero-brand"><%= t('app.name') %></p>
       <div class="landing-hero-actions">
-        <a href="#features" class="landing-btn landing-btn-lg"><%= t('collavre.landing.hero.learn_more') %></a>
+        <a href="#problem" class="landing-btn landing-btn-lg"><%= t('collavre.landing.hero.learn_more') %></a>
         <%= link_to t('app.sign_in'), collavre.new_session_path, class: "landing-btn landing-btn-ghost landing-btn-lg" %>
       </div>
     </div>
   </section>
 
   <%# ══════════════════════════════════════ PROBLEM STATEMENT ══════════════════════════════════ %>
-  <section class="landing-section landing-problem">
+  <section id="problem" class="landing-section landing-problem">
     <div class="landing-container">
       <h2 class="landing-section-title"><%= t('collavre.landing.problem.title') %></h2>
       <div class="landing-problem-grid">
