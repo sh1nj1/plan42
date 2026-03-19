@@ -1,6 +1,7 @@
 module Collavre
   class CompressJob < ApplicationJob
     include AiAgentResolvable
+    include CommentSerializable
 
     queue_as :default
 
@@ -13,7 +14,7 @@ module Collavre
       all_comments = creative.comments
         .where(topic_id: topic_id)
         .order(created_at: :asc)
-        .includes(:user)
+        .includes(:user, images_attachments: :blob)
 
       # Separate: comments to summarize vs the compress command itself
       compress_pattern = /\A\/compress\b/i
@@ -80,6 +81,20 @@ module Collavre
         user: user,
         topic_id: topic_id,
         content: summary_content
+      )
+
+      # Save snapshot for recovery before deleting originals
+      # Exclude the last comment only if it's the /compress command trigger
+      last_comment = all_comments.last
+      last_is_command = last_comment&.content.to_s.strip.match?(compress_pattern)
+      restorable_comments = last_is_command ? all_comments[0..-2] : all_comments.to_a
+      CommentSnapshot.create!(
+        creative: creative,
+        topic_id: topic_id,
+        user: user,
+        operation: "compress",
+        comments_data: serialize_comments(restorable_comments),
+        result_comment: summary_comment
       )
 
       # Delete original comments (excluding the newly created summary)

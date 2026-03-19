@@ -159,6 +159,20 @@
       </details>
     </div>
   <% end %>
+  <% snapshot = comment.snapshot_as_result %>
+  <% if snapshot&.restorable? %>
+    <div class="comment-snapshot-restore">
+      <button class="restore-snapshot-btn"
+              type="button"
+              data-snapshot-id="<%= snapshot.id %>"
+              data-creative-id="<%= comment.creative_id %>"
+              data-action="click->comment#restoreSnapshot"
+              data-confirm-text="<%= t('collavre.comment_snapshots.restore_confirm') %>"
+              title="<%= t('collavre.comment_snapshots.restore_button') %> (<%= snapshot.comment_count %>)">
+        ↩️ <%= t('collavre.comment_snapshots.restore_button') %> (<%= snapshot.comment_count %>)
+      </button>
+    </div>
+  <% end %>
   <% if comment.activity_logs.exists? %>
     <div class="comment-activity-log-block">
       <details>

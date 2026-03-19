@@ -32,7 +32,7 @@ module Collavre
         Current.user.id,
         Current.user.id
       )
-      scope = visible_scope.with_attached_images.includes(:topic, :comment_reactions, :comment_versions)
+      scope = visible_scope.with_attached_images.includes(:topic, :comment_reactions, :comment_versions, :snapshot_as_result)
 
       if params[:search].present?
         words = params[:search].to_s.strip.downcase.split(/\s+/)
