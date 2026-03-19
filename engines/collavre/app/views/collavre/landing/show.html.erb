@@ -3,7 +3,7 @@
 <div class="landing">
   <%# ═══════════════════════════════════════════ NAV ═══════════════════════════════════════════ %>
   <header class="landing-nav">
-    <div class="landing-nav-inner">
+    <div class="landing-container landing-nav-inner">
       <a href="/" class="landing-logo"><%= t('app.name') %></a>
       <div class="landing-nav-links">
         <%= link_to t('app.sign_in'), collavre.new_session_path, class: "landing-nav-link" %>
@@ -16,12 +16,49 @@
   <section class="landing-hero">
     <div class="landing-hero-glow"></div>
     <div class="landing-container">
-      <p class="landing-badge"><%= t('collavre.landing.hero.badge') %></p>
       <h1 class="landing-hero-title"><%= t('collavre.landing.hero.title_html') %></h1>
       <p class="landing-hero-sub"><%= t('collavre.landing.hero.subtitle') %></p>
+      <p class="landing-hero-tagline"><%= t('collavre.landing.hero.tagline') %></p>
       <div class="landing-hero-actions">
         <%= link_to t('collavre.landing.hero.cta'), collavre.new_user_path, class: "landing-btn landing-btn-lg" %>
-        <a href="#features" class="landing-btn landing-btn-ghost"><%= t('collavre.landing.hero.learn_more') %></a>
+        <a href="#demo" class="landing-btn landing-btn-ghost"><%= t('collavre.landing.hero.watch_demo') %></a>
+      </div>
+    </div>
+  </section>
+
+  <%# ══════════════════════════════════════════ DEMO ══════════════════════════════════════════ %>
+  <section id="demo" class="landing-section landing-demo">
+    <div class="landing-container">
+      <div class="landing-demo-frame">
+        <div class="landing-demo-placeholder">
+          <span class="landing-demo-play">▶</span>
+          <p><%= t('collavre.landing.demo.placeholder') %></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <%# ════════════════════════════════════ WHY COLLAVRE ════════════════════════════════════════ %>
+  <section class="landing-section landing-why">
+    <div class="landing-container">
+      <h2 class="landing-section-title"><%= t('collavre.landing.why.title') %></h2>
+      <p class="landing-section-sub"><%= t('collavre.landing.why.subtitle') %></p>
+      <div class="landing-why-grid">
+        <div class="landing-why-card">
+          <span class="landing-why-emoji">🧠</span>
+          <h3><%= t('collavre.landing.why.context.title') %></h3>
+          <p><%= t('collavre.landing.why.context.desc') %></p>
+        </div>
+        <div class="landing-why-card">
+          <span class="landing-why-emoji">🤝</span>
+          <h3><%= t('collavre.landing.why.human.title') %></h3>
+          <p><%= t('collavre.landing.why.human.desc') %></p>
+        </div>
+        <div class="landing-why-card">
+          <span class="landing-why-emoji">🌱</span>
+          <h3><%= t('collavre.landing.why.grow.title') %></h3>
+          <p><%= t('collavre.landing.why.grow.desc') %></p>
+        </div>
       </div>
     </div>
   </section>
