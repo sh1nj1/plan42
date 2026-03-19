@@ -17,6 +17,8 @@
     <%= collavre_stylesheets %>
     <%= stylesheet_link_tag "collavre/landing", "data-turbo-track": "reload" %>
 
+    <%= javascript_include_tag "application", "data-turbo-track": "reload", defer: true, type: "module" %>
+
     <%# Admin-configured default themes for users without personal theme %>
     <% default_styles = default_theme_styles %>
     <% if default_styles.present? %>
