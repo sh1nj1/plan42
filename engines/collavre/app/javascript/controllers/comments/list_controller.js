@@ -513,13 +513,17 @@ export default class extends Controller {
     if (this.selection.size === 0) return
 
     const count = this.selection.size
+    const total = this.listTarget.querySelectorAll('.comment-select-checkbox').length
+    const allSelected = count === total
     const i18n = (key, fallback) => this.element.dataset[key] || fallback
+    const selectAllLabel = i18n('selectionSelectAllText', 'All')
 
     const bar = document.createElement('div')
     bar.className = 'selection-action-bar'
     bar.innerHTML = `
       <div class="selection-action-bar-main">
-        <span class="selection-action-bar-count">${i18n('selectionCountText', '{count}개 선택').replace('{count}', count)}</span>
+        <label class="selection-action-bar-select-all"><input type="checkbox" class="selection-action-bar-select-all-checkbox"${allSelected ? ' checked' : ''}> ${selectAllLabel}</label>
+        <span class="selection-action-bar-count">${i18n('selectionCountText', '{count}/{total}개 선택').replace('{count}', count).replace('{total}', total)}</span>
         <button type="button" class="selection-action-bar-btn selection-action-delete" title="${i18n('selectionDeleteText', 'Delete')}">🗑 ${i18n('selectionDeleteText', 'Delete')}</button>
         <button type="button" class="selection-action-bar-btn selection-action-merge" title="${i18n('selectionMergeText', 'Merge')}"${count < 2 ? ' disabled' : ''}>🔗 ${i18n('selectionMergeText', 'Merge')}</button>
         <button type="button" class="selection-action-bar-btn selection-action-move" title="${i18n('selectionMoveText', 'Move')}">📤 ${i18n('selectionMoveText', 'Move')}</button>
@@ -530,6 +534,38 @@ export default class extends Controller {
         💡 ${i18n('selectionDragHintText', 'Drag & drop to move to topic')}
       </div>
     `
+
+    // Set indeterminate state if partially selected
+    const selectAllCheckbox = bar.querySelector('.selection-action-bar-select-all-checkbox')
+    if (count > 0 && !allSelected) {
+      selectAllCheckbox.indeterminate = true
+    }
+
+    // Select All toggle handler
+    selectAllCheckbox.addEventListener('change', () => {
+      const shouldSelect = selectAllCheckbox.checked
+      this.listTarget.querySelectorAll('.comment-select-checkbox').forEach((checkbox) => {
+        const commentId = checkbox.value
+        const item = checkbox.closest('.comment-item')
+        if (shouldSelect && !checkbox.checked) {
+          checkbox.checked = true
+          this.selection.add(commentId)
+          if (item) {
+            item.classList.add('selected-for-move')
+            item.setAttribute('draggable', 'true')
+          }
+        } else if (!shouldSelect && checkbox.checked) {
+          checkbox.checked = false
+          this.selection.delete(commentId)
+          if (item) {
+            item.classList.remove('selected-for-move')
+            item.removeAttribute('draggable')
+          }
+        }
+      })
+      this.notifySelectionChange()
+      this.updateSelectionActionBar()
+    })
 
     bar.querySelector('.selection-action-delete').addEventListener('click', (e) => { e.stopPropagation(); this.deleteSelectedComments() })
     bar.querySelector('.selection-action-merge').addEventListener('click', (e) => { e.stopPropagation(); this.mergeSelectedComments() })
