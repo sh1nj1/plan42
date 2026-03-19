@@ -513,10 +513,12 @@ export default class extends Controller {
   }
 
   handleDragOver(event) {
-    if (this.hasImageFromDataTransfer(event.dataTransfer) || this.hasCreativeFromDataTransfer(event.dataTransfer)) {
+    const isCreative = this.hasCreativeFromDataTransfer(event.dataTransfer)
+    const isImage = this.hasImageFromDataTransfer(event.dataTransfer)
+    if (isImage || isCreative) {
       event.preventDefault()
-      if (this.hasCreativeFromDataTransfer(event.dataTransfer)) {
-        event.stopPropagation()
+      event.stopPropagation()
+      if (isCreative) {
         this.formTarget.classList.add('creative-drop-hover')
       }
     }
