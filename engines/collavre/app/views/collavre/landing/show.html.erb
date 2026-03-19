@@ -1,17 +1,6 @@
 <%# Landing Page — Collavre %>
 
 <div class="landing">
-  <%# ═══════════════════════════════════════════ NAV ═══════════════════════════════════════════ %>
-  <header class="landing-nav">
-    <div class="landing-container landing-nav-inner">
-      <a href="/" class="landing-logo"><%= t('app.name') %></a>
-      <div class="landing-nav-links">
-        <%= link_to t('app.sign_in'), collavre.new_session_path, class: "landing-nav-link" %>
-        <%= link_to t('collavre.landing.hero.cta'), collavre.new_user_path, class: "landing-btn landing-btn-sm" %>
-      </div>
-    </div>
-  </header>
-
   <%# ═══════════════════════════════════════════ HERO ══════════════════════════════════════════ %>
   <section class="landing-hero">
     <div class="landing-hero-glow"></div>
@@ -20,20 +9,8 @@
       <p class="landing-hero-sub"><%= t('collavre.landing.hero.subtitle') %></p>
       <p class="landing-hero-tagline"><%= t('collavre.landing.hero.tagline') %></p>
       <div class="landing-hero-actions">
-        <%= link_to t('collavre.landing.hero.cta'), collavre.new_user_path, class: "landing-btn landing-btn-lg" %>
-        <a href="#demo" class="landing-btn landing-btn-ghost"><%= t('collavre.landing.hero.watch_demo') %></a>
-      </div>
-    </div>
-  </section>
-
-  <%# ══════════════════════════════════════════ DEMO ══════════════════════════════════════════ %>
-  <section id="demo" class="landing-section landing-demo">
-    <div class="landing-container">
-      <div class="landing-demo-frame">
-        <div class="landing-demo-placeholder">
-          <span class="landing-demo-play">▶</span>
-          <p><%= t('collavre.landing.demo.placeholder') %></p>
-        </div>
+        <a href="#features" class="landing-btn landing-btn-lg"><%= t('collavre.landing.hero.learn_more') %></a>
+        <%= link_to t('app.sign_in'), collavre.new_session_path, class: "landing-btn landing-btn-ghost landing-btn-lg" %>
       </div>
     </div>
   </section>
@@ -108,27 +85,14 @@
     </div>
   </section>
 
-  <%# ══════════════════════════════════════ HOW IT WORKS ══════════════════════════════════════ %>
-  <section class="landing-section landing-how">
+  <%# ══════════════════════════════════════════ DEMO ══════════════════════════════════════════ %>
+  <section id="demo" class="landing-section landing-demo">
     <div class="landing-container">
-      <h2 class="landing-section-title"><%= t('collavre.landing.how.title') %></h2>
-      <div class="landing-steps">
-        <div class="landing-step">
-          <div class="landing-step-num">1</div>
-          <h3><%= t('collavre.landing.how.step1.title') %></h3>
-          <p><%= t('collavre.landing.how.step1.desc') %></p>
-        </div>
-        <div class="landing-step-arrow">→</div>
-        <div class="landing-step">
-          <div class="landing-step-num">2</div>
-          <h3><%= t('collavre.landing.how.step2.title') %></h3>
-          <p><%= t('collavre.landing.how.step2.desc') %></p>
-        </div>
-        <div class="landing-step-arrow">→</div>
-        <div class="landing-step">
-          <div class="landing-step-num">3</div>
-          <h3><%= t('collavre.landing.how.step3.title') %></h3>
-          <p><%= t('collavre.landing.how.step3.desc') %></p>
+      <h2 class="landing-section-title"><%= t('collavre.landing.demo.title') %></h2>
+      <div class="landing-demo-frame">
+        <div class="landing-demo-placeholder">
+          <span class="landing-demo-play">▶</span>
+          <p><%= t('collavre.landing.demo.placeholder') %></p>
         </div>
       </div>
     </div>
@@ -139,7 +103,10 @@
     <div class="landing-container">
       <h2 class="landing-cta-title"><%= t('collavre.landing.cta.title') %></h2>
       <p class="landing-cta-sub"><%= t('collavre.landing.cta.subtitle') %></p>
-      <%= link_to t('collavre.landing.hero.cta'), collavre.new_user_path, class: "landing-btn landing-btn-lg" %>
+      <div class="landing-cta-actions">
+        <%= link_to t('collavre.landing.cta.start'), collavre.new_user_path, class: "landing-btn landing-btn-lg" %>
+        <%= link_to t('app.sign_in'), collavre.new_session_path, class: "landing-btn landing-btn-ghost landing-btn-lg" %>
+      </div>
     </div>
   </section>
 

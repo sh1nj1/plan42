@@ -8,9 +8,9 @@ en:
         title_html: "Organize work.<br>Collaborate with <em>AI</em>."
         subtitle: "The workspace where every idea becomes a living document — with progress tracking, real-time chat, and AI agents that work alongside you."
         tagline: "COLLABORATIVE INTELLIGENCE"
-        cta: "Get Started — Free"
-        watch_demo: "Watch Demo"
+        learn_more: "Learn More"
       demo:
+        title: "See it in action"
         placeholder: "Product demo video goes here"
       problem:
         title: "Your tools are failing you"
@@ -44,19 +44,9 @@ en:
         progress:
           title: "Live Progress"
           desc: "Track completion from leaf to root. Filter by tags, plans, or status. See your project's real health at a glance."
-      how:
-        title: "How it works"
-        step1:
-          title: "Structure your work"
-          desc: "Create creatives as a tree. Import from Markdown, PPT, or build from scratch."
-        step2:
-          title: "Collaborate"
-          desc: "Chat, share, tag, and plan. Add AI agents to automate reviews and analysis."
-        step3:
-          title: "Ship with confidence"
-          desc: "Track progress in real-time. AI keeps context so nothing falls through the cracks."
       cta:
         title: "Ready to collaborate smarter?"
         subtitle: "Start organizing your work with AI-powered context."
+        start: "Get Started"
       footer:
         rights: "All rights reserved."

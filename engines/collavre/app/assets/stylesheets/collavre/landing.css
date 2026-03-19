@@ -26,55 +26,6 @@
   padding: 0 var(--space-5);
 }
 
-/* ─── Navigation ────────────────────────────────────────────────────────────── */
-/* Full-width bar with blur, but inner items align to landing-container edges */
-.landing-nav {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: var(--layer-4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  background: color-mix(in srgb, var(--surface-bg) 80%, transparent);
-  border-bottom: var(--border-1) solid var(--border-color);
-}
-
-/* Reuses .landing-container for max-width + padding, adds flex layout */
-.landing-nav-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: var(--space-3);
-  padding-bottom: var(--space-3);
-}
-
-.landing-logo {
-  font-size: var(--text-3);
-  font-weight: var(--weight-7);
-  color: var(--text-primary);
-  text-decoration: none;
-  letter-spacing: -0.02em;
-}
-
-.landing-nav-links {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.landing-nav-link {
-  color: var(--text-muted);
-  text-decoration: none;
-  font-size: var(--text-0);
-  font-weight: var(--weight-5);
-  transition: color 0.15s var(--ease-2);
-}
-
-.landing-nav-link:hover {
-  color: var(--text-primary);
-}
-
 /* ─── Buttons ───────────────────────────────────────────────────────────────── */
 .landing-btn {
   display: inline-flex;
@@ -126,7 +77,7 @@
 /* ─── Hero ──────────────────────────────────────────────────────────────────── */
 .landing-hero {
   position: relative;
-  padding: var(--space-12) 0 var(--space-8);
+  padding: var(--space-10) 0 var(--space-8);
   text-align: center;
   overflow: hidden;
 }
@@ -192,10 +143,6 @@
 }
 
 /* ─── Demo Section ──────────────────────────────────────────────────────────── */
-.landing-demo {
-  padding-top: 0;
-  padding-bottom: var(--space-10);
-}
 
 .landing-demo-frame {
   max-width: 900px;
@@ -412,6 +359,13 @@
   margin-right: auto;
 }
 
+.landing-cta-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
 /* ─── Footer (center-aligned) ───────────────────────────────────────────────── */
 .landing-footer {
   border-top: var(--border-1) solid var(--border-color);
@@ -444,7 +398,7 @@
   }
 
   .landing-hero {
-    padding: var(--space-11) 0 var(--space-8);
+    padding: var(--space-9) 0 var(--space-7);
   }
 
   .landing-hero-glow {

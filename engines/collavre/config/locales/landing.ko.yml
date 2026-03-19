@@ -8,9 +8,9 @@ ko:
         title_html: "작업을 체계화하고,<br><em>AI</em>와 협업하세요."
         subtitle: "모든 아이디어가 살아있는 문서가 되는 워크스페이스 — 진행률 추적, 실시간 채팅, 그리고 함께 일하는 AI 에이전트."
         tagline: "COLLABORATIVE INTELLIGENCE"
-        cta: "무료로 시작하기"
-        watch_demo: "데모 보기"
+        learn_more: "알아보기"
       demo:
+        title: "직접 확인하세요"
         placeholder: "실제 작동 화면이 들어갈 자리입니다"
       problem:
         title: "기존 도구의 한계"
@@ -44,19 +44,9 @@ ko:
         progress:
           title: "실시간 진행률"
           desc: "리프부터 루트까지 완료율 추적. 태그, 계획, 상태별 필터. 프로젝트 건강도를 한눈에."
-      how:
-        title: "이렇게 사용하세요"
-        step1:
-          title: "작업을 구조화"
-          desc: "크리에이티브를 트리로 만드세요. 마크다운, PPT에서 가져오거나 직접 구성하세요."
-        step2:
-          title: "함께 작업"
-          desc: "채팅, 공유, 태그, 계획. AI 에이전트를 추가해 리뷰와 분석을 자동화하세요."
-        step3:
-          title: "확신을 갖고 완성"
-          desc: "진행률을 실시간으로 추적하세요. AI가 맥락을 유지하니 놓치는 것이 없습니다."
       cta:
         title: "더 똑똑하게 협업할 준비 되셨나요?"
         subtitle: "AI 기반 컨텍스트로 작업을 정리하세요."
+        start: "시작하기"
       footer:
         rights: "모든 권리 보유."
