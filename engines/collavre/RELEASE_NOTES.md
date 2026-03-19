@@ -1,3 +1,25 @@
+## v0.9.0 (2026-03-19)
+
+### Changes
+- 6c555730 feat: add select-all toggle checkbox to comment selection action bar (#1007)
+- b48750de refactor: use generic scrollable ancestor detection in chat popup (#1002)
+- e395638e feat: add merge selected chat messages action (#1004)
+- 9ccb9e5b feat: drag & drop AI agent to topic tabs to set primary agent (#1005)
+- 9f4bfb7e fix: prevent CompressJob from deleting comments when AI call fails (#1003)
+- efd7c517 fix: broadcast topic creation from /topic command to update UI instantly (#999)
+- 2f4f22bd feat: use orchestration rules for agent selection in CompressJob (#1001)
+- aab343d7 fix: allow scroll inside chat popup textarea and review quotes (#1000)
+- 20517e16 fix: close chat popup when creative is deleted (#996)
+- 454c5dfc fix: improve visibility of comment version buttons and activity log marker (#994)
+- 6fa2203a fix: allow creative admins to edit action payload in update_action (#995)
+- 737a8885 fix: allow scrolling inside action details and edit textarea in chat popup (#993)
+- 5be05ef8 feat: add drag-and-drop creative onto context area (#992)
+- 8199360e fix: render markdown when navigating comment versions (#991)
+- 0a58da8c feat: align chat popup to right of button when space available (#990)
+- b2bbcb9b fix: prevent wheel event handler from blocking share modal scroll (#989)
+- 35b3c419 fix: remove underline decoration from creative hover (#988)
+- 239632a0 fix: limit hover underline to first line of creative content (#987)
+
 ## v0.8.3 (2026-03-16)
 
 ### Changes
