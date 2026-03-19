@@ -5,25 +5,13 @@ en:
         title: "Where Teams Think Together"
         description: "The collaborative workspace where hierarchical creatives, AI agents, and real-time chat come together. Organize, collaborate, and ship — with AI as your teammate."
       hero:
-        title_html: "Where people connect ideas<br>and <em>AI</em> helps them build"
-        subtitle: "Scattered ideas, broken context, forgotten decisions — Collavre turns your team's knowledge into a living structure you build together."
+        title_html: "Organize work.<br>Collaborate with <em>AI</em>."
+        subtitle: "The workspace where every idea becomes a living document — with progress tracking, real-time chat, and AI agents that work alongside you."
         tagline: "COLLABORATIVE INTELLIGENCE"
         cta: "Get Started — Free"
         watch_demo: "Watch Demo"
       demo:
         placeholder: "Product demo video goes here"
-      why:
-        title: "Who is this for?"
-        subtitle: "For every team that needs to organize work, build together, and never lose track."
-        context:
-          title: "Collaboration without losing context"
-          desc: "Decisions from meetings, ideas from chat, agreements buried in docs — they all connect in one place. No more 'what was that again?'"
-        human:
-          title: "A tool built for people"
-          desc: "AI is powerful, but people are the ones who create. Collavre is designed so AI supports human judgment, not replaces it."
-        grow:
-          title: "Documents that grow with your team"
-          desc: "Not write-once-forget docs, but a living knowledge system that evolves as your team does."
       problem:
         title: "Your tools are failing you"
         notion:
@@ -69,6 +57,6 @@ en:
           desc: "Track progress in real-time. AI keeps context so nothing falls through the cracks."
       cta:
         title: "Ready to collaborate smarter?"
-        subtitle: "The workspace that connects your team's thinking. Start now."
+        subtitle: "Start organizing your work with AI-powered context."
       footer:
         rights: "All rights reserved."

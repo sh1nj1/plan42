@@ -1,6 +1,7 @@
 /* ============================================================================
  * Collavre Landing Page
  * Uses design tokens exclusively — no hardcoded colors.
+ * Primary accent: --color-active (the blue used throughout the app UI)
  * ============================================================================ */
 
 /* ─── Reset & Base ──────────────────────────────────────────────────────────── */
@@ -18,13 +19,15 @@
   line-height: var(--leading-2);
 }
 
+/* Container: sets the content boundary that header items align to */
 .landing-container {
   max-width: 1080px;
   margin: 0 auto;
   padding: 0 var(--space-5);
 }
 
-/* ─── Navigation (aligned with main section boundaries) ─────────────────────── */
+/* ─── Navigation ────────────────────────────────────────────────────────────── */
+/* Full-width bar with blur, but inner items align to landing-container edges */
 .landing-nav {
   position: fixed;
   top: 0;
@@ -37,6 +40,7 @@
   border-bottom: var(--border-1) solid var(--border-color);
 }
 
+/* Reuses .landing-container for max-width + padding, adds flex layout */
 .landing-nav-inner {
   display: flex;
   align-items: center;
@@ -82,14 +86,14 @@
   font-size: var(--text-0);
   text-decoration: none;
   transition: all 0.2s var(--ease-2);
-  background: var(--color-brand);
+  background: var(--color-active);
   color: white;
   border: none;
   cursor: pointer;
 }
 
 .landing-btn:hover {
-  filter: brightness(var(--hover-brightness));
+  filter: brightness(1.1);
   transform: translateY(-1px);
   box-shadow: var(--shadow-2);
 }
@@ -134,7 +138,7 @@
   transform: translateX(-50%);
   width: 600px;
   height: 600px;
-  background: radial-gradient(circle, color-mix(in srgb, var(--color-brand) 12%, transparent) 0%, transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--color-active) 12%, transparent) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -152,7 +156,7 @@
 
 .landing-hero-title em {
   font-style: normal;
-  background: linear-gradient(135deg, var(--color-brand), var(--color-active));
+  background: linear-gradient(135deg, var(--color-active), var(--color-brand));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -172,7 +176,7 @@
   font-size: var(--text-4);
   font-weight: var(--weight-7);
   letter-spacing: 0.15em;
-  color: var(--color-brand);
+  color: var(--color-active);
   margin-bottom: var(--space-7);
   position: relative;
   z-index: 1;
@@ -222,49 +226,6 @@
 
 .landing-demo-placeholder p {
   font-size: var(--text-1);
-}
-
-/* ─── Why Section (emotional / human-centered) ──────────────────────────────── */
-.landing-why {
-  background: var(--surface-bg);
-}
-
-.landing-why-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--space-5);
-  max-width: 960px;
-  margin: var(--space-7) auto 0;
-}
-
-.landing-why-card {
-  padding: var(--space-6);
-  border-radius: var(--radius-3);
-  background: var(--surface-section);
-  border: var(--border-1) solid var(--border-color);
-  transition: border-color 0.2s var(--ease-2);
-}
-
-.landing-why-card:hover {
-  border-color: var(--color-brand);
-}
-
-.landing-why-emoji {
-  font-size: var(--text-6);
-  display: block;
-  margin-bottom: var(--space-3);
-}
-
-.landing-why-card h3 {
-  font-size: var(--text-2);
-  font-weight: var(--weight-6);
-  margin-bottom: var(--space-2);
-}
-
-.landing-why-card p {
-  font-size: var(--text-0);
-  color: var(--text-muted);
-  line-height: var(--leading-3);
 }
 
 /* ─── Sections (shared) ─────────────────────────────────────────────────────── */
@@ -353,7 +314,7 @@
 .landing-feature-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-2);
-  border-color: var(--color-brand);
+  border-color: var(--color-active);
 }
 
 .landing-feature-icon {
@@ -399,7 +360,7 @@
   width: 48px;
   height: 48px;
   border-radius: var(--radius-round);
-  background: var(--color-brand);
+  background: var(--color-active);
   color: white;
   font-size: var(--text-3);
   font-weight: var(--weight-7);
@@ -511,10 +472,6 @@
   }
 
   .landing-features-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .landing-why-grid {
     grid-template-columns: 1fr;
   }
 }
