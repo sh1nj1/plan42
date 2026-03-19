@@ -5,7 +5,9 @@
   <section class="landing-hero">
     <div class="landing-hero-glow"></div>
     <div class="landing-container">
-      <h1 class="landing-hero-title"><%= t('collavre.landing.hero.title_html') %></h1>
+      <h1 class="landing-hero-title"><%= t('collavre.landing.hero.headline_html') %></h1>
+      <p class="landing-hero-sub"><%= t('collavre.landing.hero.subline') %></p>
+      <p class="landing-hero-brand"><%= t('app.name') %></p>
       <div class="landing-hero-actions">
         <a href="#features" class="landing-btn landing-btn-lg"><%= t('collavre.landing.hero.learn_more') %></a>
         <%= link_to t('app.sign_in'), collavre.new_session_path, class: "landing-btn landing-btn-ghost landing-btn-lg" %>

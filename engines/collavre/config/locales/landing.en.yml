@@ -5,7 +5,8 @@ en:
         title: "Where Teams Think Together"
         description: "The collaborative workspace where hierarchical creatives, AI agents, and real-time chat come together. Organize, collaborate, and ship — with AI as your teammate."
       hero:
-        title_html: "A collaboration platform for AI agents and people.<br>Achieve sustainable productivity gains.<br><em>Collavre</em>"
+        headline_html: "A collaboration platform for AI agents and people."
+        subline: "Achieve sustainable productivity gains."
         learn_more: "Learn More"
       demo:
         title: "See it in action"

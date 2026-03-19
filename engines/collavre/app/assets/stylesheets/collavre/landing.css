@@ -94,21 +94,38 @@
   z-index: 0;
 }
 
-.landing-hero-title {                   /* L1 — headline, default color */
+.landing-hero-title {                   /* L1 — main headline */
   font-size: var(--text-7);
   font-weight: var(--weight-8);
   letter-spacing: 0.02em;
   line-height: var(--leading-1);
   color: var(--text-primary);
-  margin: 0 auto var(--space-7);
+  margin: 0 auto var(--space-5);
   max-width: 900px;
   position: relative;
   z-index: 1;
 }
 
-.landing-hero-title em {                /* "콜라브" in brand color */
-  font-style: normal;
+.landing-hero-sub {                     /* L3 — subline */
+  font-size: var(--text-3);
+  font-weight: var(--weight-6);
+  color: var(--text-muted);
+  margin: 0 auto var(--space-5);
+  max-width: 900px;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.landing-hero-brand {                   /* L1 — "콜라브" in brand color */
+  font-size: var(--text-7);
+  font-weight: var(--weight-8);
+  letter-spacing: 0.02em;
   color: var(--color-active);
+  margin: 0 auto var(--space-7);
+  text-align: center;
+  position: relative;
+  z-index: 1;
 }
 
 .landing-hero-actions {
@@ -376,6 +393,10 @@
     font-size: var(--text-5);
   }
 
+  .landing-hero-brand {                 /* L1 scaled down on mobile */
+    font-size: var(--text-5);
+  }
+
   .landing-hero-glow {
     width: 350px;
     height: 350px;
@@ -421,9 +442,13 @@
 }
 
 .landing-hero-title,
+.landing-hero-sub,
+.landing-hero-brand,
 .landing-hero-actions {
   animation: landing-fade-up 0.6s var(--ease-out-3) both;
 }
 
 .landing-hero-title { animation-delay: 0s; }
-.landing-hero-actions { animation-delay: 0.2s; }
+.landing-hero-sub { animation-delay: 0.1s; }
+.landing-hero-brand { animation-delay: 0.2s; }
+.landing-hero-actions { animation-delay: 0.3s; }
