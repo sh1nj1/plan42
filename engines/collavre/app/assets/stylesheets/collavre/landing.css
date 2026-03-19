@@ -4,10 +4,10 @@
  * Primary accent: --color-active (the blue used throughout the app UI)
  *
  * Typography scale (4 levels only):
- *   L1  clamp(--text-5 … --text-7)  Hero title, CTA title
+ *   L1  --text-7                     Hero title, CTA title
  *   L2  --text-5                     Section titles, tagline
- *   L3  --text-2                     Card titles, subtitles, button-lg
- *   L4  --text-0                     Body copy, descriptions, buttons, footer
+ *   L3  --text-3                     Card titles, subtitles, button-lg
+ *   L4  --text-2                     Body copy, descriptions, buttons, footer
  * ============================================================================ */
 
 /* ─── Reset & Base ──────────────────────────────────────────────────────────── */
@@ -40,7 +40,7 @@
   padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-3);
   font-weight: var(--weight-6);
-  font-size: var(--text-0);             /* L4 */
+  font-size: var(--text-2);             /* L4 */
   text-decoration: none;
   transition: all 0.2s var(--ease-2);
   background: var(--color-active);
@@ -57,7 +57,7 @@
 
 .landing-btn-lg {
   padding: var(--space-3) var(--space-7);
-  font-size: var(--text-2);             /* L3 */
+  font-size: var(--text-3);             /* L3 */
   border-radius: var(--radius-4);
 }
 
@@ -95,10 +95,10 @@
 }
 
 .landing-hero-title {                   /* L1 */
-  font-size: clamp(var(--text-5), 5vw, var(--text-7));
+  font-size: var(--text-7);
   font-weight: var(--weight-8);
   line-height: var(--leading-00);
-  letter-spacing: -0.01em;
+  letter-spacing: 0.02em;
   margin: 0 auto var(--space-5);
   max-width: 800px;
   position: relative;
@@ -114,7 +114,7 @@
 }
 
 .landing-hero-sub {                     /* L4 */
-  font-size: var(--text-0);
+  font-size: var(--text-2);
   color: var(--text-muted);
   max-width: 580px;
   margin: 0 auto var(--space-5);
@@ -167,12 +167,12 @@
 }
 
 .landing-demo-play {
-  font-size: var(--text-5);             /* L2 — kept large for visual weight */
+  font-size: var(--text-5);             /* L2 — decorative play icon */
   opacity: 0.3;
 }
 
 .landing-demo-placeholder p {
-  font-size: var(--text-0);             /* L4 */
+  font-size: var(--text-2);             /* L4 */
 }
 
 /* ─── Sections (shared) ─────────────────────────────────────────────────────── */
@@ -189,7 +189,7 @@
 }
 
 .landing-section-sub {                  /* L4 */
-  font-size: var(--text-0);
+  font-size: var(--text-2);
   color: var(--text-muted);
   text-align: center;
   max-width: 560px;
@@ -228,13 +228,13 @@
 }
 
 .landing-problem-card h3 {             /* L3 */
-  font-size: var(--text-2);
+  font-size: var(--text-3);
   font-weight: var(--weight-6);
   margin-bottom: var(--space-2);
 }
 
 .landing-problem-card p {              /* L4 */
-  font-size: var(--text-0);
+  font-size: var(--text-2);
   color: var(--text-muted);
   line-height: var(--leading-2);
 }
@@ -270,13 +270,13 @@
 }
 
 .landing-feature-card h3 {             /* L3 */
-  font-size: var(--text-2);
+  font-size: var(--text-3);
   font-weight: var(--weight-6);
   margin-bottom: var(--space-2);
 }
 
 .landing-feature-card p {              /* L4 */
-  font-size: var(--text-0);
+  font-size: var(--text-2);
   color: var(--text-muted);
   line-height: var(--leading-2);
 }
@@ -309,7 +309,7 @@
   border-radius: var(--radius-round);
   background: var(--color-active);
   color: white;
-  font-size: var(--text-2);             /* L3 */
+  font-size: var(--text-3);             /* L3 */
   font-weight: var(--weight-7);
   display: inline-flex;
   align-items: center;
@@ -318,13 +318,13 @@
 }
 
 .landing-step h3 {                     /* L3 */
-  font-size: var(--text-2);
+  font-size: var(--text-3);
   font-weight: var(--weight-6);
   margin-bottom: var(--space-2);
 }
 
 .landing-step p {                      /* L4 */
-  font-size: var(--text-0);
+  font-size: var(--text-2);
   color: var(--text-muted);
   line-height: var(--leading-2);
 }
@@ -344,14 +344,14 @@
 }
 
 .landing-cta-title {                    /* L1 */
-  font-size: clamp(var(--text-5), 5vw, var(--text-7));
+  font-size: var(--text-7);
   font-weight: var(--weight-8);
-  letter-spacing: -0.01em;
+  letter-spacing: 0.02em;
   margin-bottom: var(--space-3);
 }
 
 .landing-cta-sub {                     /* L4 */
-  font-size: var(--text-0);
+  font-size: var(--text-2);
   color: var(--text-muted);
   margin-bottom: var(--space-7);
   max-width: 480px;
@@ -375,12 +375,12 @@
 
 .landing-footer-brand {                /* L4 */
   font-weight: var(--weight-6);
-  font-size: var(--text-0);
+  font-size: var(--text-2);
   color: var(--text-primary);
 }
 
 .landing-footer-copy {                 /* L4 */
-  font-size: var(--text-0);
+  font-size: var(--text-2);
   color: var(--text-muted);
 }
 
@@ -394,13 +394,17 @@
     padding: var(--space-9) 0 var(--space-7);
   }
 
+  .landing-hero-title {                 /* L1 scaled down on mobile */
+    font-size: var(--text-5);
+  }
+
   .landing-hero-glow {
     width: 350px;
     height: 350px;
   }
 
   .landing-hero-tagline {               /* L3 on mobile */
-    font-size: var(--text-2);
+    font-size: var(--text-3);
     letter-spacing: 0.1em;
   }
 
@@ -424,6 +428,10 @@
 
   .landing-features-grid {
     grid-template-columns: 1fr;
+  }
+
+  .landing-cta-title {                  /* L1 scaled down on mobile */
+    font-size: var(--text-5);
   }
 }
 
