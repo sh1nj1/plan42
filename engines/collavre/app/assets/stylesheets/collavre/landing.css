@@ -1,0 +1,465 @@
+/* ============================================================================
+ * Collavre Landing Page
+ * Uses design tokens exclusively — no hardcoded colors.
+ * ============================================================================ */
+
+/* ─── Reset & Base ──────────────────────────────────────────────────────────── */
+.landing-page {
+  overflow-x: hidden;
+}
+
+.landing-page nav {
+  display: none; /* hide app navigation */
+}
+
+.landing {
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  line-height: var(--leading-2);
+}
+
+.landing-container {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 var(--space-5);
+}
+
+/* ─── Navigation ────────────────────────────────────────────────────────────── */
+.landing-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--layer-4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--surface-bg) 80%, transparent);
+  border-bottom: var(--border-1) solid var(--border-color);
+}
+
+.landing-nav-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.landing-logo {
+  font-size: var(--text-3);
+  font-weight: var(--weight-7);
+  color: var(--text-primary);
+  text-decoration: none;
+  letter-spacing: -0.02em;
+}
+
+.landing-nav-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.landing-nav-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: var(--text-0);
+  font-weight: var(--weight-5);
+  transition: color 0.15s var(--ease-2);
+}
+
+.landing-nav-link:hover {
+  color: var(--text-primary);
+}
+
+/* ─── Buttons ───────────────────────────────────────────────────────────────── */
+.landing-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-3);
+  font-weight: var(--weight-6);
+  font-size: var(--text-0);
+  text-decoration: none;
+  transition: all 0.2s var(--ease-2);
+  background: var(--color-brand);
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+.landing-btn:hover {
+  filter: brightness(var(--hover-brightness));
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+}
+
+.landing-btn-sm {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-0);
+  border-radius: var(--radius-2);
+}
+
+.landing-btn-lg {
+  padding: var(--space-3) var(--space-7);
+  font-size: var(--text-2);
+  border-radius: var(--radius-4);
+}
+
+.landing-btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: var(--border-1) solid var(--border-color);
+}
+
+.landing-btn-ghost:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+  background: var(--surface-hover);
+  filter: none;
+}
+
+/* ─── Hero ──────────────────────────────────────────────────────────────────── */
+.landing-hero {
+  position: relative;
+  padding: var(--space-12) var(--space-5) var(--space-10);
+  text-align: center;
+  overflow: hidden;
+}
+
+.landing-hero-glow {
+  position: absolute;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--color-brand) 15%, transparent) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.landing-badge {
+  display: inline-block;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-5);
+  font-size: var(--text-00);
+  font-weight: var(--weight-5);
+  color: var(--text-muted);
+  border: var(--border-1) solid var(--border-color);
+  margin-bottom: var(--space-5);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  position: relative;
+  z-index: 1;
+}
+
+.landing-hero-title {
+  font-size: clamp(var(--text-6), 6vw, var(--text-8));
+  font-weight: var(--weight-8);
+  line-height: var(--leading-00);
+  letter-spacing: -0.03em;
+  margin: 0 auto var(--space-5);
+  max-width: 800px;
+  position: relative;
+  z-index: 1;
+}
+
+.landing-hero-title em {
+  font-style: normal;
+  background: linear-gradient(135deg, var(--color-brand), var(--color-active));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.landing-hero-sub {
+  font-size: var(--text-3);
+  color: var(--text-muted);
+  max-width: 560px;
+  margin: 0 auto var(--space-7);
+  line-height: var(--leading-2);
+  position: relative;
+  z-index: 1;
+}
+
+.landing-hero-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── Sections (shared) ─────────────────────────────────────────────────────── */
+.landing-section {
+  padding: var(--space-10) var(--space-5);
+}
+
+.landing-section-title {
+  font-size: var(--text-5);
+  font-weight: var(--weight-7);
+  text-align: center;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-3);
+}
+
+.landing-section-sub {
+  font-size: var(--text-2);
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 560px;
+  margin: 0 auto var(--space-8);
+}
+
+/* ─── Problem Section ───────────────────────────────────────────────────────── */
+.landing-problem {
+  background: var(--surface-section);
+}
+
+.landing-problem-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-5);
+  max-width: 900px;
+  margin: var(--space-7) auto 0;
+}
+
+.landing-problem-card {
+  padding: var(--space-5);
+  border-radius: var(--radius-3);
+  border: var(--border-1) solid var(--border-color);
+  background: var(--surface-bg);
+  transition: border-color 0.2s var(--ease-2);
+}
+
+.landing-problem-card:hover {
+  border-color: var(--text-muted);
+}
+
+.landing-problem-icon {
+  font-size: var(--text-5);
+  display: block;
+  margin-bottom: var(--space-3);
+}
+
+.landing-problem-card h3 {
+  font-size: var(--text-2);
+  font-weight: var(--weight-6);
+  margin-bottom: var(--space-2);
+}
+
+.landing-problem-card p {
+  font-size: var(--text-0);
+  color: var(--text-muted);
+  line-height: var(--leading-2);
+}
+
+/* ─── Features Grid ─────────────────────────────────────────────────────────── */
+.landing-features {
+  background: var(--surface-bg);
+}
+
+.landing-features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-5);
+}
+
+.landing-feature-card {
+  padding: var(--space-5);
+  border-radius: var(--radius-3);
+  border: var(--border-1) solid var(--border-color);
+  background: var(--surface-section);
+  transition: all 0.25s var(--ease-2);
+}
+
+.landing-feature-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-2);
+  border-color: var(--color-brand);
+}
+
+.landing-feature-icon {
+  font-size: var(--text-6);
+  margin-bottom: var(--space-3);
+}
+
+.landing-feature-card h3 {
+  font-size: var(--text-2);
+  font-weight: var(--weight-6);
+  margin-bottom: var(--space-2);
+}
+
+.landing-feature-card p {
+  font-size: var(--text-0);
+  color: var(--text-muted);
+  line-height: var(--leading-2);
+}
+
+/* ─── How It Works ──────────────────────────────────────────────────────────── */
+.landing-how {
+  background: var(--surface-section);
+}
+
+.landing-steps {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  max-width: 900px;
+  margin: var(--space-7) auto 0;
+}
+
+.landing-step {
+  flex: 1;
+  min-width: 200px;
+  max-width: 260px;
+  text-align: center;
+}
+
+.landing-step-num {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-round);
+  background: var(--color-brand);
+  color: white;
+  font-size: var(--text-3);
+  font-weight: var(--weight-7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-3);
+}
+
+.landing-step h3 {
+  font-size: var(--text-2);
+  font-weight: var(--weight-6);
+  margin-bottom: var(--space-2);
+}
+
+.landing-step p {
+  font-size: var(--text-0);
+  color: var(--text-muted);
+  line-height: var(--leading-2);
+}
+
+.landing-step-arrow {
+  font-size: var(--text-5);
+  color: var(--text-muted);
+  padding-top: var(--space-3);
+  user-select: none;
+}
+
+/* ─── CTA Section ───────────────────────────────────────────────────────────── */
+.landing-cta {
+  text-align: center;
+  padding: var(--space-11) var(--space-5);
+  background: var(--surface-bg);
+}
+
+.landing-cta-title {
+  font-size: var(--text-6);
+  font-weight: var(--weight-8);
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-3);
+}
+
+.landing-cta-sub {
+  font-size: var(--text-2);
+  color: var(--text-muted);
+  margin-bottom: var(--space-7);
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ─── Footer ────────────────────────────────────────────────────────────────── */
+.landing-footer {
+  border-top: var(--border-1) solid var(--border-color);
+  padding: var(--space-5) var(--space-5);
+}
+
+.landing-footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.landing-footer-brand {
+  font-weight: var(--weight-6);
+  font-size: var(--text-0);
+  color: var(--text-primary);
+}
+
+.landing-footer-copy {
+  font-size: var(--text-00);
+  color: var(--text-muted);
+}
+
+/* ─── Responsive ────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .landing-hero {
+    padding: var(--space-11) var(--space-3) var(--space-8);
+  }
+
+  .landing-hero-glow {
+    width: 350px;
+    height: 350px;
+  }
+
+  .landing-section {
+    padding: var(--space-8) var(--space-3);
+  }
+
+  .landing-steps {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .landing-step-arrow {
+    transform: rotate(90deg);
+    padding: 0;
+  }
+
+  .landing-step {
+    max-width: 100%;
+  }
+
+  .landing-footer-inner {
+    flex-direction: column;
+    gap: var(--space-2);
+    text-align: center;
+  }
+
+  .landing-features-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── Entrance animations ───────────────────────────────────────────────────── */
+@keyframes landing-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.landing-hero-title,
+.landing-hero-sub,
+.landing-hero-actions,
+.landing-badge {
+  animation: landing-fade-up 0.6s var(--ease-out-3) both;
+}
+
+.landing-badge { animation-delay: 0s; }
+.landing-hero-title { animation-delay: 0.1s; }
+.landing-hero-sub { animation-delay: 0.2s; }
+.landing-hero-actions { animation-delay: 0.3s; }

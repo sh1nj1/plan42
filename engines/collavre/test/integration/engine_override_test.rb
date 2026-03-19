@@ -97,6 +97,10 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
   end
 
   test "overrides footer partial in layout" do
+    # Must be authenticated to see the main layout (unauthenticated users see the landing page)
+    user = users(:one)
+    user.update!(email_verified_at: Time.current) unless user.email_verified?
+    post collavre.session_path, params: { email: user.email, password: "password" }
     get root_path
 
     assert_response :success

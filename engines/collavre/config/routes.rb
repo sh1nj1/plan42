@@ -1,4 +1,7 @@
 Collavre::Engine.routes.draw do
+  # Landing page
+  get "landing", to: "landing#show"
+
   # Authentication routes
   resource :session, only: [ :new, :create, :destroy ]
   resources :passwords, param: :token, only: [ :new, :create, :edit, :update ]

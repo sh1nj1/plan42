@@ -16,6 +16,12 @@ module Collavre
     def index
       respond_to do |format|
         format.html do
+          # Show landing page for unauthenticated visitors on root
+          unless authenticated? || params[:id].present?
+            render template: "collavre/landing/show", layout: "collavre/landing"
+            return
+          end
+
           # HTML only needs parent_creative for nav/title - skip expensive filtered queries
           # Must check permission to avoid leaking metadata (og:title, etc.) to unauthorized users
           if params[:id].present?
