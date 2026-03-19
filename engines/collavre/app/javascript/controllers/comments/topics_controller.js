@@ -1,5 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 import { createSubscription } from "../../services/cable"
+import { fetchNextTopicName, createTopicWithComments } from "../../lib/api/topics"
 
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
@@ -820,51 +821,23 @@ export default class extends Controller {
     async createTopicAndMoveComments(commentIds, topicName = null) {
         if (!this.creativeId) return
 
-        try {
-            // Fetch auto-generated name if not provided
-            const name = topicName || await this.fetchNextTopicName()
-            if (!name) return
+        const name = topicName || await fetchNextTopicName(this.creativeId)
+        if (!name) return
 
-            const response = await fetch(`/creatives/${this.creativeId}/topics`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
-                },
-                body: JSON.stringify({ topic: { name }, comment_ids: commentIds })
-            })
+        const result = await createTopicWithComments(this.creativeId, name, commentIds)
+        if (result.ok) {
+            this.currentTopicId = result.topic.id
+            await this.loadTopics()
+            this.dispatch("change", { detail: { topicId: result.topic.id } })
 
-            if (response.ok) {
-                const topic = await response.json()
-                this.currentTopicId = topic.id
-                await this.loadTopics()
-                this.dispatch("change", { detail: { topicId: topic.id } })
-
-                // Clear selection in list controller
-                const listController = this.application.getControllerForElementAndIdentifier(
-                    this.element, 'comments--list'
-                )
-                if (listController) listController.clearSelection()
-            } else {
-                const data = await response.json().catch(() => ({}))
-                console.error('Failed to create topic and move comments:', data.errors || data.error)
-            }
-        } catch (e) {
-            console.error('Error creating topic with comments', e)
+            // Clear selection in list controller
+            const listController = this.application.getControllerForElementAndIdentifier(
+                this.element, 'comments--list'
+            )
+            if (listController) listController.clearSelection()
+        } else {
+            alert(result.error)
         }
-    }
-
-    async fetchNextTopicName() {
-        try {
-            const response = await fetch(`/creatives/${this.creativeId}/topics/next_name`)
-            if (response.ok) {
-                const data = await response.json()
-                return data.name
-            }
-        } catch (e) {
-            console.error('Error fetching next topic name', e)
-        }
-        return null
     }
 
     async setTopicPrimaryAgent(topicId, agent) {

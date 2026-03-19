@@ -1544,3 +1544,7 @@ body.chat-fullscreen {
     color: var(--link);
     font-style: italic;
 }
+
+li:hover .topic-create-option {
+    text-decoration: underline;
+}

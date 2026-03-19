@@ -1,4 +1,5 @@
 import CommonPopupController from './common_popup_controller'
+import { fetchNextTopicName, createTopicWithComments } from '../lib/api/topics'
 
 export default class extends CommonPopupController {
     static targets = ['input', 'list', 'close']
@@ -69,8 +70,12 @@ export default class extends CommonPopupController {
         const filtered = this._allTopics.filter(t =>
             (t.label || '').toLowerCase().includes(q)
         )
-        // If no match found, show "create and move" option with the query as name
-        if (filtered.length === 0) {
+        // Always show "create and move" option with the query as name
+        // (even when there are partial matches, user may want to create a new one)
+        const exactMatch = this._allTopics.some(t =>
+            (t.label || '').toLowerCase() === `#${q}`
+        )
+        if (!exactMatch) {
             const createLabel = this.element.dataset.createAndMoveText || 'Create "%{name}" and move'
             filtered.push({
                 id: '__create__',
@@ -85,9 +90,9 @@ export default class extends CommonPopupController {
     async _loadTopics(creativeId, mainLabel) {
         if (!creativeId) return
         try {
-            const [topicsResponse, nextNameResponse] = await Promise.all([
+            const [topicsResponse, nextName] = await Promise.all([
                 fetch(`/creatives/${creativeId}/topics`, { headers: { Accept: 'application/json' } }),
-                fetch(`/creatives/${creativeId}/topics/next_name`, { headers: { Accept: 'application/json' } })
+                fetchNextTopicName(creativeId)
             ])
 
             const data = await topicsResponse.json()
@@ -99,13 +104,12 @@ export default class extends CommonPopupController {
             ]
 
             // Build default create item from next_name
-            if (nextNameResponse.ok) {
-                const nextNameData = await nextNameResponse.json()
+            if (nextName) {
                 const createLabel = this.element.dataset.createAndMoveText || 'Create "%{name}" and move'
                 this._defaultCreateItem = {
                     id: '__create_default__',
-                    label: `+ ${createLabel.replace('%{name}', nextNameData.name)}`,
-                    createName: nextNameData.name,
+                    label: `+ ${createLabel.replace('%{name}', nextName)}`,
+                    createName: nextName,
                     isCreate: true
                 }
             }
@@ -138,28 +142,13 @@ export default class extends CommonPopupController {
     async _createTopicAndMove(name, commentIds) {
         if (!this._creativeId) return
 
-        try {
-            const response = await fetch(`/creatives/${this._creativeId}/topics`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
-                },
-                body: JSON.stringify({ topic: { name }, comment_ids: commentIds })
-            })
-
-            if (response.ok) {
-                const topic = await response.json()
-                // Notify via callback so list_controller refreshes
-                if (this.onSelectCallback) {
-                    this.onSelectCallback({ id: topic.id, label: `#${topic.name}`, created: true })
-                }
-            } else {
-                const data = await response.json().catch(() => ({}))
-                console.error('Failed to create topic:', data.errors || data.error)
+        const result = await createTopicWithComments(this._creativeId, name, commentIds)
+        if (result.ok) {
+            if (this.onSelectCallback) {
+                this.onSelectCallback({ id: result.topic.id, label: `#${result.topic.name}`, created: true })
             }
-        } catch (e) {
-            console.error('Error creating topic and moving comments', e)
+        } else {
+            alert(result.error)
         }
     }
 

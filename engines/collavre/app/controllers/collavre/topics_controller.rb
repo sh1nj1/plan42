@@ -54,20 +54,16 @@ module Collavre
           render json: { errors: topic.errors.full_messages }, status: :unprocessable_entity
         end
       end
+    rescue CommentMoveService::MoveError => e
+      render json: { errors: [ e.message ] }, status: :unprocessable_entity
     end
 
     def next_name
-      prefix = I18n.t("collavre.topics.default_name_prefix")
-      existing_numbers = @creative.topics
-        .where("name LIKE ?", "#{Topic.sanitize_sql_like(prefix)}%")
-        .pluck(:name)
-        .filter_map { |n|
-          suffix = n.delete_prefix(prefix)
-          suffix.match?(/\A\d+\z/) ? suffix.to_i : nil
-        }
+      unless @creative.has_permission?(Current.user, :read) || @creative.user == Current.user
+        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
+      end
 
-      next_number = (existing_numbers.max || 0) + 1
-      render json: { name: "#{prefix}#{next_number}" }
+      render json: { name: generate_next_topic_name }
     end
 
     def update
@@ -225,6 +221,20 @@ module Collavre
 
     def topic_params
       params.require(:topic).permit(:name)
+    end
+
+    def generate_next_topic_name
+      prefix = I18n.t("collavre.topics.default_name_prefix")
+      existing_numbers = @creative.topics.active
+        .where("name LIKE ?", "#{Topic.sanitize_sql_like(prefix)}%")
+        .pluck(:name)
+        .filter_map { |n|
+          suffix = n.delete_prefix(prefix)
+          suffix.match?(/\A\d+\z/) ? suffix.to_i : nil
+        }
+
+      next_number = (existing_numbers.max || 0) + 1
+      "#{prefix}#{next_number}"
     end
 
     # Batch-load primary agents for all topics to avoid N+1 queries
