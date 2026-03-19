@@ -4,9 +4,14 @@ module Collavre
       extend ActiveSupport::Concern
 
       included do
-        after_create_commit :broadcast_create, :broadcast_badges
+        after_create_commit :broadcast_create
         after_update_commit :broadcast_update
-        after_destroy_commit :broadcast_destroy, :broadcast_badges
+        after_destroy_commit :broadcast_destroy
+        # Use after_commit with on: to avoid Rails callback deduplication.
+        # Registering the same method via both after_create_commit and
+        # after_destroy_commit causes the later registration to silently
+        # overwrite the earlier one.
+        after_commit :broadcast_badges, on: [ :create, :destroy ]
       end
 
       module ClassMethods
