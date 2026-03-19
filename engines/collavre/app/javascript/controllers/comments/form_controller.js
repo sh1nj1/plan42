@@ -58,9 +58,9 @@ export default class extends Controller {
 
     this.imageButtonTarget?.addEventListener('click', this.handleImageButtonClick)
     this.imageInputTarget?.addEventListener('change', this.handleImageChange)
-    this.textareaTarget.addEventListener('dragover', this.handleDragOver)
-    this.textareaTarget.addEventListener('dragleave', this.handleDragLeave)
-    this.textareaTarget.addEventListener('drop', this.handleDrop)
+    this.formTarget.addEventListener('dragover', this.handleDragOver)
+    this.formTarget.addEventListener('dragleave', this.handleDragLeave)
+    this.formTarget.addEventListener('drop', this.handleDrop)
     this.handlePaste = this.handlePaste.bind(this)
     this.textareaTarget.addEventListener('paste', this.handlePaste)
 
@@ -114,9 +114,9 @@ export default class extends Controller {
     this.imageButtonTarget?.removeEventListener('click', this.handleImageButtonClick)
     this.imageInputTarget?.removeEventListener('change', this.handleImageChange)
     this.textareaTarget.removeEventListener('input', this._autoResize)
-    this.textareaTarget.removeEventListener('dragover', this.handleDragOver)
-    this.textareaTarget.removeEventListener('dragleave', this.handleDragLeave)
-    this.textareaTarget.removeEventListener('drop', this.handleDrop)
+    this.formTarget.removeEventListener('dragover', this.handleDragOver)
+    this.formTarget.removeEventListener('dragleave', this.handleDragLeave)
+    this.formTarget.removeEventListener('drop', this.handleDrop)
     this.textareaTarget.removeEventListener('paste', this.handlePaste)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
   }
@@ -517,17 +517,20 @@ export default class extends Controller {
       event.preventDefault()
       if (this.hasCreativeFromDataTransfer(event.dataTransfer)) {
         event.stopPropagation()
-        this.textareaTarget.classList.add('creative-drop-hover')
+        this.formTarget.classList.add('creative-drop-hover')
       }
     }
   }
 
   handleDragLeave(event) {
-    this.textareaTarget.classList.remove('creative-drop-hover')
+    // Only remove highlight if truly leaving the form
+    if (!this.formTarget.contains(event.relatedTarget)) {
+      this.formTarget.classList.remove('creative-drop-hover')
+    }
   }
 
   handleDrop(event) {
-    this.textareaTarget.classList.remove('creative-drop-hover')
+    this.formTarget.classList.remove('creative-drop-hover')
 
     // Handle creative drop — stop propagation so contexts_controller doesn't intercept
     if (this.hasCreativeFromDataTransfer(event.dataTransfer)) {
