@@ -83,7 +83,8 @@ ko:
       move_no_selection: 이동할 메시지를 선택해주세요.
       move_error: 메시지를 이동할 수 없습니다.
       add_participant: 사용자 추가
-      selection_count: "{count}개 선택"
+      select_all: 전체
+      selection_count: "{count}/{total}개 선택"
       selection_delete: 삭제
       selection_move: 이동
       selection_topic_move: 토픽 이동

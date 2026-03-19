@@ -1374,6 +1374,23 @@ body.chat-fullscreen {
     flex-wrap: wrap;
 }
 
+.selection-action-bar-select-all {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: 0.85em;
+    font-weight: bold;
+    color: var(--color-text);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.selection-action-bar-select-all-checkbox {
+    cursor: pointer;
+    margin: 0;
+}
+
 .selection-action-bar-count {
     font-size: 0.85em;
     font-weight: bold;
