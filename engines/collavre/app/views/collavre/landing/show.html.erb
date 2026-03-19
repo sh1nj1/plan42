@@ -79,12 +79,19 @@
   <section id="demo" class="landing-section landing-demo">
     <div class="landing-container">
       <h2 class="landing-section-title"><%= t('collavre.landing.demo.title') %></h2>
-      <div class="landing-demo-frame">
+      <div class="landing-demo-frame" data-controller="landing-video">
         <video class="landing-demo-video"
+               data-landing-video-target="video"
                autoplay muted loop playsinline
                poster="/collavre/demo-poster.jpg">
           <source src="/collavre/demo.mp4" type="video/mp4">
         </video>
+        <div class="landing-demo-progress" data-landing-video-target="progressBar">
+          <div class="landing-demo-progress-fill" data-landing-video-target="progressFill"></div>
+        </div>
+        <button class="landing-demo-toggle" data-landing-video-target="toggle" data-action="click->landing-video#togglePlay">
+          <span class="landing-demo-toggle-icon" data-landing-video-target="icon">❚❚</span>
+        </button>
       </div>
     </div>
   </section>
