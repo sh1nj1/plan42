@@ -126,7 +126,7 @@
 /* ─── Hero ──────────────────────────────────────────────────────────────────── */
 .landing-hero {
   position: relative;
-  padding: var(--space-12) var(--space-5) var(--space-8);
+  padding: var(--space-12) 0 var(--space-8);
   text-align: center;
   overflow: hidden;
 }
@@ -230,7 +230,7 @@
 
 /* ─── Sections (shared) ─────────────────────────────────────────────────────── */
 .landing-section {
-  padding: var(--space-10) var(--space-5);
+  padding: var(--space-10) 0;
 }
 
 .landing-section-title {
@@ -392,7 +392,7 @@
 /* ─── CTA Section ───────────────────────────────────────────────────────────── */
 .landing-cta {
   text-align: center;
-  padding: var(--space-11) var(--space-5);
+  padding: var(--space-11) 0;
   background: var(--surface-bg);
 }
 
@@ -415,7 +415,7 @@
 /* ─── Footer (center-aligned) ───────────────────────────────────────────────── */
 .landing-footer {
   border-top: var(--border-1) solid var(--border-color);
-  padding: var(--space-5) var(--space-5);
+  padding: var(--space-5) 0;
 }
 
 .landing-footer-inner {
@@ -439,8 +439,12 @@
 
 /* ─── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
+  .landing-container {
+    padding: 0 var(--space-3);
+  }
+
   .landing-hero {
-    padding: var(--space-11) var(--space-3) var(--space-8);
+    padding: var(--space-11) 0 var(--space-8);
   }
 
   .landing-hero-glow {
@@ -454,7 +458,7 @@
   }
 
   .landing-section {
-    padding: var(--space-8) var(--space-3);
+    padding: var(--space-8) 0;
   }
 
   .landing-steps {
