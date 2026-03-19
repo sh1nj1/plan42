@@ -516,6 +516,7 @@ export default class extends Controller {
     if (this.hasImageFromDataTransfer(event.dataTransfer) || this.hasCreativeFromDataTransfer(event.dataTransfer)) {
       event.preventDefault()
       if (this.hasCreativeFromDataTransfer(event.dataTransfer)) {
+        event.stopPropagation()
         this.textareaTarget.classList.add('creative-drop-hover')
       }
     }
@@ -528,9 +529,10 @@ export default class extends Controller {
   handleDrop(event) {
     this.textareaTarget.classList.remove('creative-drop-hover')
 
-    // Handle creative drop
+    // Handle creative drop — stop propagation so contexts_controller doesn't intercept
     if (this.hasCreativeFromDataTransfer(event.dataTransfer)) {
       event.preventDefault()
+      event.stopPropagation()
       const creativeData = this.extractCreativeData(event.dataTransfer)
       if (creativeData) {
         this.insertCreativeLink(creativeData)
