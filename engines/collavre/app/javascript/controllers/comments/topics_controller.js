@@ -787,9 +787,11 @@ export default class extends Controller {
     }
 
     handleAddButtonDragOver(event) {
-        if (!event.dataTransfer.types.includes('application/x-agent-drop')) return
+        const isAgent = event.dataTransfer.types.includes('application/x-agent-drop')
+        const isComment = event.dataTransfer.types.includes('application/x-comment-ids')
+        if (!isAgent && !isComment) return
         event.preventDefault()
-        event.dataTransfer.dropEffect = 'copy'
+        event.dataTransfer.dropEffect = isAgent ? 'copy' : 'move'
         event.currentTarget.classList.add('drag-over')
     }
 
@@ -797,11 +799,72 @@ export default class extends Controller {
         event.preventDefault()
         event.currentTarget.classList.remove('drag-over')
 
+        // Handle comment drop → create new topic + move
+        const commentIdsJson = event.dataTransfer.getData('application/x-comment-ids')
+        if (commentIdsJson) {
+            const commentIds = JSON.parse(commentIdsJson)
+            if (commentIds && commentIds.length > 0) {
+                await this.createTopicAndMoveComments(commentIds)
+            }
+            return
+        }
+
+        // Handle agent drop (existing logic)
         const agentJson = event.dataTransfer.getData('application/x-agent-drop')
         if (!agentJson) return
 
         const agent = JSON.parse(agentJson)
         await this.createTopicWithAgent(agent)
+    }
+
+    async createTopicAndMoveComments(commentIds, topicName = null) {
+        if (!this.creativeId) return
+
+        try {
+            // Fetch auto-generated name if not provided
+            const name = topicName || await this.fetchNextTopicName()
+            if (!name) return
+
+            const response = await fetch(`/creatives/${this.creativeId}/topics`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({ topic: { name }, comment_ids: commentIds })
+            })
+
+            if (response.ok) {
+                const topic = await response.json()
+                this.currentTopicId = topic.id
+                await this.loadTopics()
+                this.dispatch("change", { detail: { topicId: topic.id } })
+
+                // Clear selection in list controller
+                const listController = this.application.getControllerForElementAndIdentifier(
+                    this.element, 'comments--list'
+                )
+                if (listController) listController.clearSelection()
+            } else {
+                const data = await response.json().catch(() => ({}))
+                console.error('Failed to create topic and move comments:', data.errors || data.error)
+            }
+        } catch (e) {
+            console.error('Error creating topic with comments', e)
+        }
+    }
+
+    async fetchNextTopicName() {
+        try {
+            const response = await fetch(`/creatives/${this.creativeId}/topics/next_name`)
+            if (response.ok) {
+                const data = await response.json()
+                return data.name
+            }
+        } catch (e) {
+            console.error('Error fetching next topic name', e)
+        }
+        return null
     }
 
     async setTopicPrimaryAgent(topicId, agent) {

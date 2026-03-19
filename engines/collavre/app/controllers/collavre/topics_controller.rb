@@ -27,22 +27,47 @@ module Collavre
       topic = @creative.topics.build(topic_params)
       topic.user = Current.user
 
-      if topic.save
-        agent = nil
-        if params[:agent_id].present?
-          agent = User.find_by(id: params[:agent_id])
-          topic.set_primary_agent!(agent) if agent&.ai_user?
-        end
+      Topic.transaction do
+        if topic.save
+          agent = nil
+          if params[:agent_id].present?
+            agent = User.find_by(id: params[:agent_id])
+            topic.set_primary_agent!(agent) if agent&.ai_user?
+          end
 
-        broadcast_data = agent ? topic_json_with_agent(topic, agent) : topic.slice(:id, :name)
-        TopicsChannel.broadcast_to(
-          @creative,
-          { action: "created", topic: broadcast_data, user_id: Current.user.id }
-        )
-        render json: topic, status: :created
-      else
-        render json: { errors: topic.errors.full_messages }, status: :unprocessable_entity
+          # Move comments to the new topic if comment_ids provided
+          comment_ids = Array(params[:comment_ids]).map(&:presence).compact
+          if comment_ids.any?
+            CommentMoveService.new(creative: @creative, user: Current.user).call(
+              comment_ids: comment_ids,
+              target_topic_id: topic.id
+            )
+          end
+
+          broadcast_data = agent ? topic_json_with_agent(topic, agent) : topic.slice(:id, :name)
+          TopicsChannel.broadcast_to(
+            @creative,
+            { action: "created", topic: broadcast_data, user_id: Current.user.id }
+          )
+          render json: topic, status: :created
+        else
+          render json: { errors: topic.errors.full_messages }, status: :unprocessable_entity
+        end
       end
+    end
+
+    def next_name
+      prefix = I18n.t("collavre.topics.default_name_prefix")
+      existing_numbers = @creative.topics
+        .where("name LIKE ?", "#{Topic.sanitize_sql_like(prefix)}%")
+        .pluck(:name)
+        .filter_map { |n|
+          suffix = n.delete_prefix(prefix)
+          suffix.match?(/\A\d+\z/) ? suffix.to_i : nil
+        }
+
+      next_number = (existing_numbers.max || 0) + 1
+      render json: { name: "#{prefix}#{next_number}" }
     end
 
     def update

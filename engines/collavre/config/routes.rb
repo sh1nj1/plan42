@@ -54,6 +54,7 @@ Collavre::Engine.routes.draw do
     resources :topics, only: [ :index, :create, :update, :destroy ] do
       collection do
         post :reorder
+        get :next_name
       end
       member do
         patch :move

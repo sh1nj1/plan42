@@ -644,15 +644,23 @@ export default class extends Controller {
   openTopicSearchPopup(event) {
     if (this.selection.size === 0) return
 
+    const commentIds = Array.from(this.selection)
+
     const openWithController = (controller, btnRect) => {
       controller.openForCreative(
         this.creativeId,
         btnRect,
         (topic) => {
-          const commentIds = Array.from(this.selection)
-          this.handleMoveToTopic({ detail: { commentIds, targetTopicId: topic.id } })
+          if (topic.created) {
+            // Topic was just created with comments moved — refresh
+            this.clearSelection()
+            this.loadInitialComments()
+          } else {
+            this.handleMoveToTopic({ detail: { commentIds, targetTopicId: topic.id } })
+          }
         },
-        this.element.dataset.topicMainText || 'Main'
+        this.element.dataset.topicMainText || 'Main',
+        commentIds
       )
     }
 
@@ -674,6 +682,7 @@ export default class extends Controller {
     modal.className = 'common-popup'
     modal.style.display = 'none'
     modal.dataset.controller = 'topic-search'
+    modal.dataset.createAndMoveText = this.element.dataset.topicCreateAndMoveText || 'Create "%{name}" and move'
     modal.innerHTML = `
       <button type="button" class="popup-close-btn" data-topic-search-target="close">&times;</button>
       <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"

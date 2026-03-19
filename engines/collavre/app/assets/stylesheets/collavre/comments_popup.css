@@ -1539,3 +1539,8 @@ body.chat-fullscreen {
     0%, 70% { opacity: 1; }
     100% { opacity: 0; }
 }
+
+.topic-create-option {
+    color: var(--link);
+    font-style: italic;
+}

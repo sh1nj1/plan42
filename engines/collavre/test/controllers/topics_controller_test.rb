@@ -182,6 +182,47 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal ai_agent.id, policy.config["primary_agent_id"]
   end
 
+  test "should create topic with comment_ids and move comments" do
+    comment1 = Collavre::Comment.create!(creative: @creative, user: @user, content: "Message 1")
+    comment2 = Collavre::Comment.create!(creative: @creative, user: @user, content: "Message 2")
+
+    assert_difference("Topic.count") do
+      post collavre.creative_topics_url(@creative),
+        params: { topic: { name: "New Thread" }, comment_ids: [ comment1.id, comment2.id ] }, as: :json
+    end
+
+    assert_response :created
+    topic = @creative.topics.find_by(name: "New Thread")
+    assert topic.present?
+
+    comment1.reload
+    comment2.reload
+    assert_equal topic.id, comment1.topic_id
+    assert_equal topic.id, comment2.topic_id
+  end
+
+  test "should return next_name for auto-generated topic name" do
+    get next_name_creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert json["name"].present?
+    # First auto-name should be "Topic1" (en locale)
+    assert_match(/\A.+1\z/, json["name"])
+  end
+
+  test "next_name should increment based on existing topics" do
+    @creative.topics.create!(name: "Topic1", user: @user)
+    @creative.topics.create!(name: "Topic3", user: @user)
+
+    get next_name_creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    # Should return Topic4 (max existing is 3, so 3+1=4)
+    assert_match(/4\z/, json["name"])
+  end
+
   test "new topic should be created at the end after reordering" do
     # Create initial topics
     topic2 = @creative.topics.create!(name: "Topic 2", user: @user)
