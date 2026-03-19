@@ -34,7 +34,7 @@ en:
           desc: "Add AI agents to any conversation. They review, collaborate, and respond to @mentions — just like a colleague."
         context:
           title: "Context System"
-          desc: "Connect knowledge across your workspace. Child creatives inherit context so AI always has the full picture."
+          desc: "Reduce cognitive load for people, and inject the knowledge and skills AI needs."
         chat:
           title: "Real-time Chat & Topics"
           desc: "Every creative has a chat. Organize conversations with topics, move messages between creatives, and keep discussions focused."
