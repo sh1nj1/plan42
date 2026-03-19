@@ -45,6 +45,7 @@ export default class extends Controller {
     this.handleImageButtonClick = this.handleImageButtonClick.bind(this)
     this.handleImageChange = this.handleImageChange.bind(this)
     this.handleDragOver = this.handleDragOver.bind(this)
+    this.handleDragLeave = this.handleDragLeave.bind(this)
     this.handleDrop = this.handleDrop.bind(this)
 
     this.formTarget.addEventListener('submit', this.handleSubmit)
@@ -58,6 +59,7 @@ export default class extends Controller {
     this.imageButtonTarget?.addEventListener('click', this.handleImageButtonClick)
     this.imageInputTarget?.addEventListener('change', this.handleImageChange)
     this.textareaTarget.addEventListener('dragover', this.handleDragOver)
+    this.textareaTarget.addEventListener('dragleave', this.handleDragLeave)
     this.textareaTarget.addEventListener('drop', this.handleDrop)
     this.handlePaste = this.handlePaste.bind(this)
     this.textareaTarget.addEventListener('paste', this.handlePaste)
@@ -113,6 +115,7 @@ export default class extends Controller {
     this.imageInputTarget?.removeEventListener('change', this.handleImageChange)
     this.textareaTarget.removeEventListener('input', this._autoResize)
     this.textareaTarget.removeEventListener('dragover', this.handleDragOver)
+    this.textareaTarget.removeEventListener('dragleave', this.handleDragLeave)
     this.textareaTarget.removeEventListener('drop', this.handleDrop)
     this.textareaTarget.removeEventListener('paste', this.handlePaste)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
@@ -510,17 +513,80 @@ export default class extends Controller {
   }
 
   handleDragOver(event) {
-    if (this.hasImageFromDataTransfer(event.dataTransfer)) {
+    if (this.hasImageFromDataTransfer(event.dataTransfer) || this.hasCreativeFromDataTransfer(event.dataTransfer)) {
       event.preventDefault()
+      if (this.hasCreativeFromDataTransfer(event.dataTransfer)) {
+        this.textareaTarget.classList.add('creative-drop-hover')
+      }
     }
   }
 
+  handleDragLeave(event) {
+    this.textareaTarget.classList.remove('creative-drop-hover')
+  }
+
   handleDrop(event) {
+    this.textareaTarget.classList.remove('creative-drop-hover')
+
+    // Handle creative drop
+    if (this.hasCreativeFromDataTransfer(event.dataTransfer)) {
+      event.preventDefault()
+      const creativeData = this.extractCreativeData(event.dataTransfer)
+      if (creativeData) {
+        this.insertCreativeLink(creativeData)
+      }
+      return
+    }
+
+    // Handle image drop
     const imageFiles = this.extractImageFiles(event.dataTransfer)
     if (!imageFiles.length) return
     event.preventDefault()
     this.setImageFiles([...this.currentImageFiles(), ...imageFiles])
     this.updateAttachmentList()
+  }
+
+  hasCreativeFromDataTransfer(dataTransfer) {
+    if (!dataTransfer || !dataTransfer.types) return false
+    return Array.from(dataTransfer.types).includes('application/x-collavre-creative')
+  }
+
+  extractCreativeData(dataTransfer) {
+    if (!dataTransfer) return null
+    const raw = dataTransfer.getData('application/x-collavre-creative') || dataTransfer.getData('text/plain')
+    if (!raw) return null
+    try {
+      const parsed = JSON.parse(raw)
+      if (!parsed || !parsed.creativeId) return null
+      const label = this.getCreativeLabelFromDom(parsed.creativeId)
+      return { id: parsed.creativeId, label: label || `Creative #${parsed.creativeId}` }
+    } catch {
+      return null
+    }
+  }
+
+  getCreativeLabelFromDom(creativeId) {
+    const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
+    if (!row) return null
+    const descriptionHtml = row.descriptionHtml || row.dataset?.descriptionHtml || ''
+    if (!descriptionHtml) return null
+    const tmp = document.createElement('div')
+    tmp.innerHTML = descriptionHtml
+    return (tmp.textContent || tmp.innerText || '').trim()
+  }
+
+  insertCreativeLink({ id, label }) {
+    const link = `[${label}](/creatives/${id})`
+    const textarea = this.textareaTarget
+    const pos = textarea.selectionStart
+    const before = textarea.value.substring(0, pos)
+    const after = textarea.value.substring(pos)
+    const needsSpace = before.length > 0 && !before.endsWith(' ') && !before.endsWith('\n')
+    textarea.value = `${before}${needsSpace ? ' ' : ''}${link}${after ? '' : ' '}${after}`
+    const newPos = pos + (needsSpace ? 1 : 0) + link.length + (after ? 0 : 1)
+    textarea.setSelectionRange(newPos, newPos)
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    textarea.focus()
   }
 
   extractImageFiles(dataTransfer) {
