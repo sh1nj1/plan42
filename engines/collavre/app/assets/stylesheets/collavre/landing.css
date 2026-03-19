@@ -94,16 +94,21 @@
   z-index: 0;
 }
 
-.landing-hero-title {                   /* L1 — single headline in brand color */
+.landing-hero-title {                   /* L1 — headline, default color */
   font-size: var(--text-7);
   font-weight: var(--weight-8);
   letter-spacing: 0.02em;
   line-height: var(--leading-1);
-  color: var(--color-active);
+  color: var(--text-primary);
   margin: 0 auto var(--space-7);
   max-width: 900px;
   position: relative;
   z-index: 1;
+}
+
+.landing-hero-title em {                /* "콜라브" in brand color */
+  font-style: normal;
+  color: var(--color-active);
 }
 
 .landing-hero-actions {
