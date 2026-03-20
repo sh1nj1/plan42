@@ -35,8 +35,12 @@ module Collavre
       scope = visible_scope.with_attached_images.includes(:topic, :comment_reactions, :comment_versions)
 
       if params[:search].present?
-        search_term = ActiveRecord::Base.sanitize_sql_like(params[:search].to_s.strip.downcase)
-        scope = scope.where("LOWER(comments.content) LIKE ?", "%#{search_term}%")
+        words = params[:search].to_s.strip.downcase.split(/\s+/)
+                  .first(Creatives::Filters::SearchFilter::MAX_SEARCH_WORDS)
+        words.each do |word|
+          sanitized = "%#{ActiveRecord::Base.sanitize_sql_like(word)}%"
+          scope = scope.where("LOWER(comments.content) LIKE ?", sanitized)
+        end
       end
 
       # Filter by topic
