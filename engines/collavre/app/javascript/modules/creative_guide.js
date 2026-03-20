@@ -1,6 +1,10 @@
 // Creative guide popover functionality
 // Handles the help button click and popover display
 
+import { notifyPopupOpen, onOtherPopupOpen } from '../lib/gnb_popup_manager'
+
+const POPUP_ID = 'creative-guide'
+
 // Single document-level click handler for dismissing popover (delegated)
 let documentClickHandlerAttached = false
 
@@ -28,6 +32,10 @@ function setupCreativeGuide() {
   const close = document.getElementById('close-creative-guide')
 
   if (links.length && popover && close) {
+    onOtherPopupOpen(POPUP_ID, function() {
+      popover.style.display = 'none'
+    })
+
     links.forEach(function(link) {
       // Use onclick assignment to avoid duplicate listeners
       link.onclick = function(e) {
@@ -36,6 +44,7 @@ function setupCreativeGuide() {
           return
         }
         e.preventDefault()
+        notifyPopupOpen(POPUP_ID)
         popover.style.display = 'block'
       }
     })
