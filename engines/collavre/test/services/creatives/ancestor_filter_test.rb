@@ -5,7 +5,7 @@ module Creatives
     class FakeViewContext
       include Rails.application.routes.url_helpers
       def embed_youtube_iframe(_content); ""; end
-      def render_creative_progress(_creative, select_mode: false); ""; end
+      def render_creative_progress(_creative, select_mode: false, has_children: nil); ""; end
       def svg_tag(name, **args); ""; end
       def link_to(_path, *args); block_given? ? yield : ""; end
       def creative_path(creative); "/creatives/#{creative.id}"; end

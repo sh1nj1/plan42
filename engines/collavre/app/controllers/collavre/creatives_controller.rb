@@ -226,7 +226,27 @@ module Collavre
 
         if success
           format.html { redirect_to @creative }
-          format.json { head :ok }
+          format.json do
+            base.reload
+            response_data = {
+              id: base.id,
+              progress: base.progress,
+              progress_html: view_context.render_creative_progress(base),
+              has_children: base.children.exists?
+            }
+            # Build ancestor chain for progress updates (closure_tree: 1 SELECT via hierarchy table)
+            ancestor_records = base.ancestors.order(:id)
+            if ancestor_records.any?
+              response_data[:ancestors] = ancestor_records.map do |anc|
+                {
+                  id: anc.id,
+                  progress: anc.progress,
+                  progress_html: view_context.render_creative_progress(anc, has_children: true)
+                }
+              end
+            end
+            render json: response_data
+          end
         else
           format.html { render :edit, status: :unprocessable_entity }
           format.json { render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity }

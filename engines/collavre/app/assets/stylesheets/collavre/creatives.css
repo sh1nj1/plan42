@@ -230,7 +230,69 @@ creative-tree-row.show-edit .creative-row {
     color: var(--text-muted);
 }
 
-/* .creative-progress-incomplete {} - removed empty rule */
+/* Progress toggle (hover-to-complete) */
+.progress-toggle-wrap {
+    position: relative;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    padding-top: 4px;
+}
+
+.progress-toggle-wrap .creative-progress-complete,
+.progress-toggle-wrap .creative-progress-incomplete {
+    padding-top: 0;
+}
+
+.progress-toggle-checkbox {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    margin: 0;
+    z-index: 1;
+}
+
+/* Desktop: show checkbox on row hover (same pattern as edit-btn, comments-btn) */
+@media (hover: hover) {
+    .progress-toggle-checkbox {
+        width: 1em;
+        height: 1em;
+        visibility: hidden;
+        opacity: 0;
+        position: absolute;
+        margin: auto;
+        pointer-events: none;
+    }
+
+    .creative-row:hover .progress-toggle-wrap .creative-progress-complete,
+    .creative-row:hover .progress-toggle-wrap .creative-progress-incomplete {
+        display: none;
+    }
+
+    .creative-row:hover .progress-toggle-checkbox {
+        visibility: visible;
+        opacity: 1;
+        position: relative;
+        pointer-events: auto;
+        accent-color: var(--color-brand);
+    }
+}
+
+/* Touch devices: always show both text and clickable area */
+@media (hover: none) {
+    .progress-toggle-checkbox {
+        opacity: 0;
+        pointer-events: auto;
+    }
+}
+
+.progress-toggle-saving {
+    opacity: 0.5;
+    pointer-events: none;
+}
 
 .creative-row-start {
     display: flex;

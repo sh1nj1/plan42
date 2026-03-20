@@ -114,6 +114,8 @@ en:
         progress_complete: Complete
         progress_incomplete: Incomplete
         progress_complete_children_alert: Marking this creative complete will also mark all child creatives complete.
+        mark_complete: Mark as complete
+        mark_incomplete: Mark as incomplete
         set_plan_title: Set Plan for Selected Creative
         are_you_sure_delete_share: Are you sure delete share?
         share_deleted: The share are deleted.
