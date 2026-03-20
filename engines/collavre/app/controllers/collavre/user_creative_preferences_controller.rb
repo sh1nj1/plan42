@@ -41,6 +41,12 @@ module Collavre
         record.save!
       end
 
+      # Broadcast to other sessions of the same user
+      TopicsChannel.broadcast_to(
+        creative,
+        { action: "last_topic_changed", last_topic_id: record.last_topic_id, user_id: Current.user.id }
+      )
+
       render json: { success: true }
     end
   end
