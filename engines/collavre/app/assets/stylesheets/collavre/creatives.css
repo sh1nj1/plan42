@@ -206,6 +206,11 @@ creative-tree-row.show-edit .creative-row {
     align-items: flex-start;
 }
 
+/* Reset row-start vertical centering for buttons inside row-end */
+.creative-row-end .creative-action-btn {
+    margin-top: 0;
+}
+
 .creative-tags {
     margin-left: 10px;
     text-align: right;
@@ -568,6 +573,9 @@ creative-tree-row.chat-active .creative-row {
     height: 28px;
     position: relative;
     color: var(--text-primary);
+    /* Override .creative-action-btn margin-top — comments button is in
+       .creative-row-end and should not inherit row-start vertical centering */
+    margin-top: 0;
 }
 
 /* Add spacing for headings via row padding to preserve alignment */
