@@ -1,6 +1,9 @@
 // Plans menu functionality
 // Handles the plans menu button click and lazy-loads plans data
 
+import { notifyPopupOpen, onOtherPopupOpen } from '../lib/gnb_popup_manager'
+
+const POPUP_ID = 'plans-menu'
 let initialized = false
 
 function initPlansMenu() {
@@ -13,9 +16,16 @@ function initPlansMenu() {
     let loaded = false
     const timeline = document.getElementById('plans-timeline')
 
+    function closePlans() {
+      if (area) area.style.display = 'none'
+    }
+
+    onOtherPopupOpen(POPUP_ID, closePlans)
+
     btns.forEach(function(btn) {
       btn.addEventListener('click', function() {
         if (area.style.display === 'none') {
+          notifyPopupOpen(POPUP_ID)
           area.style.display = 'block'
           if (!loaded) {
             fetch('/plans.json')

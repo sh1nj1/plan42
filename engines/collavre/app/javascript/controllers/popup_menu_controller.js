@@ -1,14 +1,23 @@
 import { Controller } from '@hotwired/stimulus'
+import { notifyPopupOpen, onOtherPopupOpen } from '../lib/gnb_popup_manager'
 
 export default class extends Controller {
   static targets = ['menu', 'button']
 
   connect() {
     this.handleOutsideClick = this.handleOutsideClick.bind(this)
+    this._popupId = 'popup-menu-' + (this.menuTarget.id || this.element.id || this.element.dataset.popupId || Math.random().toString(36).slice(2))
+    this._cleanupPopupListener = onOtherPopupOpen(this._popupId, () => {
+      if (this.isOpen()) this.hide()
+    })
   }
 
   disconnect() {
     this.removeOutsideClickListener()
+    if (this._cleanupPopupListener) {
+      this._cleanupPopupListener()
+      this._cleanupPopupListener = null
+    }
   }
 
   toggle(event) {
@@ -27,6 +36,7 @@ export default class extends Controller {
   }
 
   show() {
+    notifyPopupOpen(this._popupId)
     const menu = this.menuTarget
     menu.style.display = 'block'
     menu.style.transform = ''
