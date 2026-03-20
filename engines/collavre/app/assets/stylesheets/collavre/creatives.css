@@ -206,8 +206,10 @@ creative-tree-row.show-edit .creative-row {
     align-items: flex-start;
 }
 
-/* Reset row-start vertical centering for buttons inside row-end */
-.creative-row-end .creative-action-btn {
+/* Reset row-start vertical centering for buttons inside row-end.
+   Uses .creative-row to boost specificity above .level-N rules. */
+.creative-row .creative-row-end .creative-action-btn,
+.creative-row .creative-row-end .comments-btn {
     margin-top: 0;
 }
 
@@ -526,30 +528,30 @@ creative-tree-row.chat-active .creative-row {
 }
 
 /* Dynamic vertical centering: calc((font-size × line-height − icon-size) / 2)
-   em values are resolved in the .creative-row context (parent font-size),
-   which matches the heading em context since headings are inside this parent. */
-.level-1 .creative-action-btn,
+   Scoped to .creative-row-start to avoid affecting .creative-row-end buttons. */
+.level-1 .creative-row-start > .creative-action-btn,
 .level-1 .select-creative-checkbox,
 .level-1 .creative-toggle-btn {
     margin-top: calc((var(--creative-h1-size, 1.3em) * var(--creative-h1-lh, 1.3) - var(--creative-icon-size, 16px)) / 2);
 }
 
-.level-2 .creative-action-btn,
+.level-2 .creative-row-start > .creative-action-btn,
 .level-2 .select-creative-checkbox,
 .level-2 .creative-toggle-btn {
     margin-top: calc((var(--creative-h2-size, 1.2em) * var(--creative-h2-lh, 1.3) - var(--creative-icon-size, 16px)) / 2);
 }
 
-.level-3 .creative-action-btn,
+.level-3 .creative-row-start > .creative-action-btn,
 .level-3 .select-creative-checkbox,
 .level-3 .creative-toggle-btn {
     margin-top: calc((var(--creative-h3-size, 1.1em) * var(--creative-h3-lh, 1.3) - var(--creative-icon-size, 16px)) / 2);
 }
 
-/* Childless items (level 1-3 without children) use body font size */
-.level-1:has(.creative-childless) .creative-action-btn,
-.level-2:has(.creative-childless) .creative-action-btn,
-.level-3:has(.creative-childless) .creative-action-btn,
+/* Childless items (level 1-3 without children) use body font size.
+   Scoped to .creative-row-start to avoid affecting .creative-row-end buttons. */
+.level-1:has(.creative-childless) .creative-row-start > .creative-action-btn,
+.level-2:has(.creative-childless) .creative-row-start > .creative-action-btn,
+.level-3:has(.creative-childless) .creative-row-start > .creative-action-btn,
 .level-1:has(.creative-childless) .creative-toggle-btn,
 .level-2:has(.creative-childless) .creative-toggle-btn,
 .level-3:has(.creative-childless) .creative-toggle-btn,
@@ -573,9 +575,6 @@ creative-tree-row.chat-active .creative-row {
     height: 28px;
     position: relative;
     color: var(--text-primary);
-    /* Override .creative-action-btn margin-top — comments button is in
-       .creative-row-end and should not inherit row-start vertical centering */
-    margin-top: 0;
 }
 
 /* Add spacing for headings via row padding to preserve alignment */
