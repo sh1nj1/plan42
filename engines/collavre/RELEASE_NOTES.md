@@ -1,3 +1,10 @@
+## v0.10.0 (2026-03-20)
+
+### Changes
+- 284b1024 feat: drag & drop creative into chat form to insert markdown link (#1014)
+- 390a62f9 fix: prevent Rails callback deduplication from silencing badge broadcasts (#1013)
+- cba46cf4 feat: create new topic from selected messages via drag-drop and search popup (#1012)
+
 ## v0.9.0 (2026-03-19)
 
 ### Changes
