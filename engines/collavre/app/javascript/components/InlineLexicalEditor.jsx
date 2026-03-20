@@ -34,6 +34,7 @@ import {
   COMMAND_PRIORITY_CRITICAL,
   COMMAND_PRIORITY_LOW,
   FORMAT_TEXT_COMMAND,
+  KEY_ENTER_COMMAND,
   REDO_COMMAND,
   SELECTION_CHANGE_COMMAND,
   UNDO_COMMAND
@@ -747,6 +748,7 @@ function EditorInner({
   initialHtml,
   onChange,
   onKeyDown,
+  onEnterKey,
   onReady,
   onUploadStateChange,
   directUploadUrl,
@@ -831,15 +833,38 @@ function EditorInner({
           blobUrlTemplate={blobUrlTemplate}
         />
         <AttachmentCleanupPlugin deletedAttachmentsRef={deletedAttachmentsRef} />
+        {onEnterKey && <EnterKeyPlugin onEnterKey={onEnterKey} />}
       </div>
     </div>
   )
+}
+
+function EnterKeyPlugin({ onEnterKey }) {
+  const [editor] = useLexicalComposerContext()
+
+  useEffect(() => {
+    return editor.registerCommand(
+      KEY_ENTER_COMMAND,
+      (event) => {
+        // Let Shift+Enter, Alt+Enter, Ctrl/Cmd+Enter pass through to Lexical (newline)
+        if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
+          return false
+        }
+        // Call the callback; if it returns true, we handled it (suppress Lexical's newline)
+        return onEnterKey(event, editor) === true
+      },
+      COMMAND_PRIORITY_CRITICAL
+    )
+  }, [editor, onEnterKey])
+
+  return null
 }
 
 export default function InlineLexicalEditor({
   initialHtml,
   onChange,
   onKeyDown,
+  onEnterKey,
   onReady,
   onUploadStateChange,
   directUploadUrl,
@@ -877,6 +902,7 @@ export default function InlineLexicalEditor({
         initialHtml={initialHtml}
         onChange={onChange}
         onKeyDown={onKeyDown}
+        onEnterKey={onEnterKey}
         onReady={onReady}
         onUploadStateChange={onUploadStateChange}
         directUploadUrl={directUploadUrl}

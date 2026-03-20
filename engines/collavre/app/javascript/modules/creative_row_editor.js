@@ -113,6 +113,7 @@ export function initializeCreativeRowEditor() {
         lexicalEditor = createInlineEditor(editorContainer, {
           onChange: onLexicalChange,
           onKeyDown: handleEditorKeyDown,
+          onEnterKey: handleEditorEnterKey,
           onUploadStateChange: handleUploadStateChange
         });
       } catch (e) {
@@ -1685,6 +1686,18 @@ export function initializeCreativeRowEditor() {
       scheduleSave();
     }
 
+    // Intercepts bare Enter via Lexical's KEY_ENTER_COMMAND (COMMAND_PRIORITY_CRITICAL).
+    // Returning true prevents Lexical from inserting a newline.
+    // PC: Enter → addNew (complete & move to next)
+    // Mobile: Enter → newline (let Lexical handle it)
+    function handleEditorEnterKey(event, editorInstance) {
+      if (window.innerWidth > 600) {
+        addNew();
+        return true; // handled — suppress Lexical's newline
+      }
+      return false; // mobile: let Lexical insert newline
+    }
+
     function handleEditorKeyDown(event, editorInstance) {
       if (!editorInstance) return;
       if (event.key === 'Escape') {
@@ -1697,15 +1710,8 @@ export function initializeCreativeRowEditor() {
         addChild();
         return;
       }
-      // PC: Enter → addNew (complete & move to next), Shift+Enter → newline (default Lexical behavior)
-      // Mobile: Enter → newline (default), completion via button
-      if (event.key === 'Enter' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-        if (window.innerWidth > 600) {
-          event.preventDefault();
-          addNew();
-          return;
-        }
-      }
+      // Note: bare Enter is handled by handleEditorEnterKey via Lexical's KEY_ENTER_COMMAND
+      // (COMMAND_PRIORITY_CRITICAL) to prevent newline insertion before addNew().
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === '.' || event.key === '>')) {
         event.preventDefault();
         levelDown();
