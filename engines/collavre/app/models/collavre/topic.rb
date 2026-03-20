@@ -6,6 +6,8 @@ module Collavre
     belongs_to :user, class_name: Collavre.configuration.user_class_name
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
+    has_many :user_creative_preferences_as_last_topic, class_name: "Collavre::UserCreativePreference",
+             foreign_key: :last_topic_id, dependent: :nullify, inverse_of: :last_topic
 
     # --- Archive scopes ---
     scope :active, -> { where(archived_at: nil) }

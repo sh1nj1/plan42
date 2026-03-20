@@ -98,6 +98,10 @@ module Collavre
 
       topic = @creative.topics.find(params[:id])
       topic_id = topic.id
+
+      # Nullify any user preferences referencing this topic before deletion
+      UserCreativePreference.where(last_topic_id: topic_id).update_all(last_topic_id: nil)
+
       topic.destroy
 
       TopicsChannel.broadcast_to(
