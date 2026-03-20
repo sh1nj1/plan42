@@ -226,7 +226,25 @@ module Collavre
 
         if success
           format.html { redirect_to @creative }
-          format.json { head :ok }
+          format.json do
+            base.reload
+            response_data = {
+              id: base.id,
+              progress: base.progress,
+              progress_html: view_context.render_creative_progress(base),
+              has_children: base.children.exists?
+            }
+            if base.parent.present?
+              parent = base.parent
+              parent.reload
+              response_data[:parent] = {
+                id: parent.id,
+                progress: parent.progress,
+                progress_html: view_context.render_creative_progress(parent, has_children: true)
+              }
+            end
+            render json: response_data
+          end
         else
           format.html { render :edit, status: :unprocessable_entity }
           format.json { render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity }

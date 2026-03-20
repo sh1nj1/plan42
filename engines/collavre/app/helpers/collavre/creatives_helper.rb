@@ -25,7 +25,7 @@ module Collavre
       end
     end
 
-    def render_creative_progress(creative, select_mode: false)
+    def render_creative_progress(creative, select_mode: false, has_children: nil)
       progress_value = if params[:tags].present?
         tag_ids = Array(params[:tags]).map(&:to_s)
         creative.filtered_progress || creative.progress_for_tags(tag_ids) || 0
@@ -69,7 +69,7 @@ module Collavre
         else
           safe_join([])
         end
-        is_leaf = !creative.children.exists?
+        is_leaf = has_children.nil? ? !creative.children.exists? : !has_children
         can_write = creative.has_permission?(Current.user, :write)
         progress_part = if is_leaf && can_write && !select_mode
           render_progress_toggle(creative, progress_value)

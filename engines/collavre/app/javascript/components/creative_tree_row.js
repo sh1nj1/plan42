@@ -531,6 +531,19 @@ class CreativeTreeRow extends LitElement {
       if (data.has_children != null) {
         this.hasChildren = data.has_children;
       }
+      // Update parent row progress if returned
+      if (data.parent) {
+        const parentRow = document.querySelector(`creative-tree-row[creative-id="${data.parent.id}"]`);
+        if (parentRow) {
+          if (data.parent.progress_html) {
+            parentRow.progressHtml = data.parent.progress_html;
+            parentRow.dataset.progressHtml = data.parent.progress_html;
+          }
+          if (data.parent.progress != null) {
+            parentRow.dataset.progressValue = String(data.parent.progress);
+          }
+        }
+      }
     } catch (err) {
       // Revert optimistic UI
       if (checkbox) checkbox.checked = wasComplete;
