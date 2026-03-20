@@ -23,7 +23,7 @@ module Collavre
     has_many :topics, class_name: "Collavre::Topic", dependent: :destroy
     has_many :calendar_events, class_name: "Collavre::CalendarEvent", dependent: :destroy
     has_many :comment_read_pointers, class_name: "Collavre::CommentReadPointer", dependent: :destroy
-    has_many :creative_expanded_states, class_name: "Collavre::CreativeExpandedState", dependent: :destroy
+    has_many :user_creative_preferences, class_name: "Collavre::UserCreativePreference", dependent: :destroy
     has_many :creative_shares, class_name: "Collavre::CreativeShare", dependent: :destroy
     has_many :creative_shares_caches, class_name: "Collavre::CreativeSharesCache", dependent: :delete_all
     has_many :shared_creative_shares, class_name: "Collavre::CreativeShare", foreign_key: :shared_by_id,

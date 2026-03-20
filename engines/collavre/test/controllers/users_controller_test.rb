@@ -89,7 +89,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     creative = Creative.create!(user: user_to_delete, description: "Test creative")
     comment = Comment.create!(creative: creative, user: user_to_delete, content: "Test comment")
     pointer = CommentReadPointer.create!(user: user_to_delete, creative: creative, last_read_comment: comment)
-    expanded_state = CreativeExpandedState.create!(user: user_to_delete, creative: creative, expanded_status: { creative.id => true })
+    expanded_state = UserCreativePreference.create!(user: user_to_delete, creative: creative, expanded_status: { creative.id => true })
     share = CreativeShare.create!(creative: creative, user: user_to_delete, permission: :read)
     calendar_event = CalendarEvent.create!(
       user: user_to_delete,
@@ -141,7 +141,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     refute Creative.exists?(creative.id)
     refute Comment.exists?(comment.id)
     refute CommentReadPointer.exists?(pointer.id)
-    refute CreativeExpandedState.exists?(expanded_state.id)
+    refute UserCreativePreference.exists?(expanded_state.id)
     refute CreativeShare.exists?(share.id)
     refute CalendarEvent.exists?(calendar_event.id)
     refute Device.exists?(device.id)

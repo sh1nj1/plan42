@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_13_011922) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_20_061144) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -172,17 +172,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_13_011922) do
     t.index ["contact_user_id"], name: "index_contacts_on_contact_user_id"
     t.index ["user_id", "contact_user_id"], name: "index_contacts_on_user_id_and_contact_user_id", unique: true
     t.index ["user_id"], name: "index_contacts_on_user_id"
-  end
-
-  create_table "creative_expanded_states", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.integer "creative_id"
-    t.json "expanded_status", default: {}, null: false
-    t.datetime "updated_at", null: false
-    t.integer "user_id", null: false
-    t.index ["creative_id", "user_id"], name: "index_creative_expanded_states_on_creative_id_and_user_id", unique: true
-    t.index ["creative_id"], name: "index_creative_expanded_states_on_creative_id"
-    t.index ["user_id"], name: "index_creative_expanded_states_on_user_id"
   end
 
   create_table "creative_hierarchies", id: false, force: :cascade do |t|
@@ -750,6 +739,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_13_011922) do
     t.index ["user_id"], name: "index_topics_on_user_id"
   end
 
+  create_table "user_creative_preferences", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "creative_id"
+    t.json "expanded_status", default: {}, null: false
+    t.integer "last_topic_id"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["creative_id", "user_id"], name: "index_user_creative_preferences_on_creative_id_and_user_id", unique: true
+    t.index ["creative_id"], name: "index_user_creative_preferences_on_creative_id"
+    t.index ["last_topic_id"], name: "index_user_creative_preferences_on_last_topic_id"
+    t.index ["user_id"], name: "index_user_creative_preferences_on_user_id"
+  end
+
   create_table "user_themes", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "name"
@@ -830,8 +832,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_13_011922) do
   add_foreign_key "comments", "users", column: "approver_id"
   add_foreign_key "contacts", "users"
   add_foreign_key "contacts", "users", column: "contact_user_id"
-  add_foreign_key "creative_expanded_states", "creatives"
-  add_foreign_key "creative_expanded_states", "users"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
   add_foreign_key "creative_shares", "users", column: "shared_by_id"
@@ -882,6 +882,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_13_011922) do
   add_foreign_key "tasks", "users", column: "agent_id"
   add_foreign_key "topics", "creatives"
   add_foreign_key "topics", "users"
+  add_foreign_key "user_creative_preferences", "creatives"
+  add_foreign_key "user_creative_preferences", "topics", column: "last_topic_id"
+  add_foreign_key "user_creative_preferences", "users"
   add_foreign_key "user_themes", "users"
   add_foreign_key "webauthn_credentials", "users"
 end

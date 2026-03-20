@@ -113,7 +113,8 @@ Collavre::Engine.routes.draw do
   resources :emails, only: [ :index, :show ]
   resource :invite, only: [ :show, :create ]
 
-  post "/creative_expanded_states/toggle", to: "creative_expanded_states#toggle"
+  post "/creative_expanded_states/toggle", to: "user_creative_preferences#toggle"
+  patch "/creatives/:creative_id/user_creative_preferences/update_last_topic", to: "user_creative_preferences#update_last_topic", as: :update_last_topic
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
 
   # Admin settings & orchestration

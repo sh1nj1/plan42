@@ -31,7 +31,7 @@ module Collavre
     belongs_to :user, class_name: Collavre.configuration.user_class_name, optional: true
 
     has_many :tags, class_name: "Collavre::Tag", dependent: :destroy
-    has_many :creative_expanded_states, class_name: "Collavre::CreativeExpandedState", dependent: :delete_all
+    has_many :user_creative_preferences, class_name: "Collavre::UserCreativePreference", dependent: :delete_all
     has_many :invitations, class_name: "Collavre::Invitation", dependent: :delete_all
     # github_repository_links association added by CollavreGithub engine
     has_many :topics, class_name: "Collavre::Topic", dependent: :destroy

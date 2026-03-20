@@ -116,7 +116,7 @@ Rails.application.config.to_prepare do
   set_alias(Object, :CommentPresenceStore, Collavre::CommentPresenceStore)
   set_alias(Object, :CreativeShare, Collavre::CreativeShare)
   set_alias(Object, :CreativeSharesCache, Collavre::CreativeSharesCache)
-  set_alias(Object, :CreativeExpandedState, Collavre::CreativeExpandedState)
+  set_alias(Object, :UserCreativePreference, Collavre::UserCreativePreference)
   set_alias(Object, :CreativeHierarchy, Collavre::CreativeHierarchy)
   set_alias(Object, :Contact, Collavre::Contact)
   set_alias(Object, :Device, Collavre::Device)

@@ -70,13 +70,13 @@ class CreativeTest < ActiveSupport::TestCase
     Current.session = OpenStruct.new(user: user)
 
     creative = Creative.create!(user: user, description: "Parent")
-    CreativeExpandedState.create!(creative: creative, user: user, expanded_status: { "1" => true })
+    UserCreativePreference.create!(creative: creative, user: user, expanded_status: { "1" => true })
 
     assert_difference("Creative.count", -1) do
       assert_nothing_raised { creative.destroy }
     end
 
-    assert_empty CreativeExpandedState.where(creative_id: creative.id)
+    assert_empty UserCreativePreference.where(creative_id: creative.id)
 
     Current.reset
   end
