@@ -7,6 +7,7 @@ const POPUP_ID = 'creative-guide'
 
 // Single document-level click handler for dismissing popover (delegated)
 let documentClickHandlerAttached = false
+let popupListenerRegistered = false
 
 function setupDocumentClickHandler() {
   if (documentClickHandlerAttached) return
@@ -32,9 +33,13 @@ function setupCreativeGuide() {
   const close = document.getElementById('close-creative-guide')
 
   if (links.length && popover && close) {
-    onOtherPopupOpen(POPUP_ID, function() {
-      popover.style.display = 'none'
-    })
+    if (!popupListenerRegistered) {
+      popupListenerRegistered = true
+      onOtherPopupOpen(POPUP_ID, function() {
+        const p = document.getElementById('creative-guide-popover')
+        if (p) p.style.display = 'none'
+      })
+    }
 
     links.forEach(function(link) {
       // Use onclick assignment to avoid duplicate listeners

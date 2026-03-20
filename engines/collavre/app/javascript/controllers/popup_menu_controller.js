@@ -6,7 +6,7 @@ export default class extends Controller {
 
   connect() {
     this.handleOutsideClick = this.handleOutsideClick.bind(this)
-    this._popupId = 'popup-menu-' + (this.menuTarget.id || Math.random().toString(36).slice(2))
+    this._popupId = 'popup-menu-' + (this.menuTarget.id || this.element.id || this.element.dataset.popupId || Math.random().toString(36).slice(2))
     this._cleanupPopupListener = onOtherPopupOpen(this._popupId, () => {
       if (this.isOpen()) this.hide()
     })
