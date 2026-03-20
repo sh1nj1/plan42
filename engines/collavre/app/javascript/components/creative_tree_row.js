@@ -2,6 +2,7 @@ import { LitElement, html, svg, nothing } from "lit";
 import DOMPurify from "dompurify";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { parseEmojis } from "../utils/emoji_parser";
+import csrfFetch from "../lib/api/csrf_fetch";
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -58,6 +59,7 @@ class CreativeTreeRow extends LitElement {
     this._handleToggleClick = this._handleToggleClick.bind(this);
     this._handleEditClick = this._handleEditClick.bind(this);
     this._handleCommentsClick = this._handleCommentsClick.bind(this);
+    this._handleProgressToggle = this._handleProgressToggle.bind(this);
   }
 
   createRenderRoot() {
@@ -171,14 +173,17 @@ class CreativeTreeRow extends LitElement {
     this._toggleBtn?.removeEventListener("click", this._handleToggleClick);
     this._editBtn?.removeEventListener("click", this._handleEditClick);
     this._commentsBtn?.removeEventListener("click", this._handleCommentsClick);
+    this._progressToggle?.removeEventListener("click", this._handleProgressToggle);
 
     this._toggleBtn = this.querySelector(".creative-toggle-btn");
     this._editBtn = this.querySelector(".edit-inline-btn");
     this._commentsBtn = this.querySelector(".comments-btn");
+    this._progressToggle = this.querySelector("[data-progress-toggle]");
 
     if (this._toggleBtn) this._toggleBtn.addEventListener("click", this._handleToggleClick, { passive: false });
     if (this._editBtn) this._editBtn.addEventListener("click", this._handleEditClick, { passive: false });
     if (this._commentsBtn) this._commentsBtn.addEventListener("click", this._handleCommentsClick, { passive: false });
+    if (this._progressToggle) this._progressToggle.addEventListener("click", this._handleProgressToggle, { passive: false });
   }
 
   render() {
@@ -483,6 +488,59 @@ class CreativeTreeRow extends LitElement {
       bubbles: true,
       composed: true
     }));
+  }
+
+  async _handleProgressToggle(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const wrap = event.currentTarget;
+    const creativeId = wrap.dataset.creativeId;
+    const newProgress = wrap.dataset.newProgress;
+    if (!creativeId || newProgress == null) return;
+
+    // Optimistic UI: toggle checkbox and class immediately
+    const checkbox = wrap.querySelector(".progress-toggle-checkbox");
+    const progressSpan = wrap.querySelector("[class^='creative-progress-']");
+    const wasComplete = checkbox?.checked;
+    if (checkbox) checkbox.checked = !wasComplete;
+    if (progressSpan) {
+      progressSpan.className = newProgress === "1" ? "creative-progress-complete" : "creative-progress-incomplete";
+    }
+    wrap.classList.add("progress-toggle-saving");
+
+    try {
+      const body = new FormData();
+      body.append("creative[progress]", newProgress);
+      const response = await csrfFetch(`/creatives/${creativeId}`, {
+        method: "PATCH",
+        headers: { Accept: "application/json" },
+        body,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      // Update this row's progressHtml from server response
+      if (data.progress_html) {
+        this.progressHtml = data.progress_html;
+        this.dataset.progressHtml = data.progress_html;
+      }
+      // Update progressValue for inline editor
+      if (data.progress != null) {
+        this.dataset.progressValue = String(data.progress);
+      }
+      // Update has_children if returned
+      if (data.has_children != null) {
+        this.hasChildren = data.has_children;
+      }
+    } catch (err) {
+      // Revert optimistic UI
+      if (checkbox) checkbox.checked = wasComplete;
+      if (progressSpan) {
+        progressSpan.className = wasComplete ? "creative-progress-complete" : "creative-progress-incomplete";
+      }
+      console.error("Progress toggle failed:", err);
+    } finally {
+      wrap.classList.remove("progress-toggle-saving");
+    }
   }
 
   _handleContentClick(event) {

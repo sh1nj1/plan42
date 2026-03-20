@@ -69,12 +69,46 @@ module Collavre
         else
           safe_join([])
         end
+        is_leaf = !creative.children.exists?
+        can_write = creative.has_permission?(Current.user, :write)
+        progress_part = if is_leaf && can_write && !select_mode
+          render_progress_toggle(creative, progress_value)
+        else
+          render_progress_value(progress_value)
+        end
+
         safe_join([
-          render_progress_value(progress_value),
+          progress_part,
           comment_part,
           tag.br,
           (creative.tags ? render_creative_tags(creative) : safe_join([]))
         ])
+      end
+    end
+
+    def render_progress_toggle(creative, value)
+      complete = value == 1
+      new_value = complete ? 0 : 1
+      tooltip = complete ? t("collavre.creatives.index.mark_incomplete") : t("collavre.creatives.index.mark_complete")
+      content_tag(
+        :span,
+        class: "progress-toggle-wrap",
+        data: {
+          progress_toggle: true,
+          creative_id: creative.id,
+          current_progress: value,
+          new_progress: new_value
+        },
+        title: tooltip
+      ) do
+        checkbox = tag.input(
+          type: "checkbox",
+          checked: complete || nil,
+          class: "progress-toggle-checkbox",
+          tabindex: -1,
+          "aria-label": tooltip
+        )
+        safe_join([ render_progress_value(value), checkbox ])
       end
     end
 
