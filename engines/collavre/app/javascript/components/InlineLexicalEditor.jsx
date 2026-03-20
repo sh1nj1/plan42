@@ -747,6 +747,7 @@ function EditorInner({
   initialHtml,
   onChange,
   onKeyDown,
+  onEnterKey,
   onReady,
   onUploadStateChange,
   directUploadUrl,
@@ -831,15 +832,44 @@ function EditorInner({
           blobUrlTemplate={blobUrlTemplate}
         />
         <AttachmentCleanupPlugin deletedAttachmentsRef={deletedAttachmentsRef} />
+        {onEnterKey && <EnterKeyPlugin onEnterKey={onEnterKey} />}
       </div>
     </div>
   )
+}
+
+function EnterKeyPlugin({ onEnterKey }) {
+  const [editor] = useLexicalComposerContext()
+
+  useEffect(() => {
+    // Use capture-phase keydown on the root element to intercept Enter
+    // BEFORE Lexical's own handlers process it and insert a paragraph.
+    const rootElement = editor.getRootElement()
+    if (!rootElement) return
+
+    const handler = (event) => {
+      if (event.key !== 'Enter') return
+      if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return
+      if (event.isComposing) return
+
+      if (onEnterKey(event, editor) === true) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+      }
+    }
+
+    rootElement.addEventListener('keydown', handler, true) // capture phase
+    return () => rootElement.removeEventListener('keydown', handler, true)
+  }, [editor, onEnterKey])
+
+  return null
 }
 
 export default function InlineLexicalEditor({
   initialHtml,
   onChange,
   onKeyDown,
+  onEnterKey,
   onReady,
   onUploadStateChange,
   directUploadUrl,
@@ -877,6 +907,7 @@ export default function InlineLexicalEditor({
         initialHtml={initialHtml}
         onChange={onChange}
         onKeyDown={onKeyDown}
+        onEnterKey={onEnterKey}
         onReady={onReady}
         onUploadStateChange={onUploadStateChange}
         directUploadUrl={directUploadUrl}
