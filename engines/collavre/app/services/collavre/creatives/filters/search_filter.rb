@@ -18,9 +18,9 @@ module Creatives
 
         words.each_with_index do |word, i|
           key = :"q#{i}"
-          binds[key] = "%#{sanitize_like(word)}%"
-          conditions << "(creatives.description LIKE :#{key} ESCAPE '\\' " \
-                        "OR comments.content LIKE :#{key} ESCAPE '\\')"
+          binds[key] = "%#{sanitize_like(word.downcase)}%"
+          conditions << "(LOWER(creatives.description) LIKE :#{key} ESCAPE '\\' " \
+                        "OR LOWER(comments.content) LIKE :#{key} ESCAPE '\\')"
         end
 
         scope
@@ -33,7 +33,7 @@ module Creatives
       private
 
       def sanitize_like(str)
-        str.to_s.gsub(/[%_]/) { |m| "\\#{m}" }
+        ActiveRecord::Base.sanitize_sql_like(str.to_s)
       end
     end
   end
