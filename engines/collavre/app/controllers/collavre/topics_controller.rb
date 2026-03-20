@@ -15,7 +15,7 @@ module Collavre
                         UserCreativePreference
                           .where(user_id: Current.user.id, creative_id: @creative.id)
                           .pick(:last_topic_id)
-                      end
+      end
 
       render json: {
         topics: active_topics.map { |t| topic_json(t) },
