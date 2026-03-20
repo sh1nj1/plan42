@@ -34,7 +34,6 @@ import {
   COMMAND_PRIORITY_CRITICAL,
   COMMAND_PRIORITY_LOW,
   FORMAT_TEXT_COMMAND,
-  KEY_ENTER_COMMAND,
   REDO_COMMAND,
   SELECTION_CHANGE_COMMAND,
   UNDO_COMMAND
@@ -843,18 +842,24 @@ function EnterKeyPlugin({ onEnterKey }) {
   const [editor] = useLexicalComposerContext()
 
   useEffect(() => {
-    return editor.registerCommand(
-      KEY_ENTER_COMMAND,
-      (event) => {
-        // Let Shift+Enter, Alt+Enter, Ctrl/Cmd+Enter pass through to Lexical (newline)
-        if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
-          return false
-        }
-        // Call the callback; if it returns true, we handled it (suppress Lexical's newline)
-        return onEnterKey(event, editor) === true
-      },
-      COMMAND_PRIORITY_CRITICAL
-    )
+    // Use capture-phase keydown on the root element to intercept Enter
+    // BEFORE Lexical's own handlers process it and insert a paragraph.
+    const rootElement = editor.getRootElement()
+    if (!rootElement) return
+
+    const handler = (event) => {
+      if (event.key !== 'Enter') return
+      if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return
+      if (event.isComposing) return
+
+      if (onEnterKey(event, editor) === true) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+      }
+    }
+
+    rootElement.addEventListener('keydown', handler, true) // capture phase
+    return () => rootElement.removeEventListener('keydown', handler, true)
   }, [editor, onEnterKey])
 
   return null
