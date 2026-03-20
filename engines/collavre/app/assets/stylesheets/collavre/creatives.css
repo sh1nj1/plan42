@@ -717,3 +717,9 @@ creative-tree-row[archived] .creative-tree {
 creative-tree-row[archived] .creative-row {
     background-color: var(--surface-input);
 }
+
+/* Import dropzone drag-over feedback */
+#import-markdown-dropzone.dragover {
+    border-color: var(--color-accent-border);
+    background-color: var(--surface-input);
+}
