@@ -1697,10 +1697,14 @@ export function initializeCreativeRowEditor() {
         addChild();
         return;
       }
-      if (event.key === 'Enter' && event.shiftKey) {
-        event.preventDefault();
-        addNew();
-        return;
+      // PC: Enter → addNew (complete & move to next), Shift+Enter → newline (default Lexical behavior)
+      // Mobile: Enter → newline (default), completion via button
+      if (event.key === 'Enter' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        if (window.innerWidth > 600) {
+          event.preventDefault();
+          addNew();
+          return;
+        }
       }
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === '.' || event.key === '>')) {
         event.preventDefault();
