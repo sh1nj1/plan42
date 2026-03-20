@@ -117,9 +117,10 @@ module Collavre
       if value == 1 && !Current.user&.completion_mark.nil?
         text = Current.user.completion_mark
       end
+      display_text = text.blank? ? "&nbsp;&nbsp;".html_safe : text
       content_tag(
         :span,
-        text,
+        display_text,
         class: "creative-progress-#{value == 1 ? 'complete' : 'incomplete'}"
       )
     end

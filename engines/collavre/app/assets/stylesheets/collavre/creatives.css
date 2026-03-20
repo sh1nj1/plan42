@@ -255,29 +255,28 @@ creative-tree-row.show-edit .creative-row {
     z-index: 1;
 }
 
-/* Desktop: show checkbox on hover */
+/* Desktop: show checkbox on row hover (same pattern as edit-btn, comments-btn) */
 @media (hover: hover) {
     .progress-toggle-checkbox {
+        width: 1em;
+        height: 1em;
+        visibility: hidden;
         opacity: 0;
-        width: auto;
-        height: auto;
         position: absolute;
-        inset: 0;
         margin: auto;
         pointer-events: none;
     }
 
-    .progress-toggle-wrap:hover .creative-progress-complete,
-    .progress-toggle-wrap:hover .creative-progress-incomplete {
+    .creative-row:hover .progress-toggle-wrap .creative-progress-complete,
+    .creative-row:hover .progress-toggle-wrap .creative-progress-incomplete {
         display: none;
     }
 
-    .progress-toggle-wrap:hover .progress-toggle-checkbox {
+    .creative-row:hover .progress-toggle-checkbox {
+        visibility: visible;
         opacity: 1;
         position: relative;
         pointer-events: auto;
-        width: 1em;
-        height: 1em;
         accent-color: var(--color-brand);
     }
 }

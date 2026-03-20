@@ -234,14 +234,16 @@ module Collavre
               progress_html: view_context.render_creative_progress(base),
               has_children: base.children.exists?
             }
-            if base.parent.present?
-              parent = base.parent
-              parent.reload
-              response_data[:parent] = {
-                id: parent.id,
-                progress: parent.progress,
-                progress_html: view_context.render_creative_progress(parent, has_children: true)
-              }
+            # Build ancestor chain for progress updates (closure_tree: 1 SELECT via hierarchy table)
+            ancestor_records = base.ancestors.order(:id)
+            if ancestor_records.any?
+              response_data[:ancestors] = ancestor_records.map do |anc|
+                {
+                  id: anc.id,
+                  progress: anc.progress,
+                  progress_html: view_context.render_creative_progress(anc, has_children: true)
+                }
+              end
             end
             render json: response_data
           end
