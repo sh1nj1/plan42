@@ -648,7 +648,7 @@ export default class extends Controller {
                 const topic = await response.json()
                 this.currentTopicId = topic.id
                 // Flush save immediately so loadTopics gets the correct value from server
-                this.flushSaveLastTopic(topic.id)
+                await this.flushSaveLastTopic(topic.id)
                 await this.loadTopics()
                 // Dispatch change event manually since we skipped the click handler
                 this.dispatch("change", { detail: { topicId: topic.id } })
@@ -682,13 +682,13 @@ export default class extends Controller {
         }, 500)
     }
 
-    flushSaveLastTopic(id) {
+    async flushSaveLastTopic(id) {
         if (this._saveLastTopicTimer) {
             clearTimeout(this._saveLastTopicTimer)
             this._saveLastTopicTimer = null
         }
         if (this.creativeId) {
-            saveLastTopic(this.creativeId, id || null)
+            await saveLastTopic(this.creativeId, id || null)
         }
     }
 
@@ -870,7 +870,7 @@ export default class extends Controller {
         const result = await createTopicWithComments(this.creativeId, name, commentIds)
         if (result.ok) {
             this.currentTopicId = result.topic.id
-            this.flushSaveLastTopic(result.topic.id)
+            await this.flushSaveLastTopic(result.topic.id)
             await this.loadTopics()
             this.dispatch("change", { detail: { topicId: result.topic.id } })
 
@@ -925,7 +925,7 @@ export default class extends Controller {
             if (response.ok) {
                 const topic = await response.json()
                 this.currentTopicId = topic.id
-                this.flushSaveLastTopic(topic.id)
+                await this.flushSaveLastTopic(topic.id)
                 await this.loadTopics()
                 this.dispatch("change", { detail: { topicId: topic.id } })
             } else {
