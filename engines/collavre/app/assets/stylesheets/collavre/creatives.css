@@ -257,16 +257,6 @@ creative-tree-row.show-edit .creative-row {
 
 /* Desktop: show checkbox on hover */
 @media (hover: hover) {
-    .progress-toggle-wrap .creative-progress-complete,
-    .progress-toggle-wrap .creative-progress-incomplete {
-        transition: opacity 0.15s var(--ease-out, ease-out);
-    }
-
-    .progress-toggle-wrap:hover .creative-progress-complete,
-    .progress-toggle-wrap:hover .creative-progress-incomplete {
-        opacity: 0;
-    }
-
     .progress-toggle-checkbox {
         opacity: 0;
         width: auto;
@@ -277,6 +267,11 @@ creative-tree-row.show-edit .creative-row {
         pointer-events: none;
     }
 
+    .progress-toggle-wrap:hover .creative-progress-complete,
+    .progress-toggle-wrap:hover .creative-progress-incomplete {
+        display: none;
+    }
+
     .progress-toggle-wrap:hover .progress-toggle-checkbox {
         opacity: 1;
         position: relative;
@@ -284,11 +279,6 @@ creative-tree-row.show-edit .creative-row {
         width: 1em;
         height: 1em;
         accent-color: var(--color-brand);
-    }
-
-    .progress-toggle-wrap:hover .creative-progress-complete,
-    .progress-toggle-wrap:hover .creative-progress-incomplete {
-        display: none;
     }
 }
 
