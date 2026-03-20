@@ -25,17 +25,23 @@ export default class extends Controller {
 
   dragOver(event) {
     event.preventDefault()
-    this.dropzoneTarget.classList.add(this.dragoverClass)
+    if (this.hasDragoverClass) {
+      this.dropzoneTarget.classList.add(this.dragoverClass)
+    }
   }
 
   dragLeave(event) {
     event.preventDefault()
-    this.dropzoneTarget.classList.remove(this.dragoverClass)
+    if (this.hasDragoverClass) {
+      this.dropzoneTarget.classList.remove(this.dragoverClass)
+    }
   }
 
   drop(event) {
     event.preventDefault()
-    this.dropzoneTarget.classList.remove(this.dragoverClass)
+    if (this.hasDragoverClass) {
+      this.dropzoneTarget.classList.remove(this.dragoverClass)
+    }
     const file = event.dataTransfer.files[0]
     if (file) {
       this.handleFile(file)
