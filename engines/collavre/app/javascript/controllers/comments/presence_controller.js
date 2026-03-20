@@ -328,6 +328,7 @@ export default class extends Controller {
       this.typingTimeoutHandle = null
     }
     this.element.style.bottom = ''
+    this.element.style.maxHeight = ''
     if (window.visualViewport && this.visualViewportHandler) {
       window.visualViewport.removeEventListener('resize', this.visualViewportHandler)
       this.visualViewportHandler = null
@@ -348,6 +349,9 @@ export default class extends Controller {
       if (inset < 0) inset = 0
     }
     this.element.style.bottom = `${inset}px`
+    this.element.style.maxHeight = inset > 0
+      ? `${window.innerHeight - inset}px`
+      : ''
   }
 
   isMobile() {
