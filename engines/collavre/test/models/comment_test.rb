@@ -9,21 +9,17 @@ class CommentTest < ActiveSupport::TestCase
     CreativeShare.create!(creative: creative, user: writer, permission: :write)
 
     comment = nil
-    assert_difference("InboxItem.count", 2) do
+    # Notifications now create comments on inbox creatives (one per recipient)
+    assert_difference("Comment.count", 3) do # 1 original + 2 inbox comments
       comment = Comment.create!(creative: creative, user: commenter, content: "hi")
     end
 
-    origin = creative.effective_origin
-
     [ creative.user, writer ].each do |recipient|
-      item = InboxItem.where(owner: recipient).last
-      assert_equal "inbox.comment_added", item.message_key
-      assert_includes item.localized_message, commenter.name
-      assert_includes item.localized_message, ActionController::Base.helpers.strip_tags(creative.description)
-      assert_equal comment.id, item.comment.id
-      assert_equal origin.id, item.creative.id
-      assert_equal comment.id, item.message_params["comment_id"]
-      assert_equal origin.id, item.message_params["creative_id"]
+      inbox = Creative.inbox_for(recipient)
+      inbox_comment = inbox.comments.where(quoted_comment: comment).last
+      assert inbox_comment, "Expected inbox comment for #{recipient.email}"
+      assert_nil inbox_comment.user, "Inbox comment should be system (user: nil)"
+      assert_equal comment.id, inbox_comment.quoted_comment_id
     end
   end
 
@@ -37,7 +33,8 @@ class CommentTest < ActiveSupport::TestCase
     CommentPresenceStore.add(creative.id, creative.user.id)
     CommentPresenceStore.add(creative.id, writer.id)
 
-    assert_no_difference("InboxItem.count") do
+    # Only the original comment should be created, no inbox comments
+    assert_difference("Comment.count", 1) do
       Comment.create!(creative: creative, user: commenter, content: "hi")
     end
     Rails.cache.delete(CommentPresenceStore.key(creative.id))
@@ -58,24 +55,21 @@ class CommentTest < ActiveSupport::TestCase
     formatter.verify
   end
 
-  test "creates a single inbox item for mentioned users" do
+  test "creates inbox comment for mentioned users" do
     owner = User.create!(email: "mentions-owner@example.com", password: TEST_PASSWORD, name: "Owner")
     commenter = User.create!(email: "mentions-commenter@example.com", password: TEST_PASSWORD, name: "Commenter")
     mentioned = User.create!(email: "mentions-mentioned@example.com", password: TEST_PASSWORD, name: "Mentioned", searchable: true)
     creative = Creative.create!(user: owner, description: "Root")
 
+    inbox = Creative.inbox_for(mentioned)
     comment = nil
-    assert_difference("InboxItem.where(owner: mentioned).count", 1) do
+    assert_difference("inbox.comments.count", 1) do
       comment = Comment.create!(creative: creative, user: commenter, content: "hi @#{mentioned.name}:")
     end
 
-    item = InboxItem.where(owner: mentioned).last
-    assert_equal "inbox.user_mentioned", item.message_key
-    assert_includes item.localized_message, commenter.name
-    assert_equal comment.id, item.comment.id
-    assert_equal creative.effective_origin.id, item.creative.id
-    assert_equal comment.id, item.message_params["comment_id"]
-    assert_equal creative.effective_origin.id, item.message_params["creative_id"]
+    inbox_comment = inbox.comments.last
+    assert_nil inbox_comment.user
+    assert_equal comment.id, inbox_comment.quoted_comment_id
   end
 
   test "does not create duplicate mentions for existing recipient" do
@@ -83,12 +77,10 @@ class CommentTest < ActiveSupport::TestCase
     commenter = User.create!(email: "mentions-commenter-dup@example.com", password: TEST_PASSWORD, name: "CommenterDup")
     creative = Creative.create!(user: owner, description: "Root")
 
-    assert_difference("InboxItem.where(owner: owner).count", 1) do
+    inbox = Creative.inbox_for(owner)
+    assert_difference("inbox.comments.count", 1) do
       Comment.create!(creative: creative, user: commenter, content: "hi @#{owner.name}:")
     end
-
-    items = InboxItem.where(owner: owner)
-    assert_equal "inbox.user_mentioned", items.last.message_key
   end
 
   test "defaults user to Current.user when user missing" do
@@ -114,7 +106,7 @@ class CommentTest < ActiveSupport::TestCase
     assert_equal origin, comment.creative
   end
 
-  test "streaming placeholder does not create inbox items" do
+  test "streaming placeholder does not create inbox comments" do
     owner = users(:one)
     ai_agent = users(:ai_bot)
 
@@ -124,14 +116,14 @@ class CommentTest < ActiveSupport::TestCase
     end
 
     creative = Creative.last
-
-    initial_inbox_count = InboxItem.count
+    inbox = Creative.inbox_for(owner)
+    initial_inbox_comment_count = inbox.comments.count
 
     perform_enqueued_jobs do
       creative.comments.create!(content: Collavre::Comment::STREAMING_PLACEHOLDER_CONTENT, user: ai_agent)
     end
 
-    # No inbox items should be created for "..." placeholder from AI agent
-    assert_equal initial_inbox_count, InboxItem.count
+    # No inbox comments should be created for "..." placeholder from AI agent
+    assert_equal initial_inbox_comment_count, inbox.comments.count
   end
 end

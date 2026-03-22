@@ -237,12 +237,19 @@ module Collavre
                      stuck_item.item
         end
 
-        InboxItem.create!(
-          owner: owner,
-          message_key: message_key,
-          message_params: message_params,
-          creative: creative,
-          link: creative ? Collavre::Engine.routes.url_helpers.creative_path(creative) : nil
+        inbox_creative = Creative.inbox_for(owner)
+        system_topic = inbox_creative.system_topic(fallback_user: owner)
+        msg = I18n.t(message_key, **message_params.symbolize_keys, locale: owner.locale || "en")
+        if creative
+          creative_path = Collavre::Engine.routes.url_helpers.creative_path(creative, open_comments: true)
+          msg += " [→](#{creative_path})"
+        end
+        Comment.create!(
+          creative: inbox_creative,
+          topic: system_topic,
+          content: msg,
+          user: nil,
+          skip_default_user: true
         )
       end
 

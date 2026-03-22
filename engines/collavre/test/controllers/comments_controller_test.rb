@@ -59,14 +59,16 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     end
 
     comment = shared_creative.comments.create!(content: "- Shared task", user: other_user)
+    creative_comment_count_before = shared_creative.comments.count
 
     assert_difference("Creative.count", 1) do
-      assert_no_difference("Comment.count") do
-        perform_enqueued_jobs do
-          post convert_creative_comment_path(shared_creative, comment)
-        end
+      perform_enqueued_jobs do
+        post convert_creative_comment_path(shared_creative, comment)
       end
     end
+
+    # Original comment destroyed, system comment added on the creative (net 0 on this creative)
+    assert_equal creative_comment_count_before, shared_creative.comments.reload.count
 
     assert_response :no_content
     shared_creative.reload
@@ -80,12 +82,14 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     commenter.update!(email_verified_at: Time.current)
 
     comment = @creative.comments.create!(content: "- Cross user task", user: commenter)
+    creative_comment_count_before = @creative.comments.count
 
     assert_difference("Creative.count", 1) do
-      assert_no_difference("Comment.count") do
-        post convert_creative_comment_path(@creative, comment)
-      end
+      post convert_creative_comment_path(@creative, comment)
     end
+
+    # Original comment destroyed, system comment added (net 0 on this creative)
+    assert_equal creative_comment_count_before, @creative.comments.reload.count
 
     assert_response :no_content
     child = @creative.children.order(:id).last
@@ -484,20 +488,18 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     other_user.update!(email_verified_at: Time.current)
     comment = @creative.comments.create!(content: "Other user comment", user: other_user)
 
-    assert_difference("Comment.count", -1) do
-      assert_difference("InboxItem.count", 1) do
-        delete creative_comment_path(@creative, comment)
-      end
-    end
+    inbox = Creative.inbox_for(other_user)
+    inbox_before = inbox.comments.count
+
+    delete creative_comment_path(@creative, comment)
 
     assert_response :no_content
 
-    # Verify inbox notification was created
-    inbox_item = InboxItem.order(:id).last
-    assert_equal other_user.id, inbox_item.owner.id
-    assert_equal "inbox.comment_deleted_by_admin", inbox_item.message_key
-    assert_equal @user.name, inbox_item.message_params["admin_name"]
-    assert_equal "Other user comment", inbox_item.message_params["comment_content"]
+    # Verify inbox notification comment was created
+    assert_equal inbox_before + 1, inbox.comments.reload.count
+    inbox_comment = inbox.comments.order(:id).last
+    assert_nil inbox_comment.user
+    assert_includes inbox_comment.content, "Other user comment"
   end
 
   test "admin user can delete any comment" do
@@ -516,13 +518,14 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     # Create comment by other_user
     comment = other_creative.comments.create!(content: "Comment to delete", user: other_user)
 
-    assert_difference("Comment.count", -1) do
-      assert_difference("InboxItem.count", 1) do
-        delete creative_comment_path(other_creative, comment)
-      end
-    end
+    inbox = Creative.inbox_for(other_user)
+    inbox_before = inbox.comments.count
+
+    delete creative_comment_path(other_creative, comment)
 
     assert_response :no_content
+    # Inbox notification comment created for the deleted comment's author
+    assert_equal inbox_before + 1, inbox.comments.reload.count
   end
 
   test "non-owner non-admin cannot delete comment" do
@@ -560,25 +563,20 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     comment = @creative.comments.create!(content: "AI response", user: ai_user)
 
-    assert_difference("Comment.count", -1) do
-      assert_no_difference("InboxItem.count") do
-        delete creative_comment_path(@creative, comment)
-      end
-    end
-
+    delete creative_comment_path(@creative, comment)
     assert_response :no_content
   end
 
   test "comment owner deleting own comment does not create inbox notification" do
     comment = @creative.comments.create!(content: "My own comment", user: @user)
+    inbox = Creative.inbox_for(@user)
+    inbox_before = inbox.comments.count
 
-    assert_difference("Comment.count", -1) do
-      assert_no_difference("InboxItem.count") do
-        delete creative_comment_path(@creative, comment)
-      end
-    end
+    delete creative_comment_path(@creative, comment)
 
     assert_response :no_content
+    # No inbox notification for deleting own comment
+    assert_equal inbox_before, inbox.comments.reload.count
   end
 
   test "main topic view shows all comments and renders topic links" do

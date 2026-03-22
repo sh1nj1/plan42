@@ -175,16 +175,17 @@ module Collavre
         )
         task.update_columns(created_at: 1.hour.ago, updated_at: 1.hour.ago)
 
-        initial_inbox_count = InboxItem.where(owner: @human_user).count
+        inbox = Collavre::Creative.inbox_for(@human_user)
+        initial_inbox_count = inbox.comments.count
 
         detector = StuckDetector.new
         result = detector.detect_and_escalate
 
         assert_equal 1, result.escalated_count
-        assert_equal initial_inbox_count + 1, InboxItem.where(owner: @human_user).count
+        assert_equal initial_inbox_count + 1, inbox.comments.reload.count
 
-        inbox_item = InboxItem.where(owner: @human_user).last
-        assert_equal "collavre.stuck_detection.task_stuck", inbox_item.message_key
+        inbox_comment = inbox.comments.order(:id).last
+        assert_includes inbox_comment.content, "Stuck task"
       ensure
         policy&.destroy
       end

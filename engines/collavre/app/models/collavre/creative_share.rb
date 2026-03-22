@@ -62,17 +62,26 @@ module Collavre
 
     def notify_recipient
       return unless Current.user && user
-      desc = creative.effective_description
-      title = ActionController::Base.helpers.strip_tags(desc)
-      short_title = ActionController::Base.helpers.truncate(title, length: 30)
-      InboxItem.create!(
-        owner: user,
-        message_key: "inbox.creative_shared",
-        message_params: { user: Current.user.display_name, short_title: short_title },
-        link: Collavre::Engine.routes.url_helpers.creative_url(
-          creative,
-          Rails.application.config.action_mailer.default_url_options
-        )
+      inbox_creative = Creative.inbox_for(user)
+      short_title = ActionController::Base.helpers.truncate(
+        ActionController::Base.helpers.strip_tags(creative.effective_description),
+        length: 30
+      )
+      creative_path = Collavre::Engine.routes.url_helpers.creative_path(creative, open_comments: true)
+      creative_link = "[#{short_title}](#{creative_path})"
+      msg = I18n.t(
+        "inbox.creative_shared",
+        user: Current.user.display_name,
+        short_title: creative_link,
+        locale: user.locale || "en"
+      )
+      system_topic = inbox_creative.system_topic(fallback_user: user)
+      Comment.create!(
+        creative: inbox_creative,
+        topic: system_topic,
+        content: msg,
+        user: nil,
+        skip_default_user: true
       )
     end
 

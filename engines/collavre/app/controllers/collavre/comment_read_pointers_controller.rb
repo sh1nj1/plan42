@@ -58,23 +58,11 @@ module Collavre
       query.includes(user: { avatar_attachment: :blob }).map(&:user)
     end
 
-    def mark_inbox_items_read(creative, last_comment_id)
-      return unless last_comment_id
-
-      base_scope = InboxItem.where(owner: Current.user, state: "new")
-                            .where(message_key: [ "inbox.comment_added", "inbox.user_mentioned" ])
-
-      with_creative = base_scope.where(creative: creative)
-                                .where("comment_id IS NULL OR comment_id <= ?", last_comment_id)
-
-      ids = with_creative.pluck(:id)
-      return if ids.empty?
-
-      InboxItem.transaction do
-        InboxItem.where(id: ids).where.not(state: "read").find_each do |item|
-          item.update!(state: "read")
-        end
-      end
+    # No-op: inbox notifications are now comments on the user's inbox creative.
+    # Reading comments on a creative updates the CommentReadPointer, which
+    # automatically handles the unread count for the inbox badge.
+    def mark_inbox_items_read(_creative, _last_comment_id)
+      # Intentionally empty — kept for backward compatibility during transition.
     end
   end
 end

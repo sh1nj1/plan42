@@ -67,20 +67,20 @@ module CollavreSlack
         slack_user_id: "U888"
       }
 
+      creative_comment_count = @creative.comments.count
+
       # Should create a share (granting permission)
       assert_difference "Collavre::CreativeShare.count", 1 do
-        # Should create comment
-        assert_difference "Collavre::Comment.count", 1 do
-          SlackInboundMessageJob.perform_now(payload)
-        end
+        SlackInboundMessageJob.perform_now(payload)
       end
 
       # Check permission was granted
       share = Collavre::CreativeShare.find_by(creative: @creative, user: slack_user)
       assert_equal "feedback", share.permission
 
-      # Check comment was created with the Slack user
-      comment = Collavre::Comment.last
+      # Check comment was created with the Slack user on this creative
+      assert_equal creative_comment_count + 1, @creative.comments.reload.count
+      comment = @creative.comments.order(:id).last
       assert_equal slack_user.id, comment.user_id
       assert_equal "Hello from Slack!", comment.content
     end
@@ -105,14 +105,15 @@ module CollavreSlack
         slack_user_id: "U777"
       }
 
+      creative_comment_count = @creative.comments.count
+
       # Should not create additional share
       assert_no_difference "Collavre::CreativeShare.count" do
-        assert_difference "Collavre::Comment.count", 1 do
-          SlackInboundMessageJob.perform_now(payload)
-        end
+        SlackInboundMessageJob.perform_now(payload)
       end
 
-      comment = Collavre::Comment.last
+      assert_equal creative_comment_count + 1, @creative.comments.reload.count
+      comment = @creative.comments.order(:id).last
       assert_equal slack_user.id, comment.user_id
       assert_equal "Hello from Slack!", comment.content
     end

@@ -10,15 +10,23 @@ module Collavre
         end
 
         short_title = helpers.strip_tags(creative.effective_origin.description).truncate(10)
+        creative_path = Collavre::Engine.routes.url_helpers.creative_path(creative, open_comments: true)
+        creative_link = "[#{short_title}](#{creative_path})"
 
-        InboxItem.create!(
-          owner: creative.user,
-          message_key: "inbox.permission_requested",
-          message_params: { user: Current.user.display_name, short_title: short_title },
-          link: creative_url(
-            creative,
-            Rails.application.config.action_mailer.default_url_options.merge(share_request: Current.user.email)
-          )
+        inbox_creative = Creative.inbox_for(creative.user)
+        system_topic = inbox_creative.system_topic(fallback_user: creative.user)
+        msg = I18n.t(
+          "inbox.permission_requested",
+          user: Current.user.display_name,
+          short_title: creative_link,
+          locale: creative.user.locale || "en"
+        )
+        Comment.create!(
+          creative: inbox_creative,
+          topic: system_topic,
+          content: msg,
+          user: nil,
+          skip_default_user: true
         )
 
         head :ok
