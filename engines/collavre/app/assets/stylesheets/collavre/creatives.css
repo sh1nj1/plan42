@@ -52,17 +52,158 @@ html.creative-alignment-ready .page-title {
 }
 
 .creative-actions-row {
-    margin: 0.0em 1.0em 0.0em var(--creative-row-text-offset);
-    padding: 0.5em 0.5em 0.5em 0;
+    margin: 0 0 0 var(--creative-row-text-offset);
+    padding: var(--space-1) 0;
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    height: 48px;
+    justify-content: space-between;
     align-items: center;
+    min-height: 36px;
+    border: none;
 }
 
-.creative-actions-row button {
-    height: 32px;
+/* === Breadcrumb (left-aligned) === */
+.creative-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    font-size: var(--text-0);
+    color: var(--text-muted);
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+    min-width: 0;
+}
+
+.creative-breadcrumb::-webkit-scrollbar {
+    display: none;
+}
+
+/* Override application.css .creative-actions-row a global styles for breadcrumb links.
+   Uses .creative-breadcrumb-link (not generic a) + !important to beat global selectors. */
+.creative-actions-row a.creative-breadcrumb-link,
+.creative-actions-row a.creative-breadcrumb-link:hover,
+.creative-actions-row a.creative-breadcrumb-link:visited {
+    color: var(--text-muted) !important;
+    text-decoration: underline !important;
+    text-underline-offset: 2px;
+    text-decoration-color: color-mix(in srgb, var(--text-muted) 40%, transparent);
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    font-size: var(--text-0) !important;
+    filter: none !important;
+    line-height: normal;
+    display: inline;
+}
+
+.creative-actions-row a.creative-breadcrumb-link:hover {
+    color: var(--text-primary) !important;
+    text-decoration-color: var(--text-primary) !important;
+}
+
+.creative-actions-row a.creative-breadcrumb-current {
+    color: var(--text-secondary) !important;
+    font-weight: var(--weight-5);
+}
+
+.creative-breadcrumb-sep {
+    color: var(--text-muted);
+    opacity: 0.4;
+    margin: 0 var(--space-1);
+    font-size: var(--text-00);
+    user-select: none;
+}
+
+/* === Header actions (right-aligned) === */
+.creative-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex-shrink: 0;
+}
+
+/* Outline button — GNB-like with border.
+   Higher specificity to override application.css .creative-actions-row button */
+.creative-actions-row .creative-header-actions .creative-header-outline-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    height: 30px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-0);
+    transition: background 0.15s var(--ease-out-2), color 0.15s var(--ease-out-2), border-color 0.15s var(--ease-out-2);
+}
+
+.creative-actions-row .creative-header-actions .creative-header-outline-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+}
+
+/* Add button in header — outline style */
+.creative-actions-row .creative-header-actions .add-creative-btn,
+.creative-actions-row .creative-header-actions .new-root-creative-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    height: 30px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-1);
+    transition: background 0.15s var(--ease-out-2), color 0.15s var(--ease-out-2), border-color 0.15s var(--ease-out-2);
+}
+
+.creative-actions-row .creative-header-actions .add-creative-btn:hover,
+.creative-actions-row .creative-header-actions .new-root-creative-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+}
+
+/* === Overflow popup menu — GNB style === */
+#creative-overflow-menu {
+    min-width: 200px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-3);
+    box-shadow: var(--shadow-2);
+    padding: var(--space-1);
+    background: var(--surface-section);
+}
+
+#creative-overflow-menu .popup-menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    text-align: left;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-2);
+    border: none;
+    background: none;
+    color: var(--text-primary);
+    font-size: var(--text-1);
+    cursor: pointer;
+    transition: background 0.15s var(--ease-out-2);
+    white-space: nowrap;
+}
+
+#creative-overflow-menu .popup-menu-item:hover {
+    background: var(--surface-hover);
+}
+
+.creative-overflow-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: var(--space-1) 0;
 }
 
 .delete-options {

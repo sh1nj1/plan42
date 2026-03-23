@@ -9,61 +9,88 @@
      data-creatives--import-dragover-class="dragover"
      data-creatives--set-plan-modal-select-one-value="<%= t('collavre.creatives.index.select_one_creative') %>"
      data-creatives--set-plan-modal-select-plan-value="<%= t('collavre.creatives.index.select_plan_to_remove') %>">
-  <div class="creative-actions-row">
-  <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
-  <% if @parent_creative&.parent_id.present? %>
-    <%= button_to creative_path(@parent_creative.owning_parent), method: :get, aria: { label: t('.up') } do %>
-      <span aria-hidden="true"><%= svg_tag 'arrow-up.svg', class: 'icon-up', width: 16, height: 16 %></span>
-    <% end %>
-  <% elsif @parent_creative.present? %>
-    <%= button_to creatives_path, class: "up-link", method: :get, aria: { label: t('.up') } do %>
-      <span aria-hidden="true"><%= svg_tag 'arrow-up.svg', class: 'icon-up', width: 16, height: 16 %></span>
-    <% end %>
-  <% end %>
-
   <% current_creative = @parent_creative || @creative %>
   <% can_manage_integrations = current_creative&.has_permission?(Current.user, :admin) %>
-  <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
-    <%= render 'share_button' %>
-  <% end %>
 
-  <% if can_manage_integrations %>
-    <%= render Collavre::PopupMenuComponent.new(
-          button_content: t('collavre.creatives.index.integrations', default: '연동'),
-          menu_id: 'creative-integrations-menu',
-          align: :left,
-          button_classes: 'desktop-only'
-        ) do %>
-      <%= render 'integrations_menu', creative: current_creative %>
-    <% end %>
-  <% end %>
+  <div class="creative-actions-row">
+    <%# Left: breadcrumb ancestry %>
+    <div class="creative-breadcrumb" role="navigation" aria-label="<%= t('collavre.creatives.index.breadcrumb', default: 'Breadcrumb') %>">
+      <a href="<%= creatives_path %>" class="creative-breadcrumb-link"><%= t('collavre.creatives.index.root_breadcrumb', default: '최상위') %></a>
+      <% if @parent_creative %>
+        <% @parent_creative.ancestors.each do |ancestor| %>
+          <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
+          <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" title="<%= strip_tags(ancestor.effective_description) %>"><%= truncate(strip_tags(ancestor.effective_description), length: 20) %></a>
+        <% end %>
+        <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
+        <a href="<%= creative_path(@parent_creative) %>" class="creative-breadcrumb-link creative-breadcrumb-current" data-turbo-action="replace"><%= truncate(strip_tags(@parent_creative.effective_description), length: 30) %></a>
+      <% end %>
+    </div>
 
-  <% if @parent_creative.present? %>
-    <%= button_to slide_view_creative_path(@parent_creative), method: :get, class: 'slide-view-btn desktop-only', aria: { label: t('collavre.creatives.index.slide_view') } do %>
-      <span aria-hidden="true"><%= svg_tag 'slide.svg', class: 'icon-slide', width: 22, height: 20 %></span>
-    <% end %>
-  <% end %>
+    <%# Right: primary actions + overflow %>
+    <div class="creative-header-actions">
+      <%# Add button (always visible) %>
+      <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
 
-  <button id="set-plan-btn" class="set-plan-btn" style="display:none;" data-creatives--select-mode-target="setPlan" data-action="click->creatives--set-plan-modal#open"><%= t('app.set_plan') %></button>
-  <input type="checkbox" id="select-all-creatives" style="display:none;vertical-align:middle;" data-action="change->creatives--select-mode#toggleSelectAll" data-creatives--select-mode-target="selectAll" />
-  <% if authenticated? %>
-    <button id="select-creative-btn" class="select-btn" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>" data-action="click->creatives--select-mode#toggle" data-creatives--select-mode-target="toggle"><%= t('app.select') %></button>
-  <% end %>
-  <% if (@parent_creative || @creative)&.has_permission?(Current.user, :admin) %>
-    <button id="delete-selection-btn" class="danger-link" style="display:none;" data-confirm="<%= t('collavre.creatives.index.are_you_sure_delete_selection') %>" data-action="click->creatives--select-mode#deleteSelected" data-creatives--select-mode-target="deleteButton"><%= t('collavre.creatives.index.delete_selection') %></button>
-  <% end %>
-  <button id="expand-all-btn" class="expand-btn" style="width: 36px;" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" data-action="click->creatives--expansion#toggleAll" data-creatives--expansion-target="expand"><span class="icon-expand" aria-hidden="true"><%= svg_tag 'chevron-down.svg', width: 16, height: 16 %></span><span class="icon-collapse" aria-hidden="true" style="display:none"><%= svg_tag 'chevron-right.svg', width: 16, height: 16 %></span></button>
-  <button id="toggle-edit-btn" class="edit-toggle-btn mobile-only" aria-label="<%= t('.edit') %>" title="<%= t('.edit') %>">
-    <span aria-hidden="true"><%= svg_tag 'edit.svg', class: 'icon-edit', width: 16, height: 16 %></span></button>
-  <% if authenticated? %>
-    <button id="toggle-archived-btn" class="archive-toggle-btn desktop-only" title="<%= t('collavre.creatives.index.show_archived') %>" data-show-text="<%= t('collavre.creatives.index.show_archived') %>" data-hide-text="<%= t('collavre.creatives.index.hide_archived') %>"><span aria-hidden="true"><%= svg_tag 'archive.svg', width: 16, height: 16 %></span></button>
-  <% end %>
-  <% if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
-    <button id="import-markdown-btn" class="import-btn desktop-only" data-action="click->creatives--import#toggle" data-creatives--import-target="toggle"><%= t('.import_markdown') %></button>
-  <% end %>
-  <button id="export-markdown-btn" class="export-btn desktop-only" data-parent-creative-id="<%= @parent_creative&.id %>" data-error="<%= t('collavre.creatives.index.export_failed') %>"><%= t('.export_markdown') %></button>
-  <%= render 'mobile_actions_menu', current_creative: current_creative, can_manage_integrations: can_manage_integrations %>
-</div>
+      <%# Expand/collapse toggle (always visible) %>
+      <button id="expand-all-btn" class="creative-header-outline-btn" title="<%= t('app.expand_all') %>" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" data-action="click->creatives--expansion#toggleAll" data-creatives--expansion-target="expand">
+        <span class="icon-expand" aria-hidden="true"><%= svg_tag 'chevron-down.svg', width: 14, height: 14 %></span>
+        <span class="icon-collapse" aria-hidden="true" style="display:none"><%= svg_tag 'chevron-right.svg', width: 14, height: 14 %></span>
+      </button>
+
+      <%# Contextual (select mode — hidden until activated) %>
+      <button id="set-plan-btn" class="set-plan-btn" style="display:none;" data-creatives--select-mode-target="setPlan" data-action="click->creatives--set-plan-modal#open"><%= t('app.set_plan') %></button>
+      <input type="checkbox" id="select-all-creatives" style="display:none;vertical-align:middle;" data-action="change->creatives--select-mode#toggleSelectAll" data-creatives--select-mode-target="selectAll" />
+      <% if (@parent_creative || @creative)&.has_permission?(Current.user, :admin) %>
+        <button id="delete-selection-btn" class="danger-link" style="display:none;" data-confirm="<%= t('collavre.creatives.index.are_you_sure_delete_selection') %>" data-action="click->creatives--select-mode#deleteSelected" data-creatives--select-mode-target="deleteButton"><%= t('collavre.creatives.index.delete_selection') %></button>
+      <% end %>
+
+      <%# Overflow menu ⋯ (GNB style) %>
+      <%= render Collavre::PopupMenuComponent.new(
+            button_content: '⋯',
+            menu_id: 'creative-overflow-menu',
+            align: :right,
+            button_classes: 'creative-header-outline-btn'
+          ) do %>
+        <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
+          <button type="button" id="share-creative-btn" class="popup-menu-item" data-action="click->share-modal#open" data-share-modal-url-param="<%= collavre.creative_creative_shares_path(current_creative) %>">
+            <span aria-hidden="true"><%= svg_tag 'share.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.share') %>
+          </button>
+        <% end %>
+        <% if authenticated? %>
+          <button type="button" id="select-creative-btn" class="popup-menu-item" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>" data-action="click->creatives--select-mode#toggle" data-creatives--select-mode-target="toggle">
+            <span aria-hidden="true"><%= svg_tag 'selection.svg', width: 16, height: 16 %></span> <%= t('app.select') %>
+          </button>
+        <% end %>
+        <% if @parent_creative.present? %>
+          <%= button_to slide_view_creative_path(@parent_creative), method: :get, class: 'popup-menu-item' do %>
+            <span aria-hidden="true"><%= svg_tag 'slide.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.slide_view') %>
+          <% end %>
+        <% end %>
+        <div class="creative-overflow-divider"></div>
+        <% if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
+          <button type="button" id="import-markdown-btn" class="popup-menu-item" data-action="click->creatives--import#toggle" data-creatives--import-target="toggle">
+            <span aria-hidden="true"><%= svg_tag 'arrow-down.svg', width: 16, height: 16 %></span> <%= t('.import_markdown') %>
+          </button>
+        <% end %>
+        <button type="button" id="export-markdown-btn" class="popup-menu-item" data-parent-creative-id="<%= @parent_creative&.id %>" data-error="<%= t('collavre.creatives.index.export_failed') %>">
+          <span aria-hidden="true"><%= svg_tag 'arrow-up.svg', width: 16, height: 16 %></span> <%= t('.export_markdown') %>
+        </button>
+        <% if authenticated? %>
+          <button type="button" id="toggle-archived-btn" class="popup-menu-item" title="<%= t('collavre.creatives.index.show_archived') %>" data-show-text="<%= t('collavre.creatives.index.show_archived') %>" data-hide-text="<%= t('collavre.creatives.index.hide_archived') %>">
+            <span aria-hidden="true"><%= svg_tag 'archive.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.show_archived') %>
+          </button>
+        <% end %>
+        <% if can_manage_integrations %>
+          <div class="creative-overflow-divider"></div>
+          <%= render 'integrations_menu', creative: current_creative %>
+        <% end %>
+        <div class="creative-overflow-divider mobile-only"></div>
+        <button type="button" id="toggle-edit-btn" class="popup-menu-item mobile-only" aria-label="<%= t('.edit') %>">
+          <span aria-hidden="true"><%= svg_tag 'edit.svg', width: 16, height: 16 %></span> <%= t('.edit') %>
+        </button>
+      <% end %>
+    </div>
+  </div>
 
   <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
     <div data-share-modal-target="container"></div>
