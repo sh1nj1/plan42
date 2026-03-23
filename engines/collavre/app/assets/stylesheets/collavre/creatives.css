@@ -171,6 +171,11 @@ html.creative-alignment-ready .page-title {
     background: var(--surface-hover);
 }
 
+#creative-overflow-menu .popup-menu-item.active {
+    background: color-mix(in srgb, var(--color-active) 15%, transparent);
+    color: var(--color-active);
+}
+
 .creative-overflow-divider {
     height: 1px;
     background: var(--border-color);
