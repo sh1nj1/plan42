@@ -284,6 +284,23 @@ export default class extends Controller {
       }
     }))
 
+    // Exit fullscreen state if active
+    if (this.isFullscreen()) {
+      this.element.dataset.fullscreen = 'false'
+      document.body.classList.remove('chat-fullscreen')
+      this._syncFullscreenUI(false)
+      this._savedStyles = null
+
+      // Navigate back from fullscreen URL
+      const creativeId = this.element.dataset.creativeId
+      const backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
+      if (backUrl) {
+        const url = new URL(backUrl, window.location.origin)
+        window.history.pushState({ fullscreen: false }, '', url.pathname + url.search)
+      }
+      this._previousUrl = null
+    }
+
     this._clearChatActiveRow()
 
     this.element.style.display = 'none'
@@ -294,6 +311,7 @@ export default class extends Controller {
     this.element.style.right = ''
     this.element.style.top = ''
     this.element.style.bottom = ''
+    this.element.style.position = ''
     delete this.element.dataset.resized
   }
 
