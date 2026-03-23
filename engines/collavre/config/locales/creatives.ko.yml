@@ -32,6 +32,7 @@ ko:
         delete_selection: 선택 항목 삭제
         are_you_sure_delete_selection: 선택된 크리에이티브를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
         creatives: 크리에이티브 목록
+        breadcrumb: 계보
         root_breadcrumb: 최상위
         slide_view: 슬라이드 뷰
         recalculate_progress: 진행률 다시 계산
