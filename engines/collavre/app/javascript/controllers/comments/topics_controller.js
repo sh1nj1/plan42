@@ -733,13 +733,11 @@ export default class extends Controller {
         const action = data.action || "created"
 
         if (action === "last_topic_changed") {
-            const currentUserId = document.body.dataset.currentUserId
-            if (data.user_id && currentUserId && String(data.user_id) === String(currentUserId)) {
-                const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
-                if (newTopicId !== this.serverLastTopicId) {
-                    this.serverLastTopicId = newTopicId
-                    this.selectTopic(newTopicId)
-                }
+            // Broadcast is already scoped to the current user via user-specific channel
+            const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+            if (newTopicId !== this.serverLastTopicId) {
+                this.serverLastTopicId = newTopicId
+                this.selectTopic(newTopicId)
             }
             return
         }

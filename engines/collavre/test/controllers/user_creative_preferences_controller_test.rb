@@ -60,6 +60,16 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_nil record.last_topic_id
   end
 
+  test "update_last_topic rejects topic from another creative" do
+    other_creative = Collavre::Creative.create!(user: @user, description: "Other")
+    other_topic = Collavre::Topic.create!(creative: other_creative, user: @user, name: "Foreign Topic")
+
+    patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
+          params: { last_topic_id: other_topic.id },
+          as: :json
+    assert_response :unprocessable_entity
+  end
+
   test "update_last_topic requires permission" do
     other_user = users(:two)
     other_user.update!(email_verified_at: Time.current)
