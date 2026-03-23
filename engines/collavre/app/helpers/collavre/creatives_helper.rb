@@ -25,7 +25,7 @@ module Collavre
       end
     end
 
-    def render_creative_progress(creative, select_mode: false)
+    def render_creative_progress(creative, select_mode: false, has_children: nil)
       progress_value = if params[:tags].present?
         tag_ids = Array(params[:tags]).map(&:to_s)
         creative.filtered_progress || creative.progress_for_tags(tag_ids) || 0
@@ -69,12 +69,46 @@ module Collavre
         else
           safe_join([])
         end
+        is_leaf = has_children.nil? ? !creative.children.exists? : !has_children
+        can_write = creative.has_permission?(Current.user, :write)
+        progress_part = if is_leaf && can_write && !select_mode
+          render_progress_toggle(creative, progress_value)
+        else
+          render_progress_value(progress_value)
+        end
+
         safe_join([
-          render_progress_value(progress_value),
+          progress_part,
           comment_part,
           tag.br,
           (creative.tags ? render_creative_tags(creative) : safe_join([]))
         ])
+      end
+    end
+
+    def render_progress_toggle(creative, value)
+      complete = value == 1
+      new_value = complete ? 0 : 1
+      tooltip = complete ? t("collavre.creatives.index.mark_incomplete") : t("collavre.creatives.index.mark_complete")
+      content_tag(
+        :span,
+        class: "progress-toggle-wrap",
+        data: {
+          progress_toggle: true,
+          creative_id: creative.id,
+          current_progress: value,
+          new_progress: new_value
+        },
+        title: tooltip
+      ) do
+        checkbox = tag.input(
+          type: "checkbox",
+          checked: complete || nil,
+          class: "progress-toggle-checkbox",
+          tabindex: -1,
+          "aria-label": tooltip
+        )
+        safe_join([ render_progress_value(value), checkbox ])
       end
     end
 
@@ -83,9 +117,10 @@ module Collavre
       if value == 1 && !Current.user&.completion_mark.nil?
         text = Current.user.completion_mark
       end
+      display_text = text.blank? ? "&nbsp;&nbsp;".html_safe : text
       content_tag(
         :span,
-        text,
+        display_text,
         class: "creative-progress-#{value == 1 ? 'complete' : 'incomplete'}"
       )
     end

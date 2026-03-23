@@ -9,7 +9,7 @@ module Creatives
         "<iframe></iframe>"
       end
 
-      def render_creative_progress(_creative, select_mode: false)
+      def render_creative_progress(_creative, select_mode: false, has_children: nil)
         "<progress data-select='#{select_mode}'></progress>"
       end
 
