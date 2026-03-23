@@ -1,6 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 import { createSubscription } from "../../services/cable"
-import { fetchNextTopicName, createTopicWithComments } from "../../lib/api/topics"
+import { fetchNextTopicName, createTopicWithComments, saveLastTopic } from "../../lib/api/topics"
 
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
@@ -72,6 +72,10 @@ export default class extends Controller {
                 this.canManageTopics = canManage
                 this.canCreateTopic = canCreateTopic
                 this.archivedTopics = data.archived_topics || []
+                this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+
+                // Migrate localStorage to server if server has no value
+                this.migrateLocalStorage()
 
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
                 this.restoreSelection()
@@ -643,6 +647,8 @@ export default class extends Controller {
             if (response.ok) {
                 const topic = await response.json()
                 this.currentTopicId = topic.id
+                // Flush save immediately so loadTopics gets the correct value from server
+                await this.flushSaveLastTopic(topic.id)
                 await this.loadTopics()
                 // Dispatch change event manually since we skipped the click handler
                 this.dispatch("change", { detail: { topicId: topic.id } })
@@ -661,15 +667,39 @@ export default class extends Controller {
         const urlTopicId = urlParams.get('topic_id')
         if (urlTopicId) return urlTopicId
 
-        return localStorage.getItem(`collavre_creative_${this.creativeId}_last_topic`) || ""
+        return this.serverLastTopicId || ""
     }
 
     set currentTopicId(id) {
-        if (id) {
-            localStorage.setItem(`collavre_creative_${this.creativeId}_last_topic`, id)
-        } else {
-            localStorage.removeItem(`collavre_creative_${this.creativeId}_last_topic`)
+        this.serverLastTopicId = id ? String(id) : ""
+        this.debounceSaveLastTopic(id)
+    }
+
+    debounceSaveLastTopic(id) {
+        if (this._saveLastTopicTimer) clearTimeout(this._saveLastTopicTimer)
+        this._saveLastTopicTimer = setTimeout(() => {
+            this.flushSaveLastTopic(id)
+        }, 500)
+    }
+
+    async flushSaveLastTopic(id) {
+        if (this._saveLastTopicTimer) {
+            clearTimeout(this._saveLastTopicTimer)
+            this._saveLastTopicTimer = null
         }
+        if (this.creativeId) {
+            await saveLastTopic(this.creativeId, id || null)
+        }
+    }
+
+    migrateLocalStorage() {
+        const key = `collavre_creative_${this.creativeId}_last_topic`
+        const localValue = localStorage.getItem(key)
+        if (localValue && !this.serverLastTopicId) {
+            this.serverLastTopicId = localValue
+            saveLastTopic(this.creativeId, localValue)
+        }
+        localStorage.removeItem(key)
     }
 
     subscribe() {
@@ -701,6 +731,17 @@ export default class extends Controller {
         if (!data) return
 
         const action = data.action || "created"
+
+        if (action === "last_topic_changed") {
+            // Broadcast is already scoped to the current user via user-specific channel
+            const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+            if (newTopicId !== this.serverLastTopicId) {
+                this.serverLastTopicId = newTopicId
+                this.selectTopic(newTopicId)
+            }
+            return
+        }
+
         if (action === "deleted") {
             this.removeTopic(data.topic_id)
             return
@@ -827,6 +868,7 @@ export default class extends Controller {
         const result = await createTopicWithComments(this.creativeId, name, commentIds)
         if (result.ok) {
             this.currentTopicId = result.topic.id
+            await this.flushSaveLastTopic(result.topic.id)
             await this.loadTopics()
             this.dispatch("change", { detail: { topicId: result.topic.id } })
 
@@ -881,6 +923,7 @@ export default class extends Controller {
             if (response.ok) {
                 const topic = await response.json()
                 this.currentTopicId = topic.id
+                await this.flushSaveLastTopic(topic.id)
                 await this.loadTopics()
                 this.dispatch("change", { detail: { topicId: topic.id } })
             } else {

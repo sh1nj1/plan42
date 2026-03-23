@@ -1,0 +1,5 @@
+ko:
+  collavre:
+    user_creative_preferences:
+      no_permission: "이 크리에이티브의 환경설정을 변경할 권한이 없습니다."
+      invalid_topic: "지정한 토픽이 이 크리에이티브에 속하지 않습니다."

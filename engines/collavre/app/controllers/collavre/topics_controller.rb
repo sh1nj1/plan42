@@ -11,11 +11,18 @@ module Collavre
       preload_primary_agents(active_topics)
       archived_topics = @creative.topics.archived.order(:created_at)
 
+      last_topic_id = if Current.user
+                        UserCreativePreference
+                          .where(user_id: Current.user.id, creative_id: @creative.id)
+                          .pick(:last_topic_id)
+      end
+
       render json: {
         topics: active_topics.map { |t| topic_json(t) },
         archived_topics: archived_topics,
         can_manage: can_manage,
-        can_create_topic: can_create_topic
+        can_create_topic: can_create_topic,
+        last_topic_id: last_topic_id
       }
     end
 
@@ -91,6 +98,8 @@ module Collavre
 
       topic = @creative.topics.find(params[:id])
       topic_id = topic.id
+
+      # last_topic_id is nullified by DB FK (on_delete: :nullify) and model dependent: :nullify
       topic.destroy
 
       TopicsChannel.broadcast_to(

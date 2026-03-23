@@ -27,6 +27,29 @@ export async function fetchNextTopicName(creativeId) {
 }
 
 /**
+ * Save the last selected topic for a creative (server-side persistence).
+ * @param {string|number} creativeId
+ * @param {string|number|null} topicId
+ * @returns {Promise<boolean>}
+ */
+export async function saveLastTopic(creativeId, topicId) {
+    try {
+        const response = await fetch(`/creatives/${creativeId}/user_creative_preferences/update_last_topic`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken()
+            },
+            body: JSON.stringify({ last_topic_id: topicId || null })
+        })
+        return response.ok
+    } catch (e) {
+        console.error('Error saving last topic', e)
+        return false
+    }
+}
+
+/**
  * Create a new topic and optionally move comments into it.
  * @param {string|number} creativeId
  * @param {string} name - topic name

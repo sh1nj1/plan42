@@ -81,7 +81,7 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     find(row_selector(@root_creative)).hover
     find("#{row_selector(@root_creative)} .creative-toggle-btn").click
 
-    assert_nil CreativeExpandedState.find_by(user: @user, creative: @root_creative)
+    assert_nil UserCreativePreference.find_by(user: @user, creative: @root_creative)
   end
 
   test "visiting a comment share link opens popup and highlights comment" do

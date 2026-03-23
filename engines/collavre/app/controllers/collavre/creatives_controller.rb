@@ -33,7 +33,7 @@ module Collavre
           end
 
           @expanded_state_map = if user_id_for_state
-            CreativeExpandedState.where(user_id: user_id_for_state, creative_id: params[:id]).first&.expanded_status || {}
+            UserCreativePreference.where(user_id: user_id_for_state, creative_id: params[:id]).first&.expanded_status || {}
           else
             {}
           end
