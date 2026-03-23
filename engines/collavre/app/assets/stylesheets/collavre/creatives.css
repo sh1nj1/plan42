@@ -65,7 +65,6 @@ html.creative-alignment-ready .page-title {
 .creative-breadcrumb {
     display: flex;
     align-items: center;
-    gap: 0;
     font-size: var(--text-0);
     color: var(--text-muted);
     overflow-x: auto;
@@ -78,11 +77,8 @@ html.creative-alignment-ready .page-title {
     display: none;
 }
 
-/* Override application.css .creative-actions-row a global styles for breadcrumb links.
-   Uses .creative-breadcrumb-link (not generic a) + !important to beat global selectors. */
-.creative-actions-row a.creative-breadcrumb-link,
-.creative-actions-row a.creative-breadcrumb-link:hover,
-.creative-actions-row a.creative-breadcrumb-link:visited {
+/* Override application.css .creative-actions-row a for breadcrumb links */
+.creative-actions-row a.creative-breadcrumb-link {
     color: var(--text-muted) !important;
     text-decoration: underline !important;
     text-underline-offset: 2px;
@@ -93,7 +89,6 @@ html.creative-alignment-ready .page-title {
     font-size: var(--text-0) !important;
     filter: none !important;
     line-height: normal;
-    display: inline;
 }
 
 .creative-actions-row a.creative-breadcrumb-link:hover {
@@ -140,30 +135,6 @@ html.creative-alignment-ready .page-title {
 }
 
 .creative-actions-row .creative-header-actions .creative-header-outline-btn:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-    border-color: var(--text-muted);
-}
-
-/* Add button in header — outline style */
-.creative-actions-row .creative-header-actions .add-creative-btn,
-.creative-actions-row .creative-header-actions .new-root-creative-btn {
-    background: transparent;
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    cursor: pointer;
-    height: 30px;
-    padding: 0 var(--space-2);
-    border-radius: var(--radius-2);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: var(--text-1);
-    transition: background 0.15s var(--ease-out-2), color 0.15s var(--ease-out-2), border-color 0.15s var(--ease-out-2);
-}
-
-.creative-actions-row .creative-header-actions .add-creative-btn:hover,
-.creative-actions-row .creative-header-actions .new-root-creative-btn:hover {
     background: var(--surface-hover);
     color: var(--text-primary);
     border-color: var(--text-muted);

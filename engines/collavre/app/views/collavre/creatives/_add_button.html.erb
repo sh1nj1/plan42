@@ -1,7 +1,7 @@
 <% if @parent_creative %>
   <%= button_tag(
         type: 'button',
-        class: 'popup-menu-item add-creative-btn',
+        class: 'creative-header-outline-btn add-creative-btn',
         data: { parent_id: @parent_creative.id },
         aria: { label: t('collavre.creatives.index.new_creative') },
         title: t('collavre.creatives.index.new_creative_shortcut')
@@ -11,7 +11,7 @@
 <% else %>
   <%= button_tag(
         type: 'button',
-        class: 'popup-menu-item new-root-creative-btn',
+        class: 'creative-header-outline-btn new-root-creative-btn',
         aria: { label: t('collavre.creatives.index.new_creative') },
         title: t('collavre.creatives.index.new_creative_shortcut')
       ) do %>
