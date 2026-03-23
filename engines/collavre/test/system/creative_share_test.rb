@@ -24,7 +24,8 @@ class CreativeShareSystemTest < ApplicationSystemTestCase
 
     visit collavre.creative_path(@creative)
 
-    # Share modal is loaded via AJAX when share button is clicked
+    # Open overflow menu first, then click share button (share is inside ⋯ menu)
+    find("#creative-overflow-menu", visible: :all).ancestor(".popup-menu-wrapper").find("button", match: :first).click
     find("#share-creative-btn").click
     assert_selector "#share-creative-modal", visible: :visible
 

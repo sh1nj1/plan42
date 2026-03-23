@@ -191,7 +191,8 @@ class InlineScriptsTest < ApplicationSystemTestCase
     # Modal is loaded via AJAX, so it should not be in the DOM initially
     assert_no_selector "#share-creative-modal"
 
-    # Click share button to load and open the modal
+    # Open overflow menu, then click share button (share is inside ⋯ menu)
+    find("#creative-overflow-menu", visible: :all).ancestor(".popup-menu-wrapper").find("button", match: :first).click
     find("#share-creative-btn").click
 
     # Modal should become visible after AJAX load
@@ -209,6 +210,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     visit collavre.creative_path(creative)
 
+    find("#creative-overflow-menu", visible: :all).ancestor(".popup-menu-wrapper").find("button", match: :first).click
     find("#share-creative-btn").click
     assert_selector "#share-creative-modal", visible: :visible
 

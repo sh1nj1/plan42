@@ -46,13 +46,18 @@ export default class extends Controller {
     const toggle = () => {
       this._showingArchived = !this._showingArchived
 
-      // Update desktop button
+      // Update button (now a labeled overflow-menu item)
       if (btn) {
         btn.classList.toggle('active', this._showingArchived)
-        btn.title = this._showingArchived ? (btn.dataset.hideText || '') : (btn.dataset.showText || '')
+        const label = this._showingArchived ? (btn.dataset.hideText || '') : (btn.dataset.showText || '')
+        btn.title = label
+        // Update visible text while preserving the icon span
+        const iconSpan = btn.querySelector('span')
+        const iconHtml = iconSpan ? iconSpan.outerHTML + ' ' : ''
+        btn.innerHTML = iconHtml + label
       }
 
-      // Update mobile button text
+      // Update mobile button text (legacy, kept for backward compat)
       if (mobileBtn) {
         const label = this._showingArchived ? (mobileBtn.dataset.hideText || '') : (mobileBtn.dataset.showText || '')
         const iconSpan = mobileBtn.querySelector('span')
