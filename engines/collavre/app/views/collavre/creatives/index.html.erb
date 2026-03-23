@@ -17,7 +17,7 @@
     <div class="creative-breadcrumb" role="navigation" aria-label="<%= t('collavre.creatives.index.breadcrumb', default: 'Breadcrumb') %>">
       <a href="<%= creatives_path %>" class="creative-breadcrumb-link"><%= t('collavre.creatives.index.root_breadcrumb', default: '최상위') %></a>
       <% if @parent_creative %>
-        <% @parent_creative.ancestors.each do |ancestor| %>
+        <% @parent_creative.ancestors.reverse.each do |ancestor| %>
           <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
           <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" title="<%= strip_tags(ancestor.effective_description) %>"><%= truncate(strip_tags(ancestor.effective_description), length: 20) %></a>
         <% end %>
