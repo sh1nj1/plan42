@@ -43,6 +43,26 @@ describe('CommentsPopupController', () => {
         application.stop()
     })
 
+    test('close in fullscreen exits fullscreen state and cleans up body class', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+
+        // Open popup
+        controller.open(triggerBtn)
+
+        // Simulate entering fullscreen
+        popup.dataset.fullscreen = 'true'
+        popup.dataset.creativeId = '123'
+        document.body.classList.add('chat-fullscreen')
+
+        // Close popup
+        controller.close()
+
+        expect(popup.style.display).toBe('none')
+        expect(popup.dataset.fullscreen).toBe('false')
+        expect(document.body.classList.contains('chat-fullscreen')).toBe(false)
+    })
+
     test('clears resized dataset attribute on close', () => {
         const triggerBtn = document.getElementById('trigger-btn')
         const popup = document.getElementById('comments-popup')

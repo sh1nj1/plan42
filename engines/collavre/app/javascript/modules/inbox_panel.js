@@ -1,6 +1,9 @@
 // Inbox panel functionality
 // Manages the inbox slide panel UI with pagination and touch gestures
 
+import { notifyPopupOpen, onOtherPopupOpen } from '../lib/gnb_popup_manager'
+
+const POPUP_ID = 'inbox-panel'
 let initialized = false
 
 function initInboxPanel() {
@@ -163,6 +166,7 @@ function initInboxPanel() {
 
     function openPanel() {
       if (!panel) return
+      notifyPopupOpen(POPUP_ID)
       panel.classList.add('open')
       localStorage.setItem('inboxOpen', '1')
       loadInbox()
@@ -175,6 +179,8 @@ function initInboxPanel() {
       localStorage.removeItem('inboxOpen')
       document.body.classList.remove('no-scroll')
     }
+
+    onOtherPopupOpen(POPUP_ID, closePanel)
 
     let startX = null
     if (panel) {

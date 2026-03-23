@@ -284,6 +284,31 @@ export default class extends Controller {
       }
     }))
 
+    // Exit fullscreen state if active
+    if (this.isFullscreen()) {
+      this.element.dataset.fullscreen = 'false'
+      document.body.classList.remove('chat-fullscreen')
+      this._syncFullscreenUI(false)
+      this._savedStyles = null
+
+      // Navigate back from fullscreen URL — use replaceState to consume the
+      // fullscreen history entry instead of pushing a new one, preventing a
+      // stale fullscreen entry from being reached via the Back button.
+      const creativeId = this.element.dataset.creativeId
+      const backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
+      if (backUrl) {
+        const url = new URL(backUrl, window.location.origin)
+        // Strip comment auto-open markers so a refresh after close doesn't
+        // re-open the popup (handles ?open_comments, ?comment_id, #comment_*).
+        url.searchParams.delete('open_comments')
+        url.searchParams.delete('comment_id')
+        const cleanPath = url.pathname.replace(/\/comments\/\d+$/, '')
+        url.hash = url.hash.replace(/^#comment_\d+$/, '')
+        window.history.replaceState({ fullscreen: false }, '', cleanPath + url.search + url.hash)
+      }
+      this._previousUrl = null
+    }
+
     this._clearChatActiveRow()
 
     this.element.style.display = 'none'
@@ -294,6 +319,7 @@ export default class extends Controller {
     this.element.style.right = ''
     this.element.style.top = ''
     this.element.style.bottom = ''
+    this.element.style.position = ''
     delete this.element.dataset.resized
   }
 

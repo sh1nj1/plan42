@@ -102,6 +102,8 @@ ko:
         progress_complete: 완료
         progress_incomplete: 미완료
         progress_complete_children_alert: 하위 크리에이티브도 모두 완료로 표시됩니다.
+        mark_complete: 완료로 표시
+        mark_incomplete: 미완료로 표시
         set_plan_title: 선택된 크리에이티브에 대한 계획 설정
         are_you_sure_delete_share: 공유를 삭제하시겠습니까?
         share_deleted: 공유가 삭제 되었습니다.
