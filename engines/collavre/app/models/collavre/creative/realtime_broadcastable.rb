@@ -29,6 +29,11 @@ module Collavre
 
         Rails.logger.info "[CreativeBroadcast] #{action} creative #{id} -> broadcasting to users #{target_users.map(&:id)}"
 
+        # Exclude the user who made the change — their UI already reflects it
+        current = Collavre.current_user
+        target_users.reject! { |u| current && u.id == current.id }
+        return if target_users.empty?
+
         target_users.each do |target_user|
           Turbo::StreamsChannel.broadcast_action_to(
             [ target_user, :creative_tree ],
