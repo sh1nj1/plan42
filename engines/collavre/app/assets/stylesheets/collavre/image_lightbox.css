@@ -2,21 +2,22 @@
 .image-lightbox-dialog {
   position: fixed;
   inset: 0;
-  width: 100vw;
-  height: 100vh;
-  max-width: 100vw;
-  max-height: 100vh;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
   margin: 0;
   padding: 0;
   border: none;
   background: rgba(0, 0, 0, 0.92);
   z-index: var(--layer-important, 999);
   overflow: hidden;
-  display: block;
+  display: flex;
+  flex-direction: column;
 }
 
 .image-lightbox-dialog[open] {
-  display: block;
+  display: flex;
 }
 
 .image-lightbox-dialog::backdrop {
@@ -25,17 +26,14 @@
 
 /* Full-size overlay container */
 .image-lightbox-container {
-  width: 100vw;
-  height: 100vh;
-  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Toolbar pinned to top */
 .image-lightbox-toolbar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -44,6 +42,7 @@
   font-size: var(--text-1, 0.875rem);
   background: rgba(0, 0, 0, 0.6);
   z-index: 3;
+  flex-shrink: 0;
 }
 
 .image-lightbox-toolbar-actions {
@@ -80,19 +79,20 @@
   border-color: rgba(255, 255, 255, 0.5);
 }
 
-/* Stage — fills entire container, centers image */
+/* Stage — takes remaining space, centers image */
 .image-lightbox-stage {
-  position: absolute;
-  inset: 0;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  min-height: 0;
+  position: relative;
 }
 
 .image-lightbox-image {
-  max-width: 90vw;
-  max-height: 90vh;
+  max-width: 90%;
+  max-height: 90%;
   object-fit: contain;
   border-radius: var(--radius-2, 4px);
   user-select: none;
@@ -101,7 +101,7 @@
   transition: opacity 0.15s ease;
 }
 
-/* Navigation arrows — positioned via JS using fixed pixel values */
+/* Navigation arrows — positioned via JS */
 .image-lightbox-nav {
   position: fixed;
   width: 3rem;
@@ -123,8 +123,6 @@
   background: rgba(0, 0, 0, 0.7);
 }
 
-/* left/right set via JS */
-
 /* Responsive */
 @media (max-width: 768px) {
   .image-lightbox-btn-label {
@@ -138,6 +136,6 @@
   }
 
   .image-lightbox-image {
-    max-width: 96vw;
+    max-width: 96%;
   }
 }

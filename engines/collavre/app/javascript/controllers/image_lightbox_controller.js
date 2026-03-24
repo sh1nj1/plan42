@@ -364,9 +364,12 @@ export default class extends Controller {
     if (!this._dialog) return
     const prevBtn = this._dialog.querySelector(".image-lightbox-prev")
     const nextBtn = this._dialog.querySelector(".image-lightbox-next")
-    if (!prevBtn || !nextBtn) return
+    const stage = this._dialog.querySelector(".image-lightbox-stage")
+    if (!prevBtn || !nextBtn || !stage) return
 
-    const centerY = Math.round(window.innerHeight / 2 - 24) // 24 = half of 3rem button
+    const stageRect = stage.getBoundingClientRect()
+    const btnHeight = prevBtn.offsetHeight || 48
+    const centerY = Math.round(stageRect.top + stageRect.height / 2 - btnHeight / 2)
     prevBtn.style.top = `${centerY}px`
     prevBtn.style.left = "12px"
     nextBtn.style.top = `${centerY}px`
