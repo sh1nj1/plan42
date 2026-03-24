@@ -36,69 +36,6 @@ body {
     height: 100%;
 }
 
-nav {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    flex-wrap: wrap;
-    font-size: var(--text-1);
-    gap: var(--space-1);
-    max-width: var(--max-width);
-    margin: 0 auto;
-    padding: var(--space-3);
-    background: var(--color-nav-bg);
-    color: var(--color-nav-text);
-    border-bottom: 1px solid var(--color-border);
-    width: 100%;
-    box-sizing: border-box;
-}
-
-nav a,
-nav button {
-    min-width: 2em;
-    line-height: 1.5;
-    font-size: var(--text-1);
-    background: transparent;
-    color: var(--color-nav-btn-text);
-    text-decoration: none;
-    padding: var(--space-1);
-    border-radius: var(--radius-3);
-    border: none;
-    transition: background 0.2s var(--ease-out-2), color 0.2s var(--ease-out-2);
-}
-
-/* progress filter button group */
-.progress-filter-group {
-    display: flex;
-    gap: var(--space-1);
-}
-
-.progress-filter-btn {
-    border-radius: var(--radius-3);
-    border: none;
-    background: transparent;
-    padding: var(--space-1) var(--space-2);
-    transition: background 0.2s var(--ease-out-2);
-}
-
-.progress-filter-btn:first-child {
-    border-radius: var(--radius-3);
-}
-
-.progress-filter-btn:last-child {
-    border-radius: var(--radius-3);
-}
-
-.progress-filter-btn+.progress-filter-btn {
-    border-left: none;
-}
-
-.progress-filter-btn.active {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-    font-weight: var(--weight-5);
-}
-
 .creative-actions-row a,
 .creative-actions-row button {
     line-height: 1.2;
@@ -110,17 +47,6 @@ nav button {
     border-radius: var(--radius-2);
     padding: 0.25em 0.6em;
     transition: background 0.15s;
-}
-
-nav a:hover,
-nav button:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-}
-
-nav a:active,
-nav button:active {
-    background: color-mix(in srgb, var(--surface-hover) 80%, var(--text-primary) 5%);
 }
 
 .creative-actions-row a:hover,
@@ -145,13 +71,6 @@ input[type="submit"]:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     filter: grayscale(0.5);
-}
-
-nav #search {
-    border-radius: var(--radius-3);
-    padding-left: var(--space-2);
-    padding-right: var(--space-2);
-    margin-right: var(--space-1);
 }
 
 #search {
@@ -438,169 +357,6 @@ button {
     font-weight: bold;
     cursor: pointer;
     color: var(--color-bg);
-}
-
-
-#inbox-panel.slide-panel {
-    position: fixed;
-    top: 0;
-    right: -360px;
-    width: 360px;
-    max-width: 100vw;
-    height: 100%;
-    background: var(--color-section-bg);
-    border-left: 1px solid var(--color-border);
-    box-shadow: var(--shadow-3);
-    overflow-y: auto;
-    transition: right 0.3s;
-    z-index: 1000;
-    border-radius: 8px 0 0 8px;
-}
-
-#inbox-panel.open {
-    right: 0;
-}
-
-@media (max-width: 360px) {
-    #inbox-panel.slide-panel {
-        right: -100vw;
-        width: 100vw;
-    }
-
-    #inbox-panel.slide-panel.open {
-        right: 0;
-    }
-}
-
-.inbox-panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-2) var(--space-3);
-    background: var(--color-nav-bg);
-    color: var(--color-nav-text);
-    border-bottom: 1px solid var(--color-border);
-}
-
-#close-inbox {
-    position: static;
-    color: var(--color-nav-text);
-}
-
-#inbox-panel {
-    --inbox-spacing: var(--paragraph-space-1);
-}
-
-.inbox-item {
-    border-bottom: 1px solid var(--color-border);
-    padding: var(--inbox-spacing);
-}
-
-.inbox-item:last-child {
-    border-bottom: none;
-}
-
-.inbox-item .actions button {
-    margin-right: 0.5em;
-    padding: 0.15em 0.4em;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-2);
-    background: var(--color-btn-bg);
-    color: var(--color-btn-text);
-    font-size: 0.75rem;
-    line-height: 1.3;
-    cursor: pointer;
-}
-
-.inbox-item .actions button:hover {
-    filter: brightness(var(--hover-brightness, 0.95));
-}
-
-.inbox-item .actions .delete-item {
-    color: var(--color-danger);
-    border-color: var(--color-danger);
-    background: transparent;
-}
-
-.inbox-item .actions .delete-item:hover {
-    background: var(--color-danger);
-    color: var(--text-on-badge);
-}
-
-/* NOTE: delete-item styles above mirror .btn-danger from dark_mode.css
-   Kept here for specificity since inbox buttons use element selectors */
-
-.inbox-empty {
-    padding: var(--inbox-spacing);
-}
-
-/* ChatGPT-style popup menu overrides */
-nav .popup-menu-wrapper .popup-menu {
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-3);
-    box-shadow: var(--shadow-2);
-    padding: var(--space-1);
-    background: var(--surface-section);
-}
-
-nav .popup-menu-item button,
-nav .popup-menu-item a {
-    border-radius: var(--radius-2);
-    padding: var(--space-1) var(--space-2);
-    transition: background 0.15s var(--ease-out-2);
-}
-
-nav .popup-menu-item button:hover,
-nav .popup-menu-item a:hover {
-    background: var(--surface-hover);
-}
-
-#inbox-menu-btn {
-    position: relative;
-}
-
-.badge {
-    background: var(--color-badge-bg, red);
-    color: var(--color-badge-text, white);
-    border-radius: var(--radius-round);
-    padding: 0 6px;
-    font-size: var(--text-00);
-    font-weight: var(--weight-6);
-    line-height: 1.4;
-    margin-left: var(--space-1);
-    display: none;
-    min-width: 1.2em;
-    text-align: center;
-}
-
-/* Responsive visibility helpers */
-.mobile-only {
-    display: none;
-}
-
-.desktop-only {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-}
-
-@media (max-width: 768px) {
-    nav {
-        padding: var(--space-3) var(--space-2);
-        gap: var(--space-1);
-    }
-
-    nav #search {
-        width: 8em;
-    }
-
-    .desktop-only {
-        display: none !important;
-    }
-
-    .mobile-only {
-        display: inline-block !important;
-    }
 }
 
 input[type="password"] {

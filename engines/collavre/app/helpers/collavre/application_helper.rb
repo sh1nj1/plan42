@@ -6,6 +6,7 @@ module Collavre
     COLLAVRE_STYLESHEETS = %w[
       collavre/design_tokens
       collavre/dark_mode
+      collavre/gnb
       collavre/creatives
       collavre/actiontext
       collavre/activity_logs
