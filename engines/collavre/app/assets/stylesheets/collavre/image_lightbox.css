@@ -105,9 +105,9 @@
   transition: transform 0.1s ease-out;
 }
 
-/* Navigation arrows */
+/* Navigation arrows — positioned relative to container, not stage */
 .image-lightbox-nav {
-  position: absolute;
+  position: fixed;
   top: 50%;
   transform: translateY(-50%);
   width: 3rem;
