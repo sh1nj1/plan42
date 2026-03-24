@@ -11,10 +11,20 @@ export default class extends Controller {
   connect() {
     this.abortController = null
     this.loadingIndicator = null
+    this._editing = false
+    this._pendingRefetch = false
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
-    this.handleSyncRefetch = () => this.debouncedLoad()
-    this.handleDocSyncRefetch = () => this.debouncedLoad()
+    this.handleSyncRefetch = (e) => this._handleSyncRefetch(e)
+    this.handleDocSyncRefetch = (e) => this._handleSyncRefetch(e)
+    this._handleEditStart = () => { this._editing = true }
+    this._handleEditStop = () => {
+      this._editing = false
+      if (this._pendingRefetch) {
+        this._pendingRefetch = false
+        this.debouncedLoad()
+      }
+    }
     document.documentElement.classList.remove('creative-alignment-ready')
     if (!this.hasCachedContent()) {
       this.load()
@@ -24,6 +34,8 @@ export default class extends Controller {
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
     this.element.addEventListener('creative-sync:refetch', this.handleSyncRefetch)
     document.addEventListener('creative-sync:refetch', this.handleDocSyncRefetch)
+    document.addEventListener('creative-editing:start', this._handleEditStart)
+    document.addEventListener('creative-editing:stop', this._handleEditStop)
     this._setupArchiveToggle()
   }
 
@@ -36,6 +48,8 @@ export default class extends Controller {
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
     this.element.removeEventListener('creative-sync:refetch', this.handleSyncRefetch)
     document.removeEventListener('creative-sync:refetch', this.handleDocSyncRefetch)
+    document.removeEventListener('creative-editing:start', this._handleEditStart)
+    document.removeEventListener('creative-editing:stop', this._handleEditStop)
     if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
     if (this._archiveToggleHandler) {
       document.getElementById('toggle-archived-btn')?.removeEventListener('click', this._archiveToggleHandler)
@@ -87,6 +101,46 @@ export default class extends Controller {
     this._archiveToggleHandler = toggle
     if (btn) btn.addEventListener('click', toggle)
     if (mobileBtn) mobileBtn.addEventListener('click', toggle)
+  }
+
+  _handleSyncRefetch(event) {
+    if (this._editing) {
+      // Don't do a full tree refetch while editing — it would close the editor.
+      // Instead, update just the changed row (if it's not the one being edited).
+      this._pendingRefetch = true
+      const detail = event?.detail
+      if (detail?.creativeId) {
+        const editingRow = document.querySelector('#inline-edit-form-element')
+        const editingId = editingRow?.dataset?.creativeId
+        if (String(detail.creativeId) !== String(editingId)) {
+          // Update the non-editing changed row via individual fetch
+          this._refreshSingleRow(detail.creativeId)
+        }
+      }
+      return
+    }
+    this.debouncedLoad()
+  }
+
+  async _refreshSingleRow(creativeId) {
+    try {
+      const response = await fetch(`/creatives/${creativeId}.json`, {
+        headers: { Accept: 'application/json' }
+      })
+      if (!response.ok) return
+      const data = await response.json()
+      const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
+      if (!row) return
+      if (data.description) row.descriptionHtml = data.description
+      if (data.description_raw_html != null) row.dataset.descriptionRawHtml = data.description_raw_html
+      if (data.progress_html) {
+        row.progressHtml = data.progress_html
+        row.dataset.progressHtml = data.progress_html
+      }
+      if (data.progress != null) row.dataset.progressValue = String(data.progress)
+    } catch (e) {
+      console.warn('[TreeController] failed to refresh single row', creativeId, e)
+    }
   }
 
   debouncedLoad() {
