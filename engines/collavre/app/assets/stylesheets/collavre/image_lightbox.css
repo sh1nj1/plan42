@@ -12,6 +12,11 @@
   background: rgba(0, 0, 0, 0.92);
   z-index: var(--layer-important, 999);
   overflow: hidden;
+  display: block;
+}
+
+.image-lightbox-dialog[open] {
+  display: block;
 }
 
 .image-lightbox-dialog::backdrop {
