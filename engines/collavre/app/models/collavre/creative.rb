@@ -16,6 +16,7 @@ module Collavre
     include Linkable
     include Permissible
     include Describable
+    include RealtimeBroadcastable
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
     has_many :comment_read_pointers, class_name: "Collavre::CommentReadPointer", dependent: :delete_all

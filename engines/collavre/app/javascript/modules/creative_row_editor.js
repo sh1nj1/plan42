@@ -753,6 +753,14 @@ export function initializeCreativeRowEditor() {
       template.style.display = 'block';
       loadCreative(tree);
       updateActionButtonStates();
+
+      // Notify sync controller that editing started
+      const editCreativeId = form.dataset.creativeId || currentRowElement?.getAttribute('creative-id');
+      if (editCreativeId) {
+        document.dispatchEvent(new CustomEvent('creative-editing:start', {
+          detail: { creativeId: parseInt(editCreativeId, 10) }
+        }));
+      }
     }
 
     function initializeEventListeners() {
@@ -1063,6 +1071,15 @@ export function initializeCreativeRowEditor() {
       const tree = currentTree;
       const parentId = parentInput.value;
       const wasNew = !form.dataset.creativeId;
+
+      // Notify sync controller that editing stopped
+      const editCreativeId = form.dataset.creativeId;
+      if (editCreativeId) {
+        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+          detail: { creativeId: parseInt(editCreativeId, 10) }
+        }));
+      }
+
       currentTree = null;
       currentRowElement = null;
       tree.draggable = true;

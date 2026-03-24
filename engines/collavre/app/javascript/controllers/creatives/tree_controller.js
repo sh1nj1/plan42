@@ -13,6 +13,7 @@ export default class extends Controller {
     this.loadingIndicator = null
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
+    this.handleSyncRefetch = () => this.load()
     document.documentElement.classList.remove('creative-alignment-ready')
     if (!this.hasCachedContent()) {
       this.load()
@@ -20,6 +21,7 @@ export default class extends Controller {
     this.queueAlignmentUpdate()
     window.addEventListener('resize', this.handleResize)
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
+    this.element.addEventListener('creative-sync:refetch', this.handleSyncRefetch)
     this._setupArchiveToggle()
   }
 
@@ -30,6 +32,7 @@ export default class extends Controller {
     }
     window.removeEventListener('resize', this.handleResize)
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
+    this.element.removeEventListener('creative-sync:refetch', this.handleSyncRefetch)
     if (this._archiveToggleHandler) {
       document.getElementById('toggle-archived-btn')?.removeEventListener('click', this._archiveToggleHandler)
       document.getElementById('toggle-archived-btn-mobile')?.removeEventListener('click', this._archiveToggleHandler)

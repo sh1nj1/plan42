@@ -8,6 +8,7 @@ import CreativesDragDropController from "./creatives/drag_drop_controller"
 import CreativesExpansionController from "./creatives/expansion_controller"
 import CreativesRowEditorController from "./creatives/row_editor_controller"
 import CreativesTreeController from "./creatives/tree_controller"
+import CreativesSyncController from "./creatives/sync_controller"
 import CreativesSetPlanModalController from "./creatives/set_plan_modal_controller"
 import CommentsListController from "./comments/list_controller"
 import CommentsFormController from "./comments/form_controller"
@@ -41,6 +42,7 @@ export {
   CreativesExpansionController,
   CreativesRowEditorController,
   CreativesTreeController,
+  CreativesSyncController,
   CreativesSetPlanModalController,
   CommentsListController,
   CommentsFormController,
@@ -74,6 +76,7 @@ export function registerControllers(application) {
   application.register("creatives--expansion", CreativesExpansionController)
   application.register("creatives--row-editor", CreativesRowEditorController)
   application.register("creatives--tree", CreativesTreeController)
+  application.register("creatives--sync", CreativesSyncController)
   application.register("creatives--set-plan-modal", CreativesSetPlanModalController)
   application.register("comments--list", CommentsListController)
   application.register("comments--form", CommentsFormController)
