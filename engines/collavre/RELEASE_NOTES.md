@@ -1,3 +1,9 @@
+## v0.11.1 (2026-03-24)
+
+### Changes
+- eead2373 fix: update inbox panel CSS test to reference engine gnb.css (#1035)
+- cb53e988 refactor: extract GNB styles from host app to collavre engine (#1033)
+
 ## v0.11.0 (2026-03-24)
 
 ### Changes
