@@ -318,20 +318,15 @@ module Collavre
       require "zip"
       zip_filename = "images-comment-#{@comment.id}.zip"
 
-      response.headers["Content-Type"] = "application/zip"
-      response.headers["Content-Disposition"] = "attachment; filename=\"#{zip_filename}\""
-      response.headers["Cache-Control"] = "no-cache"
-
-      # Stream zip
-      self.response_body = Enumerator.new do |yielder|
-        buffer = Zip::OutputStream.write_buffer do |zip|
-          images.each do |image|
-            zip.put_next_entry(image.filename.to_s)
-            image.download { |chunk| zip.write(chunk) }
-          end
+      buffer = Zip::OutputStream.write_buffer do |zip|
+        images.each do |image|
+          zip.put_next_entry(image.filename.to_s)
+          zip.write(image.download)
         end
-        yielder << buffer.string
       end
+      buffer.rewind
+
+      send_data buffer.read, filename: zip_filename, type: "application/zip"
     end
 
     private
