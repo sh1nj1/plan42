@@ -4,7 +4,14 @@ import { Controller } from "@hotwired/stimulus"
 // Provides a fullscreen image carousel with navigation, download, and zoom
 export default class extends Controller {
   static values = {
-    downloadAllUrl: String
+    downloadAllUrl: String,
+    i18nClose: { type: String, default: "Close" },
+    i18nPrevious: { type: String, default: "Previous" },
+    i18nNext: { type: String, default: "Next" },
+    i18nDownload: { type: String, default: "Download" },
+    i18nDownloadAll: { type: String, default: "Download all" },
+    i18nDelete: { type: String, default: "Delete" },
+    i18nDeleteConfirm: { type: String, default: "Delete this image?" }
   }
 
   connect() {
@@ -192,20 +199,20 @@ export default class extends Controller {
         <div class="image-lightbox-toolbar">
           <span class="image-lightbox-counter"></span>
           <div class="image-lightbox-toolbar-actions">
-            <button class="image-lightbox-btn image-lightbox-zoom-in" type="button" title="Zoom in">🔍+ <span class="image-lightbox-btn-label">Zoom in</span></button>
-            <button class="image-lightbox-btn image-lightbox-zoom-out" type="button" title="Zoom out">🔍− <span class="image-lightbox-btn-label">Zoom out</span></button>
+            <button class="image-lightbox-btn image-lightbox-zoom-in" type="button" title="Zoom in">🔍+</button>
+            <button class="image-lightbox-btn image-lightbox-zoom-out" type="button" title="Zoom out">🔍−</button>
             <button class="image-lightbox-btn image-lightbox-zoom-reset" type="button" title="Reset zoom">1:1</button>
-            <button class="image-lightbox-btn image-lightbox-download-one" type="button" title="Download">⬇ <span class="image-lightbox-btn-label">Download</span></button>
-            ${this.hasDownloadAllUrlValue ? `<button class="image-lightbox-btn image-lightbox-download-all" type="button" title="Download all">📥 <span class="image-lightbox-btn-label">All</span></button>` : ""}
-            <button class="image-lightbox-btn image-lightbox-delete" type="button" title="Delete">🗑 <span class="image-lightbox-btn-label">Delete</span></button>
-            <button class="image-lightbox-btn image-lightbox-close" type="button" title="Close">✕ <span class="image-lightbox-btn-label">Close</span></button>
+            <button class="image-lightbox-btn image-lightbox-download-one" type="button" title="${this.i18nDownloadValue}">⬇ <span class="image-lightbox-btn-label">${this.i18nDownloadValue}</span></button>
+            ${this.hasDownloadAllUrlValue ? `<button class="image-lightbox-btn image-lightbox-download-all" type="button" title="${this.i18nDownloadAllValue}">📥 <span class="image-lightbox-btn-label">${this.i18nDownloadAllValue}</span></button>` : ""}
+            <button class="image-lightbox-btn image-lightbox-delete" type="button" title="${this.i18nDeleteValue}">🗑 <span class="image-lightbox-btn-label">${this.i18nDeleteValue}</span></button>
+            <button class="image-lightbox-btn image-lightbox-close" type="button" title="${this.i18nCloseValue}">✕ <span class="image-lightbox-btn-label">${this.i18nCloseValue}</span></button>
           </div>
         </div>
         <div class="image-lightbox-stage">
           <img class="image-lightbox-image" src="" alt="" draggable="false" />
         </div>
-        <button class="image-lightbox-nav image-lightbox-prev" type="button" title="Previous">‹</button>
-        <button class="image-lightbox-nav image-lightbox-next" type="button" title="Next">›</button>
+        <button class="image-lightbox-nav image-lightbox-prev" type="button" title="${this.i18nPreviousValue}">‹</button>
+        <button class="image-lightbox-nav image-lightbox-next" type="button" title="${this.i18nNextValue}">›</button>
       </div>
     `
 
@@ -331,7 +338,7 @@ export default class extends Controller {
 
   async _deleteCurrentImage() {
     if (!this.hasDownloadAllUrlValue) return
-    if (!confirm("Delete this image?")) return
+    if (!confirm(this.i18nDeleteConfirmValue)) return
 
     const url = `${this.downloadAllUrlValue.replace("download_images", "remove_image")}?index=${this._currentIndex}`
     const csrfToken = document.querySelector("meta[name='csrf-token']")?.content

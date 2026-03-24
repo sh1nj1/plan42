@@ -100,7 +100,14 @@
     <% images_list = comment.images.to_a %>
     <div class="comment-attachments"
          data-controller="image-lightbox"
-         data-image-lightbox-download-all-url-value="<%= collavre.download_images_creative_comment_path(comment.creative, comment) %>">
+         data-image-lightbox-download-all-url-value="<%= collavre.download_images_creative_comment_path(comment.creative, comment) %>"
+         data-image-lightbox-i18n-close-value="<%= t('collavre.comments.lightbox.close') %>"
+         data-image-lightbox-i18n-previous-value="<%= t('collavre.comments.lightbox.previous') %>"
+         data-image-lightbox-i18n-next-value="<%= t('collavre.comments.lightbox.next') %>"
+         data-image-lightbox-i18n-download-value="<%= t('collavre.comments.lightbox.download') %>"
+         data-image-lightbox-i18n-download-all-value="<%= t('collavre.comments.lightbox.download_all') %>"
+         data-image-lightbox-i18n-delete-value="<%= t('collavre.comments.lightbox.delete') %>"
+         data-image-lightbox-i18n-delete-confirm-value="<%= t('collavre.comments.lightbox.delete_confirm') %>">
       <% images_list.each_with_index do |image, idx| %>
         <% preview_image = image.variable? ? image.variant(resize_to_limit: [ 800, 800 ]) : image %>
         <% preview_image_path =
