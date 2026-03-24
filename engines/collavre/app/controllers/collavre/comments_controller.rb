@@ -5,7 +5,7 @@ module Collavre
     include Collavre::Comments::BatchOperations
 
     before_action :set_creative
-    before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action ]
+    before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action, :download_images ]
 
     def fullscreen
       # Render the creative index page with comments popup auto-opened in fullscreen.
@@ -305,6 +305,37 @@ module Collavre
 
 
     private
+
+    def download_images
+      images = @comment.images
+      unless images.attached?
+        head :not_found
+        return
+      end
+
+      if images.count == 1
+        redirect_to main_app.rails_blob_path(images.first, disposition: "attachment")
+        return
+      end
+
+      require "zip"
+      zip_filename = "images-comment-#{@comment.id}.zip"
+
+      response.headers["Content-Type"] = "application/zip"
+      response.headers["Content-Disposition"] = "attachment; filename=\"#{zip_filename}\""
+      response.headers["Cache-Control"] = "no-cache"
+
+      # Stream zip
+      self.response_body = Enumerator.new do |yielder|
+        buffer = Zip::OutputStream.write_buffer do |zip|
+          images.each do |image|
+            zip.put_next_entry(image.filename.to_s)
+            image.download { |chunk| zip.write(chunk) }
+          end
+        end
+        yielder << buffer.string
+      end
+    end
 
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin

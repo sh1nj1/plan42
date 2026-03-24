@@ -97,8 +97,11 @@
 
 
   <% if comment.images.attached? %>
-    <div class="comment-attachments">
-      <% comment.images.each do |image| %>
+    <% images_list = comment.images.to_a %>
+    <div class="comment-attachments"
+         data-controller="image-lightbox"
+         <%= images_list.size > 1 ? "data-image-lightbox-download-all-url-value=\"#{collavre.download_images_creative_comment_path(comment.creative, comment)}\"" : "" %>>
+      <% images_list.each_with_index do |image, idx| %>
         <% preview_image = image.variable? ? image.variant(resize_to_limit: [ 800, 800 ]) : image %>
         <% preview_image_path =
              if preview_image.respond_to?(:processed)
@@ -106,9 +109,19 @@
              else
                main_app.rails_blob_path(preview_image, only_path: true)
              end %>
-        <%= link_to main_app.rails_blob_path(image, only_path: true), target: '_blank', rel: 'noopener', class: 'comment-attachment-link' do %>
+        <a href="#" class="comment-attachment-link"
+           data-action="click->image-lightbox#open"
+           data-image-lightbox-index-param="<%= idx %>"
+           data-full-src="<%= main_app.rails_blob_path(image, only_path: true) %>"
+           data-download-src="<%= main_app.rails_blob_path(image, disposition: 'attachment', only_path: true) %>"
+           data-filename="<%= image.filename %>">
           <%= image_tag preview_image_path, class: 'comment-attachment-image', alt: '', loading: 'lazy' %>
-        <% end %>
+        </a>
+      <% end %>
+      <% if images_list.size > 1 %>
+        <a href="<%= collavre.download_images_creative_comment_path(comment.creative, comment) %>" class="comment-download-all-btn">
+          📥 <%= t('collavre.comments.lightbox.download_all') %>
+        </a>
       <% end %>
     </div>
   <% end %>

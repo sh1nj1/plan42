@@ -28,6 +28,7 @@ import ShareUserSearchController from "./share_user_search_controller"
 import CommentVersionController from "./comment_version_controller"
 import OrgChartController from "./org_chart_controller"
 import ShareModalController from "./share_modal_controller"
+import ImageLightboxController from "./image_lightbox_controller"
 
 // Export all controllers
 export {
@@ -57,7 +58,8 @@ export {
   ShareUserSearchController,
   CommentVersionController,
   OrgChartController,
-  ShareModalController
+  ShareModalController,
+  ImageLightboxController
 }
 
 // Registration function for use with a Stimulus application
@@ -90,4 +92,5 @@ export function registerControllers(application) {
   application.register("comment-version", CommentVersionController)
   application.register("org-chart", OrgChartController)
   application.register("share-modal", ShareModalController)
+  application.register("image-lightbox", ImageLightboxController)
 }

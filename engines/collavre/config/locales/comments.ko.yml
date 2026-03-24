@@ -167,6 +167,13 @@ ko:
         select: 선택
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
+      lightbox:
+        close: 닫기
+        previous: 이전
+        next: 다음
+        download: 다운로드
+        download_all: 전체 다운로드
+        counter: "%{current} / %{total}"
     calendar_events:
       deleted: 캘린더 이벤트가 삭제되었습니다.
     google_calendar:
