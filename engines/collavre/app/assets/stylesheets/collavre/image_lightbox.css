@@ -9,33 +9,21 @@
   margin: 0;
   padding: 0;
   border: none;
-  background: transparent;
+  background: rgba(0, 0, 0, 0.92);
   z-index: var(--layer-important, 999);
   overflow: hidden;
 }
 
 .image-lightbox-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.9);
-}
-
-.image-lightbox-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
+  background: rgba(0, 0, 0, 0.92);
 }
 
 .image-lightbox-container {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto 1fr;
   width: 100%;
   height: 100%;
-  pointer-events: none;
-}
-
-.image-lightbox-container > * {
-  pointer-events: auto;
+  position: relative;
 }
 
 /* Toolbar */
@@ -47,6 +35,7 @@
   color: #fff;
   font-size: var(--text-1, 0.875rem);
   background: rgba(0, 0, 0, 0.4);
+  z-index: 3;
 }
 
 .image-lightbox-toolbar-actions {
@@ -83,32 +72,31 @@
   border-color: rgba(255, 255, 255, 0.5);
 }
 
-/* Stage */
+/* Stage — takes all remaining space, centers image */
 .image-lightbox-stage {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
   overflow: hidden;
   min-height: 0;
+  position: relative;
 }
 
 .image-lightbox-image {
   max-width: 90vw;
-  max-height: calc(100vh - 4rem);
+  max-height: 100%;
   object-fit: contain;
   border-radius: var(--radius-2, 4px);
   user-select: none;
   -webkit-user-drag: none;
   transform-origin: center center;
-  transition: transform 0.1s ease-out;
 }
 
-/* Navigation arrows — positioned relative to container, not stage */
+/* Navigation arrows — absolute within container, vertically centered in stage area */
 .image-lightbox-nav {
-  position: fixed;
-  top: 50%;
+  position: absolute;
+  /* Center in stage area: toolbar height (~46px) + half of remaining */
+  top: calc(50% + 23px);
   transform: translateY(-50%);
   width: 3rem;
   height: 3rem;

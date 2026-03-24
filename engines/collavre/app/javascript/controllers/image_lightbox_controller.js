@@ -201,10 +201,10 @@ export default class extends Controller {
           </div>
         </div>
         <div class="image-lightbox-stage">
-          <button class="image-lightbox-nav image-lightbox-prev" type="button" title="Previous">‹</button>
           <img class="image-lightbox-image" src="" alt="" draggable="false" />
-          <button class="image-lightbox-nav image-lightbox-next" type="button" title="Next">›</button>
         </div>
+        <button class="image-lightbox-nav image-lightbox-prev" type="button" title="Previous">‹</button>
+        <button class="image-lightbox-nav image-lightbox-next" type="button" title="Next">›</button>
       </div>
     `
 
