@@ -1,3 +1,19 @@
+## v0.11.0 (2026-03-24)
+
+### Changes
+- 646a3e44 style: add right padding to breadcrumb for action button spacing (#1032)
+- c46142fa feat: redesign creative-actions-row with breadcrumb and overflow menu (#1031)
+- e8ca266b feat: persist topic selection server-side via UserCreativePreference (#1025)
+- 151002ce fix: close fullscreen chat properly on swipe down (#1027)
+- d9cc5463 fix: ensure only one GNB popup is visible at a time on mobile (#1026)
+- eadbb422 feat: add inline progress toggle on hover (#1021)
+- 3f7a567a fix: update system test for Enter key shortcut change (#1024)
+- c3ab40e9 fix: swap Enter/Shift+Enter behavior in creative inline editor (#1019)
+- c34070fe fix: markdown import drop not working due to missing dragover class (#1020)
+- 8697d203 feat: multi-word AND search for creatives and comments (#1016)
+- 6d58c308 fix: constrain mobile chat popup max-height when keyboard opens (#1017)
+- 836a1bb1 fix: use calc-based dynamic vertical centering for creative row icons (#1018)
+
 ## v0.10.0 (2026-03-20)
 
 ### Changes
