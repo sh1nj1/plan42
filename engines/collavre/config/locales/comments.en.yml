@@ -176,6 +176,8 @@ en:
         next: Next
         download: Download
         download_all: Download all
+        delete: Delete
+        delete_confirm: Delete this image?
         counter: "%{current} / %{total}"
     calendar_events:
       deleted: Calendar event deleted.

@@ -5,7 +5,7 @@ module Collavre
     include Collavre::Comments::BatchOperations
 
     before_action :set_creative
-    before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action, :download_images ]
+    before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action, :download_images, :remove_image ]
 
     def fullscreen
       # Render the creative index page with comments popup auto-opened in fullscreen.
@@ -334,6 +334,25 @@ module Collavre
       buffer.rewind
 
       send_data buffer.read, filename: zip_filename, type: "application/zip", disposition: "attachment"
+    end
+
+    def remove_image
+      images = @comment.images
+      index = params[:index].to_i
+      image = images.to_a[index]
+
+      unless image
+        head :not_found
+        return
+      end
+
+      unless @comment.user_id == Current.user.id || Current.user.system_admin?
+        head :forbidden
+        return
+      end
+
+      image.purge
+      head :ok
     end
 
     private

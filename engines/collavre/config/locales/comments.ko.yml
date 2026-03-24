@@ -173,6 +173,8 @@ ko:
         next: 다음
         download: 다운로드
         download_all: 전체 다운로드
+        delete: 삭제
+        delete_confirm: 이 이미지를 삭제하시겠습니까?
         counter: "%{current} / %{total}"
     calendar_events:
       deleted: 캘린더 이벤트가 삭제되었습니다.

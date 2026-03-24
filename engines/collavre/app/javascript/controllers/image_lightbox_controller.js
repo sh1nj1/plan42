@@ -196,6 +196,7 @@ export default class extends Controller {
             <button class="image-lightbox-btn image-lightbox-zoom-reset" type="button" title="Reset zoom">1:1</button>
             <button class="image-lightbox-btn image-lightbox-download-one" type="button" title="Download">⬇ Download</button>
             ${this.hasDownloadAllUrlValue ? `<button class="image-lightbox-btn image-lightbox-download-all" type="button" title="Download all">📥 All</button>` : ""}
+            <button class="image-lightbox-btn image-lightbox-delete" type="button" title="Delete">🗑 Delete</button>
             <button class="image-lightbox-btn image-lightbox-close" type="button" title="Close">✕ Close</button>
           </div>
         </div>
@@ -231,6 +232,47 @@ export default class extends Controller {
     dialog.querySelector(".image-lightbox-zoom-reset").addEventListener("click", (e) => {
       e.stopPropagation()
       this._resetZoom()
+    })
+
+    // Delete button
+    dialog.querySelector(".image-lightbox-delete").addEventListener("click", async (e) => {
+      e.stopPropagation()
+      if (!this.hasDownloadAllUrlValue) return
+      if (!confirm("Delete this image?")) return
+
+      const url = `${this.downloadAllUrlValue.replace("download_images", "remove_image")}?index=${this._currentIndex}`
+      const csrfToken = document.querySelector("meta[name='csrf-token']")?.content
+
+      try {
+        const resp = await fetch(url, {
+          method: "DELETE",
+          credentials: "same-origin",
+          headers: { "X-CSRF-Token": csrfToken }
+        })
+        if (resp.ok) {
+          // Remove from gallery
+          this._images.splice(this._currentIndex, 1)
+          if (this._images.length === 0) {
+            this._close()
+            // Reload comments to reflect removal
+            this.element.closest("[data-controller]")?.dispatchEvent(new CustomEvent("lightbox:image-deleted", { bubbles: true }))
+            location.reload()
+            return
+          }
+          if (this._currentIndex >= this._images.length) {
+            this._currentIndex = this._images.length - 1
+          }
+          this._showImage()
+
+          // Update download-all visibility
+          const downloadAllBtn = this._dialog.querySelector(".image-lightbox-download-all")
+          if (downloadAllBtn && this._images.length <= 1) {
+            downloadAllBtn.style.display = "none"
+          }
+        }
+      } catch (err) {
+        console.error("Delete failed:", err)
+      }
     })
 
     // Download buttons
