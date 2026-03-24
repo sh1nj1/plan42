@@ -15,10 +15,14 @@ registerStreamAction("refresh_creative_tree", function () {
     const action = this.getAttribute("change-action")
     console.log("[Turbo] refresh_creative_tree", { creativeId, action })
 
-    // Update title row if the changed creative matches the title
-    const titleRow = document.querySelector('creative-tree-row[is-title]')
-    if (titleRow && creativeId && String(titleRow.getAttribute('creative-id')) === String(creativeId)) {
-        refreshTitleRow(titleRow, creativeId)
+    // Update title row if the changed creative matches it.
+    // Non-title rows are handled by tree refetch (debouncedLoad) which
+    // includes inline_editor_payload with fresh description_raw_html.
+    if (creativeId) {
+        const titleRow = document.querySelector('creative-tree-row[is-title]')
+        if (titleRow && String(titleRow.getAttribute('creative-id')) === String(creativeId)) {
+            refreshCreativeRow(titleRow, creativeId)
+        }
     }
 
     // Dispatch event for any listening tree controller to refetch children
@@ -28,25 +32,32 @@ registerStreamAction("refresh_creative_tree", function () {
     }))
 })
 
-async function refreshTitleRow(titleRow, creativeId) {
+async function refreshCreativeRow(row, creativeId) {
     try {
         const response = await fetch(`/creatives/${creativeId}.json`, {
             headers: { Accept: 'application/json' }
         })
         if (!response.ok) return
         const data = await response.json()
-        // show.json returns 'description' (HTML), not 'description_html'
+        // Update visible description (show.json returns 'description' as HTML)
         if (data.description) {
-            titleRow.descriptionHtml = data.description
+            row.descriptionHtml = data.description
+        }
+        // Update raw HTML cache so inline editor loads fresh data
+        if (data.description_raw_html != null) {
+            row.dataset.descriptionRawHtml = data.description_raw_html
         }
         if (data.progress_html) {
-            titleRow.progressHtml = data.progress_html
-            titleRow.dataset.progressHtml = data.progress_html
+            row.progressHtml = data.progress_html
+            row.dataset.progressHtml = data.progress_html
         }
         if (data.progress != null) {
-            titleRow.dataset.progressValue = String(data.progress)
+            row.dataset.progressValue = String(data.progress)
         }
-        console.log("[Turbo] refreshed title row", creativeId)
+        if (data.origin_id != null) {
+            row.dataset.originId = String(data.origin_id)
+        }
+        console.log("[Turbo] refreshed creative row", creativeId)
     } catch (e) {
         console.warn("[Turbo] failed to refresh title row", e)
     }
