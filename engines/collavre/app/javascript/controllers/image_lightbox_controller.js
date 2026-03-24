@@ -94,7 +94,7 @@ export default class extends Controller {
     dialog.querySelector(".image-lightbox-download-one").addEventListener("click", (e) => {
       e.stopPropagation()
       const img = this._images[this._currentIndex]
-      if (img) this._triggerDownload(img.downloadSrc)
+      if (img && img.downloadSrc) window.open(img.downloadSrc, "_blank")
     })
 
     const downloadAllBtn = dialog.querySelector(".image-lightbox-download-all")
