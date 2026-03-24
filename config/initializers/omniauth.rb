@@ -37,3 +37,21 @@ Rails.application.config.middleware.use OmniAuth::Builder do
 end
 
 OmniAuth.config.allowed_request_methods = %i[get post]
+
+# Enable OmniAuth mock mode for development when GITHUB_MOCK=1
+# This allows testing the GitHub integration UI without real credentials.
+if ENV["GITHUB_MOCK"] == "1"
+  OmniAuth.config.test_mode = true
+  OmniAuth.config.mock_auth[:github] = OmniAuth::AuthHash.new(
+    provider: "github",
+    uid: "12345",
+    info: {
+      nickname: "dev-user",
+      name: "Dev User",
+      image: "https://avatars.githubusercontent.com/u/12345"
+    },
+    credentials: {
+      token: "fake-dev-token"
+    }
+  )
+end

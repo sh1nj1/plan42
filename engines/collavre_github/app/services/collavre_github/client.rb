@@ -1,7 +1,10 @@
 module CollavreGithub
   class Client
     def initialize(account)
-      @client = Octokit::Client.new(access_token: account.token)
+      options = { access_token: account.token }
+      api_endpoint = ENV["GITHUB_API_ENDPOINT"]
+      options[:api_endpoint] = api_endpoint if api_endpoint.present?
+      @client = Octokit::Client.new(options)
       @client.auto_paginate = true
     end
 
