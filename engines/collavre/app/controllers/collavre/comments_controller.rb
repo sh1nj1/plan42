@@ -317,23 +317,32 @@ module Collavre
           head :not_found
           return
         end
-        send_data image.download, filename: image.filename.to_s, type: image.content_type, disposition: "attachment"
+        image.blob.open do |file|
+          send_data file.read, filename: image.filename.to_s, type: image.content_type, disposition: "attachment"
+        end
         return
       end
 
-      # All images as zip
+      # All images as zip (using Tempfile to avoid large memory buffers)
       require "zip"
       zip_filename = "images-comment-#{@comment.id}.zip"
 
-      buffer = Zip::OutputStream.write_buffer do |zip|
-        images.each do |image|
-          zip.put_next_entry(image.filename.to_s)
-          zip.write(image.download)
+      tempfile = Tempfile.new([ "images", ".zip" ])
+      begin
+        Zip::OutputStream.open(tempfile.path) do |zip|
+          images.each do |image|
+            zip.put_next_entry(image.filename.to_s)
+            image.blob.open do |file|
+              zip.write(file.read)
+            end
+          end
         end
-      end
-      buffer.rewind
 
-      send_data buffer.read, filename: zip_filename, type: "application/zip", disposition: "attachment"
+        send_file tempfile.path, filename: zip_filename, type: "application/zip", disposition: "attachment"
+      ensure
+        tempfile.close
+        tempfile.unlink
+      end
     end
 
     def remove_image

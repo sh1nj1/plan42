@@ -209,106 +209,9 @@ export default class extends Controller {
       </div>
     `
 
-    // Close on backdrop click
-    dialog.addEventListener("click", (e) => {
-      if (e.target === dialog) this._close()
-    })
-    dialog.querySelector(".image-lightbox-close").addEventListener("click", () => this._close())
-    dialog.querySelector(".image-lightbox-prev").addEventListener("click", () => this._prev())
-    dialog.querySelector(".image-lightbox-next").addEventListener("click", () => this._next())
-    dialog.addEventListener("cancel", (e) => {
-      e.preventDefault()
-      this._close()
-    })
-
-    // Zoom buttons
-    dialog.querySelector(".image-lightbox-zoom-in").addEventListener("click", (e) => {
-      e.stopPropagation()
-      this._setZoom(this._zoom + 0.25)
-    })
-    dialog.querySelector(".image-lightbox-zoom-out").addEventListener("click", (e) => {
-      e.stopPropagation()
-      this._setZoom(this._zoom - 0.25)
-    })
-    dialog.querySelector(".image-lightbox-zoom-reset").addEventListener("click", (e) => {
-      e.stopPropagation()
-      this._resetZoom()
-    })
-
-    // Delete button
-    dialog.querySelector(".image-lightbox-delete").addEventListener("click", async (e) => {
-      e.stopPropagation()
-      if (!this.hasDownloadAllUrlValue) return
-      if (!confirm("Delete this image?")) return
-
-      const url = `${this.downloadAllUrlValue.replace("download_images", "remove_image")}?index=${this._currentIndex}`
-      const csrfToken = document.querySelector("meta[name='csrf-token']")?.content
-
-      try {
-        const resp = await fetch(url, {
-          method: "DELETE",
-          credentials: "same-origin",
-          headers: { "X-CSRF-Token": csrfToken }
-        })
-        if (resp.ok) {
-          // Remove from gallery
-          this._images.splice(this._currentIndex, 1)
-          if (this._images.length === 0) {
-            this._close()
-            // Reload comments to reflect removal
-            this.element.closest("[data-controller]")?.dispatchEvent(new CustomEvent("lightbox:image-deleted", { bubbles: true }))
-            location.reload()
-            return
-          }
-          if (this._currentIndex >= this._images.length) {
-            this._currentIndex = this._images.length - 1
-          }
-          this._showImage()
-
-          // Update download-all visibility
-          const downloadAllBtn = this._dialog.querySelector(".image-lightbox-download-all")
-          if (downloadAllBtn && this._images.length <= 1) {
-            downloadAllBtn.style.display = "none"
-          }
-        }
-      } catch (err) {
-        console.error("Delete failed:", err)
-      }
-    })
-
-    // Download buttons
-    dialog.querySelector(".image-lightbox-download-one").addEventListener("click", (e) => {
-      e.stopPropagation()
-      if (!this.hasDownloadAllUrlValue) return
-      const url = `${this.downloadAllUrlValue}?index=${this._currentIndex}`
-      this._triggerDownload(url)
-    })
-
-    const downloadAllBtn = dialog.querySelector(".image-lightbox-download-all")
-    if (downloadAllBtn) {
-      downloadAllBtn.addEventListener("click", (e) => {
-        e.stopPropagation()
-        this._triggerDownload(this.downloadAllUrlValue)
-      })
-    }
-
-    // Touch swipe (only when not zoomed)
-    let touchStartX = 0
-    const stage = dialog.querySelector(".image-lightbox-stage")
-    stage.addEventListener("touchstart", (e) => {
-      if (e.touches.length === 1) touchStartX = e.changedTouches[0].screenX
-    }, { passive: true })
-    stage.addEventListener("touchend", (e) => {
-      if (this._zoom > 1) return // Don't swipe when zoomed
-      if (e.changedTouches.length === 1) {
-        const diff = e.changedTouches[0].screenX - touchStartX
-        if (Math.abs(diff) > 50) {
-          diff > 0 ? this._prev() : this._next()
-        }
-      }
-    }, { passive: true })
-
-    // Setup zoom interactions (wheel, pinch, drag)
+    this._bindNavigationEvents(dialog)
+    this._bindToolbarEvents(dialog)
+    this._bindTouchEvents(dialog)
     this._setupZoom(dialog)
 
     document.body.appendChild(dialog)
@@ -358,6 +261,110 @@ export default class extends Controller {
     if (this._images.length <= 1) return
     this._currentIndex = (this._currentIndex + 1) % this._images.length
     this._showImage()
+  }
+
+  _bindNavigationEvents(dialog) {
+    dialog.addEventListener("click", (e) => {
+      if (e.target === dialog) this._close()
+    })
+    dialog.querySelector(".image-lightbox-close").addEventListener("click", () => this._close())
+    dialog.querySelector(".image-lightbox-prev").addEventListener("click", () => this._prev())
+    dialog.querySelector(".image-lightbox-next").addEventListener("click", () => this._next())
+    dialog.addEventListener("cancel", (e) => {
+      e.preventDefault()
+      this._close()
+    })
+  }
+
+  _bindToolbarEvents(dialog) {
+    // Zoom
+    dialog.querySelector(".image-lightbox-zoom-in").addEventListener("click", (e) => {
+      e.stopPropagation()
+      this._setZoom(this._zoom + 0.25)
+    })
+    dialog.querySelector(".image-lightbox-zoom-out").addEventListener("click", (e) => {
+      e.stopPropagation()
+      this._setZoom(this._zoom - 0.25)
+    })
+    dialog.querySelector(".image-lightbox-zoom-reset").addEventListener("click", (e) => {
+      e.stopPropagation()
+      this._resetZoom()
+    })
+
+    // Download
+    dialog.querySelector(".image-lightbox-download-one").addEventListener("click", (e) => {
+      e.stopPropagation()
+      if (!this.hasDownloadAllUrlValue) return
+      this._triggerDownload(`${this.downloadAllUrlValue}?index=${this._currentIndex}`)
+    })
+    const downloadAllBtn = dialog.querySelector(".image-lightbox-download-all")
+    if (downloadAllBtn) {
+      downloadAllBtn.addEventListener("click", (e) => {
+        e.stopPropagation()
+        this._triggerDownload(this.downloadAllUrlValue)
+      })
+    }
+
+    // Delete
+    dialog.querySelector(".image-lightbox-delete").addEventListener("click", (e) => {
+      e.stopPropagation()
+      this._deleteCurrentImage()
+    })
+  }
+
+  _bindTouchEvents(dialog) {
+    let touchStartX = 0
+    const stage = dialog.querySelector(".image-lightbox-stage")
+    stage.addEventListener("touchstart", (e) => {
+      if (e.touches.length === 1) touchStartX = e.changedTouches[0].screenX
+    }, { passive: true })
+    stage.addEventListener("touchend", (e) => {
+      if (this._zoom > 1) return
+      if (e.changedTouches.length === 1) {
+        const diff = e.changedTouches[0].screenX - touchStartX
+        if (Math.abs(diff) > 50) {
+          diff > 0 ? this._prev() : this._next()
+        }
+      }
+    }, { passive: true })
+  }
+
+  async _deleteCurrentImage() {
+    if (!this.hasDownloadAllUrlValue) return
+    if (!confirm("Delete this image?")) return
+
+    const url = `${this.downloadAllUrlValue.replace("download_images", "remove_image")}?index=${this._currentIndex}`
+    const csrfToken = document.querySelector("meta[name='csrf-token']")?.content
+
+    try {
+      const resp = await fetch(url, {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": csrfToken }
+      })
+      if (!resp.ok) return
+
+      this._images.splice(this._currentIndex, 1)
+      if (this._images.length === 0) {
+        this._close()
+        this.element.closest("[data-controller]")?.dispatchEvent(
+          new CustomEvent("lightbox:image-deleted", { bubbles: true })
+        )
+        location.reload()
+        return
+      }
+      if (this._currentIndex >= this._images.length) {
+        this._currentIndex = this._images.length - 1
+      }
+      this._showImage()
+
+      const downloadAllBtn = this._dialog.querySelector(".image-lightbox-download-all")
+      if (downloadAllBtn && this._images.length <= 1) {
+        downloadAllBtn.style.display = "none"
+      }
+    } catch (err) {
+      console.error("Delete failed:", err)
+    }
   }
 
   _positionNavButtons() {
