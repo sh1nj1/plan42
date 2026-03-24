@@ -101,6 +101,8 @@
   border-radius: var(--radius-2, 4px);
   user-select: none;
   -webkit-user-drag: none;
+  transform-origin: center center;
+  transition: transform 0.1s ease-out;
 }
 
 /* Navigation arrows */

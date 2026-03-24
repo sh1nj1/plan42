@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 
 // Connects to data-controller="image-lightbox"
-// Provides a fullscreen image carousel with navigation and download
+// Provides a fullscreen image carousel with navigation, download, and zoom
 export default class extends Controller {
   static values = {
     downloadAllUrl: String
@@ -42,19 +42,145 @@ export default class extends Controller {
 
   _triggerDownload(url) {
     if (!url) return
-    // Use a hidden iframe appended to document.body (outside dialog)
-    // This triggers a normal browser request with cookies, and
-    // Content-Disposition: attachment causes a file download
     const iframe = document.createElement("iframe")
     iframe.style.cssText = "position:absolute;width:0;height:0;border:0;visibility:hidden"
     document.body.appendChild(iframe)
     iframe.src = url
-    // Clean up after download starts
     setTimeout(() => iframe.remove(), 30000)
+  }
+
+  // --- Zoom ---
+
+  _resetZoom() {
+    this._zoom = 1
+    this._panX = 0
+    this._panY = 0
+    this._applyTransform()
+  }
+
+  _setZoom(newZoom, centerX, centerY) {
+    const MIN = 0.5, MAX = 5
+    const clamped = Math.min(MAX, Math.max(MIN, newZoom))
+    if (clamped === this._zoom) return
+
+    // Adjust pan so zoom centers on the pointer position
+    if (centerX !== undefined && centerY !== undefined) {
+      const imgEl = this._dialog.querySelector(".image-lightbox-image")
+      const rect = imgEl.getBoundingClientRect()
+      const ox = centerX - rect.left - rect.width / 2
+      const oy = centerY - rect.top - rect.height / 2
+      const ratio = 1 - clamped / this._zoom
+      this._panX += ox * ratio
+      this._panY += oy * ratio
+    }
+
+    this._zoom = clamped
+
+    // Reset pan if back to fit
+    if (this._zoom <= 1) {
+      this._panX = 0
+      this._panY = 0
+    }
+
+    this._applyTransform()
+  }
+
+  _applyTransform() {
+    const imgEl = this._dialog?.querySelector(".image-lightbox-image")
+    if (!imgEl) return
+    imgEl.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${this._zoom})`
+    imgEl.style.cursor = this._zoom > 1 ? "grab" : "default"
+  }
+
+  _setupZoom(dialog) {
+    this._zoom = 1
+    this._panX = 0
+    this._panY = 0
+
+    const stage = dialog.querySelector(".image-lightbox-stage")
+    const imgEl = dialog.querySelector(".image-lightbox-image")
+
+    // Mouse wheel zoom
+    stage.addEventListener("wheel", (e) => {
+      e.preventDefault()
+      const delta = e.deltaY > 0 ? -0.15 : 0.15
+      this._setZoom(this._zoom + delta, e.clientX, e.clientY)
+    }, { passive: false })
+
+    // Double-click to toggle zoom
+    imgEl.addEventListener("dblclick", (e) => {
+      e.stopPropagation()
+      if (this._zoom > 1) {
+        this._resetZoom()
+      } else {
+        this._setZoom(2.5, e.clientX, e.clientY)
+      }
+    })
+
+    // Mouse drag to pan when zoomed
+    let dragging = false, dragStartX = 0, dragStartY = 0, panStartX = 0, panStartY = 0
+
+    imgEl.addEventListener("mousedown", (e) => {
+      if (this._zoom <= 1) return
+      e.preventDefault()
+      dragging = true
+      dragStartX = e.clientX
+      dragStartY = e.clientY
+      panStartX = this._panX
+      panStartY = this._panY
+      imgEl.style.cursor = "grabbing"
+    })
+
+    window.addEventListener("mousemove", this._onMouseMove = (e) => {
+      if (!dragging) return
+      this._panX = panStartX + (e.clientX - dragStartX)
+      this._panY = panStartY + (e.clientY - dragStartY)
+      this._applyTransform()
+    })
+
+    window.addEventListener("mouseup", this._onMouseUp = () => {
+      if (!dragging) return
+      dragging = false
+      const imgEl2 = this._dialog?.querySelector(".image-lightbox-image")
+      if (imgEl2) imgEl2.style.cursor = this._zoom > 1 ? "grab" : "default"
+    })
+
+    // Pinch zoom (touch)
+    let lastPinchDist = 0
+
+    stage.addEventListener("touchstart", (e) => {
+      if (e.touches.length === 2) {
+        lastPinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        )
+      }
+    }, { passive: true })
+
+    stage.addEventListener("touchmove", (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault()
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        )
+        const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2
+        const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2
+        const scale = dist / lastPinchDist
+        this._setZoom(this._zoom * scale, centerX, centerY)
+        lastPinchDist = dist
+      }
+    }, { passive: false })
+  }
+
+  _cleanupZoom() {
+    if (this._onMouseMove) window.removeEventListener("mousemove", this._onMouseMove)
+    if (this._onMouseUp) window.removeEventListener("mouseup", this._onMouseUp)
   }
 
   _createDialog() {
     if (this._dialog) {
+      this._cleanupZoom()
       this._dialog.remove()
     }
 
@@ -65,6 +191,9 @@ export default class extends Controller {
         <div class="image-lightbox-toolbar">
           <span class="image-lightbox-counter"></span>
           <div class="image-lightbox-toolbar-actions">
+            <button class="image-lightbox-btn image-lightbox-zoom-in" type="button" title="Zoom in">🔍+</button>
+            <button class="image-lightbox-btn image-lightbox-zoom-out" type="button" title="Zoom out">🔍−</button>
+            <button class="image-lightbox-btn image-lightbox-zoom-reset" type="button" title="Reset zoom">1:1</button>
             <button class="image-lightbox-btn image-lightbox-download-one" type="button" title="Download">⬇ Download</button>
             ${this.hasDownloadAllUrlValue ? `<button class="image-lightbox-btn image-lightbox-download-all" type="button" title="Download all">📥 All</button>` : ""}
             <button class="image-lightbox-btn image-lightbox-close" type="button" title="Close">✕ Close</button>
@@ -72,13 +201,13 @@ export default class extends Controller {
         </div>
         <div class="image-lightbox-stage">
           <button class="image-lightbox-nav image-lightbox-prev" type="button" title="Previous">‹</button>
-          <img class="image-lightbox-image" src="" alt="" />
+          <img class="image-lightbox-image" src="" alt="" draggable="false" />
           <button class="image-lightbox-nav image-lightbox-next" type="button" title="Next">›</button>
         </div>
       </div>
     `
 
-    // Close on backdrop click (clicking the dialog element itself, not children)
+    // Close on backdrop click
     dialog.addEventListener("click", (e) => {
       if (e.target === dialog) this._close()
     })
@@ -90,11 +219,24 @@ export default class extends Controller {
       this._close()
     })
 
-    // Download buttons - use <button> not <a> to avoid all link/Turbo issues
+    // Zoom buttons
+    dialog.querySelector(".image-lightbox-zoom-in").addEventListener("click", (e) => {
+      e.stopPropagation()
+      this._setZoom(this._zoom + 0.25)
+    })
+    dialog.querySelector(".image-lightbox-zoom-out").addEventListener("click", (e) => {
+      e.stopPropagation()
+      this._setZoom(this._zoom - 0.25)
+    })
+    dialog.querySelector(".image-lightbox-zoom-reset").addEventListener("click", (e) => {
+      e.stopPropagation()
+      this._resetZoom()
+    })
+
+    // Download buttons
     dialog.querySelector(".image-lightbox-download-one").addEventListener("click", (e) => {
       e.stopPropagation()
       if (!this.hasDownloadAllUrlValue) return
-      // Use same-origin endpoint with index param to avoid CORS/CSP issues
       const url = `${this.downloadAllUrlValue}?index=${this._currentIndex}`
       this._triggerDownload(url)
     })
@@ -107,18 +249,24 @@ export default class extends Controller {
       })
     }
 
-    // Touch swipe
+    // Touch swipe (only when not zoomed)
     let touchStartX = 0
     const stage = dialog.querySelector(".image-lightbox-stage")
     stage.addEventListener("touchstart", (e) => {
-      touchStartX = e.changedTouches[0].screenX
+      if (e.touches.length === 1) touchStartX = e.changedTouches[0].screenX
     }, { passive: true })
     stage.addEventListener("touchend", (e) => {
-      const diff = e.changedTouches[0].screenX - touchStartX
-      if (Math.abs(diff) > 50) {
-        diff > 0 ? this._prev() : this._next()
+      if (this._zoom > 1) return // Don't swipe when zoomed
+      if (e.changedTouches.length === 1) {
+        const diff = e.changedTouches[0].screenX - touchStartX
+        if (Math.abs(diff) > 50) {
+          diff > 0 ? this._prev() : this._next()
+        }
       }
     }, { passive: true })
+
+    // Setup zoom interactions (wheel, pinch, drag)
+    this._setupZoom(dialog)
 
     document.body.appendChild(dialog)
     this._dialog = dialog
@@ -130,6 +278,9 @@ export default class extends Controller {
     const img = this._images[this._currentIndex]
     const imgEl = this._dialog.querySelector(".image-lightbox-image")
     imgEl.src = img.fullSrc
+
+    // Reset zoom on image change
+    this._resetZoom()
 
     // Counter
     const counter = this._dialog.querySelector(".image-lightbox-counter")
@@ -156,6 +307,7 @@ export default class extends Controller {
 
   _close() {
     document.removeEventListener("keydown", this._boundKeydown)
+    this._cleanupZoom()
     if (this._dialog) {
       this._dialog.close()
       this._dialog.remove()
@@ -176,6 +328,19 @@ export default class extends Controller {
       case "Escape":
         e.preventDefault()
         this._close()
+        break
+      case "+":
+      case "=":
+        e.preventDefault()
+        this._setZoom(this._zoom + 0.25)
+        break
+      case "-":
+        e.preventDefault()
+        this._setZoom(this._zoom - 0.25)
+        break
+      case "0":
+        e.preventDefault()
+        this._resetZoom()
         break
     }
   }
