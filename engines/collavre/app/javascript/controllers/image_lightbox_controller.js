@@ -191,13 +191,13 @@ export default class extends Controller {
         <div class="image-lightbox-toolbar">
           <span class="image-lightbox-counter"></span>
           <div class="image-lightbox-toolbar-actions">
-            <button class="image-lightbox-btn image-lightbox-zoom-in" type="button" title="Zoom in">🔍+</button>
-            <button class="image-lightbox-btn image-lightbox-zoom-out" type="button" title="Zoom out">🔍−</button>
+            <button class="image-lightbox-btn image-lightbox-zoom-in" type="button" title="Zoom in">🔍+ <span class="image-lightbox-btn-label">Zoom in</span></button>
+            <button class="image-lightbox-btn image-lightbox-zoom-out" type="button" title="Zoom out">🔍− <span class="image-lightbox-btn-label">Zoom out</span></button>
             <button class="image-lightbox-btn image-lightbox-zoom-reset" type="button" title="Reset zoom">1:1</button>
-            <button class="image-lightbox-btn image-lightbox-download-one" type="button" title="Download">⬇ Download</button>
-            ${this.hasDownloadAllUrlValue ? `<button class="image-lightbox-btn image-lightbox-download-all" type="button" title="Download all">📥 All</button>` : ""}
-            <button class="image-lightbox-btn image-lightbox-delete" type="button" title="Delete">🗑 Delete</button>
-            <button class="image-lightbox-btn image-lightbox-close" type="button" title="Close">✕ Close</button>
+            <button class="image-lightbox-btn image-lightbox-download-one" type="button" title="Download">⬇ <span class="image-lightbox-btn-label">Download</span></button>
+            ${this.hasDownloadAllUrlValue ? `<button class="image-lightbox-btn image-lightbox-download-all" type="button" title="Download all">📥 <span class="image-lightbox-btn-label">All</span></button>` : ""}
+            <button class="image-lightbox-btn image-lightbox-delete" type="button" title="Delete">🗑 <span class="image-lightbox-btn-label">Delete</span></button>
+            <button class="image-lightbox-btn image-lightbox-close" type="button" title="Close">✕ <span class="image-lightbox-btn-label">Close</span></button>
           </div>
         </div>
         <div class="image-lightbox-stage">

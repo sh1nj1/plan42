@@ -159,6 +159,10 @@
 
 /* Responsive */
 @media (max-width: 768px) {
+  .image-lightbox-btn-label {
+    display: none;
+  }
+
   .image-lightbox-nav {
     width: 2.25rem;
     height: 2.25rem;
