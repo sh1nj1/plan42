@@ -94,7 +94,7 @@ export default class extends Controller {
     dialog.querySelector(".image-lightbox-download-one").addEventListener("click", (e) => {
       e.stopPropagation()
       const img = this._images[this._currentIndex]
-      if (img && img.downloadSrc) window.open(img.downloadSrc, "_blank")
+      if (img && img.downloadSrc) this._fetchDownload(img.downloadSrc, img.filename)
     })
 
     const downloadAllBtn = dialog.querySelector(".image-lightbox-download-all")
@@ -159,6 +159,22 @@ export default class extends Controller {
       this._dialog.remove()
       this._dialog = null
     }
+  }
+
+  _fetchDownload(url, filename) {
+    fetch(url, { credentials: "same-origin" })
+      .then((resp) => resp.blob())
+      .then((blob) => {
+        const blobUrl = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = blobUrl
+        a.download = filename || "download"
+        a.style.display = "none"
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        URL.revokeObjectURL(blobUrl)
+      })
   }
 
   _handleKeydown(e) {
