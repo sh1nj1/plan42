@@ -61,23 +61,26 @@
 }
 
 .image-lightbox-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  height: 30px;
+  padding: 0 var(--space-2, 0.5rem);
+  border-radius: var(--radius-2, 4px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border: none;
-  border-radius: var(--radius-2, 4px);
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-  font-size: 1rem;
-  cursor: pointer;
+  font-size: var(--text-0, 0.8rem);
+  transition: background 0.15s var(--ease-out-2, ease-out), color 0.15s var(--ease-out-2, ease-out), border-color 0.15s var(--ease-out-2, ease-out);
   text-decoration: none;
-  transition: background 0.15s;
+  gap: var(--space-1, 0.25rem);
 }
 
 .image-lightbox-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 /* Stage */

@@ -65,9 +65,9 @@ export default class extends Controller {
         <div class="image-lightbox-toolbar">
           <span class="image-lightbox-counter"></span>
           <div class="image-lightbox-toolbar-actions">
-            <button class="image-lightbox-btn image-lightbox-download-one" type="button" title="Download">⬇</button>
-            ${this.hasDownloadAllUrlValue ? `<button class="image-lightbox-btn image-lightbox-download-all" type="button" title="Download all">📥</button>` : ""}
-            <button class="image-lightbox-btn image-lightbox-close" type="button" title="Close">✕</button>
+            <button class="image-lightbox-btn image-lightbox-download-one" type="button" title="Download">⬇ Download</button>
+            ${this.hasDownloadAllUrlValue ? `<button class="image-lightbox-btn image-lightbox-download-all" type="button" title="Download all">📥 All</button>` : ""}
+            <button class="image-lightbox-btn image-lightbox-close" type="button" title="Close">✕ Close</button>
           </div>
         </div>
         <div class="image-lightbox-stage">
