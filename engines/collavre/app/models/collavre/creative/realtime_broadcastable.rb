@@ -24,8 +24,8 @@ module Collavre
       end
 
       def broadcast_creative_change(action)
-        root = find_broadcast_root
-        return unless root
+        roots = find_broadcast_roots
+        return if roots.empty?
 
         payload = { action: action.to_s }
 
@@ -37,17 +37,22 @@ module Collavre
           payload[:ancestors] = broadcast_ancestor_data
         end
 
-        CreativesChannel.broadcast_to(root, payload)
+        # Broadcast to every ancestor so any viewer at any level receives it
+        Rails.logger.info "[CreativeBroadcast] #{action} creative #{id} -> broadcasting to #{roots.map(&:id)}"
+        roots.each do |root|
+          CreativesChannel.broadcast_to(root, payload)
+        end
       end
 
-      def find_broadcast_root
-        # For linked creatives, broadcast to the origin's root
+      def find_broadcast_roots
         target = origin_id.present? ? (origin || self) : self
-        # Walk up to the root using closure_tree
-        root = target.root
-        root&.effective_origin
+        # Broadcast to self + all ancestors, so anyone viewing any
+        # level of the tree will receive the update
+        ([target] + target.ancestors).filter_map do |creative|
+          creative.effective_origin
+        end.uniq
       rescue ActiveRecord::RecordNotFound
-        nil
+        []
       end
 
       def broadcast_creative_data

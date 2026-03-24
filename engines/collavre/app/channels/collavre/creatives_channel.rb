@@ -7,6 +7,7 @@ module Collavre
       return reject unless @root
       return reject unless @root.has_permission?(current_user, :read)
 
+      Rails.logger.info "[CreativesChannel] User #{current_user.email} subscribed to root #{@root.id}"
       stream_for @root
       CreativePresenceStore.add(@root.id, current_user.id)
       broadcast_presence

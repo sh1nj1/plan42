@@ -5,8 +5,8 @@ const EDITING_INDICATOR_CLASS = 'creative-editing-indicator'
 
 export default class extends Controller {
   static values = {
-    rootId: Number,
-    currentUserId: Number,
+    rootId: { type: Number, default: 0 },
+    currentUserId: { type: Number, default: 0 },
   }
 
   connect() {
@@ -30,7 +30,7 @@ export default class extends Controller {
     document.addEventListener('creative-editing:start', this.handleEditStart)
     document.addEventListener('creative-editing:stop', this.handleEditStop)
 
-    if (this.rootIdValue) {
+    if (this.rootIdValue > 0) {
       this.subscribe()
     }
   }
@@ -39,6 +39,7 @@ export default class extends Controller {
     document.removeEventListener('creative-editing:start', this.handleEditStart)
     document.removeEventListener('creative-editing:stop', this.handleEditStop)
 
+    if (this.refetchTimer) clearTimeout(this.refetchTimer)
     if (this.subscription) {
       this.subscription.cleanup()
       this.subscription = null
@@ -50,17 +51,32 @@ export default class extends Controller {
       this.subscription.cleanup()
       this.subscription = null
     }
-    if (this.rootIdValue) {
+    if (this.rootIdValue > 0) {
       this.subscribe()
     }
   }
 
   subscribe() {
+    console.log('[CreativeSync] Subscribing to root_id:', this.rootIdValue)
     this.subscription = subscribeToCreatives(this.rootIdValue, {
-      onCreated: (data) => this.handleCreated(data),
-      onUpdated: (data) => this.handleUpdated(data),
-      onDestroyed: (data) => this.handleDestroyed(data),
-      onPresence: (data) => this.handlePresence(data),
+      onConnected: () => console.log('[CreativeSync] Connected'),
+      onDisconnected: () => console.log('[CreativeSync] Disconnected'),
+      onCreated: (data) => {
+        console.log('[CreativeSync] Created:', data)
+        this.handleCreated(data)
+      },
+      onUpdated: (data) => {
+        console.log('[CreativeSync] Updated:', data)
+        this.handleUpdated(data)
+      },
+      onDestroyed: (data) => {
+        console.log('[CreativeSync] Destroyed:', data)
+        this.handleDestroyed(data)
+      },
+      onPresence: (data) => {
+        console.log('[CreativeSync] Presence:', data)
+        this.handlePresence(data)
+      },
       onEditing: (data) => this.handleEditing(data),
       onStoppedEditing: (data) => this.handleStoppedEditing(data),
     })
@@ -68,93 +84,23 @@ export default class extends Controller {
 
   // --- CRUD handlers ---
 
-  handleCreated(data) {
-    const { creative } = data
-    if (!creative) return
-
-    // Refetch the tree to get properly rendered node with all templates
-    this.refetchTree()
+  handleCreated(_data) {
+    this.debouncedRefetch()
   }
 
-  handleUpdated(data) {
-    const { creative, ancestors } = data
-    if (!creative) return
-
-    // Update the creative row in the DOM
-    const row = this.findRow(creative.id)
-    if (row) {
-      // Update description
-      if (creative.description != null) {
-        const descTemplate = row.querySelector('template[data-part="description"]')
-        if (descTemplate) {
-          descTemplate.innerHTML = creative.description
-        }
-        row.descriptionHtml = creative.description
-        row.dataset.descriptionHtml = creative.description
-        row.dataset.descriptionRawHtml = creative.description_raw_html || ''
-      }
-
-      // Update progress
-      if (creative.progress != null) {
-        row.dataset.progressValue = creative.progress
-      }
-
-      // Trigger re-render
-      if (typeof row.requestUpdate === 'function') {
-        row.requestUpdate()
-      }
-    }
-
-    // Update ancestor progress bars
-    if (Array.isArray(ancestors)) {
-      ancestors.forEach((anc) => {
-        const ancRow = this.findRow(anc.id)
-        if (ancRow && anc.progress != null) {
-          ancRow.dataset.progressValue = anc.progress
-          if (typeof ancRow.requestUpdate === 'function') {
-            ancRow.requestUpdate()
-          }
-        }
-      })
-    }
-
-    // Also update the title row if it matches
-    const titleRow = document.querySelector('creative-tree-row[is-title]')
-    if (titleRow) {
-      const titleId = parseInt(titleRow.getAttribute('creative-id'), 10)
-      if (titleId === creative.id && creative.progress != null) {
-        titleRow.dataset.progressValue = creative.progress
-        if (typeof titleRow.requestUpdate === 'function') {
-          titleRow.requestUpdate()
-        }
-      }
-      // Check ancestors for title update
-      if (Array.isArray(ancestors)) {
-        const titleAncestor = ancestors.find((a) => a.id === titleId)
-        if (titleAncestor) {
-          titleRow.dataset.progressValue = titleAncestor.progress
-          if (typeof titleRow.requestUpdate === 'function') {
-            titleRow.requestUpdate()
-          }
-        }
-      }
-    }
+  handleUpdated(_data) {
+    this.debouncedRefetch()
   }
 
-  handleDestroyed(data) {
-    const { creative } = data
-    if (!creative) return
+  handleDestroyed(_data) {
+    this.debouncedRefetch()
+  }
 
-    const row = this.findRow(creative.id)
-    if (row) {
-      // Also remove the children container if exists
-      const domId = row.getAttribute('dom-id')
-      if (domId) {
-        const childrenContainer = document.getElementById(`children-of-${domId}`)
-        if (childrenContainer) childrenContainer.remove()
-      }
-      row.remove()
-    }
+  debouncedRefetch() {
+    if (this.refetchTimer) clearTimeout(this.refetchTimer)
+    this.refetchTimer = setTimeout(() => {
+      this.refetchTree()
+    }, 300)
   }
 
   // --- Presence handlers ---
