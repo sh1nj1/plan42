@@ -93,8 +93,10 @@ export default class extends Controller {
     // Download buttons - use <button> not <a> to avoid all link/Turbo issues
     dialog.querySelector(".image-lightbox-download-one").addEventListener("click", (e) => {
       e.stopPropagation()
-      const img = this._images[this._currentIndex]
-      if (img && img.downloadSrc) this._fetchDownload(img.downloadSrc, img.filename)
+      if (!this.hasDownloadAllUrlValue) return
+      // Use same-origin endpoint with index param to avoid CORS/CSP issues
+      const url = `${this.downloadAllUrlValue}?index=${this._currentIndex}`
+      this._triggerDownload(url)
     })
 
     const downloadAllBtn = dialog.querySelector(".image-lightbox-download-all")
@@ -159,22 +161,6 @@ export default class extends Controller {
       this._dialog.remove()
       this._dialog = null
     }
-  }
-
-  _fetchDownload(url, filename) {
-    fetch(url, { credentials: "same-origin" })
-      .then((resp) => resp.blob())
-      .then((blob) => {
-        const blobUrl = URL.createObjectURL(blob)
-        const a = document.createElement("a")
-        a.href = blobUrl
-        a.download = filename || "download"
-        a.style.display = "none"
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-        URL.revokeObjectURL(blobUrl)
-      })
   }
 
   _handleKeydown(e) {

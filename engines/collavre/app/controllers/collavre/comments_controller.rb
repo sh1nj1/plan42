@@ -310,11 +310,18 @@ module Collavre
         return
       end
 
-      if images.count == 1
-        redirect_to main_app.rails_blob_path(images.first, disposition: "attachment")
+      # Single image download by index
+      if params[:index].present?
+        image = images.to_a[params[:index].to_i]
+        unless image
+          head :not_found
+          return
+        end
+        send_data image.download, filename: image.filename.to_s, type: image.content_type, disposition: "attachment"
         return
       end
 
+      # All images as zip
       require "zip"
       zip_filename = "images-comment-#{@comment.id}.zip"
 

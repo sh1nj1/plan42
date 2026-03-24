@@ -100,7 +100,7 @@
     <% images_list = comment.images.to_a %>
     <div class="comment-attachments"
          data-controller="image-lightbox"
-         <% if images_list.size > 1 %>data-image-lightbox-download-all-url-value="<%= collavre.download_images_creative_comment_path(comment.creative, comment) %>"<% end %>>
+         data-image-lightbox-download-all-url-value="<%= collavre.download_images_creative_comment_path(comment.creative, comment) %>">
       <% images_list.each_with_index do |image, idx| %>
         <% preview_image = image.variable? ? image.variant(resize_to_limit: [ 800, 800 ]) : image %>
         <% preview_image_path =
