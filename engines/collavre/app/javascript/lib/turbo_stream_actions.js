@@ -1,7 +1,16 @@
 import { Turbo } from "@hotwired/turbo-rails"
 
+// Register custom actions on both the imported Turbo and the global window.Turbo
+// to handle cases where the bundled Turbo instance differs from the runtime one.
+function registerStreamAction(name, handler) {
+    Turbo.StreamActions[name] = handler
+    if (window.Turbo && window.Turbo.StreamActions && window.Turbo.StreamActions !== Turbo.StreamActions) {
+        window.Turbo.StreamActions[name] = handler
+    }
+}
+
 // Creative tree refresh: triggered when a shared creative is created/updated/destroyed
-Turbo.StreamActions.refresh_creative_tree = function () {
+registerStreamAction("refresh_creative_tree", function () {
     const creativeId = this.getAttribute("creative-id")
     const action = this.getAttribute("change-action")
     console.log("[Turbo] refresh_creative_tree", { creativeId, action })
@@ -11,9 +20,9 @@ Turbo.StreamActions.refresh_creative_tree = function () {
         detail: { creativeId: creativeId ? parseInt(creativeId, 10) : null, action },
         bubbles: true
     }))
-}
+})
 
-Turbo.StreamActions.update_reactions = function () {
+registerStreamAction("update_reactions", function () {
     const targetId = this.getAttribute("target")
     const dataJSON = this.getAttribute("data")
 
@@ -43,4 +52,4 @@ Turbo.StreamActions.update_reactions = function () {
     } catch (e) {
         console.error("Failed to process update_reactions stream action", e)
     }
-}
+})
