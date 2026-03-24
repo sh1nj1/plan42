@@ -118,11 +118,7 @@
           <%= image_tag preview_image_path, class: 'comment-attachment-image', alt: '', loading: 'lazy' %>
         </a>
       <% end %>
-      <% if images_list.size > 1 %>
-        <a href="<%= collavre.download_images_creative_comment_path(comment.creative, comment) %>" class="comment-download-all-btn" data-turbo="false" onclick="event.stopPropagation()">
-          📥 <%= t('collavre.comments.lightbox.download_all') %>
-        </a>
-      <% end %>
+
     </div>
   <% end %>
   <% reaction_emojis = [ "👍", "🎉", "❤️", "😂", "😮", "😢", "😡" ] %>

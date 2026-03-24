@@ -76,22 +76,14 @@ export default class extends Controller {
       this._close()
     })
 
-    // Handle download links - use programmatic download to avoid dialog interference
+    // Handle download links - use fetch+blob to bypass Turbo and dialog issues
     dialog.querySelectorAll(".image-lightbox-download-one, .image-lightbox-download-all").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.preventDefault()
         e.stopPropagation()
         const url = el.href
         if (!url) return
-        // Create a temporary link outside the dialog to trigger download
-        const tmpLink = document.createElement("a")
-        tmpLink.href = url
-        tmpLink.download = el.download || ""
-        tmpLink.setAttribute("data-turbo", "false")
-        tmpLink.style.display = "none"
-        document.body.appendChild(tmpLink)
-        tmpLink.click()
-        document.body.removeChild(tmpLink)
+        this._downloadViaFetch(url, el.dataset.filename || "")
       })
     })
 
@@ -126,6 +118,7 @@ export default class extends Controller {
     // Download link
     const downloadBtn = this._dialog.querySelector(".image-lightbox-download-one")
     downloadBtn.href = img.downloadSrc
+    downloadBtn.dataset.filename = img.filename
 
     // Nav visibility
     const prevBtn = this._dialog.querySelector(".image-lightbox-prev")
@@ -153,6 +146,28 @@ export default class extends Controller {
       this._dialog.remove()
       this._dialog = null
     }
+  }
+
+  _downloadViaFetch(url, fallbackFilename) {
+    fetch(url, { credentials: "same-origin" })
+      .then((resp) => {
+        // Extract filename from Content-Disposition header if available
+        const disposition = resp.headers.get("Content-Disposition") || ""
+        const match = disposition.match(/filename="?([^";\n]+)"?/)
+        const filename = match ? match[1] : (fallbackFilename || url.split("/").pop())
+        return resp.blob().then((blob) => ({ blob, filename }))
+      })
+      .then(({ blob, filename }) => {
+        const blobUrl = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = blobUrl
+        a.download = filename
+        a.style.display = "none"
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(blobUrl)
+      })
   }
 
   _handleKeydown(e) {
