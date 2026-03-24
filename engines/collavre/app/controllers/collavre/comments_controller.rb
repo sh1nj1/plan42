@@ -5,7 +5,7 @@ module Collavre
     include Collavre::Comments::BatchOperations
 
     before_action :set_creative
-    before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action ]
+    before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action, :download_images, :remove_image ]
 
     def fullscreen
       # Render the creative index page with comments popup auto-opened in fullscreen.
@@ -303,6 +303,59 @@ module Collavre
       render json: CommandMenuService.new(user: Current.user).items
     end
 
+    def download_images
+      images = @comment.images
+      unless images.attached?
+        head :not_found
+        return
+      end
+
+      # Single image download by index
+      if params[:index].present?
+        image = images.to_a[params[:index].to_i]
+        unless image
+          head :not_found
+          return
+        end
+        image.blob.open do |file|
+          send_data file.read, filename: image.filename.to_s, type: image.content_type, disposition: "attachment"
+        end
+        return
+      end
+
+      # All images as zip
+      require "zip"
+      zip_filename = "images-comment-#{@comment.id}.zip"
+
+      buffer = Zip::OutputStream.write_buffer do |zip|
+        images.each do |image|
+          zip.put_next_entry(image.filename.to_s)
+          image.blob.open { |file| zip.write(file.read) }
+        end
+      end
+      buffer.rewind
+
+      send_data buffer.read, filename: zip_filename, type: "application/zip", disposition: "attachment"
+    end
+
+    def remove_image
+      images = @comment.images
+      index = params[:index].to_i
+      image = images.to_a[index]
+
+      unless image
+        head :not_found
+        return
+      end
+
+      unless @comment.user_id == Current.user.id || Current.user.system_admin?
+        head :forbidden
+        return
+      end
+
+      image.purge
+      head :ok
+    end
 
     private
 

@@ -17,6 +17,7 @@ module Collavre
       collavre/comment_versions
       collavre/mention_menu
       collavre/slide_view
+      collavre/image_lightbox
     ].freeze
 
     COLLAVRE_PRINT_STYLESHEETS = %w[

@@ -69,6 +69,8 @@ Collavre::Engine.routes.draw do
         post :approve
         patch :update_action
         delete :reactions, to: "comments/reactions#destroy"
+        get :download_images
+        delete :remove_image
       end
 
       resources :reactions, only: [ :create ], module: :comments
