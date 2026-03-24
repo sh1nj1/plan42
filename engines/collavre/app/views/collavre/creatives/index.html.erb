@@ -1,4 +1,7 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
+<% if authenticated? %>
+  <%= turbo_stream_from Current.user, :creative_tree %>
+<% end %>
 
 <div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--set-plan-modal share-modal"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"

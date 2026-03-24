@@ -13,7 +13,8 @@ export default class extends Controller {
     this.loadingIndicator = null
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
-    this.handleSyncRefetch = () => this.load()
+    this.handleSyncRefetch = () => this.debouncedLoad()
+    this.handleDocSyncRefetch = () => this.debouncedLoad()
     document.documentElement.classList.remove('creative-alignment-ready')
     if (!this.hasCachedContent()) {
       this.load()
@@ -22,6 +23,7 @@ export default class extends Controller {
     window.addEventListener('resize', this.handleResize)
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
     this.element.addEventListener('creative-sync:refetch', this.handleSyncRefetch)
+    document.addEventListener('creative-sync:refetch', this.handleDocSyncRefetch)
     this._setupArchiveToggle()
   }
 
@@ -33,6 +35,8 @@ export default class extends Controller {
     window.removeEventListener('resize', this.handleResize)
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
     this.element.removeEventListener('creative-sync:refetch', this.handleSyncRefetch)
+    document.removeEventListener('creative-sync:refetch', this.handleDocSyncRefetch)
+    if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
     if (this._archiveToggleHandler) {
       document.getElementById('toggle-archived-btn')?.removeEventListener('click', this._archiveToggleHandler)
       document.getElementById('toggle-archived-btn-mobile')?.removeEventListener('click', this._archiveToggleHandler)
@@ -83,6 +87,11 @@ export default class extends Controller {
     this._archiveToggleHandler = toggle
     if (btn) btn.addEventListener('click', toggle)
     if (mobileBtn) mobileBtn.addEventListener('click', toggle)
+  }
+
+  debouncedLoad() {
+    if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
+    this._debouncedLoadTimer = setTimeout(() => this.load(), 300)
   }
 
   load() {

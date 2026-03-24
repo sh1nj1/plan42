@@ -24,57 +24,51 @@ module Collavre
       end
 
       def broadcast_creative_change(action)
-        roots = find_broadcast_roots
-        return if roots.empty?
+        target_users = find_broadcast_users
+        return if target_users.empty?
 
-        payload = { action: action.to_s }
+        Rails.logger.info "[CreativeBroadcast] #{action} creative #{id} -> broadcasting to users #{target_users.map(&:id)}"
 
-        case action
-        when :destroyed
-          payload[:creative] = { id: id, parent_id: parent_id }
-        when :created, :updated
-          payload[:creative] = broadcast_creative_data
-          payload[:ancestors] = broadcast_ancestor_data
-        end
-
-        # Broadcast to every ancestor so any viewer at any level receives it
-        Rails.logger.info "[CreativeBroadcast] #{action} creative #{id} -> broadcasting to #{roots.map(&:id)}"
-        roots.each do |root|
-          CreativesChannel.broadcast_to(root, payload)
+        target_users.each do |target_user|
+          Turbo::StreamsChannel.broadcast_action_to(
+            [ target_user, :creative_tree ],
+            action: :refresh_creative_tree,
+            target: "creatives",
+            attributes: {
+              "creative-id": id.to_s,
+              "change-action": action.to_s
+            }
+          )
         end
       end
 
-      def find_broadcast_roots
-        target = origin_id.present? ? (origin || self) : self
-        # Broadcast to self + all ancestors, so anyone viewing any
-        # level of the tree will receive the update
-        ([target] + target.ancestors).filter_map do |creative|
-          creative.effective_origin
-        end.uniq
-      rescue ActiveRecord::RecordNotFound
+      def find_broadcast_users
+        # Find the effective origin (for linked creatives)
+        target = begin
+          origin_id.present? && origin ? origin.effective_origin : effective_origin
+        rescue ActiveRecord::RecordNotFound
+          self
+        end
+
+        # Collect all users who might see this creative:
+        # 1. Owner of the creative
+        # 2. All users with shares on this creative or its ancestors
+        users = []
+        users << target.user if target.user
+
+        # Shared users on the creative itself
+        users.concat(target.all_shared_users.map(&:user))
+
+        # Also check ancestor shares (viewers at parent level)
+        target.ancestors.each do |ancestor|
+          users << ancestor.user if ancestor.user
+          users.concat(ancestor.all_shared_users.map(&:user))
+        end
+
+        users.compact.uniq
+      rescue StandardError => e
+        Rails.logger.error "[CreativeBroadcast] Error finding users: #{e.message}"
         []
-      end
-
-      def broadcast_creative_data
-        {
-          id: id,
-          parent_id: parent_id,
-          description: effective_description,
-          description_raw_html: description,
-          progress: progress,
-          sequence: sequence,
-          origin_id: origin_id,
-          updated_at: updated_at&.iso8601
-        }
-      end
-
-      def broadcast_ancestor_data
-        ancestors.map do |anc|
-          {
-            id: anc.id,
-            progress: anc.progress
-          }
-        end
       end
     end
   end
