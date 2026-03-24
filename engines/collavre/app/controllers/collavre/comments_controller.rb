@@ -323,26 +323,19 @@ module Collavre
         return
       end
 
-      # All images as zip (using Tempfile to avoid large memory buffers)
+      # All images as zip
       require "zip"
       zip_filename = "images-comment-#{@comment.id}.zip"
 
-      tempfile = Tempfile.new([ "images", ".zip" ])
-      begin
-        Zip::OutputStream.open(tempfile.path) do |zip|
-          images.each do |image|
-            zip.put_next_entry(image.filename.to_s)
-            image.blob.open do |file|
-              zip.write(file.read)
-            end
-          end
+      buffer = Zip::OutputStream.write_buffer do |zip|
+        images.each do |image|
+          zip.put_next_entry(image.filename.to_s)
+          image.blob.open { |file| zip.write(file.read) }
         end
-
-        send_file tempfile.path, filename: zip_filename, type: "application/zip", disposition: "attachment"
-      ensure
-        tempfile.close
-        tempfile.unlink
       end
+      buffer.rewind
+
+      send_data buffer.read, filename: zip_filename, type: "application/zip", disposition: "attachment"
     end
 
     def remove_image
