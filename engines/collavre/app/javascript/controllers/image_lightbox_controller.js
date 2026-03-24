@@ -53,8 +53,8 @@ export default class extends Controller {
         <div class="image-lightbox-toolbar">
           <span class="image-lightbox-counter"></span>
           <div class="image-lightbox-toolbar-actions">
-            <a class="image-lightbox-btn image-lightbox-download-one" title="" download>⬇</a>
-            ${this.hasDownloadAllUrlValue ? `<a class="image-lightbox-btn image-lightbox-download-all" href="${this.downloadAllUrlValue}" title="">📥</a>` : ""}
+            <a class="image-lightbox-btn image-lightbox-download-one" title="" download data-turbo="false">⬇</a>
+            ${this.hasDownloadAllUrlValue ? `<a class="image-lightbox-btn image-lightbox-download-all" href="${this.downloadAllUrlValue}" title="" data-turbo="false">📥</a>` : ""}
             <button class="image-lightbox-btn image-lightbox-close" type="button" title="">✕</button>
           </div>
         </div>
@@ -74,6 +74,13 @@ export default class extends Controller {
     dialog.addEventListener("cancel", (e) => {
       e.preventDefault()
       this._close()
+    })
+
+    // Prevent download links from closing lightbox or propagating
+    dialog.querySelectorAll(".image-lightbox-download-one, .image-lightbox-download-all").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation()
+      })
     })
 
     // Touch swipe
