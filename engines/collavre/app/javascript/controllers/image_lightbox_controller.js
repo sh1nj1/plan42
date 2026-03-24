@@ -76,10 +76,22 @@ export default class extends Controller {
       this._close()
     })
 
-    // Prevent download links from closing lightbox or propagating
+    // Handle download links - use programmatic download to avoid dialog interference
     dialog.querySelectorAll(".image-lightbox-download-one, .image-lightbox-download-all").forEach((el) => {
       el.addEventListener("click", (e) => {
+        e.preventDefault()
         e.stopPropagation()
+        const url = el.href
+        if (!url) return
+        // Create a temporary link outside the dialog to trigger download
+        const tmpLink = document.createElement("a")
+        tmpLink.href = url
+        tmpLink.download = el.download || ""
+        tmpLink.setAttribute("data-turbo", "false")
+        tmpLink.style.display = "none"
+        document.body.appendChild(tmpLink)
+        tmpLink.click()
+        document.body.removeChild(tmpLink)
       })
     })
 
