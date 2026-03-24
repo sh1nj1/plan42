@@ -303,9 +303,6 @@ module Collavre
       render json: CommandMenuService.new(user: Current.user).items
     end
 
-
-    private
-
     def download_images
       images = @comment.images
       unless images.attached?
@@ -336,6 +333,8 @@ module Collavre
         yielder << buffer.string
       end
     end
+
+    private
 
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin
