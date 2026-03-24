@@ -71,6 +71,7 @@ html.creative-alignment-ready .page-title {
     white-space: nowrap;
     scrollbar-width: none;
     min-width: 0;
+    margin-right: var(--space-3);
 }
 
 .creative-breadcrumb::-webkit-scrollbar {
