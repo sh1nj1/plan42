@@ -326,7 +326,7 @@ module Collavre
       end
       buffer.rewind
 
-      send_data buffer.read, filename: zip_filename, type: "application/zip"
+      send_data buffer.read, filename: zip_filename, type: "application/zip", disposition: "attachment"
     end
 
     private

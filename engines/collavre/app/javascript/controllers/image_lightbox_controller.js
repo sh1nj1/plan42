@@ -40,6 +40,19 @@ export default class extends Controller {
     }))
   }
 
+  _triggerDownload(url) {
+    if (!url) return
+    // Use a hidden iframe appended to document.body (outside dialog)
+    // This triggers a normal browser request with cookies, and
+    // Content-Disposition: attachment causes a file download
+    const iframe = document.createElement("iframe")
+    iframe.style.cssText = "position:absolute;width:0;height:0;border:0;visibility:hidden"
+    document.body.appendChild(iframe)
+    iframe.src = url
+    // Clean up after download starts
+    setTimeout(() => iframe.remove(), 30000)
+  }
+
   _createDialog() {
     if (this._dialog) {
       this._dialog.remove()
@@ -48,26 +61,27 @@ export default class extends Controller {
     const dialog = document.createElement("dialog")
     dialog.className = "image-lightbox-dialog"
     dialog.innerHTML = `
-      <div class="image-lightbox-backdrop" data-action="click"></div>
       <div class="image-lightbox-container">
         <div class="image-lightbox-toolbar">
           <span class="image-lightbox-counter"></span>
           <div class="image-lightbox-toolbar-actions">
-            <a class="image-lightbox-btn image-lightbox-download-one" title="" download data-turbo="false">⬇</a>
-            ${this.hasDownloadAllUrlValue ? `<a class="image-lightbox-btn image-lightbox-download-all" href="${this.downloadAllUrlValue}" title="" data-turbo="false">📥</a>` : ""}
-            <button class="image-lightbox-btn image-lightbox-close" type="button" title="">✕</button>
+            <button class="image-lightbox-btn image-lightbox-download-one" type="button" title="Download">⬇</button>
+            ${this.hasDownloadAllUrlValue ? `<button class="image-lightbox-btn image-lightbox-download-all" type="button" title="Download all">📥</button>` : ""}
+            <button class="image-lightbox-btn image-lightbox-close" type="button" title="Close">✕</button>
           </div>
         </div>
         <div class="image-lightbox-stage">
-          <button class="image-lightbox-nav image-lightbox-prev" type="button" title="">‹</button>
+          <button class="image-lightbox-nav image-lightbox-prev" type="button" title="Previous">‹</button>
           <img class="image-lightbox-image" src="" alt="" />
-          <button class="image-lightbox-nav image-lightbox-next" type="button" title="">›</button>
+          <button class="image-lightbox-nav image-lightbox-next" type="button" title="Next">›</button>
         </div>
       </div>
     `
 
-    // Event listeners
-    dialog.querySelector(".image-lightbox-backdrop").addEventListener("click", () => this._close())
+    // Close on backdrop click (clicking the dialog element itself, not children)
+    dialog.addEventListener("click", (e) => {
+      if (e.target === dialog) this._close()
+    })
     dialog.querySelector(".image-lightbox-close").addEventListener("click", () => this._close())
     dialog.querySelector(".image-lightbox-prev").addEventListener("click", () => this._prev())
     dialog.querySelector(".image-lightbox-next").addEventListener("click", () => this._next())
@@ -76,25 +90,20 @@ export default class extends Controller {
       this._close()
     })
 
-    // Handle download links - use hidden iframe to trigger download
-    // This bypasses both Turbo interception and dialog close issues
-    dialog.querySelectorAll(".image-lightbox-download-one, .image-lightbox-download-all").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        const url = el.href
-        if (!url) return
-        // Use a hidden iframe to trigger download without leaving the page
-        let iframe = document.getElementById("image-lightbox-download-frame")
-        if (!iframe) {
-          iframe = document.createElement("iframe")
-          iframe.id = "image-lightbox-download-frame"
-          iframe.style.display = "none"
-          document.body.appendChild(iframe)
-        }
-        iframe.src = url
-      })
+    // Download buttons - use <button> not <a> to avoid all link/Turbo issues
+    dialog.querySelector(".image-lightbox-download-one").addEventListener("click", (e) => {
+      e.stopPropagation()
+      const img = this._images[this._currentIndex]
+      if (img) this._triggerDownload(img.downloadSrc)
     })
+
+    const downloadAllBtn = dialog.querySelector(".image-lightbox-download-all")
+    if (downloadAllBtn) {
+      downloadAllBtn.addEventListener("click", (e) => {
+        e.stopPropagation()
+        this._triggerDownload(this.downloadAllUrlValue)
+      })
+    }
 
     // Touch swipe
     let touchStartX = 0
@@ -123,11 +132,6 @@ export default class extends Controller {
     // Counter
     const counter = this._dialog.querySelector(".image-lightbox-counter")
     counter.textContent = `${this._currentIndex + 1} / ${this._images.length}`
-
-    // Download link
-    const downloadBtn = this._dialog.querySelector(".image-lightbox-download-one")
-    downloadBtn.href = img.downloadSrc
-    downloadBtn.dataset.filename = img.filename
 
     // Nav visibility
     const prevBtn = this._dialog.querySelector(".image-lightbox-prev")
