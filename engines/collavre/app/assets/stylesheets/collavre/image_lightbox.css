@@ -98,6 +98,7 @@
   user-select: none;
   -webkit-user-drag: none;
   transform-origin: center center;
+  transition: opacity 0.15s ease;
 }
 
 /* Navigation arrows — absolute in container, always vertically centered */
