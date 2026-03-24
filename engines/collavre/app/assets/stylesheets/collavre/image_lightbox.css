@@ -101,11 +101,9 @@
   transition: opacity 0.15s ease;
 }
 
-/* Navigation arrows — absolute in container, always vertically centered */
+/* Navigation arrows — positioned via JS using fixed pixel values */
 .image-lightbox-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
+  position: fixed;
   width: 3rem;
   height: 3rem;
   border: none;
@@ -115,7 +113,7 @@
   font-size: 1.5rem;
   cursor: pointer;
   transition: background 0.15s;
-  z-index: 2;
+  z-index: 99999;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -125,13 +123,7 @@
   background: rgba(0, 0, 0, 0.7);
 }
 
-.image-lightbox-prev {
-  left: var(--space-3, 0.75rem);
-}
-
-.image-lightbox-next {
-  right: var(--space-3, 0.75rem);
-}
+/* left/right set via JS */
 
 /* Responsive */
 @media (max-width: 768px) {

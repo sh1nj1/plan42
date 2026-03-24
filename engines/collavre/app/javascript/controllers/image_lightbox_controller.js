@@ -26,6 +26,7 @@ export default class extends Controller {
     this._createDialog()
     this._showImage()
     this._dialog.showModal()
+    this._positionNavButtons()
     document.addEventListener("keydown", this._boundKeydown)
   }
 
@@ -357,6 +358,20 @@ export default class extends Controller {
     if (this._images.length <= 1) return
     this._currentIndex = (this._currentIndex + 1) % this._images.length
     this._showImage()
+  }
+
+  _positionNavButtons() {
+    if (!this._dialog) return
+    const prevBtn = this._dialog.querySelector(".image-lightbox-prev")
+    const nextBtn = this._dialog.querySelector(".image-lightbox-next")
+    if (!prevBtn || !nextBtn) return
+
+    const centerY = Math.round(window.innerHeight / 2 - 24) // 24 = half of 3rem button
+    prevBtn.style.top = `${centerY}px`
+    prevBtn.style.left = "12px"
+    nextBtn.style.top = `${centerY}px`
+    nextBtn.style.right = "12px"
+    nextBtn.style.left = "auto"
   }
 
   _close() {
