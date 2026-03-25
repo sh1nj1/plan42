@@ -96,6 +96,8 @@ module Collavre
           archived: archived?,
           link_url: "/creatives?id=#{id}",
           origin_id: origin_id,
+          sequence: sequence,
+          previous_sibling_id: previous_sibling&.id,
           # Templates (for display)
           templates: {
             description_html: desc_html,
@@ -132,6 +134,16 @@ module Collavre
         effective_origin
       rescue StandardError
         self
+      end
+
+      def previous_sibling
+        siblings = if parent
+                     parent.children.order(:sequence)
+        else
+                     Creative.roots.order(:sequence)
+        end
+        idx = siblings.to_a.index { |s| s.id == id }
+        idx && idx > 0 ? siblings.to_a[idx - 1] : nil
       end
 
       def find_broadcast_users

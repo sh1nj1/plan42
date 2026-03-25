@@ -75,13 +75,39 @@ function handleCreated(creative) {
         if (targetContainer.dataset) targetContainer.dataset.expanded = 'true'
 
         const newRow = createRow(creative)
-        targetContainer.appendChild(newRow)
+        insertAtCorrectPosition(newRow, creative, targetContainer)
         console.log("[CreativeSync] Inserted row for creative", creative.id)
     } else {
         // Fallback: trigger tree reload — the creative is relevant to this page
         // (we received the broadcast) but we can't determine exact insertion point
         console.log("[CreativeSync] Fallback: reloading tree for created creative", creative.id)
         document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
+    }
+}
+
+function insertAtCorrectPosition(newRow, creative, container) {
+    const prevSiblingId = creative.previous_sibling_id
+
+    if (prevSiblingId) {
+        // Find the previous sibling's row in the container
+        const prevRow = container.querySelector(`creative-tree-row[creative-id="${prevSiblingId}"]`)
+        if (prevRow) {
+            // Insert after the previous sibling (and its children container if present)
+            const prevChildrenContainer = document.getElementById(`creative-children-${prevSiblingId}`)
+            const insertAfter = prevChildrenContainer || prevRow
+            insertAfter.insertAdjacentElement('afterend', newRow)
+            return
+        }
+    }
+
+    // No previous sibling → insert at the beginning of the container
+    // (this creative is first among its siblings)
+    const firstRow = container.querySelector('creative-tree-row')
+    if (firstRow && !prevSiblingId) {
+        container.insertBefore(newRow, firstRow)
+    } else {
+        // Fallback: append at end
+        container.appendChild(newRow)
     }
 }
 
