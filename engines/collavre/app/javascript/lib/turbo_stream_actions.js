@@ -266,7 +266,7 @@ function updateAncestorProgress(ancestors) {
     ancestors.forEach(anc => {
         const ancRow = document.querySelector(`creative-tree-row[creative-id="${anc.id}"]`)
         if (ancRow && anc.progress != null) {
-            ancRow.dataset.progressValue = String(anc.progress)
+            ancRow.dataset.progressValue = String(Math.round(anc.progress))
         }
     })
 }
