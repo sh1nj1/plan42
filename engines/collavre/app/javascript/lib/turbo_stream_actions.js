@@ -9,58 +9,96 @@ function registerStreamAction(name, handler) {
     }
 }
 
-// Creative tree refresh: triggered when a shared creative is created/updated/destroyed
+// Creative tree sync: directly updates rows from broadcast data (no HTTP fetch needed)
 registerStreamAction("refresh_creative_tree", function () {
-    const creativeId = this.getAttribute("creative-id")
-    const action = this.getAttribute("change-action")
-    console.log("[Turbo] refresh_creative_tree", { creativeId, action })
+    const rawData = this.getAttribute("data")
+    if (!rawData) return
 
-    // Update title row if the changed creative matches it.
-    // Non-title rows are handled by tree refetch (debouncedLoad) which
-    // includes inline_editor_payload with fresh description_raw_html.
-    if (creativeId) {
-        const titleRow = document.querySelector('creative-tree-row[is-title]')
-        if (titleRow && String(titleRow.getAttribute('creative-id')) === String(creativeId)) {
-            refreshCreativeRow(titleRow, creativeId)
-        }
+    let payload
+    try {
+        payload = JSON.parse(rawData)
+    } catch (e) {
+        console.warn("[CreativeSync] Failed to parse broadcast data", e)
+        return
     }
 
-    // Dispatch event for any listening tree controller to refetch children
-    document.dispatchEvent(new CustomEvent('creative-sync:refetch', {
-        detail: { creativeId: creativeId ? parseInt(creativeId, 10) : null, action },
-        bubbles: true
-    }))
+    const { action, creative } = payload
+    if (!creative || !creative.id) return
+
+    console.log("[CreativeSync] Received", action, "for creative", creative.id)
+
+    if (action === "destroyed") {
+        handleCreativeDestroyed(creative)
+    } else {
+        handleCreativeUpserted(creative, action)
+    }
 })
 
-async function refreshCreativeRow(row, creativeId) {
-    try {
-        const response = await fetch(`/creatives/${creativeId}.json`, {
-            headers: { Accept: 'application/json' }
-        })
-        if (!response.ok) return
-        const data = await response.json()
-        // Update visible description (show.json returns 'description' as HTML)
-        if (data.description) {
-            row.descriptionHtml = data.description
-        }
-        // Update raw HTML cache so inline editor loads fresh data
-        if (data.description_raw_html != null) {
-            row.dataset.descriptionRawHtml = data.description_raw_html
-        }
-        if (data.progress_html) {
-            row.progressHtml = data.progress_html
-            row.dataset.progressHtml = data.progress_html
-        }
-        if (data.progress != null) {
-            row.dataset.progressValue = String(data.progress)
-        }
-        if (data.origin_id != null) {
-            row.dataset.originId = String(data.origin_id)
-        }
-        console.log("[Turbo] refreshed creative row", creativeId)
-    } catch (e) {
-        console.warn("[Turbo] failed to refresh title row", e)
+function handleCreativeDestroyed(creative) {
+    const rows = document.querySelectorAll(`creative-tree-row[creative-id="${creative.id}"]`)
+    rows.forEach(row => {
+        // Remove the row's parent .creative-tree container
+        const tree = row.closest('.creative-tree') || row
+        tree.remove()
+    })
+}
+
+function handleCreativeUpserted(creative, action) {
+    const rows = document.querySelectorAll(`creative-tree-row[creative-id="${creative.id}"]`)
+
+    if (rows.length === 0 && action === "created") {
+        // New creative — need a tree refetch to properly insert it
+        // (we don't have enough data to construct a full row client-side)
+        dispatchRefetchEvent(creative)
+        return
     }
+
+    // Update all matching rows (title row + tree row if both exist)
+    rows.forEach(row => applyCreativeData(row, creative))
+
+    // If progress changed, parent rows need updating too — dispatch a targeted refetch
+    // only for the children tree, not the whole page
+    if (action === "updated") {
+        dispatchRefetchEvent(creative)
+    }
+}
+
+function applyCreativeData(row, creative) {
+    // Update display HTML
+    if (creative.description_html != null) {
+        row.descriptionHtml = creative.description_html
+    }
+
+    // Update editor cache (descriptionRawHtml) so next edit loads fresh data
+    if (creative.description_raw_html != null) {
+        row.dataset.descriptionRawHtml = creative.description_raw_html
+    }
+
+    // Update progress value (the visual progress_html will be refreshed by tree refetch)
+    if (creative.progress != null) {
+        row.dataset.progressValue = String(creative.progress)
+    }
+
+    // Update origin
+    if (creative.origin_id != null) {
+        row.dataset.originId = String(creative.origin_id)
+    }
+
+    // Update has_children
+    if (creative.has_children != null) {
+        row.hasChildren = creative.has_children
+    }
+}
+
+function dispatchRefetchEvent(creative) {
+    document.dispatchEvent(new CustomEvent('creative-sync:refetch', {
+        detail: {
+            creativeId: creative.id,
+            parentId: creative.parent_id,
+            action: 'sync'
+        },
+        bubbles: true
+    }))
 }
 
 registerStreamAction("update_reactions", function () {
@@ -79,7 +117,6 @@ registerStreamAction("update_reactions", function () {
         const element = document.getElementById(targetId)
 
         if (element) {
-            // Find the stimulus controller instance using the global Stimulus application
             const controller = window.Stimulus?.getControllerForElementAndIdentifier(element, "comment")
             if (controller && typeof controller.updateReactionsUI === 'function') {
                 console.log("[Turbo] calling updateReactionsUI", data)

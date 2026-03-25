@@ -105,42 +105,13 @@ export default class extends Controller {
 
   _handleSyncRefetch(event) {
     if (this._editing) {
-      // Don't do a full tree refetch while editing — it would close the editor.
-      // Instead, update just the changed row (if it's not the one being edited).
+      // While editing, skip full tree refetch (it would close the editor).
+      // Row-level updates are already applied by refresh_creative_tree action.
+      // Queue a full refetch for when editing ends (to update progress_html etc.)
       this._pendingRefetch = true
-      const detail = event?.detail
-      if (detail?.creativeId) {
-        const editingRow = document.querySelector('#inline-edit-form-element')
-        const editingId = editingRow?.dataset?.creativeId
-        if (String(detail.creativeId) !== String(editingId)) {
-          // Update the non-editing changed row via individual fetch
-          this._refreshSingleRow(detail.creativeId)
-        }
-      }
       return
     }
     this.debouncedLoad()
-  }
-
-  async _refreshSingleRow(creativeId) {
-    try {
-      const response = await fetch(`/creatives/${creativeId}.json`, {
-        headers: { Accept: 'application/json' }
-      })
-      if (!response.ok) return
-      const data = await response.json()
-      const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
-      if (!row) return
-      if (data.description) row.descriptionHtml = data.description
-      if (data.description_raw_html != null) row.dataset.descriptionRawHtml = data.description_raw_html
-      if (data.progress_html) {
-        row.progressHtml = data.progress_html
-        row.dataset.progressHtml = data.progress_html
-      }
-      if (data.progress != null) row.dataset.progressValue = String(data.progress)
-    } catch (e) {
-      console.warn('[TreeController] failed to refresh single row', creativeId, e)
-    }
   }
 
   debouncedLoad() {
