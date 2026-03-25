@@ -212,6 +212,8 @@ export default class extends Controller {
         wrapper.dataset.agentId = user.id
         wrapper.dataset.agentName = user.name
         wrapper.dataset.agentAvatarUrl = user.avatar_url
+
+        // HTML5 DnD (desktop)
         wrapper.addEventListener('dragstart', (e) => {
           e.dataTransfer.setData('application/x-agent-drop', JSON.stringify({
             id: user.id,
@@ -224,6 +226,9 @@ export default class extends Controller {
         wrapper.addEventListener('dragend', () => {
           wrapper.classList.remove('dragging')
         })
+
+        // Touch drag (mobile)
+        this._addAgentTouchDrag(wrapper, user)
       }
 
       wrapper.appendChild(img)
@@ -371,5 +376,126 @@ export default class extends Controller {
         avatar.classList.add('inactive')
       }
     })
+  }
+
+  // ── Agent touch drag-and-drop (mobile) ─────────────────
+
+  _addAgentTouchDrag(wrapper, user) {
+    if (!('ontouchstart' in window)) return
+
+    const LONG_PRESS_MS = 400
+    const MOVE_TOLERANCE = 10
+    const DROP_TARGET_SEL = '.topic-tag.topic-drop-target, .topic-creation-container'
+    const DRAG_OVER_CLASS = 'drag-over'
+
+    let timer = null
+    let dragging = false
+    let proxy = null
+    let currentTarget = null
+    let startX = 0
+    let startY = 0
+
+    const cancelLongPress = () => {
+      if (timer) { clearTimeout(timer); timer = null }
+    }
+
+    const moveProxy = (x, y) => {
+      if (!proxy) return
+      proxy.style.left = `${x + 12}px`
+      proxy.style.top = `${y - 30}px`
+    }
+
+    const updateDropTarget = (x, y) => {
+      if (proxy) proxy.style.pointerEvents = 'none'
+      const el = document.elementFromPoint(x, y)
+      if (proxy) proxy.style.pointerEvents = ''
+      const target = el?.closest?.(DROP_TARGET_SEL) ?? null
+      if (target !== currentTarget) {
+        currentTarget?.classList.remove(DRAG_OVER_CLASS)
+        currentTarget = target
+        currentTarget?.classList.add(DRAG_OVER_CLASS)
+      }
+    }
+
+    const endDrag = () => {
+      dragging = false
+      cancelLongPress()
+      document.removeEventListener('contextmenu', preventContext, true)
+      wrapper.classList.remove('dragging')
+      if (currentTarget) { currentTarget.classList.remove(DRAG_OVER_CLASS); currentTarget = null }
+      if (proxy) { proxy.remove(); proxy = null }
+    }
+
+    const preventContext = (e) => { if (dragging || timer) e.preventDefault() }
+
+    const startDrag = (touch) => {
+      timer = null
+      dragging = true
+      if (navigator.vibrate) navigator.vibrate(30)
+      document.addEventListener('contextmenu', preventContext, { capture: true })
+      wrapper.classList.add('dragging')
+
+      proxy = document.createElement('div')
+      proxy.className = 'touch-drag-proxy'
+      proxy.innerHTML = `<span class="touch-drag-proxy-badge">${user.name}</span>`
+      document.body.appendChild(proxy)
+      moveProxy(touch.clientX, touch.clientY)
+    }
+
+    wrapper.addEventListener('touchstart', (e) => {
+      if (dragging) return
+      const touch = e.touches[0]
+      if (!touch) return
+      startX = touch.clientX
+      startY = touch.clientY
+      cancelLongPress()
+      timer = setTimeout(() => startDrag(touch), LONG_PRESS_MS)
+    }, { passive: false })
+
+    wrapper.addEventListener('touchmove', (e) => {
+      const touch = e.touches[0]
+      if (!touch) return
+      if (dragging) {
+        e.preventDefault()
+        moveProxy(touch.clientX, touch.clientY)
+        updateDropTarget(touch.clientX, touch.clientY)
+        return
+      }
+      if (timer) {
+        const dx = Math.abs(touch.clientX - startX)
+        const dy = Math.abs(touch.clientY - startY)
+        if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) cancelLongPress()
+      }
+    }, { passive: false })
+
+    const onTouchEnd = (e) => {
+      if (timer) { cancelLongPress(); return }
+      if (!dragging) return
+      e.preventDefault()
+
+      if (currentTarget) {
+        const agentData = { id: user.id, name: user.name, avatar_url: user.avatar_url }
+        const topicsCtrl = this.application.getControllerForElementAndIdentifier(
+          this.element, 'comments--topics'
+        )
+        if (topicsCtrl) {
+          // Drop on "+" button → create topic with agent
+          if (currentTarget.closest('.topic-creation-container')) {
+            topicsCtrl.createTopicWithAgent(agentData)
+          } else {
+            // Drop on topic tag → set primary agent
+            const topicTag = currentTarget.closest('.topic-tag.topic-drop-target')
+            if (topicTag && topicTag.dataset.id) {
+              topicsCtrl.setTopicPrimaryAgent(topicTag.dataset.id, agentData)
+            }
+          }
+        }
+      }
+
+      endDrag()
+    }
+
+    wrapper.addEventListener('touchend', onTouchEnd, { passive: false })
+    wrapper.addEventListener('touchcancel', onTouchEnd, { passive: false })
   }
 }
