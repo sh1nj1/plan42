@@ -496,50 +496,22 @@ export default class extends Controller {
     const shareModal = document.getElementById("share-creative-modal")
     if (shareModal && shareModal.style.display === "flex") {
       this.touchStartY = null
-      this._swipeTouchStartX = null
       return
     }
     if (!event.target.closest('#comments-list')) {
       this.touchStartY = event.touches[0].clientY
-      this._swipeTouchStartX = event.touches[0].clientX
-      this._swipeTouchTarget = event.target
     } else {
       this.touchStartY = null
-      this._swipeTouchStartX = null
-      this._swipeTouchTarget = null
     }
   }
 
   handleTouchEnd(event) {
-    if (this.touchStartY === null && this._swipeTouchStartX === null) return
-    const endX = event.changedTouches[0].clientX
-    const endY = event.changedTouches[0].clientY
-    const diffY = this.touchStartY !== null ? endY - this.touchStartY : 0
-    const diffX = this._swipeTouchStartX !== null ? endX - this._swipeTouchStartX : 0
-
-    this.touchStartY = null
-    this._swipeTouchStartX = null
-
-    // Check if touch started on a swipeable area (header or typing indicator)
-    const isSwipeArea = this._swipeTouchTarget &&
-      (this._swipeTouchTarget.closest('.comments-popup-header') ||
-       this._swipeTouchTarget.closest('#typing-indicator'))
-    this._swipeTouchTarget = null
-
-    // Horizontal swipe on swipeable areas takes priority
-    if (isSwipeArea && Math.abs(diffX) >= 40 && Math.abs(diffX) > Math.abs(diffY)) {
-      if (diffX < 0) {
-        this.navigateForward()
-      } else {
-        this.navigateBack()
-      }
-      return
-    }
-
-    // Vertical swipe down to close
+    if (this.touchStartY === null) return
+    const diffY = event.changedTouches[0].clientY - this.touchStartY
     if (diffY > 50) {
       this.close()
     }
+    this.touchStartY = null
   }
 
   handleCloseButtonTouchStart(event) {
@@ -1239,8 +1211,6 @@ export default class extends Controller {
   }
 
   handleHeaderTouchStart(event) {
-    // On mobile, the popup-level touch handler already covers swipe detection
-    if (this.isMobile()) return
     if (event.touches.length !== 1) return
     this._headerSwipeStartX = event.touches[0].clientX
     this._headerSwipeStartY = event.touches[0].clientY
