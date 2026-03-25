@@ -14,6 +14,11 @@
     <%= render_navigation_item(mobile_plans, mobile: true) %>
   <% end %>
 
+  <%# Chat Filter Button (always visible on mobile, after Plans) %>
+  <% if (comment_item = Navigation::Registry.instance.find(:comment_filter)) && navigation_item_visible?(comment_item) %>
+    <span class="mobile-only"><%= render_navigation_item(comment_item) %></span>
+  <% end %>
+
   <%# Desktop Navigation %>
   <div class="desktop-only">
     <% navigation_items_for(:main, desktop: true).reject { |i| i[:key] == :search }.each do |item| %>
@@ -28,7 +33,7 @@
         menu_id: 'mobile-more-menu',
         align: :right
       ) do %>
-    <% navigation_items_for(:main, desktop: false).reject { |i| i[:key].in?([:mobile_plans, :search, :home]) }.each do |item| %>
+    <% navigation_items_for(:main, desktop: false).reject { |i| i[:key].in?([:mobile_plans, :search, :home, :comment_filter]) }.each do |item| %>
       <%= render_mobile_navigation_item(item) %>
     <% end %>
   <% end %>
