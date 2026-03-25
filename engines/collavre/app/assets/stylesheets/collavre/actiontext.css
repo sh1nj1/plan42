@@ -39,6 +39,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  height: 30px;
 }
 
 .lexical-toolbar-color__swatch {
@@ -77,29 +78,35 @@
 
 .lexical-toolbar-btn--small {
   min-width: auto;
-  padding: 0.2rem 0.4rem;
-  font-size: var(--text-0);
+  height: 24px;
+  padding: 0 var(--space-1);
+  font-size: var(--text-00);
 }
 
 .lexical-toolbar-btn {
   appearance: none;
-  background: var(--surface-btn);
+  background: transparent;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-1);
-  color: var(--text-on-btn);
+  border-radius: var(--radius-2);
+  color: var(--text-secondary);
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: var(--text-0);
   font-weight: var(--weight-6);
-  line-height: 1.2;
-  min-width: var(--space-7);
-  padding: var(--space-1) 0.4rem;
-  text-align: center;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  line-height: 1;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s var(--ease-out-2), color 0.15s var(--ease-out-2), border-color 0.15s var(--ease-out-2);
 }
 
 .lexical-toolbar-btn:hover,
 .lexical-toolbar-btn:focus-visible {
-  filter: brightness(var(--hover-brightness, 0.95));
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
   outline: none;
 }
 
@@ -107,6 +114,13 @@
   background: var(--color-active);
   border-color: var(--color-accent-border);
   color: var(--color-accent-text);
+}
+
+.lexical-toolbar-btn:disabled {
+  opacity: 0.4;
+  color: var(--text-muted);
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .lexical-toolbar-separator {
