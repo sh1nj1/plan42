@@ -19,7 +19,7 @@ export function subscribeToCreatives(rootId, callbacks = {}) {
   const editingTimers = {}
 
   const subscription = createSubscription(
-    { channel: 'CreativesChannel', root_id: rootId },
+    { channel: 'Collavre::CreativesChannel', root_id: rootId },
     {
       connected() {
         callbacks.onConnected?.()
