@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { createSubscription } from '../../services/cable'
+import TouchDragHandler from '../../lib/touch_drag'
 
 const TYPING_TIMEOUT = 3000
 const AGENT_STATUS_TIMEOUT = 10000 // Safety timeout for agent_status (heartbeat expected every 3s)
@@ -212,6 +213,8 @@ export default class extends Controller {
         wrapper.dataset.agentId = user.id
         wrapper.dataset.agentName = user.name
         wrapper.dataset.agentAvatarUrl = user.avatar_url
+
+        // HTML5 DnD (desktop)
         wrapper.addEventListener('dragstart', (e) => {
           e.dataTransfer.setData('application/x-agent-drop', JSON.stringify({
             id: user.id,
@@ -224,6 +227,9 @@ export default class extends Controller {
         wrapper.addEventListener('dragend', () => {
           wrapper.classList.remove('dragging')
         })
+
+        // Touch drag (mobile)
+        this._addAgentTouchDrag(wrapper, user)
       }
 
       wrapper.appendChild(img)
@@ -371,5 +377,42 @@ export default class extends Controller {
         avatar.classList.add('inactive')
       }
     })
+  }
+
+  // ── Agent touch drag-and-drop (mobile) ─────────────────
+
+  _addAgentTouchDrag(wrapper, user) {
+    if (!('ontouchstart' in window)) return
+
+    const handler = new TouchDragHandler({
+      container: wrapper,
+      singleElement: true,
+      dropTargetSelector: '.topic-tag.topic-drop-target, .topic-creation-container',
+      draggingClass: 'dragging',
+
+      proxyContent: () =>
+        `<span class="touch-drag-proxy-badge">${user.name}</span>`,
+
+      onDrop: (targetEl) => {
+        const agentData = { id: user.id, name: user.name, avatar_url: user.avatar_url }
+        const topicsCtrl = this.application.getControllerForElementAndIdentifier(
+          this.element, 'comments--topics'
+        )
+        if (!topicsCtrl) return
+
+        if (targetEl.closest('.topic-creation-container')) {
+          topicsCtrl.createTopicWithAgent(agentData)
+        } else {
+          const topicTag = targetEl.closest('.topic-tag.topic-drop-target')
+          if (topicTag?.dataset.id) {
+            topicsCtrl.setTopicPrimaryAgent(topicTag.dataset.id, agentData)
+          }
+        }
+      }
+    })
+
+    // Store for cleanup if needed
+    if (!this._agentTouchDragHandlers) this._agentTouchDragHandlers = []
+    this._agentTouchDragHandlers.push(handler)
   }
 }

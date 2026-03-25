@@ -187,6 +187,12 @@ body.chat-fullscreen {
 .comment-item.selected-for-move {
     background-color: var(--color-section-bg);
     border-color: var(--color-border);
+    /* Prevent native long-press behaviors (text selection, context menu,
+       native drag preview) from stealing touch events on mobile */
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .comment-select {
@@ -1452,10 +1458,50 @@ body.chat-fullscreen {
     margin-top: var(--space-1);
 }
 
+/* Hide touch hint on non-touch devices */
+.selection-action-bar-hint.touch-drag-hint {
+    display: none;
+}
+
 @media (pointer: coarse) {
     .selection-action-bar-hint.no-touch {
         display: none;
     }
+    .selection-action-bar-hint.touch-drag-hint {
+        display: block;
+    }
+}
+
+/* Touch drag proxy (mobile drag-and-drop) */
+.touch-drag-proxy {
+    position: fixed;
+    z-index: var(--layer-popover, 9999);
+    pointer-events: none;
+    animation: touch-drag-pop-in 0.15s ease-out;
+}
+
+.touch-drag-proxy-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-3);
+    background-color: var(--color-active);
+    color: var(--color-badge-text);
+    border-radius: var(--radius-round, 999px);
+    font-size: var(--text-0, 0.85em);
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: var(--shadow-3, 0 4px 12px rgba(0,0,0,0.25));
+}
+
+@keyframes touch-drag-pop-in {
+    from { opacity: 0; transform: scale(0.7); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+/* During touch drag, dim non-selected items (reuses existing class) */
+#comments-list.touch-dragging .comment-item:not(.selected-for-move) {
+    opacity: 0.5;
 }
 
 @keyframes action-bar-slide-up {

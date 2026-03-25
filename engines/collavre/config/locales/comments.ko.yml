@@ -92,6 +92,10 @@ ko:
       selection_topic_move: 토픽 이동
       selection_close: 취소
       selection_drag_hint: "드래그&드롭으로도 토픽 이동 가능"
+      selection_touch_drag_hint: "선택한 메시지를 길게 눌러 토픽으로 드래그하세요"
+      touch_drag_proxy_label:
+        one: "메시지 1개"
+        other: "메시지 %{count}개"
       selection_merge: 병합
       merge_confirm: "선택한 메시지를 하나로 병합하시겠습니까? 첫 번째 메시지가 업데이트되고 나머지는 삭제됩니다."
       merge:

@@ -32,6 +32,9 @@ describe('Selection Action Bar - DOM behavior', () => {
       <div class="selection-action-bar-hint no-touch">
         💡 ${i18n('selectionDragHintText', 'Drag & drop to move to topic')}
       </div>
+      <div class="selection-action-bar-hint touch-drag-hint">
+        💡 ${i18n('selectionTouchDragHintText', 'Long press to drag to topic')}
+      </div>
     `
     document.body.appendChild(bar)
     return bar
@@ -76,6 +79,15 @@ describe('Selection Action Bar - DOM behavior', () => {
     expect(hint).toBeTruthy()
     expect(hint.classList.contains('no-touch')).toBe(true)
     expect(hint.textContent).toContain('Drag & drop')
+  })
+
+  test('shows touch drag hint with touch-drag-hint class', () => {
+    const bar = createActionBar(1)
+    const hints = bar.querySelectorAll('.selection-action-bar-hint')
+    expect(hints.length).toBe(2)
+    const touchHint = bar.querySelector('.selection-action-bar-hint.touch-drag-hint')
+    expect(touchHint).toBeTruthy()
+    expect(touchHint.textContent).toContain('Long press')
   })
 
   test('uses i18n dataset values when provided', () => {
