@@ -13,9 +13,12 @@ module Collavre
       end
 
       # Public: called from CreateService after insert_at_position
-      def broadcast_creative_created
-        Rails.logger.info "[CreativeBroadcast] === broadcast_creative_created for creative##{id} seq=#{sequence} ==="
-        broadcast_creative_change(:created, broadcast_node_payload)
+      # @param after_id [Integer, nil] the creative ID this was inserted after (from user action)
+      def broadcast_creative_created(after_id: nil)
+        Rails.logger.info "[CreativeBroadcast] === broadcast_creative_created for creative##{id} seq=#{sequence} after_id=#{after_id} ==="
+        payload = broadcast_node_payload
+        payload[:after_id] = after_id.presence&.to_i
+        broadcast_creative_change(:created, payload)
       rescue StandardError => e
         Rails.logger.error "[CreativeBroadcast] ERROR in broadcast_creative_created: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
       end

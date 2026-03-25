@@ -87,31 +87,35 @@ function handleCreated(creative) {
 
 function insertAtCorrectPosition(newRow, creative, container) {
     const prevSiblingId = creative.previous_sibling_id
+    const afterId = creative.after_id  // from user's add action in CreateService
     const sequence = creative.sequence
 
-    // Get only direct child rows of this container (same level siblings)
     const siblingRows = Array.from(container.querySelectorAll(':scope > creative-tree-row'))
     console.log("[CreativeSync] insertAtCorrectPosition", {
-        id: creative.id, prevSiblingId, sequence,
+        id: creative.id, afterId, prevSiblingId, sequence,
         siblingCount: siblingRows.length,
         siblingIds: siblingRows.map(r => r.getAttribute('creative-id'))
     })
 
-    // Strategy 1: Use previous_sibling_id for exact positioning
-    if (prevSiblingId) {
-        const prevRow = container.querySelector(`:scope > creative-tree-row[creative-id="${prevSiblingId}"]`)
-        if (prevRow) {
-            // Insert after the previous sibling AND its children container
-            const prevChildren = document.getElementById(`creative-children-${prevSiblingId}`)
-            const insertAfter = prevChildren || prevRow
-            insertAfter.insertAdjacentElement('afterend', newRow)
-            console.log("[CreativeSync] Inserted after sibling", prevSiblingId)
-            return
-        }
-        console.log("[CreativeSync] Previous sibling", prevSiblingId, "not found in container")
+    // Helper: insert after a row (accounting for its children container)
+    function insertAfterRow(targetId, label) {
+        const row = container.querySelector(`:scope > creative-tree-row[creative-id="${targetId}"]`)
+            || document.querySelector(`creative-tree-row[creative-id="${targetId}"]`)
+        if (!row) return false
+        const childContainer = document.getElementById(`creative-children-${targetId}`)
+        const ref = childContainer || row
+        ref.insertAdjacentElement('afterend', newRow)
+        console.log(`[CreativeSync] Inserted after ${label}`, targetId)
+        return true
     }
 
-    // Strategy 2: Use sequence to find correct position
+    // Strategy 1: after_id — the creative user clicked "add after" (most reliable)
+    if (afterId && insertAfterRow(afterId, 'after_id')) return
+
+    // Strategy 2: previous_sibling_id — computed from DB after resequencing
+    if (prevSiblingId && insertAfterRow(prevSiblingId, 'prev_sibling')) return
+
+    // Strategy 3: sequence comparison among visible siblings
     if (sequence != null) {
         for (const row of siblingRows) {
             const rowSeq = parseInt(row.getAttribute('sequence'), 10)
@@ -123,11 +127,11 @@ function insertAtCorrectPosition(newRow, creative, container) {
         }
     }
 
-    // Strategy 3: No previous sibling and sequence 0 → first position
-    if (!prevSiblingId && (sequence === 0 || sequence === null)) {
+    // Strategy 4: first child (no previous sibling)
+    if (!prevSiblingId && !afterId && (sequence === 0 || sequence == null)) {
         if (siblingRows.length > 0) {
             container.insertBefore(newRow, siblingRows[0])
-            console.log("[CreativeSync] Inserted at beginning (first child)")
+            console.log("[CreativeSync] Inserted at beginning")
             return
         }
     }
