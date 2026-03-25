@@ -4,16 +4,17 @@ module Collavre
       extend ActiveSupport::Concern
 
       included do
-        after_create_commit :broadcast_creative_created
+        # NOTE: after_create_commit is NOT used here because CreateService
+        # needs to call insert_at_position (resequence) BEFORE broadcast.
+        # broadcast_creative_created is called explicitly from CreateService.
         after_update_commit :broadcast_creative_updated
         before_destroy :capture_broadcast_state
         after_destroy_commit :broadcast_creative_destroyed
       end
 
-      private
-
+      # Public: called from CreateService after insert_at_position
       def broadcast_creative_created
-        Rails.logger.info "[CreativeBroadcast] === after_create_commit fired for creative##{id} ==="
+        Rails.logger.info "[CreativeBroadcast] === broadcast_creative_created for creative##{id} seq=#{sequence} ==="
         broadcast_creative_change(:created, broadcast_node_payload)
       rescue StandardError => e
         Rails.logger.error "[CreativeBroadcast] ERROR in broadcast_creative_created: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
