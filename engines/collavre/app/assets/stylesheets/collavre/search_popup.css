@@ -34,11 +34,11 @@
 }
 
 /* Badge */
-/* Active state when search filters are applied */
+/* Active state when search filters are applied — matches .progress-filter-btn.active */
 .search-popup-trigger.active {
-  background: var(--color-active);
-  color: var(--color-badge-text, #fff);
-  border-color: var(--color-active);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  font-weight: var(--weight-5);
 }
 
 /* ── Overlay (backdrop) ── */
