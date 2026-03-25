@@ -84,6 +84,9 @@ en:
       review_send_question: Send question
       review_type_review: Review
       review_type_question: Question
+      navigate_back: Previous chat
+      navigate_forward: Next chat
+      recent_chats: Recent chats
       replace_button: Replace
       move_no_selection: Select at least one message to move.
       move_error: Unable to move messages.

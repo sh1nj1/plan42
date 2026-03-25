@@ -59,6 +59,20 @@
   <div class="resize-handle resize-handle-left" data-comments--popup-target="leftHandle"></div>
   <div class="resize-handle resize-handle-right" data-comments--popup-target="rightHandle"></div>
   <div class="comments-popup-header">
+    <div class="chat-nav-buttons" data-comments--popup-target="navContainer">
+      <button class="chat-nav-btn" type="button" disabled
+              data-comments--popup-target="navBack"
+              data-action="click->comments--popup#navigateBack contextmenu->comments--popup#showRecentChats"
+              aria-label="<%= t('collavre.comments.navigate_back', default: 'Previous chat') %>">
+        <%= svg_tag "chevron-left.svg", class: "chat-nav-icon" %>
+      </button>
+      <button class="chat-nav-btn" type="button" disabled
+              data-comments--popup-target="navForward"
+              data-action="click->comments--popup#navigateForward contextmenu->comments--popup#showRecentChats"
+              aria-label="<%= t('collavre.comments.navigate_forward', default: 'Next chat') %>">
+        <%= svg_tag "chevron-right.svg", class: "chat-nav-icon" %>
+      </button>
+    </div>
     <h3 id="comments-popup-title" data-comments--popup-target="title"><%= fullscreen && creative.present? ? creative.creative_snippet : t('collavre.comments.comments') %></h3>
     <span data-integration-badges class="integration-badges"></span>
     <div class="comments-popup-actions">

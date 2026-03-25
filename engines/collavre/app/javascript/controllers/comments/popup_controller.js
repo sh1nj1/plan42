@@ -1,8 +1,10 @@
 import { Controller } from '@hotwired/stimulus'
+import chatHistory from '../../lib/chat_history'
 
 const SIZE_STORAGE_KEY = 'commentsPopupSize'
 const CREATIVE_CLICK_EVENT = 'creative-comments-click'
 const CREATIVE_DESTROYED_EVENT = 'creative-destroyed'
+const LONG_PRESS_MS = 500
 
 export default class extends Controller {
   static targets = [
@@ -15,6 +17,10 @@ export default class extends Controller {
     'fullscreenButton',
     'fullscreenIcon',
     'exitFullscreenIcon',
+    'navBack',
+    'navForward',
+    'navContainer',
+    'navDropdown',
   ]
 
   connect() {
@@ -37,6 +43,10 @@ export default class extends Controller {
     this.handleVisibilityChange = this.handleVisibilityChange.bind(this)
     this.handlePopState = this.handlePopState.bind(this)
     this.handlePopupWheel = this.handlePopupWheel.bind(this)
+    this.handleChatNavKeydown = this.handleChatNavKeydown.bind(this)
+    this.handleDropdownOutsideClick = this.handleDropdownOutsideClick.bind(this)
+    this._longPressTimer = null
+    this._isNavigating = false
 
     document.addEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.addEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
@@ -45,6 +55,10 @@ export default class extends Controller {
     window.addEventListener('focus', this.handleWindowFocus)
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('popstate', this.handlePopState)
+    document.addEventListener('keydown', this.handleChatNavKeydown)
+
+    // Long press on nav buttons
+    this._setupNavLongPress()
 
     if (this.hasCloseButtonTarget) {
       this.closeButtonTarget.addEventListener('click', () => this.close())
@@ -101,6 +115,9 @@ export default class extends Controller {
     window.removeEventListener('focus', this.handleWindowFocus)
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     window.removeEventListener('popstate', this.handlePopState)
+    document.removeEventListener('keydown', this.handleChatNavKeydown)
+    document.removeEventListener('click', this.handleDropdownOutsideClick)
+    this._clearLongPressTimer()
     window.removeEventListener('mousemove', this.handleResizeMove)
     window.removeEventListener('mouseup', this.handleResizeStop)
     if (this.isMobile()) {
@@ -178,6 +195,18 @@ export default class extends Controller {
 
     await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
 
+    // Track in chat navigation history (skip if navigating via back/forward)
+    if (!this._isNavigating) {
+      chatHistory.push({ creativeId: resolvedCreativeId, snippet, canComment })
+    }
+    this._updateNavButtons()
+
+    // Record in chat navigation history (skip if navigating via back/forward)
+    if (!this._isNavigating) {
+      chatHistory.push({ creativeId: resolvedCreativeId, snippet, canComment })
+    }
+    this._updateNavButtons()
+
     // Dispatch event for integrations (e.g., Slack badge)
     this.element.dispatchEvent(new CustomEvent('comments-popup:opened', {
       bubbles: true,
@@ -203,6 +232,12 @@ export default class extends Controller {
     this.showPopup()
 
     await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment })
+
+    // Track in chat navigation history
+    if (!this._isNavigating) {
+      chatHistory.push({ creativeId: resolvedCreativeId, snippet, canComment })
+    }
+    this._updateNavButtons()
 
     // Dispatch event for integrations (e.g., Slack badge)
     this.element.dispatchEvent(new CustomEvent('comments-popup:opened', {
@@ -310,6 +345,7 @@ export default class extends Controller {
     }
 
     this._clearChatActiveRow()
+    this._hideNavDropdown()
 
     this.element.style.display = 'none'
     this.element.classList.remove('open')
@@ -1013,5 +1049,142 @@ export default class extends Controller {
       el = el.parentElement
     }
     return { element: null, axis: null }
+  }
+
+  // ── Chat Navigation ───────────────────────────────────────────────
+
+  navigateBack() {
+    const entry = chatHistory.back()
+    if (!entry) return
+    this._navigateToEntry(entry)
+  }
+
+  navigateForward() {
+    const entry = chatHistory.forward()
+    if (!entry) return
+    this._navigateToEntry(entry)
+  }
+
+  showRecentChats(event) {
+    event.preventDefault()
+    const list = chatHistory.recentList()
+    if (list.length <= 1) return
+
+    if (!this.hasNavDropdownTarget) return
+    const dropdown = this.navDropdownTarget
+    dropdown.innerHTML = ''
+
+    list.forEach((entry, index) => {
+      const item = document.createElement('button')
+      item.type = 'button'
+      item.className = 'chat-nav-dropdown-item'
+      if (entry.isCurrent) item.classList.add('current')
+      item.textContent = entry.snippet || `Creative #${entry.creativeId}`
+      item.addEventListener('click', () => {
+        this._hideNavDropdown()
+        const target = chatHistory.goTo(index)
+        if (target) this._navigateToEntry(target)
+      })
+      dropdown.appendChild(item)
+    })
+
+    dropdown.style.display = 'block'
+
+    // Close dropdown on outside click (deferred to avoid immediate trigger)
+    requestAnimationFrame(() => {
+      document.addEventListener('click', this.handleDropdownOutsideClick)
+    })
+  }
+
+  handleDropdownOutsideClick(event) {
+    if (this.hasNavContainerTarget && !this.navContainerTarget.contains(event.target)) {
+      this._hideNavDropdown()
+    }
+  }
+
+  handleChatNavKeydown(event) {
+    // Only when popup is visible
+    if (this.element.style.display !== 'flex') return
+    // Skip when typing in textarea/input
+    const tag = event.target.tagName
+    if (tag === 'TEXTAREA' || tag === 'INPUT' || event.target.isContentEditable) return
+
+    if (event.altKey && event.key === 'ArrowLeft') {
+      event.preventDefault()
+      this.navigateBack()
+    } else if (event.altKey && event.key === 'ArrowRight') {
+      event.preventDefault()
+      this.navigateForward()
+    }
+  }
+
+  async _navigateToEntry(entry) {
+    this._isNavigating = true
+    try {
+      // Try to find the button for this creative in the tree
+      const row = document.querySelector(`creative-tree-row[creative-id="${entry.creativeId}"]`)
+      const button = row?.querySelector('[name="show-comments-btn"]')
+
+      if (button) {
+        await this.open(button, { creativeId: entry.creativeId })
+      } else {
+        // Creative not in current view — open directly via openForCreative
+        this.element.dataset.creativeId = entry.creativeId
+        this.element.dataset.canComment = entry.canComment ? 'true' : 'false'
+        this.element.dataset.creativeSnippet = entry.snippet || ''
+        await this.openForCreative()
+      }
+    } finally {
+      this._isNavigating = false
+    }
+  }
+
+  _updateNavButtons() {
+    if (this.hasNavBackTarget) {
+      this.navBackTarget.disabled = !chatHistory.canGoBack()
+    }
+    if (this.hasNavForwardTarget) {
+      this.navForwardTarget.disabled = !chatHistory.canGoForward()
+    }
+  }
+
+  _setupNavLongPress() {
+    const setupBtn = (btn) => {
+      if (!btn) return
+      btn.addEventListener('mousedown', () => {
+        this._clearLongPressTimer()
+        this._longPressTimer = setTimeout(() => {
+          this.showRecentChats(new MouseEvent('contextmenu', { bubbles: true }))
+        }, LONG_PRESS_MS)
+      })
+      btn.addEventListener('mouseup', () => this._clearLongPressTimer())
+      btn.addEventListener('mouseleave', () => this._clearLongPressTimer())
+      // Touch long press
+      btn.addEventListener('touchstart', () => {
+        this._clearLongPressTimer()
+        this._longPressTimer = setTimeout(() => {
+          this.showRecentChats(new Event('contextmenu', { bubbles: true }))
+        }, LONG_PRESS_MS)
+      }, { passive: true })
+      btn.addEventListener('touchend', () => this._clearLongPressTimer())
+      btn.addEventListener('touchcancel', () => this._clearLongPressTimer())
+    }
+    if (this.hasNavBackTarget) setupBtn(this.navBackTarget)
+    if (this.hasNavForwardTarget) setupBtn(this.navForwardTarget)
+  }
+
+  _clearLongPressTimer() {
+    if (this._longPressTimer) {
+      clearTimeout(this._longPressTimer)
+      this._longPressTimer = null
+    }
+  }
+
+  _hideNavDropdown() {
+    document.removeEventListener('click', this.handleDropdownOutsideClick)
+    if (this.hasNavDropdownTarget) {
+      this.navDropdownTarget.style.display = 'none'
+      this.navDropdownTarget.innerHTML = ''
+    }
   }
 }
