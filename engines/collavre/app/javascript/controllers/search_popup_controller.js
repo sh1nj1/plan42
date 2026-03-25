@@ -1,35 +1,43 @@
 import { Controller } from '@hotwired/stimulus'
 
 export default class extends Controller {
-  static targets = ['input', 'popup']
+  static targets = ['input', 'popup', 'overlay']
 
   connect() {
-    this._outsideClickHandler = (e) => {
-      if (!this.element.contains(e.target)) {
-        this.close()
-      }
-    }
-    document.addEventListener('click', this._outsideClickHandler)
-
     this._escHandler = (e) => {
       if (e.key === 'Escape') this.close()
     }
     document.addEventListener('keydown', this._escHandler)
 
+    // Global keyboard shortcut: Cmd/Ctrl + K to open search
+    this._shortcutHandler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        this.toggle()
+      }
+    }
+    document.addEventListener('keydown', this._shortcutHandler)
   }
 
   disconnect() {
-    document.removeEventListener('click', this._outsideClickHandler)
     document.removeEventListener('keydown', this._escHandler)
+    document.removeEventListener('keydown', this._shortcutHandler)
   }
 
   open() {
     this.popupTarget.classList.add('open')
-    this.inputTarget.focus()
+    if (this.hasOverlayTarget) {
+      this.overlayTarget.classList.add('open')
+    }
+    // Focus input after animation
+    requestAnimationFrame(() => this.inputTarget.focus())
   }
 
   close() {
     this.popupTarget.classList.remove('open')
+    if (this.hasOverlayTarget) {
+      this.overlayTarget.classList.remove('open')
+    }
   }
 
   toggle() {

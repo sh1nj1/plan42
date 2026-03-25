@@ -27,21 +27,26 @@
     <% end %>
   </button>
 
+  <%# Overlay backdrop %>
+  <div class="search-popup-overlay" data-search-popup-target="overlay" data-action="click->search-popup#close"></div>
+
   <div class="search-popup-dropdown" data-search-popup-target="popup">
     <form action="<%= collavre.creatives_path %>" method="get" class="search-popup-form">
       <% if params[:id].present? %>
         <input type="hidden" name="id" value="<%= params[:id] %>" />
       <% end %>
       <div class="search-popup-input-row">
+        <span class="search-popup-input-icon" aria-hidden="true"><%= svg_tag 'search.svg', width: 18, height: 18 rescue '🔍' %></span>
         <input type="text"
                id="search"
-               class="search-popup-input shared-input-surface"
+               class="search-popup-input"
                name="search"
                value="<%= params[:search] %>"
                placeholder="<%= t('app.search_placeholder') %>"
                autocomplete="off"
                data-search-popup-target="input"
                data-action="keydown->search-popup#submitSearch" />
+        <span class="search-popup-shortcut"><kbd>ESC</kbd></span>
       </div>
     </form>
 
@@ -90,6 +95,13 @@
                     data-action="click->search-popup#toggleArchive"><%= has_archived ? t('collavre.creatives.index.hide_archived') : t('collavre.creatives.index.show_archived') %></button>
           <% end %>
         </div>
+      </div>
+    </div>
+
+    <div class="search-popup-footer">
+      <div class="search-popup-footer-hints">
+        <span class="search-popup-footer-hint"><kbd>↵</kbd> <%= t('collavre.search_popup.to_search') %></span>
+        <span class="search-popup-footer-hint"><kbd>ESC</kbd> <%= t('collavre.search_popup.to_close') %></span>
       </div>
     </div>
   </div>

@@ -8,3 +8,5 @@ ko:
       flat_view: "플랫"
       tree_view: "트리"
       other_filters: "필터"
+      to_search: "검색"
+      to_close: "닫기"

@@ -1,20 +1,18 @@
-/* Search Popup */
+/* Search Popup — ChatGPT-inspired command palette */
+
 .search-popup-wrapper {
   position: static;
 }
 
-/* Trigger: inherits ALL styles from `nav button {}` in application.css.
-   We only add cursor and whitespace — nothing that would change sizing.
-   CRITICAL: do NOT set display, line-height, font-size, or padding here;
-   those come from `nav button` and must stay identical. */
+/* ── Trigger Button ── */
+/* Inherits ALL styles from `nav button {}` in application.css.
+   CRITICAL: do NOT set display, line-height, font-size, or padding here. */
 .search-popup-trigger {
   cursor: pointer;
   white-space: nowrap;
   box-sizing: border-box;
 }
 
-/* Icon wrapper: zero out its own line-height so the SVG doesn't create
-   a taller line box than the button text would. */
 .search-popup-trigger-icon {
   display: inline-block;
   vertical-align: middle;
@@ -35,6 +33,7 @@
   text-overflow: ellipsis;
 }
 
+/* Badge */
 .search-popup-badge {
   flex-shrink: 0;
   display: inline-flex;
@@ -51,31 +50,67 @@
   line-height: 1;
 }
 
+/* ── Overlay (backdrop) ── */
+.search-popup-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-popup, 100);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: search-popup-fade-in 0.15s var(--ease-out-3, ease-out);
+}
+
+.search-popup-overlay.open {
+  display: block;
+}
+
+@keyframes search-popup-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ── Dropdown (modal) ── */
 .search-popup-dropdown {
   display: none;
   position: fixed;
-  top: 60px;
+  top: 15vh;
   left: 50%;
   transform: translateX(-50%);
-  z-index: var(--layer-popup, 100);
-  width: 360px;
+  z-index: calc(var(--layer-popup, 100) + 1);
+  width: 520px;
   max-width: calc(100vw - 2rem);
+  max-height: 70vh;
+  overflow-y: auto;
   box-sizing: border-box;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-3, 8px);
-  box-shadow: var(--shadow-3);
-  padding: var(--space-3);
-  /* Reset nav button styles that leak into dropdown children */
+  border-radius: var(--radius-4, 16px);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  padding: 0;
   font-size: initial;
   line-height: normal;
   text-align: left;
+  animation: search-popup-slide-up 0.2s var(--ease-out-3, ease-out);
 }
 
 .search-popup-dropdown.open {
   display: block;
 }
 
+@keyframes search-popup-slide-up {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* ── Search Input Area ── */
 .search-popup-form {
   display: block;
   width: 100%;
@@ -83,57 +118,108 @@
 }
 
 .search-popup-input-row {
-  margin-bottom: var(--space-3);
+  display: flex;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  gap: var(--space-2);
+}
+
+.search-popup-input-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  line-height: 0;
 }
 
 .search-popup-dropdown input.search-popup-input {
   display: block;
+  flex: 1;
   width: 100% !important;
   min-width: 0;
   box-sizing: border-box;
-  font-size: var(--text-1, 1rem);
-  padding: var(--space-2);
+  font-size: var(--text-2, 1.125rem);
+  padding: var(--space-2) 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
 }
 
+.search-popup-dropdown input.search-popup-input::placeholder {
+  color: var(--text-secondary);
+}
+
+/* ── Keyboard shortcut hint ── */
+.search-popup-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--text-00, 11px);
+  color: var(--text-secondary);
+}
+
+.search-popup-shortcut kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-1);
+  background: var(--surface-input, var(--color-bg));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-1, 4px);
+  font-size: var(--text-00, 11px);
+  font-family: inherit;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+/* ── Filter Sections ── */
 .search-popup-filters {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  gap: var(--space-4);
 }
 
 .search-popup-filter-section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
 .search-popup-filter-label {
-  font-size: var(--text-0, 0.875rem);
+  font-size: var(--text-00, 0.75rem);
   font-weight: var(--weight-6, 600);
-  color: var(--text-primary);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .search-popup-filter-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
+/* Filter chips — pill style */
 .search-popup-filter-btn {
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: none;
+  border-radius: var(--radius-round, 9999px);
+  background: transparent;
   color: var(--text-secondary);
-  font-size: var(--text-0);
+  font-size: var(--text-0, 0.875rem);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: all 0.15s var(--ease-out-3, ease-out);
   white-space: nowrap;
+  line-height: 1.5;
 }
 
 .search-popup-filter-btn:hover {
-  background: var(--surface-input);
+  background: var(--surface-input, var(--color-bg));
   color: var(--text-primary);
+  border-color: var(--text-secondary);
 }
 
 .search-popup-filter-btn.active {
@@ -142,14 +228,45 @@
   border-color: var(--color-active);
 }
 
-/* Mobile */
+/* ── Footer ── */
+.search-popup-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-00, 0.75rem);
+  color: var(--text-secondary);
+}
+
+.search-popup-footer-hints {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.search-popup-footer-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* ── Mobile ── */
 @media (max-width: 768px) {
   .search-popup-trigger .search-popup-trigger-label {
     display: none;
   }
 
-  /* Popup full width on mobile */
   .search-popup-dropdown {
     width: calc(100vw - 2rem);
+    top: 10vh;
+    border-radius: var(--radius-3, 12px);
+  }
+
+  .search-popup-shortcut {
+    display: none;
+  }
+
+  .search-popup-footer {
+    display: none;
   }
 }
