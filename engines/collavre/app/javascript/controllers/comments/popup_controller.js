@@ -18,7 +18,6 @@ export default class extends Controller {
     'fullscreenIcon',
     'exitFullscreenIcon',
     'navBack',
-    'navForward',
     'navContainer',
     'navDropdown',
     'header',
@@ -186,6 +185,11 @@ export default class extends Controller {
 
   handleCreativeDestroyed(event) {
     const destroyedIds = event.detail?.creativeIds || []
+
+    // Remove destroyed creatives from navigation history
+    destroyedIds.forEach(id => chatHistory.remove(id))
+    this._updateNavButtons()
+
     if (this.element.style.display !== 'flex') return
     if (destroyedIds.includes(this.element.dataset.creativeId)) {
       this.close()
@@ -1066,35 +1070,58 @@ export default class extends Controller {
   navigateBack() {
     const entry = chatHistory.prev()
     if (!entry) return
-    this._navigateToEntry(entry)
+    this._navigateToEntry(entry, 'back')
   }
 
   navigateForward() {
     const entry = chatHistory.next()
     if (!entry) return
-    this._navigateToEntry(entry)
+    this._navigateToEntry(entry, 'forward')
   }
 
   showRecentChats(event) {
     event.preventDefault()
-    const list = chatHistory.recentList()
-    if (list.length <= 1) return
+    const list = chatHistory.recentList().filter(entry => !entry.isCurrent)
+    if (list.length === 0) return
 
     if (!this.hasNavDropdownTarget) return
     const dropdown = this.navDropdownTarget
     dropdown.innerHTML = ''
 
     list.forEach((entry, index) => {
-      const item = document.createElement('button')
-      item.type = 'button'
+      const item = document.createElement('div')
       item.className = 'chat-nav-dropdown-item'
-      if (entry.isCurrent) item.classList.add('current')
-      item.textContent = entry.snippet || `Creative #${entry.creativeId}`
-      item.addEventListener('click', () => {
+
+      const label = document.createElement('button')
+      label.type = 'button'
+      label.className = 'chat-nav-dropdown-label'
+      label.textContent = entry.snippet || `Creative #${entry.creativeId}`
+      label.addEventListener('click', () => {
         this._hideNavDropdown()
-        const target = chatHistory.goTo(index)
+        const target = chatHistory.goTo(entry.index)
         if (target) this._navigateToEntry(target)
       })
+      item.appendChild(label)
+
+      const removeBtn = document.createElement('button')
+      removeBtn.type = 'button'
+      removeBtn.className = 'chat-nav-dropdown-remove'
+      removeBtn.innerHTML = '&times;'
+      removeBtn.title = this._i18n('remove_from_history')
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        chatHistory.remove(entry.creativeId)
+        this._updateNavButtons()
+        // Re-render dropdown if still enough items
+        const remaining = chatHistory.recentList().filter(e => !e.isCurrent)
+        if (remaining.length > 0) {
+          this.showRecentChats(new Event('contextmenu', { bubbles: true }))
+        } else {
+          this._hideNavDropdown()
+        }
+      })
+      item.appendChild(removeBtn)
+
       dropdown.appendChild(item)
     })
 
@@ -1122,13 +1149,10 @@ export default class extends Controller {
     if (event.altKey && event.key === 'ArrowLeft') {
       event.preventDefault()
       this.navigateBack()
-    } else if (event.altKey && event.key === 'ArrowRight') {
-      event.preventDefault()
-      this.navigateForward()
     }
   }
 
-  async _navigateToEntry(entry) {
+  async _navigateToEntry(entry, direction = 'forward') {
     this._isNavigating = true
     try {
       // Try to find the button for this creative in the tree
@@ -1144,6 +1168,17 @@ export default class extends Controller {
         this.element.dataset.creativeSnippet = entry.snippet || ''
         await this.openForCreative()
       }
+    } catch (error) {
+      // Creative likely deleted (404) — remove from history and skip to next
+      console.warn(`[chat-nav] Failed to open creative ${entry.creativeId}, removing from history:`, error)
+      chatHistory.remove(entry.creativeId)
+      this._updateNavButtons()
+
+      if (chatHistory.canNavigate()) {
+        this._isNavigating = false
+        const next = direction === 'back' ? chatHistory.prev() : chatHistory.next()
+        if (next) return this._navigateToEntry(next, direction)
+      }
     } finally {
       this._isNavigating = false
     }
@@ -1152,9 +1187,6 @@ export default class extends Controller {
   _updateNavButtons() {
     if (this.hasNavBackTarget) {
       this.navBackTarget.disabled = !chatHistory.canNavigate()
-    }
-    if (this.hasNavForwardTarget) {
-      this.navForwardTarget.disabled = !chatHistory.canNavigate()
     }
   }
 
@@ -1180,7 +1212,6 @@ export default class extends Controller {
       btn.addEventListener('touchcancel', () => this._clearLongPressTimer())
     }
     if (this.hasNavBackTarget) setupBtn(this.navBackTarget)
-    if (this.hasNavForwardTarget) setupBtn(this.navForwardTarget)
   }
 
   _clearLongPressTimer() {
@@ -1231,6 +1262,13 @@ export default class extends Controller {
       // Swipe right → previous chat
       this.navigateBack()
     }
+  }
+
+  _i18n(key) {
+    const translations = {
+      remove_from_history: this.element.dataset.removeFromHistoryLabel || 'Remove from history'
+    }
+    return translations[key] || key
   }
 
   _hideNavDropdown() {

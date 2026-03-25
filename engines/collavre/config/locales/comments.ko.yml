@@ -84,6 +84,7 @@ ko:
       navigate_back: 이전 채팅
       navigate_forward: 다음 채팅
       recent_chats: 최근 채팅
+      remove_from_history: 히스토리에서 제거
       replace_button: 바꾸기
       move_no_selection: 이동할 메시지를 선택해주세요.
       move_error: 메시지를 이동할 수 없습니다.

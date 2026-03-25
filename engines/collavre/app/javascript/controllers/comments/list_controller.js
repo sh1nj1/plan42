@@ -336,7 +336,7 @@ export default class extends Controller {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ creative_id: this.creativeId }),
-      })
+      }).catch(() => { /* ignore — creative may have been deleted */ })
     }, 2000);
   }
 

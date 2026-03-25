@@ -55,7 +55,8 @@
      data-review-type-review="💬"
      data-review-type-question="❓"
      data-review-type-review-label="<%= t('collavre.comments.review_type_review') %>"
-     data-review-type-question-label="<%= t('collavre.comments.review_type_question') %>">
+     data-review-type-question-label="<%= t('collavre.comments.review_type_question') %>"
+     data-remove-from-history-label="<%= t('collavre.comments.remove_from_history') %>">
   <div class="resize-handle resize-handle-left" data-comments--popup-target="leftHandle"></div>
   <div class="resize-handle resize-handle-right" data-comments--popup-target="rightHandle"></div>
   <div class="comments-popup-header" data-comments--popup-target="header">
@@ -65,12 +66,6 @@
               data-action="click->comments--popup#navigateBack contextmenu->comments--popup#showRecentChats"
               aria-label="<%= t('collavre.comments.navigate_back', default: 'Previous chat') %>">
         <%= svg_tag "chevron-left.svg", class: "chat-nav-icon" %>
-      </button>
-      <button class="chat-nav-btn" type="button" disabled
-              data-comments--popup-target="navForward"
-              data-action="click->comments--popup#navigateForward contextmenu->comments--popup#showRecentChats"
-              aria-label="<%= t('collavre.comments.navigate_forward', default: 'Next chat') %>">
-        <%= svg_tag "chevron-right.svg", class: "chat-nav-icon" %>
       </button>
       <div class="chat-nav-dropdown" data-comments--popup-target="navDropdown" style="display:none;"></div>
     </div>
