@@ -778,6 +778,7 @@ export default class extends Controller {
       },
 
       onDrop: (targetEl) => {
+        this.listTarget.classList.remove('dragging-comments')
         const commentIds = Array.from(this.selection)
         if (commentIds.length === 0) return
 
