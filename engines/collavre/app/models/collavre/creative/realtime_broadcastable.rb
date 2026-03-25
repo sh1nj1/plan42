@@ -33,6 +33,7 @@ module Collavre
       def capture_broadcast_state
         # Capture before destroy — after destroy, associations are gone
         @_destroy_broadcast_users = find_broadcast_users
+        @_destroy_linked_map = build_linked_creative_map(@_destroy_broadcast_users)
         @_destroy_payload = {
           id: id,
           parent_id: parent_id,
@@ -48,9 +49,15 @@ module Collavre
         users = @_destroy_broadcast_users.reject { |u| current && u.id == current.id }
         return if users.empty?
 
-        payload = { action: "destroyed", creative: @_destroy_payload }.to_json
-
         users.each do |target_user|
+          user_data = @_destroy_payload.dup
+          linked_id = @_destroy_linked_map[target_user.id]
+          user_data[:linked_id] = linked_id if linked_id
+          if user_data[:ancestors].present?
+            user_data[:ancestors] = remap_ancestor_ids(user_data[:ancestors], target_user)
+          end
+
+          payload = { action: "destroyed", creative: user_data }.to_json
           Turbo::StreamsChannel.broadcast_action_to(
             [ target_user, :creative_tree ],
             action: :refresh_creative_tree,
@@ -67,10 +74,20 @@ module Collavre
         target_users.reject! { |u| current && u.id == current.id }
         return if target_users.empty?
 
-        payload = { action: action.to_s, creative: data }.to_json
-        Rails.logger.info "[CreativeBroadcast] Broadcasting to #{target_users.map(&:email)} payload_size=#{payload.size}"
+        # Build per-user linked creative ID mapping
+        linked_map = build_linked_creative_map(target_users)
 
         target_users.each do |target_user|
+          user_data = data.dup
+          # Add linked_id for this user's linked creative (if any)
+          linked_id = linked_map[target_user.id]
+          user_data[:linked_id] = linked_id if linked_id
+          # Also remap ancestor IDs to linked IDs for this user
+          if user_data[:ancestors].present?
+            user_data[:ancestors] = remap_ancestor_ids(user_data[:ancestors], target_user)
+          end
+
+          payload = { action: action.to_s, creative: user_data }.to_json
           Turbo::StreamsChannel.broadcast_action_to(
             [ target_user, :creative_tree ],
             action: :refresh_creative_tree,
@@ -152,6 +169,37 @@ module Collavre
         end
         idx = siblings.to_a.index { |s| s.id == id }
         idx && idx > 0 ? siblings.to_a[idx - 1] : nil
+      end
+
+      # Build a map of user_id → linked_creative_id for this creative
+      # So each user receives the correct ID for their view
+      def build_linked_creative_map(users)
+        origin = safe_effective_origin
+        map = {}
+        # If this IS the origin, find linked creatives for each user
+        origin.linked_creatives.where(user: users).find_each do |linked|
+          map[linked.user_id] = linked.id
+        end
+        # Also map ancestors' linked creatives
+        map
+      rescue StandardError => e
+        Rails.logger.error "[CreativeBroadcast] Error building linked map: #{e.message}"
+        {}
+      end
+
+      # Remap ancestor IDs to the user's linked creative IDs
+      def remap_ancestor_ids(ancestors, target_user)
+        ancestors.map do |anc|
+          linked = Creative.find_by(origin_id: anc[:id], user: target_user)
+          if linked
+            anc.merge(id: linked.id, origin_id: anc[:id])
+          else
+            anc
+          end
+        end
+      rescue StandardError => e
+        Rails.logger.error "[CreativeBroadcast] Error remapping ancestors: #{e.message}"
+        ancestors
       end
 
       def find_broadcast_users

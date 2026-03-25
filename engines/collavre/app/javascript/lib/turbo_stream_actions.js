@@ -28,17 +28,23 @@ registerStreamAction("refresh_creative_tree", function () {
     const { action, creative } = payload
     if (!creative || !creative.id) return
 
-    console.log("[CreativeSync] Received", action, "for creative", creative.id)
+    // Use linked_id if present (shared creative: receiver sees linked copy, not origin)
+    const effectiveId = creative.linked_id || creative.id
+    console.log("[CreativeSync] Received", action, "for creative", creative.id, 
+        creative.linked_id ? `(linked: ${creative.linked_id})` : '')
+
+    // Override id with effectiveId for DOM lookups
+    const effectiveCreative = { ...creative, id: effectiveId, origin_id: creative.id }
 
     switch (action) {
         case "created":
-            handleCreated(creative)
+            handleCreated(effectiveCreative)
             break
         case "updated":
-            handleUpdated(creative)
+            handleUpdated(effectiveCreative)
             break
         case "destroyed":
-            handleDestroyed(creative)
+            handleDestroyed(effectiveCreative)
             break
     }
 
@@ -220,14 +226,9 @@ function findRowsForCreative(creativeId) {
         if (urlId && String(urlId) === String(creativeId)) {
             return [titleRow]
         }
-        // 2c. Top-level page: if any tree row has parent-id matching creativeId,
-        //     then creativeId is the root of this tree = title row
-        if (!titleCreativeId) {
-            const childOfTarget = document.querySelector(`creative-tree-row[parent-id="${creativeId}"]`)
-            if (childOfTarget) {
-                return [titleRow]
-            }
-        }
+        // 2c removed: parent-id reverse lookup was incorrectly matching origin
+        // creative to title row on shared/linked creative pages.
+        // Title row progress is handled separately in updateAncestorProgress.
     }
     return rows
 }
@@ -314,10 +315,29 @@ function updateProgressForRow(row, progress) {
     row.dataset.progressHtml = newHtml
 }
 
+function findTitleRowForAncestor(ancestorId) {
+    // On top-level /creatives page, title row has no creative-id.
+    // If tree rows have parent-id matching ancestorId, then the title row
+    // represents this ancestor (for progress display only).
+    const titleRow = document.querySelector('creative-tree-row[is-title]')
+    if (!titleRow) return null
+    const titleCreativeId = titleRow.getAttribute('creative-id')
+    // If title row already has a creative-id, findRowsForCreative handles it
+    if (titleCreativeId) return null
+    // Check if any direct child has parent-id matching the ancestor
+    const child = document.querySelector(`creative-tree-row[parent-id="${ancestorId}"]`)
+    return child ? titleRow : null
+}
+
 function updateAncestorProgress(ancestors) {
     if (!Array.isArray(ancestors)) return
     ancestors.forEach(anc => {
-        const rows = findRowsForCreative(anc.id)
+        let rows = findRowsForCreative(anc.id)
+        // Also check if title row represents this ancestor (top-level page)
+        if (rows.length === 0) {
+            const titleRow = findTitleRowForAncestor(anc.id)
+            if (titleRow) rows = [titleRow]
+        }
         if (rows[0]) updateProgressForRow(rows[0], anc.progress)
     })
 }
