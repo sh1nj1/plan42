@@ -273,7 +273,8 @@ export default class extends Controller {
 
     const ids = Object.keys(this.typingUsers)
     if (ids.length === 0) {
-      this.typingIndicatorTarget.style.opacity = '0'; this.typingIndicatorTarget.style.pointerEvents = 'auto'
+      this.typingIndicatorTarget.style.opacity = '0'
+      this.typingIndicatorTarget.style.pointerEvents = 'auto'
       return
     }
 
