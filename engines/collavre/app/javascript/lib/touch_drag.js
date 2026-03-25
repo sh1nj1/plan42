@@ -185,28 +185,27 @@ export default class TouchDragHandler {
   }
 
   _updateDropTarget(x, y) {
-    // Temporarily hide the proxy so elementFromPoint can see through it
-    if (this._proxy) this._proxy.style.display = 'none'
+    // Use bounding-rect hit testing instead of elementFromPoint.
+    // elementFromPoint is unreliable on mobile when z-index, overlays,
+    // or reflow timing interfere with the result.
+    const PAD = 12 // extra padding for finger imprecision
+    const targets = document.querySelectorAll(this.dropTargetSelector)
+    let found = null
 
-    // Check both the exact point and nearby points (finger is imprecise on mobile)
-    let target = this._findDropTarget(x, y)
-    if (!target) target = this._findDropTarget(x, y - 15)
-    if (!target) target = this._findDropTarget(x, y + 15)
-    if (!target) target = this._findDropTarget(x - 10, y)
-    if (!target) target = this._findDropTarget(x + 10, y)
+    for (const target of targets) {
+      const rect = target.getBoundingClientRect()
+      if (x >= rect.left - PAD && x <= rect.right + PAD &&
+          y >= rect.top - PAD && y <= rect.bottom + PAD) {
+        found = target
+        break
+      }
+    }
 
-    if (this._proxy) this._proxy.style.display = ''
-
-    if (target !== this._currentTarget) {
+    if (found !== this._currentTarget) {
       this._currentTarget?.classList.remove(this.dragOverClass)
-      this._currentTarget = target
+      this._currentTarget = found
       this._currentTarget?.classList.add(this.dragOverClass)
     }
-  }
-
-  _findDropTarget(x, y) {
-    const el = document.elementFromPoint(x, y)
-    return el?.closest?.(this.dropTargetSelector) ?? null
   }
 
   _endDrag() {

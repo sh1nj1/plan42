@@ -405,24 +405,21 @@ export default class extends Controller {
       proxy.style.top = `${y - 30}px`
     }
 
-    const findDropTarget = (x, y) => {
-      const el = document.elementFromPoint(x, y)
-      return el?.closest?.(DROP_TARGET_SEL) ?? null
-    }
-
     const updateDropTarget = (x, y) => {
-      if (proxy) proxy.style.display = 'none'
-      // Check exact point and nearby points (finger imprecision on mobile)
-      let target = findDropTarget(x, y)
-      if (!target) target = findDropTarget(x, y - 15)
-      if (!target) target = findDropTarget(x, y + 15)
-      if (!target) target = findDropTarget(x - 10, y)
-      if (!target) target = findDropTarget(x + 10, y)
-      if (proxy) proxy.style.display = ''
-
-      if (target !== currentTarget) {
+      const PAD = 12
+      const targets = document.querySelectorAll(DROP_TARGET_SEL)
+      let found = null
+      for (const t of targets) {
+        const rect = t.getBoundingClientRect()
+        if (x >= rect.left - PAD && x <= rect.right + PAD &&
+            y >= rect.top - PAD && y <= rect.bottom + PAD) {
+          found = t
+          break
+        }
+      }
+      if (found !== currentTarget) {
         currentTarget?.classList.remove(DRAG_OVER_CLASS)
-        currentTarget = target
+        currentTarget = found
         currentTarget?.classList.add(DRAG_OVER_CLASS)
       }
     }
