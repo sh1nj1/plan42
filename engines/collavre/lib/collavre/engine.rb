@@ -151,7 +151,22 @@ module Collavre
           mobile: false
         )
 
-        # Progress filter and comment filter moved into search popup (search_form partial)
+        # Progress filter moved into search popup (search_form partial)
+
+        Navigation::Registry.instance.register(
+          key: :comment_filter,
+          label: "",
+          type: :component,
+          component: Collavre::ProgressFilterComponent,
+          component_args: {
+            current_state: -> { params[:comment] == "true" ? :comment : nil },
+            states: [
+              { name: -> { I18n.t("app.filter_comments") }, value: :comment }
+            ]
+          },
+          priority: 140,
+          requires_auth: true
+        )
 
         Navigation::Registry.instance.register(
           key: :inbox,

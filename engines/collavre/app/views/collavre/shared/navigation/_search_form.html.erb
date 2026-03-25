@@ -8,7 +8,7 @@
     has_archived = url_params['show_archived'] == 'true'
     has_search = url_params['search'].present?
     search_mode = url_params['search_mode'] || 'flat'
-    active_count = [has_progress, has_comment, has_archived, search_mode == 'tree'].count(true)
+    has_any_filter = has_progress || has_archived || has_search
 
     progress_state = if url_params['min_progress'] == '1' && url_params['max_progress'] == '1'
                        :complete
@@ -19,12 +19,9 @@
                      end
   %>
 
-  <button type="button" class="search-popup-trigger" data-action="click->search-popup#toggle" aria-label="<%= t('app.search_placeholder') %>">
+  <button type="button" class="search-popup-trigger<%= ' active' if has_any_filter %>" data-action="click->search-popup#toggle" aria-label="<%= t('app.search_placeholder') %>">
     <span class="search-popup-trigger-icon" aria-hidden="true"><%= svg_tag 'search.svg', width: 16, height: 16 rescue '🔍' %></span>
     <span class="search-popup-trigger-label"><%= t('collavre.search_popup.search') %></span>
-    <% if active_count > 0 %>
-      <span class="search-popup-badge"><%= active_count %></span>
-    <% end %>
   </button>
 
   <%# Overlay backdrop %>
@@ -86,19 +83,16 @@
       </div>
       <% end %>
 
+      <% if authenticated? %>
       <div class="search-popup-filter-section">
         <span class="search-popup-filter-label"><%= t('collavre.search_popup.other_filters') %></span>
         <div class="search-popup-filter-buttons">
-          <button type="button"
-                  class="search-popup-filter-btn<%= ' active' if has_comment %>"
-                  data-action="click->search-popup#applyCommentFilter"><%= t('app.filter_comments') %></button>
-          <% if authenticated? %>
             <button type="button"
                     class="search-popup-filter-btn<%= ' active' if has_archived %>"
                     data-action="click->search-popup#toggleArchive"><%= has_archived ? t('collavre.creatives.index.hide_archived') : t('collavre.creatives.index.show_archived') %></button>
-          <% end %>
         </div>
       </div>
+      <% end %>
     </div>
 
     <div class="search-popup-footer">
