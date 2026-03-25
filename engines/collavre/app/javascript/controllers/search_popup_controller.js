@@ -29,8 +29,11 @@ export default class extends Controller {
     if (this.hasOverlayTarget) {
       this.overlayTarget.classList.add('open')
     }
-    // Focus input after animation
-    requestAnimationFrame(() => this.inputTarget.focus())
+    // Focus and select all text in input after animation
+    requestAnimationFrame(() => {
+      this.inputTarget.focus()
+      this.inputTarget.select()
+    })
   }
 
   close() {

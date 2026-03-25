@@ -883,7 +883,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_061144) do
   add_foreign_key "topics", "creatives"
   add_foreign_key "topics", "users"
   add_foreign_key "user_creative_preferences", "creatives"
-  add_foreign_key "user_creative_preferences", "topics", column: "last_topic_id"
+  add_foreign_key "user_creative_preferences", "topics", column: "last_topic_id", on_delete: :nullify
   add_foreign_key "user_creative_preferences", "users"
   add_foreign_key "user_themes", "users"
   add_foreign_key "webauthn_credentials", "users"
