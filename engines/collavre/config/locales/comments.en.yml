@@ -95,6 +95,7 @@ en:
       selection_topic_move: Move to topic
       selection_close: Cancel
       selection_drag_hint: "You can also drag & drop to move to a topic"
+      selection_touch_drag_hint: "Long press a selected message to drag to a topic"
       selection_merge: Merge
       merge_confirm: "Merge the selected messages into one? The first message will be updated and the rest will be deleted."
       merge:
