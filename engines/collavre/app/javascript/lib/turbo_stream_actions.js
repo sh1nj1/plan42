@@ -203,24 +203,29 @@ function findTargetContainer(parentId, treeContainer) {
 }
 
 function findRowsForCreative(creativeId) {
-    // 1. Normal tree rows
+    // 1. Normal tree rows by attribute
     const rows = Array.from(document.querySelectorAll(`creative-tree-row[creative-id="${creativeId}"]`))
+    if (rows.length > 0) return rows
 
-    // 2. Title row — may not have creative-id attribute on top-level page
-    //    Check via URL param (?id=X) or data attribute
-    if (rows.length === 0) {
-        const titleRow = document.querySelector('creative-tree-row[is-title]')
-        if (titleRow) {
-            // Check attribute first
-            const titleCreativeId = titleRow.getAttribute('creative-id')
-            if (String(titleCreativeId) === String(creativeId)) {
-                rows.push(titleRow)
-            } else {
-                // Check URL param: /creatives?id=X
-                const urlId = new URLSearchParams(window.location.search).get('id')
-                if (urlId && String(urlId) === String(creativeId)) {
-                    rows.push(titleRow)
-                }
+    // 2. Title row checks
+    const titleRow = document.querySelector('creative-tree-row[is-title]')
+    if (titleRow) {
+        // 2a. Title row has creative-id attribute (e.g. /creatives?id=X page)
+        const titleCreativeId = titleRow.getAttribute('creative-id')
+        if (titleCreativeId && String(titleCreativeId) === String(creativeId)) {
+            return [titleRow]
+        }
+        // 2b. URL param check
+        const urlId = new URLSearchParams(window.location.search).get('id')
+        if (urlId && String(urlId) === String(creativeId)) {
+            return [titleRow]
+        }
+        // 2c. Top-level page: if any tree row has parent-id matching creativeId,
+        //     then creativeId is the root of this tree = title row
+        if (!titleCreativeId) {
+            const childOfTarget = document.querySelector(`creative-tree-row[parent-id="${creativeId}"]`)
+            if (childOfTarget) {
+                return [titleRow]
             }
         }
     }
@@ -229,6 +234,7 @@ function findRowsForCreative(creativeId) {
 
 function handleUpdated(creative) {
     const rows = findRowsForCreative(creative.id)
+    console.log("[CreativeSync] handleUpdated creative", creative.id, "found rows:", rows.length)
     if (rows.length === 0) return
 
     // Find currently editing creative ID to skip it
