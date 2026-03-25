@@ -1,0 +1,12 @@
+---
+en:
+  collavre:
+    search_popup:
+      search: "Search"
+      progress_filter: "Progress"
+      search_results: "Search results"
+      flat_view: "Flat"
+      tree_view: "Tree"
+      other_filters: "Filters"
+      to_search: "to search"
+      to_close: "to close"

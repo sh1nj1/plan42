@@ -110,10 +110,10 @@ module Collavre
         Navigation::Registry.instance.register(
           key: :search,
           label: "app.search_placeholder",
-          section: :search,
+          section: :main,
           type: :partial,
           partial: "collavre/shared/navigation/search_form",
-          priority: 10
+          priority: 105
         )
 
         # ============================================
@@ -151,30 +151,7 @@ module Collavre
           mobile: false
         )
 
-        Navigation::Registry.instance.register(
-          key: :progress_filter,
-          label: "",
-          type: :component,
-          component: Collavre::ProgressFilterComponent,
-          component_args: {
-            current_state: -> {
-              if params[:min_progress] == "1" && params[:max_progress] == "1"
-                :complete
-              elsif params[:min_progress] == "0" && params[:max_progress] == "0.99"
-                :incomplete
-              else
-                :all
-              end
-            },
-            states: [
-              { name: -> { I18n.t("app.filter_complete") }, value: :complete },
-              { name: -> { I18n.t("app.filter_incomplete") }, value: :incomplete },
-              { name: -> { I18n.t("app.filter_all") }, value: :all }
-            ]
-          },
-          priority: 130,
-          requires_auth: true
-        )
+        # Progress filter moved into search popup (search_form partial)
 
         Navigation::Registry.instance.register(
           key: :comment_filter,

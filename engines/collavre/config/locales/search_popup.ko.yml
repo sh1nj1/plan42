@@ -1,0 +1,12 @@
+---
+ko:
+  collavre:
+    search_popup:
+      search: "검색"
+      progress_filter: "진행 상태"
+      search_results: "검색 결과"
+      flat_view: "플랫"
+      tree_view: "트리"
+      other_filters: "필터"
+      to_search: "검색"
+      to_close: "닫기"
