@@ -211,6 +211,12 @@ ko:
       event:
         invitation: 초대
         inbox_summary: 인박스 요약
+    comment_snapshots:
+      restored: "원본 메시지가 복구되었습니다."
+      already_restored: "이미 복구된 스냅샷입니다."
+      not_authorized: "이 스냅샷을 복구할 권한이 없습니다."
+      restore_confirm: "원본 메시지를 복구하시겠습니까? 요약이 삭제됩니다."
+      restore_button: "원본 복구"
     inbox_mailer:
       daily_summary:
         subject: 인박스 요약

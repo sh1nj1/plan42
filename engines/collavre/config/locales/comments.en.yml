@@ -215,6 +215,12 @@ en:
       event:
         invitation: Invitation
         inbox_summary: Inbox summary
+    comment_snapshots:
+      restored: "Original messages have been restored."
+      already_restored: "This snapshot has already been restored."
+      not_authorized: "You don't have permission to restore this snapshot."
+      restore_confirm: "Restore original messages? The summary will be removed."
+      restore_button: "Restore originals"
     inbox_mailer:
       daily_summary:
         subject: Your inbox summary

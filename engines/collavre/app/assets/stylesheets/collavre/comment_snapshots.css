@@ -1,0 +1,26 @@
+.comment-snapshot-restore {
+  margin-top: var(--space-2);
+}
+
+.restore-snapshot-btn {
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.restore-snapshot-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border-color: var(--color-accent-border);
+}
+
+.restore-snapshot-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

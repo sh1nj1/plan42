@@ -126,6 +126,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_061144) do
     t.index ["user_id"], name: "index_comment_read_pointers_on_user_id"
   end
 
+  create_table "comment_snapshots", force: :cascade do |t|
+    t.json "comments_data", default: [], null: false
+    t.datetime "created_at", null: false
+    t.integer "creative_id", null: false
+    t.string "operation", null: false
+    t.datetime "restored_at"
+    t.integer "result_comment_id"
+    t.integer "topic_id"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["creative_id", "operation"], name: "index_comment_snapshots_on_creative_id_and_operation"
+    t.index ["creative_id"], name: "index_comment_snapshots_on_creative_id"
+    t.index ["restored_at"], name: "index_comment_snapshots_on_restored_at"
+    t.index ["result_comment_id"], name: "index_comment_snapshots_on_result_comment_id"
+    t.index ["topic_id"], name: "index_comment_snapshots_on_topic_id"
+    t.index ["user_id"], name: "index_comment_snapshots_on_user_id"
+  end
+
   create_table "comment_versions", force: :cascade do |t|
     t.integer "comment_id", null: false
     t.text "content", null: false
@@ -822,6 +840,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_061144) do
   add_foreign_key "comment_reactions", "users"
   add_foreign_key "comment_read_pointers", "creatives"
   add_foreign_key "comment_read_pointers", "users"
+  add_foreign_key "comment_snapshots", "comments", column: "result_comment_id", on_delete: :nullify
+  add_foreign_key "comment_snapshots", "creatives"
+  add_foreign_key "comment_snapshots", "topics"
+  add_foreign_key "comment_snapshots", "users"
   add_foreign_key "comment_versions", "comments"
   add_foreign_key "comment_versions", "comments", column: "review_comment_id"
   add_foreign_key "comments", "comment_versions", column: "selected_version_id"
