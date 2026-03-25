@@ -18,7 +18,6 @@ export default class extends Controller {
     'fullscreenIcon',
     'exitFullscreenIcon',
     'navBack',
-
     'navContainer',
     'navDropdown',
     'header',
@@ -1189,7 +1188,6 @@ export default class extends Controller {
     if (this.hasNavBackTarget) {
       this.navBackTarget.disabled = !chatHistory.canNavigate()
     }
-
   }
 
   _setupNavLongPress() {

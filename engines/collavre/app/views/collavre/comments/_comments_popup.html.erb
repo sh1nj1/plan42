@@ -67,7 +67,6 @@
               aria-label="<%= t('collavre.comments.navigate_back', default: 'Previous chat') %>">
         <%= svg_tag "chevron-left.svg", class: "chat-nav-icon" %>
       </button>
-
       <div class="chat-nav-dropdown" data-comments--popup-target="navDropdown" style="display:none;"></div>
     </div>
     <h3 id="comments-popup-title" data-comments--popup-target="title"><%= fullscreen && creative.present? ? creative.creative_snippet : t('collavre.comments.comments') %></h3>
