@@ -22,6 +22,7 @@ export default class extends Controller {
     'navContainer',
     'navDropdown',
     'header',
+    'typingIndicator',
   ]
 
   connect() {
@@ -65,10 +66,10 @@ export default class extends Controller {
     // Long press on nav buttons
     this._setupNavLongPress()
 
-    // Horizontal swipe on header for chat navigation
-    if (this.hasHeaderTarget) {
-      this.headerTarget.addEventListener('touchstart', this.handleHeaderTouchStart, { passive: true })
-      this.headerTarget.addEventListener('touchend', this.handleHeaderTouchEnd)
+    // Horizontal swipe on header and typing indicator for chat navigation
+    for (const el of this._swipeTargets()) {
+      el.addEventListener('touchstart', this.handleHeaderTouchStart, { passive: true })
+      el.addEventListener('touchend', this.handleHeaderTouchEnd)
     }
 
     if (this.hasCloseButtonTarget) {
@@ -129,9 +130,9 @@ export default class extends Controller {
     document.removeEventListener('keydown', this.handleChatNavKeydown)
     document.removeEventListener('click', this.handleDropdownOutsideClick)
     this._clearLongPressTimer()
-    if (this.hasHeaderTarget) {
-      this.headerTarget.removeEventListener('touchstart', this.handleHeaderTouchStart)
-      this.headerTarget.removeEventListener('touchend', this.handleHeaderTouchEnd)
+    for (const el of this._swipeTargets()) {
+      el.removeEventListener('touchstart', this.handleHeaderTouchStart)
+      el.removeEventListener('touchend', this.handleHeaderTouchEnd)
     }
     window.removeEventListener('mousemove', this.handleResizeMove)
     window.removeEventListener('mouseup', this.handleResizeStop)
@@ -1187,6 +1188,13 @@ export default class extends Controller {
       clearTimeout(this._longPressTimer)
       this._longPressTimer = null
     }
+  }
+
+  _swipeTargets() {
+    const targets = []
+    if (this.hasHeaderTarget) targets.push(this.headerTarget)
+    if (this.hasTypingIndicatorTarget) targets.push(this.typingIndicatorTarget)
+    return targets
   }
 
   handleHeaderTouchStart(event) {
