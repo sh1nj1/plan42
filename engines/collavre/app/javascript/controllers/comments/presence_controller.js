@@ -401,8 +401,11 @@ export default class extends Controller {
 
     const moveProxy = (x, y) => {
       if (!proxy) return
-      proxy.style.left = `${x + 12}px`
-      proxy.style.top = `${y - 30}px`
+      const rect = proxy.getBoundingClientRect()
+      const hw = (rect.width || 80) / 2
+      const hh = (rect.height || 30) / 2
+      proxy.style.left = `${x - hw}px`
+      proxy.style.top = `${y - hh}px`
     }
 
     const updateDropTarget = (x, y) => {

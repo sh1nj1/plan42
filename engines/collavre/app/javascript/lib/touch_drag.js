@@ -187,8 +187,12 @@ export default class TouchDragHandler {
 
   _moveProxy(x, y) {
     if (!this._proxy) return
-    this._proxy.style.left = `${x + 12}px`
-    this._proxy.style.top = `${y - 30}px`
+    // Center the proxy on the touch point
+    const rect = this._proxy.getBoundingClientRect()
+    const hw = (rect.width || 80) / 2
+    const hh = (rect.height || 30) / 2
+    this._proxy.style.left = `${x - hw}px`
+    this._proxy.style.top = `${y - hh}px`
   }
 
   _updateDropTarget(x, y) {
