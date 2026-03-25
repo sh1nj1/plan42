@@ -1,12 +1,12 @@
 <nav>
+  <%# Search Button (always visible, both desktop and mobile — leftmost on mobile) %>
+  <% if (search_item = Navigation::Registry.instance.find(:search)) && navigation_item_visible?(search_item) %>
+    <%= render_navigation_item(search_item) %>
+  <% end %>
+
   <%# Mobile Plans Button (special: outside popup) %>
   <% if (mobile_plans = Navigation::Registry.instance.find(:mobile_plans)) && navigation_item_visible?(mobile_plans, desktop: false) %>
     <%= render_navigation_item(mobile_plans, mobile: true) %>
-  <% end %>
-
-  <%# Search Button (always visible, both desktop and mobile) %>
-  <% if (search_item = Navigation::Registry.instance.find(:search)) && navigation_item_visible?(search_item) %>
-    <%= render_navigation_item(search_item) %>
   <% end %>
 
   <%# Desktop Navigation %>
