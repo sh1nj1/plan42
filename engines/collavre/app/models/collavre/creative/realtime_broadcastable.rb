@@ -6,30 +6,65 @@ module Collavre
       included do
         after_create_commit :broadcast_creative_created
         after_update_commit :broadcast_creative_updated
+        before_destroy :capture_broadcast_state
         after_destroy_commit :broadcast_creative_destroyed
       end
 
       private
 
       def broadcast_creative_created
+        Rails.logger.info "[CreativeBroadcast] === after_create_commit fired for creative##{id} ==="
         broadcast_creative_change(:created, broadcast_node_payload)
+      rescue StandardError => e
+        Rails.logger.error "[CreativeBroadcast] ERROR in broadcast_creative_created: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
       end
 
       def broadcast_creative_updated
+        Rails.logger.info "[CreativeBroadcast] === after_update_commit fired for creative##{id} ==="
         broadcast_creative_change(:updated, broadcast_node_payload)
+      rescue StandardError => e
+        Rails.logger.error "[CreativeBroadcast] ERROR in broadcast_creative_updated: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
+      end
+
+      def capture_broadcast_state
+        # Capture before destroy — after destroy, associations are gone
+        @_destroy_broadcast_users = find_broadcast_users
+        @_destroy_payload = {
+          id: id,
+          parent_id: parent_id,
+          ancestors: ancestors.map { |a| { id: a.id, progress: a.progress } }
+        }
       end
 
       def broadcast_creative_destroyed
-        broadcast_creative_change(:destroyed, broadcast_destroy_payload)
+        return if @_destroy_broadcast_users.blank?
+
+        current = Collavre.current_user
+        Rails.logger.info "[CreativeBroadcast] destroyed creative##{id} current_user=#{current&.email} target_users=#{@_destroy_broadcast_users.map(&:email)}"
+        users = @_destroy_broadcast_users.reject { |u| current && u.id == current.id }
+        return if users.empty?
+
+        payload = { action: "destroyed", creative: @_destroy_payload }.to_json
+
+        users.each do |target_user|
+          Turbo::StreamsChannel.broadcast_action_to(
+            [ target_user, :creative_tree ],
+            action: :refresh_creative_tree,
+            target: "creatives",
+            attributes: { data: payload }
+          )
+        end
       end
 
       def broadcast_creative_change(action, data)
         target_users = find_broadcast_users
         current = Collavre.current_user
+        Rails.logger.info "[CreativeBroadcast] #{action} creative##{data[:id]} current_user=#{current&.email} target_users=#{target_users.map(&:email)}"
         target_users.reject! { |u| current && u.id == current.id }
         return if target_users.empty?
 
         payload = { action: action.to_s, creative: data }.to_json
+        Rails.logger.info "[CreativeBroadcast] Broadcasting to #{target_users.map(&:email)} payload_size=#{payload.size}"
 
         target_users.each do |target_user|
           Turbo::StreamsChannel.broadcast_action_to(
