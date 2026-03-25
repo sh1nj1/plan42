@@ -201,12 +201,6 @@ export default class extends Controller {
     }
     this._updateNavButtons()
 
-    // Record in chat navigation history (skip if navigating via back/forward)
-    if (!this._isNavigating) {
-      chatHistory.push({ creativeId: resolvedCreativeId, snippet, canComment })
-    }
-    this._updateNavButtons()
-
     // Dispatch event for integrations (e.g., Slack badge)
     this.element.dispatchEvent(new CustomEvent('comments-popup:opened', {
       bubbles: true,
