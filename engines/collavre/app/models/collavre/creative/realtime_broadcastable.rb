@@ -104,8 +104,9 @@ module Collavre
           previous_sibling_id: previous_sibling&.id,
           # Templates (for display)
           templates: {
-            description_html: desc_html,
-            progress_html: broadcast_progress_html
+            description_html: desc_html
+            # progress_html intentionally omitted — minimal render would overwrite
+            # the full server-rendered progress area (which includes chat badges etc.)
           },
           # Inline editor payload (for editor cache)
           inline_editor_payload: {

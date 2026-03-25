@@ -266,7 +266,13 @@ function updateAncestorProgress(ancestors) {
     ancestors.forEach(anc => {
         const ancRow = document.querySelector(`creative-tree-row[creative-id="${anc.id}"]`)
         if (ancRow && anc.progress != null) {
-            ancRow.dataset.progressValue = String(Math.round(anc.progress))
+            const pct = Math.round(anc.progress)
+            ancRow.dataset.progressValue = String(pct)
+            // Update displayed text only (preserve chat badges etc.)
+            const progressSpan = ancRow.shadowRoot
+                ? ancRow.shadowRoot.querySelector('.creative-progress')
+                : ancRow.querySelector('.creative-progress')
+            if (progressSpan) progressSpan.textContent = `${pct}%`
         }
     })
 }

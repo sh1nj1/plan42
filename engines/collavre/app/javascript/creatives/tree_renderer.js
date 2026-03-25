@@ -109,7 +109,15 @@ function applyRowProperties(row, node) {
     setDatasetValue(row, 'descriptionRawHtml', inlinePayload.description_raw_html ?? '')
   }
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'progress')) {
-    setDatasetValue(row, 'progressValue', inlinePayload.progress ?? '')
+    const pct = Math.round(inlinePayload.progress ?? 0)
+    setDatasetValue(row, 'progressValue', pct)
+    // Update displayed progress text without replacing full progress HTML (preserves chat badges)
+    if (templates.progress_html == null) {
+      const progressSpan = row.shadowRoot
+        ? row.shadowRoot.querySelector('.creative-progress')
+        : row.querySelector('.creative-progress')
+      if (progressSpan) progressSpan.textContent = `${pct}%`
+    }
   }
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'origin_id')) {
     setDatasetValue(row, 'originId', inlinePayload.origin_id ?? '')
