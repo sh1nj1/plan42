@@ -187,6 +187,12 @@ body.chat-fullscreen {
 .comment-item.selected-for-move {
     background-color: var(--color-section-bg);
     border-color: var(--color-border);
+    /* Prevent native long-press behaviors (text selection, context menu,
+       native drag preview) from stealing touch events on mobile */
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .comment-select {

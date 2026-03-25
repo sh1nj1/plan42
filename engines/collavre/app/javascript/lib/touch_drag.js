@@ -86,6 +86,13 @@ export default class TouchDragHandler {
     this._startY = touch.clientY
     this._startItem = item
 
+    // Prevent native long-press behavior (text selection, context menu,
+    // native drag preview) from stealing touch events after ~500ms.
+    // Scrolling is handled via touchmove: within tolerance we preventDefault,
+    // beyond tolerance we cancel the timer and the user can scroll normally
+    // on the next touch.
+    e.preventDefault()
+
     this._cancelLongPress()
     this._timer = setTimeout(() => {
       this._startDrag(touch)
