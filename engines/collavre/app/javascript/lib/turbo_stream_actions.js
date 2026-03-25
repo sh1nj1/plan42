@@ -50,11 +50,6 @@ function handleCreated(creative) {
     const parentId = creative.parent_id
     console.log("[CreativeSync] handleCreated", { id: creative.id, parentId, level: creative.level })
 
-    if (!parentId) {
-        console.log("[CreativeSync] No parent_id, skipping")
-        return
-    }
-
     // Duplicate broadcast protection
     if (document.querySelector(`creative-tree-row[creative-id="${creative.id}"]`)) {
         console.log("[CreativeSync] Row already exists, skipping")
@@ -67,28 +62,39 @@ function handleCreated(creative) {
         return
     }
 
-    // Determine where to insert the new row
+    // Strategy: find where to insert the new row
+    // 1. Parent is in tree as regular row → insert into its children container
+    // 2. Parent is the title row (page root) → insert into #creatives directly
+    // 3. Parent is not visible but its children ARE in #creatives → insert into #creatives
+    // 4. Fallback: reload the tree (safest option)
+
     const targetContainer = findTargetContainer(parentId, treeContainer)
-    if (!targetContainer) {
-        console.log("[CreativeSync] Could not find target container for parent", parentId)
-        return
+
+    if (targetContainer) {
+        targetContainer.style.display = ''
+        if (targetContainer.dataset) targetContainer.dataset.expanded = 'true'
+
+        const newRow = createRow(creative)
+        targetContainer.appendChild(newRow)
+        console.log("[CreativeSync] Inserted row for creative", creative.id)
+    } else {
+        // Fallback: trigger tree reload — the creative is relevant to this page
+        // (we received the broadcast) but we can't determine exact insertion point
+        console.log("[CreativeSync] Fallback: reloading tree for created creative", creative.id)
+        document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
     }
-
-    // Make sure container is visible
-    targetContainer.style.display = ''
-    if (targetContainer.dataset) targetContainer.dataset.expanded = 'true'
-
-    const newRow = createRow(creative)
-    targetContainer.appendChild(newRow)
-    console.log("[CreativeSync] Inserted row for creative", creative.id, "into", targetContainer.id || 'tree container')
 }
 
 function findTargetContainer(parentId, treeContainer) {
-    const parentRow = document.querySelector(`creative-tree-row[creative-id="${parentId}"]`)
+    if (!parentId) {
+        // No parent → top-level creative, insert into main container
+        return treeContainer
+    }
 
+    // 1. Check if parent exists as a regular tree row
+    const parentRow = document.querySelector(`creative-tree-row[creative-id="${parentId}"]`)
     if (parentRow) {
         if (parentRow.hasAttribute('is-title')) {
-            // Title row's children go directly into #creatives
             return treeContainer
         }
         // Regular row — use or create children container
@@ -101,7 +107,6 @@ function findTargetContainer(parentId, treeContainer) {
             container.dataset.loaded = 'true'
             parentRow.insertAdjacentElement('afterend', container)
         }
-        // Update parent state
         parentRow.hasChildren = true
         parentRow.setAttribute('has-children', '')
         if (!parentRow.expanded) {
@@ -111,24 +116,33 @@ function findTargetContainer(parentId, treeContainer) {
         return container
     }
 
-    // Parent row not found as a tree row. Check if the parent IS the page root.
-    // The page root's ID is stored on the tree container (or title row without creative-id).
+    // 2. Check if parent is the page root (title row)
     const rootId = treeContainer.dataset?.creativesSyncRootIdValue
     if (rootId && String(parentId) === String(rootId)) {
-        // Parent is the current page's root creative — children go into #creatives
         return treeContainer
     }
 
-    // Fallback: check title row's creative-id
+    // 3. Check title row's creative-id attribute
     const titleRow = document.querySelector('creative-tree-row[is-title]')
     const titleCreativeId = titleRow?.getAttribute('creative-id')
     if (titleCreativeId && String(parentId) === String(titleCreativeId)) {
         return treeContainer
     }
 
-    // If parent is not visible on this page, the creative belongs in a subtree
-    // that's not currently expanded. Nothing to do.
-    console.log("[CreativeSync] Parent", parentId, "not visible on this page (rootId:", rootId, ")")
+    // 4. Check if any siblings of the new creative are already in #creatives
+    //    (parent's other children are direct children of #creatives → top-level page)
+    const sibling = treeContainer.querySelector(`creative-tree-row[parent-id="${parentId}"]`)
+    if (sibling) {
+        return treeContainer
+    }
+
+    // 5. If the tree container has ANY rows, this broadcast is relevant to this page
+    //    Return null to trigger fallback tree reload
+    const anyRow = treeContainer.querySelector('creative-tree-row')
+    if (anyRow) {
+        return null  // will trigger refetch fallback
+    }
+
     return null
 }
 
@@ -157,10 +171,16 @@ function handleUpdated(creative) {
 
 function handleDestroyed(creative) {
     const rows = document.querySelectorAll(`creative-tree-row[creative-id="${creative.id}"]`)
-    if (rows.length === 0) return
+
+    if (rows.length === 0) {
+        // Row not found — might be on a page where it's displayed differently
+        // Trigger tree reload as fallback
+        console.log("[CreativeSync] Destroyed creative", creative.id, "not found in tree, reloading")
+        document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
+        return
+    }
 
     rows.forEach(row => {
-        // Also remove the associated children container
         const childrenContainer = document.getElementById(`creative-children-${creative.id}`)
         if (childrenContainer) childrenContainer.remove()
         row.remove()

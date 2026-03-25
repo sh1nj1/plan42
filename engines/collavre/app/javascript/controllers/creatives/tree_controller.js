@@ -19,6 +19,10 @@ export default class extends Controller {
       this._editing = false
       // Apply any pending sync data that was deferred while editing
       this._applyPendingSyncData()
+      if (this._pendingRefetch) {
+        this._pendingRefetch = false
+        this.debouncedLoad()
+      }
     }
     document.documentElement.classList.remove('creative-alignment-ready')
     if (!this.hasCachedContent()) {
@@ -29,6 +33,14 @@ export default class extends Controller {
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
     document.addEventListener('creative-editing:start', this._handleEditStart)
     document.addEventListener('creative-editing:stop', this._handleEditStop)
+    this._handleSyncRefetch = () => {
+      if (this._editing) {
+        this._pendingRefetch = true
+        return
+      }
+      this.debouncedLoad()
+    }
+    document.addEventListener('creative-sync:refetch', this._handleSyncRefetch)
     this._setupArchiveToggle()
   }
 
@@ -41,6 +53,7 @@ export default class extends Controller {
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
     document.removeEventListener('creative-editing:start', this._handleEditStart)
     document.removeEventListener('creative-editing:stop', this._handleEditStop)
+    document.removeEventListener('creative-sync:refetch', this._handleSyncRefetch)
     if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
     if (this._archiveToggleHandler) {
       document.getElementById('toggle-archived-btn')?.removeEventListener('click', this._archiveToggleHandler)
