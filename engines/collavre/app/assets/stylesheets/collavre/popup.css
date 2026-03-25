@@ -28,6 +28,11 @@
   #share-creative-modal .share-grid {
     max-height: 25vh;
   }
+
+  .popup-box {
+    min-width: 0 !important;
+    max-width: calc(100vw - 1em) !important;
+  }
 }
 
 /* Ensure autocomplete popup inside share modal works without mention_menu.css */
