@@ -1,7 +1,12 @@
 module CollavreGithub
   class Client
+    MOCK_SERVER_DEFAULT = "http://localhost:4567"
+
     def initialize(account)
-      @client = Octokit::Client.new(access_token: account.token)
+      options = { access_token: account.token }
+      api_endpoint = resolve_api_endpoint
+      options[:api_endpoint] = api_endpoint if api_endpoint.present?
+      @client = Octokit::Client.new(options)
       @client.auto_paginate = true
     end
 
@@ -106,5 +111,15 @@ module CollavreGithub
     private
 
     attr_reader :client
+
+    # Use GITHUB_API_ENDPOINT env var if set, otherwise fall back to mock server
+    # in development when no real GitHub credentials are configured.
+    def resolve_api_endpoint
+      return ENV["GITHUB_API_ENDPOINT"] if ENV["GITHUB_API_ENDPOINT"].present?
+
+      if Rails.env.development? && ENV["GITHUB_CLIENT_ID"].blank?
+        MOCK_SERVER_DEFAULT
+      end
+    end
   end
 end

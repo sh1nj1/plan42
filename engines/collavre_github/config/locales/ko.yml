@@ -23,6 +23,14 @@ ko:
       summary: "다음 저장소가 이 Creative에 연동됩니다:"
       webhook_instructions: "각 저장소에 아래 웹훅 정보를 설정하세요."
       summary_empty: "선택된 저장소가 없습니다."
+    setup:
+      loading: "불러오는 중..."
+      close: "닫기"
+      no_orgs: "조직을 찾을 수 없습니다."
+      no_repos: "저장소를 찾을 수 없습니다."
+      load_orgs_error: "조직 목록을 불러오지 못했습니다."
+      load_repos_error: "저장소 목록을 불러오지 못했습니다."
+      save_error: "연동 저장에 실패했습니다."
     auth:
       login_first: "GitHub 계정을 연결하려면 먼저 로그인하세요"
       connected: "GitHub 계정이 연결되었습니다"

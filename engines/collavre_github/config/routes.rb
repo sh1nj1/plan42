@@ -4,6 +4,10 @@ CollavreGithub::Engine.routes.draw do
   post "webhook", to: "webhooks#create", as: :webhook
   post "webhooks", to: "webhooks#create"
 
+  # OAuth setup flow (popup wizard after callback)
+  get "auth/setup", to: "auth#setup", as: :setup_auth
+  post "auth/store_creative", to: "auth#store_creative", as: :store_creative_auth
+
   # Account endpoints
   resource :account, only: [ :show ] do
     get :organizations
