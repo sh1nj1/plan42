@@ -268,11 +268,17 @@ function updateAncestorProgress(ancestors) {
         if (ancRow && anc.progress != null) {
             const pct = Math.round(anc.progress)
             ancRow.dataset.progressValue = String(pct)
-            // Update displayed text only (preserve chat badges etc.)
-            const progressSpan = ancRow.shadowRoot
-                ? ancRow.shadowRoot.querySelector('.creative-progress')
-                : ancRow.querySelector('.creative-progress')
-            if (progressSpan) progressSpan.textContent = `${pct}%`
+            // Update progress percentage in existing progressHtml (preserve chat badges etc.)
+            if (ancRow.progressHtml) {
+                const updated = ancRow.progressHtml.replace(
+                    /(<span[^>]*class="creative-progress[^"]*"[^>]*>)\s*\d+%\s*(<\/span>)/,
+                    `$1${pct}%$2`
+                )
+                if (updated !== ancRow.progressHtml) {
+                    ancRow.progressHtml = updated
+                    ancRow.dataset.progressHtml = updated
+                }
+            }
         }
     })
 }

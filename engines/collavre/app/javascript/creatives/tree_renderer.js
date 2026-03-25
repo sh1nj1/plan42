@@ -111,12 +111,17 @@ function applyRowProperties(row, node) {
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'progress')) {
     const pct = Math.round(inlinePayload.progress ?? 0)
     setDatasetValue(row, 'progressValue', pct)
-    // Update displayed progress text without replacing full progress HTML (preserves chat badges)
-    if (templates.progress_html == null) {
-      const progressSpan = row.shadowRoot
-        ? row.shadowRoot.querySelector('.creative-progress')
-        : row.querySelector('.creative-progress')
-      if (progressSpan) progressSpan.textContent = `${pct}%`
+    // Update progress percentage in existing progressHtml without replacing full HTML
+    // (preserves chat badges, comment counts, etc.)
+    if (templates.progress_html == null && row.progressHtml) {
+      const updated = row.progressHtml.replace(
+        /(<span[^>]*class="creative-progress[^"]*"[^>]*>)\s*\d+%\s*(<\/span>)/,
+        `$1${pct}%$2`
+      )
+      if (updated !== row.progressHtml) {
+        row.progressHtml = updated
+        setDatasetValue(row, 'progressHtml', updated)
+      }
     }
   }
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'origin_id')) {
