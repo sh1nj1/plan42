@@ -18,7 +18,7 @@ export default class extends Controller {
     'fullscreenIcon',
     'exitFullscreenIcon',
     'navBack',
-    'navForward',
+
     'navContainer',
     'navDropdown',
     'header',
@@ -1150,9 +1150,6 @@ export default class extends Controller {
     if (event.altKey && event.key === 'ArrowLeft') {
       event.preventDefault()
       this.navigateBack()
-    } else if (event.altKey && event.key === 'ArrowRight') {
-      event.preventDefault()
-      this.navigateForward()
     }
   }
 
@@ -1192,9 +1189,7 @@ export default class extends Controller {
     if (this.hasNavBackTarget) {
       this.navBackTarget.disabled = !chatHistory.canNavigate()
     }
-    if (this.hasNavForwardTarget) {
-      this.navForwardTarget.disabled = !chatHistory.canNavigate()
-    }
+
   }
 
   _setupNavLongPress() {
@@ -1219,7 +1214,6 @@ export default class extends Controller {
       btn.addEventListener('touchcancel', () => this._clearLongPressTimer())
     }
     if (this.hasNavBackTarget) setupBtn(this.navBackTarget)
-    if (this.hasNavForwardTarget) setupBtn(this.navForwardTarget)
   }
 
   _clearLongPressTimer() {
