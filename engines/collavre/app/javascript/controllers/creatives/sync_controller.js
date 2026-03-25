@@ -9,16 +9,18 @@ export default class extends Controller {
 
   connect() {
     this.subscription = null
-    this.editingUsers = {} // { creativeId: { userId: { user_name, avatar_url } } }
+    this.editingUsers = {} // { creativeId: { userId: { user_name } } }
 
     this.handleEditStart = (e) => {
       const { creativeId } = e.detail
+      console.log('[CreativeSync] Edit start event, creativeId:', creativeId, 'subscription:', !!this.subscription)
       if (creativeId && this.subscription) {
         this.subscription.sendEditing(creativeId)
       }
     }
     this.handleEditStop = (e) => {
       const { creativeId } = e.detail
+      console.log('[CreativeSync] Edit stop event, creativeId:', creativeId)
       if (creativeId && this.subscription) {
         this.subscription.sendStoppedEditing(creativeId)
       }
@@ -29,6 +31,9 @@ export default class extends Controller {
 
     if (this.rootIdValue > 0) {
       this.subscribe()
+    } else {
+      // Top-level /creatives page — try to infer root from tree rows
+      this.inferAndSubscribe()
     }
   }
 
@@ -52,9 +57,38 @@ export default class extends Controller {
     }
   }
 
-  subscribe() {
-    console.log('[CreativeSync] Subscribing to CreativesChannel, root_id:', this.rootIdValue)
-    this.subscription = subscribeToCreatives(this.rootIdValue, {
+  inferAndSubscribe() {
+    // Wait for tree to load, then find root from first row's parent-id
+    const tryInfer = () => {
+      const firstRow = this.element.querySelector('creative-tree-row[parent-id]')
+      if (firstRow) {
+        const parentId = parseInt(firstRow.getAttribute('parent-id'), 10)
+        if (parentId > 0) {
+          console.log('[CreativeSync] Inferred root_id from tree:', parentId)
+          this.subscribe(parentId)
+          return true
+        }
+      }
+      return false
+    }
+
+    if (!tryInfer()) {
+      // Tree may not be loaded yet, observe for changes
+      const observer = new MutationObserver(() => {
+        if (tryInfer()) observer.disconnect()
+      })
+      observer.observe(this.element, { childList: true, subtree: true })
+      // Cleanup after 10s
+      setTimeout(() => observer.disconnect(), 10000)
+    }
+  }
+
+  subscribe(overrideRootId) {
+    const rootId = overrideRootId || this.rootIdValue
+    if (rootId <= 0) return
+
+    console.log('[CreativeSync] Subscribing to CreativesChannel, root_id:', rootId)
+    this.subscription = subscribeToCreatives(rootId, {
       onConnected: () => console.log('[CreativeSync] CreativesChannel connected'),
       onDisconnected: () => console.log('[CreativeSync] CreativesChannel disconnected'),
       onEditing: (data) => this.handleEditing(data),
@@ -63,7 +97,7 @@ export default class extends Controller {
   }
 
   handleEditing(data) {
-    const { creative_id, user_id, user_name, avatar_url } = data
+    const { creative_id, user_id, user_name } = data
     if (user_id === this.currentUserIdValue) return
 
     console.log('[CreativeSync] Editing:', creative_id, 'by', user_name)
@@ -71,7 +105,7 @@ export default class extends Controller {
     if (!this.editingUsers[creative_id]) {
       this.editingUsers[creative_id] = {}
     }
-    this.editingUsers[creative_id][user_id] = { user_name, avatar_url }
+    this.editingUsers[creative_id][user_id] = { user_name }
     this.updateRowEditingUsers(creative_id)
   }
 
@@ -90,7 +124,10 @@ export default class extends Controller {
 
   updateRowEditingUsers(creativeId) {
     const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
-    if (!row) return
+    if (!row) {
+      console.log('[CreativeSync] Row not found for editing update:', creativeId)
+      return
+    }
 
     const editors = this.editingUsers[creativeId]
     if (!editors || Object.keys(editors).length === 0) {
@@ -99,8 +136,8 @@ export default class extends Controller {
       row.editingUsers = Object.entries(editors).map(([userId, info]) => ({
         user_id: parseInt(userId),
         user_name: info.user_name,
-        avatar_url: info.avatar_url
       }))
     }
+    console.log('[CreativeSync] Updated editingUsers for row', creativeId, ':', row.editingUsers)
   }
 }
