@@ -202,8 +202,33 @@ function findTargetContainer(parentId, treeContainer) {
     return null
 }
 
+function findRowsForCreative(creativeId) {
+    // 1. Normal tree rows
+    const rows = Array.from(document.querySelectorAll(`creative-tree-row[creative-id="${creativeId}"]`))
+
+    // 2. Title row — may not have creative-id attribute on top-level page
+    //    Check via URL param (?id=X) or data attribute
+    if (rows.length === 0) {
+        const titleRow = document.querySelector('creative-tree-row[is-title]')
+        if (titleRow) {
+            // Check attribute first
+            const titleCreativeId = titleRow.getAttribute('creative-id')
+            if (String(titleCreativeId) === String(creativeId)) {
+                rows.push(titleRow)
+            } else {
+                // Check URL param: /creatives?id=X
+                const urlId = new URLSearchParams(window.location.search).get('id')
+                if (urlId && String(urlId) === String(creativeId)) {
+                    rows.push(titleRow)
+                }
+            }
+        }
+    }
+    return rows
+}
+
 function handleUpdated(creative) {
-    const rows = document.querySelectorAll(`creative-tree-row[creative-id="${creative.id}"]`)
+    const rows = findRowsForCreative(creative.id)
     if (rows.length === 0) return
 
     // Find currently editing creative ID to skip it
@@ -212,8 +237,6 @@ function handleUpdated(creative) {
 
     rows.forEach(row => {
         if (String(creative.id) === String(editingId)) {
-            // Don't touch the row being edited — it would close the editor.
-            // Cache the latest data so when the editor closes, it can be applied.
             if (creative.inline_editor_payload) {
                 row.dataset.pendingSyncData = JSON.stringify(creative)
             }
@@ -226,7 +249,7 @@ function handleUpdated(creative) {
 }
 
 function handleDestroyed(creative) {
-    const rows = document.querySelectorAll(`creative-tree-row[creative-id="${creative.id}"]`)
+    const rows = findRowsForCreative(creative.id)
 
     if (rows.length === 0) {
         // Row not found — might be on a page where it's displayed differently
@@ -264,25 +287,26 @@ function handleDestroyed(creative) {
 function updateAncestorProgress(ancestors) {
     if (!Array.isArray(ancestors)) return
     ancestors.forEach(anc => {
-        // Search regular rows + title row (which may not have creative-id attribute on top-level page)
-        let ancRow = document.querySelector(`creative-tree-row[creative-id="${anc.id}"]`)
-        if (!ancRow) {
-            const titleRow = document.querySelector('creative-tree-row[is-title]')
-            if (titleRow && String(titleRow.creativeId || titleRow.getAttribute('creative-id')) === String(anc.id)) {
-                ancRow = titleRow
-            }
-        }
+        const rows = findRowsForCreative(anc.id)
+        const ancRow = rows[0]
         if (ancRow && anc.progress != null) {
             const pct = Math.round(anc.progress * 100)
             ancRow.dataset.progressValue = String(anc.progress)
+            console.log("[CreativeSync] ancestor progressHtml exists:", !!ancRow.progressHtml, "value:", ancRow.progressHtml?.substring(0, 100))
             if (ancRow.progressHtml) {
+                const regex = /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/
+                const matched = regex.test(ancRow.progressHtml)
+                console.log("[CreativeSync] regex matched:", matched)
                 const updated = ancRow.progressHtml.replace(
-                    /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/,
+                    regex,
                     `$1${pct}%$2`
                 )
                 if (updated !== ancRow.progressHtml) {
                     ancRow.progressHtml = updated
                     ancRow.dataset.progressHtml = updated
+                    console.log("[CreativeSync] ancestor progress updated to", pct + "%")
+                } else {
+                    console.log("[CreativeSync] regex replace had no effect")
                 }
             }
         }
