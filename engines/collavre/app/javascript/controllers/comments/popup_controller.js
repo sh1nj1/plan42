@@ -21,6 +21,7 @@ export default class extends Controller {
     'navForward',
     'navContainer',
     'navDropdown',
+    'header',
   ]
 
   connect() {
@@ -47,6 +48,10 @@ export default class extends Controller {
     this.handleDropdownOutsideClick = this.handleDropdownOutsideClick.bind(this)
     this._longPressTimer = null
     this._isNavigating = false
+    this._headerSwipeStartX = null
+    this._headerSwipeStartY = null
+    this.handleHeaderTouchStart = this.handleHeaderTouchStart.bind(this)
+    this.handleHeaderTouchEnd = this.handleHeaderTouchEnd.bind(this)
 
     document.addEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.addEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
@@ -59,6 +64,12 @@ export default class extends Controller {
 
     // Long press on nav buttons
     this._setupNavLongPress()
+
+    // Horizontal swipe on header for chat navigation
+    if (this.hasHeaderTarget) {
+      this.headerTarget.addEventListener('touchstart', this.handleHeaderTouchStart, { passive: true })
+      this.headerTarget.addEventListener('touchend', this.handleHeaderTouchEnd)
+    }
 
     if (this.hasCloseButtonTarget) {
       this.closeButtonTarget.addEventListener('click', () => this.close())
@@ -118,6 +129,10 @@ export default class extends Controller {
     document.removeEventListener('keydown', this.handleChatNavKeydown)
     document.removeEventListener('click', this.handleDropdownOutsideClick)
     this._clearLongPressTimer()
+    if (this.hasHeaderTarget) {
+      this.headerTarget.removeEventListener('touchstart', this.handleHeaderTouchStart)
+      this.headerTarget.removeEventListener('touchend', this.handleHeaderTouchEnd)
+    }
     window.removeEventListener('mousemove', this.handleResizeMove)
     window.removeEventListener('mouseup', this.handleResizeStop)
     if (this.isMobile()) {
@@ -1171,6 +1186,31 @@ export default class extends Controller {
     if (this._longPressTimer) {
       clearTimeout(this._longPressTimer)
       this._longPressTimer = null
+    }
+  }
+
+  handleHeaderTouchStart(event) {
+    if (event.touches.length !== 1) return
+    this._headerSwipeStartX = event.touches[0].clientX
+    this._headerSwipeStartY = event.touches[0].clientY
+  }
+
+  handleHeaderTouchEnd(event) {
+    if (this._headerSwipeStartX === null) return
+    const dx = event.changedTouches[0].clientX - this._headerSwipeStartX
+    const dy = event.changedTouches[0].clientY - this._headerSwipeStartY
+    this._headerSwipeStartX = null
+    this._headerSwipeStartY = null
+
+    // Must be horizontal (dx > dy) and at least 40px
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return
+
+    if (dx < 0) {
+      // Swipe left → next chat
+      this.navigateForward()
+    } else {
+      // Swipe right → previous chat
+      this.navigateBack()
     }
   }
 
