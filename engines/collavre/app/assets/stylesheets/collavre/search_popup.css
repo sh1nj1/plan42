@@ -189,11 +189,9 @@
 }
 
 .search-popup-filter-label {
-  font-size: var(--text-00, 0.75rem);
+  font-size: var(--text-1, 1rem);
   font-weight: var(--weight-6, 600);
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--text-primary);
 }
 
 .search-popup-filter-buttons {
