@@ -29,7 +29,8 @@ module Collavre
         editing: {
           creative_id: creative_id,
           user_id: current_user.id,
-          user_name: current_user.display_name
+          user_name: current_user.display_name,
+          avatar_url: user_avatar_url_for(current_user)
         }
       })
     end
@@ -48,6 +49,16 @@ module Collavre
     end
 
     private
+
+    def user_avatar_url_for(user)
+      if user.avatar.attached?
+        Rails.application.routes.url_helpers.rails_blob_path(
+          user.avatar, only_path: true
+        )
+      elsif user.respond_to?(:avatar_url) && user.avatar_url.present?
+        user.avatar_url
+      end
+    end
 
     def broadcast_presence
       user_ids = CreativePresenceStore.list(@root.id)

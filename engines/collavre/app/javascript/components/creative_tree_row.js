@@ -305,10 +305,9 @@ class CreativeTreeRow extends LitElement {
         ${this.editingUsers.map(u => html`
           <span class="creative-editing-avatar" title="${u.user_name} is editing">
             ${u.avatar_url
-              ? html`<img src="${u.avatar_url}" alt="${u.user_name}" width="20" height="20" style="border-radius:50%; border: 2px solid var(--color-accent, #4a9eff);">`
-              : html`<span style="display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; background:var(--color-accent, #4a9eff); color:white; font-size:10px; border: 2px solid var(--color-accent, #4a9eff);">${(u.user_name || '?')[0]}</span>`
+              ? html`<img src="${u.avatar_url}" alt="${u.user_name}" width="24" height="24" style="border-radius:50%; border: 2px solid var(--color-accent, #4a9eff); object-fit:cover;">`
+              : html`<span style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:var(--color-accent, #4a9eff); color:white; font-size:11px; font-weight:600; border: 2px solid var(--color-accent, #4a9eff);">${(u.user_name || '?')[0]}</span>`
             }
-            <span style="font-size:10px;">✏️</span>
           </span>
         `)}
       </div>

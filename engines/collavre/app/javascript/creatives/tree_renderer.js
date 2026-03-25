@@ -111,6 +111,8 @@ function applyRowProperties(row, node) {
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'progress')) {
     const rawProgress = inlinePayload.progress ?? 0
     const pct = Math.round(rawProgress * 100)
+    // progress_text from server: completion mark string, empty string (=complete but no mark), or undefined
+    const displayText = node.progress_text != null ? (node.progress_text || '\u00a0\u00a0') : `${pct}%`
     setDatasetValue(row, 'progressValue', rawProgress)
     // Update progress percentage in existing progressHtml without replacing full HTML
     // (preserves chat badges, comment counts, etc.)
@@ -121,17 +123,17 @@ function applyRowProperties(row, node) {
         // Try regex replacement first (preserves chat buttons etc.)
         const replaced = updated.replace(
           /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/,
-          `$1${pct}%$2`
+          `$1${displayText}$2`
         )
         if (replaced !== updated) {
-          updated = replaced
-        } else {
-          // Regex didn't match — create fresh progress HTML
-          updated = `<span class="${cssClass}">${pct}%</span>`
+          // Also update ONLY the first progress class (not chat buttons etc.)
+          updated = replaced.replace(
+            /class="creative-progress-(?:in)?complete"/,
+            `class="${cssClass}"`
+          )
         }
-      } else {
-        // progressHtml was empty — create fresh
-        updated = `<span class="${cssClass}">${pct}%</span>`
+        // If regex didn't match, do NOT create fresh HTML — preserve existing progressHtml
+        // (it contains chat buttons, comment badges, etc.)
       }
       if (updated !== (row.progressHtml || '')) {
         row.progressHtml = updated

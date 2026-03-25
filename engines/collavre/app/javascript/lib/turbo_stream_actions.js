@@ -30,7 +30,6 @@ registerStreamAction("refresh_creative_tree", function () {
 
     // Use linked_id if present (shared creative: receiver sees linked copy, not origin)
     const effectiveId = creative.linked_id || creative.id
-    console.log("[CreativeSync] Received", action, "for creative", creative.id, 
         creative.linked_id ? `(linked: ${creative.linked_id})` : '')
 
     // Override id with effectiveId for DOM lookups
@@ -54,17 +53,14 @@ registerStreamAction("refresh_creative_tree", function () {
 
 function handleCreated(creative) {
     const parentId = creative.parent_id
-    console.log("[CreativeSync] handleCreated", { id: creative.id, parentId, level: creative.level })
 
     // Duplicate broadcast protection
     if (document.querySelector(`creative-tree-row[creative-id="${creative.id}"]`)) {
-        console.log("[CreativeSync] Row already exists, skipping")
         return
     }
 
     const treeContainer = document.getElementById('creatives')
     if (!treeContainer) {
-        console.log("[CreativeSync] Tree container #creatives not found")
         return
     }
 
@@ -82,11 +78,9 @@ function handleCreated(creative) {
 
         const newRow = createRow(creative)
         insertAtCorrectPosition(newRow, creative, targetContainer)
-        console.log("[CreativeSync] Inserted row for creative", creative.id)
     } else {
         // Fallback: trigger tree reload — the creative is relevant to this page
         // (we received the broadcast) but we can't determine exact insertion point
-        console.log("[CreativeSync] Fallback: reloading tree for created creative", creative.id)
         document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
     }
 }
@@ -97,7 +91,6 @@ function insertAtCorrectPosition(newRow, creative, container) {
     const sequence = creative.sequence
 
     const siblingRows = Array.from(container.querySelectorAll(':scope > creative-tree-row'))
-    console.log("[CreativeSync] insertAtCorrectPosition", {
         id: creative.id, afterId, prevSiblingId, sequence,
         siblingCount: siblingRows.length,
         siblingIds: siblingRows.map(r => r.getAttribute('creative-id'))
@@ -111,7 +104,6 @@ function insertAtCorrectPosition(newRow, creative, container) {
         const childContainer = document.getElementById(`creative-children-${targetId}`)
         const ref = childContainer || row
         ref.insertAdjacentElement('afterend', newRow)
-        console.log(`[CreativeSync] Inserted after ${label}`, targetId)
         return true
     }
 
@@ -127,7 +119,6 @@ function insertAtCorrectPosition(newRow, creative, container) {
             const rowSeq = parseInt(row.getAttribute('sequence'), 10)
             if (!isNaN(rowSeq) && rowSeq > sequence) {
                 container.insertBefore(newRow, row)
-                console.log("[CreativeSync] Inserted before row with sequence", rowSeq)
                 return
             }
         }
@@ -137,14 +128,12 @@ function insertAtCorrectPosition(newRow, creative, container) {
     if (!prevSiblingId && !afterId && (sequence === 0 || sequence == null)) {
         if (siblingRows.length > 0) {
             container.insertBefore(newRow, siblingRows[0])
-            console.log("[CreativeSync] Inserted at beginning")
             return
         }
     }
 
     // Fallback: append at end
     container.appendChild(newRow)
-    console.log("[CreativeSync] Appended at end (fallback)")
 }
 
 function findTargetContainer(parentId, treeContainer) {
@@ -249,7 +238,6 @@ function findRowsForCreative(creativeId, originId) {
 
 function handleUpdated(creative) {
     const rows = findRowsForCreative(creative.id, creative.origin_id)
-    console.log("[CreativeSync] handleUpdated creative", creative.id, "origin:", creative.origin_id, "found rows:", rows.length)
     if (rows.length === 0) return
 
     // Find currently editing creative ID to skip it
@@ -266,19 +254,12 @@ function handleUpdated(creative) {
         applyRowProperties(row, creative)
     })
 
-    console.log("[CreativeSync] Updated", rows.length, "row(s) for creative", creative.id)
 }
 
 function handleDestroyed(creative) {
     const rows = findRowsForCreative(creative.id, creative.origin_id)
 
-    if (rows.length === 0) {
-        // Row not found — might be on a page where it's displayed differently
-        // Trigger tree reload as fallback
-        console.log("[CreativeSync] Destroyed creative", creative.id, "not found in tree, reloading")
-        document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
-        return
-    }
+    if (rows.length === 0) return // Row not visible on this page
 
     rows.forEach(row => {
         const childrenContainer = document.getElementById(`creative-children-${creative.id}`)
@@ -302,31 +283,33 @@ function handleDestroyed(creative) {
         }
     }
 
-    console.log("[CreativeSync] Removed row(s) for creative", creative.id)
 }
 
-function updateProgressForRow(row, progress) {
+function updateProgressForRow(row, progress, progressText) {
     if (progress == null) return
     const pct = Math.round(progress * 100)
     const cssClass = pct >= 100 ? 'creative-progress-complete' : 'creative-progress-incomplete'
+    // progressText from server: completion mark string, empty string (=complete but no mark), or null
+    const displayText = progressText != null ? (progressText || '\u00a0\u00a0') : `${pct}%`
 
     row.dataset.progressValue = String(progress)
 
     if (row.progressHtml) {
         // Try regex replacement on existing progress HTML (preserves chat buttons etc.)
         const regex = /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/
-        const updated = row.progressHtml.replace(regex, `$1${pct}%$2`)
+        const updated = row.progressHtml.replace(regex, `$1${displayText}$2`)
         if (updated !== row.progressHtml) {
-            row.progressHtml = updated
-            row.dataset.progressHtml = updated
-            return
+            // Also update ONLY the first progress class (not chat buttons etc.)
+            const classUpdated = updated.replace(
+                /class="creative-progress-(?:in)?complete"/,
+                `class="${cssClass}"`
+            )
+            row.progressHtml = classUpdated
+            row.dataset.progressHtml = classUpdated
         }
+        // If regex didn't match, do NOT create fresh HTML — preserve existing progressHtml
+        // (it contains chat buttons, comment badges, etc.)
     }
-
-    // progressHtml is empty or regex didn't match — create fresh progress HTML
-    const newHtml = `<span class="${cssClass}">${pct}%</span>`
-    row.progressHtml = newHtml
-    row.dataset.progressHtml = newHtml
 }
 
 function updateAncestorProgress(ancestors) {
@@ -334,7 +317,7 @@ function updateAncestorProgress(ancestors) {
     ancestors.forEach(anc => {
         // findRowsForCreative already handles origin_id fallback for linked creatives
         const rows = findRowsForCreative(anc.id, anc.origin_id)
-        if (rows[0]) updateProgressForRow(rows[0], anc.progress)
+        if (rows[0]) updateProgressForRow(rows[0], anc.progress, anc.progress_text)
     })
 }
 

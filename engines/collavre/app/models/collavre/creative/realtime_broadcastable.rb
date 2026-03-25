@@ -107,6 +107,9 @@ module Collavre
             user_data[:ancestors] = remap_ancestor_ids(user_data[:ancestors], target_user)
           end
 
+          # Add per-user progress text (completion mark differs per user)
+          add_progress_text!(user_data, target_user)
+
           payload = { action: action.to_s, creative: user_data }.to_json
           Turbo::StreamsChannel.broadcast_action_to(
             [ target_user, :creative_tree ],
@@ -159,22 +162,6 @@ module Collavre
         }
       end
 
-      def broadcast_destroy_payload
-        {
-          id: id,
-          parent_id: parent_id,
-          ancestors: (ancestors.map { |a| { id: a.id, progress: a.progress } } rescue [])
-        }
-      end
-
-      # Simple progress HTML without view_context dependencies
-      # Full progress_html (with comment badges etc.) requires view_context
-      # so we render a minimal version; the user's own save already has full rendering
-      def broadcast_progress_html
-        pct = ((progress || 0) * 100).round
-        %(<div class="creative-row-end"><span class="creative-progress">#{pct}%</span></div>)
-      end
-
       def safe_effective_origin
         effective_origin
       rescue StandardError
@@ -182,13 +169,8 @@ module Collavre
       end
 
       def previous_sibling
-        siblings = if parent
-                     parent.children.order(:sequence)
-        else
-                     Creative.roots.order(:sequence)
-        end
-        idx = siblings.to_a.index { |s| s.id == id }
-        idx && idx > 0 ? siblings.to_a[idx - 1] : nil
+        scope = parent ? parent.children : Creative.where(parent_id: nil)
+        scope.where("sequence < ?", sequence).order(sequence: :desc).first
       end
 
       # Build a map of user_id → linked_creative_id for this creative
@@ -205,6 +187,32 @@ module Collavre
       rescue StandardError => e
         Rails.logger.error "[CreativeBroadcast] Error building linked map: #{e.message}"
         {}
+      end
+
+      # Format progress text for a user (100% → completion mark if set)
+      # Matches render_progress_value helper: when value==1 and completion_mark is not nil,
+      # use it (even if blank — blank becomes non-breaking spaces in display)
+      def format_progress_text(progress_value, user)
+        pct = ((progress_value || 0) * 100).round
+        if pct >= 100 && !user.completion_mark.nil?
+          mark = user.completion_mark
+          mark.blank? ? "" : mark
+        else
+          "#{pct}%"
+        end
+      end
+
+      # Add per-user progress_text to payload and ancestors
+      def add_progress_text!(data, target_user)
+        # Main creative progress text
+        if data.dig(:inline_editor_payload, :progress)
+          data[:progress_text] = format_progress_text(data[:inline_editor_payload][:progress], target_user)
+        end
+
+        # Ancestor progress text
+        data[:ancestors]&.each do |anc|
+          anc[:progress_text] = format_progress_text(anc[:progress], target_user) if anc[:progress]
+        end
       end
 
       # Remap ancestor IDs to the user's linked creative IDs
@@ -229,16 +237,18 @@ module Collavre
           self
         end
 
-        users = []
-        users << target.user if target.user
-        users.concat(target.all_shared_users.map(&:user))
+        # Collect candidate users from target and its ancestors
+        candidates = Set.new
+        candidates << target.user if target.user
+        target.all_shared_users.each { |su| candidates << su.user }
 
         target.ancestors.each do |ancestor|
-          users << ancestor.user if ancestor.user
-          users.concat(ancestor.all_shared_users.map(&:user))
+          candidates << ancestor.user if ancestor.user
+          ancestor.all_shared_users.each { |su| candidates << su.user }
         end
 
-        users.compact.uniq
+        # Filter: only users who actually have read permission on this creative
+        candidates.compact.select { |user| target.has_permission?(user, :read) }.uniq
       rescue StandardError => e
         Rails.logger.error "[CreativeBroadcast] Error finding users: #{e.message}"
         []
