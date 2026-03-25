@@ -26,7 +26,8 @@ const DEFAULT_MOVE_TOLERANCE = 10
 export default class TouchDragHandler {
   constructor(opts) {
     this.container = opts.container
-    this.itemSelector = opts.itemSelector
+    this.itemSelector = opts.itemSelector       // optional when singleElement is true
+    this.singleElement = opts.singleElement ?? false  // treat container itself as the draggable
     this.dropTargetSelector = opts.dropTargetSelector
     this.longPressMs = opts.longPressMs ?? DEFAULT_LONG_PRESS_MS
     this.moveTolerance = opts.moveTolerance ?? DEFAULT_MOVE_TOLERANCE
@@ -75,16 +76,19 @@ export default class TouchDragHandler {
     const touch = e.touches[0]
     if (!touch) return
 
-    // Must start on a selected item
-    const item = touch.target.closest?.(this.itemSelector)
-    if (!item) return
+    if (this.singleElement) {
+      // In single-element mode, the container itself is the draggable
+    } else {
+      // Must start on a selected item
+      const item = touch.target.closest?.(this.itemSelector)
+      if (!item) return
 
-    // Ignore if started on interactive elements
-    if (touch.target.closest('input, button, a, textarea, .comment-select')) return
+      // Ignore if started on interactive elements
+      if (touch.target.closest('input, button, a, textarea, .comment-select')) return
+    }
 
     this._startX = touch.clientX
     this._startY = touch.clientY
-    this._startItem = item
 
     // Prevent native long-press behavior (text selection, context menu,
     // native drag preview) from stealing touch events after ~500ms.
@@ -154,8 +158,10 @@ export default class TouchDragHandler {
   _startDrag(touch) {
     this._timer = null
 
-    // Collect matched items
-    const items = this.container.querySelectorAll(this.itemSelector)
+    // Collect matched items (or the container itself in single-element mode)
+    const items = this.singleElement
+      ? [this.container]
+      : this.container.querySelectorAll(this.itemSelector)
     if (!items || items.length === 0) return
 
     // Let caller cancel
@@ -187,12 +193,14 @@ export default class TouchDragHandler {
 
   _moveProxy(x, y) {
     if (!this._proxy) return
-    // Center the proxy on the touch point
-    const rect = this._proxy.getBoundingClientRect()
-    const hw = (rect.width || 80) / 2
-    const hh = (rect.height || 30) / 2
-    this._proxy.style.left = `${x - hw}px`
-    this._proxy.style.top = `${y - hh}px`
+    // Cache proxy dimensions on first call (size doesn't change during drag)
+    if (this._proxyHW === undefined) {
+      const rect = this._proxy.getBoundingClientRect()
+      this._proxyHW = (rect.width || 80) / 2
+      this._proxyHH = (rect.height || 30) / 2
+    }
+    this._proxy.style.left = `${x - this._proxyHW}px`
+    this._proxy.style.top = `${y - this._proxyHH}px`
   }
 
   _updateDropTarget(x, y) {
@@ -200,7 +208,11 @@ export default class TouchDragHandler {
     // elementFromPoint is unreliable on mobile when z-index, overlays,
     // or reflow timing interfere with the result.
     const PAD = 12 // extra padding for finger imprecision
-    const targets = document.querySelectorAll(this.dropTargetSelector)
+    // Cache drop targets on first call (topic list doesn't change during drag)
+    if (!this._cachedDropTargets) {
+      this._cachedDropTargets = document.querySelectorAll(this.dropTargetSelector)
+    }
+    const targets = this._cachedDropTargets
     let found = null
 
     for (const target of targets) {
@@ -235,7 +247,10 @@ export default class TouchDragHandler {
     if (this._proxy) {
       this._proxy.remove()
       this._proxy = null
+      this._proxyHW = undefined
+      this._proxyHH = undefined
     }
+    this._cachedDropTargets = null
   }
 
   _cancelLongPress() {
@@ -243,6 +258,5 @@ export default class TouchDragHandler {
       clearTimeout(this._timer)
       this._timer = null
     }
-    this._startItem = null
   }
 }

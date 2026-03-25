@@ -773,7 +773,9 @@ export default class extends Controller {
 
       proxyContent: (items) => {
         const count = this.selection.size || items.length
-        const label = count === 1 ? '1 message' : `${count} messages`
+        const oneText = this.element.dataset.touchDragProxyOneText || '1 message'
+        const otherText = this.element.dataset.touchDragProxyOtherText || '%{count} messages'
+        const label = count === 1 ? oneText : otherText.replace('%{count}', count)
         return `<span class="touch-drag-proxy-badge">${label}</span>`
       },
 

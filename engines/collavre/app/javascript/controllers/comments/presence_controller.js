@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { createSubscription } from '../../services/cable'
+import TouchDragHandler from '../../lib/touch_drag'
 
 const TYPING_TIMEOUT = 3000
 const AGENT_STATUS_TIMEOUT = 10000 // Safety timeout for agent_status (heartbeat expected every 3s)
@@ -383,133 +384,35 @@ export default class extends Controller {
   _addAgentTouchDrag(wrapper, user) {
     if (!('ontouchstart' in window)) return
 
-    const LONG_PRESS_MS = 400
-    const MOVE_TOLERANCE = 10
-    const DROP_TARGET_SEL = '.topic-tag.topic-drop-target, .topic-creation-container'
-    const DRAG_OVER_CLASS = 'drag-over'
+    const handler = new TouchDragHandler({
+      container: wrapper,
+      singleElement: true,
+      dropTargetSelector: '.topic-tag.topic-drop-target, .topic-creation-container',
+      draggingClass: 'dragging',
 
-    let timer = null
-    let dragging = false
-    let proxy = null
-    let currentTarget = null
-    let startX = 0
-    let startY = 0
+      proxyContent: () =>
+        `<span class="touch-drag-proxy-badge">${user.name}</span>`,
 
-    const cancelLongPress = () => {
-      if (timer) { clearTimeout(timer); timer = null }
-    }
-
-    const moveProxy = (x, y) => {
-      if (!proxy) return
-      const rect = proxy.getBoundingClientRect()
-      const hw = (rect.width || 80) / 2
-      const hh = (rect.height || 30) / 2
-      proxy.style.left = `${x - hw}px`
-      proxy.style.top = `${y - hh}px`
-    }
-
-    const updateDropTarget = (x, y) => {
-      const PAD = 12
-      const targets = document.querySelectorAll(DROP_TARGET_SEL)
-      let found = null
-      for (const t of targets) {
-        const rect = t.getBoundingClientRect()
-        if (x >= rect.left - PAD && x <= rect.right + PAD &&
-            y >= rect.top - PAD && y <= rect.bottom + PAD) {
-          found = t
-          break
-        }
-      }
-      if (found !== currentTarget) {
-        currentTarget?.classList.remove(DRAG_OVER_CLASS)
-        currentTarget = found
-        currentTarget?.classList.add(DRAG_OVER_CLASS)
-      }
-    }
-
-    const endDrag = () => {
-      dragging = false
-      cancelLongPress()
-      document.removeEventListener('contextmenu', preventContext, true)
-      wrapper.classList.remove('dragging')
-      if (currentTarget) { currentTarget.classList.remove(DRAG_OVER_CLASS); currentTarget = null }
-      if (proxy) { proxy.remove(); proxy = null }
-    }
-
-    const preventContext = (e) => { if (dragging || timer) e.preventDefault() }
-
-    const startDrag = (touch) => {
-      timer = null
-      dragging = true
-      if (navigator.vibrate) navigator.vibrate(30)
-      document.addEventListener('contextmenu', preventContext, { capture: true })
-      wrapper.classList.add('dragging')
-
-      proxy = document.createElement('div')
-      proxy.className = 'touch-drag-proxy'
-      proxy.innerHTML = `<span class="touch-drag-proxy-badge">${user.name}</span>`
-      document.body.appendChild(proxy)
-      moveProxy(touch.clientX, touch.clientY)
-    }
-
-    wrapper.addEventListener('touchstart', (e) => {
-      if (dragging) return
-      const touch = e.touches[0]
-      if (!touch) return
-      startX = touch.clientX
-      startY = touch.clientY
-      cancelLongPress()
-      timer = setTimeout(() => startDrag(touch), LONG_PRESS_MS)
-    }, { passive: false })
-
-    wrapper.addEventListener('touchmove', (e) => {
-      const touch = e.touches[0]
-      if (!touch) return
-      if (dragging) {
-        e.preventDefault()
-        moveProxy(touch.clientX, touch.clientY)
-        updateDropTarget(touch.clientX, touch.clientY)
-        return
-      }
-      if (timer) {
-        const dx = Math.abs(touch.clientX - startX)
-        const dy = Math.abs(touch.clientY - startY)
-        if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) {
-          cancelLongPress()
-        } else {
-          e.preventDefault() // Prevent scroll within tolerance during long-press wait
-        }
-      }
-    }, { passive: false })
-
-    const onTouchEnd = (e) => {
-      if (timer) { cancelLongPress(); return }
-      if (!dragging) return
-      e.preventDefault()
-
-      if (currentTarget) {
+      onDrop: (targetEl) => {
         const agentData = { id: user.id, name: user.name, avatar_url: user.avatar_url }
         const topicsCtrl = this.application.getControllerForElementAndIdentifier(
           this.element, 'comments--topics'
         )
-        if (topicsCtrl) {
-          // Drop on "+" button → create topic with agent
-          if (currentTarget.closest('.topic-creation-container')) {
-            topicsCtrl.createTopicWithAgent(agentData)
-          } else {
-            // Drop on topic tag → set primary agent
-            const topicTag = currentTarget.closest('.topic-tag.topic-drop-target')
-            if (topicTag && topicTag.dataset.id) {
-              topicsCtrl.setTopicPrimaryAgent(topicTag.dataset.id, agentData)
-            }
+        if (!topicsCtrl) return
+
+        if (targetEl.closest('.topic-creation-container')) {
+          topicsCtrl.createTopicWithAgent(agentData)
+        } else {
+          const topicTag = targetEl.closest('.topic-tag.topic-drop-target')
+          if (topicTag?.dataset.id) {
+            topicsCtrl.setTopicPrimaryAgent(topicTag.dataset.id, agentData)
           }
         }
       }
+    })
 
-      endDrag()
-    }
-
-    wrapper.addEventListener('touchend', onTouchEnd, { passive: false })
-    wrapper.addEventListener('touchcancel', onTouchEnd, { passive: false })
+    // Store for cleanup if needed
+    if (!this._agentTouchDragHandlers) this._agentTouchDragHandlers = []
+    this._agentTouchDragHandlers.push(handler)
   }
 }
