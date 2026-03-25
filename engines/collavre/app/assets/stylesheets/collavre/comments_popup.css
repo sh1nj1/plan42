@@ -124,18 +124,14 @@ body.chat-fullscreen {
 }
 
 .chat-nav-dropdown-item {
-    display: block;
+    display: flex;
+    align-items: center;
     width: 100%;
-    padding: var(--space-1) var(--space-3);
+    padding: 0;
     background: none;
     border: none;
-    text-align: left;
-    cursor: pointer;
     font-size: var(--text-1);
     color: var(--color-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     line-height: 1.4;
 }
 
@@ -145,6 +141,42 @@ body.chat-fullscreen {
 
 .chat-nav-dropdown-item.current {
     font-weight: var(--weight-bold, 700);
+}
+
+.chat-nav-dropdown-label {
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-1) var(--space-3);
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-nav-dropdown-remove {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--color-muted, #999);
+    cursor: pointer;
+    font-size: var(--text-2, 1.1em);
+    padding: var(--space-1) var(--space-2);
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.chat-nav-dropdown-item:hover .chat-nav-dropdown-remove {
+    opacity: 1;
+}
+
+.chat-nav-dropdown-remove:hover {
+    color: var(--color-danger, #e53e3e);
 }
 
 .comments-popup-actions {

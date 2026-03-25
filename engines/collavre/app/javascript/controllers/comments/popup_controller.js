@@ -1085,16 +1085,42 @@ export default class extends Controller {
     dropdown.innerHTML = ''
 
     list.forEach((entry, index) => {
-      const item = document.createElement('button')
-      item.type = 'button'
+      const item = document.createElement('div')
       item.className = 'chat-nav-dropdown-item'
       if (entry.isCurrent) item.classList.add('current')
-      item.textContent = entry.snippet || `Creative #${entry.creativeId}`
-      item.addEventListener('click', () => {
+
+      const label = document.createElement('button')
+      label.type = 'button'
+      label.className = 'chat-nav-dropdown-label'
+      label.textContent = entry.snippet || `Creative #${entry.creativeId}`
+      label.addEventListener('click', () => {
         this._hideNavDropdown()
         const target = chatHistory.goTo(index)
         if (target) this._navigateToEntry(target)
       })
+      item.appendChild(label)
+
+      // Remove button (not for current chat)
+      if (!entry.isCurrent) {
+        const removeBtn = document.createElement('button')
+        removeBtn.type = 'button'
+        removeBtn.className = 'chat-nav-dropdown-remove'
+        removeBtn.innerHTML = '&times;'
+        removeBtn.title = this._i18n('remove_from_history')
+        removeBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          chatHistory.remove(entry.creativeId)
+          this._updateNavButtons()
+          // Re-render dropdown if still enough items
+          if (chatHistory.recentList().length > 1) {
+            this.showRecentChats(new Event('contextmenu', { bubbles: true }))
+          } else {
+            this._hideNavDropdown()
+          }
+        })
+        item.appendChild(removeBtn)
+      }
+
       dropdown.appendChild(item)
     })
 
@@ -1231,6 +1257,13 @@ export default class extends Controller {
       // Swipe right → previous chat
       this.navigateBack()
     }
+  }
+
+  _i18n(key) {
+    const translations = {
+      remove_from_history: this.element.dataset.removeFromHistoryLabel || 'Remove from history'
+    }
+    return translations[key] || key
   }
 
   _hideNavDropdown() {
