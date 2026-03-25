@@ -117,11 +117,13 @@ function applyRowProperties(row, node) {
   }
 }
 
-function createRow(node) {
+export function createRow(node) {
   const row = document.createElement('creative-tree-row')
   applyRowProperties(row, node)
   return row
 }
+
+export { applyRowProperties }
 
 function applyChildrenContainerProperties(container, node) {
   if (!container || !node) return

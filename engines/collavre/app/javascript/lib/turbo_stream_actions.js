@@ -1,7 +1,7 @@
 import { Turbo } from "@hotwired/turbo-rails"
+import { createRow, applyRowProperties } from "../creatives/tree_renderer"
 
 // Register custom actions on both the imported Turbo and the global window.Turbo
-// to handle cases where the bundled Turbo instance differs from the runtime one.
 function registerStreamAction(name, handler) {
     Turbo.StreamActions[name] = handler
     if (window.Turbo && window.Turbo.StreamActions && window.Turbo.StreamActions !== Turbo.StreamActions) {
@@ -9,7 +9,10 @@ function registerStreamAction(name, handler) {
     }
 }
 
-// Creative tree sync: directly updates rows from broadcast data (no HTTP fetch needed)
+// ─── Creative tree sync ──────────────────────────────────────────────
+// Receives full creative data via WebSocket and applies changes directly
+// to the DOM — zero HTTP fetch for any CRUD operation.
+
 registerStreamAction("refresh_creative_tree", function () {
     const rawData = this.getAttribute("data")
     if (!rawData) return
@@ -27,108 +30,147 @@ registerStreamAction("refresh_creative_tree", function () {
 
     console.log("[CreativeSync] Received", action, "for creative", creative.id)
 
-    if (action === "destroyed") {
-        handleCreativeDestroyed(creative)
-    } else {
-        handleCreativeUpserted(creative, action)
+    switch (action) {
+        case "created":
+            handleCreated(creative)
+            break
+        case "updated":
+            handleUpdated(creative)
+            break
+        case "destroyed":
+            handleDestroyed(creative)
+            break
     }
+
+    // Update ancestor progress for all actions
+    updateAncestorProgress(creative.ancestors)
 })
 
-function handleCreativeDestroyed(creative) {
+function handleCreated(creative) {
+    // Find the parent's children container to insert the new row
+    const parentId = creative.parent_id
+    if (!parentId) return
+
+    // Check if parent row exists in the current view
+    const parentRow = document.querySelector(`creative-tree-row[creative-id="${parentId}"]`)
+    if (!parentRow) return // Parent not visible — nothing to do
+
+    // Find or create the children container
+    let childrenContainer = document.getElementById(`creative-children-${parentId}`)
+
+    if (!childrenContainer) {
+        // Create a new children container after the parent row
+        childrenContainer = document.createElement('div')
+        childrenContainer.className = 'creative-children'
+        childrenContainer.id = `creative-children-${parentId}`
+        childrenContainer.dataset.expanded = 'true'
+        childrenContainer.dataset.loaded = 'true'
+        parentRow.insertAdjacentElement('afterend', childrenContainer)
+    }
+
+    // Make sure children container is visible
+    childrenContainer.style.display = ''
+    childrenContainer.dataset.expanded = 'true'
+
+    // Check if the row already exists (duplicate broadcast protection)
+    if (document.querySelector(`creative-tree-row[creative-id="${creative.id}"]`)) return
+
+    // Create the new row using tree_renderer's createRow
+    const newRow = createRow(creative)
+    childrenContainer.appendChild(newRow)
+
+    // Update parent's has-children state
+    parentRow.hasChildren = true
+    parentRow.setAttribute('has-children', '')
+
+    // Expand parent if not already
+    if (!parentRow.expanded) {
+        parentRow.expanded = true
+        parentRow.setAttribute('expanded', '')
+    }
+
+    console.log("[CreativeSync] Inserted new row for creative", creative.id, "under parent", parentId)
+}
+
+function handleUpdated(creative) {
     const rows = document.querySelectorAll(`creative-tree-row[creative-id="${creative.id}"]`)
+    if (rows.length === 0) return
+
+    // Find currently editing creative ID to skip it
+    const editForm = document.querySelector('#inline-edit-form-element')
+    const editingId = editForm?.dataset?.creativeId
+
     rows.forEach(row => {
-        // Remove the row's parent .creative-tree container
-        const tree = row.closest('.creative-tree') || row
-        tree.remove()
+        if (String(creative.id) === String(editingId)) {
+            // Don't touch the row being edited — it would close the editor.
+            // Cache the latest data so when the editor closes, it can be applied.
+            if (creative.inline_editor_payload) {
+                row.dataset.pendingSyncData = JSON.stringify(creative)
+            }
+            return
+        }
+        applyRowProperties(row, creative)
+    })
+
+    console.log("[CreativeSync] Updated", rows.length, "row(s) for creative", creative.id)
+}
+
+function handleDestroyed(creative) {
+    const rows = document.querySelectorAll(`creative-tree-row[creative-id="${creative.id}"]`)
+    if (rows.length === 0) return
+
+    rows.forEach(row => {
+        // Also remove the associated children container
+        const childrenContainer = document.getElementById(`creative-children-${creative.id}`)
+        if (childrenContainer) childrenContainer.remove()
+        row.remove()
+    })
+
+    // Update parent's has-children state if no more children
+    if (creative.parent_id) {
+        const parentChildrenContainer = document.getElementById(`creative-children-${creative.parent_id}`)
+        if (parentChildrenContainer) {
+            const remaining = parentChildrenContainer.querySelectorAll('creative-tree-row')
+            if (remaining.length === 0) {
+                const parentRow = document.querySelector(`creative-tree-row[creative-id="${creative.parent_id}"]`)
+                if (parentRow) {
+                    parentRow.hasChildren = false
+                    parentRow.removeAttribute('has-children')
+                }
+                parentChildrenContainer.remove()
+            }
+        }
+    }
+
+    console.log("[CreativeSync] Removed row(s) for creative", creative.id)
+}
+
+function updateAncestorProgress(ancestors) {
+    if (!Array.isArray(ancestors)) return
+    ancestors.forEach(anc => {
+        const ancRow = document.querySelector(`creative-tree-row[creative-id="${anc.id}"]`)
+        if (ancRow && anc.progress != null) {
+            ancRow.dataset.progressValue = String(anc.progress)
+        }
     })
 }
 
-function handleCreativeUpserted(creative, action) {
-    const rows = document.querySelectorAll(`creative-tree-row[creative-id="${creative.id}"]`)
-
-    if (rows.length === 0 && action === "created") {
-        // New creative — need a tree refetch to properly insert it
-        dispatchRefetchEvent(creative)
-        return
-    }
-
-    // Update all matching rows directly — no tree refetch needed
-    rows.forEach(row => applyCreativeData(row, creative))
-
-    // Update ancestor progress values from broadcast data
-    if (creative.ancestors) {
-        creative.ancestors.forEach(anc => {
-            const ancRow = document.querySelector(`creative-tree-row[creative-id="${anc.id}"]`)
-            if (ancRow && anc.progress != null) {
-                ancRow.dataset.progressValue = String(anc.progress)
-            }
-        })
-    }
-}
-
-function applyCreativeData(row, creative) {
-    // Update display HTML
-    if (creative.description_html != null) {
-        row.descriptionHtml = creative.description_html
-    }
-
-    // Update editor cache (descriptionRawHtml) so next edit loads fresh data
-    if (creative.description_raw_html != null) {
-        row.dataset.descriptionRawHtml = creative.description_raw_html
-    }
-
-    // Update progress value (the visual progress_html will be refreshed by tree refetch)
-    if (creative.progress != null) {
-        row.dataset.progressValue = String(creative.progress)
-    }
-
-    // Update origin
-    if (creative.origin_id != null) {
-        row.dataset.originId = String(creative.origin_id)
-    }
-
-    // Update has_children
-    if (creative.has_children != null) {
-        row.hasChildren = creative.has_children
-    }
-}
-
-function dispatchRefetchEvent(creative) {
-    document.dispatchEvent(new CustomEvent('creative-sync:refetch', {
-        detail: {
-            creativeId: creative.id,
-            parentId: creative.parent_id,
-            action: 'sync'
-        },
-        bubbles: true
-    }))
-}
+// ─── Reactions sync ──────────────────────────────────────────────────
 
 registerStreamAction("update_reactions", function () {
     const targetId = this.getAttribute("target")
     const dataJSON = this.getAttribute("data")
 
-    console.log("[Turbo] update_reactions action received", { targetId, dataJSON })
-
-    if (!targetId || !dataJSON) {
-        console.warn("[Turbo] update_reactions missing target or data")
-        return
-    }
+    if (!targetId || !dataJSON) return
 
     try {
         const data = JSON.parse(dataJSON)
         const element = document.getElementById(targetId)
-
         if (element) {
             const controller = window.Stimulus?.getControllerForElementAndIdentifier(element, "comment")
             if (controller && typeof controller.updateReactionsUI === 'function') {
-                console.log("[Turbo] calling updateReactionsUI", data)
                 controller.updateReactionsUI(data)
-            } else {
-                console.warn("[Turbo] comment controller not found", { element, controller })
             }
-        } else {
-            console.warn("[Turbo] target element not found", targetId)
         }
     } catch (e) {
         console.error("Failed to process update_reactions stream action", e)

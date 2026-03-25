@@ -12,20 +12,19 @@ module Collavre
       private
 
       def broadcast_creative_created
-        broadcast_creative_change(:created, broadcast_payload)
+        broadcast_creative_change(:created, broadcast_node_payload)
       end
 
       def broadcast_creative_updated
-        broadcast_creative_change(:updated, broadcast_payload)
+        broadcast_creative_change(:updated, broadcast_node_payload)
       end
 
       def broadcast_creative_destroyed
-        broadcast_creative_change(:destroyed, { id: id, parent_id: parent_id })
+        broadcast_creative_change(:destroyed, broadcast_destroy_payload)
       end
 
       def broadcast_creative_change(action, data)
         target_users = find_broadcast_users
-        # Exclude the user who made the change — their UI already reflects it
         current = Collavre.current_user
         target_users.reject! { |u| current && u.id == current.id }
         return if target_users.empty?
@@ -42,29 +41,60 @@ module Collavre
         end
       end
 
-      def broadcast_payload
-        origin = begin
-          effective_origin
-        rescue StandardError
-          self
-        end
+      # Tree-renderer compatible node payload (matches TreeBuilder output)
+      def broadcast_node_payload
+        origin = safe_effective_origin
+        desc_html = origin.effective_description
+        desc_raw = description
 
-        data = {
+        {
+          # Core node properties (tree_renderer.applyRowProperties)
+          id: id,
+          dom_id: "creative-#{id}",
+          parent_id: parent_id,
+          level: ancestors.size + 1,
+          has_children: children.exists?,
+          expanded: false,
+          is_root: parent.nil?,
+          archived: archived?,
+          link_url: "/creatives?id=#{id}",
+          origin_id: origin_id,
+          # Templates (for display)
+          templates: {
+            description_html: desc_html,
+            progress_html: broadcast_progress_html
+          },
+          # Inline editor payload (for editor cache)
+          inline_editor_payload: {
+            description_raw_html: desc_raw,
+            progress: progress,
+            origin_id: origin_id
+          },
+          # Ancestors progress (for parent row updates)
+          ancestors: ancestors.map { |a| { id: a.id, progress: a.progress } }
+        }
+      end
+
+      def broadcast_destroy_payload
+        {
           id: id,
           parent_id: parent_id,
-          origin_id: origin_id,
-          progress: progress,
-          description_html: origin.effective_description,
-          description_raw_html: description,
-          has_children: children.exists?
+          ancestors: (ancestors.map { |a| { id: a.id, progress: a.progress } } rescue [])
         }
+      end
 
-        # Include ancestor progress updates so clients can update
-        # parent rows without a full tree refetch
-        anc_progress = ancestors.map { |a| { id: a.id, progress: a.progress } }
-        data[:ancestors] = anc_progress if anc_progress.any?
+      # Simple progress HTML without view_context dependencies
+      # Full progress_html (with comment badges etc.) requires view_context
+      # so we render a minimal version; the user's own save already has full rendering
+      def broadcast_progress_html
+        pct = progress || 0
+        %(<div class="creative-row-end"><span class="creative-progress">#{pct}%</span></div>)
+      end
 
-        data
+      def safe_effective_origin
+        effective_origin
+      rescue StandardError
+        self
       end
 
       def find_broadcast_users

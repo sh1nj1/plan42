@@ -12,18 +12,13 @@ export default class extends Controller {
     this.abortController = null
     this.loadingIndicator = null
     this._editing = false
-    this._pendingRefetch = false
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
-    this.handleSyncRefetch = (e) => this._handleSyncRefetch(e)
-    this.handleDocSyncRefetch = (e) => this._handleSyncRefetch(e)
     this._handleEditStart = () => { this._editing = true }
     this._handleEditStop = () => {
       this._editing = false
-      if (this._pendingRefetch) {
-        this._pendingRefetch = false
-        this.debouncedLoad()
-      }
+      // Apply any pending sync data that was deferred while editing
+      this._applyPendingSyncData()
     }
     document.documentElement.classList.remove('creative-alignment-ready')
     if (!this.hasCachedContent()) {
@@ -32,8 +27,6 @@ export default class extends Controller {
     this.queueAlignmentUpdate()
     window.addEventListener('resize', this.handleResize)
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
-    this.element.addEventListener('creative-sync:refetch', this.handleSyncRefetch)
-    document.addEventListener('creative-sync:refetch', this.handleDocSyncRefetch)
     document.addEventListener('creative-editing:start', this._handleEditStart)
     document.addEventListener('creative-editing:stop', this._handleEditStop)
     this._setupArchiveToggle()
@@ -46,8 +39,6 @@ export default class extends Controller {
     }
     window.removeEventListener('resize', this.handleResize)
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
-    this.element.removeEventListener('creative-sync:refetch', this.handleSyncRefetch)
-    document.removeEventListener('creative-sync:refetch', this.handleDocSyncRefetch)
     document.removeEventListener('creative-editing:start', this._handleEditStart)
     document.removeEventListener('creative-editing:stop', this._handleEditStop)
     if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
@@ -103,15 +94,23 @@ export default class extends Controller {
     if (mobileBtn) mobileBtn.addEventListener('click', toggle)
   }
 
-  _handleSyncRefetch(event) {
-    if (this._editing) {
-      // While editing, skip full tree refetch (it would close the editor).
-      // Row-level updates are already applied by refresh_creative_tree action.
-      // Queue a full refetch for when editing ends (to update progress_html etc.)
-      this._pendingRefetch = true
-      return
-    }
-    this.debouncedLoad()
+  _applyPendingSyncData() {
+    // After editor closes, apply any sync data that was deferred
+    const pendingRows = this.element.querySelectorAll('creative-tree-row[data-pending-sync-data]')
+    if (pendingRows.length === 0) return
+
+    // Dynamic import to avoid circular dependency
+    import('../../creatives/tree_renderer').then(({ applyRowProperties }) => {
+      pendingRows.forEach(row => {
+        try {
+          const data = JSON.parse(row.dataset.pendingSyncData)
+          applyRowProperties(row, data)
+        } catch (e) {
+          console.warn('[TreeController] Failed to apply pending sync data', e)
+        }
+        delete row.dataset.pendingSyncData
+      })
+    })
   }
 
   debouncedLoad() {
