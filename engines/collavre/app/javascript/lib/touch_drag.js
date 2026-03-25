@@ -102,12 +102,18 @@ export default class TouchDragHandler {
       return
     }
 
-    // If not dragging yet, check if we moved too far (cancel long-press)
+    // During long-press wait: prevent scroll within tolerance so the
+    // timer isn't accidentally cancelled by natural finger tremor causing
+    // a scroll offset shift.
     if (this._timer) {
       const dx = Math.abs(touch.clientX - this._startX)
       const dy = Math.abs(touch.clientY - this._startY)
       if (dx > this.moveTolerance || dy > this.moveTolerance) {
+        // User intentionally scrolling — cancel long-press, let scroll happen
         this._cancelLongPress()
+      } else {
+        // Within tolerance — prevent scroll to keep the long-press alive
+        e.preventDefault()
       }
     }
   }
@@ -179,18 +185,28 @@ export default class TouchDragHandler {
   }
 
   _updateDropTarget(x, y) {
-    // Hide proxy momentarily to hit-test what's underneath
-    if (this._proxy) this._proxy.style.pointerEvents = 'none'
-    const el = document.elementFromPoint(x, y)
-    if (this._proxy) this._proxy.style.pointerEvents = ''
+    // Temporarily hide the proxy so elementFromPoint can see through it
+    if (this._proxy) this._proxy.style.display = 'none'
 
-    const target = el?.closest?.(this.dropTargetSelector) ?? null
+    // Check both the exact point and nearby points (finger is imprecise on mobile)
+    let target = this._findDropTarget(x, y)
+    if (!target) target = this._findDropTarget(x, y - 15)
+    if (!target) target = this._findDropTarget(x, y + 15)
+    if (!target) target = this._findDropTarget(x - 10, y)
+    if (!target) target = this._findDropTarget(x + 10, y)
+
+    if (this._proxy) this._proxy.style.display = ''
 
     if (target !== this._currentTarget) {
       this._currentTarget?.classList.remove(this.dragOverClass)
       this._currentTarget = target
       this._currentTarget?.classList.add(this.dragOverClass)
     }
+  }
+
+  _findDropTarget(x, y) {
+    const el = document.elementFromPoint(x, y)
+    return el?.closest?.(this.dropTargetSelector) ?? null
   }
 
   _endDrag() {
