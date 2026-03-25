@@ -171,7 +171,7 @@ body.chat-fullscreen {
 }
 
 .chat-nav-dropdown-remove:hover {
-    color: var(--color-danger);
+    color: var(--color-text);
 }
 
 .comments-popup-actions {
