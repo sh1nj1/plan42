@@ -264,7 +264,14 @@ function handleDestroyed(creative) {
 function updateAncestorProgress(ancestors) {
     if (!Array.isArray(ancestors)) return
     ancestors.forEach(anc => {
-        const ancRow = document.querySelector(`creative-tree-row[creative-id="${anc.id}"]`)
+        // Search regular rows + title row (which may not have creative-id attribute on top-level page)
+        let ancRow = document.querySelector(`creative-tree-row[creative-id="${anc.id}"]`)
+        if (!ancRow) {
+            const titleRow = document.querySelector('creative-tree-row[is-title]')
+            if (titleRow && String(titleRow.creativeId || titleRow.getAttribute('creative-id')) === String(anc.id)) {
+                ancRow = titleRow
+            }
+        }
         if (ancRow && anc.progress != null) {
             const pct = Math.round(anc.progress * 100)
             ancRow.dataset.progressValue = String(anc.progress)

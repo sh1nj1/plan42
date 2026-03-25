@@ -86,12 +86,15 @@ module Collavre
         desc_html = origin.effective_description
         desc_raw = description
 
+        # Reload ancestors to get latest progress (after update_parent_progress in after_save)
+        fresh_ancestors = self.class.find(id).ancestors
+
         {
           # Core node properties (tree_renderer.applyRowProperties)
           id: id,
           dom_id: "creative-#{id}",
           parent_id: parent_id,
-          level: ancestors.size + 1,
+          level: fresh_ancestors.size + 1,
           select_mode: false,
           can_write: true, # Refined per-user in JS if needed
           has_children: children.exists?,
@@ -115,7 +118,7 @@ module Collavre
             origin_id: origin_id
           },
           # Ancestors progress (for parent row updates)
-          ancestors: ancestors.map { |a| { id: a.id, progress: a.progress } }
+          ancestors: fresh_ancestors.map { |a| { id: a.id, progress: a.progress } }
         }
       end
 
