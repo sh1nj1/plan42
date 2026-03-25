@@ -266,18 +266,19 @@ export default class extends Controller {
     if (this.manualTypingMessage) {
       const message = document.createElement('span')
       message.textContent = this.manualTypingMessage
-      this.typingIndicatorTarget.style.visibility = 'visible'
+      this.typingIndicatorTarget.style.opacity = '1'
       this.typingIndicatorTarget.appendChild(message)
       return
     }
 
     const ids = Object.keys(this.typingUsers)
     if (ids.length === 0) {
-      this.typingIndicatorTarget.style.visibility = 'hidden'
+      this.typingIndicatorTarget.style.opacity = '0'
+      this.typingIndicatorTarget.style.pointerEvents = 'auto'
       return
     }
 
-    this.typingIndicatorTarget.style.visibility = 'visible'
+    this.typingIndicatorTarget.style.opacity = '1'
     if (this.participantsData) {
       ids.forEach((id) => {
         const user = this.participantsData.find((participant) => participant.id === parseInt(id, 10))

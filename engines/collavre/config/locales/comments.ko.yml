@@ -81,6 +81,9 @@ ko:
       review_send_question: 질문 보내기
       review_type_review: 리뷰
       review_type_question: 질문
+      navigate_back: 이전 채팅
+      navigate_forward: 다음 채팅
+      recent_chats: 최근 채팅
       replace_button: 바꾸기
       move_no_selection: 이동할 메시지를 선택해주세요.
       move_error: 메시지를 이동할 수 없습니다.

@@ -58,7 +58,22 @@
      data-review-type-question-label="<%= t('collavre.comments.review_type_question') %>">
   <div class="resize-handle resize-handle-left" data-comments--popup-target="leftHandle"></div>
   <div class="resize-handle resize-handle-right" data-comments--popup-target="rightHandle"></div>
-  <div class="comments-popup-header">
+  <div class="comments-popup-header" data-comments--popup-target="header">
+    <div class="chat-nav-buttons" data-comments--popup-target="navContainer">
+      <button class="chat-nav-btn" type="button" disabled
+              data-comments--popup-target="navBack"
+              data-action="click->comments--popup#navigateBack contextmenu->comments--popup#showRecentChats"
+              aria-label="<%= t('collavre.comments.navigate_back', default: 'Previous chat') %>">
+        <%= svg_tag "chevron-left.svg", class: "chat-nav-icon" %>
+      </button>
+      <button class="chat-nav-btn" type="button" disabled
+              data-comments--popup-target="navForward"
+              data-action="click->comments--popup#navigateForward contextmenu->comments--popup#showRecentChats"
+              aria-label="<%= t('collavre.comments.navigate_forward', default: 'Next chat') %>">
+        <%= svg_tag "chevron-right.svg", class: "chat-nav-icon" %>
+      </button>
+      <div class="chat-nav-dropdown" data-comments--popup-target="navDropdown" style="display:none;"></div>
+    </div>
     <h3 id="comments-popup-title" data-comments--popup-target="title"><%= fullscreen && creative.present? ? creative.creative_snippet : t('collavre.comments.comments') %></h3>
     <span data-integration-badges class="integration-badges"></span>
     <div class="comments-popup-actions">
@@ -96,7 +111,7 @@
   <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <%= render Collavre::CommandMenuComponent.new(menu_id: 'command-menu') %>
   <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>
-  <div id="typing-indicator" data-comments--presence-target="typingIndicator"></div>
+  <div id="typing-indicator" data-comments--presence-target="typingIndicator" data-comments--popup-target="typingIndicator"></div>
   <form id="new-comment-form" data-comments--popup-target="form" data-comments--form-target="form" style="display:none;">
     <input type="hidden" name="comment[quoted_comment_id]" data-comments--form-target="quotedCommentId" value="" />
     <input type="hidden" name="comment[quoted_text]" data-comments--form-target="quotedText" value="" />
