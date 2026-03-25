@@ -49,7 +49,7 @@ module Collavre
           self
         end
 
-        {
+        data = {
           id: id,
           parent_id: parent_id,
           origin_id: origin_id,
@@ -58,6 +58,13 @@ module Collavre
           description_raw_html: description,
           has_children: children.exists?
         }
+
+        # Include ancestor progress updates so clients can update
+        # parent rows without a full tree refetch
+        anc_progress = ancestors.map { |a| { id: a.id, progress: a.progress } }
+        data[:ancestors] = anc_progress if anc_progress.any?
+
+        data
       end
 
       def find_broadcast_users

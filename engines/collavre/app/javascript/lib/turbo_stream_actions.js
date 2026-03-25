@@ -48,18 +48,21 @@ function handleCreativeUpserted(creative, action) {
 
     if (rows.length === 0 && action === "created") {
         // New creative — need a tree refetch to properly insert it
-        // (we don't have enough data to construct a full row client-side)
         dispatchRefetchEvent(creative)
         return
     }
 
-    // Update all matching rows (title row + tree row if both exist)
+    // Update all matching rows directly — no tree refetch needed
     rows.forEach(row => applyCreativeData(row, creative))
 
-    // If progress changed, parent rows need updating too — dispatch a targeted refetch
-    // only for the children tree, not the whole page
-    if (action === "updated") {
-        dispatchRefetchEvent(creative)
+    // Update ancestor progress values from broadcast data
+    if (creative.ancestors) {
+        creative.ancestors.forEach(anc => {
+            const ancRow = document.querySelector(`creative-tree-row[creative-id="${anc.id}"]`)
+            if (ancRow && anc.progress != null) {
+                ancRow.dataset.progressValue = String(anc.progress)
+            }
+        })
     }
 }
 
