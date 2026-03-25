@@ -290,32 +290,35 @@ function handleDestroyed(creative) {
     console.log("[CreativeSync] Removed row(s) for creative", creative.id)
 }
 
+function updateProgressForRow(row, progress) {
+    if (progress == null) return
+    const pct = Math.round(progress * 100)
+    const cssClass = pct >= 100 ? 'creative-progress-complete' : 'creative-progress-incomplete'
+
+    row.dataset.progressValue = String(progress)
+
+    if (row.progressHtml) {
+        // Try regex replacement on existing progress HTML (preserves chat buttons etc.)
+        const regex = /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/
+        const updated = row.progressHtml.replace(regex, `$1${pct}%$2`)
+        if (updated !== row.progressHtml) {
+            row.progressHtml = updated
+            row.dataset.progressHtml = updated
+            return
+        }
+    }
+
+    // progressHtml is empty or regex didn't match — create fresh progress HTML
+    const newHtml = `<span class="${cssClass}">${pct}%</span>`
+    row.progressHtml = newHtml
+    row.dataset.progressHtml = newHtml
+}
+
 function updateAncestorProgress(ancestors) {
     if (!Array.isArray(ancestors)) return
     ancestors.forEach(anc => {
         const rows = findRowsForCreative(anc.id)
-        const ancRow = rows[0]
-        if (ancRow && anc.progress != null) {
-            const pct = Math.round(anc.progress * 100)
-            ancRow.dataset.progressValue = String(anc.progress)
-            console.log("[CreativeSync] ancestor progressHtml exists:", !!ancRow.progressHtml, "value:", ancRow.progressHtml?.substring(0, 100))
-            if (ancRow.progressHtml) {
-                const regex = /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/
-                const matched = regex.test(ancRow.progressHtml)
-                console.log("[CreativeSync] regex matched:", matched)
-                const updated = ancRow.progressHtml.replace(
-                    regex,
-                    `$1${pct}%$2`
-                )
-                if (updated !== ancRow.progressHtml) {
-                    ancRow.progressHtml = updated
-                    ancRow.dataset.progressHtml = updated
-                    console.log("[CreativeSync] ancestor progress updated to", pct + "%")
-                } else {
-                    console.log("[CreativeSync] regex replace had no effect")
-                }
-            }
-        }
+        if (rows[0]) updateProgressForRow(rows[0], anc.progress)
     })
 }
 

@@ -114,13 +114,26 @@ function applyRowProperties(row, node) {
     setDatasetValue(row, 'progressValue', rawProgress)
     // Update progress percentage in existing progressHtml without replacing full HTML
     // (preserves chat badges, comment counts, etc.)
-    if (templates.progress_html == null && row.progressHtml) {
-      // Match the progress value span (handles both "50%" and custom completion marks)
-      const updated = row.progressHtml.replace(
-        /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/,
-        `$1${pct}%$2`
-      )
-      if (updated !== row.progressHtml) {
+    if (templates.progress_html == null) {
+      const cssClass = pct >= 100 ? 'creative-progress-complete' : 'creative-progress-incomplete'
+      let updated = row.progressHtml || ''
+      if (updated) {
+        // Try regex replacement first (preserves chat buttons etc.)
+        const replaced = updated.replace(
+          /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/,
+          `$1${pct}%$2`
+        )
+        if (replaced !== updated) {
+          updated = replaced
+        } else {
+          // Regex didn't match — create fresh progress HTML
+          updated = `<span class="${cssClass}">${pct}%</span>`
+        }
+      } else {
+        // progressHtml was empty — create fresh
+        updated = `<span class="${cssClass}">${pct}%</span>`
+      }
+      if (updated !== (row.progressHtml || '')) {
         row.progressHtml = updated
         setDatasetValue(row, 'progressHtml', updated)
         dirty = true
