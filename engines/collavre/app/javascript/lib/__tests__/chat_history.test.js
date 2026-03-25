@@ -1,4 +1,7 @@
-import { ChatNavigationHistory } from '../chat_history.js'
+/**
+ * @jest-environment jsdom
+ */
+import { ChatNavigationHistory } from '../chat_history'
 
 describe('ChatNavigationHistory', () => {
   let history
@@ -8,133 +11,142 @@ describe('ChatNavigationHistory', () => {
     history = new ChatNavigationHistory()
   })
 
-  const entry = (id) => ({ creativeId: String(id), snippet: `Creative ${id}`, canComment: true })
-
   test('starts empty', () => {
-    expect(history.canGoBack()).toBe(false)
-    expect(history.canGoForward()).toBe(false)
-    expect(history.current).toBeNull()
+    expect(history.current()).toBeNull()
+    expect(history.canNavigate()).toBe(false)
+    expect(history.recentList()).toEqual([])
   })
 
-  test('push sets current', () => {
-    history.push(entry(1))
-    expect(history.current.creativeId).toBe('1')
-    expect(history.canGoBack()).toBe(false)
+  test('push adds entries', () => {
+    history.push({ creativeId: '1', snippet: 'A' })
+    expect(history.current().creativeId).toBe('1')
+
+    history.push({ creativeId: '2', snippet: 'B' })
+    expect(history.current().creativeId).toBe('2')
+    expect(history.entries.length).toBe(2)
   })
 
-  test('push multiple builds back stack', () => {
-    history.push(entry(1))
-    history.push(entry(2))
-    history.push(entry(3))
-    expect(history.current.creativeId).toBe('3')
-    expect(history.canGoBack()).toBe(true)
-    expect(history.canGoForward()).toBe(false)
+  test('push deduplicates by creativeId', () => {
+    history.push({ creativeId: '1', snippet: 'A' })
+    history.push({ creativeId: '2', snippet: 'B' })
+    history.push({ creativeId: '1', snippet: 'A updated' })
+
+    expect(history.entries.length).toBe(2)
+    expect(history.current().creativeId).toBe('1')
+    expect(history.current().snippet).toBe('A updated')
   })
 
-  test('back returns previous entry', () => {
-    history.push(entry(1))
-    history.push(entry(2))
-    const result = history.back()
-    expect(result.creativeId).toBe('1')
-    expect(history.current.creativeId).toBe('1')
-    expect(history.canGoForward()).toBe(true)
+  test('prev cycles backward', () => {
+    history.push({ creativeId: '1', snippet: 'A' })
+    history.push({ creativeId: '2', snippet: 'B' })
+    history.push({ creativeId: '3', snippet: 'C' })
+    // currentIndex = 2 (C)
+
+    expect(history.prev().creativeId).toBe('2') // B
+    expect(history.prev().creativeId).toBe('1') // A
+    expect(history.prev().creativeId).toBe('3') // C — wraps around!
+    expect(history.prev().creativeId).toBe('2') // B — keeps cycling
   })
 
-  test('forward returns next entry', () => {
-    history.push(entry(1))
-    history.push(entry(2))
-    history.back()
-    const result = history.forward()
-    expect(result.creativeId).toBe('2')
-    expect(history.canGoForward()).toBe(false)
+  test('next cycles forward', () => {
+    history.push({ creativeId: '1', snippet: 'A' })
+    history.push({ creativeId: '2', snippet: 'B' })
+    history.push({ creativeId: '3', snippet: 'C' })
+    // currentIndex = 2 (C)
+
+    expect(history.next().creativeId).toBe('1') // A — wraps around!
+    expect(history.next().creativeId).toBe('2') // B
+    expect(history.next().creativeId).toBe('3') // C
+    expect(history.next().creativeId).toBe('1') // A — keeps cycling
   })
 
-  test('push after back clears forward stack', () => {
-    history.push(entry(1))
-    history.push(entry(2))
-    history.push(entry(3))
-    history.back()
-    history.back()
-    // Now at 1, forward has [2, 3]
-    history.push(entry(4))
-    expect(history.current.creativeId).toBe('4')
-    expect(history.canGoForward()).toBe(false)
+  test('prev returns null when only one entry', () => {
+    history.push({ creativeId: '1', snippet: 'A' })
+    expect(history.prev()).toBeNull()
   })
 
-  test('duplicate push updates metadata only', () => {
-    history.push(entry(1))
-    history.push({ creativeId: '1', snippet: 'Updated', canComment: false })
-    expect(history.current.snippet).toBe('Updated')
-    expect(history.canGoBack()).toBe(false) // no new entry pushed
+  test('next returns null when only one entry', () => {
+    history.push({ creativeId: '1', snippet: 'A' })
+    expect(history.next()).toBeNull()
   })
 
-  test('back on empty returns null', () => {
-    expect(history.back()).toBeNull()
+  test('canNavigate requires at least 2 entries', () => {
+    expect(history.canNavigate()).toBe(false)
+    history.push({ creativeId: '1', snippet: 'A' })
+    expect(history.canNavigate()).toBe(false)
+    history.push({ creativeId: '2', snippet: 'B' })
+    expect(history.canNavigate()).toBe(true)
   })
 
-  test('forward on empty returns null', () => {
-    expect(history.forward()).toBeNull()
-  })
-
-  test('recentList returns chronological list with current flag', () => {
-    history.push(entry(1))
-    history.push(entry(2))
-    history.push(entry(3))
-    history.back() // now at 2, forward has [3]
+  test('recentList returns all entries with isCurrent', () => {
+    history.push({ creativeId: '1', snippet: 'A' })
+    history.push({ creativeId: '2', snippet: 'B' })
+    history.push({ creativeId: '3', snippet: 'C' })
 
     const list = history.recentList()
-    expect(list).toHaveLength(3)
+    expect(list.length).toBe(3)
     expect(list[0].creativeId).toBe('1')
     expect(list[0].isCurrent).toBe(false)
-    expect(list[1].creativeId).toBe('2')
-    expect(list[1].isCurrent).toBe(true)
     expect(list[2].creativeId).toBe('3')
-    expect(list[2].isCurrent).toBe(false)
+    expect(list[2].isCurrent).toBe(true)
   })
 
-  test('goTo navigates to specific entry', () => {
-    history.push(entry(1))
-    history.push(entry(2))
-    history.push(entry(3))
+  test('goTo navigates to specific index', () => {
+    history.push({ creativeId: '1', snippet: 'A' })
+    history.push({ creativeId: '2', snippet: 'B' })
+    history.push({ creativeId: '3', snippet: 'C' })
 
-    const result = history.goTo(0) // go to entry(1)
+    const result = history.goTo(0)
     expect(result.creativeId).toBe('1')
-    expect(history.current.creativeId).toBe('1')
-    expect(history.canGoForward()).toBe(true)
+    expect(history.current().creativeId).toBe('1')
+  })
+
+  test('goTo returns null for current index', () => {
+    history.push({ creativeId: '1', snippet: 'A' })
+    history.push({ creativeId: '2', snippet: 'B' })
+    expect(history.goTo(1)).toBeNull() // already at index 1
+  })
+
+  test('remove deletes entry and adjusts index', () => {
+    history.push({ creativeId: '1', snippet: 'A' })
+    history.push({ creativeId: '2', snippet: 'B' })
+    history.push({ creativeId: '3', snippet: 'C' })
+
+    history.remove('2')
+    expect(history.entries.length).toBe(2)
+    expect(history.entries[0].creativeId).toBe('1')
+    expect(history.entries[1].creativeId).toBe('3')
+    // currentIndex was 2 (C), after removing index 1, should be 1 (still C)
+    expect(history.current().creativeId).toBe('3')
   })
 
   test('persists to sessionStorage', () => {
-    history.push(entry(1))
-    history.push(entry(2))
+    history.push({ creativeId: '1', snippet: 'A' })
+    history.push({ creativeId: '2', snippet: 'B' })
 
-    const history2 = new ChatNavigationHistory()
-    expect(history2.current.creativeId).toBe('2')
-    expect(history2.canGoBack()).toBe(true)
+    const restored = new ChatNavigationHistory()
+    expect(restored.entries.length).toBe(2)
+    expect(restored.current().creativeId).toBe('2')
   })
 
   test('clear resets everything', () => {
-    history.push(entry(1))
-    history.push(entry(2))
+    history.push({ creativeId: '1', snippet: 'A' })
+    history.push({ creativeId: '2', snippet: 'B' })
     history.clear()
-    expect(history.current).toBeNull()
-    expect(history.canGoBack()).toBe(false)
-    expect(history.canGoForward()).toBe(false)
+    expect(history.entries.length).toBe(0)
+    expect(history.current()).toBeNull()
   })
 
-  test('push with null entry is ignored', () => {
+  test('ignores push with no creativeId', () => {
+    history.push({})
     history.push(null)
-    expect(history.current).toBeNull()
+    expect(history.entries.length).toBe(0)
   })
 
-  test('push with missing creativeId is ignored', () => {
-    history.push({ snippet: 'no id' })
-    expect(history.current).toBeNull()
-  })
-
-  test('max stack size is enforced', () => {
+  test('respects max size', () => {
     for (let i = 0; i < 25; i++) {
-      history.push(entry(i))
+      history.push({ creativeId: String(i), snippet: `Item ${i}` })
     }
-    expect(history.backStack.length).toBeLessThanOrEqual(20)
+    expect(history.entries.length).toBe(20)
   })
 })

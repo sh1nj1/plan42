@@ -1048,13 +1048,13 @@ export default class extends Controller {
   // ── Chat Navigation ───────────────────────────────────────────────
 
   navigateBack() {
-    const entry = chatHistory.back()
+    const entry = chatHistory.prev()
     if (!entry) return
     this._navigateToEntry(entry)
   }
 
   navigateForward() {
-    const entry = chatHistory.forward()
+    const entry = chatHistory.next()
     if (!entry) return
     this._navigateToEntry(entry)
   }
@@ -1135,10 +1135,10 @@ export default class extends Controller {
 
   _updateNavButtons() {
     if (this.hasNavBackTarget) {
-      this.navBackTarget.disabled = !chatHistory.canGoBack()
+      this.navBackTarget.disabled = !chatHistory.canNavigate()
     }
     if (this.hasNavForwardTarget) {
-      this.navForwardTarget.disabled = !chatHistory.canGoForward()
+      this.navForwardTarget.disabled = !chatHistory.canNavigate()
     }
   }
 

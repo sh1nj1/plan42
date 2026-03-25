@@ -1,147 +1,144 @@
 const STORAGE_KEY = 'chatNavigationHistory'
-const MAX_STACK_SIZE = 20
+const MAX_SIZE = 20
 
 /**
- * Browser-style back/forward navigation history for chat popups.
+ * Circular navigation history for chat popups.
+ *
+ * Tracks visited chats as an ordered list with a current index.
+ * ← (prev) and → (next) cycle through the list endlessly.
+ *
+ * Example: visited a, b, c (currentIndex = 2, pointing to c)
+ *   prev: c → b → a → c → b → a → ...
+ *   next: c → a → b → c → a → b → ...
  *
  * Each entry: { creativeId, snippet, canComment }
  *
- * Persisted in sessionStorage so it survives page reloads but
- * clears when the browser tab is closed.
+ * Persisted in sessionStorage (survives reload, clears on tab close).
  */
 class ChatNavigationHistory {
   constructor() {
     this._load()
   }
 
-  /** Record a new chat visit (like navigating to a new URL). */
+  /** Record a new chat visit. Deduplicates by creativeId. */
   push(entry) {
     if (!entry?.creativeId) return
 
-    // If we're already viewing this creative, don't push a duplicate
-    if (this.current && this.current.creativeId === entry.creativeId) {
-      // Update metadata in case snippet/canComment changed
-      this.current.snippet = entry.snippet
-      this.current.canComment = entry.canComment
+    const existingIdx = this.entries.findIndex(
+      (e) => e.creativeId === entry.creativeId
+    )
+
+    if (existingIdx !== -1) {
+      // Already in list — update metadata and move cursor there
+      this.entries[existingIdx].snippet = entry.snippet || this.entries[existingIdx].snippet
+      this.entries[existingIdx].canComment = !!entry.canComment
+      this.currentIndex = existingIdx
       this._save()
       return
     }
 
-    // Push current to backStack
-    if (this.current) {
-      this.backStack.push(this.current)
-      if (this.backStack.length > MAX_STACK_SIZE) {
-        this.backStack.shift()
-      }
-    }
-
-    // Clear forward stack (new navigation invalidates forward history)
-    this.forwardStack = []
-
-    this.current = {
+    // New entry — insert after currentIndex and point to it
+    const newEntry = {
       creativeId: entry.creativeId,
       snippet: entry.snippet || '',
       canComment: !!entry.canComment,
     }
 
-    this._save()
-  }
-
-  /** Go back. Returns the entry to navigate to, or null. */
-  back() {
-    if (!this.canGoBack()) return null
-
-    // Push current to forwardStack
-    if (this.current) {
-      this.forwardStack.push(this.current)
+    if (this.entries.length === 0) {
+      this.entries.push(newEntry)
+      this.currentIndex = 0
+    } else {
+      // Insert right after current position
+      const insertAt = this.currentIndex + 1
+      this.entries.splice(insertAt, 0, newEntry)
+      this.currentIndex = insertAt
     }
 
-    this.current = this.backStack.pop()
-    this._save()
-    return this.current
-  }
-
-  /** Go forward. Returns the entry to navigate to, or null. */
-  forward() {
-    if (!this.canGoForward()) return null
-
-    // Push current to backStack
-    if (this.current) {
-      this.backStack.push(this.current)
+    // Evict oldest if over limit
+    if (this.entries.length > MAX_SIZE) {
+      if (this.currentIndex > 0) {
+        this.entries.shift()
+        this.currentIndex--
+      } else {
+        this.entries.pop()
+      }
     }
 
-    this.current = this.forwardStack.pop()
     this._save()
-    return this.current
   }
 
-  /** Navigate directly to an entry from the recent list. */
+  /** Go to previous chat (cycles). Returns entry or null. */
+  prev() {
+    if (this.entries.length <= 1) return null
+    this.currentIndex =
+      (this.currentIndex - 1 + this.entries.length) % this.entries.length
+    this._save()
+    return this.current()
+  }
+
+  /** Go to next chat (cycles). Returns entry or null. */
+  next() {
+    if (this.entries.length <= 1) return null
+    this.currentIndex = (this.currentIndex + 1) % this.entries.length
+    this._save()
+    return this.current()
+  }
+
+  /** Navigate directly to an entry by its index in entries[]. */
   goTo(index) {
-    const list = this.recentList()
-    if (index < 0 || index >= list.length) return null
-
-    const target = list[index]
-    if (target.creativeId === this.current?.creativeId) return null
-
-    // Rebuild stacks: everything before target goes to backStack
-    // Forward stack is cleared (like a direct navigation)
-    const allEntries = [...this.backStack, this.current, ...this.forwardStack.slice().reverse()]
-      .filter(Boolean)
-
-    // Find the target in the combined list and split around it
-    const targetIdx = allEntries.findIndex(e => e.creativeId === target.creativeId)
-    if (targetIdx === -1) return null
-
-    this.backStack = allEntries.slice(0, targetIdx)
-    this.current = allEntries[targetIdx]
-    this.forwardStack = allEntries.slice(targetIdx + 1).reverse()
-
-    if (this.backStack.length > MAX_STACK_SIZE) {
-      this.backStack = this.backStack.slice(-MAX_STACK_SIZE)
-    }
-
+    if (index < 0 || index >= this.entries.length) return null
+    if (index === this.currentIndex) return null
+    this.currentIndex = index
     this._save()
-    return this.current
+    return this.current()
   }
 
-  canGoBack() {
-    return this.backStack.length > 0
+  /** Returns the current entry, or null. */
+  current() {
+    if (this.entries.length === 0) return null
+    return this.entries[this.currentIndex] || null
   }
 
-  canGoForward() {
-    return this.forwardStack.length > 0
+  /** Can navigate (needs at least 2 entries). */
+  canNavigate() {
+    return this.entries.length > 1
   }
 
   /**
-   * Returns a unified list of recent chats in chronological order
-   * (oldest first), including back stack, current, and forward stack.
-   * Each entry has an `isCurrent` flag.
+   * Returns all entries with isCurrent flag and original index.
+   * Order: visit order (oldest first).
    */
   recentList() {
-    const list = []
-
-    for (const entry of this.backStack) {
-      list.push({ ...entry, isCurrent: false })
-    }
-
-    if (this.current) {
-      list.push({ ...this.current, isCurrent: true })
-    }
-
-    // Forward stack is newest-first, so reverse for chronological order
-    const fwd = [...this.forwardStack].reverse()
-    for (const entry of fwd) {
-      list.push({ ...entry, isCurrent: false })
-    }
-
-    return list
+    return this.entries.map((entry, index) => ({
+      ...entry,
+      isCurrent: index === this.currentIndex,
+      index,
+    }))
   }
 
-  /** Clear all navigation history. */
+  /** Remove an entry by creativeId (e.g., when creative is deleted). */
+  remove(creativeId) {
+    const idx = this.entries.findIndex((e) => e.creativeId === creativeId)
+    if (idx === -1) return
+
+    this.entries.splice(idx, 1)
+
+    if (this.entries.length === 0) {
+      this.currentIndex = -1
+    } else if (idx < this.currentIndex) {
+      this.currentIndex--
+    } else if (idx === this.currentIndex) {
+      // Current was removed — clamp to valid range
+      this.currentIndex = Math.min(this.currentIndex, this.entries.length - 1)
+    }
+
+    this._save()
+  }
+
+  /** Clear all history. */
   clear() {
-    this.backStack = []
-    this.forwardStack = []
-    this.current = null
+    this.entries = []
+    this.currentIndex = -1
     this._save()
   }
 
@@ -150,18 +147,25 @@ class ChatNavigationHistory {
       const raw = window.sessionStorage.getItem(STORAGE_KEY)
       if (raw) {
         const data = JSON.parse(raw)
-        this.backStack = Array.isArray(data.backStack) ? data.backStack : []
-        this.forwardStack = Array.isArray(data.forwardStack) ? data.forwardStack : []
-        this.current = data.current || null
+        this.entries = Array.isArray(data.entries) ? data.entries : []
+        this.currentIndex =
+          typeof data.currentIndex === 'number' ? data.currentIndex : -1
+        // Clamp
+        if (this.entries.length === 0) {
+          this.currentIndex = -1
+        } else if (
+          this.currentIndex < 0 ||
+          this.currentIndex >= this.entries.length
+        ) {
+          this.currentIndex = 0
+        }
       } else {
-        this.backStack = []
-        this.forwardStack = []
-        this.current = null
+        this.entries = []
+        this.currentIndex = -1
       }
     } catch {
-      this.backStack = []
-      this.forwardStack = []
-      this.current = null
+      this.entries = []
+      this.currentIndex = -1
     }
   }
 
@@ -170,13 +174,12 @@ class ChatNavigationHistory {
       window.sessionStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
-          backStack: this.backStack,
-          forwardStack: this.forwardStack,
-          current: this.current,
+          entries: this.entries,
+          currentIndex: this.currentIndex,
         })
       )
     } catch {
-      // sessionStorage full or unavailable — silently ignore
+      // sessionStorage full or unavailable
     }
   }
 }
