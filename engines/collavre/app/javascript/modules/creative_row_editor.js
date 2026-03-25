@@ -1313,11 +1313,26 @@ export function initializeCreativeRowEditor() {
         }
       };
 
+      // Notify editing stopped on previous creative
+      const prevCreativeId = prev.dataset?.id || form.dataset?.creativeId;
+      if (prevCreativeId) {
+        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+          detail: { creativeId: parseInt(prevCreativeId, 10) }
+        }));
+      }
+
       if (wasNew) {
         // For new creatives, still need to save or cleanup
         beforeNewOrMove(wasNew, prev, prevParent).then(() => {
           loadCreative(target);
           focusAfterMove();
+          // Notify editing started on new creative
+          const newCreativeId = target.dataset?.id || currentRowElement?.getAttribute('creative-id');
+          if (newCreativeId) {
+            document.dispatchEvent(new CustomEvent('creative-editing:start', {
+              detail: { creativeId: parseInt(newCreativeId, 10) }
+            }));
+          }
         });
       } else {
         // For existing creatives, show the row and refresh if needed
@@ -1326,6 +1341,13 @@ export function initializeCreativeRowEditor() {
         }
         loadCreative(target);
         focusAfterMove();
+        // Notify editing started on new creative
+        const newCreativeId = target.dataset?.id || currentRowElement?.getAttribute('creative-id');
+        if (newCreativeId) {
+          document.dispatchEvent(new CustomEvent('creative-editing:start', {
+            detail: { creativeId: parseInt(newCreativeId, 10) }
+          }));
+        }
       }
       updateActionButtonStates();
     }
@@ -1352,6 +1374,14 @@ export function initializeCreativeRowEditor() {
         } else {
           queueSaveIfDirty(prev);
         }
+      }
+
+      // Notify editing stopped on previous creative
+      const prevEditId = prev.dataset?.id || form.dataset?.creativeId;
+      if (prevEditId) {
+        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+          detail: { creativeId: parseInt(prevEditId, 10) }
+        }));
       }
 
       const handleAddNew = () => {
