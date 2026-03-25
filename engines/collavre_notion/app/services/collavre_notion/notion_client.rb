@@ -1,11 +1,13 @@
 module CollavreNotion
   class NotionClient
-    BASE_URL = "https://api.notion.com/v1"
+    DEFAULT_BASE_URL = "https://api.notion.com/v1"
+    MOCK_SERVER_DEFAULT = "http://localhost:4568/v1"
     API_VERSION = "2022-06-28"
 
     def initialize(account)
       @account = account
       @token = account.token
+      @base_url = resolve_base_url
     end
 
     def search_pages(query: nil, start_cursor: nil, page_size: 10)
@@ -135,7 +137,7 @@ module CollavreNotion
     private
 
     def get(path, params = {})
-      url = "#{BASE_URL}/#{path}"
+      url = "#{@base_url}/#{path}"
       url += "?#{params.to_query}" if params.any?
 
       response = HTTParty.get(
@@ -149,7 +151,7 @@ module CollavreNotion
 
     def post(path, body)
       response = HTTParty.post(
-        "#{BASE_URL}/#{path}",
+        "#{@base_url}/#{path}",
         headers: headers,
         body: body.to_json,
         timeout: 30
@@ -160,7 +162,7 @@ module CollavreNotion
 
     def patch(path, body)
       response = HTTParty.patch(
-        "#{BASE_URL}/#{path}",
+        "#{@base_url}/#{path}",
         headers: headers,
         body: body.to_json,
         timeout: 30
@@ -171,7 +173,7 @@ module CollavreNotion
 
     def delete(path)
       response = HTTParty.delete(
-        "#{BASE_URL}/#{path}",
+        "#{@base_url}/#{path}",
         headers: headers,
         timeout: 30
       )
@@ -190,6 +192,16 @@ module CollavreNotion
     def format_id(id)
       # Keep dashes in UUIDs - Notion API expects them
       id.to_s
+    end
+
+    def resolve_base_url
+      return ENV["NOTION_API_ENDPOINT"] if ENV["NOTION_API_ENDPOINT"].present?
+
+      if Rails.env.development? && ENV["NOTION_CLIENT_ID"].blank?
+        MOCK_SERVER_DEFAULT
+      else
+        DEFAULT_BASE_URL
+      end
     end
 
     def handle_response(response)
