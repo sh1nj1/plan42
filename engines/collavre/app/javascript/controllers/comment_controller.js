@@ -454,4 +454,36 @@ export default class extends Controller {
       reactionsList.appendChild(button)
     })
   }
+
+  async restoreSnapshot(event) {
+    const button = event.currentTarget
+    const snapshotId = button.dataset.snapshotId
+    const creativeId = button.dataset.creativeId
+    const confirmText = button.dataset.confirmText || 'Restore original messages?'
+
+    if (!confirm(confirmText)) return
+
+    button.disabled = true
+    try {
+      const response = await fetch(`/creatives/${creativeId}/comments/snapshots/${snapshotId}/restore`, {
+        method: 'POST',
+        headers: {
+          'X-CSRF-Token': document.querySelector('meta[name=csrf-token]')?.content,
+          'Content-Type': 'application/json',
+        },
+      })
+      if (response.ok) {
+        // Restored comments will appear via ActionCable broadcast;
+        // the summary comment (this one) will be destroyed via broadcast too
+      } else {
+        const data = await response.json().catch(() => ({}))
+        alert(data.error || 'Failed to restore')
+        button.disabled = false
+      }
+    } catch (error) {
+      console.error('Error restoring snapshot:', error)
+      alert('Failed to restore')
+      button.disabled = false
+    }
+  }
 }
