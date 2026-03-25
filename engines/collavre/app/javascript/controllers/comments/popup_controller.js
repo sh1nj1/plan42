@@ -186,6 +186,11 @@ export default class extends Controller {
 
   handleCreativeDestroyed(event) {
     const destroyedIds = event.detail?.creativeIds || []
+
+    // Remove destroyed creatives from navigation history
+    destroyedIds.forEach(id => chatHistory.remove(id))
+    this._updateNavButtons()
+
     if (this.element.style.display !== 'flex') return
     if (destroyedIds.includes(this.element.dataset.creativeId)) {
       this.close()
