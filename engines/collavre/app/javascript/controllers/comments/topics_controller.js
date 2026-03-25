@@ -63,6 +63,9 @@ export default class extends Controller {
 
         try {
             const response = await fetch(`/creatives/${this.creativeId}/topics`)
+            if (response.status === 404) {
+                throw new Error(`Creative ${this.creativeId} not found`)
+            }
             if (response.ok) {
                 const data = await response.json()
                 const topics = Array.isArray(data) ? data : data.topics

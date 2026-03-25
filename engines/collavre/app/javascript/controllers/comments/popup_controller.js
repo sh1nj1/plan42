@@ -1071,13 +1071,13 @@ export default class extends Controller {
   navigateBack() {
     const entry = chatHistory.prev()
     if (!entry) return
-    this._navigateToEntry(entry)
+    this._navigateToEntry(entry, 'back')
   }
 
   navigateForward() {
     const entry = chatHistory.next()
     if (!entry) return
-    this._navigateToEntry(entry)
+    this._navigateToEntry(entry, 'forward')
   }
 
   showRecentChats(event) {
@@ -1159,7 +1159,7 @@ export default class extends Controller {
     }
   }
 
-  async _navigateToEntry(entry) {
+  async _navigateToEntry(entry, direction = 'forward') {
     this._isNavigating = true
     try {
       // Try to find the button for this creative in the tree
@@ -1174,6 +1174,17 @@ export default class extends Controller {
         this.element.dataset.canComment = entry.canComment ? 'true' : 'false'
         this.element.dataset.creativeSnippet = entry.snippet || ''
         await this.openForCreative()
+      }
+    } catch (error) {
+      // Creative likely deleted (404) — remove from history and skip to next
+      console.warn(`[chat-nav] Failed to open creative ${entry.creativeId}, removing from history:`, error)
+      chatHistory.remove(entry.creativeId)
+      this._updateNavButtons()
+
+      if (chatHistory.canNavigate()) {
+        this._isNavigating = false
+        const next = direction === 'back' ? chatHistory.prev() : chatHistory.next()
+        if (next) return this._navigateToEntry(next, direction)
       }
     } finally {
       this._isNavigating = false
