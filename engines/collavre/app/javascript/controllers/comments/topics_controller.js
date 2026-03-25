@@ -85,6 +85,7 @@ export default class extends Controller {
             }
         } catch (e) {
             console.error("Failed to load topics", e)
+            throw e
         }
     }
 
