@@ -1082,8 +1082,8 @@ export default class extends Controller {
 
   showRecentChats(event) {
     event.preventDefault()
-    const list = chatHistory.recentList()
-    if (list.length <= 1) return
+    const list = chatHistory.recentList().filter(entry => !entry.isCurrent)
+    if (list.length === 0) return
 
     if (!this.hasNavDropdownTarget) return
     const dropdown = this.navDropdownTarget
@@ -1092,7 +1092,6 @@ export default class extends Controller {
     list.forEach((entry, index) => {
       const item = document.createElement('div')
       item.className = 'chat-nav-dropdown-item'
-      if (entry.isCurrent) item.classList.add('current')
 
       const label = document.createElement('button')
       label.type = 'button'
@@ -1100,31 +1099,29 @@ export default class extends Controller {
       label.textContent = entry.snippet || `Creative #${entry.creativeId}`
       label.addEventListener('click', () => {
         this._hideNavDropdown()
-        const target = chatHistory.goTo(index)
+        const target = chatHistory.goTo(entry.index)
         if (target) this._navigateToEntry(target)
       })
       item.appendChild(label)
 
-      // Remove button (not for current chat)
-      if (!entry.isCurrent) {
-        const removeBtn = document.createElement('button')
-        removeBtn.type = 'button'
-        removeBtn.className = 'chat-nav-dropdown-remove'
-        removeBtn.innerHTML = '&times;'
-        removeBtn.title = this._i18n('remove_from_history')
-        removeBtn.addEventListener('click', (e) => {
-          e.stopPropagation()
-          chatHistory.remove(entry.creativeId)
-          this._updateNavButtons()
-          // Re-render dropdown if still enough items
-          if (chatHistory.recentList().length > 1) {
-            this.showRecentChats(new Event('contextmenu', { bubbles: true }))
-          } else {
-            this._hideNavDropdown()
-          }
-        })
-        item.appendChild(removeBtn)
-      }
+      const removeBtn = document.createElement('button')
+      removeBtn.type = 'button'
+      removeBtn.className = 'chat-nav-dropdown-remove'
+      removeBtn.innerHTML = '&times;'
+      removeBtn.title = this._i18n('remove_from_history')
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        chatHistory.remove(entry.creativeId)
+        this._updateNavButtons()
+        // Re-render dropdown if still enough items
+        const remaining = chatHistory.recentList().filter(e => !e.isCurrent)
+        if (remaining.length > 0) {
+          this.showRecentChats(new Event('contextmenu', { bubbles: true }))
+        } else {
+          this._hideNavDropdown()
+        }
+      })
+      item.appendChild(removeBtn)
 
       dropdown.appendChild(item)
     })
