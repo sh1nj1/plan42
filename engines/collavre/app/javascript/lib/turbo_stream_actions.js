@@ -226,9 +226,14 @@ function findRowsForCreative(creativeId) {
         if (urlId && String(urlId) === String(creativeId)) {
             return [titleRow]
         }
-        // 2c removed: parent-id reverse lookup was incorrectly matching origin
-        // creative to title row on shared/linked creative pages.
-        // Title row progress is handled separately in updateAncestorProgress.
+        // 2c. Top-level page: if any tree row has parent-id matching creativeId,
+        //     then creativeId is the root of this tree = title row
+        if (!titleCreativeId) {
+            const childOfTarget = document.querySelector(`creative-tree-row[parent-id="${creativeId}"]`)
+            if (childOfTarget) {
+                return [titleRow]
+            }
+        }
     }
     return rows
 }

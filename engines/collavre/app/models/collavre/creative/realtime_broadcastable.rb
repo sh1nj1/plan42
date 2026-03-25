@@ -53,6 +53,11 @@ module Collavre
           user_data = @_destroy_payload.dup
           linked_id = @_destroy_linked_map[target_user.id]
           user_data[:linked_id] = linked_id if linked_id
+          # Remap parent_id for this user
+          if user_data[:parent_id].present?
+            linked_parent = Creative.find_by(origin_id: user_data[:parent_id], user: target_user)
+            user_data[:parent_id] = linked_parent.id if linked_parent
+          end
           if user_data[:ancestors].present?
             user_data[:ancestors] = remap_ancestor_ids(user_data[:ancestors], target_user)
           end
@@ -82,7 +87,22 @@ module Collavre
           # Add linked_id for this user's linked creative (if any)
           linked_id = linked_map[target_user.id]
           user_data[:linked_id] = linked_id if linked_id
-          # Also remap ancestor IDs to linked IDs for this user
+          # Remap parent_id to linked parent for this user
+          if user_data[:parent_id].present?
+            linked_parent = Creative.find_by(origin_id: user_data[:parent_id], user: target_user)
+            user_data[:parent_id] = linked_parent.id if linked_parent
+          end
+          # Remap after_id to linked sibling for this user
+          if user_data[:after_id].present?
+            linked_after = Creative.find_by(origin_id: user_data[:after_id], user: target_user)
+            user_data[:after_id] = linked_after.id if linked_after
+          end
+          # Remap previous_sibling_id to linked sibling for this user
+          if user_data[:previous_sibling_id].present?
+            linked_prev = Creative.find_by(origin_id: user_data[:previous_sibling_id], user: target_user)
+            user_data[:previous_sibling_id] = linked_prev.id if linked_prev
+          end
+          # Remap ancestor IDs to linked IDs for this user
           if user_data[:ancestors].present?
             user_data[:ancestors] = remap_ancestor_ids(user_data[:ancestors], target_user)
           end
