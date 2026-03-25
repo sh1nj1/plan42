@@ -51,8 +51,6 @@ export default class extends Controller {
     this._isNavigating = false
     this._headerSwipeStartX = null
     this._headerSwipeStartY = null
-    this.handleHeaderTouchStart = this.handleHeaderTouchStart.bind(this)
-    this.handleHeaderTouchEnd = this.handleHeaderTouchEnd.bind(this)
 
     document.addEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.addEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
@@ -1210,13 +1208,13 @@ export default class extends Controller {
     el.removeEventListener('touchend', this.handleHeaderTouchEnd)
   }
 
-  handleHeaderTouchStart(event) {
+  handleHeaderTouchStart = (event) => {
     if (event.touches.length !== 1) return
     this._headerSwipeStartX = event.touches[0].clientX
     this._headerSwipeStartY = event.touches[0].clientY
   }
 
-  handleHeaderTouchEnd(event) {
+  handleHeaderTouchEnd = (event) => {
     if (this._headerSwipeStartX === null) return
     const dx = event.changedTouches[0].clientX - this._headerSwipeStartX
     const dy = event.changedTouches[0].clientY - this._headerSwipeStartY
