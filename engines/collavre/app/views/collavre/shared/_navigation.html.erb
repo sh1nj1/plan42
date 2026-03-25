@@ -1,7 +1,12 @@
 <nav>
-  <%# Search Button (always visible, both desktop and mobile — leftmost on mobile) %>
+  <%# Always-visible buttons (both desktop and mobile): Search, Home, Plans — matching PC order %>
   <% if (search_item = Navigation::Registry.instance.find(:search)) && navigation_item_visible?(search_item) %>
     <%= render_navigation_item(search_item) %>
+  <% end %>
+
+  <%# Home Button (always visible on mobile, not inside ... menu) %>
+  <% if (home_item = Navigation::Registry.instance.find(:home)) && navigation_item_visible?(home_item) %>
+    <span class="mobile-only"><%= render_navigation_item(home_item) %></span>
   <% end %>
 
   <%# Mobile Plans Button (special: outside popup) %>
@@ -23,7 +28,7 @@
         menu_id: 'mobile-more-menu',
         align: :right
       ) do %>
-    <% navigation_items_for(:main, desktop: false).reject { |i| i[:key] == :mobile_plans || i[:key] == :search }.each do |item| %>
+    <% navigation_items_for(:main, desktop: false).reject { |i| i[:key].in?([:mobile_plans, :search, :home]) }.each do |item| %>
       <%= render_mobile_navigation_item(item) %>
     <% end %>
   <% end %>
