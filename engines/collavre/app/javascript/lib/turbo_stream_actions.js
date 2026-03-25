@@ -87,28 +87,51 @@ function handleCreated(creative) {
 
 function insertAtCorrectPosition(newRow, creative, container) {
     const prevSiblingId = creative.previous_sibling_id
+    const sequence = creative.sequence
+    console.log("[CreativeSync] insertAtCorrectPosition", {
+        id: creative.id, prevSiblingId, sequence,
+        containerChildCount: container.querySelectorAll(':scope > creative-tree-row').length
+    })
 
+    // Strategy 1: Use previous_sibling_id to find exact position
     if (prevSiblingId) {
-        // Find the previous sibling's row in the container
         const prevRow = container.querySelector(`creative-tree-row[creative-id="${prevSiblingId}"]`)
         if (prevRow) {
-            // Insert after the previous sibling (and its children container if present)
             const prevChildrenContainer = document.getElementById(`creative-children-${prevSiblingId}`)
             const insertAfter = prevChildrenContainer || prevRow
             insertAfter.insertAdjacentElement('afterend', newRow)
+            console.log("[CreativeSync] Inserted after sibling", prevSiblingId)
             return
         }
     }
 
-    // No previous sibling → insert at the beginning of the container
-    // (this creative is first among its siblings)
-    const firstRow = container.querySelector('creative-tree-row')
-    if (firstRow && !prevSiblingId) {
-        container.insertBefore(newRow, firstRow)
-    } else {
-        // Fallback: append at end
-        container.appendChild(newRow)
+    // Strategy 2: Use sequence to find correct position among visible siblings
+    if (sequence != null) {
+        const siblingRows = container.querySelectorAll(':scope > creative-tree-row')
+        for (const row of siblingRows) {
+            // tree_renderer stores sequence in a property/attribute
+            const rowSequence = parseInt(row.getAttribute('sequence'), 10)
+            if (!isNaN(rowSequence) && rowSequence > sequence) {
+                container.insertBefore(newRow, row)
+                console.log("[CreativeSync] Inserted before row with sequence", rowSequence)
+                return
+            }
+        }
     }
+
+    // Strategy 3: No previous sibling → insert at beginning
+    if (!prevSiblingId && sequence === 0) {
+        const firstRow = container.querySelector(':scope > creative-tree-row')
+        if (firstRow) {
+            container.insertBefore(newRow, firstRow)
+            console.log("[CreativeSync] Inserted at beginning (sequence 0)")
+            return
+        }
+    }
+
+    // Fallback: append at end
+    container.appendChild(newRow)
+    console.log("[CreativeSync] Appended at end (fallback)")
 }
 
 function findTargetContainer(parentId, treeContainer) {

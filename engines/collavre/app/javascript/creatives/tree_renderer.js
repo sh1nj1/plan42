@@ -44,6 +44,9 @@ function applyRowProperties(row, node) {
     }
     row.setAttribute('level', node.level)
   }
+  if (node.sequence != null) {
+    row.setAttribute('sequence', node.sequence)
+  }
 
   const updateBooleanAttr = (prop, attr, value) => {
     if (value == null) return
