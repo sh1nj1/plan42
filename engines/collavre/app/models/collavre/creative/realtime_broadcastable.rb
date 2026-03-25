@@ -53,6 +53,8 @@ module Collavre
           dom_id: "creative-#{id}",
           parent_id: parent_id,
           level: ancestors.size + 1,
+          select_mode: false,
+          can_write: true, # Refined per-user in JS if needed
           has_children: children.exists?,
           expanded: false,
           is_root: parent.nil?,

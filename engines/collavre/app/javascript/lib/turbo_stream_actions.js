@@ -47,49 +47,66 @@ registerStreamAction("refresh_creative_tree", function () {
 })
 
 function handleCreated(creative) {
-    // Find the parent's children container to insert the new row
     const parentId = creative.parent_id
-    if (!parentId) return
+    console.log("[CreativeSync] handleCreated", { id: creative.id, parentId, level: creative.level })
 
-    // Check if parent row exists in the current view
+    if (!parentId) {
+        console.log("[CreativeSync] No parent_id, skipping")
+        return
+    }
+
+    // Duplicate broadcast protection
+    if (document.querySelector(`creative-tree-row[creative-id="${creative.id}"]`)) {
+        console.log("[CreativeSync] Row already exists, skipping")
+        return
+    }
+
+    // Check if parent is the title row (page root) — children go into #creatives directly
     const parentRow = document.querySelector(`creative-tree-row[creative-id="${parentId}"]`)
-    if (!parentRow) return // Parent not visible — nothing to do
-
-    // Find or create the children container
-    let childrenContainer = document.getElementById(`creative-children-${parentId}`)
-
-    if (!childrenContainer) {
-        // Create a new children container after the parent row
-        childrenContainer = document.createElement('div')
-        childrenContainer.className = 'creative-children'
-        childrenContainer.id = `creative-children-${parentId}`
-        childrenContainer.dataset.expanded = 'true'
-        childrenContainer.dataset.loaded = 'true'
-        parentRow.insertAdjacentElement('afterend', childrenContainer)
+    if (!parentRow) {
+        console.log("[CreativeSync] Parent row not found for", parentId)
+        return
     }
 
-    // Make sure children container is visible
-    childrenContainer.style.display = ''
-    childrenContainer.dataset.expanded = 'true'
+    const isTitle = parentRow.hasAttribute('is-title')
+    let targetContainer
 
-    // Check if the row already exists (duplicate broadcast protection)
-    if (document.querySelector(`creative-tree-row[creative-id="${creative.id}"]`)) return
+    if (isTitle) {
+        // Title row's children are direct children of #creatives container
+        targetContainer = document.getElementById('creatives')
+    } else {
+        // Regular row — use or create children container
+        targetContainer = document.getElementById(`creative-children-${parentId}`)
+        if (!targetContainer) {
+            targetContainer = document.createElement('div')
+            targetContainer.className = 'creative-children'
+            targetContainer.id = `creative-children-${parentId}`
+            targetContainer.dataset.expanded = 'true'
+            targetContainer.dataset.loaded = 'true'
+            parentRow.insertAdjacentElement('afterend', targetContainer)
+        }
 
-    // Create the new row using tree_renderer's createRow
+        // Update parent state
+        parentRow.hasChildren = true
+        parentRow.setAttribute('has-children', '')
+        if (!parentRow.expanded) {
+            parentRow.expanded = true
+            parentRow.setAttribute('expanded', '')
+        }
+    }
+
+    if (!targetContainer) {
+        console.log("[CreativeSync] No target container found")
+        return
+    }
+
+    // Make sure container is visible
+    targetContainer.style.display = ''
+    if (targetContainer.dataset) targetContainer.dataset.expanded = 'true'
+
     const newRow = createRow(creative)
-    childrenContainer.appendChild(newRow)
-
-    // Update parent's has-children state
-    parentRow.hasChildren = true
-    parentRow.setAttribute('has-children', '')
-
-    // Expand parent if not already
-    if (!parentRow.expanded) {
-        parentRow.expanded = true
-        parentRow.setAttribute('expanded', '')
-    }
-
-    console.log("[CreativeSync] Inserted new row for creative", creative.id, "under parent", parentId)
+    targetContainer.appendChild(newRow)
+    console.log("[CreativeSync] Inserted row for creative", creative.id, isTitle ? "into main container" : `under parent ${parentId}`)
 }
 
 function handleUpdated(creative) {
