@@ -266,12 +266,11 @@ function updateAncestorProgress(ancestors) {
     ancestors.forEach(anc => {
         const ancRow = document.querySelector(`creative-tree-row[creative-id="${anc.id}"]`)
         if (ancRow && anc.progress != null) {
-            const pct = Math.round(anc.progress)
-            ancRow.dataset.progressValue = String(pct)
-            // Update progress percentage in existing progressHtml (preserve chat badges etc.)
+            const pct = Math.round(anc.progress * 100)
+            ancRow.dataset.progressValue = String(anc.progress)
             if (ancRow.progressHtml) {
                 const updated = ancRow.progressHtml.replace(
-                    /(<span[^>]*class="creative-progress[^"]*"[^>]*>)\s*\d+%\s*(<\/span>)/,
+                    /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/,
                     `$1${pct}%$2`
                 )
                 if (updated !== ancRow.progressHtml) {

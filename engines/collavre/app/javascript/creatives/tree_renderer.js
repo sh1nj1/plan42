@@ -109,18 +109,21 @@ function applyRowProperties(row, node) {
     setDatasetValue(row, 'descriptionRawHtml', inlinePayload.description_raw_html ?? '')
   }
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'progress')) {
-    const pct = Math.round(inlinePayload.progress ?? 0)
-    setDatasetValue(row, 'progressValue', pct)
+    const rawProgress = inlinePayload.progress ?? 0
+    const pct = Math.round(rawProgress * 100)
+    setDatasetValue(row, 'progressValue', rawProgress)
     // Update progress percentage in existing progressHtml without replacing full HTML
     // (preserves chat badges, comment counts, etc.)
     if (templates.progress_html == null && row.progressHtml) {
+      // Match the progress value span (handles both "50%" and custom completion marks)
       const updated = row.progressHtml.replace(
-        /(<span[^>]*class="creative-progress[^"]*"[^>]*>)\s*\d+%\s*(<\/span>)/,
+        /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/,
         `$1${pct}%$2`
       )
       if (updated !== row.progressHtml) {
         row.progressHtml = updated
         setDatasetValue(row, 'progressHtml', updated)
+        dirty = true
       }
     }
   }

@@ -131,7 +131,7 @@ module Collavre
       # Full progress_html (with comment badges etc.) requires view_context
       # so we render a minimal version; the user's own save already has full rendering
       def broadcast_progress_html
-        pct = (progress || 0).to_i
+        pct = ((progress || 0) * 100).round
         %(<div class="creative-row-end"><span class="creative-progress">#{pct}%</span></div>)
       end
 
