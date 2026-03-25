@@ -208,28 +208,37 @@ function findTargetContainer(parentId, treeContainer) {
     return null
 }
 
-function findRowsForCreative(creativeId) {
+function findRowsForCreative(creativeId, originId) {
     // 1. Normal tree rows by attribute
     const rows = Array.from(document.querySelectorAll(`creative-tree-row[creative-id="${creativeId}"]`))
     if (rows.length > 0) return rows
+
+    // 1b. Try origin_id if different (linked creative: DOM may have origin ID)
+    if (originId && String(originId) !== String(creativeId)) {
+        const originRows = Array.from(document.querySelectorAll(`creative-tree-row[creative-id="${originId}"]`))
+        if (originRows.length > 0) return originRows
+    }
 
     // 2. Title row checks
     const titleRow = document.querySelector('creative-tree-row[is-title]')
     if (titleRow) {
         // 2a. Title row has creative-id attribute (e.g. /creatives?id=X page)
         const titleCreativeId = titleRow.getAttribute('creative-id')
-        if (titleCreativeId && String(titleCreativeId) === String(creativeId)) {
+        if (titleCreativeId && (String(titleCreativeId) === String(creativeId) ||
+            (originId && String(titleCreativeId) === String(originId)))) {
             return [titleRow]
         }
         // 2b. URL param check
         const urlId = new URLSearchParams(window.location.search).get('id')
-        if (urlId && String(urlId) === String(creativeId)) {
+        if (urlId && (String(urlId) === String(creativeId) ||
+            (originId && String(urlId) === String(originId)))) {
             return [titleRow]
         }
-        // 2c. Top-level page: if any tree row has parent-id matching creativeId,
+        // 2c. Top-level page: if any tree row has parent-id matching creativeId or originId,
         //     then creativeId is the root of this tree = title row
         if (!titleCreativeId) {
-            const childOfTarget = document.querySelector(`creative-tree-row[parent-id="${creativeId}"]`)
+            const childOfTarget = document.querySelector(`creative-tree-row[parent-id="${creativeId}"]`) ||
+                (originId ? document.querySelector(`creative-tree-row[parent-id="${originId}"]`) : null)
             if (childOfTarget) {
                 return [titleRow]
             }
@@ -239,8 +248,8 @@ function findRowsForCreative(creativeId) {
 }
 
 function handleUpdated(creative) {
-    const rows = findRowsForCreative(creative.id)
-    console.log("[CreativeSync] handleUpdated creative", creative.id, "found rows:", rows.length)
+    const rows = findRowsForCreative(creative.id, creative.origin_id)
+    console.log("[CreativeSync] handleUpdated creative", creative.id, "origin:", creative.origin_id, "found rows:", rows.length)
     if (rows.length === 0) return
 
     // Find currently editing creative ID to skip it
@@ -261,7 +270,7 @@ function handleUpdated(creative) {
 }
 
 function handleDestroyed(creative) {
-    const rows = findRowsForCreative(creative.id)
+    const rows = findRowsForCreative(creative.id, creative.origin_id)
 
     if (rows.length === 0) {
         // Row not found — might be on a page where it's displayed differently
@@ -320,29 +329,11 @@ function updateProgressForRow(row, progress) {
     row.dataset.progressHtml = newHtml
 }
 
-function findTitleRowForAncestor(ancestorId) {
-    // On top-level /creatives page, title row has no creative-id.
-    // If tree rows have parent-id matching ancestorId, then the title row
-    // represents this ancestor (for progress display only).
-    const titleRow = document.querySelector('creative-tree-row[is-title]')
-    if (!titleRow) return null
-    const titleCreativeId = titleRow.getAttribute('creative-id')
-    // If title row already has a creative-id, findRowsForCreative handles it
-    if (titleCreativeId) return null
-    // Check if any direct child has parent-id matching the ancestor
-    const child = document.querySelector(`creative-tree-row[parent-id="${ancestorId}"]`)
-    return child ? titleRow : null
-}
-
 function updateAncestorProgress(ancestors) {
     if (!Array.isArray(ancestors)) return
     ancestors.forEach(anc => {
-        let rows = findRowsForCreative(anc.id)
-        // Also check if title row represents this ancestor (top-level page)
-        if (rows.length === 0) {
-            const titleRow = findTitleRowForAncestor(anc.id)
-            if (titleRow) rows = [titleRow]
-        }
+        // findRowsForCreative already handles origin_id fallback for linked creatives
+        const rows = findRowsForCreative(anc.id, anc.origin_id)
         if (rows[0]) updateProgressForRow(rows[0], anc.progress)
     })
 }
