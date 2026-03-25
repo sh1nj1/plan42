@@ -56,7 +56,7 @@ html.creative-alignment-ready .page-title {
     padding: var(--space-1) 0;
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-end;
     min-height: 36px;
     border: none;
 }
