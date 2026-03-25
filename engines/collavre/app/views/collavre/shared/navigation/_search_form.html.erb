@@ -83,16 +83,19 @@
       </div>
       <% end %>
 
-      <% if authenticated? %>
       <div class="search-popup-filter-section">
         <span class="search-popup-filter-label"><%= t('collavre.search_popup.other_filters') %></span>
         <div class="search-popup-filter-buttons">
+          <button type="button"
+                  class="search-popup-filter-btn<%= ' active' if has_comment %>"
+                  data-action="click->search-popup#applyCommentFilter"><%= t('app.filter_comments') %></button>
+          <% if authenticated? %>
             <button type="button"
                     class="search-popup-filter-btn<%= ' active' if has_archived %>"
                     data-action="click->search-popup#toggleArchive"><%= has_archived ? t('collavre.creatives.index.hide_archived') : t('collavre.creatives.index.show_archived') %></button>
+          <% end %>
         </div>
       </div>
-      <% end %>
     </div>
 
     <div class="search-popup-footer">
