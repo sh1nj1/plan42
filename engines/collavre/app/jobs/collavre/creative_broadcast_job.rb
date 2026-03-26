@@ -81,6 +81,14 @@ module Collavre
         # Per-user progress text
         creative.send(:add_progress_text!, user_data, target_user)
 
+        # For created action, render per-user progress_html (includes chat button,
+        # badge with turbo-cable-stream-source subscription, and progress span).
+        # Existing rows already have this from server render; only new rows need it.
+        if action == "created"
+          user_data[:templates] ||= {}
+          user_data[:templates][:progress_html] = render_progress_html(creative, target_user)
+        end
+
         json_payload = { action: action.to_s, creative: user_data }.to_json
         Turbo::StreamsChannel.broadcast_action_to(
           [ target_user, :creative_tree ],
@@ -135,6 +143,54 @@ module Collavre
           attributes: { data: json_payload }
         )
       end
+    end
+
+    # Build progress HTML for a newly created creative.
+    # New creatives always have 0 comments and initial progress, so we can
+    # construct the HTML directly without a full view render.
+    # Includes:
+    # - turbo-cable-stream-source (per-user subscription for badge updates)
+    # - comment button (hidden via no-comments class — 0 comments initially)
+    # - progress span
+    def render_progress_html(creative, user)
+      origin = creative.effective_origin
+      progress = creative.progress || 0
+      pct = (progress * 100).round
+
+      # Generate signed stream name for turbo-cable-stream-source
+      stream_name = Turbo::StreamsChannel.signed_stream_name([ user, origin, :comment_badge ])
+      stream_tag = %(<turbo-cable-stream-source channel="Turbo::StreamsChannel" signed-stream-name="#{stream_name}"></turbo-cable-stream-source>)
+
+      # Badge (hidden, no comments yet)
+      badge_id = "comment-badge-#{origin.id}"
+      badge = %(<span id="#{badge_id}" class="badge" style="display:none" data-count="0" data-controller="comment-badge" data-comment-badge-has-comments-value="false"></span>)
+
+      # Comment button (hidden via no-comments)
+      comment_icon = read_svg("comment.svg", class: "comment-icon")
+      comment_btn = %(<button name="show-comments-btn" class="comments-btn creative-action-btn no-comments" data-creative-id="#{creative.id}" data-can-comment="true" data-creative-snippet="#{ERB::Util.html_escape(creative.creative_snippet)}">)
+      comment_btn += %(#{comment_icon}#{badge}</button>)
+
+      # Progress span
+      css_class = pct >= 100 ? "creative-progress-complete" : "creative-progress-incomplete"
+      display_text = pct >= 100 && user.completion_mark.present? ? user.completion_mark : "#{pct}%"
+      progress_span = %(<span class="#{css_class}">#{display_text}</span>)
+
+      # Wrap in creative-row-end div (matching helper output structure)
+      %(<div class="creative-row-end">#{stream_tag}#{comment_btn}#{progress_span}</div>)
+    rescue StandardError => e
+      Rails.logger.warn "[CreativeBroadcastJob] render_progress_html failed for creative##{creative.id} user##{user.id}: #{e.message}"
+      nil
+    end
+
+    def read_svg(name, options = {})
+      path = Rails.root.join("app", "assets", "images", name)
+      return "" unless File.exist?(path)
+
+      svg = File.read(path)
+      if options[:class]
+        svg.sub!(/<svg\b/, %(<svg class="#{options[:class]}"))
+      end
+      svg.html_safe # rubocop:disable Rails/OutputSafety
     end
   end
 end
