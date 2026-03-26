@@ -224,9 +224,14 @@ module Collavre
 
         candidates = (owners + shared_users).compact.uniq
 
-        # Filter: only users who actually have read permission on this creative
-        # PermissionChecker uses creative_shares_caches (O(1) per user)
-        candidates.select { |user| target.has_permission?(user, :read) }
+        # Filter: only users who actually have read permission.
+        # Check target first; if its permission cache is missing (e.g. newly created creative
+        # whose PermissionCacheJob hasn't run yet), fall back to the nearest ancestor that has
+        # a cache entry. This prevents broadcast from being silently dropped for new creatives.
+        permission_targets = [ target ] + Creative.where(id: ancestor_ids).order(:id).reverse
+        candidates.select do |user|
+          permission_targets.any? { |pt| pt.has_permission?(user, :read) }
+        end
       rescue StandardError => e
         Rails.logger.error "[CreativeBroadcast] Error finding users: #{e.message}"
         []
