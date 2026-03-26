@@ -149,6 +149,14 @@ export function initializeCreativeRowEditor() {
     let originalOriginId = '';
     let isDirty = false;
     let completionCascadePending = false;
+    let editingPingInterval = null;
+
+    function stopEditingPing() {
+      if (editingPingInterval) {
+        clearInterval(editingPingInterval);
+        editingPingInterval = null;
+      }
+    }
     const destroyedCreativeIds = new Set();
 
     function formatProgressDisplay(value) {
@@ -755,12 +763,19 @@ export function initializeCreativeRowEditor() {
       loadCreative(tree);
       updateActionButtonStates();
 
-      // Notify sync controller that editing started
+      // Notify sync controller that editing started + periodic ping
       const editCreativeId = form.dataset.creativeId || currentRowElement?.getAttribute('creative-id');
       if (editCreativeId) {
+        const parsedId = parseInt(editCreativeId, 10);
         document.dispatchEvent(new CustomEvent('creative-editing:start', {
-          detail: { creativeId: parseInt(editCreativeId, 10) }
+          detail: { creativeId: parsedId }
         }));
+        if (editingPingInterval) clearInterval(editingPingInterval);
+        editingPingInterval = setInterval(() => {
+          document.dispatchEvent(new CustomEvent('creative-editing:start', {
+            detail: { creativeId: parsedId }
+          }));
+        }, 3000);
       }
     }
 
@@ -1074,6 +1089,7 @@ export function initializeCreativeRowEditor() {
       const wasNew = !form.dataset.creativeId;
 
       // Notify sync controller that editing stopped
+      stopEditingPing();
       const editCreativeId = form.dataset.creativeId;
       if (editCreativeId) {
         document.dispatchEvent(new CustomEvent('creative-editing:stop', {
@@ -1322,6 +1338,7 @@ export function initializeCreativeRowEditor() {
       };
 
       // Notify editing stopped on previous creative
+      stopEditingPing();
       const prevCreativeId = prev.dataset?.id || form.dataset?.creativeId;
       if (prevCreativeId) {
         document.dispatchEvent(new CustomEvent('creative-editing:stop', {
@@ -1334,12 +1351,19 @@ export function initializeCreativeRowEditor() {
         beforeNewOrMove(wasNew, prev, prevParent).then(() => {
           loadCreative(target);
           focusAfterMove();
-          // Notify editing started on new creative
+          // Notify editing started on new creative + start ping
           const newCreativeId = target.dataset?.id || currentRowElement?.getAttribute('creative-id');
           if (newCreativeId) {
+            const parsedNewId = parseInt(newCreativeId, 10);
             document.dispatchEvent(new CustomEvent('creative-editing:start', {
-              detail: { creativeId: parseInt(newCreativeId, 10) }
+              detail: { creativeId: parsedNewId }
             }));
+            stopEditingPing();
+            editingPingInterval = setInterval(() => {
+              document.dispatchEvent(new CustomEvent('creative-editing:start', {
+                detail: { creativeId: parsedNewId }
+              }));
+            }, 3000);
           }
         });
       } else {
@@ -1349,12 +1373,19 @@ export function initializeCreativeRowEditor() {
         }
         loadCreative(target);
         focusAfterMove();
-        // Notify editing started on new creative
+        // Notify editing started on new creative + start ping
         const newCreativeId = target.dataset?.id || currentRowElement?.getAttribute('creative-id');
         if (newCreativeId) {
+          const parsedNewId = parseInt(newCreativeId, 10);
           document.dispatchEvent(new CustomEvent('creative-editing:start', {
-            detail: { creativeId: parseInt(newCreativeId, 10) }
+            detail: { creativeId: parsedNewId }
           }));
+          stopEditingPing();
+          editingPingInterval = setInterval(() => {
+            document.dispatchEvent(new CustomEvent('creative-editing:start', {
+              detail: { creativeId: parsedNewId }
+            }));
+          }, 3000);
         }
       }
       updateActionButtonStates();
@@ -1385,6 +1416,7 @@ export function initializeCreativeRowEditor() {
       }
 
       // Notify editing stopped on previous creative
+      stopEditingPing();
       const prevEditId = prev.dataset?.id || form.dataset?.creativeId;
       if (prevEditId) {
         document.dispatchEvent(new CustomEvent('creative-editing:stop', {
