@@ -15,17 +15,15 @@ module Collavre
       # Public: called from CreateService after insert_at_position
       # @param after_id [Integer, nil] the creative ID this was inserted after (from user action)
       def broadcast_creative_created(after_id: nil)
-        Rails.logger.info "[CreativeBroadcast] === broadcast_creative_created for creative##{id} seq=#{sequence} after_id=#{after_id} ==="
         payload = broadcast_node_payload
         payload[:after_id] = after_id.presence&.to_i
-        broadcast_creative_change(:created, payload)
+        enqueue_broadcast(:created, payload)
       rescue StandardError => e
         Rails.logger.error "[CreativeBroadcast] ERROR in broadcast_creative_created: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
       end
 
       def broadcast_creative_updated
-        Rails.logger.info "[CreativeBroadcast] === after_update_commit fired for creative##{id} ==="
-        broadcast_creative_change(:updated, broadcast_node_payload)
+        enqueue_broadcast(:updated, broadcast_node_payload)
       rescue StandardError => e
         Rails.logger.error "[CreativeBroadcast] ERROR in broadcast_creative_updated: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
       end
@@ -44,80 +42,17 @@ module Collavre
       def broadcast_creative_destroyed
         return if @_destroy_broadcast_users.blank?
 
-        current = Collavre.current_user
-        Rails.logger.info "[CreativeBroadcast] destroyed creative##{id} current_user=#{current&.email} target_users=#{@_destroy_broadcast_users.map(&:email)}"
-        users = @_destroy_broadcast_users.reject { |u| current && u.id == current.id }
-        return if users.empty?
-
-        users.each do |target_user|
-          user_data = @_destroy_payload.dup
-          linked_id = @_destroy_linked_map[target_user.id]
-          user_data[:linked_id] = linked_id if linked_id
-          # Remap parent_id for this user
-          if user_data[:parent_id].present?
-            linked_parent = Creative.find_by(origin_id: user_data[:parent_id], user: target_user)
-            user_data[:parent_id] = linked_parent.id if linked_parent
-          end
-          if user_data[:ancestors].present?
-            user_data[:ancestors] = remap_ancestor_ids(user_data[:ancestors], target_user)
-          end
-
-          payload = { action: "destroyed", creative: user_data }.to_json
-          Turbo::StreamsChannel.broadcast_action_to(
-            [ target_user, :creative_tree ],
-            action: :refresh_creative_tree,
-            target: "creatives",
-            attributes: { data: payload }
-          )
-        end
-      end
-
-      def broadcast_creative_change(action, data)
-        target_users = find_broadcast_users
-        current = Collavre.current_user
-        Rails.logger.info "[CreativeBroadcast] #{action} creative##{data[:id]} current_user=#{current&.email} target_users=#{target_users.map(&:email)}"
-        target_users.reject! { |u| current && u.id == current.id }
-        return if target_users.empty?
-
-        # Build per-user linked creative ID mapping
-        linked_map = build_linked_creative_map(target_users)
-
-        target_users.each do |target_user|
-          user_data = data.dup
-          # Add linked_id for this user's linked creative (if any)
-          linked_id = linked_map[target_user.id]
-          user_data[:linked_id] = linked_id if linked_id
-          # Remap parent_id to linked parent for this user
-          if user_data[:parent_id].present?
-            linked_parent = Creative.find_by(origin_id: user_data[:parent_id], user: target_user)
-            user_data[:parent_id] = linked_parent.id if linked_parent
-          end
-          # Remap after_id to linked sibling for this user
-          if user_data[:after_id].present?
-            linked_after = Creative.find_by(origin_id: user_data[:after_id], user: target_user)
-            user_data[:after_id] = linked_after.id if linked_after
-          end
-          # Remap previous_sibling_id to linked sibling for this user
-          if user_data[:previous_sibling_id].present?
-            linked_prev = Creative.find_by(origin_id: user_data[:previous_sibling_id], user: target_user)
-            user_data[:previous_sibling_id] = linked_prev.id if linked_prev
-          end
-          # Remap ancestor IDs to linked IDs for this user
-          if user_data[:ancestors].present?
-            user_data[:ancestors] = remap_ancestor_ids(user_data[:ancestors], target_user)
-          end
-
-          # Add per-user progress text (completion mark differs per user)
-          add_progress_text!(user_data, target_user)
-
-          payload = { action: action.to_s, creative: user_data }.to_json
-          Turbo::StreamsChannel.broadcast_action_to(
-            [ target_user, :creative_tree ],
-            action: :refresh_creative_tree,
-            target: "creatives",
-            attributes: { data: payload }
-          )
-        end
+        current_user_id = Collavre.current_user&.id
+        CreativeBroadcastJob.perform_later(
+          id,
+          "destroyed",
+          current_user_id: current_user_id,
+          payload: @_destroy_payload,
+          options: {
+            destroy_user_ids: @_destroy_broadcast_users.map(&:id),
+            destroy_linked_map: @_destroy_linked_map
+          }
+        )
       end
 
       # Tree-renderer compatible node payload (matches TreeBuilder output)
@@ -171,6 +106,17 @@ module Collavre
       def previous_sibling
         scope = parent ? parent.children : Creative.where(parent_id: nil)
         scope.where("sequence < ?", sequence).order(sequence: :desc).first
+      end
+
+      # Enqueue broadcast as a background job to avoid blocking the request cycle.
+      # Payload is built synchronously (needs fresh DB state), then delivery is async.
+      def enqueue_broadcast(action, payload)
+        CreativeBroadcastJob.perform_later(
+          id,
+          action.to_s,
+          current_user_id: Collavre.current_user&.id,
+          payload: payload
+        )
       end
 
       # Build a map of user_id → linked_creative_id for this creative
