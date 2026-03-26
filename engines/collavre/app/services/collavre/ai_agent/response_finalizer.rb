@@ -65,6 +65,7 @@ module Collavre
         )
 
         log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content })
+        @reply_comment.notify_ai_completion
       end
 
       def create_reply_comment

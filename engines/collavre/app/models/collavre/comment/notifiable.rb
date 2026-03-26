@@ -21,6 +21,32 @@ module Collavre
         scope
       end
 
+      # Notify users about a completed AI streaming message.
+      # Called from ResponseFinalizer after placeholder is updated with final content.
+      # Uses the same logic as notify_write_users but runs on update (not create).
+      def notify_ai_completion
+        return unless user&.ai_user?
+
+        base_creative = creative.effective_origin
+        present_ids = CommentPresenceStore.list(base_creative.id)
+
+        recipients = base_creative.all_shared_users(:write).map(&:user)
+        recipients << base_creative.user
+        recipients.compact!
+        recipients.uniq!
+        recipients.delete(user)
+        recipients -= mentioned_users.to_a
+        recipients.reject! { |u| present_ids.include?(u.id) }
+
+        recipients.each do |recipient|
+          create_inbox_item(
+            recipient,
+            "inbox.comment_added",
+            { user: user.display_name, comment: content, creative: creative_snippet }
+          )
+        end
+      end
+
       private
 
       def create_inbox_item(owner, key, params = {})
