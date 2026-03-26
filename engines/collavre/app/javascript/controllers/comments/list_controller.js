@@ -4,7 +4,6 @@ import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
-import TouchDragHandler from '../../lib/touch_drag'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
 export default class extends Controller {
@@ -58,8 +57,6 @@ export default class extends Controller {
     this.listTarget.addEventListener('dragend', this.handleDragEnd)
     this.element.addEventListener('comments--topics:move-to-topic', this.handleMoveToTopic)
 
-    // Touch drag-and-drop for mobile
-    this._initTouchDrag()
   }
 
   handleTopicChange(event) {
@@ -88,7 +85,6 @@ export default class extends Controller {
     }
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
     this.element.removeEventListener('comments--topics:move-to-topic', this.handleMoveToTopic)
-    this._destroyTouchDrag()
   }
 
   isColumnReverse() {
@@ -538,9 +534,6 @@ export default class extends Controller {
       <div class="selection-action-bar-hint no-touch">
         💡 ${i18n('selectionDragHintText', 'Drag & drop to move to topic')}
       </div>
-      <div class="selection-action-bar-hint touch-drag-hint">
-        💡 ${i18n('selectionTouchDragHintText', 'Long press to drag to topic')}
-      </div>
     `
 
     // Set indeterminate state if partially selected
@@ -751,69 +744,6 @@ export default class extends Controller {
 
   handleDragEnd(event) {
     this.listTarget.classList.remove('dragging-comments')
-  }
-
-  // ── Touch drag-and-drop (mobile) ────────────────────────
-
-  _initTouchDrag() {
-    // Only init on touch-capable devices
-    if (!('ontouchstart' in window)) return
-
-    this._touchDrag = new TouchDragHandler({
-      container: this.listTarget,
-      itemSelector: '.comment-item.selected-for-move',
-      dropTargetSelector: '.topic-tag.topic-drop-target, .topic-creation-container',
-      longPressMs: 400,
-      moveTolerance: 10,
-
-      onDragStart: () => {
-        if (this.selection.size === 0) return false
-        this.listTarget.classList.add('dragging-comments')
-      },
-
-      proxyContent: (items) => {
-        const count = this.selection.size || items.length
-        const oneText = this.element.dataset.touchDragProxyOneText || '1 message'
-        const otherText = this.element.dataset.touchDragProxyOtherText || '%{count} messages'
-        const label = count === 1 ? oneText : otherText.replace('%{count}', count)
-        return `<span class="touch-drag-proxy-badge">${label}</span>`
-      },
-
-      onDrop: (targetEl) => {
-        this.listTarget.classList.remove('dragging-comments')
-        const commentIds = Array.from(this.selection)
-        if (commentIds.length === 0) return
-
-        // Dropping on "+" / creation container → create topic & move
-        if (targetEl.closest('.topic-creation-container')) {
-          const topicsCtrl = this.application.getControllerForElementAndIdentifier(
-            this.element, 'comments--topics'
-          )
-          if (topicsCtrl) {
-            topicsCtrl.createTopicAndMoveComments(commentIds)
-          }
-          return
-        }
-
-        // Dropping on a topic tag
-        const topicTag = targetEl.closest('.topic-tag.topic-drop-target')
-        if (topicTag) {
-          const targetTopicId = topicTag.dataset.id
-          this.handleMoveToTopic({ detail: { commentIds, targetTopicId } })
-        }
-      },
-
-      onCancel: () => {
-        this.listTarget.classList.remove('dragging-comments')
-      }
-    })
-  }
-
-  _destroyTouchDrag() {
-    if (this._touchDrag) {
-      this._touchDrag.destroy()
-      this._touchDrag = null
-    }
   }
 
   async handleMoveToTopic(event) {
