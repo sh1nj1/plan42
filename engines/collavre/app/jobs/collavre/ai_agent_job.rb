@@ -48,7 +48,9 @@ module Collavre
 
       # Reserve resources before starting work
       tracker = Orchestration::ResourceTracker.for(agent)
-      tracker.reserve!(job_id || task.id)
+      resource_id = job_id || task.id
+      tracker.reserve!(resource_id)
+      should_release = true
 
       begin
         response_content = AiAgentService.new(task).call
@@ -60,7 +62,6 @@ module Collavre
 
           if current_retry < max_retries
             task.update!(retry_count: current_retry + 1, status: "pending")
-            tracker.release!(job_id || task.id, tokens_used: 0)
             Rails.logger.warn(
               "[AiAgentJob] Workflow subtask #{task.id} returned empty response, " \
               "retrying (#{current_retry + 1}/#{max_retries})"
@@ -68,14 +69,12 @@ module Collavre
             AiAgentJob.set(wait: 5.seconds).perform_later(task)
           else
             task.update!(status: "failed")
-            tracker.release!(job_id || task.id, tokens_used: 0)
             Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
               task, error_message: "Agent returned empty response after #{max_retries} retries"
             )
           end
         else
           task.update!(status: "done")
-          tracker.release!(job_id || task.id, tokens_used: 0)
           # Advance workflow after releasing resources to avoid deadlock
           if task.parent_task_id.present?
             Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
@@ -84,14 +83,13 @@ module Collavre
       rescue ApprovalPendingError
         # Task status already set to pending_approval by AiAgentService
         # Don't release resources yet - task will resume
+        should_release = false
         Rails.logger.info("AiAgentJob paused for task #{task.id}: awaiting tool approval")
       rescue CancelledError
         # Task status already set to "cancelled" by Comment callback
-        tracker.release!(job_id || task.id, tokens_used: 0)
         Rails.logger.info("AiAgentJob cancelled for task #{task.id}: trigger message deleted")
       rescue StandardError => e
         task.update!(status: "failed")
-        tracker.release!(job_id || task.id, tokens_used: 0)
         # Fail workflow if this is a sub-task
         if task.parent_task_id.present?
           Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(task, error_message: e.message)
@@ -99,6 +97,8 @@ module Collavre
         Rails.logger.error("AiAgentJob failed for task #{task.id}: #{e.message}")
         raise e
       ensure
+        # Guarantee resource release for all paths except pending_approval
+        tracker&.release!(resource_id, tokens_used: 0) if should_release && tracker && resource_id
         if task&.trigger_event_payload&.key?("topic") && %w[done failed cancelled escalated].include?(task.reload.status)
           Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
         end
