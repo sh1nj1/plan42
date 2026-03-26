@@ -47,6 +47,7 @@ export default class extends Controller {
     this.handleChatNavKeydown = this.handleChatNavKeydown.bind(this)
     this.handleDropdownOutsideClick = this.handleDropdownOutsideClick.bind(this)
     this._longPressTimer = null
+    this._longPressTriggered = false
     this._isNavigating = false
     this._headerSwipeStartX = null
     this._headerSwipeStartY = null
@@ -1193,17 +1194,28 @@ export default class extends Controller {
     const setupBtn = (btn) => {
       if (!btn) return
       btn.addEventListener('mousedown', () => {
+        this._longPressTriggered = false
         this._clearLongPressTimer()
         this._longPressTimer = setTimeout(() => {
+          this._longPressTriggered = true
           this.showRecentChats(new MouseEvent('contextmenu', { bubbles: true }))
         }, LONG_PRESS_MS)
       })
       btn.addEventListener('mouseup', () => this._clearLongPressTimer())
       btn.addEventListener('mouseleave', () => this._clearLongPressTimer())
+      btn.addEventListener('click', (e) => {
+        if (this._longPressTriggered) {
+          e.preventDefault()
+          e.stopImmediatePropagation()
+          this._longPressTriggered = false
+        }
+      })
       // Touch long press
       btn.addEventListener('touchstart', () => {
+        this._longPressTriggered = false
         this._clearLongPressTimer()
         this._longPressTimer = setTimeout(() => {
+          this._longPressTriggered = true
           this.showRecentChats(new Event('contextmenu', { bubbles: true }))
         }, LONG_PRESS_MS)
       }, { passive: true })
