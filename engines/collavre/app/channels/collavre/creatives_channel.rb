@@ -51,10 +51,12 @@ module Collavre
     private
 
     def broadcast_to_all_ancestors(creative_id, payload)
-      creative = Creative.find_by(id: creative_id)
-      roots = Set.new([ @root ])
-      if creative
-        creative.ancestors.each { |ancestor| roots << ancestor.effective_origin }
+      @ancestor_roots_cache ||= {}
+      roots = @ancestor_roots_cache[creative_id] ||= begin
+        creative = Creative.find_by(id: creative_id)
+        result = Set.new([ @root ])
+        creative&.ancestors&.each { |a| result << a.effective_origin }
+        result
       end
       roots.each { |root| CreativesChannel.broadcast_to(root, payload) }
     end

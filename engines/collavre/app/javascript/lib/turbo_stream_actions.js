@@ -90,9 +90,10 @@ function insertAtCorrectPosition(newRow, creative, container) {
     const siblingRows = Array.from(container.querySelectorAll(':scope > creative-tree-row'))
 
     // Helper: insert after a row (accounting for its children container)
+    const treeRoot = document.getElementById('creatives')
     function insertAfterRow(targetId, label) {
         const row = container.querySelector(`:scope > creative-tree-row[creative-id="${targetId}"]`)
-            || document.querySelector(`creative-tree-row[creative-id="${targetId}"]`)
+            || (treeRoot && treeRoot.querySelector(`creative-tree-row[creative-id="${targetId}"]`))
         if (!row) return false
         const childContainer = document.getElementById(`creative-children-${targetId}`)
         const ref = childContainer || row

@@ -157,6 +157,10 @@ export function initializeCreativeRowEditor() {
         editingPingInterval = null;
       }
     }
+
+    // Clean up editing ping on Turbo navigation to prevent interval leak
+    document.addEventListener('turbo:before-cache', () => stopEditingPing());
+
     const destroyedCreativeIds = new Set();
 
     function formatProgressDisplay(value) {

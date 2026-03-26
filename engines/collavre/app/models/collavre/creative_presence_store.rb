@@ -2,14 +2,15 @@ module Collavre
   class CreativePresenceStore
     KEY_PREFIX = "creative_presence:"
     LOCK_TTL = 2 # seconds
+    PRESENCE_TTL = 10 # minutes
 
     def self.add(root_id, user_id)
       with_lock(root_id) do
         ids = list(root_id)
         unless ids.include?(user_id)
           ids << user_id
-          Rails.cache.write(key(root_id), ids)
         end
+        Rails.cache.write(key(root_id), ids, expires_in: PRESENCE_TTL.minutes)
         ids
       end
     end
@@ -18,7 +19,7 @@ module Collavre
       with_lock(root_id) do
         ids = list(root_id)
         if ids.delete(user_id)
-          Rails.cache.write(key(root_id), ids)
+          Rails.cache.write(key(root_id), ids, expires_in: PRESENCE_TTL.minutes)
         end
         ids
       end
