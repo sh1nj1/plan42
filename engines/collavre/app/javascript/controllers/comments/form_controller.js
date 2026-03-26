@@ -163,6 +163,7 @@ export default class extends Controller {
     this.clearImageAttachments()
     this.submitTarget.textContent = this.element.dataset.updateCommentText
     if (this.cancelTarget) this.cancelTarget.style.display = ''
+    requestAnimationFrame(() => this._autoResize())
     this.focusTextarea()
   }
 
