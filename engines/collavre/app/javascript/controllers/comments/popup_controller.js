@@ -1142,10 +1142,6 @@ export default class extends Controller {
   handleChatNavKeydown(event) {
     // Only when popup is visible
     if (this.element.style.display !== 'flex') return
-    // Skip when typing in textarea/input
-    const tag = event.target.tagName
-    if (tag === 'TEXTAREA' || tag === 'INPUT' || event.target.isContentEditable) return
-
     if (event.altKey && event.key === 'ArrowLeft') {
       event.preventDefault()
       this.navigateBack()
