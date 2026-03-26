@@ -24,8 +24,12 @@ class ChatNavigationHistory {
   push(entry) {
     if (!entry?.creativeId) return
 
+    // Normalize creativeId to string (dataset values are always strings,
+    // but callers may pass numbers — avoid duplicates from type mismatch)
+    const creativeId = String(entry.creativeId)
+
     const existingIdx = this.entries.findIndex(
-      (e) => e.creativeId === entry.creativeId
+      (e) => String(e.creativeId) === creativeId
     )
 
     if (existingIdx !== -1) {
@@ -39,7 +43,7 @@ class ChatNavigationHistory {
 
     // New entry — insert after currentIndex and point to it
     const newEntry = {
-      creativeId: entry.creativeId,
+      creativeId: creativeId,
       snippet: entry.snippet || '',
       canComment: !!entry.canComment,
     }
@@ -118,7 +122,7 @@ class ChatNavigationHistory {
 
   /** Remove an entry by creativeId (e.g., when creative is deleted). */
   remove(creativeId) {
-    const idx = this.entries.findIndex((e) => e.creativeId === creativeId)
+    const idx = this.entries.findIndex((e) => String(e.creativeId) === String(creativeId))
     if (idx === -1) return
 
     this.entries.splice(idx, 1)
