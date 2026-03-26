@@ -7,11 +7,10 @@ const EDITING_TIMEOUT = 5000
  *
  * @param {number|string} rootId - The root creative ID to subscribe to
  * @param {object} callbacks
- * @param {function} callbacks.onCreated - Called when a creative is created
- * @param {function} callbacks.onUpdated - Called when a creative is updated
- * @param {function} callbacks.onDestroyed - Called when a creative is destroyed
+ * @param {function} callbacks.onConnected - Called when connected
+ * @param {function} callbacks.onDisconnected - Called when disconnected
  * @param {function} callbacks.onPresence - Called with { user_ids: [...] }
- * @param {function} callbacks.onEditing - Called with { creative_id, user_id, user_name }
+ * @param {function} callbacks.onEditing - Called with { creative_id, user_id, user_name, avatar_url }
  * @param {function} callbacks.onStoppedEditing - Called with { creative_id, user_id }
  * @returns {object} subscription object with .unsubscribe() and action methods
  */
@@ -28,19 +27,8 @@ export function subscribeToCreatives(rootId, callbacks = {}) {
         callbacks.onDisconnected?.()
       },
       received(data) {
-        if (data.action) {
-          switch (data.action) {
-            case 'created':
-              callbacks.onCreated?.(data)
-              break
-            case 'updated':
-              callbacks.onUpdated?.(data)
-              break
-            case 'destroyed':
-              callbacks.onDestroyed?.(data)
-              break
-          }
-        }
+        // NOTE: CRUD sync is handled via Turbo Streams (refresh_creative_tree action),
+        // not through this ActionCable channel. This channel handles only presence + editing.
 
         if (data.presence) {
           callbacks.onPresence?.(data.presence)

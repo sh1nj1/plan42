@@ -34,6 +34,9 @@ module Collavre
       end
 
       def capture_broadcast_state
+        # Skip expensive queries for unshared personal creatives
+        return if !origin_id && linked_creatives.none? && all_shared_users.none?
+
         # Capture before destroy — after destroy, associations are gone
         @_destroy_broadcast_users = find_broadcast_users
         @_destroy_linked_map = build_linked_creative_map(@_destroy_broadcast_users)
@@ -66,8 +69,8 @@ module Collavre
         desc_html = origin.effective_description
         desc_raw = description
 
-        # Reload ancestors to get latest progress (after update_parent_progress in after_save)
-        fresh_ancestors = self.class.find(id).ancestors
+        # Reload to get latest progress values (after update_parent_progress in after_save)
+        fresh_ancestors = reload.ancestors
 
         {
           # Core node properties (tree_renderer.applyRowProperties)

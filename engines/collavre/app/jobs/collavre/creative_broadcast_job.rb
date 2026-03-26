@@ -5,6 +5,8 @@ module Collavre
   # Offloads per-user payload building and WebSocket delivery from the request cycle.
   class CreativeBroadcastJob < ApplicationJob
     queue_as :default
+    retry_on StandardError, wait: 1.second, attempts: 3
+    discard_on ActiveRecord::RecordNotFound
 
     # @param creative_id [Integer]
     # @param action [String] "created", "updated", or "destroyed"

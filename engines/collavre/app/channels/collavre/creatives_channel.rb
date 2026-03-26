@@ -52,8 +52,9 @@ module Collavre
 
     def user_avatar_url_for(user)
       if user.avatar.attached?
-        Rails.application.routes.url_helpers.rails_blob_path(
-          user.avatar, only_path: true
+        variant = user.avatar.variant(resize_to_limit: [ 48, 48 ])
+        Rails.application.routes.url_helpers.rails_representation_path(
+          variant, only_path: true
         )
       elsif user.respond_to?(:avatar_url) && user.avatar_url.present?
         user.avatar_url

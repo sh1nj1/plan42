@@ -30,7 +30,6 @@ registerStreamAction("refresh_creative_tree", function () {
 
     // Use linked_id if present (shared creative: receiver sees linked copy, not origin)
     const effectiveId = creative.linked_id || creative.id
-        creative.linked_id ? `(linked: ${creative.linked_id})` : '')
 
     // Override id with effectiveId for DOM lookups
     const effectiveCreative = { ...creative, id: effectiveId, origin_id: creative.id }
@@ -78,11 +77,9 @@ function handleCreated(creative) {
 
         const newRow = createRow(creative)
         insertAtCorrectPosition(newRow, creative, targetContainer)
-    } else {
-        // Fallback: trigger tree reload — the creative is relevant to this page
-        // (we received the broadcast) but we can't determine exact insertion point
-        document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
     }
+    // If no targetContainer found, the creative is relevant but we can't determine
+    // the exact insertion point — it will appear on next page load.
 }
 
 function insertAtCorrectPosition(newRow, creative, container) {
@@ -91,10 +88,6 @@ function insertAtCorrectPosition(newRow, creative, container) {
     const sequence = creative.sequence
 
     const siblingRows = Array.from(container.querySelectorAll(':scope > creative-tree-row'))
-        id: creative.id, afterId, prevSiblingId, sequence,
-        siblingCount: siblingRows.length,
-        siblingIds: siblingRows.map(r => r.getAttribute('creative-id'))
-    })
 
     // Helper: insert after a row (accounting for its children container)
     function insertAfterRow(targetId, label) {
