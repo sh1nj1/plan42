@@ -200,10 +200,11 @@ module Collavre
 
         Navigation::Registry.instance.register(
           key: :help,
-          label: "?",
+          label: "app.help",
           type: :partial,
           partial: "collavre/shared/navigation/help_button",
-          priority: 170
+          priority: 170,
+          mobile: false
         )
 
         # ============================================
@@ -235,6 +236,13 @@ module Collavre
               path: -> { Collavre::Engine.routes.url_helpers.session_path },
               method: :delete,
               priority: 900
+            },
+            {
+              key: :help_menu,
+              label: "app.help",
+              type: :partial,
+              partial: "collavre/shared/navigation/help_button",
+              priority: 950
             }
           ]
         )

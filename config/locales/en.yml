@@ -39,6 +39,7 @@ en:
     home: "Home"
     sign_in: "Sign in"
     sign_out: "Sign out"
+    help: "?"
     cancel: "Cancel"
     previous: "Previous"
     next: "Next"
