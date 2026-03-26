@@ -66,7 +66,7 @@ module Collavre
           payload: @_destroy_payload,
           options: {
             destroy_user_ids: @_destroy_broadcast_users.map(&:id),
-            destroy_linked_map: @_destroy_linked_map
+            destroy_linked_map: @_destroy_linked_map.transform_keys(&:to_s)
           }
         )
       end
