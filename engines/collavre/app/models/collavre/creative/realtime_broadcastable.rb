@@ -17,6 +17,7 @@ module Collavre
       def broadcast_creative_created(after_id: nil)
         payload = broadcast_node_payload
         payload[:after_id] = after_id.presence&.to_i
+        payload[:previous_sibling_id] = previous_sibling&.id
         enqueue_broadcast(:created, payload)
       rescue StandardError => e
         Rails.logger.error "[CreativeBroadcast] ERROR in broadcast_creative_created: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
@@ -34,13 +35,14 @@ module Collavre
       end
 
       def capture_broadcast_state
-        # Skip expensive queries for unshared personal creatives
-        if !origin_id && linked_creatives.none? && all_shared_users.none?
-          return
-        end
+        # Skip for top-level personal creatives with no links
+        # (parent_id.nil? means no ancestors to inherit shares from)
+        return if parent_id.nil? && !origin_id && linked_creatives.none?
 
         # Capture before destroy — after destroy, associations are gone
         @_destroy_broadcast_users = find_broadcast_users
+        return if @_destroy_broadcast_users.empty?
+
         @_destroy_linked_map = build_linked_creative_map(@_destroy_broadcast_users)
 
         # ancestors may be empty if closure_tree already deleted hierarchy rows,
@@ -85,7 +87,7 @@ module Collavre
           parent_id: parent_id,
           level: fresh_ancestors.size + 1,
           select_mode: false,
-          can_write: true, # Refined per-user in JS if needed
+          can_write: true, # Default; overridden per-user in Job
           has_children: children.exists?,
           expanded: false,
           is_root: parent.nil?,
@@ -93,7 +95,6 @@ module Collavre
           link_url: "/creatives?id=#{id}",
           origin_id: origin_id,
           sequence: sequence,
-          previous_sibling_id: previous_sibling&.id,
           # Templates (for display)
           templates: {
             description_html: desc_html

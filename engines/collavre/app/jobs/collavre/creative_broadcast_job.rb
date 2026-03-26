@@ -78,6 +78,9 @@ module Collavre
           end
         end
 
+        # Per-user can_write permission
+        user_data[:can_write] = creative.has_permission?(target_user, :write)
+
         # Per-user progress text
         creative.send(:add_progress_text!, user_data, target_user)
 
@@ -86,7 +89,9 @@ module Collavre
         # Existing rows already have this from server render; only new rows need it.
         if action == "created"
           user_data[:templates] ||= {}
-          user_data[:templates][:progress_html] = render_progress_html(creative, target_user)
+          # target_user already passed find_broadcast_users permission check,
+          # so we can skip the expensive permission_via_ancestors walk.
+          user_data[:templates][:progress_html] = render_progress_html(creative, target_user, skip_permission_check: true)
         end
 
         json_payload = { action: action.to_s, creative: user_data }.to_json
@@ -152,7 +157,7 @@ module Collavre
     # - turbo-cable-stream-source (per-user subscription for badge updates)
     # - comment button (hidden via no-comments class — 0 comments initially)
     # - progress span
-    def render_progress_html(creative, user)
+    def render_progress_html(creative, user, skip_permission_check: false)
       origin = creative.effective_origin
       progress = creative.progress || 0
       pct = (progress * 100).round
@@ -163,9 +168,14 @@ module Collavre
       progress_span = %(<span class="#{css_class}">#{display_text}</span>)
 
       # Comment part — only render if user has feedback permission (matching helper behavior)
+      # When skip_permission_check is true, the user was already verified by find_broadcast_users
+      # (which checks :read permission on target + ancestors). Feedback permission is a subset
+      # of read permission in practice, so we can safely render the comment button.
       comment_part = ""
-      if creative.has_permission?(user, :feedback) ||
-         permission_via_ancestors(creative, user, :feedback)
+      has_feedback = skip_permission_check ||
+                     creative.has_permission?(user, :feedback) ||
+                     permission_via_ancestors(creative, user, :feedback)
+      if has_feedback
         # Generate signed stream name for turbo-cable-stream-source
         stream_name = Turbo::StreamsChannel.signed_stream_name([ user, origin, :comment_badge ])
         stream_tag = %(<turbo-cable-stream-source channel="Turbo::StreamsChannel" signed-stream-name="#{stream_name}"></turbo-cable-stream-source>)
@@ -201,14 +211,23 @@ module Collavre
     end
 
     def read_svg(name, options = {})
-      path = Rails.root.join("app", "assets", "images", name)
-      return "" unless File.exist?(path)
+      raw = self.class.svg_cache[name] ||= begin
+        path = Rails.root.join("app", "assets", "images", name)
+        File.exist?(path) ? File.read(path) : ""
+      end
+      return "" if raw.blank?
 
-      svg = File.read(path)
+      svg = raw.dup
       if options[:class]
         svg.sub!(/<svg\b/, %(<svg class="#{options[:class]}"))
       end
       svg.html_safe # rubocop:disable Rails/OutputSafety
+    end
+
+    class << self
+      def svg_cache
+        @svg_cache ||= {}
+      end
     end
   end
 end
