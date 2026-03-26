@@ -61,12 +61,19 @@ function highlightCode(code, lang) {
   }
 }
 
+// Sanitize language identifier to prevent class attribute injection
+function sanitizeLang(lang) {
+  if (!lang) return ''
+  return lang.replace(/[^a-zA-Z0-9_-]/g, '')
+}
+
 // Custom renderer for code blocks with syntax highlighting
 marked.use({
   renderer: {
     code({ text, lang }) {
-      const highlighted = highlightCode(text, lang)
-      const langClass = lang ? ` language-${lang}` : ''
+      const safeLang = sanitizeLang(lang)
+      const highlighted = highlightCode(text, safeLang)
+      const langClass = safeLang ? ` language-${safeLang}` : ''
       return `<pre><code class="hljs${langClass}">${highlighted}</code></pre>`
     }
   }
