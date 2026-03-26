@@ -149,6 +149,7 @@ export function initializeCreativeRowEditor() {
     let originalOriginId = '';
     let isDirty = false;
     let completionCascadePending = false;
+    const destroyedCreativeIds = new Set();
 
     function formatProgressDisplay(value) {
       return isProgressComplete(value) ? progressCompleteLabel : progressIncompleteLabel;
@@ -1169,6 +1170,13 @@ export function initializeCreativeRowEditor() {
       const creativeId = form.dataset?.creativeId;
       if (!creativeId) return;
 
+      // Skip save for already-destroyed creatives (prevents 404 after deletion)
+      if (destroyedCreativeIds.has(String(creativeId))) {
+        isDirty = false;
+        pendingSave = null;
+        return;
+      }
+
       // CRITICAL: Capture ALL values BEFORE awaiting, because the editor may switch
       // to a different creative while we're waiting for uploads
       let currentContent = descriptionInput.value;
@@ -1550,9 +1558,11 @@ export function initializeCreativeRowEditor() {
       const nextId = trees[index + 1] ? trees[index + 1].dataset.id : null;
       const parentId = tree.dataset.parentId;
 
+      // Mark this creative as destroyed to prevent any future saves (including
+      // Lexical onChange callbacks that may fire after deletion)
+      destroyedCreativeIds.add(String(id));
+
       // CRITICAL: Remove any pending saves for this creative from the queue
-      // This prevents a race condition where a queued save fires after deletion,
-      // resulting in a 404 error and an alert to the user.
       if (apiQueue) {
         apiQueue.removeByDedupeKey(`creative_${id}`);
       }
@@ -1580,6 +1590,9 @@ export function initializeCreativeRowEditor() {
         } else {
           document.getElementById("creative-children-" + id)?.remove();
         }
+        // Clear dirty state so move() doesn't try to save the just-deleted creative
+        isDirty = false;
+        pendingSave = null;
         move(1);
         removeTreeElement(tree);
       });
@@ -1721,6 +1734,10 @@ export function initializeCreativeRowEditor() {
     }
 
     function scheduleSave() {
+      // Skip scheduling save for already-destroyed creatives
+      const creativeId = form.dataset?.creativeId;
+      if (creativeId && destroyedCreativeIds.has(String(creativeId))) return;
+
       pendingSave = true;
       clearTimeout(saveTimer);
       saveTimer = setTimeout(saveForm, 5000);
