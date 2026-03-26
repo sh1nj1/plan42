@@ -26,18 +26,6 @@
     <% end %>
   </div>
 
-  <%# Mobile Popup Menu %>
-  <%= render Collavre::PopupMenuComponent.new(
-        button_content: '...',
-        button_classes: 'mobile-only',
-        menu_id: 'mobile-more-menu',
-        align: :right
-      ) do %>
-    <% navigation_items_for(:main, desktop: false).reject { |i| i[:key].in?([:mobile_plans, :search, :home, :comment_filter, :mobile_inbox]) }.each do |item| %>
-      <%= render_mobile_navigation_item(item) %>
-    <% end %>
-  <% end %>
-
   <%# Mobile Inbox (next to profile avatar) %>
   <% if (mobile_inbox_item = Navigation::Registry.instance.find(:mobile_inbox)) && navigation_item_visible?(mobile_inbox_item, desktop: false) %>
     <span class="mobile-only"><%= render_navigation_item(mobile_inbox_item, mobile: true) %></span>

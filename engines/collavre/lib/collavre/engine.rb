@@ -204,7 +204,8 @@ module Collavre
           type: :partial,
           partial: "collavre/shared/navigation/help_button",
           priority: 170,
-          mobile: false
+          mobile: false,
+          desktop: true
         )
 
         # ============================================
@@ -238,13 +239,11 @@ module Collavre
               priority: 900
             },
             {
-              key: :help_mobile,
-              label: "app.help",
+              key: :help_menu,
+              label: "?",
               type: :partial,
               partial: "collavre/shared/navigation/help_button",
-              priority: 950,
-              desktop: false,
-              mobile: true
+              priority: 950
             }
           ]
         )
