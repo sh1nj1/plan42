@@ -218,7 +218,7 @@ class CreativeTreeRow extends LitElement {
             ${this._renderContent()}
           </div>
             ${this._renderEditingAvatars()}
-            ${unsafeHTML(this.progressHtml || "")}
+            <span class="creative-progress-area">${unsafeHTML(this.progressHtml || "")}</span>
         </div>
       </div>
     `;
@@ -245,7 +245,7 @@ class CreativeTreeRow extends LitElement {
           </div>
           <div class="creative-row-end">
              <h1 class="page-title" style="margin: 0; display:flex; align-items:center;">
-               ${unsafeHTML(this.progressHtml || "")}
+               <span class="creative-progress-area">${unsafeHTML(this.progressHtml || "")}</span>
              </h1>
           </div>
         </div>

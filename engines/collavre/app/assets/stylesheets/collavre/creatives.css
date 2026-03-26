@@ -987,3 +987,10 @@ creative-tree-row.is-being-edited .creative-tree {
     font-weight: var(--weight-semibold, 600);
     border: 2px solid var(--color-accent, #4a9eff);
 }
+
+/* Wrapper for progressHtml so DOM can be synced back to Lit state
+   after Turbo Streams mutations (e.g. badge count updates).
+   display:contents ensures no layout impact. */
+.creative-progress-area {
+    display: contents;
+}

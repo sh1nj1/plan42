@@ -11,6 +11,23 @@ function setDatasetValue(element, key, value) {
   }
 }
 
+// Capture current DOM state of the progress area back into Lit's progressHtml
+// so that Turbo Streams DOM mutations (e.g. badge count updates) survive Lit re-renders.
+// Lit renders progressHtml via unsafeHTML() inside a .creative-progress-area wrapper.
+// Turbo may directly replace child elements (e.g. comment-badge span) in the DOM,
+// but Lit's progressHtml string remains stale. On next re-render, Lit would overwrite
+// the Turbo-updated DOM with the stale string, losing badge updates.
+function syncProgressHtmlFromDom(row) {
+  if (!row.progressHtml) return
+  const wrapper = row.querySelector('.creative-progress-area')
+  if (!wrapper) return
+  const currentHtml = wrapper.innerHTML
+  if (currentHtml && currentHtml !== row.progressHtml) {
+    row.progressHtml = currentHtml
+    row.dataset.progressHtml = currentHtml
+  }
+}
+
 function applyRowProperties(row, node) {
   if (!row || !node) return
   let dirty = false
@@ -147,6 +164,12 @@ function applyRowProperties(row, node) {
   }
 
   if (dirty && typeof row.requestUpdate === 'function') {
+    // Before Lit re-renders, sync progressHtml from current DOM.
+    // Turbo Streams may have replaced badge elements directly in the DOM
+    // (e.g. comment badge count), but the Lit progressHtml string still
+    // holds the stale initial HTML. On re-render, Lit would overwrite
+    // the Turbo-updated DOM with the stale string, losing badges.
+    syncProgressHtmlFromDom(row)
     row.requestUpdate()
   }
 }
