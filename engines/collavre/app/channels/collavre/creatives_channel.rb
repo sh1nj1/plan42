@@ -24,31 +24,40 @@ module Collavre
       return unless @root && current_user
 
       creative_id = data["creative_id"].to_i
-      Rails.logger.info "[CreativesChannel] User #{current_user.email} editing creative##{creative_id}"
-      CreativesChannel.broadcast_to(@root, {
+      payload = {
         editing: {
           creative_id: creative_id,
           user_id: current_user.id,
           user_name: current_user.display_name,
           avatar_url: user_avatar_url_for(current_user)
         }
-      })
+      }
+      broadcast_to_all_ancestors(creative_id, payload)
     end
 
     def stopped_editing(data)
       return unless @root && current_user
 
       creative_id = data["creative_id"].to_i
-      Rails.logger.info "[CreativesChannel] User #{current_user.email} stopped editing creative##{creative_id}"
-      CreativesChannel.broadcast_to(@root, {
+      payload = {
         stopped_editing: {
           creative_id: creative_id,
           user_id: current_user.id
         }
-      })
+      }
+      broadcast_to_all_ancestors(creative_id, payload)
     end
 
     private
+
+    def broadcast_to_all_ancestors(creative_id, payload)
+      creative = Creative.find_by(id: creative_id)
+      roots = Set.new([ @root ])
+      if creative
+        creative.ancestors.each { |ancestor| roots << ancestor.effective_origin }
+      end
+      roots.each { |root| CreativesChannel.broadcast_to(root, payload) }
+    end
 
     def user_avatar_url_for(user)
       if user.avatar.attached?
