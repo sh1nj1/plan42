@@ -1069,6 +1069,10 @@ export default class extends Controller {
   // ── Chat Navigation ───────────────────────────────────────────────
 
   navigateBack() {
+    if (this._longPressTriggered) {
+      this._longPressTriggered = false
+      return
+    }
     const entry = chatHistory.prev()
     if (!entry) return
     this._navigateToEntry(entry, 'back')
@@ -1203,13 +1207,6 @@ export default class extends Controller {
       })
       btn.addEventListener('mouseup', () => this._clearLongPressTimer())
       btn.addEventListener('mouseleave', () => this._clearLongPressTimer())
-      btn.addEventListener('click', (e) => {
-        if (this._longPressTriggered) {
-          e.preventDefault()
-          e.stopImmediatePropagation()
-          this._longPressTriggered = false
-        }
-      })
       // Touch long press
       btn.addEventListener('touchstart', () => {
         this._longPressTriggered = false
