@@ -288,7 +288,7 @@ module Collavre
         name: agent.display_name,
         avatar_url: view_context.user_avatar_url(agent, size: 20),
         default_avatar: !agent.avatar.attached? && agent.avatar_url.blank?,
-        initial: agent.display_name[0].upcase
+        initial: agent.display_name&.at(0)&.upcase || "?"
       }
     end
   end

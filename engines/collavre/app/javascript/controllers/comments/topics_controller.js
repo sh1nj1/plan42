@@ -943,7 +943,7 @@ export default class extends Controller {
         let html = `<span class="avatar-wrapper topic-agent-avatar-wrapper" style="width:${size}px;height:${size}px;" title="${this.escapeAttr(agent.name)}">`
         html += `<img src="${this.escapeAttr(agent.avatar_url)}" alt="" width="${size}" height="${size}" class="topic-agent-avatar" style="border-radius:50%;vertical-align:middle;">`
         if (agent.default_avatar) {
-            html += `<span class="avatar-initial" style="font-size:${Math.round(size / 2)}px;">${this.escapeAttr(agent.initial)}</span>`
+            html += `<span class="avatar-initial">${this.escapeAttr(agent.initial)}</span>`
         }
         html += `</span>`
         return html

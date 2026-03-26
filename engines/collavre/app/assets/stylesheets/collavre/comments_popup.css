@@ -1242,7 +1242,7 @@ body.chat-fullscreen {
 }
 
 .topic-agent-avatar-wrapper .avatar-initial {
-    font-size: 8px;
+    font-size: var(--text-00);
 }
 
 .ai-agent-draggable {
