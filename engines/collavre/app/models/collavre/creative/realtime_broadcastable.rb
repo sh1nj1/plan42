@@ -23,6 +23,11 @@ module Collavre
       end
 
       def broadcast_creative_updated
+        # Skip broadcast when only progress changed (cascade from update_parent_progress).
+        # The original creative's broadcast already includes ancestor progress in its payload,
+        # so receivers update parent rows without needing separate broadcasts per ancestor.
+        return if progress_only_change?
+
         enqueue_broadcast(:updated, broadcast_node_payload)
       rescue StandardError => e
         Rails.logger.error "[CreativeBroadcast] ERROR in broadcast_creative_updated: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
@@ -97,6 +102,15 @@ module Collavre
         }
       end
 
+      # Returns true when update_parent_progress cascaded a progress-only save.
+      # In that case, the child's broadcast already carries ancestor progress data,
+      # so a separate broadcast for the parent is redundant.
+      def progress_only_change?
+        return false unless previous_changes.key?("progress")
+
+        (previous_changes.keys - %w[progress updated_at]).empty?
+      end
+
       def safe_effective_origin
         effective_origin
       rescue StandardError
@@ -161,21 +175,6 @@ module Collavre
         end
       end
 
-      # Remap ancestor IDs to the user's linked creative IDs
-      def remap_ancestor_ids(ancestors, target_user)
-        ancestors.map do |anc|
-          linked = Creative.find_by(origin_id: anc[:id], user: target_user)
-          if linked
-            anc.merge(id: linked.id, origin_id: anc[:id])
-          else
-            anc
-          end
-        end
-      rescue StandardError => e
-        Rails.logger.error "[CreativeBroadcast] Error remapping ancestors: #{e.message}"
-        ancestors
-      end
-
       def find_broadcast_users
         target = begin
           origin_id.present? && origin ? origin.effective_origin : effective_origin
@@ -183,18 +182,23 @@ module Collavre
           self
         end
 
-        # Collect candidate users from target and its ancestors
-        candidates = Set.new
-        candidates << target.user if target.user
-        target.all_shared_users.each { |su| candidates << su.user }
+        # Batch: collect all ancestor IDs + target in one query, then load shares in one query
+        ancestor_ids = target.ancestor_ids  # closure_tree: single CTE query
+        all_creative_ids = [ target.id ] + ancestor_ids
 
-        target.ancestors.each do |ancestor|
-          candidates << ancestor.user if ancestor.user
-          ancestor.all_shared_users.each { |su| candidates << su.user }
-        end
+        # Owner users — single query
+        owners = User.where(id: Creative.where(id: all_creative_ids).select(:user_id))
+
+        # Shared users — single query (instead of N+1 per ancestor)
+        shared_users = User.where(
+          id: CreativeShare.where(creative_id: all_creative_ids).select(:user_id)
+        )
+
+        candidates = (owners + shared_users).compact.uniq
 
         # Filter: only users who actually have read permission on this creative
-        candidates.compact.select { |user| target.has_permission?(user, :read) }.uniq
+        # PermissionChecker uses creative_shares_caches (O(1) per user)
+        candidates.select { |user| target.has_permission?(user, :read) }
       rescue StandardError => e
         Rails.logger.error "[CreativeBroadcast] Error finding users: #{e.message}"
         []
