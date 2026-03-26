@@ -36,7 +36,9 @@ module Collavre
           last_read_ids = pointers.transform_values { |p| p.last_read_comment_id || 0 }
 
           unread_public_by_threshold = {}
-          last_read_ids.values.uniq.each do |threshold|
+          # Include 0 for users without a read pointer (never opened chat)
+          all_thresholds = (last_read_ids.values + [ 0 ]).uniq
+          all_thresholds.each do |threshold|
             unread_public_by_threshold[threshold] = origin.comments
               .where(private: false)
               .where("comments.id > ?", threshold)
