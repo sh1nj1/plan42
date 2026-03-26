@@ -144,7 +144,8 @@ module Collavre
               depth: depth,
               prompt: @creative.prompt_for(Current.user),
               has_children: children_count > 0,
-              data: @creative.effective_origin(Set.new).data
+              data: @creative.effective_origin(Set.new).data,
+              can_edit: @creative.has_permission?(Current.user, :write)
             }
           end
         end
@@ -190,6 +191,9 @@ module Collavre
     end
 
     def edit
+      unless @creative.has_permission?(Current.user, :write)
+        redirect_to @creative, alert: t("collavre.creatives.errors.no_permission") and return
+      end
       if params[:inline]
         render partial: "inline_edit_form"
       end
@@ -207,6 +211,14 @@ module Collavre
         if @creative.origin_id.present? && permitted.key?("parent_id")
           parent_id = permitted.delete("parent_id")
           success &&= @creative.update(parent_id: parent_id)
+        end
+
+        # Require write permission for origin content changes (description, progress, sequence)
+        origin_changes = permitted.except("parent_id")
+        if origin_changes.any? && !@creative.has_permission?(Current.user, :write)
+          format.html { redirect_to @creative, alert: t("collavre.creatives.errors.no_permission") }
+          format.json { render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden }
+          next
         end
 
         # When updating the base (Origin), we must NOT pass origin_id.
