@@ -11,6 +11,23 @@ function setDatasetValue(element, key, value) {
   }
 }
 
+// Capture current DOM state of the progress area back into Lit's progressHtml
+// so that Turbo Streams DOM mutations (e.g. badge count updates) survive Lit re-renders.
+// Lit renders progressHtml via unsafeHTML() inside a .creative-progress-area wrapper.
+// Turbo may directly replace child elements (e.g. comment-badge span) in the DOM,
+// but Lit's progressHtml string remains stale. On next re-render, Lit would overwrite
+// the Turbo-updated DOM with the stale string, losing badge updates.
+function syncProgressHtmlFromDom(row) {
+  if (!row.progressHtml) return
+  const wrapper = row.querySelector('.creative-progress-area')
+  if (!wrapper) return
+  const currentHtml = wrapper.innerHTML
+  if (currentHtml && currentHtml !== row.progressHtml) {
+    row.progressHtml = currentHtml
+    row.dataset.progressHtml = currentHtml
+  }
+}
+
 function applyRowProperties(row, node) {
   if (!row || !node) return
   let dirty = false
@@ -43,6 +60,9 @@ function applyRowProperties(row, node) {
       dirty = true
     }
     row.setAttribute('level', node.level)
+  }
+  if (node.sequence != null) {
+    row.setAttribute('sequence', node.sequence)
   }
 
   const updateBooleanAttr = (prop, attr, value) => {
@@ -106,22 +126,61 @@ function applyRowProperties(row, node) {
     setDatasetValue(row, 'descriptionRawHtml', inlinePayload.description_raw_html ?? '')
   }
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'progress')) {
-    setDatasetValue(row, 'progressValue', inlinePayload.progress ?? '')
+    const rawProgress = inlinePayload.progress ?? 0
+    const pct = Math.round(rawProgress * 100)
+    // progress_text from server: completion mark string, empty string (=complete but no mark), or undefined
+    const displayText = node.progress_text != null ? (node.progress_text || '\u00a0\u00a0') : `${pct}%`
+    setDatasetValue(row, 'progressValue', rawProgress)
+    // Update progress percentage in existing progressHtml without replacing full HTML
+    // (preserves chat badges, comment counts, etc.)
+    if (templates.progress_html == null) {
+      const cssClass = pct >= 100 ? 'creative-progress-complete' : 'creative-progress-incomplete'
+      let updated = row.progressHtml || ''
+      if (updated) {
+        // Try regex replacement first (preserves chat buttons etc.)
+        const replaced = updated.replace(
+          /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/,
+          `$1${displayText}$2`
+        )
+        if (replaced !== updated) {
+          // Also update ONLY the first progress class (not chat buttons etc.)
+          updated = replaced.replace(
+            /class="creative-progress-(?:in)?complete"/,
+            `class="${cssClass}"`
+          )
+        }
+        // If regex didn't match, do NOT create fresh HTML — preserve existing progressHtml
+        // (it contains chat buttons, comment badges, etc.)
+      }
+      if (updated !== (row.progressHtml || '')) {
+        row.progressHtml = updated
+        setDatasetValue(row, 'progressHtml', updated)
+        dirty = true
+      }
+    }
   }
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'origin_id')) {
     setDatasetValue(row, 'originId', inlinePayload.origin_id ?? '')
   }
 
   if (dirty && typeof row.requestUpdate === 'function') {
+    // Before Lit re-renders, sync progressHtml from current DOM.
+    // Turbo Streams may have replaced badge elements directly in the DOM
+    // (e.g. comment badge count), but the Lit progressHtml string still
+    // holds the stale initial HTML. On re-render, Lit would overwrite
+    // the Turbo-updated DOM with the stale string, losing badges.
+    syncProgressHtmlFromDom(row)
     row.requestUpdate()
   }
 }
 
-function createRow(node) {
+export function createRow(node) {
   const row = document.createElement('creative-tree-row')
   applyRowProperties(row, node)
   return row
 }
+
+export { applyRowProperties }
 
 function applyChildrenContainerProperties(container, node) {
   if (!container || !node) return

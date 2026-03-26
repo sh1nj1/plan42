@@ -26,7 +26,8 @@ class CreativeTreeRow extends LitElement {
     isTitle: { type: Boolean, attribute: "is-title", reflect: true },
     archived: { type: Boolean, attribute: "archived", reflect: true },
     loadingChildren: { type: Boolean, attribute: "loading-children", reflect: true },
-    _loadingDotsState: { state: true }
+    _loadingDotsState: { state: true },
+    editingUsers: { state: true }
   };
 
   constructor() {
@@ -47,6 +48,7 @@ class CreativeTreeRow extends LitElement {
     this.editOffIconHtml = "";
     this.originLinkHtml = "";
     this.isTitle = false;
+    this.editingUsers = []; // [{ user_id, user_name, avatar_url }]
     this._templatesExtracted = false;
     this.loadingChildren = false;
     this._loadingDotsState = ['.', '.', '.'];
@@ -215,7 +217,8 @@ class CreativeTreeRow extends LitElement {
             ${this._renderToggle()}
             ${this._renderContent()}
           </div>
-            ${unsafeHTML(this.progressHtml || "")}
+            ${this._renderEditingAvatars()}
+            <span class="creative-progress-area">${unsafeHTML(this.progressHtml || "")}</span>
         </div>
       </div>
     `;
@@ -242,7 +245,7 @@ class CreativeTreeRow extends LitElement {
           </div>
           <div class="creative-row-end">
              <h1 class="page-title" style="margin: 0; display:flex; align-items:center;">
-               ${unsafeHTML(this.progressHtml || "")}
+               <span class="creative-progress-area">${unsafeHTML(this.progressHtml || "")}</span>
              </h1>
           </div>
         </div>
@@ -292,6 +295,22 @@ class CreativeTreeRow extends LitElement {
       >
         ${unsafeHTML(this.editOffIconHtml || "")}
       </button>
+    `;
+  }
+
+  _renderEditingAvatars() {
+    if (!this.editingUsers || this.editingUsers.length === 0) return nothing;
+    return html`
+      <div class="creative-editing-avatars" title="${this.editingUsers.map(u => u.user_name).join(', ')}">
+        ${this.editingUsers.map(u => html`
+          <span class="creative-editing-avatar" title="${u.user_name} is editing">
+            ${u.avatar_url
+              ? html`<img src="${u.avatar_url}" alt="${u.user_name}" width="24" height="24" class="creative-editing-avatar-img">`
+              : html`<span class="creative-editing-avatar-initials">${(u.user_name || '?')[0]}</span>`
+            }
+          </span>
+        `)}
+      </div>
     `;
   }
 

@@ -122,6 +122,7 @@ module Creatives
           expanded: expanded,
           is_root: creative.parent.nil?,
           archived: creative.archived?,
+          sequence: creative.sequence,
           link_url: view_context.collavre.creative_path(creative),
           templates: template_payload_for(creative, has_children: filtered_children.any?),
           inline_editor_payload: inline_editor_payload_for(creative),

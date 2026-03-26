@@ -1,4 +1,7 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
+<% if authenticated? %>
+  <%= turbo_stream_from Current.user, :creative_tree %>
+<% end %>
 
 <div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--set-plan-modal share-modal"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"
@@ -15,6 +18,9 @@
   <div class="creative-actions-row">
     <%# Left: breadcrumb ancestry %>
     <div class="creative-breadcrumb" role="navigation" aria-label="<%= t('collavre.creatives.index.breadcrumb', default: 'Breadcrumb') %>">
+      <% if @parent_creative && authenticated? %>
+        <span id="creative-presence-avatars" class="creative-presence-avatars"></span>
+      <% end %>
       <a href="<%= creatives_path %>" class="creative-breadcrumb-link"><%= t('collavre.creatives.index.root_breadcrumb', default: '최상위') %></a>
       <% if @parent_creative %>
         <% @parent_creative.ancestors.reverse.each do |ancestor| %>
@@ -220,9 +226,11 @@
       empty_html,
       id: 'creatives',
       data: {
-        controller: 'creatives--tree',
+        controller: 'creatives--tree creatives--sync',
         'creatives--tree-url-value': tree_url,
         'creatives--tree-empty-html-value': empty_html.to_s,
+        'creatives--sync-root-id-value': @parent_creative&.effective_origin&.id,
+        'creatives--sync-current-user-id-value': Current.user&.id,
         edit_icon_html: svg_tag("edit.svg", className: "icon-edit"),
         edit_off_icon_html: svg_tag("edit-off.svg", className: "icon-edit")
       }

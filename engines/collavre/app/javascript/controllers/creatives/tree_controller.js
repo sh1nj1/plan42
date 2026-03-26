@@ -11,8 +11,19 @@ export default class extends Controller {
   connect() {
     this.abortController = null
     this.loadingIndicator = null
+    this._editing = false
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
+    this._handleEditStart = () => { this._editing = true }
+    this._handleEditStop = () => {
+      this._editing = false
+      // Apply any pending sync data that was deferred while editing
+      this._applyPendingSyncData()
+      if (this._pendingRefetch) {
+        this._pendingRefetch = false
+        this.debouncedLoad()
+      }
+    }
     document.documentElement.classList.remove('creative-alignment-ready')
     if (!this.hasCachedContent()) {
       this.load()
@@ -20,6 +31,16 @@ export default class extends Controller {
     this.queueAlignmentUpdate()
     window.addEventListener('resize', this.handleResize)
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
+    document.addEventListener('creative-editing:start', this._handleEditStart)
+    document.addEventListener('creative-editing:stop', this._handleEditStop)
+    this._handleSyncRefetch = () => {
+      if (this._editing) {
+        this._pendingRefetch = true
+        return
+      }
+      this.debouncedLoad()
+    }
+    document.addEventListener('creative-sync:refetch', this._handleSyncRefetch)
     this._setupArchiveToggle()
   }
 
@@ -30,6 +51,10 @@ export default class extends Controller {
     }
     window.removeEventListener('resize', this.handleResize)
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
+    document.removeEventListener('creative-editing:start', this._handleEditStart)
+    document.removeEventListener('creative-editing:stop', this._handleEditStop)
+    document.removeEventListener('creative-sync:refetch', this._handleSyncRefetch)
+    if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
     if (this._archiveToggleHandler) {
       document.getElementById('toggle-archived-btn')?.removeEventListener('click', this._archiveToggleHandler)
       document.getElementById('toggle-archived-btn-mobile')?.removeEventListener('click', this._archiveToggleHandler)
@@ -80,6 +105,30 @@ export default class extends Controller {
     this._archiveToggleHandler = toggle
     if (btn) btn.addEventListener('click', toggle)
     if (mobileBtn) mobileBtn.addEventListener('click', toggle)
+  }
+
+  _applyPendingSyncData() {
+    // After editor closes, apply any sync data that was deferred
+    const pendingRows = this.element.querySelectorAll('creative-tree-row[data-pending-sync-data]')
+    if (pendingRows.length === 0) return
+
+    // Dynamic import to avoid circular dependency
+    import('../../creatives/tree_renderer').then(({ applyRowProperties }) => {
+      pendingRows.forEach(row => {
+        try {
+          const data = JSON.parse(row.dataset.pendingSyncData)
+          applyRowProperties(row, data)
+        } catch (e) {
+          console.warn('[TreeController] Failed to apply pending sync data', e)
+        }
+        delete row.dataset.pendingSyncData
+      })
+    })
+  }
+
+  debouncedLoad() {
+    if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
+    this._debouncedLoadTimer = setTimeout(() => this.load(), 300)
   }
 
   load() {

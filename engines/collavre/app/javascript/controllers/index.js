@@ -8,6 +8,7 @@ import CreativesDragDropController from "./creatives/drag_drop_controller"
 import CreativesExpansionController from "./creatives/expansion_controller"
 import CreativesRowEditorController from "./creatives/row_editor_controller"
 import CreativesTreeController from "./creatives/tree_controller"
+import CreativesSyncController from "./creatives/sync_controller"
 import CreativesSetPlanModalController from "./creatives/set_plan_modal_controller"
 import CommentsListController from "./comments/list_controller"
 import CommentsFormController from "./comments/form_controller"
@@ -27,6 +28,7 @@ import ShareInviteController from "./share_invite_controller"
 import ShareUserSearchController from "./share_user_search_controller"
 import CommentVersionController from "./comment_version_controller"
 import OrgChartController from "./org_chart_controller"
+import CommentBadgeController from "./comment_badge_controller"
 import ShareModalController from "./share_modal_controller"
 import ImageLightboxController from "./image_lightbox_controller"
 import SearchPopupController from "./search_popup_controller"
@@ -41,6 +43,7 @@ export {
   CreativesExpansionController,
   CreativesRowEditorController,
   CreativesTreeController,
+  CreativesSyncController,
   CreativesSetPlanModalController,
   CommentsListController,
   CommentsFormController,
@@ -61,7 +64,8 @@ export {
   OrgChartController,
   ShareModalController,
   ImageLightboxController,
-  SearchPopupController
+  SearchPopupController,
+  CommentBadgeController
 }
 
 // Registration function for use with a Stimulus application
@@ -74,6 +78,7 @@ export function registerControllers(application) {
   application.register("creatives--expansion", CreativesExpansionController)
   application.register("creatives--row-editor", CreativesRowEditorController)
   application.register("creatives--tree", CreativesTreeController)
+  application.register("creatives--sync", CreativesSyncController)
   application.register("creatives--set-plan-modal", CreativesSetPlanModalController)
   application.register("comments--list", CommentsListController)
   application.register("comments--form", CommentsFormController)
@@ -96,4 +101,5 @@ export function registerControllers(application) {
   application.register("share-modal", ShareModalController)
   application.register("image-lightbox", ImageLightboxController)
   application.register("search-popup", SearchPopupController)
+  application.register("comment-badge", CommentBadgeController)
 }

@@ -912,3 +912,85 @@ creative-tree-row[archived] .creative-row {
     border-color: var(--color-accent-border);
     background-color: var(--surface-input);
 }
+
+/* --- Creative Presence Avatars --- */
+.creative-presence-avatars {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: var(--space-2, 8px);
+    vertical-align: middle;
+}
+
+.creative-presence-user {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.creative-presence-user .avatar {
+    border: 2px solid var(--color-active, #4caf50);
+    width: 20px;
+    height: 20px;
+}
+
+/* --- Editing Conflict Indicator --- */
+creative-tree-row.is-being-edited {
+    position: relative;
+}
+
+creative-tree-row.is-being-edited .creative-tree {
+    border-left: 3px solid var(--color-warning, #ff9800);
+}
+
+.creative-editing-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1, 4px);
+    font-size: var(--text-xs, 0.75rem);
+    color: var(--color-warning, #ff9800);
+    margin-left: var(--space-2, 8px);
+    white-space: nowrap;
+    animation: editing-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes editing-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Editing presence avatars */
+.creative-editing-avatars {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1, 2px);
+    margin-left: var(--space-1, 4px);
+}
+
+.creative-editing-avatar-img {
+    border-radius: var(--radius-round, 50%);
+    border: 2px solid var(--color-accent, #4a9eff);
+    object-fit: cover;
+}
+
+.creative-editing-avatar-initials {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-round, 50%);
+    background: var(--color-accent, #4a9eff);
+    color: var(--color-on-accent, white);
+    font-size: var(--text-xs, 11px);
+    font-weight: var(--weight-semibold, 600);
+    border: 2px solid var(--color-accent, #4a9eff);
+}
+
+/* Wrapper for progressHtml so DOM can be synced back to Lit state
+   after Turbo Streams mutations (e.g. badge count updates).
+   display:contents ensures no layout impact. */
+.creative-progress-area {
+    display: contents;
+}

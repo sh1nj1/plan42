@@ -149,6 +149,19 @@ export function initializeCreativeRowEditor() {
     let originalOriginId = '';
     let isDirty = false;
     let completionCascadePending = false;
+    let editingPingInterval = null;
+
+    function stopEditingPing() {
+      if (editingPingInterval) {
+        clearInterval(editingPingInterval);
+        editingPingInterval = null;
+      }
+    }
+
+    // Clean up editing ping on Turbo navigation to prevent interval leak
+    document.addEventListener('turbo:before-cache', () => stopEditingPing());
+
+    const destroyedCreativeIds = new Set();
 
     function formatProgressDisplay(value) {
       return isProgressComplete(value) ? progressCompleteLabel : progressIncompleteLabel;
@@ -753,6 +766,21 @@ export function initializeCreativeRowEditor() {
       template.style.display = 'block';
       loadCreative(tree);
       updateActionButtonStates();
+
+      // Notify sync controller that editing started + periodic ping
+      const editCreativeId = form.dataset.creativeId || currentRowElement?.getAttribute('creative-id');
+      if (editCreativeId) {
+        const parsedId = parseInt(editCreativeId, 10);
+        document.dispatchEvent(new CustomEvent('creative-editing:start', {
+          detail: { creativeId: parsedId }
+        }));
+        if (editingPingInterval) clearInterval(editingPingInterval);
+        editingPingInterval = setInterval(() => {
+          document.dispatchEvent(new CustomEvent('creative-editing:start', {
+            detail: { creativeId: parsedId }
+          }));
+        }, 3000);
+      }
     }
 
     function initializeEventListeners() {
@@ -1063,6 +1091,16 @@ export function initializeCreativeRowEditor() {
       const tree = currentTree;
       const parentId = parentInput.value;
       const wasNew = !form.dataset.creativeId;
+
+      // Notify sync controller that editing stopped
+      stopEditingPing();
+      const editCreativeId = form.dataset.creativeId;
+      if (editCreativeId) {
+        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+          detail: { creativeId: parseInt(editCreativeId, 10) }
+        }));
+      }
+
       currentTree = null;
       currentRowElement = null;
       tree.draggable = true;
@@ -1151,6 +1189,13 @@ export function initializeCreativeRowEditor() {
 
       const creativeId = form.dataset?.creativeId;
       if (!creativeId) return;
+
+      // Skip save for already-destroyed creatives (prevents 404 after deletion)
+      if (destroyedCreativeIds.has(String(creativeId))) {
+        isDirty = false;
+        pendingSave = null;
+        return;
+      }
 
       // CRITICAL: Capture ALL values BEFORE awaiting, because the editor may switch
       // to a different creative while we're waiting for uploads
@@ -1296,11 +1341,34 @@ export function initializeCreativeRowEditor() {
         }
       };
 
+      // Notify editing stopped on previous creative
+      stopEditingPing();
+      const prevCreativeId = prev.dataset?.id || form.dataset?.creativeId;
+      if (prevCreativeId) {
+        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+          detail: { creativeId: parseInt(prevCreativeId, 10) }
+        }));
+      }
+
       if (wasNew) {
         // For new creatives, still need to save or cleanup
         beforeNewOrMove(wasNew, prev, prevParent).then(() => {
           loadCreative(target);
           focusAfterMove();
+          // Notify editing started on new creative + start ping
+          const newCreativeId = target.dataset?.id || currentRowElement?.getAttribute('creative-id');
+          if (newCreativeId) {
+            const parsedNewId = parseInt(newCreativeId, 10);
+            document.dispatchEvent(new CustomEvent('creative-editing:start', {
+              detail: { creativeId: parsedNewId }
+            }));
+            stopEditingPing();
+            editingPingInterval = setInterval(() => {
+              document.dispatchEvent(new CustomEvent('creative-editing:start', {
+                detail: { creativeId: parsedNewId }
+              }));
+            }, 3000);
+          }
         });
       } else {
         // For existing creatives, show the row and refresh if needed
@@ -1309,6 +1377,20 @@ export function initializeCreativeRowEditor() {
         }
         loadCreative(target);
         focusAfterMove();
+        // Notify editing started on new creative + start ping
+        const newCreativeId = target.dataset?.id || currentRowElement?.getAttribute('creative-id');
+        if (newCreativeId) {
+          const parsedNewId = parseInt(newCreativeId, 10);
+          document.dispatchEvent(new CustomEvent('creative-editing:start', {
+            detail: { creativeId: parsedNewId }
+          }));
+          stopEditingPing();
+          editingPingInterval = setInterval(() => {
+            document.dispatchEvent(new CustomEvent('creative-editing:start', {
+              detail: { creativeId: parsedNewId }
+            }));
+          }, 3000);
+        }
       }
       updateActionButtonStates();
     }
@@ -1335,6 +1417,15 @@ export function initializeCreativeRowEditor() {
         } else {
           queueSaveIfDirty(prev);
         }
+      }
+
+      // Notify editing stopped on previous creative
+      stopEditingPing();
+      const prevEditId = prev.dataset?.id || form.dataset?.creativeId;
+      if (prevEditId) {
+        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+          detail: { creativeId: parseInt(prevEditId, 10) }
+        }));
       }
 
       const handleAddNew = () => {
@@ -1503,9 +1594,11 @@ export function initializeCreativeRowEditor() {
       const nextId = trees[index + 1] ? trees[index + 1].dataset.id : null;
       const parentId = tree.dataset.parentId;
 
+      // Mark this creative as destroyed to prevent any future saves (including
+      // Lexical onChange callbacks that may fire after deletion)
+      destroyedCreativeIds.add(String(id));
+
       // CRITICAL: Remove any pending saves for this creative from the queue
-      // This prevents a race condition where a queued save fires after deletion,
-      // resulting in a 404 error and an alert to the user.
       if (apiQueue) {
         apiQueue.removeByDedupeKey(`creative_${id}`);
       }
@@ -1533,6 +1626,9 @@ export function initializeCreativeRowEditor() {
         } else {
           document.getElementById("creative-children-" + id)?.remove();
         }
+        // Clear dirty state so move() doesn't try to save the just-deleted creative
+        isDirty = false;
+        pendingSave = null;
         move(1);
         removeTreeElement(tree);
       });
@@ -1674,6 +1770,10 @@ export function initializeCreativeRowEditor() {
     }
 
     function scheduleSave() {
+      // Skip scheduling save for already-destroyed creatives
+      const creativeId = form.dataset?.creativeId;
+      if (creativeId && destroyedCreativeIds.has(String(creativeId))) return;
+
       pendingSave = true;
       clearTimeout(saveTimer);
       saveTimer = setTimeout(saveForm, 5000);
