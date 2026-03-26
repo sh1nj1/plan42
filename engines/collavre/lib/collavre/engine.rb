@@ -203,7 +203,8 @@ module Collavre
           label: "?",
           type: :partial,
           partial: "collavre/shared/navigation/help_button",
-          priority: 170
+          priority: 170,
+          mobile: false
         )
 
         # ============================================
@@ -235,6 +236,15 @@ module Collavre
               path: -> { Collavre::Engine.routes.url_helpers.session_path },
               method: :delete,
               priority: 900
+            },
+            {
+              key: :help_mobile,
+              label: "app.help",
+              type: :partial,
+              partial: "collavre/shared/navigation/help_button",
+              priority: 950,
+              desktop: false,
+              mobile: true
             }
           ]
         )
