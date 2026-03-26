@@ -200,12 +200,11 @@ module Collavre
 
         Navigation::Registry.instance.register(
           key: :help,
-          label: "?",
+          label: "app.help",
           type: :partial,
           partial: "collavre/shared/navigation/help_button",
           priority: 170,
-          mobile: false,
-          desktop: true
+          mobile: false
         )
 
         # ============================================
