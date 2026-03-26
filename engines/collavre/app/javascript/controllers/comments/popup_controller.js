@@ -501,10 +501,10 @@ export default class extends Controller {
       this.touchStartY = null
       return
     }
-    if (!event.target.closest('#comments-list')) {
-      this.touchStartY = event.touches[0].clientY
-    } else {
+    if (event.target.closest('#comments-list') || event.target.closest('.chat-nav-dropdown')) {
       this.touchStartY = null
+    } else {
+      this.touchStartY = event.touches[0].clientY
     }
   }
 
