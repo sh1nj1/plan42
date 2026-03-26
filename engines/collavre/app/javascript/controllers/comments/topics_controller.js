@@ -123,8 +123,8 @@ export default class extends Controller {
             // Ensure comparison handles string/number difference
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
             const draggable = canManage ? 'draggable="true"' : ''
-            const agentAvatar = topic.primary_agent?.avatar_url
-                ? `<img src="${this.escapeAttr(topic.primary_agent.avatar_url)}" class="topic-agent-avatar" alt="${this.escapeAttr(topic.primary_agent.name)}" title="${this.escapeAttr(topic.primary_agent.name)}">`
+            const agentAvatar = topic.primary_agent
+                ? this.renderAgentAvatar(topic.primary_agent)
                 : ''
             html += `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
                           data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}" 
@@ -936,6 +936,17 @@ export default class extends Controller {
         } catch (e) {
             console.error('Error creating topic with agent', e)
         }
+    }
+
+    renderAgentAvatar(agent) {
+        const size = 16
+        let html = `<span class="avatar-wrapper topic-agent-avatar-wrapper" style="width:${size}px;height:${size}px;" title="${this.escapeAttr(agent.name)}">`
+        html += `<img src="${this.escapeAttr(agent.avatar_url)}" alt="" width="${size}" height="${size}" class="topic-agent-avatar" style="border-radius:50%;vertical-align:middle;">`
+        if (agent.default_avatar) {
+            html += `<span class="avatar-initial">${this.escapeAttr(agent.initial)}</span>`
+        }
+        html += `</span>`
+        return html
     }
 
     escapeAttr(str) {
