@@ -52,3 +52,5 @@ ko:
       current_creative: "현재 Creative"
       selected_page: "선택한 페이지"
       synced_label: "동기화됨"
+    export:
+      author_label: "작성자: "
