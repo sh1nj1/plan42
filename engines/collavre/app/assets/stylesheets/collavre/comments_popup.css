@@ -323,7 +323,6 @@ body.chat-fullscreen {
 .comment-content pre {
     white-space: pre-wrap;
     word-break: break-word;
-    overflow-x: auto;
 }
 
 .comment-content pre code {
