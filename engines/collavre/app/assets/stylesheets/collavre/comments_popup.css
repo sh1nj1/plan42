@@ -1226,12 +1226,23 @@ body.chat-fullscreen {
     box-sizing: border-box;
 }
 
+.topic-agent-avatar-wrapper {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+    vertical-align: middle;
+}
+
 .topic-agent-avatar {
     width: 16px;
     height: 16px;
     border-radius: 50%;
     object-fit: cover;
     flex-shrink: 0;
+}
+
+.topic-agent-avatar-wrapper .avatar-initial {
+    font-size: 8px;
 }
 
 .ai-agent-draggable {
