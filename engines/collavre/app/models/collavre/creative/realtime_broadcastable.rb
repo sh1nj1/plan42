@@ -35,15 +35,21 @@ module Collavre
 
       def capture_broadcast_state
         # Skip expensive queries for unshared personal creatives
-        return if !origin_id && linked_creatives.none? && all_shared_users.none?
+        if !origin_id && linked_creatives.none? && all_shared_users.none?
+          return
+        end
 
         # Capture before destroy — after destroy, associations are gone
         @_destroy_broadcast_users = find_broadcast_users
         @_destroy_linked_map = build_linked_creative_map(@_destroy_broadcast_users)
+
+        # ancestors may be empty if closure_tree already deleted hierarchy rows,
+        # so fall back to parent_id chain
+        ancestor_list = ancestors.presence || Creative.where(id: build_ancestor_ids_from_parent(self))
         @_destroy_payload = {
           id: id,
           parent_id: parent_id,
-          ancestors: ancestors.map { |a| { id: a.id, progress: a.progress } }
+          ancestors: ancestor_list.map { |a| { id: a.id, progress: a.progress } }
         }
       end
 
@@ -178,6 +184,19 @@ module Collavre
         end
       end
 
+      # Fallback: walk parent_id chain when closure_tree hierarchy is unavailable
+      # (e.g. during before_destroy when hierarchy rows are already deleted)
+      def build_ancestor_ids_from_parent(creative)
+        ids = []
+        current = creative
+        while current.parent_id.present?
+          ids << current.parent_id
+          current = Creative.find_by(id: current.parent_id)
+          break unless current
+        end
+        ids
+      end
+
       def find_broadcast_users
         target = begin
           origin_id.present? && origin ? origin.effective_origin : effective_origin
@@ -186,7 +205,13 @@ module Collavre
         end
 
         # Batch: collect all ancestor IDs + target in one query, then load shares in one query
+        # NOTE: ancestor_ids uses closure_tree's hierarchy table, but during before_destroy
+        # the hierarchy rows may already be deleted by closure_tree's own before_destroy callback.
+        # Fallback to parent_id chain when ancestor_ids returns empty for a creative with parent.
         ancestor_ids = target.ancestor_ids  # closure_tree: single CTE query
+        if ancestor_ids.empty? && target.parent_id.present?
+          ancestor_ids = build_ancestor_ids_from_parent(target)
+        end
         all_creative_ids = [ target.id ] + ancestor_ids
 
         # Owner users — single query
