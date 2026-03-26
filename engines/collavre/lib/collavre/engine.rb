@@ -240,7 +240,7 @@ module Collavre
             },
             {
               key: :help_menu,
-              label: "?",
+              label: "app.help",
               type: :partial,
               partial: "collavre/shared/navigation/help_button",
               priority: 950
