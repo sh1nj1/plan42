@@ -21,11 +21,28 @@ module Collavre
         scope
       end
 
+      # Notify users about a completed AI streaming message.
+      # Called from ResponseFinalizer after placeholder is updated with final content.
+      # Sends both write-user and mention notifications that were skipped at placeholder creation.
+      # Errors are rescued to avoid breaking the finalization flow.
+      def notify_ai_completion
+        return unless user&.ai_user?
+        return if private?
+
+        notify_ai_write_users
+        notify_ai_mentions
+      rescue StandardError => e
+        Rails.logger.error("[notify_ai_completion] Failed for comment #{id}: #{e.message}")
+      end
+
       private
+
+      NOTIFICATION_SNIPPET_LENGTH = 100
 
       def create_inbox_item(owner, key, params = {})
         origin = creative&.effective_origin
         metadata = params.to_h.stringify_keys
+        metadata["comment"] = metadata["comment"].truncate(NOTIFICATION_SNIPPET_LENGTH) if metadata["comment"].present?
         metadata["comment_id"] = id
         metadata["creative_id"] = origin&.id
 
@@ -63,11 +80,12 @@ module Collavre
                .uniq
       end
 
-      def notify_write_users
-        return if private? || !user
-        return if streaming_placeholder?
+      # Build the list of write-access recipients minus the comment author,
+      # mentioned users, and users currently present on the creative.
+      def notification_recipients
         base_creative = creative.effective_origin
         present_ids = CommentPresenceStore.list(base_creative.id)
+
         recipients = base_creative.all_shared_users(:write).map(&:user)
         recipients << base_creative.user
         recipients.compact!
@@ -75,7 +93,13 @@ module Collavre
         recipients.delete(user)
         recipients -= mentioned_users.to_a
         recipients.reject! { |u| present_ids.include?(u.id) }
-        recipients.each do |recipient|
+        recipients
+      end
+
+      def notify_write_users
+        return if private? || !user
+        return if streaming_placeholder?
+        notification_recipients.each do |recipient|
           create_inbox_item(
             recipient,
             "inbox.comment_added",
@@ -87,6 +111,10 @@ module Collavre
       def notify_mentions
         return if private?
         return if streaming_placeholder?
+        notify_mentioned_users
+      end
+
+      def notify_mentioned_users
         mentioned_users.each do |mentioned|
           create_inbox_item(
             mentioned,
@@ -94,6 +122,20 @@ module Collavre
             { user: user.display_name, comment: content, creative: creative_snippet }
           )
         end
+      end
+
+      def notify_ai_write_users
+        notification_recipients.each do |recipient|
+          create_inbox_item(
+            recipient,
+            "inbox.comment_added",
+            { user: user.display_name, comment: content, creative: creative_snippet }
+          )
+        end
+      end
+
+      def notify_ai_mentions
+        notify_mentioned_users
       end
 
       def notify_approver
