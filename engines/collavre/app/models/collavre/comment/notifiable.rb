@@ -37,9 +37,12 @@ module Collavre
 
       private
 
+      NOTIFICATION_SNIPPET_LENGTH = 100
+
       def create_inbox_item(owner, key, params = {})
         origin = creative&.effective_origin
         metadata = params.to_h.stringify_keys
+        metadata["comment"] = metadata["comment"].truncate(NOTIFICATION_SNIPPET_LENGTH) if metadata["comment"].present?
         metadata["comment_id"] = id
         metadata["creative_id"] = origin&.id
 

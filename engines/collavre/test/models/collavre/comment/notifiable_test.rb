@@ -78,6 +78,21 @@ module Collavre
         end
       end
 
+      test "notify_ai_completion truncates long message content in inbox item" do
+        long_content = "A" * 200
+        comment = @creative.comments.create!(
+          content: long_content,
+          user: @agent,
+          topic: @topic
+        )
+
+        comment.notify_ai_completion
+        inbox_item = InboxItem.last
+        snippet = inbox_item.message_params["comment"]
+        assert snippet.length <= 100, "Expected comment to be truncated to 100 chars, got #{snippet.length}"
+        assert snippet.end_with?("..."), "Expected truncated comment to end with '...'"
+      end
+
       test "notify_ai_completion rescues errors without raising" do
         comment = @creative.comments.create!(
           content: "AI response",
