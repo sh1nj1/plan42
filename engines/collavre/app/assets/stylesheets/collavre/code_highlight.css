@@ -2,10 +2,77 @@
  * Code Syntax Highlighting Theme
  *
  * Uses Collavre design tokens (--color-code-bg, --color-code-text, --font-mono).
- * Light/dark mode is handled automatically via design_tokens.css overrides.
- *
- * Based on GitHub-style highlighting with token-based theming.
+ * Syntax color tokens defined as CSS variables — overridden per theme context.
+ * Based on GitHub-style highlighting.
  */
+
+/* ============================================================================
+ * SYNTAX COLOR TOKENS (light mode defaults)
+ * ============================================================================ */
+:root {
+  --syntax-comment: #6a737d;
+  --syntax-keyword: #d73a49;
+  --syntax-string: #032f62;
+  --syntax-number: #005cc5;
+  --syntax-builtin: #6f42c1;
+  --syntax-title: #6f42c1;
+  --syntax-attr: #005cc5;
+  --syntax-variable: #e36209;
+  --syntax-regexp: #032f62;
+  --syntax-tag: #22863a;
+  --syntax-name: #22863a;
+  --syntax-selector: #6f42c1;
+  --syntax-meta: #6a737d;
+  --syntax-deletion-text: #b31d28;
+  --syntax-deletion-bg: #ffeef0;
+  --syntax-addition-text: #22863a;
+  --syntax-addition-bg: #f0fff4;
+}
+
+/* ============================================================================
+ * DARK MODE SYNTAX TOKENS
+ * ============================================================================ */
+body.dark-mode {
+  --syntax-comment: #8b949e;
+  --syntax-keyword: #ff7b72;
+  --syntax-string: #a5d6ff;
+  --syntax-number: #79c0ff;
+  --syntax-builtin: #d2a8ff;
+  --syntax-title: #d2a8ff;
+  --syntax-attr: #79c0ff;
+  --syntax-variable: #ffa657;
+  --syntax-regexp: #a5d6ff;
+  --syntax-tag: #7ee787;
+  --syntax-name: #7ee787;
+  --syntax-selector: #d2a8ff;
+  --syntax-meta: #8b949e;
+  --syntax-deletion-text: #ffa198;
+  --syntax-deletion-bg: rgba(248, 81, 73, 0.15);
+  --syntax-addition-text: #7ee787;
+  --syntax-addition-bg: rgba(63, 185, 80, 0.15);
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not(.light-mode):not(.dark-mode) {
+    --syntax-comment: #8b949e;
+    --syntax-keyword: #ff7b72;
+    --syntax-string: #a5d6ff;
+    --syntax-number: #79c0ff;
+    --syntax-builtin: #d2a8ff;
+    --syntax-title: #d2a8ff;
+    --syntax-attr: #79c0ff;
+    --syntax-variable: #ffa657;
+    --syntax-regexp: #a5d6ff;
+    --syntax-tag: #7ee787;
+    --syntax-name: #7ee787;
+    --syntax-selector: #d2a8ff;
+    --syntax-meta: #8b949e;
+    --syntax-deletion-text: #ffa198;
+    --syntax-deletion-bg: rgba(248, 81, 73, 0.15);
+    --syntax-addition-text: #7ee787;
+    --syntax-addition-bg: rgba(63, 185, 80, 0.15);
+  }
+}
 
 /* ============================================================================
  * CODE BLOCK CONTAINER
@@ -27,6 +94,7 @@
   background: none;
   border: none;
   padding: 0;
+  border-radius: 0;
   font-family: inherit;
   font-size: inherit;
   color: inherit;
@@ -42,60 +110,48 @@
   font-size: 0.9em;
 }
 
-/* Don't double-style code inside pre */
-.comment-content pre code {
-  background: none;
-  padding: 0;
-  border-radius: 0;
-}
-
 /* ============================================================================
- * LIGHT MODE SYNTAX COLORS
+ * SYNTAX HIGHLIGHTING RULES (token-based, theme-agnostic)
  * ============================================================================ */
 .comment-content .hljs-comment,
 .comment-content .hljs-quote {
-  color: #6a737d;
+  color: var(--syntax-comment);
   font-style: italic;
 }
 
 .comment-content .hljs-keyword,
 .comment-content .hljs-selector-tag,
 .comment-content .hljs-type {
-  color: #d73a49;
+  color: var(--syntax-keyword);
 }
 
-.comment-content .hljs-string,
-.comment-content .hljs-addition {
-  color: #032f62;
+.comment-content .hljs-string {
+  color: var(--syntax-string);
 }
 
 .comment-content .hljs-number,
 .comment-content .hljs-literal {
-  color: #005cc5;
+  color: var(--syntax-number);
 }
 
 .comment-content .hljs-built_in,
 .comment-content .hljs-builtin-name {
-  color: #6f42c1;
-}
-
-.comment-content .hljs-function .hljs-keyword {
-  color: #d73a49;
+  color: var(--syntax-builtin);
 }
 
 .comment-content .hljs-title,
 .comment-content .hljs-title.function_ {
-  color: #6f42c1;
+  color: var(--syntax-title);
 }
 
 .comment-content .hljs-attr,
 .comment-content .hljs-attribute {
-  color: #005cc5;
+  color: var(--syntax-attr);
 }
 
 .comment-content .hljs-variable,
 .comment-content .hljs-template-variable {
-  color: #e36209;
+  color: var(--syntax-variable);
 }
 
 .comment-content .hljs-params {
@@ -103,44 +159,44 @@
 }
 
 .comment-content .hljs-regexp {
-  color: #032f62;
+  color: var(--syntax-regexp);
 }
 
 .comment-content .hljs-tag {
-  color: #22863a;
+  color: var(--syntax-tag);
 }
 
 .comment-content .hljs-name {
-  color: #22863a;
+  color: var(--syntax-name);
 }
 
 .comment-content .hljs-selector-class,
 .comment-content .hljs-selector-id {
-  color: #6f42c1;
+  color: var(--syntax-selector);
 }
 
 .comment-content .hljs-selector-attr,
 .comment-content .hljs-selector-pseudo {
-  color: #005cc5;
+  color: var(--syntax-attr);
 }
 
 .comment-content .hljs-symbol,
 .comment-content .hljs-bullet {
-  color: #005cc5;
+  color: var(--syntax-number);
 }
 
 .comment-content .hljs-meta {
-  color: #6a737d;
+  color: var(--syntax-meta);
 }
 
 .comment-content .hljs-deletion {
-  color: #b31d28;
-  background: #ffeef0;
+  color: var(--syntax-deletion-text);
+  background: var(--syntax-deletion-bg);
 }
 
 .comment-content .hljs-addition {
-  color: #22863a;
-  background: #f0fff4;
+  color: var(--syntax-addition-text);
+  background: var(--syntax-addition-bg);
 }
 
 .comment-content .hljs-emphasis {
@@ -149,185 +205,4 @@
 
 .comment-content .hljs-strong {
   font-weight: var(--weight-7);
-}
-
-/* ============================================================================
- * DARK MODE SYNTAX COLORS
- * ============================================================================ */
-body.dark-mode .comment-content .hljs-comment,
-body.dark-mode .comment-content .hljs-quote {
-  color: #8b949e;
-}
-
-body.dark-mode .comment-content .hljs-keyword,
-body.dark-mode .comment-content .hljs-selector-tag,
-body.dark-mode .comment-content .hljs-type {
-  color: #ff7b72;
-}
-
-body.dark-mode .comment-content .hljs-string,
-body.dark-mode .comment-content .hljs-addition {
-  color: #a5d6ff;
-}
-
-body.dark-mode .comment-content .hljs-number,
-body.dark-mode .comment-content .hljs-literal {
-  color: #79c0ff;
-}
-
-body.dark-mode .comment-content .hljs-built_in,
-body.dark-mode .comment-content .hljs-builtin-name {
-  color: #d2a8ff;
-}
-
-body.dark-mode .comment-content .hljs-title,
-body.dark-mode .comment-content .hljs-title.function_ {
-  color: #d2a8ff;
-}
-
-body.dark-mode .comment-content .hljs-attr,
-body.dark-mode .comment-content .hljs-attribute {
-  color: #79c0ff;
-}
-
-body.dark-mode .comment-content .hljs-variable,
-body.dark-mode .comment-content .hljs-template-variable {
-  color: #ffa657;
-}
-
-body.dark-mode .comment-content .hljs-params {
-  color: var(--color-code-text);
-}
-
-body.dark-mode .comment-content .hljs-regexp {
-  color: #a5d6ff;
-}
-
-body.dark-mode .comment-content .hljs-tag {
-  color: #7ee787;
-}
-
-body.dark-mode .comment-content .hljs-name {
-  color: #7ee787;
-}
-
-body.dark-mode .comment-content .hljs-selector-class,
-body.dark-mode .comment-content .hljs-selector-id {
-  color: #d2a8ff;
-}
-
-body.dark-mode .comment-content .hljs-selector-attr,
-body.dark-mode .comment-content .hljs-selector-pseudo {
-  color: #79c0ff;
-}
-
-body.dark-mode .comment-content .hljs-symbol,
-body.dark-mode .comment-content .hljs-bullet {
-  color: #79c0ff;
-}
-
-body.dark-mode .comment-content .hljs-meta {
-  color: #8b949e;
-}
-
-body.dark-mode .comment-content .hljs-deletion {
-  color: #ffa198;
-  background: rgba(248, 81, 73, 0.15);
-}
-
-body.dark-mode .comment-content .hljs-addition {
-  color: #7ee787;
-  background: rgba(63, 185, 80, 0.15);
-}
-
-/* ============================================================================
- * SYSTEM DARK MODE (prefers-color-scheme)
- * Mirror dark mode colors for users without explicit toggle
- * ============================================================================ */
-@media (prefers-color-scheme: dark) {
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-comment,
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-quote {
-    color: #8b949e;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-keyword,
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-selector-tag,
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-type {
-    color: #ff7b72;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-string,
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-addition {
-    color: #a5d6ff;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-number,
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-literal {
-    color: #79c0ff;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-built_in,
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-builtin-name {
-    color: #d2a8ff;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-title,
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-title.function_ {
-    color: #d2a8ff;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-attr,
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-attribute {
-    color: #79c0ff;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-variable,
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-template-variable {
-    color: #ffa657;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-params {
-    color: var(--color-code-text);
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-regexp {
-    color: #a5d6ff;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-tag {
-    color: #7ee787;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-name {
-    color: #7ee787;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-selector-class,
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-selector-id {
-    color: #d2a8ff;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-selector-attr,
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-selector-pseudo {
-    color: #79c0ff;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-symbol,
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-bullet {
-    color: #79c0ff;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-meta {
-    color: #8b949e;
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-deletion {
-    color: #ffa198;
-    background: rgba(248, 81, 73, 0.15);
-  }
-
-  body:not(.light-mode):not(.dark-mode) .comment-content .hljs-addition {
-    color: #7ee787;
-    background: rgba(63, 185, 80, 0.15);
-  }
 }
