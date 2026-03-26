@@ -157,29 +157,47 @@ module Collavre
       progress = creative.progress || 0
       pct = (progress * 100).round
 
-      # Generate signed stream name for turbo-cable-stream-source
-      stream_name = Turbo::StreamsChannel.signed_stream_name([ user, origin, :comment_badge ])
-      stream_tag = %(<turbo-cable-stream-source channel="Turbo::StreamsChannel" signed-stream-name="#{stream_name}"></turbo-cable-stream-source>)
-
-      # Badge (hidden, no comments yet)
-      badge_id = "comment-badge-#{origin.id}"
-      badge = %(<span id="#{badge_id}" class="badge" style="display:none" data-count="0" data-controller="comment-badge" data-comment-badge-has-comments-value="false"></span>)
-
-      # Comment button (hidden via no-comments)
-      comment_icon = read_svg("comment.svg", class: "comment-icon")
-      comment_btn = %(<button name="show-comments-btn" class="comments-btn creative-action-btn no-comments" data-creative-id="#{creative.id}" data-can-comment="true" data-creative-snippet="#{ERB::Util.html_escape(creative.creative_snippet)}">)
-      comment_btn += %(#{comment_icon}#{badge}</button>)
-
-      # Progress span
+      # Progress span (comes first, matching helper output order)
       css_class = pct >= 100 ? "creative-progress-complete" : "creative-progress-incomplete"
       display_text = pct >= 100 && user.completion_mark.present? ? user.completion_mark : "#{pct}%"
       progress_span = %(<span class="#{css_class}">#{display_text}</span>)
 
-      # Wrap in creative-row-end div (matching helper output structure)
-      %(<div class="creative-row-end">#{stream_tag}#{comment_btn}#{progress_span}</div>)
+      # Comment part — only render if user has feedback permission (matching helper behavior)
+      comment_part = ""
+      if creative.has_permission?(user, :feedback) ||
+         permission_via_ancestors(creative, user, :feedback)
+        # Generate signed stream name for turbo-cable-stream-source
+        stream_name = Turbo::StreamsChannel.signed_stream_name([ user, origin, :comment_badge ])
+        stream_tag = %(<turbo-cable-stream-source channel="Turbo::StreamsChannel" signed-stream-name="#{stream_name}"></turbo-cable-stream-source>)
+
+        # Badge (no comments yet — hidden)
+        badge_id = "comment-badge-#{origin.id}"
+        badge = %(<span id="#{badge_id}" class="badge" style="display:none" data-count="0" data-controller="comment-badge" data-comment-badge-has-comments-value="false"></span>)
+
+        # Comment button — no-comments hides via visibility:hidden (0 comments initially)
+        comment_icon = read_svg("comment.svg", class: "comment-icon")
+        btn_classes = "comments-btn creative-action-btn no-comments"
+        comment_btn = %(<button name="show-comments-btn" class="#{btn_classes}" data-creative-id="#{creative.id}" data-can-comment="true" data-creative-snippet="#{ERB::Util.html_escape(creative.creative_snippet)}">)
+        comment_btn += %(#{comment_icon}#{badge}</button>)
+
+        comment_part = "#{stream_tag}#{comment_btn}"
+      end
+
+      # Wrap in creative-row-end div — order: progress, then comment (matching helper)
+      %(<div class="creative-row-end">#{progress_span}#{comment_part}</div>)
     rescue StandardError => e
       Rails.logger.warn "[CreativeBroadcastJob] render_progress_html failed for creative##{creative.id} user##{user.id}: #{e.message}"
       nil
+    end
+
+    # Check permission via ancestor chain (fallback when creative_shares_caches is not yet populated)
+    def permission_via_ancestors(creative, user, permission)
+      current = creative.parent
+      while current
+        return true if current.has_permission?(user, permission)
+        current = current.parent
+      end
+      false
     end
 
     def read_svg(name, options = {})
