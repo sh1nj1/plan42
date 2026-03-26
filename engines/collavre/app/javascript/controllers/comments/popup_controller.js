@@ -1145,6 +1145,9 @@ export default class extends Controller {
     if (event.altKey && event.key === 'ArrowLeft') {
       event.preventDefault()
       this.navigateBack()
+    } else if (event.altKey && event.key === 'ArrowRight') {
+      event.preventDefault()
+      this.navigateForward()
     }
   }
 
