@@ -47,6 +47,7 @@ export default class extends Controller {
     this.handleChatNavKeydown = this.handleChatNavKeydown.bind(this)
     this.handleDropdownOutsideClick = this.handleDropdownOutsideClick.bind(this)
     this._longPressTimer = null
+    this._longPressTriggered = false
     this._isNavigating = false
     this._headerSwipeStartX = null
     this._headerSwipeStartY = null
@@ -1068,6 +1069,10 @@ export default class extends Controller {
   // ── Chat Navigation ───────────────────────────────────────────────
 
   navigateBack() {
+    if (this._longPressTriggered) {
+      this._longPressTriggered = false
+      return
+    }
     const entry = chatHistory.prev()
     if (!entry) return
     this._navigateToEntry(entry, 'back')
@@ -1193,8 +1198,10 @@ export default class extends Controller {
     const setupBtn = (btn) => {
       if (!btn) return
       btn.addEventListener('mousedown', () => {
+        this._longPressTriggered = false
         this._clearLongPressTimer()
         this._longPressTimer = setTimeout(() => {
+          this._longPressTriggered = true
           this.showRecentChats(new MouseEvent('contextmenu', { bubbles: true }))
         }, LONG_PRESS_MS)
       })
@@ -1202,8 +1209,10 @@ export default class extends Controller {
       btn.addEventListener('mouseleave', () => this._clearLongPressTimer())
       // Touch long press
       btn.addEventListener('touchstart', () => {
+        this._longPressTriggered = false
         this._clearLongPressTimer()
         this._longPressTimer = setTimeout(() => {
+          this._longPressTriggered = true
           this.showRecentChats(new Event('contextmenu', { bubbles: true }))
         }, LONG_PRESS_MS)
       }, { passive: true })
