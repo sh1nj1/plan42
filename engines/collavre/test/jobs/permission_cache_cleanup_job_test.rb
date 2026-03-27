@@ -29,8 +29,14 @@ class PermissionCacheCleanupJobTest < ActiveJob::TestCase
     cache = CreativeSharesCache.find_by(creative_id: @creative.id, user_id: other_user.id)
     assert cache, "Cache entry should exist for other_user"
 
-    # Delete user directly (bypass callbacks)
+    # Delete user directly (bypass callbacks) — must clean up inbox creative first
     CreativeShare.where(id: share.id).delete_all
+    inbox = Collavre::Creative.where(user: other_user).inboxes.first
+    if inbox
+      Collavre::Comment.where(creative: inbox).delete_all
+      Collavre::CommentReadPointer.where(creative: inbox).delete_all
+      inbox.delete
+    end
     User.where(id: other_user.id).delete_all
 
     assert CreativeSharesCache.exists?(cache.id)

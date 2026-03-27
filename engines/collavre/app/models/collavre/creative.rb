@@ -30,6 +30,37 @@ module Collavre
     scope :active, -> { where(archived_at: nil) }
     scope :archived, -> { where.not(archived_at: nil) }
 
+    # --- Inbox ---
+    scope :inboxes, -> { where("data->>'kind' = 'inbox'") }
+
+    SYSTEM_TOPIC_NAME = "System"
+
+    def inbox?
+      data&.dig("kind") == "inbox"
+    end
+
+    # Find or create the "System" topic for this inbox creative.
+    # Re-creates it if the user deletes it.
+    def system_topic(fallback_user: user)
+      topics.find_or_create_by!(name: SYSTEM_TOPIC_NAME) do |topic|
+        topic.user = fallback_user
+      end
+    end
+
+    # Find or create the inbox creative for a given user.
+    # Places it as a root creative (no parent) owned by the user.
+    def self.inbox_for(user)
+      existing = where(user: user).inboxes.first
+      return existing if existing
+
+      create!(
+        description: "📥 Inbox",
+        data: { "kind" => "inbox" },
+        user: user,
+        progress: 0.0
+      )
+    end
+
     attr_accessor :filtered_progress
 
     belongs_to :user, class_name: Collavre.configuration.user_class_name, optional: true

@@ -2,6 +2,8 @@ module Collavre
   class User < ApplicationRecord
     self.table_name = "users"
 
+    include HasInboxCreative
+
     has_many :user_themes, class_name: "Collavre::UserTheme", dependent: :destroy
     DEFAULT_DISPLAY_LEVEL = 6
 

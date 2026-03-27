@@ -171,7 +171,7 @@ module CollavreOpenclaw
       assert_response :ok
 
       # Verify comment was created with the context from pending callback
-      comment = Collavre::Comment.last
+      comment = creative.comments.order(:id).last
       assert_equal creative.id, comment.creative_id
       assert_equal "Proactive message with context", comment.content
     ensure

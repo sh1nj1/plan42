@@ -246,20 +246,27 @@ module Collavre
       if is_owner || is_admin || is_creative_owner
         # If admin/creative owner is deleting someone else's comment, send notification
         if (is_admin || is_creative_owner) && !is_owner && @comment.user.present? && !@comment.user.ai_user?
-          if @comment.user.present?
-            InboxItem.create!(
-              owner: @comment.user,
-              creative: @creative,
-              comment: @comment,
-              message_key: "inbox.comment_deleted_by_admin",
-              message_params: {
-                admin_name: Current.user.name,
-                creative_snippet: @creative.creative_snippet,
-                comment_content: @comment.content
-              },
-              link: creative_path(@creative)
-            )
-          end
+          inbox_creative = Creative.inbox_for(@comment.user)
+          creative_path = Collavre::Engine.routes.url_helpers.creative_path(@creative, open_comments: true)
+          creative_link = "[#{@creative.creative_snippet}](#{creative_path})"
+          msg = I18n.t(
+            "inbox.comment_deleted_by_admin",
+            admin_name: Current.user.name,
+            creative_snippet: creative_link,
+            comment_content: @comment.content,
+            locale: @comment.user.locale || "en"
+          )
+          system_topic = inbox_creative.system_topic(fallback_user: @comment.user)
+          # Don't use quoted_comment here — the original comment is about to be
+          # destroyed and would cascade-delete this inbox comment via
+          # has_many :quoting_comments, dependent: :destroy.
+          Comment.create!(
+            creative: inbox_creative,
+            topic: system_topic,
+            content: msg,
+            user: nil,
+            skip_default_user: true
+          )
         end
 
         @comment.destroy

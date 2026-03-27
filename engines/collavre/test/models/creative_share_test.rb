@@ -8,23 +8,17 @@ class CreativeShareTest < ActiveSupport::TestCase
 
     Current.session = OpenStruct.new(user: sharer)
 
-    assert_difference("InboxItem.count", 1) do
-      perform_enqueued_jobs do
-        CreativeShare.create!(creative: creative, user: recipient, permission: :read)
-      end
+    inbox = Collavre::Creative.inbox_for(recipient)
+    inbox_before = inbox.comments.count
+
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: creative, user: recipient, permission: :read)
     end
 
-    item = InboxItem.last
-    assert_equal recipient.id, item.owner.id
-    assert_equal "inbox.creative_shared", item.message_key
-    msg = item.localized_message
-    assert_includes msg, sharer.name
-    assert_includes msg, "T-Shirt"
-    expected_link = Collavre::Engine.routes.url_helpers.creative_url(
-      creative,
-      host: "example.com"
-    )
-    assert_equal expected_link, item.link
+    assert_equal inbox_before + 1, inbox.comments.reload.count
+    inbox_comment = inbox.comments.order(:id).last
+    assert_nil inbox_comment.user
+    assert_includes inbox_comment.content, sharer.name
 
     Current.reset
   end
