@@ -33,7 +33,7 @@ module CollavreOpenclaw
       1008 => :fatal,       # Policy violation (likely auth)
       1011 => :reconnect,   # Internal server error
       4001 => :fatal,       # Auth failure (OpenClaw)
-      4003 => :fatal,       # Forbidden (OpenClaw)
+      4003 => :fatal       # Forbidden (OpenClaw)
     }.freeze
 
     attr_reader :user, :state
