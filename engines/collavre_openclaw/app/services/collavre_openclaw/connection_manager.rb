@@ -44,6 +44,16 @@ module CollavreOpenclaw
 
         if client.nil?
           client = create_client(user, gateway_url)
+        elsif client.user.llm_api_key != user.llm_api_key
+          # Same gateway_url but different API key. This is a configuration
+          # error: one Gateway = one API key. Log a warning so the admin
+          # notices, rather than silently ignoring the second user's key.
+          # In HTTP mode this would surface as a 401 on each request.
+          Rails.logger.warn(
+            "[CollavreOpenclaw::ConnectionManager] API key mismatch for gateway #{gateway_url}: " \
+            "user #{user.id} has a different key than connection owner #{client.user.id}. " \
+            "The connection uses the owner's key. Verify AI agent settings."
+          )
         end
 
         # Track this user as using this gateway
