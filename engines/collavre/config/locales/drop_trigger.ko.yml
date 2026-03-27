@@ -1,6 +1,6 @@
 ko:
   collavre:
     drop_trigger:
-      child_entered: "🔔 드롭 트리거: 크리에이티브 '%{child_description}' (ID: %{child_id})가 '%{parent_description}'에 추가되었습니다. 이 단계의 목적에 맞게 처리해주세요."
+      child_entered: "🔔 드롭 트리거 — 크리에이티브 '%{child_description}' (ID: %{child_id})가 '%{parent_description}'에 추가되었습니다. 이 단계의 목적에 맞게 처리해주세요."
       toggle_on: "드롭 트리거 활성화됨"
       toggle_off: "드롭 트리거 비활성화됨"
