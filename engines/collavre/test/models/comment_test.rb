@@ -126,4 +126,28 @@ class CommentTest < ActiveSupport::TestCase
     # No inbox comments should be created for "..." placeholder from AI agent
     assert_equal initial_inbox_comment_count, inbox.comments.count
   end
+
+  test "creating an inbox notification broadcasts inbox badge immediately" do
+    creative = creatives(:tshirt)
+    commenter = users(:two)
+    owner = creative.user
+    inbox_creative = Creative.inbox_for(owner)
+
+    broadcasts = []
+
+    Turbo::StreamsChannel.stub(:broadcast_replace_to, ->(*args, **kwargs) {
+      broadcasts << { stream: args.first, target: kwargs[:target], locals: kwargs[:locals] }
+    }) do
+      perform_enqueued_jobs do
+        Comment.create!(creative: creative, user: commenter, content: "immediate inbox badge")
+      end
+    end
+
+    inbox_broadcasts = broadcasts.select { |payload| payload[:stream] == ["inbox", owner] }
+
+    assert inbox_broadcasts.any?, "expected inbox badge broadcast"
+    assert inbox_broadcasts.any? { |payload| payload[:target] == "desktop-inbox-badge" && payload.dig(:locals, :count) == 1 }
+    assert inbox_broadcasts.any? { |payload| payload[:target] == "mobile-inbox-badge" && payload.dig(:locals, :count) == 1 }
+    assert_equal 1, Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
+  end
 end
