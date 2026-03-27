@@ -328,6 +328,42 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected no new task when duplicate running task exists for same comment"
   end
 
+  test "releases resources in ensure block on success" do
+    AiClient.stub :new, FakeAiClient.new do
+      AiAgentJob.perform_now(@agent.id, "test_event", @context)
+    end
+
+    tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
+    assert_equal 0, tracker.active_jobs,
+      "Expected active_jobs to be 0 after successful completion"
+  end
+
+  test "releases resources in ensure block on error" do
+    AiClient.stub :new, ->(*args) { raise StandardError, "AI Error" } do
+      assert_raises(StandardError) do
+        AiAgentJob.perform_now(@agent.id, "test_event", @context)
+      end
+    end
+
+    tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
+    assert_equal 0, tracker.active_jobs,
+      "Expected active_jobs to be 0 after error"
+  end
+
+  test "does not release resources on approval pending" do
+    # Stub AiAgentService to raise ApprovalPendingError directly
+    fake_service = Minitest::Mock.new
+    fake_service.expect(:call, nil) { raise Collavre::ApprovalPendingError }
+
+    Collavre::AiAgentService.stub :new, ->(_task) { fake_service } do
+      AiAgentJob.perform_now(@agent.id, "test_event", @context)
+    end
+
+    tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
+    assert_operator tracker.active_jobs, :>, 0,
+      "Expected active_jobs > 0 when approval is pending"
+  end
+
   test "allows execution when existing task for same comment is done" do
     # Create a completed task for the same agent + comment
     Task.create!(
