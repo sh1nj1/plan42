@@ -17,7 +17,7 @@ module Collavre
 
       # Create trigger topic and comment on the CHILD creative
       topic = find_or_create_trigger_topic(child, agent)
-      comment = create_trigger_comment(child, parent, topic)
+      comment = create_trigger_comment(child, parent, agent, topic)
 
       # Dispatch event targeting the child creative
       SystemEvents::Dispatcher.dispatch("comment_created", {
@@ -35,7 +35,11 @@ module Collavre
           "id" => topic.id
         },
         "chat" => {
-          "content" => comment.content
+          "content" => comment.content,
+          "mentioned_user" => {
+            "id" => agent.id,
+            "name" => agent.name
+          }
         },
         "drop_trigger" => {
           "parent_id" => parent.id,
@@ -64,13 +68,15 @@ module Collavre
       topic
     end
 
-    def create_trigger_comment(child, parent, topic)
-      content = I18n.t(
+    def create_trigger_comment(child, parent, agent, topic)
+      trigger_text = I18n.t(
         "collavre.drop_trigger.child_entered",
         child_description: child.description,
         child_id: child.id,
         parent_description: parent.description
       )
+      # Mention the agent to ensure exclusive routing via Matcher
+      content = "@#{agent.name}: #{trigger_text}"
       child.comments.create!(
         content: content,
         topic_id: topic.id,
