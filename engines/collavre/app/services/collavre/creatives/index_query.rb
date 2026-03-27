@@ -127,7 +127,6 @@ module Creatives
 
     def handle_root_query
       roots = Creative.where(user: user).roots
-                      .where("data->>'kind' IS NULL OR data->>'kind' != ?", 'inbox')
       roots = roots.where(archived_at: nil) unless params[:show_archived]
 
       {
@@ -169,8 +168,7 @@ module Creatives
           linked_descendants_subquery
         )
       else
-        Creative.where(origin_id: nil)
-                .where("data->>'kind' IS NULL OR data->>'kind' != ?", 'inbox')  # Only real root creatives, excluding system inboxes
+        Creative.where(origin_id: nil)  # Only real creatives (not shells)
       end
 
       # Exclude archived creatives from all filters/search unless explicitly requested

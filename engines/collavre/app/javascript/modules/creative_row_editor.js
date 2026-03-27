@@ -337,16 +337,6 @@ export function initializeCreativeRowEditor() {
       }
     }
 
-    function isVisibleCreativeRow(row) {
-      if (!row || !row.getAttribute?.('creative-id')) return false;
-      if (row.hasAttribute?.('is-title')) return false;
-      if (row.hidden) return false;
-      if (row.getAttribute?.('aria-hidden') === 'true') return false;
-      const style = window.getComputedStyle(row);
-      if (style.display === 'none' || style.visibility === 'hidden') return false;
-      return row.getClientRects().length > 0;
-    }
-
     function siblingTreeRow(row, direction) {
       if (!row) return null;
       const step = direction === 'previous' ? 'previousSibling' : 'nextSibling';
@@ -356,11 +346,7 @@ export function initializeCreativeRowEditor() {
           node = node[step];
           continue;
         }
-        if (node.matches?.('creative-tree-row')) {
-          if (isVisibleCreativeRow(node)) return node;
-          node = node[step];
-          continue;
-        }
+        if (node.matches?.('creative-tree-row')) return node;
         if (node.classList?.contains?.('creative-children')) {
           node = node[step];
           continue;
@@ -504,8 +490,8 @@ export function initializeCreativeRowEditor() {
 
     function listAllTreeNodes() {
       const root = document.getElementById('creatives');
-      const trees = root ? Array.from(root.querySelectorAll('.creative-tree')) : Array.from(document.querySelectorAll('.creative-tree'));
-      return trees.filter((tree) => Boolean(treeRowElement(tree)?.getAttribute('creative-id')));
+      if (root) return Array.from(root.querySelectorAll('.creative-tree'));
+      return Array.from(document.querySelectorAll('.creative-tree'));
     }
 
     function findPreviousTree(tree) {
@@ -681,17 +667,12 @@ export function initializeCreativeRowEditor() {
 
     function updateActionButtonStates() {
       const hasCurrent = Boolean(currentTree);
-      const currentRow = hasCurrent ? treeRowElement(currentTree) : null;
-      const siblingRows = currentRow?.parentNode
-        ? Array.from(currentRow.parentNode.children).filter((node) => node.matches?.('creative-tree-row') && isVisibleCreativeRow(node))
-        : [];
-      const siblingIndex = currentRow ? siblingRows.indexOf(currentRow) : -1;
-      const previousSiblingRow = siblingIndex > 0 ? siblingRows[siblingIndex - 1] : null;
-      const nextSiblingRow = siblingIndex >= 0 ? siblingRows[siblingIndex + 1] : null;
+      const trees = hasCurrent ? listAllTreeNodes() : [];
+      const index = hasCurrent ? trees.indexOf(currentTree) : -1;
       const hasCreativeId = Boolean(form.dataset?.creativeId);
 
-      if (upBtn) upBtn.disabled = !(hasCurrent && previousSiblingRow);
-      if (downBtn) downBtn.disabled = !(hasCurrent && nextSiblingRow);
+      if (upBtn) upBtn.disabled = !(hasCurrent && index > 0);
+      if (downBtn) downBtn.disabled = !(hasCurrent && index >= 0 && index < trees.length - 1);
 
       let canLevelDown = false;
       if (hasCurrent) {

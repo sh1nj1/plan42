@@ -25,10 +25,6 @@ class InlineScriptsTest < ApplicationSystemTestCase
     end
   end
 
-  def clear_inbox_state
-    page.execute_script("localStorage.removeItem('inboxOpen')")
-  end
-
   def stub_clipboard
     # Stub navigator.clipboard for tests in non-secure contexts
     # Uses try/catch and Object.defineProperty for read-only property handling
@@ -140,25 +136,21 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_selector "#plans-list-area", visible: :hidden
   end
 
-  test "inbox panel opens and closes on button click" do
-    visit root_path
-    clear_inbox_state
+  test "inbox button opens comments popup and close button hides it" do
+    inbox = Creative.inbox_for(@user)
+
     visit root_path
 
-    # Inbox panel should not have 'open' class initially
-    assert_no_selector "#inbox-panel.open"
+    assert_no_selector "#comments-popup", visible: :visible
 
-    # Click inbox menu button
     find(".inbox-menu-btn", match: :first).click
 
-    # Inbox panel should have 'open' class
-    assert_selector "#inbox-panel.open", wait: 5
+    assert_selector "#comments-popup", visible: :visible, wait: 5
+    assert_equal inbox.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
 
-    # Click close button via JavaScript (more reliable for event-bound elements)
-    page.execute_script("document.getElementById('close-inbox').click()")
+    find("#close-comments-btn", wait: 5).click
 
-    # Wait for the class to be removed
-    assert_no_selector "#inbox-panel.open", wait: 5
+    assert_no_selector "#comments-popup", visible: :visible, wait: 5
   end
 
   test "creative guide popover shows on help button click" do
@@ -253,63 +245,34 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert firebase_config.present?, "Firebase config should be loaded"
   end
 
-  test "inbox panel persists open state across page navigation" do
+  test "inbox button opens comments popup after page navigation" do
     creative = Creative.create!(user: @user, description: "Navigation Test Creative")
+    inbox = Creative.inbox_for(@user)
 
     visit root_path
-    clear_inbox_state
-    visit root_path
-
-    # Wait for page to fully load
     assert_selector ".inbox-menu-btn", wait: 5
 
-    # Open inbox panel
-    find(".inbox-menu-btn", match: :first).click
-    assert_selector "#inbox-panel.open", wait: 5
-
-    # Navigate to a creative page and wait for it to load
     visit collavre.creative_path(creative)
-    assert_selector "#inbox-panel", wait: 5
-
-    # Inbox panel should still be open (localStorage preserves state)
-    assert_selector "#inbox-panel.open", wait: 5
-
-    # Close and verify it stays closed (use JS click for reliability)
-    page.execute_script("document.getElementById('close-inbox').click()")
-    assert_no_selector "#inbox-panel.open", wait: 5
-
-    # Navigate back and verify closed state persists
-    visit root_path
     assert_selector ".inbox-menu-btn", wait: 5
-    assert_no_selector "#inbox-panel.open", wait: 5
+
+    find(".inbox-menu-btn", match: :first).click
+
+    assert_selector "#comments-popup", visible: :visible, wait: 5
+    assert_equal inbox.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
   end
 
-  test "inbox panel loads items on open" do
-    # Create an inbox item for the user
-    other_user = User.create!(
-      email: "other@example.com",
-      password: SystemHelpers::PASSWORD,
-      name: "OtherUser",
-      email_verified_at: Time.current
-    )
-    creative = Creative.create!(user: other_user, description: "Shared Creative")
-    CreativeShare.create!(creative: creative, user: @user, permission: :read)
-    InboxItem.create!(owner: @user, creative: creative, message_key: "inbox.share", state: "new")
+  test "inbox button loads inbox creative comments on open" do
+    inbox = Creative.inbox_for(@user)
+    comment = Comment.create!(creative: inbox, user: @user, content: "Inbox message")
 
     visit root_path
-    clear_inbox_state
-    visit root_path
-
-    # Wait for page to fully load
     assert_selector ".inbox-menu-btn", wait: 5
 
-    # Open inbox panel
     find(".inbox-menu-btn", match: :first).click
-    assert_selector "#inbox-panel.open", wait: 5
 
-    # Wait for inbox content to load (async fetch)
-    # Use visible: :all because panel animation can affect visibility detection
-    assert_selector "#inbox-panel .inbox-item", visible: :all, wait: 15
+    assert_selector "#comments-popup", visible: :visible, wait: 5
+    assert_selector "#comment_#{comment.id}", visible: :all, wait: 15
+    assert_selector "#comment_#{comment.id}", text: "Inbox message", visible: :all, wait: 15
   end
 
   test "doorkeeper token modal copy and close buttons work" do
@@ -486,51 +449,21 @@ class InlineScriptsTest < ApplicationSystemTestCase
     end
   end
 
-  test "inbox mark-read button works without duplicate requests" do
-    # Create inbox items
-    other_user = User.create!(
-      email: "pagination-test@example.com",
-      password: SystemHelpers::PASSWORD,
-      name: "PaginationUser",
-      email_verified_at: Time.current
-    )
-
-    creative = Creative.create!(user: other_user, description: "Test Creative")
-    CreativeShare.create!(creative: creative, user: @user, permission: :read)
-    inbox_item = InboxItem.create!(
-      owner: @user,
-      creative: creative,
-      message_key: "inbox.share",
-      state: "new",
-      link: "/creatives/#{creative.id}"
-    )
+  test "inbox button can reopen comments popup without duplicate bindings" do
+    inbox = Creative.inbox_for(@user)
 
     visit root_path
-    clear_inbox_state
-    visit root_path
 
-    # Open inbox panel
     find(".inbox-menu-btn", match: :first).click
-    assert_selector "#inbox-panel.open", wait: 5
+    assert_selector "#comments-popup", visible: :visible, wait: 5
+    assert_equal inbox.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
 
-    # Wait for inbox content to load (async fetch)
-    # Use visible: :all because panel animation can affect visibility detection
-    assert_selector ".inbox-item", visible: :all, wait: 15
+    find("#close-comments-btn", wait: 5).click
+    assert_no_selector "#comments-popup", visible: :visible, wait: 5
 
-    # Verify initial state
-    assert_equal "new", inbox_item.reload.state
-
-    # Get the item element and click mark-read button
-    item_selector = ".inbox-item[data-id='#{inbox_item.id}']"
-    item = find(item_selector, visible: :all)
-    mark_read_btn = item.find("button", text: I18n.t("collavre.inbox.mark_read"), visible: :all)
-    page.execute_script("arguments[0].click()", mark_read_btn)
-
-    # Wait for the item to disappear (inbox reloads after marking read, and default view hides read items)
-    assert_no_selector item_selector, wait: 10
-
-    # Verify final state in database
-    assert_equal "read", inbox_item.reload.state, "Item should be marked as read after click"
+    find(".inbox-menu-btn", match: :first).click
+    assert_selector "#comments-popup", visible: :visible, wait: 5
+    assert_equal inbox.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
   end
 
   test "doorkeeper token copy uses fallback when clipboard API fails" do
