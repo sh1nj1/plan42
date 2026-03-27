@@ -6,6 +6,7 @@ export default class extends Controller {
     connect() {
         this.enabled = false
         this.canWrite = false
+        this._cachedData = null
     }
 
     get creativeId() {
@@ -15,6 +16,7 @@ export default class extends Controller {
     async onPopupOpened({ creativeId }) {
         this.enabled = false
         this.canWrite = false
+        this._cachedData = null
         this._updateButtonState()
         await this._loadTriggerState()
     }
@@ -22,6 +24,7 @@ export default class extends Controller {
     onPopupClosed() {
         this.enabled = false
         this.canWrite = false
+        this._cachedData = null
         this._updateButtonState()
     }
 
@@ -34,8 +37,7 @@ export default class extends Controller {
         this._updateButtonState()
 
         try {
-            // Fetch current data first to preserve other fields
-            const currentData = await this._fetchCreativeData()
+            const currentData = this._cachedData || {}
             const newData = {
                 ...currentData,
                 trigger: { ...(currentData.trigger || {}), on_child_enter: newState }
@@ -51,7 +53,10 @@ export default class extends Controller {
                 body: new URLSearchParams({ data: JSON.stringify(newData) })
             })
 
-            if (!response.ok) {
+            if (response.ok) {
+                // Update cache with new data
+                this._cachedData = newData
+            } else {
                 // Revert on failure
                 this.enabled = !newState
                 this._updateButtonState()
@@ -71,27 +76,14 @@ export default class extends Controller {
             const response = await fetch(`/creatives/${creativeId}.json`)
             if (response.ok) {
                 const json = await response.json()
-                this.enabled = json.data?.trigger?.on_child_enter === true
+                this._cachedData = json.data || {}
+                this.enabled = this._cachedData?.trigger?.on_child_enter === true
                 this.canWrite = json.can_edit || false
                 this._updateButtonState()
             }
         } catch (e) {
             console.error("Failed to load drop trigger state", e)
         }
-    }
-
-    async _fetchCreativeData() {
-        const creativeId = this.creativeId
-        if (!creativeId) return {}
-
-        try {
-            const response = await fetch(`/creatives/${creativeId}.json`)
-            if (response.ok) {
-                const json = await response.json()
-                return json.data || {}
-            }
-        } catch (e) { /* ignore */ }
-        return {}
     }
 
     _updateButtonState() {

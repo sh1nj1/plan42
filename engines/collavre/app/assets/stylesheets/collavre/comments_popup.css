@@ -1208,14 +1208,14 @@ body.chat-fullscreen {
 }
 
 .drop-trigger-toggle-btn.drop-trigger-active {
-    background: var(--color-warning-background, #fff3cd);
-    color: var(--color-warning-text, #856404);
-    border-color: var(--color-warning-border, #ffc107);
+    background: color-mix(in srgb, var(--color-warning) 20%, transparent);
+    color: var(--color-warning);
+    border-color: var(--color-warning);
 }
 
 .drop-trigger-toggle-btn.drop-trigger-active svg {
-    stroke: var(--color-warning-text, #856404);
-    fill: var(--color-warning-text, #856404);
+    stroke: var(--color-warning);
+    fill: var(--color-warning);
     fill-opacity: 0.2;
 }
 
