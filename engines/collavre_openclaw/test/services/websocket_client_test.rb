@@ -160,6 +160,41 @@ module CollavreOpenclaw
       assert_equal "AB", result
     end
 
+    # Regression: final event with same seq as last delta must NOT be skipped.
+    # Gateway may reuse seq numbers across different states (delta vs final).
+    test "chat_send processes final event even when its seq equals last delta seq" do
+      client = WebsocketClient.new(user: @user)
+      yielded = []
+
+      events = [
+        { seq: 0, state: "delta", message: { content: "Hi" } },
+        { seq: 1, state: "delta", message: { content: "Hi there" } },
+        { seq: 1, state: "final", message: { content: "Hi there" } }  # same seq as last delta!
+      ]
+
+      result = run_chat_send_with_events(client, events) do |ev|
+        yielded << ev
+      end
+
+      assert_equal "Hi there", result
+      finals = yielded.select { |e| e[:state] == "final" }
+      assert_equal 1, finals.size, "Final event must not be filtered by seq dedup"
+    end
+
+    # Regression: duplicate_chat_event? must distinguish delta vs final with same seq.
+    test "handle_chat_event does not dedup final event sharing seq with delta" do
+      client = WebsocketClient.new(user: @user)
+      proactive_calls = []
+      client.on_proactive_message { |user, payload| proactive_calls << payload }
+
+      # delta with seq=5 arrives first
+      client.send(:handle_chat_event, { runId: "run-seq", seq: 5, state: "delta", message: { content: "hello" } })
+      # final with seq=5 arrives second — must NOT be deduped
+      client.send(:handle_chat_event, { runId: "run-seq", seq: 5, state: "final", message: { content: "hello" } })
+
+      assert_equal 2, proactive_calls.size, "Delta and final with same seq should both be processed"
+    end
+
     # --- broadcast+nodeSend (runId, seq) dedup tests ---
 
     test "duplicate chat event with same runId and seq is suppressed" do

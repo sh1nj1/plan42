@@ -212,14 +212,19 @@ module CollavreOpenclaw
         end
 
         # Gateway may broadcast + nodeSend the same event, causing
-        # duplicates on the same WebSocket.  Skip already-seen seqs.
+        # duplicates on the same WebSocket. Skip already-seen seqs for
+        # deltas only. Terminal events (final, error, aborted) must NEVER
+        # be skipped — they break the loop and unblock the caller.
         seq = event[:seq]
-        if seq && last_seq && seq <= last_seq
+        event_state = event[:state]
+        is_terminal = event_state == "final" || event_state == "error" || event_state == "aborted"
+
+        if !is_terminal && seq && last_seq && seq <= last_seq
           next
         end
         last_seq = seq if seq
 
-        case event[:state]
+        case event_state
         when "delta"
           text = extract_event_text(event)
           if text.present?
@@ -497,8 +502,10 @@ module CollavreOpenclaw
       seq = payload[:seq]
 
       # Dedup: Gateway sends identical events via broadcast() + nodeSendToSession().
-      # Skip if we've already seen this (runId, seq) pair.
-      if run_id && seq && duplicate_chat_event?(run_id, seq)
+      # Key includes state so that a delta and final with the same seq are NOT
+      # treated as duplicates (they are different events that share a seq number).
+      state = payload[:state]
+      if run_id && seq && duplicate_chat_event?(run_id, seq, state)
         Rails.logger.debug("[CollavreOpenclaw::WS] CHAT run=#{run_id} seq=#{seq} state=dedup_skipped")
         return
       end
@@ -521,11 +528,12 @@ module CollavreOpenclaw
       end
     end
 
-    # Check if this (runId, seq) pair was already seen. Records it if new.
+    # Check if this (runId, seq, state) triple was already seen. Records it if new.
     # Gateway emits each event via broadcast() AND nodeSendToSession(),
-    # delivering the identical payload (same runId + seq) twice.
-    def duplicate_chat_event?(run_id, seq)
-      key = "#{run_id}:#{seq}"
+    # delivering the identical payload twice. Including state in the key
+    # ensures a delta and final with the same seq are treated as distinct events.
+    def duplicate_chat_event?(run_id, seq, state = nil)
+      key = "#{run_id}:#{seq}:#{state}"
       now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       @mutex.synchronize do
