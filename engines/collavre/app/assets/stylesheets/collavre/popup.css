@@ -325,7 +325,7 @@
     max-width: calc(100vw - 8px);
   }
 
-  #inline-delete-popup-menu {
+  .inline-delete-popup-menu {
     right: 0;
     left: auto;
   }
