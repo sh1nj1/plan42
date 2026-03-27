@@ -1,6 +1,6 @@
 en:
   collavre:
     drop_trigger:
-      child_entered: "🔔 Drop Trigger: Creative '%{child_description}' (ID: %{child_id}) was added to '%{parent_description}'. Please process this creative according to this stage's purpose."
+      child_entered: "🔔 Drop Trigger — Creative '%{child_description}' (ID: %{child_id}) was added to '%{parent_description}'. Please process this creative according to this stage's purpose."
       toggle_on: "Drop Trigger enabled"
       toggle_off: "Drop Trigger disabled"
