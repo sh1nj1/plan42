@@ -11,6 +11,8 @@ module Collavre
     end
 
     after_save :touch_subtree_on_move, if: :saved_change_to_parent_id?
+    after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
+    after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
 
 
     include Linkable
@@ -79,6 +81,11 @@ module Collavre
     after_save :update_parent_progress
     after_destroy :update_parent_progress
     after_save :update_mcp_tools
+
+    # --- Drop Trigger ---
+    def drop_trigger_enabled?
+      data&.dig("trigger", "on_child_enter") == true
+    end
 
     # --- Context IDs ---
     # Returns the directly-configured context creative IDs for this creative.
@@ -235,6 +242,25 @@ module Collavre
 
     def touch_subtree_on_move
       descendants.update_all(updated_at: Time.current)
+    end
+
+    def fire_drop_trigger_on_move
+      # Skip on create — after_create_commit handles that case
+      return if previously_new_record?
+
+      new_parent_id = parent_id
+      return unless new_parent_id
+
+      new_parent = Creative.find_by(id: new_parent_id)
+      return unless new_parent&.drop_trigger_enabled?
+
+      DropTriggerJob.perform_later(new_parent.id, id)
+    end
+
+    def fire_drop_trigger_on_create
+      return unless parent&.drop_trigger_enabled?
+
+      DropTriggerJob.perform_later(parent_id, id)
     end
   end
 end
