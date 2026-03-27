@@ -13,7 +13,10 @@ module Collavre
       # Agent is resolved from the parent (where the trigger is configured),
       # but the work happens on the child creative's chat
       agent = find_trigger_agent(parent)
-      return unless agent
+      unless agent
+        post_trigger_failure_notice(child, parent)
+        return
+      end
 
       # Create trigger topic and comment on the CHILD creative
       topic = find_or_create_trigger_topic(child, agent)
@@ -49,6 +52,23 @@ module Collavre
     end
 
     private
+
+    def post_trigger_failure_notice(child, parent)
+      topic = child.topics.find_or_create_by!(name: "Drop Trigger") do |t|
+        t.user = child.user
+      end
+      # System message (user: nil, skip_default_user: true) — not dispatched
+      # to SystemEvents, so no AI agent will be triggered by this comment.
+      child.comments.create!(
+        content: I18n.t(
+          "collavre.drop_trigger.no_agent",
+          parent_description: parent.creative_snippet
+        ),
+        topic_id: topic.id,
+        private: false,
+        skip_default_user: true
+      )
+    end
 
     def find_trigger_agent(creative)
       creative.all_shared_users(:write)
