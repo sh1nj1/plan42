@@ -22,6 +22,20 @@ module CollavreOpenclaw
     COMPLETED_RUN_COOLDOWN = 5  # seconds to suppress late-arriving events for completed runs
     SEEN_EVENT_TTL = 30         # seconds to remember (runId, seq) pairs for dedup
 
+    # WebSocket close codes → reconnection policy
+    # :reconnect — schedule reconnect with exponential backoff
+    # :fatal     — permanent failure (auth, forbidden), don't retry, propagate error
+    # :normal    — clean shutdown, no reconnect, no error
+    CLOSE_POLICIES = {
+      1000 => :normal,      # Normal closure
+      1001 => :reconnect,   # Going away (server shutting down)
+      1006 => :reconnect,   # Abnormal closure (network issue)
+      1008 => :fatal,       # Policy violation (likely auth)
+      1011 => :reconnect,   # Internal server error
+      4001 => :fatal,       # Auth failure (OpenClaw)
+      4003 => :fatal       # Forbidden (OpenClaw)
+    }.freeze
+
     attr_reader :user, :state
 
     # States: :disconnected, :connecting, :connected, :reconnecting
@@ -39,8 +53,7 @@ module CollavreOpenclaw
       @proactive_handler = nil
       @reconnect_attempts = 0
       @last_activity_at = nil
-      @tick_interval_ms = 15_000
-      @tick_timer = nil
+      @rpc_run_registrations = {} # RPC request_id → run_queue (for EM-thread runId registration)
     end
 
     def connected?
@@ -52,7 +65,6 @@ module CollavreOpenclaw
     def connect!
       return if connected?
 
-      initiator = false
       waiter_queue = nil
 
       @connect_mutex.synchronize do
@@ -64,7 +76,6 @@ module CollavreOpenclaw
           @connect_waiters << waiter_queue
         else
           @state = :connecting
-          initiator = true
         end
       end
 
@@ -126,7 +137,6 @@ module CollavreOpenclaw
     def disconnect!
       @state = :disconnected
       EmReactor.next_tick do
-        cancel_tick_timer!
         @ws&.close
         @ws = nil
       end
@@ -135,6 +145,7 @@ module CollavreOpenclaw
       @pending_requests.clear
       @pending_runs.each_value { |q| q.push({ done: true }) }
       @pending_runs.clear
+      @rpc_run_registrations.clear
     end
 
     # Send a chat message. Blocks and yields streaming events.
@@ -156,19 +167,30 @@ module CollavreOpenclaw
       # Pre-register with idempotency_key to catch early events
       @mutex.synchronize { @pending_runs[idempotency_key] = run_queue }
 
-      # Send the RPC request to get the real runId
+      # Send the RPC request to get the real runId.
+      # IMPORTANT: We pass the run_queue via @rpc_run_registrations so that
+      # handle_response can register @pending_runs[actual_run_id] on the EM
+      # thread BEFORE any subsequent chat events arrive. This prevents a race
+      # condition where fast Gateway responses send events before the Rails
+      # thread can re-register with the actual runId.
+      rpc_request_id = SecureRandom.uuid
+      @mutex.synchronize { @rpc_run_registrations[rpc_request_id] = run_queue }
+
       response = send_rpc("chat.send", {
         sessionKey: session_key,
         message: message,
         idempotencyKey: idempotency_key
-      })
+      }, request_id: rpc_request_id)
 
-      # Re-register with the Gateway-assigned runId
+      # The EM thread already registered @pending_runs[actual_run_id] in
+      # handle_response. Clean up the idempotency_key entry if a different
+      # runId was assigned.
       actual_run_id = response&.dig(:runId) || idempotency_key
       if actual_run_id != idempotency_key
         @mutex.synchronize do
           @pending_runs.delete(idempotency_key)
-          @pending_runs[actual_run_id] = run_queue
+          # Ensure runId is registered (may already be from handle_response)
+          @pending_runs[actual_run_id] ||= run_queue
         end
       end
 
@@ -185,14 +207,19 @@ module CollavreOpenclaw
         end
 
         # Gateway may broadcast + nodeSend the same event, causing
-        # duplicates on the same WebSocket.  Skip already-seen seqs.
+        # duplicates on the same WebSocket. Skip already-seen seqs for
+        # deltas only. Terminal events (final, error, aborted) must NEVER
+        # be skipped — they break the loop and unblock the caller.
         seq = event[:seq]
-        if seq && last_seq && seq <= last_seq
+        event_state = event[:state]
+        is_terminal = event_state == "final" || event_state == "error" || event_state == "aborted"
+
+        if !is_terminal && seq && last_seq && seq <= last_seq
           next
         end
         last_seq = seq if seq
 
-        case event[:state]
+        case event_state
         when "delta"
           text = extract_event_text(event)
           if text.present?
@@ -260,6 +287,12 @@ module CollavreOpenclaw
       @proactive_handler = handler
     end
 
+    # Register a callback invoked when the connection dies with a fatal close code
+    # (auth failure, forbidden, etc.). ConnectionManager uses this to remove dead clients.
+    def on_fatal_close(&handler)
+      @on_fatal_close = handler
+    end
+
     # Time since last activity (for idle timeout)
     def idle_seconds
       return Float::INFINITY unless @last_activity_at
@@ -270,6 +303,23 @@ module CollavreOpenclaw
 
     def config
       CollavreOpenclaw.config
+    end
+
+    # Determine reconnection policy for a WebSocket close code.
+    # Returns :reconnect, :fatal, or :normal.
+    def close_policy(code)
+      CLOSE_POLICIES[code] || (code.to_i >= 4000 ? :fatal : :reconnect)
+    end
+
+    # Drain all pending requests and streaming runs with an error message.
+    # Called on fatal close to unblock waiting Rails threads.
+    def drain_pending_with_error!(message)
+      @mutex.synchronize do
+        @pending_requests.each_value { |pr| pr[:queue]&.push({ error: message }) }
+        @pending_requests.clear
+        @pending_runs.each_value { |q| q.push({ error: message }) }
+        @pending_runs.clear
+      end
     end
 
     def gateway_ws_url
@@ -301,8 +351,7 @@ module CollavreOpenclaw
       @handshake_done = false
 
       @ws.on :open do |_event|
-        Rails.logger.info("[CollavreOpenclaw::WS] Connected to #{url}")
-        # Wait for connect.challenge from gateway
+        Rails.logger.info("[CollavreOpenclaw::WS] CONNECT gateway=#{url} state=open")
       end
 
       @ws.on :message do |event|
@@ -312,18 +361,26 @@ module CollavreOpenclaw
       @ws.on :close do |event|
         code = event.code
         reason = event.reason
-        Rails.logger.info("[CollavreOpenclaw::WS] Disconnected (code=#{code}, reason=#{reason})")
-
-        cancel_tick_timer!
+        policy = close_policy(code)
+        Rails.logger.info("[CollavreOpenclaw::WS] DISCONNECT gateway=#{url} code=#{code} reason=#{reason} policy=#{policy}")
 
         unless @handshake_done
           @handshake_done = true
           @handshake_queue&.push({ error: "Connection closed during handshake (code=#{code})" })
         end
 
-        if @state == :connected
-          @state = :reconnecting
-          schedule_reconnect!
+        case policy
+        when :reconnect
+          if @state == :connected || @state == :connecting
+            @state = :reconnecting
+            schedule_reconnect!
+          end
+        when :fatal
+          @state = :disconnected
+          drain_pending_with_error!("Connection closed with fatal code #{code}: #{reason}")
+          @on_fatal_close&.call(self)
+        when :normal
+          @state = :disconnected
         end
       end
     end
@@ -395,10 +452,8 @@ module CollavreOpenclaw
       if id == @connect_request_id && !@handshake_done
         @handshake_done = true
         if ok
-          @tick_interval_ms = payload&.dig(:policy, :tickIntervalMs) || 15_000
           @state = :connected
           @reconnect_attempts = 0
-          start_tick_timer!
           @handshake_queue&.push({ ok: true, payload: payload })
         else
           error_msg = error&.dig(:message) || error.to_s || "handshake failed"
@@ -411,6 +466,19 @@ module CollavreOpenclaw
       # Regular RPC response
       pending = @mutex.synchronize { @pending_requests.delete(id) }
       if pending
+        # If this RPC response contains a runId (chat.send response), register
+        # the run_queue under that runId NOW, on the EM thread, before any
+        # subsequent chat events arrive. This eliminates the race condition
+        # where fast events arrive before the Rails thread can re-register.
+        if ok && payload.is_a?(Hash) && payload[:runId]
+          run_queue = @mutex.synchronize { @rpc_run_registrations.delete(id) }
+          if run_queue
+            @mutex.synchronize { @pending_runs[payload[:runId]] = run_queue }
+          end
+        else
+          @mutex.synchronize { @rpc_run_registrations.delete(id) }
+        end
+
         if ok
           pending[:queue].push({ ok: true, payload: payload })
         else
@@ -425,9 +493,11 @@ module CollavreOpenclaw
       seq = payload[:seq]
 
       # Dedup: Gateway sends identical events via broadcast() + nodeSendToSession().
-      # Skip if we've already seen this (runId, seq) pair.
-      if run_id && seq && duplicate_chat_event?(run_id, seq)
-        Rails.logger.debug("[CollavreOpenclaw::WS] Skipping duplicate chat event (runId=#{run_id}, seq=#{seq})")
+      # Key includes state so that a delta and final with the same seq are NOT
+      # treated as duplicates (they are different events that share a seq number).
+      state = payload[:state]
+      if run_id && seq && duplicate_chat_event?(run_id, seq, state)
+        Rails.logger.debug("[CollavreOpenclaw::WS] CHAT run=#{run_id} seq=#{seq} state=dedup_skipped")
         return
       end
 
@@ -439,21 +509,22 @@ module CollavreOpenclaw
         run_queue.push(payload)
       elsif recently_completed_run?(run_id)
         # Late-arriving event for a run we already finished — suppress it
-        Rails.logger.info("[CollavreOpenclaw::WS] Suppressing late event for completed runId=#{run_id}")
+        Rails.logger.info("[CollavreOpenclaw::WS] CHAT run=#{run_id} state=late_suppressed")
       elsif @proactive_handler
         # Unknown run — proactive message from Gateway (cron/heartbeat)
-        Rails.logger.info("[CollavreOpenclaw::WS] Proactive message received (runId=#{run_id})")
+        Rails.logger.info("[CollavreOpenclaw::WS] CHAT run=#{run_id} state=proactive")
         @proactive_handler.call(@user, payload)
       else
-        Rails.logger.debug("[CollavreOpenclaw::WS] Ignoring chat event for unknown runId=#{run_id}")
+        Rails.logger.debug("[CollavreOpenclaw::WS] CHAT run=#{run_id} state=ignored_no_handler")
       end
     end
 
-    # Check if this (runId, seq) pair was already seen. Records it if new.
+    # Check if this (runId, seq, state) triple was already seen. Records it if new.
     # Gateway emits each event via broadcast() AND nodeSendToSession(),
-    # delivering the identical payload (same runId + seq) twice.
-    def duplicate_chat_event?(run_id, seq)
-      key = "#{run_id}:#{seq}"
+    # delivering the identical payload twice. Including state in the key
+    # ensures a delta and final with the same seq are treated as distinct events.
+    def duplicate_chat_event?(run_id, seq, state = nil)
+      key = "#{run_id}:#{seq}:#{state}"
       now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       @mutex.synchronize do
@@ -485,38 +556,21 @@ module CollavreOpenclaw
     end
 
     def handle_tick(_payload)
-      # Respond with a tick acknowledgment (poll response)
-      send_frame({
-        type: "req",
-        id: SecureRandom.uuid,
-        method: "poll",
-        params: {}
-      })
-    end
-
-    def start_tick_timer!
-      cancel_tick_timer!
-      interval = @tick_interval_ms / 1000.0
-      @tick_timer = EM.add_periodic_timer(interval) do
-        # Send keepalive poll if the server hasn't sent a tick
-        send_frame({
-          type: "req",
-          id: SecureRandom.uuid,
-          method: "poll",
-          params: {}
-        })
-      end
-    end
-
-    def cancel_tick_timer!
-      @tick_timer&.cancel
-      @tick_timer = nil
+      # The tick event from Gateway is a keepalive heartbeat.
+      # Receiving it already refreshes our activity timer (via touch_activity!
+      # in handle_raw_message). No response is needed.
     end
 
     # Send an RPC request and block until the response.
     # Returns the response payload.
-    def send_rpc(method, params)
-      request_id = SecureRandom.uuid
+    #
+    # @param method [String] RPC method name
+    # @param params [Hash] RPC parameters
+    # @param request_id [String, nil] Pre-generated request ID. Used by chat_send
+    #   to correlate the RPC response with the run_queue for EM-thread runId
+    #   registration (see handle_response). If nil, a random UUID is generated.
+    def send_rpc(method, params, request_id: nil)
+      request_id ||= SecureRandom.uuid
       queue = Queue.new
 
       @mutex.synchronize do
@@ -566,7 +620,8 @@ module CollavreOpenclaw
       delay = config.ws_reconnect_base_delay * (2**(@reconnect_attempts - 1))
       delay = [ delay, 60 ].min # Cap at 60 seconds
 
-      Rails.logger.info("[CollavreOpenclaw::WS] Reconnecting in #{delay}s (attempt #{@reconnect_attempts}/#{max})")
+      url = gateway_ws_url
+      Rails.logger.info("[CollavreOpenclaw::WS] RECONNECT gateway=#{url} attempt=#{@reconnect_attempts}/#{max} delay=#{delay}s")
 
       EM.add_timer(delay) do
         next if @state == :disconnected # User explicitly disconnected
@@ -580,13 +635,13 @@ module CollavreOpenclaw
           EM.add_timer(config.ws_connect_timeout) do
             unless @handshake_done
               @handshake_done = true
-              Rails.logger.warn("[CollavreOpenclaw::WS] Reconnect handshake timed out")
+              Rails.logger.warn("[CollavreOpenclaw::WS] RECONNECT gateway=#{url} state=handshake_timeout")
               @ws&.close
               schedule_reconnect!
             end
           end
         rescue => e
-          Rails.logger.error("[CollavreOpenclaw::WS] Reconnect failed: #{e.message}")
+          Rails.logger.error("[CollavreOpenclaw::WS] RECONNECT gateway=#{url} state=fail reason=#{e.message}")
           schedule_reconnect!
         end
       end

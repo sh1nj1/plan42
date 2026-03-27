@@ -7,4 +7,5 @@ gem "rails", ">= 8.0"
 group :development, :test do
   gem "debug"
   gem "minitest"
+  gem "em-websocket", "~> 0.5"
 end

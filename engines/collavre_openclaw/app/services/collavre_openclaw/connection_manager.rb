@@ -43,10 +43,17 @@ module CollavreOpenclaw
         client = @connections[gateway_url]
 
         if client.nil?
-          client = WebsocketClient.new(user: user)
-          client.on_proactive_message(&@proactive_handler) if @proactive_handler
-          @connections[gateway_url] = client
-          @gateway_users[gateway_url] = Set.new
+          client = create_client(user, gateway_url)
+        elsif client.user.llm_api_key != user.llm_api_key
+          # Same gateway_url but different API key. This is a configuration
+          # error: one Gateway = one API key. Log a warning so the admin
+          # notices, rather than silently ignoring the second user's key.
+          # In HTTP mode this would surface as a 401 on each request.
+          Rails.logger.warn(
+            "[CollavreOpenclaw::ConnectionManager] API key mismatch for gateway #{gateway_url}: " \
+            "user #{user.id} has a different key than connection owner #{client.user.id}. " \
+            "The connection uses the owner's key. Verify AI agent settings."
+          )
         end
 
         # Track this user as using this gateway
@@ -109,6 +116,17 @@ module CollavreOpenclaw
       end
     end
 
+    # Safe accessor: returns status without triggering singleton initialization.
+    # Use this from controllers/monitoring instead of instance_variable_get.
+    def self.status_summary
+      if instance_variable_defined?(:@singleton__instance__) && @singleton__instance__
+        instance.status
+      else
+        { total_connections: 0, total_users: 0,
+          connected: 0, connecting: 0, reconnecting: 0, disconnected: 0 }
+      end
+    end
+
     # Register a proactive message handler for all connections.
     # New connections will also get this handler.
     def on_proactive_message(&handler)
@@ -137,6 +155,35 @@ module CollavreOpenclaw
     end
 
     private
+
+    # Create a new WebsocketClient and wire up handlers.
+    def create_client(user, gateway_url)
+      client = WebsocketClient.new(user: user)
+      client.on_proactive_message(&@proactive_handler) if @proactive_handler
+      client.on_fatal_close do |dead_client|
+        handle_fatal_close(gateway_url, dead_client)
+      end
+      @connections[gateway_url] = client
+      @gateway_users[gateway_url] ||= Set.new
+      client
+    end
+
+    # Called when a client receives a fatal close code (auth failure, etc.).
+    # Removes the dead client so the next connection_for call creates a fresh one.
+    #
+    # Guard: only deletes if the current mapping still points to dead_client.
+    # Without this, a late-arriving callback from an old client could wipe a
+    # new live connection that was already registered for the same gateway_url.
+    def handle_fatal_close(gateway_url, dead_client)
+      @mutex.synchronize do
+        return unless @connections[gateway_url].equal?(dead_client)
+
+        Rails.logger.warn("[CollavreOpenclaw::ConnectionManager] Fatal close for gateway #{gateway_url}, removing connection")
+        @connections.delete(gateway_url)
+        user_ids = @gateway_users.delete(gateway_url) || Set.new
+        user_ids.each { |uid| @user_gateways.delete(uid) }
+      end
+    end
 
     # Set up the default proactive message handler that dispatches
     # unsolicited chat events to CallbackProcessorJob.
