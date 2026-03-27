@@ -71,9 +71,9 @@ module Collavre
     def create_trigger_comment(child, parent, agent, topic)
       trigger_text = I18n.t(
         "collavre.drop_trigger.child_entered",
-        child_description: child.description,
+        child_description: child.creative_snippet,
         child_id: child.id,
-        parent_description: parent.description
+        parent_description: parent.creative_snippet
       )
       # Mention the agent to ensure exclusive routing via Matcher
       content = "@#{agent.name}: #{trigger_text}"
