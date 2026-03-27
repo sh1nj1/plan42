@@ -113,3 +113,5 @@ end
 if ENV["USE_COLLAVRE_GEM"] == "true"
   gem "collavre", "0.2.4"
 end
+
+gem "em-websocket", "~> 0.5.3", :groups => [:development, :test]

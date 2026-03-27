@@ -37,7 +37,7 @@ module CollavreOpenclaw
       # Try WebSocket first, fall back to HTTP
       # Set OPENCLAW_TRANSPORT=http to force HTTP-only mode
       if CollavreOpenclaw.config.transport == "http"
-        Rails.logger.info("[CollavreOpenclaw] Using HTTP transport (forced by config)")
+        Rails.logger.info("[CollavreOpenclaw::WS] TRANSPORT mode=http_forced")
         chat_via_http(messages, &block)
       elsif websocket_available?
         chat_via_websocket(messages, &block)
@@ -119,7 +119,7 @@ module CollavreOpenclaw
         response_content.presence
       rescue CollavreOpenclaw::ConnectionError,
              CollavreOpenclaw::TimeoutError => e
-        Rails.logger.warn("[CollavreOpenclaw] WebSocket failed, falling back to HTTP: #{e.message}")
+        Rails.logger.warn("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
         chat_via_http(messages, &block)
       rescue CollavreOpenclaw::ChatError, CollavreOpenclaw::RpcError => e
         Rails.logger.error("[CollavreOpenclaw] WebSocket chat error: #{e.message}")
@@ -129,7 +129,7 @@ module CollavreOpenclaw
       rescue StandardError => e
         Rails.logger.error("[CollavreOpenclaw] WebSocket unexpected error: #{e.message}\n" \
                            "#{e.backtrace.first(5).join("\n")}")
-        Rails.logger.info("[CollavreOpenclaw] Falling back to HTTP")
+        Rails.logger.info("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
         chat_via_http(messages, &block)
       end
     end

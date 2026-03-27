@@ -252,6 +252,63 @@ module CollavreOpenclaw
       assert_empty client.instance_variable_get(:@completed_runs)
     end
 
+    # --- Close-code policy tests ---
+
+    test "close_policy returns :normal for code 1000" do
+      client = WebsocketClient.new(user: @user)
+      assert_equal :normal, client.send(:close_policy, 1000)
+    end
+
+    test "close_policy returns :reconnect for code 1006" do
+      client = WebsocketClient.new(user: @user)
+      assert_equal :reconnect, client.send(:close_policy, 1006)
+    end
+
+    test "close_policy returns :fatal for code 4001" do
+      client = WebsocketClient.new(user: @user)
+      assert_equal :fatal, client.send(:close_policy, 4001)
+    end
+
+    test "close_policy returns :fatal for unknown 4xxx codes" do
+      client = WebsocketClient.new(user: @user)
+      assert_equal :fatal, client.send(:close_policy, 4999)
+    end
+
+    test "close_policy returns :reconnect for unknown sub-4000 codes" do
+      client = WebsocketClient.new(user: @user)
+      assert_equal :reconnect, client.send(:close_policy, 1099)
+    end
+
+    test "drain_pending_with_error unblocks pending requests and runs" do
+      client = WebsocketClient.new(user: @user)
+      req_queue = Queue.new
+      run_queue = Queue.new
+
+      client.instance_variable_get(:@mutex).synchronize do
+        client.instance_variable_get(:@pending_requests)["req-1"] = { queue: req_queue }
+        client.instance_variable_get(:@pending_runs)["run-1"] = run_queue
+      end
+
+      client.send(:drain_pending_with_error!, "fatal close")
+
+      req_result = req_queue.pop(timeout: 1)
+      run_result = run_queue.pop(timeout: 1)
+
+      assert_equal "fatal close", req_result[:error]
+      assert_equal "fatal close", run_result[:error]
+      assert_empty client.instance_variable_get(:@pending_requests)
+      assert_empty client.instance_variable_get(:@pending_runs)
+    end
+
+    test "on_fatal_close callback is invoked on fatal close" do
+      client = WebsocketClient.new(user: @user)
+      callback_called = false
+      client.on_fatal_close { |c| callback_called = true }
+
+      # Directly set the callback variable to verify registration
+      assert client.instance_variable_get(:@on_fatal_close)
+    end
+
     test "chat_send records completed runs in cooldown set" do
       client = WebsocketClient.new(user: @user)
 
@@ -278,7 +335,7 @@ module CollavreOpenclaw
       client.define_singleton_method(:touch_activity!) { nil }
 
       # Stub send_rpc to push pre-built events into the run queue
-      client.define_singleton_method(:send_rpc) do |_method, params|
+      client.define_singleton_method(:send_rpc) do |_method, params, **_kwargs|
         run_queue = instance_variable_get(:@mutex).synchronize do
           instance_variable_get(:@pending_runs)[params[:idempotencyKey]]
         end

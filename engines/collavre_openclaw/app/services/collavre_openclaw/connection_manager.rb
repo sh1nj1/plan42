@@ -43,10 +43,7 @@ module CollavreOpenclaw
         client = @connections[gateway_url]
 
         if client.nil?
-          client = WebsocketClient.new(user: user)
-          client.on_proactive_message(&@proactive_handler) if @proactive_handler
-          @connections[gateway_url] = client
-          @gateway_users[gateway_url] = Set.new
+          client = create_client(user, gateway_url)
         end
 
         # Track this user as using this gateway
@@ -137,6 +134,29 @@ module CollavreOpenclaw
     end
 
     private
+
+    # Create a new WebsocketClient and wire up handlers.
+    def create_client(user, gateway_url)
+      client = WebsocketClient.new(user: user)
+      client.on_proactive_message(&@proactive_handler) if @proactive_handler
+      client.on_fatal_close do |dead_client|
+        handle_fatal_close(gateway_url, dead_client)
+      end
+      @connections[gateway_url] = client
+      @gateway_users[gateway_url] ||= Set.new
+      client
+    end
+
+    # Called when a client receives a fatal close code (auth failure, etc.).
+    # Removes the dead client so the next connection_for call creates a fresh one.
+    def handle_fatal_close(gateway_url, _dead_client)
+      Rails.logger.warn("[CollavreOpenclaw::ConnectionManager] Fatal close for gateway #{gateway_url}, removing connection")
+      @mutex.synchronize do
+        @connections.delete(gateway_url)
+        user_ids = @gateway_users.delete(gateway_url) || Set.new
+        user_ids.each { |uid| @user_gateways.delete(uid) }
+      end
+    end
 
     # Set up the default proactive message handler that dispatches
     # unsolicited chat events to CallbackProcessorJob.

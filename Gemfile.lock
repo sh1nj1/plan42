@@ -229,6 +229,9 @@ GEM
       dry-logic (~> 1.4)
       zeitwerk (~> 2.6)
     ed25519 (1.4.0)
+    em-websocket (0.5.3)
+      eventmachine (>= 0.12.9)
+      http_parser.rb (~> 0)
     erb (6.0.2)
     erubi (1.13.1)
     et-orbi (1.4.0)
@@ -299,6 +302,7 @@ GEM
     hashdiff (1.2.1)
     hashie (5.1.0)
       logger
+    http_parser.rb (0.8.1)
     httparty (0.24.2)
       csv
       mini_mime (>= 1.0.0)
@@ -703,6 +707,7 @@ DEPENDENCIES
   debug
   doorkeeper (~> 5.9)
   dotenv
+  em-websocket (~> 0.5.3)
   fcm
   google-apis-calendar_v3
   google-apis-fcm_v1

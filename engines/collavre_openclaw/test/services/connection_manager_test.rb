@@ -158,6 +158,27 @@ module CollavreOpenclaw
       refute manager.user_connected?(user)
     end
 
+    test "fatal close callback removes dead client so next call creates fresh one" do
+      user = mock_user(id: 1, gateway_url: "http://gateway1.local")
+      manager = ConnectionManager.instance
+
+      old_client = manager.connection_for(user)
+
+      # Simulate the fatal close callback (which ConnectionManager wires up)
+      manager.send(:handle_fatal_close, "http://gateway1.local", old_client)
+
+      new_client = manager.connection_for(user)
+      refute_same old_client, new_client, "Should create fresh client after fatal close"
+    end
+
+    test "new clients get fatal_close callback" do
+      manager = ConnectionManager.instance
+      user = mock_user(id: 1)
+      client = manager.connection_for(user)
+
+      assert client.instance_variable_get(:@on_fatal_close), "Fatal close callback should be set"
+    end
+
     test "connection_for returns nil for blank gateway_url" do
       user = mock_user(id: 1, gateway_url: "")
       manager = ConnectionManager.instance
