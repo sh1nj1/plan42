@@ -56,12 +56,17 @@ module Collavre
       end
     end
 
-    test "skips when no AI agent found" do
+    test "posts failure notice when no AI agent found" do
       CreativeShare.where(creative: @parent, user: @ai_bot).destroy_all
 
-      assert_no_difference -> { Comment.count } do
+      assert_difference -> { @child.comments.count }, 1 do
         DropTriggerJob.perform_now(@parent.id, @child.id)
       end
+
+      comment = @child.comments.last
+      assert_nil comment.user_id, "Failure notice should be a system message (user_id: nil)"
+      assert_includes comment.content, "⚠️"
+      assert_includes comment.content, @parent.creative_snippet
     end
 
     test "skips when parent creative not found" do
