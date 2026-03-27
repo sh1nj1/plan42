@@ -49,8 +49,8 @@ export default class extends Controller {
     requestAnimationFrame(() => {
       const transforms = []
       let rect = menu.getBoundingClientRect()
-      const spaceBelow = window.innerHeight - rect.top
-      const spaceAbove = rect.bottom
+      const spaceBelow = window.innerHeight - rect.bottom
+      const spaceAbove = rect.top
 
       if (rect.bottom > window.innerHeight && spaceAbove > spaceBelow) {
         menu.style.top = 'auto'
