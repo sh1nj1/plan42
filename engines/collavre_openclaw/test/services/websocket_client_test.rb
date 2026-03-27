@@ -361,6 +361,37 @@ module CollavreOpenclaw
 
     # Exercises chat_send by stubbing send_rpc / ensure_connected! and
     # feeding events directly into the pending_runs queue.
+    test "chat_send includes attachments in RPC params" do
+      client = WebsocketClient.new(
+        user: mock_user(id: 1, gateway_url: "wss://gw.example", llm_api_key: "tok", email: "a@b.c")
+      )
+
+      client.define_singleton_method(:ensure_connected!) { nil }
+      client.define_singleton_method(:touch_activity!) { nil }
+
+      captured = nil
+      client.define_singleton_method(:send_rpc) do |_method, params, **_kwargs|
+        captured = params
+        run_queue = instance_variable_get(:@mutex).synchronize do
+          instance_variable_get(:@pending_runs)[params[:idempotencyKey]]
+        end
+        run_queue.push({ state: "final", text: "done", seq: 0 })
+        run_queue.push({ done: true })
+        { runId: params[:idempotencyKey] }
+      end
+
+      client.chat_send(
+        session_key: "test-session",
+        message: "Hello",
+        attachments: [ { type: "image", mimeType: "image/png", fileName: "x.png", content: "abcd" } ],
+        idempotency_key: "test-key"
+      )
+
+      assert_equal 1, captured[:attachments].size
+      assert_equal "image/png", captured[:attachments].first[:mimeType]
+      assert_equal "x.png", captured[:attachments].first[:fileName]
+    end
+
     def run_chat_send_with_events(client, events, &block)
       session_key = "test-session"
       idempotency_key = "test-key"
