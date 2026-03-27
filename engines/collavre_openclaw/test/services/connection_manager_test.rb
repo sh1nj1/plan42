@@ -197,6 +197,38 @@ module CollavreOpenclaw
       assert client.instance_variable_get(:@on_fatal_close), "Fatal close callback should be set"
     end
 
+    test "logs warning when user has different API key than connection owner" do
+      owner = mock_user(id: 1, gateway_url: "http://gateway1.local", llm_api_key: "key-owner")
+      other = mock_user(id: 2, gateway_url: "http://gateway1.local", llm_api_key: "key-other")
+      manager = ConnectionManager.instance
+
+      manager.connection_for(owner)
+
+      logged = nil
+      Rails.logger.stub(:warn, ->(msg) { logged = msg if msg.include?("API key mismatch") }) do
+        manager.connection_for(other)
+      end
+
+      assert logged, "Should log a warning for API key mismatch"
+      assert_includes logged, "user 2"
+      assert_includes logged, "owner 1"
+    end
+
+    test "no warning when users share same API key on same gateway" do
+      user1 = mock_user(id: 1, gateway_url: "http://gateway1.local", llm_api_key: "same-key")
+      user2 = mock_user(id: 2, gateway_url: "http://gateway1.local", llm_api_key: "same-key")
+      manager = ConnectionManager.instance
+
+      manager.connection_for(user1)
+
+      warned = false
+      Rails.logger.stub(:warn, ->(_msg) { warned = true }) do
+        manager.connection_for(user2)
+      end
+
+      refute warned, "Should not warn when API keys match"
+    end
+
     test "connection_for returns nil for blank gateway_url" do
       user = mock_user(id: 1, gateway_url: "")
       manager = ConnectionManager.instance
@@ -207,11 +239,11 @@ module CollavreOpenclaw
 
     private
 
-    def mock_user(id:, gateway_url: "http://localhost:18789")
+    def mock_user(id:, gateway_url: "http://localhost:18789", llm_api_key: "test-token")
       OpenStruct.new(
         id: id,
         gateway_url: gateway_url,
-        llm_api_key: "test-token",
+        llm_api_key: llm_api_key,
         email: "agent-#{id}@collavre.com"
       )
     end
