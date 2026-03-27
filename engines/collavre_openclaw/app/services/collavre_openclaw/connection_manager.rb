@@ -149,9 +149,15 @@ module CollavreOpenclaw
 
     # Called when a client receives a fatal close code (auth failure, etc.).
     # Removes the dead client so the next connection_for call creates a fresh one.
-    def handle_fatal_close(gateway_url, _dead_client)
-      Rails.logger.warn("[CollavreOpenclaw::ConnectionManager] Fatal close for gateway #{gateway_url}, removing connection")
+    #
+    # Guard: only deletes if the current mapping still points to dead_client.
+    # Without this, a late-arriving callback from an old client could wipe a
+    # new live connection that was already registered for the same gateway_url.
+    def handle_fatal_close(gateway_url, dead_client)
       @mutex.synchronize do
+        return unless @connections[gateway_url].equal?(dead_client)
+
+        Rails.logger.warn("[CollavreOpenclaw::ConnectionManager] Fatal close for gateway #{gateway_url}, removing connection")
         @connections.delete(gateway_url)
         user_ids = @gateway_users.delete(gateway_url) || Set.new
         user_ids.each { |uid| @user_gateways.delete(uid) }

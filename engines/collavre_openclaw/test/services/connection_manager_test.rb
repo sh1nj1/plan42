@@ -171,6 +171,24 @@ module CollavreOpenclaw
       refute_same old_client, new_client, "Should create fresh client after fatal close"
     end
 
+    test "late fatal close callback does not remove a new live client" do
+      user = mock_user(id: 1, gateway_url: "http://gateway1.local")
+      manager = ConnectionManager.instance
+
+      old_client = manager.connection_for(user)
+
+      # Simulate: old client dies, but before callback fires, a new client is created
+      manager.send(:handle_fatal_close, "http://gateway1.local", old_client)
+      new_client = manager.connection_for(user)
+
+      # Now a stale callback from old_client arrives late
+      manager.send(:handle_fatal_close, "http://gateway1.local", old_client)
+
+      # New client must survive
+      assert_same new_client, manager.connection_for(user),
+        "Late fatal close from old client must not remove the new live client"
+    end
+
     test "new clients get fatal_close callback" do
       manager = ConnectionManager.instance
       user = mock_user(id: 1)
