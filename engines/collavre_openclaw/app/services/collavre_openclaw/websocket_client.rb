@@ -53,8 +53,6 @@ module CollavreOpenclaw
       @proactive_handler = nil
       @reconnect_attempts = 0
       @last_activity_at = nil
-      @tick_interval_ms = 15_000
-      @tick_timer = nil
       @rpc_run_registrations = {} # RPC request_id → run_queue (for EM-thread runId registration)
     end
 
@@ -67,7 +65,6 @@ module CollavreOpenclaw
     def connect!
       return if connected?
 
-      initiator = false
       waiter_queue = nil
 
       @connect_mutex.synchronize do
@@ -79,7 +76,6 @@ module CollavreOpenclaw
           @connect_waiters << waiter_queue
         else
           @state = :connecting
-          initiator = true
         end
       end
 
@@ -141,7 +137,6 @@ module CollavreOpenclaw
     def disconnect!
       @state = :disconnected
       EmReactor.next_tick do
-        cancel_tick_timer!
         @ws&.close
         @ws = nil
       end
@@ -369,8 +364,6 @@ module CollavreOpenclaw
         policy = close_policy(code)
         Rails.logger.info("[CollavreOpenclaw::WS] DISCONNECT gateway=#{url} code=#{code} reason=#{reason} policy=#{policy}")
 
-        cancel_tick_timer!
-
         unless @handshake_done
           @handshake_done = true
           @handshake_queue&.push({ error: "Connection closed during handshake (code=#{code})" })
@@ -459,10 +452,8 @@ module CollavreOpenclaw
       if id == @connect_request_id && !@handshake_done
         @handshake_done = true
         if ok
-          @tick_interval_ms = payload&.dig(:policy, :tickIntervalMs) || 15_000
           @state = :connected
           @reconnect_attempts = 0
-          start_tick_timer!
           @handshake_queue&.push({ ok: true, payload: payload })
         else
           error_msg = error&.dig(:message) || error.to_s || "handshake failed"
@@ -568,18 +559,6 @@ module CollavreOpenclaw
       # The tick event from Gateway is a keepalive heartbeat.
       # Receiving it already refreshes our activity timer (via touch_activity!
       # in handle_raw_message). No response is needed.
-    end
-
-    def start_tick_timer!
-      # No-op. The Gateway sends tick events to keep the connection alive.
-      # We don't need to send proactive keepalives; receiving the Gateway's
-      # ticks is sufficient. (The "poll" RPC method is NOT a keepalive — it
-      # requires user-facing params like to/question/options/idempotencyKey.)
-    end
-
-    def cancel_tick_timer!
-      @tick_timer&.cancel
-      @tick_timer = nil
     end
 
     # Send an RPC request and block until the response.

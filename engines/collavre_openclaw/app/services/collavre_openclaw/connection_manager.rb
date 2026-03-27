@@ -106,6 +106,17 @@ module CollavreOpenclaw
       end
     end
 
+    # Safe accessor: returns status without triggering singleton initialization.
+    # Use this from controllers/monitoring instead of instance_variable_get.
+    def self.status_summary
+      if instance_variable_defined?(:@singleton__instance__) && @singleton__instance__
+        instance.status
+      else
+        { total_connections: 0, total_users: 0,
+          connected: 0, connecting: 0, reconnecting: 0, disconnected: 0 }
+      end
+    end
+
     # Register a proactive message handler for all connections.
     # New connections will also get this handler.
     def on_proactive_message(&handler)

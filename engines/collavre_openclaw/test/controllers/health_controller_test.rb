@@ -7,7 +7,7 @@ module CollavreOpenclaw
       "/openclaw/health"
     end
 
-    test "returns health status with websocket info" do
+    test "returns basic health without auth" do
       get health_path
 
       assert_response :success
@@ -15,20 +15,11 @@ module CollavreOpenclaw
       assert_equal "ok", json["status"]
       assert_equal "collavre_openclaw", json["engine"]
       assert_equal CollavreOpenclaw::VERSION, json["version"]
-      assert_includes %w[auto http], json["transport"]
 
-      ws = json["websocket"]
-      assert_not_nil ws
-      assert ws.key?("total_connections")
-      assert ws.key?("total_users")
-      assert ws.key?("connected")
-      assert ws.key?("connecting")
-      assert ws.key?("reconnecting")
-      assert ws.key?("disconnected")
-
-      reactor = json["reactor"]
-      assert_not_nil reactor
-      assert [ true, false ].include?(reactor["running"])
+      # WebSocket details should NOT be exposed without auth
+      assert_nil json["websocket"], "WebSocket status should not be public"
+      assert_nil json["reactor"], "Reactor status should not be public"
+      assert_nil json["transport"], "Transport config should not be public"
     end
   end
 end
