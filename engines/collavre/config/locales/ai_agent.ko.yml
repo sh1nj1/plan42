@@ -2,6 +2,7 @@ ko:
   collavre:
     stuck_detection:
       task_stuck: "⚠️ '%{task_name}' 작업이 %{agent_name}에게 할당된 후 %{minutes}분 동안 진행되지 않고 있습니다."
+      approval_timeout: "⚠️ '%{task_name}' 작업이 %{agent_name}에게 할당된 후 %{minutes}분 동안 승인 대기 상태여서 자동 취소되었습니다."
       creative_stalled: "⚠️ '%{creative_title}' Creative가 %{progress}%%에서 %{hours}시간 동안 정체되어 있습니다."
       system_comment: "[시스템] %{agent_name}의 '%{task_name}' 작업이 막힌 것 같습니다. 관리자 확인이 필요합니다."
     ai_agent:

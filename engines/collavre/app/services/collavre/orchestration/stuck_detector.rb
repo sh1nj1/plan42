@@ -53,19 +53,30 @@ module Collavre
 
       private
 
-      # Auto-recover stuck tasks by marking them as failed and draining the queue.
+      # Auto-recover stuck tasks by marking them as failed/cancelled and draining the queue.
       def auto_recover_stuck_tasks(stuck_items)
         stuck_items.each do |stuck_item|
           next unless stuck_item.type == :task
 
           task = stuck_item.item
-          next unless task.status == "running"
+          minutes_stuck = ((Time.current - stuck_item.stuck_since) / 60).round
 
-          task.update!(status: "failed")
-          Rails.logger.info(
-            "[StuckDetector] Auto-recovered task #{task.id} (agent=#{task.agent_id}): " \
-            "marked as failed after #{((Time.current - stuck_item.stuck_since) / 60).round} minutes"
-          )
+          case task.status
+          when "running"
+            task.update!(status: "failed")
+            Rails.logger.info(
+              "[StuckDetector] Auto-recovered running task #{task.id} (agent=#{task.agent_id}): " \
+              "marked as failed after #{minutes_stuck} minutes"
+            )
+          when "pending_approval"
+            task.update!(status: "cancelled")
+            Rails.logger.info(
+              "[StuckDetector] Auto-recovered pending_approval task #{task.id} (agent=#{task.agent_id}): " \
+              "marked as cancelled after #{minutes_stuck} minutes"
+            )
+          else
+            next
+          end
 
           # Release resources held by the stuck task
           if task.agent
@@ -84,22 +95,21 @@ module Collavre
         @policy_resolver.resolve("stuck_detection")
       end
 
-      # Detect tasks that are stuck in running state
+      # Detect tasks that are stuck in running or pending_approval state
       def detect_stuck_tasks(config)
+        items = []
+
+        # 1. Running tasks stuck for > N minutes
         threshold_minutes = config["task_stuck_threshold_minutes"] || 30
         threshold_time = threshold_minutes.minutes.ago
 
-        stuck_tasks = Task.where(status: "running")
-                          .where("updated_at < ?", threshold_time)
-
-        stuck_tasks.filter_map do |task|
-          # Skip if already escalated recently
+        Task.where(status: "running").where("updated_at < ?", threshold_time).find_each do |task|
           next if recently_escalated?(task)
 
           escalation_targets = find_escalation_targets(task)
           next if escalation_targets.empty?
 
-          StuckItem.new(
+          items << StuckItem.new(
             type: :task,
             item: task,
             reason: :no_progress,
@@ -107,6 +117,27 @@ module Collavre
             escalation_targets: escalation_targets
           )
         end
+
+        # 2. Pending approval tasks stuck for > N minutes
+        approval_minutes = config["approval_timeout_minutes"] || 60
+        approval_threshold = approval_minutes.minutes.ago
+
+        Task.where(status: "pending_approval").where("updated_at < ?", approval_threshold).find_each do |task|
+          next if recently_escalated?(task)
+
+          escalation_targets = find_escalation_targets(task)
+          next if escalation_targets.empty?
+
+          items << StuckItem.new(
+            type: :task,
+            item: task,
+            reason: :approval_timeout,
+            stuck_since: task.updated_at,
+            escalation_targets: escalation_targets
+          )
+        end
+
+        items
       end
 
       # Detect creatives that have stalled (no activity for extended period)
@@ -254,9 +285,10 @@ module Collavre
         when :task
           task = stuck_item.item
           minutes_stuck = ((Time.current - stuck_item.stuck_since) / 60).round
+          message_key = stuck_item.reason == :approval_timeout ? "collavre.stuck_detection.approval_timeout" : "collavre.stuck_detection.task_stuck"
 
           [
-            "collavre.stuck_detection.task_stuck",
+            message_key,
             {
               task_name: task.name,
               agent_name: task.agent&.display_name || "Unknown",
