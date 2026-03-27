@@ -100,6 +100,39 @@ module CollavreOpenclaw
       assert_equal "Proactive message via context", comment.content
     end
 
+    test "creates comment in topic when proactive payload uses topic_id" do
+      topic = Collavre::Topic.create!(creative: @creative, user: @owner, name: "Talk to Vrex")
+
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "topic_id" => topic.id,
+        "content" => "Topic scoped proactive message"
+      })
+
+      assert_equal before_count + 1, @creative.comments.reload.count
+      comment = @creative.comments.order(:id).last
+      assert_equal topic, comment.topic
+      assert_equal "Topic scoped proactive message", comment.content
+    end
+
+    test "creates response comment in topic when context uses topic_id" do
+      topic = Collavre::Topic.create!(creative: @creative, user: @owner, name: "Talk to Vrex")
+
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "response",
+        "content" => "Async response in topic",
+        "context" => { "creative_id" => @creative.id, "topic_id" => topic.id }
+      })
+
+      assert_equal before_count + 1, @creative.comments.reload.count
+      comment = @creative.comments.order(:id).last
+      assert_equal topic, comment.topic
+      assert_equal "Async response in topic", comment.content
+    end
+
     test "proactive message without creative_id logs error" do
       before_count = Collavre::Comment.count
       CallbackProcessorJob.perform_now(@user.id, {

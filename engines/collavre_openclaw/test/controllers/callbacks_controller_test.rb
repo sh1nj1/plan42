@@ -179,5 +179,46 @@ module CollavreOpenclaw
       creative&.destroy
       owner&.destroy
     end
+
+    test "nonce callback preserves topic when payload uses topic_id semantics downstream" do
+      owner = User.create!(
+        email: "owner-topic-test@example.com",
+        password: "password123",
+        name: "Owner Topic"
+      )
+      creative = Collavre::Creative.create!(
+        description: "Test Creative Topic",
+        user: owner
+      )
+      topic = Collavre::Topic.create!(creative: creative, user: owner, name: "Talk to Vrex")
+
+      pending = PendingCallback.create_for_request(
+        user: @user,
+        creative_id: creative.id,
+        thread_id: topic.id
+      )
+
+      body = {
+        type: "proactive",
+        nonce: pending.nonce,
+        content: "Proactive message in topic"
+      }.to_json
+
+      perform_enqueued_jobs do
+        post callback_path(user_id: @user.id),
+             params: body,
+             headers: { "Content-Type" => "application/json" }
+      end
+
+      assert_response :ok
+
+      comment = creative.comments.order(:id).last
+      assert_equal topic, comment.topic
+      assert_equal "Proactive message in topic", comment.content
+    ensure
+      Collavre::Comment.where(creative: creative).destroy_all
+      creative&.destroy
+      owner&.destroy
+    end
   end
 end
