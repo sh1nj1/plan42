@@ -135,58 +135,57 @@ module CollavreOpenclaw
     end
 
     # Format messages for WebSocket chat.send (single message string).
-    # Gateway manages session history, so we only send the latest user message
-    # with optional context prefix on the FIRST message only.
+    #
+    # Includes full context on EVERY request, matching HTTP mode behavior.
+    # The Gateway's WS session may be new (no prior history), so we cannot
+    # assume context was sent before. This is consistent with how the HTTP
+    # Chat Completions API works (full history on every request).
+    #
+    # Message structure sent:
+    #   [system prompt]
+    #   [creative context messages]
+    #   [context creative messages]
+    #   [chat history]
+    #   [latest user message]
     def format_message_for_ws(messages)
       formatted = Array(messages)
+      return "" if formatted.empty?
 
-      # Extract the last user message
-      last_user = formatted.reverse.find do |m|
+      parts = []
+
+      # 1. System prompt (same as HTTP mode's build_payload)
+      parts << @system_prompt if @system_prompt.present?
+
+      # 2. All context messages (Creative:, Context Creative:, Referenced Creative:)
+      formatted.each do |m|
         role = m[:role] || m["role"]
-        role.to_s == "user"
+        next unless role.to_s == "user"
+
+        text = extract_message_text(m)
+        next unless text.present?
+        next unless text.match?(/\A(Creative|Context Creative|Referenced Creative)\s*\(/)
+
+        parts << text
       end
 
-      return "" unless last_user
+      # 3. Chat history (prior user/assistant exchanges)
+      formatted.each do |m|
+        role = (m[:role] || m["role"]).to_s
+        text = extract_message_text(m)
+        next unless text.present?
 
-      text = extract_message_text(last_user)
+        # Skip context messages (already included above)
+        next if text.match?(/\A(Creative|Context Creative|Referenced Creative)\s*\(/)
 
-      # Only prepend creative context on the first message in a session.
-      # If there are prior assistant replies, the Gateway already has context.
-      if first_message_in_session?(formatted)
-        context_prefix = build_context_prefix(formatted)
-        if context_prefix.present?
-          return "#{context_prefix}\n\n#{text}"
+        case role
+        when "user"
+          parts << text
+        when "assistant", "model"
+          parts << "[Assistant]: #{text}"
         end
       end
 
-      text.to_s
-    end
-
-    # Returns true when this looks like the first exchange in a session
-    # (no prior assistant messages in the conversation history).
-    def first_message_in_session?(messages)
-      messages.none? do |m|
-        role = (m[:role] || m["role"]).to_s
-        # "model" is used by some providers (e.g. Gemini) as an alias for "assistant"
-        role == "assistant" || role == "model"
-      end
-    end
-
-    # Build a context prefix from system/context messages if present.
-    # This includes creative tree markdown and other context that the Gateway
-    # wouldn't have from its own agent config.
-    def build_context_prefix(messages)
-      # Find the first "user" message that looks like creative context
-      # (typically starts with "Creative:\n")
-      context_msg = messages.find do |m|
-        role = m[:role] || m["role"]
-        text = extract_message_text(m)
-        role.to_s == "user" && text&.start_with?("Creative:")
-      end
-
-      return nil unless context_msg
-
-      extract_message_text(context_msg)
+      parts.join("\n\n")
     end
 
     def extract_message_text(message)
