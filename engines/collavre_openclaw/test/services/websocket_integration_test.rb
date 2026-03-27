@@ -161,6 +161,37 @@ module CollavreOpenclaw
     end
 
     # ─────────────────────────────────────────────
+    # Race condition: Gateway assigns different runId
+    # ─────────────────────────────────────────────
+
+    # Regression: When the Gateway assigns its own runId (different from
+    # the client's idempotencyKey), events must still be matched to the
+    # correct run_queue. The EM-thread registration in handle_response
+    # ensures this works even for fast responses.
+    test "chat works when Gateway assigns a different runId than idempotencyKey" do
+      @gateway.script = [
+        { on: "connect", respond: :hello_ok },
+        { on: "chat.send", respond: :stream_deltas, text: "Works with different runId", own_run_id: true }
+      ]
+
+      client = WebsocketClient.new(user: @user)
+      client.connect!
+
+      yielded = []
+      result = client.chat_send(
+        session_key: "test:session:race",
+        message: "Test"
+      ) do |event|
+        yielded << event
+      end
+
+      assert_equal "Works with different runId", result
+      assert yielded.any? { |e| e[:state] == "final" }, "Final event must arrive"
+
+      client.disconnect!
+    end
+
+    # ─────────────────────────────────────────────
     # Connection via ConnectionManager
     # ─────────────────────────────────────────────
 

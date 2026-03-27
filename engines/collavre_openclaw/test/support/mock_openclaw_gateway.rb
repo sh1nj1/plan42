@@ -178,9 +178,14 @@ module CollavreOpenclaw
     def handle_chat_send(ws, id, params)
       step = current_script_step("chat.send")
       session_key = params[:sessionKey]
-      # Use idempotencyKey as runId so the client can match events
-      # immediately (before re-registration with the actual runId)
-      run_id = params[:idempotencyKey] || SecureRandom.uuid
+      # By default, use idempotencyKey as runId. Scripts can set
+      # own_run_id: true to generate a different runId (simulating
+      # real Gateway behavior where runId != idempotencyKey).
+      run_id = if step&.dig(:own_run_id)
+                 SecureRandom.uuid
+      else
+                 params[:idempotencyKey] || SecureRandom.uuid
+      end
 
       case step&.dig(:respond)
       when :stream_deltas, nil
