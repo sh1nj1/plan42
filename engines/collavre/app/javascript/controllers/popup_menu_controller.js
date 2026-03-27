@@ -38,26 +38,39 @@ export default class extends Controller {
   show() {
     notifyPopupOpen(this._popupId)
     const menu = this.menuTarget
+    const viewportPadding = 4
+
     menu.style.display = 'block'
     menu.style.transform = ''
-
-    const transforms = []
-    const viewportPadding = 4
+    menu.style.maxWidth = `calc(100vw - ${viewportPadding * 2}px)`
 
     this.buttonTarget?.setAttribute('aria-expanded', 'true')
 
     requestAnimationFrame(() => {
-      const rect = menu.getBoundingClientRect()
-      if (rect.right > window.innerWidth) {
-        transforms.push(`translateX(-${rect.right - window.innerWidth + viewportPadding}px)`)
-      } else if (rect.left < 0) {
-        transforms.push(`translateX(${Math.abs(rect.left) + viewportPadding}px)`)
+      const transforms = []
+      let rect = menu.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - rect.top
+      const spaceAbove = rect.bottom
+
+      if (rect.bottom > window.innerHeight && spaceAbove > spaceBelow) {
+        menu.style.top = 'auto'
+        menu.style.bottom = 'calc(100% + 4px)'
+        rect = menu.getBoundingClientRect()
+      } else {
+        menu.style.top = 'calc(100% + 4px)'
+        menu.style.bottom = 'auto'
       }
 
-      if (rect.bottom > window.innerHeight) {
+      if (rect.right > window.innerWidth - viewportPadding) {
+        transforms.push(`translateX(-${rect.right - window.innerWidth + viewportPadding}px)`)
+      } else if (rect.left < viewportPadding) {
+        transforms.push(`translateX(${viewportPadding - rect.left}px)`)
+      }
+
+      if (rect.bottom > window.innerHeight - viewportPadding) {
         transforms.push(`translateY(-${rect.bottom - window.innerHeight + viewportPadding}px)`)
-      } else if (rect.top < 0) {
-        transforms.push(`translateY(${Math.abs(rect.top) + viewportPadding}px)`)
+      } else if (rect.top < viewportPadding) {
+        transforms.push(`translateY(${viewportPadding - rect.top}px)`)
       }
 
       menu.style.transform = transforms.join(' ')
