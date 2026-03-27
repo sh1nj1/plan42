@@ -10,12 +10,16 @@ module Collavre
       return unless parent && child
       return unless parent.drop_trigger_enabled?
 
+      # Agent is resolved from the parent (where the trigger is configured),
+      # but the work happens on the child creative's chat
       agent = find_trigger_agent(parent)
       return unless agent
 
-      topic = find_or_create_trigger_topic(parent, agent)
-      comment = create_trigger_comment(parent, child, topic)
+      # Create trigger topic and comment on the CHILD creative
+      topic = find_or_create_trigger_topic(child, agent)
+      comment = create_trigger_comment(child, parent, topic)
 
+      # Dispatch event targeting the child creative
       SystemEvents::Dispatcher.dispatch("comment_created", {
         "comment" => {
           "id" => comment.id,
@@ -24,8 +28,8 @@ module Collavre
           "from_ai" => false
         },
         "creative" => {
-          "id" => parent.id,
-          "description" => parent.description
+          "id" => child.id,
+          "description" => child.description
         },
         "topic" => {
           "id" => topic.id
@@ -34,8 +38,8 @@ module Collavre
           "content" => comment.content
         },
         "drop_trigger" => {
-          "child_id" => child.id,
-          "child_description" => child.description
+          "parent_id" => parent.id,
+          "parent_description" => parent.description
         }
       })
     end
@@ -60,18 +64,18 @@ module Collavre
       topic
     end
 
-    def create_trigger_comment(parent, child, topic)
+    def create_trigger_comment(child, parent, topic)
       content = I18n.t(
         "collavre.drop_trigger.child_entered",
         child_description: child.description,
         child_id: child.id,
         parent_description: parent.description
       )
-      parent.comments.create!(
+      child.comments.create!(
         content: content,
         topic_id: topic.id,
         private: false,
-        user: parent.user
+        user: child.user
       )
     end
   end
