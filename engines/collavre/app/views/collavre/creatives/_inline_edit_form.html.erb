@@ -32,7 +32,7 @@
         </button>
       </div>
       <div style="margin-top:0.5em;">
-        <button type="button" id="inline-move-up" class="creative-action-btn" title="<%= t('collavre.creatives.index.inline_move_up_tooltip') %>">
+        <button type="button" id="inline-move-up" class="creative-action-btn" title="<%= t('collavre.creatives.index.inline_move_up_tooltip') %>" disabled>
           &nbsp;<%= svg_tag 'arrow-up.svg', class: 'icon-svg', width: 24, height: 24 %>
         </button>
         <button type="button" id="inline-move-down" class="creative-action-btn" title="<%= t('collavre.creatives.index.inline_move_down_tooltip') %>">
@@ -41,11 +41,11 @@
         <button type="button" id="inline-add" class="creative-action-btn add-creative-btn" title="<%= t('collavre.creatives.index.inline_add_sibling_tooltip') %>">
           &nbsp;<%= svg_tag 'add.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
-        <button type="button" id="inline-level-down" class="creative-action-btn add-creative-btn" title="<%= t('collavre.creatives.index.inline_level_down_tooltip') %>">
+        <button type="button" id="inline-level-down" class="creative-action-btn add-creative-btn" title="<%= t('collavre.creatives.index.inline_level_down_tooltip') %>" disabled>
           &nbsp;
           <%= svg_tag 'hierarchy-child.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
-        <button type="button" id="inline-level-up" class="creative-action-btn add-creative-btn" title="<%= t('collavre.creatives.index.inline_level_up_tooltip') %>">
+        <button type="button" id="inline-level-up" class="creative-action-btn add-creative-btn" title="<%= t('collavre.creatives.index.inline_level_up_tooltip') %>" disabled>
           &nbsp;
           <%= svg_tag 'hierarchy-parent.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
