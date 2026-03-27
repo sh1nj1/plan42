@@ -245,6 +245,9 @@ module Collavre
     end
 
     def fire_drop_trigger_on_move
+      # Skip on create — after_create_commit handles that case
+      return if previously_new_record?
+
       new_parent_id = parent_id
       return unless new_parent_id
 
