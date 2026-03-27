@@ -1,0 +1,88 @@
+/**
+ * @jest-environment jsdom
+ */
+import { jest } from '@jest/globals'
+import { Application } from '@hotwired/stimulus'
+
+const notifyPopupOpen = jest.fn()
+const onOtherPopupOpen = jest.fn(() => () => {})
+
+jest.unstable_mockModule('../../lib/gnb_popup_manager', () => ({
+  __esModule: true,
+  notifyPopupOpen,
+  onOtherPopupOpen
+}))
+
+const { default: PopupMenuController } = await import('../popup_menu_controller')
+
+describe('PopupMenuController', () => {
+  let application
+  let container
+  let controller
+  let menu
+
+  beforeEach(async () => {
+    document.body.innerHTML = ''
+    notifyPopupOpen.mockClear()
+    onOtherPopupOpen.mockClear()
+
+    container = document.createElement('div')
+    container.innerHTML = `
+      <div data-controller="popup-menu">
+        <button type="button" data-popup-menu-target="button">Open</button>
+        <div id="test-menu" data-popup-menu-target="menu" style="display:none"></div>
+      </div>
+    `
+    document.body.appendChild(container)
+
+    application = Application.start()
+    application.register('popup-menu', PopupMenuController)
+
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    const element = container.querySelector('[data-controller="popup-menu"]')
+    controller = application.getControllerForElementAndIdentifier(element, 'popup-menu')
+    menu = container.querySelector('#test-menu')
+
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 360 })
+    Object.defineProperty(window, 'innerHeight', { writable: true, configurable: true, value: 640 })
+  })
+
+  afterEach(() => {
+    application?.stop()
+    document.body.innerHTML = ''
+    jest.restoreAllMocks()
+  })
+
+  test('flips upward when there is more space above than below', async () => {
+    const rects = [
+      { top: 520, bottom: 700, left: 20, right: 220, width: 200, height: 180 },
+      { top: 336, bottom: 516, left: 20, right: 220, width: 200, height: 180 }
+    ]
+    let callCount = 0
+    jest.spyOn(menu, 'getBoundingClientRect').mockImplementation(() => rects[Math.min(callCount++, rects.length - 1)])
+
+    controller.show()
+    await new Promise(resolve => requestAnimationFrame(resolve))
+
+    expect(menu.style.bottom).toBe('calc(100% + 4px)')
+    expect(menu.style.top).toBe('auto')
+  })
+
+  test('stays below when there is more space below than above', async () => {
+    jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+      top: 40,
+      bottom: 220,
+      left: 20,
+      right: 220,
+      width: 200,
+      height: 180
+    })
+
+    controller.show()
+    await new Promise(resolve => requestAnimationFrame(resolve))
+
+    expect(menu.style.top).toBe('calc(100% + 4px)')
+    expect(menu.style.bottom).toBe('auto')
+  })
+})
