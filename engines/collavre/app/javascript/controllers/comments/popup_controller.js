@@ -170,6 +170,10 @@ export default class extends Controller {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--contexts')
   }
 
+  get dropTriggerController() {
+    return this.application.getControllerForElementAndIdentifier(this.element, 'comments--drop-trigger')
+  }
+
   handleCreativeClick(event) {
     const button = event.detail?.button
     const creativeId = event.detail?.creativeId
@@ -304,6 +308,9 @@ export default class extends Controller {
     if (this.contextsController) {
       this.contextsController.onPopupOpened({ creativeId })
     }
+    if (this.dropTriggerController) {
+      this.dropTriggerController.onPopupOpened({ creativeId })
+    }
   }
 
   close() {
@@ -324,6 +331,9 @@ export default class extends Controller {
     }
     if (this.contextsController) {
       this.contextsController.onPopupClosed()
+    }
+    if (this.dropTriggerController) {
+      this.dropTriggerController.onPopupClosed()
     }
 
     // Dispatch event for integrations
