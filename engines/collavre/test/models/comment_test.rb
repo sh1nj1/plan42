@@ -143,7 +143,7 @@ class CommentTest < ActiveSupport::TestCase
       end
     end
 
-    inbox_broadcasts = broadcasts.select { |payload| payload[:stream] == ["inbox", owner] }
+    inbox_broadcasts = broadcasts.select { |payload| payload[:stream] == [ "inbox", owner ] }
 
     assert inbox_broadcasts.any?, "expected inbox badge broadcast"
     assert inbox_broadcasts.any? { |payload| payload[:target] == "desktop-inbox-badge" && payload.dig(:locals, :count) == 1 }
