@@ -37,4 +37,41 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     # Verify the update propagated to the origin
     assert_equal 0.5, @b1_origin.reload.progress
   end
+
+  test "update_metadata posts drop trigger warning when enabling without write-permission AI agent" do
+    creative = Creative.create!(description: "Documentation", user: @user, data: {})
+    feedback_ai = users(:ai_bot)
+    CreativeShare.create!(creative: creative, user: feedback_ai, permission: :feedback)
+
+    assert_difference -> { creative.comments.count }, 1 do
+      patch update_metadata_creative_url(creative), params: {
+        data: {
+          trigger: { on_child_enter: true }
+        }.to_json
+      }
+    end
+
+    assert_response :success
+    comment = creative.comments.order(:id).last
+    assert_nil comment.user_id
+    assert_includes comment.content, "⚠️"
+    assert_includes comment.content, creative.creative_snippet
+    assert_equal "Drop Trigger", comment.topic.name
+  end
+
+  test "update_metadata does not post duplicate warning when already enabled" do
+    creative = Creative.create!(description: "Documentation", user: @user, data: { "trigger" => { "on_child_enter" => true } })
+    feedback_ai = users(:ai_bot)
+    CreativeShare.create!(creative: creative, user: feedback_ai, permission: :feedback)
+
+    assert_no_difference -> { creative.comments.count } do
+      patch update_metadata_creative_url(creative), params: {
+        data: {
+          trigger: { on_child_enter: true }
+        }.to_json
+      }
+    end
+
+    assert_response :success
+  end
 end
