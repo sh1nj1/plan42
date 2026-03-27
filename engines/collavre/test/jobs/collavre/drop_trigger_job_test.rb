@@ -23,9 +23,11 @@ module Collavre
     end
 
     test "creates trigger topic and comment on child creative" do
-      assert_difference -> { @child.comments.count }, 1 do
-        assert_difference -> { @child.topics.count }, 1 do
-          DropTriggerJob.perform_now(@parent.id, @child.id)
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
+        assert_difference -> { @child.comments.count }, 1 do
+          assert_difference -> { @child.topics.count }, 1 do
+            DropTriggerJob.perform_now(@parent.id, @child.id)
+          end
         end
       end
 
@@ -38,11 +40,15 @@ module Collavre
     end
 
     test "reuses existing Drop Trigger topic" do
-      DropTriggerJob.perform_now(@parent.id, @child.id)
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
+        DropTriggerJob.perform_now(@parent.id, @child.id)
+      end
       topic = @child.topics.find_by(name: "Drop Trigger")
 
-      assert_no_difference -> { @child.topics.count } do
-        DropTriggerJob.perform_now(@parent.id, @child.id)
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
+        assert_no_difference -> { @child.topics.count } do
+          DropTriggerJob.perform_now(@parent.id, @child.id)
+        end
       end
 
       assert_equal topic.id, @child.topics.find_by(name: "Drop Trigger").id
@@ -82,7 +88,9 @@ module Collavre
     end
 
     test "comment mentions the AI agent for routing" do
-      DropTriggerJob.perform_now(@parent.id, @child.id)
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
+        DropTriggerJob.perform_now(@parent.id, @child.id)
+      end
 
       comment = @child.comments.last
       assert comment.content.start_with?("@#{@ai_bot.name}:"),
@@ -92,11 +100,26 @@ module Collavre
     test "uses creative_snippet for plain text names" do
       @child.update!(description: "<p>HTML <strong>description</strong> that is very long and should be truncated</p>")
 
-      DropTriggerJob.perform_now(@parent.id, @child.id)
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
+        DropTriggerJob.perform_now(@parent.id, @child.id)
+      end
 
       comment = @child.comments.last
       refute_includes comment.content, "<p>"
       refute_includes comment.content, "<strong>"
+    end
+
+    test "posts failure notice when dispatch schedules no agent" do
+      SystemEvents::Dispatcher.stub(:dispatch, []) do
+        assert_difference -> { @child.comments.count }, 2 do
+          DropTriggerJob.perform_now(@parent.id, @child.id)
+        end
+      end
+
+      comments = @child.comments.order(:id).last(2)
+      assert_includes comments.first.content, "@#{@ai_bot.name}:"
+      assert_nil comments.last.user_id
+      assert_includes comments.last.content, "⚠️"
     end
   end
 end

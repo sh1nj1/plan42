@@ -22,33 +22,16 @@ module Collavre
       topic = find_or_create_trigger_topic(child, agent)
       comment = create_trigger_comment(child, parent, agent, topic)
 
-      # Dispatch event targeting the child creative
-      SystemEvents::Dispatcher.dispatch("comment_created", {
-        "comment" => {
-          "id" => comment.id,
-          "content" => comment.content,
-          "user_id" => comment.user_id,
-          "from_ai" => false
-        },
-        "creative" => {
-          "id" => child.id,
-          "description" => child.description
-        },
-        "topic" => {
-          "id" => topic.id
-        },
-        "chat" => {
-          "content" => comment.content,
-          "mentioned_user" => {
-            "id" => agent.id,
-            "name" => agent.name
-          }
-        },
-        "drop_trigger" => {
-          "parent_id" => parent.id,
-          "parent_description" => parent.description
-        }
-      })
+      scheduled_agents = dispatch_trigger_comment(comment, child, parent)
+      return if scheduled_agents.present?
+
+      post_dispatch_failure_notice(child, parent, topic)
+    rescue StandardError => e
+      Rails.logger.error(
+        "[DropTriggerJob] Failed for parent=#{parent_creative_id} child=#{child_creative_id}: " \
+        "#{e.class} #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}"
+      )
+      raise
     end
 
     private
@@ -57,17 +40,54 @@ module Collavre
       topic = child.topics.find_or_create_by!(name: "Drop Trigger") do |t|
         t.user = child.user
       end
+      post_system_notice(child, topic, I18n.t(
+        "collavre.drop_trigger.no_agent",
+        parent_description: parent.creative_snippet
+      ))
+    end
+
+    def post_dispatch_failure_notice(child, parent, topic)
+      post_system_notice(child, topic, I18n.t(
+        "collavre.drop_trigger.no_dispatch",
+        parent_description: parent.creative_snippet
+      ))
+    end
+
+    def post_system_notice(child, topic, content)
       # System message (user: nil, skip_default_user: true) — not dispatched
       # to SystemEvents, so no AI agent will be triggered by this comment.
       child.comments.create!(
-        content: I18n.t(
-          "collavre.drop_trigger.no_agent",
-          parent_description: parent.creative_snippet
-        ),
+        content: content,
         topic_id: topic.id,
         private: false,
         skip_default_user: true
       )
+    end
+
+    def dispatch_trigger_comment(comment, child, parent)
+      SystemEvents::Dispatcher.dispatch("comment_created", {
+        comment: {
+          id: comment.id,
+          content: comment.content,
+          user_id: comment.user_id,
+          from_ai: comment.user&.searchable? || false,
+          quoted_comment_id: comment.quoted_comment_id
+        }.compact,
+        creative: {
+          id: child.id,
+          description: child.description
+        },
+        topic: {
+          id: comment.topic_id
+        },
+        chat: {
+          content: comment.content
+        },
+        drop_trigger: {
+          parent_id: parent.id,
+          parent_description: parent.description
+        }
+      })
     end
 
     def find_trigger_agent(creative)
