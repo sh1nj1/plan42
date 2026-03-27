@@ -359,90 +359,58 @@ module CollavreOpenclaw
       assert_not payload.key?(:tools), "Tools key should not be present"
     end
 
-    test "format_message_for_ws extracts last user message" do
+    test "format_message_for_ws includes full context with chat history" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
-        system_prompt: "Test",
+        system_prompt: "You are a helpful agent",
         context: {}
       )
 
       messages = [
-        { role: "user", parts: [ { text: "First question" } ] },
-        { role: "model", parts: [ { text: "Answer" } ] },
-        { role: "user", parts: [ { text: "Follow-up question" } ] }
-      ]
-
-      result = adapter.send(:format_message_for_ws, messages)
-      assert_equal "Follow-up question", result
-    end
-
-    test "format_message_for_ws includes creative context on first message" do
-      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "Test",
-        context: {}
-      )
-
-      # First message in session — no assistant replies yet
-      messages = [
-        { role: "user", parts: [ { text: "Creative:\n# My Project" } ] },
-        { role: "user", parts: [ { text: "What do you think?" } ] }
-      ]
-
-      result = adapter.send(:format_message_for_ws, messages)
-      assert_includes result, "Creative:\n# My Project"
-      assert_includes result, "What do you think?"
-    end
-
-    test "format_message_for_ws does NOT repeat creative context on follow-up messages" do
-      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "Test",
-        context: {}
-      )
-
-      # Follow-up — assistant has already replied, so context was sent before
-      messages = [
-        { role: "user", parts: [ { text: "Creative:\n# My Project" } ] },
-        { role: "user", parts: [ { text: "First question" } ] },
-        { role: "assistant", parts: [ { text: "Here's my answer" } ] },
-        { role: "user", parts: [ { text: "Follow-up question" } ] }
-      ]
-
-      result = adapter.send(:format_message_for_ws, messages)
-      assert_equal "Follow-up question", result
-      assert_not_includes result, "Creative:"
-    end
-
-    test "format_message_for_ws treats model role as assistant for follow-up detection" do
-      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
-
-      adapter = OpenclawAdapter.new(
-        user: user,
-        system_prompt: "Test",
-        context: {}
-      )
-
-      # "model" role (used by Gemini/some providers) should be treated as assistant
-      messages = [
-        { role: "user", parts: [ { text: "Creative:\n# My Project" } ] },
-        { role: "user", parts: [ { text: "First question" } ] },
+        { role: "user", parts: [ { text: "Creative (id: 42):\n# My Project" } ] },
+        { role: "user", parts: [ { text: "Context Creative (id: 41):\n# Dev Environment" } ] },
+        { role: "user", parts: [ { text: "[Alice]: First question" } ] },
         { role: "model", parts: [ { text: "Here's my answer" } ] },
-        { role: "user", parts: [ { text: "Follow-up question" } ] }
+        { role: "user", parts: [ { text: "[Alice]: Follow-up question" } ] }
       ]
 
       result = adapter.send(:format_message_for_ws, messages)
-      assert_equal "Follow-up question", result
-      assert_not_includes result, "Creative:"
+
+      assert_includes result, "You are a helpful agent"
+      assert_includes result, "Creative (id: 42):"
+      assert_includes result, "Context Creative (id: 41):"
+      assert_includes result, "[Alice]: First question"
+      assert_includes result, "[Assistant]: Here's my answer"
+      assert_includes result, "[Alice]: Follow-up question"
     end
 
-    test "format_message_for_ws returns empty string for no user messages" do
+    test "format_message_for_ws includes multiple context creatives" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: {}
+      )
+
+      messages = [
+        { role: "user", parts: [ { text: "Creative (id: 100):\n# Main" } ] },
+        { role: "user", parts: [ { text: "Context Creative (id: 200):\n# Dev Rules" } ] },
+        { role: "user", parts: [ { text: "Context Creative (id: 300):\n# Dev Env" } ] },
+        { role: "user", parts: [ { text: "[Bob]: Hello" } ] }
+      ]
+
+      result = adapter.send(:format_message_for_ws, messages)
+
+      assert_includes result, "Creative (id: 100):"
+      assert_includes result, "Context Creative (id: 200):"
+      assert_includes result, "Context Creative (id: 300):"
+      assert_includes result, "[Bob]: Hello"
+    end
+
+    test "format_message_for_ws returns empty string for empty messages" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
@@ -451,11 +419,7 @@ module CollavreOpenclaw
         context: {}
       )
 
-      messages = [
-        { role: "system", content: "System prompt" }
-      ]
-
-      result = adapter.send(:format_message_for_ws, messages)
+      result = adapter.send(:format_message_for_ws, [])
       assert_equal "", result
     end
 
