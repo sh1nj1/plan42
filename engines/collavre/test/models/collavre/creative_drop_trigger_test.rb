@@ -19,7 +19,7 @@ module Collavre
         data: { "trigger" => { "on_child_enter" => true } }
       )
       @normal_parent = Creative.create!(user: @owner, description: "Normal Parent")
-      CreativeShare.create!(creative: @trigger_parent, user: @ai_bot, permission: :feedback)
+      CreativeShare.create!(creative: @trigger_parent, user: @ai_bot, permission: :write)
     end
 
     teardown do

@@ -14,7 +14,7 @@ module Collavre
       perform_enqueued_jobs do
         @parent = Creative.create!(user: @owner, description: "Trigger Parent", data: { "trigger" => { "on_child_enter" => true } })
         @child = Creative.create!(user: @owner, description: "Dropped Child")
-        CreativeShare.create!(creative: @parent, user: @ai_bot, permission: :feedback)
+        CreativeShare.create!(creative: @parent, user: @ai_bot, permission: :write)
       end
     end
 

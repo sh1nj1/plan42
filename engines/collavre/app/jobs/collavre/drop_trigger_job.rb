@@ -51,7 +51,7 @@ module Collavre
     private
 
     def find_trigger_agent(creative)
-      creative.all_shared_users(:feedback)
+      creative.all_shared_users(:write)
               .map(&:user)
               .find(&:ai_user?)
     end
