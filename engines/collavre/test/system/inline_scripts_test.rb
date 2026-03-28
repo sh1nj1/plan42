@@ -136,7 +136,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_selector "#plans-list-area", visible: :hidden
   end
 
-  test "inbox button opens comments popup and close button hides it" do
+  test "inbox button opens comments popup for inbox creative" do
     inbox = Creative.inbox_for(@user)
 
     visit root_path
@@ -147,10 +147,6 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     assert_selector "#comments-popup", visible: :visible, wait: 5
     assert_equal inbox.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
-
-    find("#close-comments-btn", wait: 5).click
-
-    assert_no_selector "#comments-popup", visible: :visible, wait: 5
   end
 
   test "creative guide popover shows on help button click" do
@@ -449,7 +445,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     end
   end
 
-  test "inbox button can reopen comments popup without duplicate bindings" do
+  test "inbox button can toggle comments popup without duplicate bindings" do
     inbox = Creative.inbox_for(@user)
 
     visit root_path
@@ -458,7 +454,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_selector "#comments-popup", visible: :visible, wait: 5
     assert_equal inbox.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
 
-    find("#close-comments-btn", wait: 5).click
+    find(".inbox-menu-btn", match: :first).click
     assert_no_selector "#comments-popup", visible: :visible, wait: 5
 
     find(".inbox-menu-btn", match: :first).click
