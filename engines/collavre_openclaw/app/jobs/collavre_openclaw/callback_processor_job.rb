@@ -39,6 +39,8 @@ module CollavreOpenclaw
       comment_id = context[:comment_id]
       content = payload[:content] || payload[:message]
 
+      normalize_topic_context!(context)
+
       if comment_id.present?
         # Update existing comment (streaming completion)
         comment = Collavre::Comment.find_by(id: comment_id)
@@ -56,7 +58,7 @@ module CollavreOpenclaw
     def handle_proactive(payload)
       creative_id = payload[:creative_id] || payload.dig(:context, :creative_id)
       content = payload[:content] || payload[:message]
-      thread_id = payload[:thread_id] || payload.dig(:context, :thread_id)
+      thread_id = payload[:thread_id] || payload[:topic_id] || payload.dig(:context, :thread_id) || payload.dig(:context, :topic_id)
       parent_comment_id = payload[:parent_comment_id] || payload.dig(:context, :parent_comment_id)
 
       unless creative_id.present?
@@ -94,6 +96,8 @@ module CollavreOpenclaw
     end
 
     def create_ai_comment(creative_id, content, context = {})
+      normalize_topic_context!(context)
+
       creative = Collavre::Creative.find_by(id: creative_id)
       unless creative
         Rails.logger.error("[CollavreOpenclaw] Creative not found: #{creative_id}")
@@ -134,6 +138,14 @@ module CollavreOpenclaw
     rescue ActiveRecord::RecordInvalid => e
       Rails.logger.error("[CollavreOpenclaw] Failed to create comment: #{e.message}")
       nil
+    end
+
+    def normalize_topic_context!(context)
+      return unless context.is_a?(Hash)
+      return if context[:thread_id].present?
+
+      topic_id = context[:topic_id]
+      context[:thread_id] = topic_id if topic_id.present?
     end
   end
 end
