@@ -413,6 +413,41 @@ module CollavreOpenclaw
       assert_includes result, "[Bob]: Hello"
     end
 
+    test "build_ws_chat_payload includes base64 image attachments" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "You are a helpful agent",
+        context: {}
+      )
+
+      blob = ActiveStorage::Blob.create_and_upload!(
+        io: StringIO.new("\x89PNG\r\n\x1a\n" + "\x00" * 100),
+        filename: "test.png",
+        content_type: "image/png"
+      )
+
+      messages = [
+        { role: "user", parts: [ { text: "Creative (id: 42):\n# My Project" } ] },
+        { role: "user", parts: [ { text: "What is this?" }, { image: blob } ] }
+      ]
+
+      result = adapter.send(:build_ws_chat_payload, messages)
+
+      assert_includes result[:message], "You are a helpful agent"
+      assert_includes result[:message], "Creative (id: 42):"
+      assert_includes result[:message], "What is this?"
+      assert_equal 1, result[:attachments].size
+      attachment = result[:attachments].first
+      assert_equal "image", attachment[:type]
+      assert_equal "image/png", attachment[:mimeType]
+      assert_equal "test.png", attachment[:fileName]
+      assert_match(/\A[A-Za-z0-9+\/=]+\z/, attachment[:content])
+    ensure
+      blob&.purge
+    end
+
     test "format_message_for_ws returns empty string for empty messages" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 

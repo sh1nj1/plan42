@@ -152,10 +152,11 @@ module CollavreOpenclaw
     #
     # @param session_key [String]
     # @param message [String]
+    # @param attachments [Array<Hash>, nil]
     # @param idempotency_key [String]
     # @yield [Hash] chat events with :state, :text, :message keys
     # @return [String, nil] final response text
-    def chat_send(session_key:, message:, idempotency_key: nil, &block)
+    def chat_send(session_key:, message:, attachments: nil, idempotency_key: nil, &block)
       ensure_connected!
       touch_activity!
 
@@ -176,11 +177,14 @@ module CollavreOpenclaw
       rpc_request_id = SecureRandom.uuid
       @mutex.synchronize { @rpc_run_registrations[rpc_request_id] = run_queue }
 
-      response = send_rpc("chat.send", {
+      rpc_params = {
         sessionKey: session_key,
         message: message,
         idempotencyKey: idempotency_key
-      }, request_id: rpc_request_id)
+      }
+      rpc_params[:attachments] = attachments if attachments.present?
+
+      response = send_rpc("chat.send", rpc_params, request_id: rpc_request_id)
 
       # The EM thread already registered @pending_runs[actual_run_id] in
       # handle_response. Clean up the idempotency_key entry if a different

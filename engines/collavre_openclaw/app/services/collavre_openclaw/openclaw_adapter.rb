@@ -88,13 +88,14 @@ module CollavreOpenclaw
 
       begin
         client = ConnectionManager.instance.connection_for(@user)
-        message_text = format_message_for_ws(messages)
+        payload = build_ws_chat_payload(messages)
 
         Rails.logger.info("[CollavreOpenclaw] Sending via WebSocket (session: #{session_key})")
 
         client.chat_send(
           session_key: session_key,
-          message: message_text
+          message: payload[:message],
+          attachments: payload[:attachments]
         ) do |event|
           case event[:state]
           when "delta"
@@ -134,7 +135,18 @@ module CollavreOpenclaw
       end
     end
 
-    # Format messages for WebSocket chat.send (single message string).
+    # Build WebSocket chat.send payload.
+    #
+    # Includes the same full text context as HTTP mode plus optional base64
+    # image attachments supported by the Gateway's chat.send.attachments field.
+    def build_ws_chat_payload(messages)
+      {
+        message: format_message_for_ws(messages),
+        attachments: extract_ws_attachments(messages).presence
+      }
+    end
+
+    # Format messages for WebSocket chat.send text payload.
     #
     # Includes full context on EVERY request, matching HTTP mode behavior.
     # The Gateway's WS session may be new (no prior history), so we cannot
@@ -204,6 +216,12 @@ module CollavreOpenclaw
       Array(parts).filter_map { |part| part[:image] || part["image"] }
     end
 
+    def extract_ws_attachments(messages)
+      Array(messages).flat_map do |message|
+        extract_image_sources(message).filter_map { |source| encode_image_source_for_ws(source) }
+      end
+    end
+
     def encode_image_source(source)
       if defined?(ActiveStorage) && source.is_a?(ActiveStorage::Blob)
         data = Base64.strict_encode64(source.download)
@@ -235,6 +253,43 @@ module CollavreOpenclaw
       end
     rescue StandardError => e
       Rails.logger.warn("[CollavreOpenclaw] Failed to encode image: #{e.message}")
+      nil
+    end
+
+    def encode_image_source_for_ws(source)
+      if defined?(ActiveStorage) && source.is_a?(ActiveStorage::Blob)
+        {
+          type: "image",
+          mimeType: source.content_type,
+          fileName: source.filename.to_s,
+          content: Base64.strict_encode64(source.download)
+        }
+      elsif source.respond_to?(:download)
+        blob = source.respond_to?(:blob) ? source.blob : source
+        return nil unless blob
+
+        {
+          type: "image",
+          mimeType: blob.content_type,
+          fileName: blob.filename.to_s,
+          content: Base64.strict_encode64(blob.download)
+        }
+      elsif source.is_a?(String) && source.match?(%r{^https?://})
+        nil
+      elsif source.is_a?(String)
+        return nil unless File.exist?(source)
+
+        {
+          type: "image",
+          mimeType: Marcel::MimeType.for(Pathname.new(source)),
+          fileName: File.basename(source),
+          content: Base64.strict_encode64(File.binread(source))
+        }
+      else
+        nil
+      end
+    rescue StandardError => e
+      Rails.logger.warn("[CollavreOpenclaw] Failed to encode WS image attachment: #{e.message}")
       nil
     end
 

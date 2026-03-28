@@ -93,7 +93,7 @@ class WebsocketClient
   def disconnect!
 
   # RPC methods
-  def chat_send(session_key:, message:, idempotency_key:, &on_event)
+  def chat_send(session_key:, message:, attachments: nil, idempotency_key:, &on_event)
   def chat_history(session_key:, limit: nil)
   def chat_abort(session_key:, run_id: nil)
 
