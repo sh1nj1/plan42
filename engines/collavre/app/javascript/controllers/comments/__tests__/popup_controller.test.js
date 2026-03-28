@@ -86,4 +86,15 @@ describe('CommentsPopupController', () => {
         expect(popup.style.display).toBe('none')
         expect(popup.dataset.resized).toBeUndefined()
     })
+
+    test('inherits auto-focus preference from trigger button', async () => {
+        const triggerBtn = document.getElementById('trigger-btn')
+        const popup = document.getElementById('comments-popup')
+
+        triggerBtn.dataset.autoFocusOnOpen = 'false'
+
+        await controller.open(triggerBtn)
+
+        expect(popup.dataset.autoFocusOnOpen).toBe('false')
+    })
 })

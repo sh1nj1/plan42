@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 
+import { jest } from '@jest/globals'
 import { Application } from '@hotwired/stimulus'
 import FormController from '../form_controller'
 
@@ -11,6 +12,17 @@ describe('FormController - Review Quote Chips', () => {
   let controller
 
   beforeEach(async () => {
+    if (!global.DataTransfer) {
+      global.DataTransfer = class {
+        constructor() {
+          this.files = []
+          this.items = {
+            add: (file) => this.files.push(file),
+          }
+        }
+      }
+    }
+
     container = document.createElement('div')
     container.innerHTML = `
       <div id="comments-popup"
@@ -62,6 +74,20 @@ describe('FormController - Review Quote Chips', () => {
   // Helper accessors for the refactored store-based API
   const getQuotes = (ctrl) => ctrl._reviewStore.quotes
   const getActiveId = (ctrl) => ctrl._reviewStore.activeId
+
+  describe('auto focus on open', () => {
+    test('skips initial focus when popup opts out', () => {
+      container.querySelector('#comments-popup').dataset.autoFocusOnOpen = 'false'
+      const resetFormSpy = jest.spyOn(controller, 'resetForm').mockImplementation(() => {})
+      const focusSpy = jest.spyOn(controller.textareaTarget, 'focus').mockImplementation(() => {})
+
+      controller.onPopupOpened({ creativeId: '123', canComment: true })
+
+      expect(focusSpy).not.toHaveBeenCalled()
+      focusSpy.mockRestore()
+      resetFormSpy.mockRestore()
+    })
+  })
 
   describe('appendReviewQuote', () => {
     test('adds a review quote chip', () => {

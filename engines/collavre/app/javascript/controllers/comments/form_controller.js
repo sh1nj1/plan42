@@ -134,7 +134,7 @@ export default class extends Controller {
     this.element.dataset.creativeId = creativeId || ''
     this.formTarget.style.display = canComment ? '' : 'none'
     this.resetForm()
-    if (canComment) {
+    if (canComment && this.shouldAutoFocusOnOpen()) {
       requestAnimationFrame(() => this.textareaTarget.focus())
     }
   }
@@ -146,6 +146,10 @@ export default class extends Controller {
 
   onSelectionChanged({ size, moving }) {
     // Selection state now managed by list_controller action bar
+  }
+
+  shouldAutoFocusOnOpen() {
+    return this.element.dataset.autoFocusOnOpen !== 'false'
   }
 
   focusTextarea() {

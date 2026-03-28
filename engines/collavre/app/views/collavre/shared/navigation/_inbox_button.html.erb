@@ -5,6 +5,7 @@
           type="button"
           data-creative-id="<%= inbox.id %>"
           data-can-comment="true"
+          data-auto-focus-on-open="false"
           data-creative-snippet="<%= inbox.creative_snippet %>"
           name="show-comments-btn"><%= t('app.inbox') %><%= render Collavre::Inbox::BadgeComponent.new(
             creative: inbox,

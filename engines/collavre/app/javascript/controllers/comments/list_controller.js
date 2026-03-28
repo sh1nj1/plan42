@@ -182,7 +182,9 @@ export default class extends Controller {
       }
 
       this.initialLoadComplete = true
-      this.formController?.focusTextarea()
+      if (this.formController?.shouldAutoFocusOnOpen()) {
+        this.formController.focusTextarea()
+      }
       this.markCommentsRead()
 
     })
