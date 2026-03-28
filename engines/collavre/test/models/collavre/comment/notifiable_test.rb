@@ -15,7 +15,7 @@ module Collavre
         @topic = Topic.create!(creative: @creative, name: "test", user: @owner)
       end
 
-      test "notify_ai_completion creates inbox item for absent users" do
+      test "notify_ai_completion creates inbox comment for absent users" do
         comment = @creative.comments.create!(
           content: Comment::STREAMING_PLACEHOLDER_CONTENT,
           user: @agent,
@@ -23,16 +23,19 @@ module Collavre
         )
         comment.update!(content: "AI response complete")
 
-        assert_difference "InboxItem.count", 1 do
+        inbox = Creative.inbox_for(@owner)
+
+        assert_difference("inbox.comments.count", 1) do
           comment.notify_ai_completion
         end
 
-        inbox_item = InboxItem.last
-        assert_equal @owner, inbox_item.owner
-        assert_equal "inbox.comment_added", inbox_item.message_key
+        inbox_comment = inbox.comments.order(:id).last
+        assert_nil inbox_comment.user
+        assert_equal comment.id, inbox_comment.quoted_comment_id
+        assert_includes inbox_comment.content, "AI response complete"
       end
 
-      test "notify_ai_completion sends mention notification for mentioned users" do
+      test "notify_ai_completion sends mention notification as inbox comment for mentioned users" do
         comment = @creative.comments.create!(
           content: Comment::STREAMING_PLACEHOLDER_CONTENT,
           user: @agent,
@@ -40,14 +43,17 @@ module Collavre
         )
         comment.update!(content: "Hello @#{@owner.name}: check this out")
 
-        # Owner is mentioned → gets mention notification (not comment_added)
-        inbox_items_before = InboxItem.count
-        comment.notify_ai_completion
-        new_items = InboxItem.where("id > ?", inbox_items_before).order(:id)
+        inbox = Creative.inbox_for(@owner)
 
-        mention_item = new_items.find { |i| i.message_key == "inbox.user_mentioned" }
-        assert mention_item, "Expected a mention notification for the owner"
-        assert_equal @owner, mention_item.owner
+        assert_difference("inbox.comments.count", 1) do
+          comment.notify_ai_completion
+        end
+
+        mention_comment = inbox.comments.order(:id).last
+        assert_nil mention_comment.user
+        assert_equal comment.id, mention_comment.quoted_comment_id
+        assert_includes mention_comment.content, @agent.display_name
+        assert_includes mention_comment.content, "check this out"
       end
 
       test "notify_ai_completion skips present users" do
@@ -57,9 +63,10 @@ module Collavre
           topic: @topic
         )
 
+        inbox = Creative.inbox_for(@owner)
         CommentPresenceStore.add(@creative.id, @owner.id)
 
-        assert_no_difference "InboxItem.count" do
+        assert_no_difference("inbox.comments.count") do
           comment.notify_ai_completion
         end
       ensure
@@ -73,12 +80,14 @@ module Collavre
           topic: @topic
         )
 
-        assert_no_difference "InboxItem.count" do
+        inbox = Creative.inbox_for(@owner)
+
+        assert_no_difference("inbox.comments.count") do
           comment.notify_ai_completion
         end
       end
 
-      test "notify_ai_completion truncates long message content in inbox item" do
+      test "notify_ai_completion stores inbox comment content for long messages" do
         long_content = "A" * 200
         comment = @creative.comments.create!(
           content: long_content,
@@ -86,11 +95,17 @@ module Collavre
           topic: @topic
         )
 
-        comment.notify_ai_completion
-        inbox_item = InboxItem.last
-        snippet = inbox_item.message_params["comment"]
-        assert snippet.length <= 100, "Expected comment to be truncated to 100 chars, got #{snippet.length}"
-        assert snippet.end_with?("..."), "Expected truncated comment to end with '...'"
+        inbox = Creative.inbox_for(@owner)
+
+        assert_difference("inbox.comments.count", 1) do
+          comment.notify_ai_completion
+        end
+
+        inbox_comment = inbox.comments.order(:id).last
+        assert_nil inbox_comment.user
+        assert_equal comment.id, inbox_comment.quoted_comment_id
+        assert inbox_comment.content.present?
+        assert_includes inbox_comment.content, long_content.first(50)
       end
 
       test "notify_ai_completion rescues errors without raising" do
