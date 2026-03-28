@@ -53,6 +53,7 @@ module Collavre
           quoted_comment: self
         )
 
+        broadcast_inbox_badge(inbox_creative, owner)
         PushNotificationJob.perform_later(owner.id, message: msg, link: inbox_comment_link)
         comment
       rescue StandardError => e
@@ -170,6 +171,21 @@ module Collavre
           "inbox.approval_requested",
           { user: user&.display_name, tool_name: parsed_action_tool_name, creative: creative_markdown_link }
         )
+      end
+
+      def broadcast_inbox_badge(inbox_creative, owner)
+        %w[desktop-inbox-badge mobile-inbox-badge].each do |target_id|
+          Turbo::StreamsChannel.broadcast_replace_to(
+            [ "inbox", owner ],
+            target: target_id,
+            partial: "inbox/badge_component/count",
+            locals: {
+              count: Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count,
+              badge_id: target_id,
+              show_zero: false
+            }
+          )
+        end
       end
     end
   end

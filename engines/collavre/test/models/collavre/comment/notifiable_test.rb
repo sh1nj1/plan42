@@ -25,17 +25,19 @@ module Collavre
 
         inbox = Creative.inbox_for(@owner)
 
-        assert_difference("inbox.comments.count", 1) do
+        assert_difference -> { inbox.comments.count }, 1 do
           comment.notify_ai_completion
         end
 
         inbox_comment = inbox.comments.order(:id).last
-        assert_nil inbox_comment.user
         assert_equal comment.id, inbox_comment.quoted_comment_id
+        assert_nil inbox_comment.user
         assert_includes inbox_comment.content, "AI response complete"
       end
 
       test "notify_ai_completion sends mention notification as inbox comment for mentioned users" do
+        @owner.update!(searchable: true)
+
         comment = @creative.comments.create!(
           content: Comment::STREAMING_PLACEHOLDER_CONTENT,
           user: @agent,
@@ -45,7 +47,7 @@ module Collavre
 
         inbox = Creative.inbox_for(@owner)
 
-        assert_difference("inbox.comments.count", 1) do
+        assert_difference -> { inbox.comments.count }, 1 do
           comment.notify_ai_completion
         end
 
@@ -66,7 +68,7 @@ module Collavre
         inbox = Creative.inbox_for(@owner)
         CommentPresenceStore.add(@creative.id, @owner.id)
 
-        assert_no_difference("inbox.comments.count") do
+        assert_no_difference -> { inbox.comments.count } do
           comment.notify_ai_completion
         end
       ensure
@@ -82,7 +84,7 @@ module Collavre
 
         inbox = Creative.inbox_for(@owner)
 
-        assert_no_difference("inbox.comments.count") do
+        assert_no_difference -> { inbox.comments.count } do
           comment.notify_ai_completion
         end
       end
@@ -97,7 +99,7 @@ module Collavre
 
         inbox = Creative.inbox_for(@owner)
 
-        assert_difference("inbox.comments.count", 1) do
+        assert_difference -> { inbox.comments.count }, 1 do
           comment.notify_ai_completion
         end
 
@@ -115,8 +117,7 @@ module Collavre
           topic: @topic
         )
 
-        # Stub create_inbox_item to raise an error
-        comment.stub(:create_inbox_item, ->(*_args) { raise StandardError, "test error" }) do
+        comment.stub(:create_inbox_comment, ->(*_args) { raise StandardError, "test error" }) do
           assert_nothing_raised do
             comment.notify_ai_completion
           end
