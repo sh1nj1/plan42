@@ -26,6 +26,11 @@
     <% end %>
   </div>
 
+  <%# Mobile Help (guest entry point after removing the mobile ... menu) %>
+  <% if Current.user.nil? && (help_item = Navigation::Registry.instance.find(:help)) %>
+    <span class="mobile-only"><%= render_navigation_item(help_item, mobile: true) %></span>
+  <% end %>
+
   <%# Mobile Sign In (guest entry point after removing the mobile ... menu) %>
   <% if (sign_in_item = Navigation::Registry.instance.find(:sign_in)) && navigation_item_visible?(sign_in_item, desktop: false) %>
     <span class="mobile-only"><%= render_navigation_item(sign_in_item, mobile: true) %></span>
