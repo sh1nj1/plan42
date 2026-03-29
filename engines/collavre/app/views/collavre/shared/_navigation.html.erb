@@ -26,6 +26,11 @@
     <% end %>
   </div>
 
+  <%# Mobile Sign In (guest entry point after removing the mobile ... menu) %>
+  <% if (sign_in_item = Navigation::Registry.instance.find(:sign_in)) && navigation_item_visible?(sign_in_item, desktop: false) %>
+    <span class="mobile-only"><%= render_navigation_item(sign_in_item, mobile: true) %></span>
+  <% end %>
+
   <%# Mobile Inbox (next to profile avatar) %>
   <% if (mobile_inbox_item = Navigation::Registry.instance.find(:mobile_inbox)) && navigation_item_visible?(mobile_inbox_item, desktop: false) %>
     <span class="mobile-only"><%= render_navigation_item(mobile_inbox_item, mobile: true) %></span>
