@@ -97,4 +97,17 @@ describe('CommentsPopupController', () => {
 
         expect(popup.dataset.autoFocusOnOpen).toBe('false')
     })
+
+    test('openForCreative resets auto-focus preference to default', async () => {
+        const triggerBtn = document.getElementById('trigger-btn')
+        const popup = document.getElementById('comments-popup')
+
+        triggerBtn.dataset.autoFocusOnOpen = 'false'
+        await controller.open(triggerBtn)
+        expect(popup.dataset.autoFocusOnOpen).toBe('false')
+
+        await controller.openForCreative()
+
+        expect(popup.dataset.autoFocusOnOpen).toBe('true')
+    })
 })

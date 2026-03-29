@@ -245,7 +245,7 @@ export default class extends Controller {
     this.currentButton = null
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
-    this.element.dataset.autoFocusOnOpen ||= 'true'
+    this.element.dataset.autoFocusOnOpen = 'true'
     this.titleTarget.textContent = snippet
 
     this._markChatActiveRow(resolvedCreativeId)
