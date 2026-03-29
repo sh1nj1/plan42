@@ -204,7 +204,7 @@ module Collavre
           type: :partial,
           partial: "collavre/shared/navigation/help_button",
           priority: 170,
-          mobile: false
+          mobile: true
         )
 
         # ============================================

@@ -145,6 +145,33 @@ class NavigationHelperTest < ActionView::TestCase
     assert_match(/Test Button/, html)
   end
 
+  test "navigation partial renders mobile guest help and sign in buttons" do
+    Navigation::Registry.instance.register(
+      key: :help,
+      label: "app.help",
+      type: :partial,
+      partial: "collavre/shared/navigation/help_button",
+      priority: 170,
+      mobile: true
+    )
+
+    Navigation::Registry.instance.register(
+      key: :sign_in,
+      label: "app.sign_in",
+      type: :button,
+      path: -> { collavre.new_session_path },
+      priority: 160,
+      visible: -> { true }
+    )
+
+    render partial: "collavre/shared/navigation"
+
+    assert_includes rendered, 'class="mobile-only"'
+    assert_includes rendered, 'creative-guide-link'
+    assert_includes rendered, I18n.t("app.sign_in")
+    assert_includes rendered, collavre.new_session_path
+  end
+
   test "render_navigation_item respects html_class option" do
     Navigation::Registry.instance.register(
       key: :test,
