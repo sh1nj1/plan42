@@ -271,6 +271,7 @@ export default class extends Controller {
   }
 
   async notifyChildControllers({ creativeId, canComment, highlightId }) {
+    this.topicsController?.clearOverrideTopicId()
     // Pre-set creativeId on list controller BEFORE loading topics.
     // Topics loading triggers a change event that list controller handles.
     // Without this, list controller still holds the previous creative's ID

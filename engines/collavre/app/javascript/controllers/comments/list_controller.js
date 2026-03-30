@@ -290,6 +290,9 @@ export default class extends Controller {
           // Ideally direct controller access, but event bus is safer if decoupled.
           // Or access via popupController?
           if (this.popupController && this.popupController.topicsController) {
+            // Deep link / around_comment_id resolution from server must win over
+            // saved topic state for the current popup session.
+            this.popupController.topicsController.setOverrideTopicId(serverTopicId)
             // Update UI and local state without dispatching change event (to avoid loop)
             this.popupController.topicsController.updateSelectionUI(serverTopicId)
 
