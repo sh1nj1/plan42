@@ -29,6 +29,12 @@ module Collavre
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment
 
+      # Infrastructure errors (timeout, connection failure) → retry without consuming iteration
+      if infrastructure_error?(last_agent_comment)
+        retry_without_iteration(child_creative, topic, parent_creative, loop_config, task)
+        return
+      end
+
       status = evaluate_status(last_agent_comment, loop_config)
 
       case status
@@ -69,10 +75,36 @@ module Collavre
               .first
     end
 
+    # Detect infrastructure errors (timeout, connection failure, etc.)
+    # These are NOT valid task results — the agent never actually worked.
+    INFRASTRUCTURE_ERROR_PATTERNS = [
+      /OpenClaw Error/i,
+      /timed?\s*out/i,
+      /connection\s*(refused|reset|closed)/i,
+      /internal\s*server\s*error/i,
+      /502|503|504/
+    ].freeze
+
+    def infrastructure_error?(comment)
+      content = comment.content.to_s
+      INFRASTRUCTURE_ERROR_PATTERNS.any? { |pattern| content.match?(pattern) }
+    end
+
+    # Retry without consuming an iteration — the agent never actually worked
+    def retry_without_iteration(child_creative, topic, parent_creative, loop_config, task)
+      max = loop_config["max_iterations"] || 10
+      iteration = loop_config["current_iteration"] || 0
+
+      # Still update last_task_id to avoid re-evaluating the same error
+      update_loop_iteration(child_creative, iteration, task.id)
+
+      post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
+    end
+
     def evaluate_status(comment, loop_config)
       content = comment.content.to_s
 
-      # Parse structured [STATUS: ...] tag
+      # Parse structured [STATUS: ...] tag — DONE requires explicit tag
       if content.match?(/\[STATUS:\s*DONE\b/i)
         return :done
       end
@@ -85,19 +117,14 @@ module Collavre
         return :continue
       end
 
-      # Fallback: check completion_conditions keywords
-      conditions = loop_config["completion_conditions"] || []
-      if conditions.any? { |kw| content.downcase.include?(kw.downcase) }
-        return :done
-      end
-
-      # Fallback: check stuck_conditions keywords
+      # Keyword fallback — only for stuck detection, NOT for completion.
+      # Completion requires explicit [STATUS: DONE] to prevent false positives.
       stuck = loop_config["stuck_conditions"] || []
       if stuck.any? { |kw| content.downcase.include?(kw.downcase) }
         return :stuck
       end
 
-      # Default: continue
+      # Default: continue (agent didn't report DONE, so work is incomplete)
       :continue
     end
 

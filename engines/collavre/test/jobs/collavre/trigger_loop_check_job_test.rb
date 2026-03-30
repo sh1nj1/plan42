@@ -136,7 +136,15 @@ module Collavre
       assert_equal "max_reached", @child.data.dig("trigger", "loop", "state")
     end
 
-    test "falls back to completion_conditions keywords" do
+    test "does NOT complete on keyword match alone — requires explicit STATUS DONE tag" do
+      @child.update!(data: {
+        "trigger" => {
+          "loop" => @child.data.dig("trigger", "loop").merge(
+            "completion_conditions" => [ "pr created" ]
+          )
+        }
+      })
+
       @child.comments.create!(
         content: "I have pr created successfully",
         topic_id: @topic.id,
@@ -144,12 +152,51 @@ module Collavre
         created_at: @task.created_at + 1.second
       )
 
-      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [] }) do
+      # Without explicit [STATUS: DONE], keyword match defaults to continue
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
         TriggerLoopCheckJob.perform_now(@task.id)
       end
 
       @child.reload
-      assert_equal "completed", @child.data.dig("trigger", "loop", "state")
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
+    end
+
+    test "retries without consuming iteration on infrastructure error (timeout)" do
+      @child.comments.create!(
+        content: "OpenClaw Error: OpenClaw request timed out after 3 attempts",
+        topic_id: @topic.id,
+        user: @ai_bot,
+        created_at: @task.created_at + 1.second
+      )
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+
+      @child.reload
+      # Iteration stays at 0 — not consumed
+      assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      # But a continue comment was posted
+      assert_includes @child.comments.last.content, "🔄"
+    end
+
+    test "retries without consuming iteration on connection error" do
+      @child.comments.create!(
+        content: "OpenClaw Error: connection refused",
+        topic_id: @topic.id,
+        user: @ai_bot,
+        created_at: @task.created_at + 1.second
+      )
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+
+      @child.reload
+      assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
     end
 
     test "falls back to stuck_conditions keywords" do
