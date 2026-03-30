@@ -46,30 +46,11 @@ module CollavreSlack
       comment.instance_variable_set(:@from_slack, true)
 
       response = Collavre::Comments::CommandProcessor.new(comment: comment, user: user).call
-      comment.content = "#{comment.content}\n\n#{response}" if response.present?
-      comment.save!
-
-      # Dispatch system event to trigger AI agents (same as CommentsController#create)
-      # Skip dispatch for slash command messages (e.g. /topic, /calendar)
-      unless comment.private? || response.present?
-        Collavre::SystemEvents::Dispatcher.dispatch("comment_created", {
-          comment: {
-            id: comment.id,
-            content: comment.content,
-            user_id: comment.user_id
-          },
-          creative: {
-            id: creative.id,
-            description: creative.description
-          },
-          topic: {
-            id: comment.topic_id
-          },
-          chat: {
-            content: comment.content
-          }
-        })
+      if response.present?
+        comment.content = "#{comment.content}\n\n#{response}"
+        comment.skip_dispatch = true  # slash command responses should not trigger AI
       end
+      comment.save!
 
       # Create link between Slack message and comment for reaction sync
       if data[:slack_channel_link_id].present? && data[:slack_message_ts].present?

@@ -180,38 +180,12 @@ module Collavre
       @comment.user = Current.user
       @comment.images.attach(image_attachments) if image_attachments.present?
       response = ::Comments::CommandProcessor.new(comment: @comment, user: Current.user).call
-      @comment.content = "#{@comment.content}\n\n#{response}" if response.present?
+      if response.present?
+        @comment.content = "#{@comment.content}\n\n#{response}"
+        @comment.skip_dispatch = true
+      end
       if @comment.save
-
-        # Dispatch system event
-        unless @comment.private? || response.present?
-          begin
-            ::SystemEvents::Dispatcher.dispatch("comment_created", {
-              comment: {
-                id: @comment.id,
-                content: @comment.content,
-                user_id: @comment.user_id,
-                from_ai: @comment.user&.searchable? || false,
-                quoted_comment_id: @comment.quoted_comment_id
-              }.compact,
-              creative: {
-                id: @creative.id,
-                description: @creative.description
-              },
-              topic: {
-                id: @comment.topic_id
-              },
-              chat: {
-                content: @comment.content
-              }
-            })
-          rescue => e
-            Rails.logger.error(
-              "[SystemEvents] Dispatch failed for comment #{@comment.id}: " \
-              "#{e.class} #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}"
-            )
-          end
-        end
+        # Dispatch is handled by Comment#after_create_commit callback
         @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
         render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }, status: :created
       else

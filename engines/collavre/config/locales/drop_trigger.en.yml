@@ -3,6 +3,6 @@ en:
     drop_trigger:
       child_entered: "🔔 Drop Trigger — Creative '%{child_description}' (ID: %{child_id}) was added to '%{parent_description}'. Please process this creative according to this stage's purpose."
       no_agent: "⚠️ Drop Trigger failed — No AI agent with write permission found on '%{parent_description}'. Please share an AI agent with write permission to enable automatic processing."
-      no_dispatch: "⚠️ Drop Trigger failed — A trigger message was created for '%{parent_description}', but no AI agent task was scheduled. Please check orchestration settings or retry."
+
       toggle_on: "Drop Trigger enabled"
       toggle_off: "Drop Trigger disabled"

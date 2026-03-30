@@ -35,10 +35,12 @@ module Collavre
         content: message,
         user: agent,
         topic_id: topic&.id,
-        private: false
+        private: false,
+        skip_dispatch: true  # manual dispatch below (AI user would skip model callback)
       )
 
       # Dispatch system event to trigger agent orchestration pipeline
+      # (manual because cron-initiated AI messages intentionally need dispatch)
       SystemEvents::Dispatcher.dispatch("comment_created", {
         comment: {
           id: comment.id,
