@@ -122,21 +122,41 @@ module Collavre
     end
 
     def broadcast_share_change
+      previous_permission = saved_change_to_permission? ? permission_before_last_save : nil
+
       CommentsPresenceChannel.broadcast_shares_changed(
         creative.effective_origin.id,
         shared_user_id: user_id,
         permission: permission,
-        action: previously_new_record? ? "created" : "updated"
+        action: previously_new_record? ? "created" : "updated",
+        has_access: permission_allows_access?(permission),
+        can_comment: permission_allows_comment?(permission),
+        has_access_changed: permission_allows_access?(previous_permission) != permission_allows_access?(permission),
+        can_comment_changed: permission_allows_comment?(previous_permission) != permission_allows_comment?(permission)
       )
     end
 
     def broadcast_share_destroy
+      previous_permission = permission
+
       CommentsPresenceChannel.broadcast_shares_changed(
         creative.effective_origin.id,
         shared_user_id: user_id,
         permission: nil,
-        action: "destroyed"
+        action: "destroyed",
+        has_access: false,
+        can_comment: false,
+        has_access_changed: permission_allows_access?(previous_permission),
+        can_comment_changed: permission_allows_comment?(previous_permission)
       )
+    end
+
+    def permission_allows_access?(value)
+      value.present? && value != "no_access"
+    end
+
+    def permission_allows_comment?(value)
+      value.present? && CreativeShare.permissions[value] >= CreativeShare.permissions["feedback"]
     end
   end
 end

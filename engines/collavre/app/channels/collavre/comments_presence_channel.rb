@@ -1,13 +1,17 @@
 module Collavre
 class CommentsPresenceChannel < ApplicationCable::Channel
-  def self.broadcast_shares_changed(creative_id, shared_user_id:, permission: nil, action: "updated")
+  def self.broadcast_shares_changed(creative_id, shared_user_id:, permission: nil, action: "updated", has_access: nil, can_comment: nil, has_access_changed: nil, can_comment_changed: nil)
     ActionCable.server.broadcast(
       "comments_presence:#{creative_id}",
       {
         shares_changed: {
           user_id: shared_user_id,
           permission: permission,
-          action: action
+          action: action,
+          has_access: has_access,
+          can_comment: can_comment,
+          has_access_changed: has_access_changed,
+          can_comment_changed: can_comment_changed
         }
       }
     )

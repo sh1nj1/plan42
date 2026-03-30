@@ -180,12 +180,20 @@ export default class extends Controller {
       this.renderTypingIndicator()
     }
     if (data.shares_changed) {
-      const affectedCurrentUser = this.currentUserId && String(data.shares_changed.user_id) === String(this.currentUserId)
-      this.loadParticipants({ closeOnForbidden: affectedCurrentUser })
+      const shareChange = data.shares_changed
+      const affectedCurrentUser = this.currentUserId && String(shareChange.user_id) === String(this.currentUserId)
 
-      if (affectedCurrentUser) {
-        this.listController?.loadInitialComments()
+      if (!affectedCurrentUser) {
+        this.loadParticipants()
+        return
       }
+
+      if (shareChange.can_comment_changed && typeof shareChange.can_comment === 'boolean') {
+        this.formController?.setCommentPermission(shareChange.can_comment)
+      }
+
+      this.loadParticipants({ closeOnForbidden: shareChange.has_access === false })
+      return
     }
     if (data.agent_status) {
       const { id, name, status, creative_id: agentCreativeId } = data.agent_status

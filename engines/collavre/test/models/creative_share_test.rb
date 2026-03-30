@@ -71,6 +71,10 @@ class CreativeShareTest < ActiveSupport::TestCase
     assert_equal recipient.id, broadcast_args[1][:shared_user_id]
     assert_equal "read", broadcast_args[1][:permission]
     assert_equal "created", broadcast_args[1][:action]
+    assert_equal true, broadcast_args[1][:has_access]
+    assert_equal false, broadcast_args[1][:can_comment]
+    assert_equal true, broadcast_args[1][:has_access_changed]
+    assert_equal false, broadcast_args[1][:can_comment_changed]
   end
 
   test "update broadcasts share change to comments presence channel" do
@@ -87,6 +91,10 @@ class CreativeShareTest < ActiveSupport::TestCase
     assert_equal recipient.id, broadcasts.last[1][:shared_user_id]
     assert_equal "feedback", broadcasts.last[1][:permission]
     assert_equal "updated", broadcasts.last[1][:action]
+    assert_equal true, broadcasts.last[1][:has_access]
+    assert_equal true, broadcasts.last[1][:can_comment]
+    assert_equal false, broadcasts.last[1][:has_access_changed]
+    assert_equal true, broadcasts.last[1][:can_comment_changed]
   end
 
   test "destroy broadcasts share removal to comments presence channel" do
@@ -103,5 +111,9 @@ class CreativeShareTest < ActiveSupport::TestCase
     assert_equal recipient.id, broadcasts.last[1][:shared_user_id]
     assert_nil broadcasts.last[1][:permission]
     assert_equal "destroyed", broadcasts.last[1][:action]
+    assert_equal false, broadcasts.last[1][:has_access]
+    assert_equal false, broadcasts.last[1][:can_comment]
+    assert_equal true, broadcasts.last[1][:has_access_changed]
+    assert_equal false, broadcasts.last[1][:can_comment_changed]
   end
 end
