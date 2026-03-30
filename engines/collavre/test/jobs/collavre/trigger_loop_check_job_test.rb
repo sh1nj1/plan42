@@ -10,23 +10,13 @@ module Collavre
       @human = users(:one)
       @ai_bot = users(:ai_bot)
 
-      # Parent creative with drop trigger + loop config
+      # Parent creative with drop trigger config (no loop state here)
       @parent = Creative.create!(
         description: "Parent with trigger",
         user: @human,
         data: {
           "trigger" => {
-            "on_child_enter" => true,
-            "loop" => {
-              "state" => "running",
-              "current_iteration" => 0,
-              "max_iterations" => 3,
-              "completion_conditions" => [ "pr created" ],
-              "stuck_conditions" => [ "need help" ],
-              "on_retry" => "continue",
-              "topic_id" => nil,
-              "cooldown_seconds" => 0
-            }
+            "on_child_enter" => true
           }
         }
       )
@@ -41,8 +31,22 @@ module Collavre
       @child.reload
 
       @topic = @child.topics.create!(name: "Drop Trigger", user: @human)
-      @parent.data["trigger"]["loop"]["topic_id"] = @topic.id
-      @parent.save!
+
+      # Loop state lives on the child creative (each child has its own loop)
+      @child.update!(data: {
+        "trigger" => {
+          "loop" => {
+            "state" => "running",
+            "current_iteration" => 0,
+            "max_iterations" => 3,
+            "completion_conditions" => [ "pr created" ],
+            "stuck_conditions" => [ "need help" ],
+            "on_retry" => "continue",
+            "topic_id" => @topic.id,
+            "cooldown_seconds" => 0
+          }
+        }
+      })
 
       # Create task with status "running" first, then update to "done" quietly
       # to avoid triggering the after_update_commit callback during setup
@@ -68,8 +72,8 @@ module Collavre
 
       TriggerLoopCheckJob.perform_now(@task.id)
 
-      @parent.reload
-      assert_equal "completed", @parent.data.dig("trigger", "loop", "state")
+      @child.reload
+      assert_equal "completed", @child.data.dig("trigger", "loop", "state")
     end
 
     test "completes loop when agent reports STATUS: BLOCKED" do
@@ -86,8 +90,8 @@ module Collavre
         end
       end
 
-      @parent.reload
-      assert_equal "stuck", @parent.data.dig("trigger", "loop", "state")
+      @child.reload
+      assert_equal "stuck", @child.data.dig("trigger", "loop", "state")
       assert_includes @child.comments.last.content, "⚠️"
     end
 
@@ -105,9 +109,9 @@ module Collavre
         end
       end
 
-      @parent.reload
-      assert_equal "running", @parent.data.dig("trigger", "loop", "state")
-      assert_equal 1, @parent.data.dig("trigger", "loop", "current_iteration")
+      @child.reload
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
 
       continue_comment = @child.comments.last
       assert_includes continue_comment.content, "@#{@ai_bot.name}:"
@@ -115,8 +119,8 @@ module Collavre
     end
 
     test "stops at max iterations" do
-      @parent.data["trigger"]["loop"]["current_iteration"] = 2
-      @parent.save!
+      @child.data["trigger"]["loop"]["current_iteration"] = 2
+      @child.save!
 
       @child.comments.create!(
         content: "Still working [STATUS: CONTINUE]",
@@ -129,8 +133,8 @@ module Collavre
         TriggerLoopCheckJob.perform_now(@task.id)
       end
 
-      @parent.reload
-      assert_equal "max_reached", @parent.data.dig("trigger", "loop", "state")
+      @child.reload
+      assert_equal "max_reached", @child.data.dig("trigger", "loop", "state")
     end
 
     test "falls back to completion_conditions keywords" do
@@ -145,8 +149,8 @@ module Collavre
         TriggerLoopCheckJob.perform_now(@task.id)
       end
 
-      @parent.reload
-      assert_equal "completed", @parent.data.dig("trigger", "loop", "state")
+      @child.reload
+      assert_equal "completed", @child.data.dig("trigger", "loop", "state")
     end
 
     test "falls back to stuck_conditions keywords" do
@@ -161,8 +165,8 @@ module Collavre
         TriggerLoopCheckJob.perform_now(@task.id)
       end
 
-      @parent.reload
-      assert_equal "stuck", @parent.data.dig("trigger", "loop", "state")
+      @child.reload
+      assert_equal "stuck", @child.data.dig("trigger", "loop", "state")
     end
 
     test "defaults to continue when no status tag or keywords match" do
@@ -177,14 +181,14 @@ module Collavre
         TriggerLoopCheckJob.perform_now(@task.id)
       end
 
-      @parent.reload
-      assert_equal "running", @parent.data.dig("trigger", "loop", "state")
-      assert_equal 1, @parent.data.dig("trigger", "loop", "current_iteration")
+      @child.reload
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
     end
 
     test "skips when loop state is not running" do
-      @parent.data["trigger"]["loop"]["state"] = "completed"
-      @parent.save!
+      @child.data["trigger"]["loop"]["state"] = "completed"
+      @child.save!
 
       @child.comments.create!(
         content: "Some response [STATUS: CONTINUE]",
@@ -207,6 +211,8 @@ module Collavre
     test "skips when parent has no drop trigger" do
       @parent.data.delete("trigger")
       @parent.save!
+
+      @child.update!(data: {})  # Also clear child trigger data
 
       assert_no_difference -> { @child.comments.count } do
         TriggerLoopCheckJob.perform_now(@task.id)

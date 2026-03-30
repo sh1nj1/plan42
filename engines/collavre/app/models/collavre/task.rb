@@ -49,7 +49,8 @@ module Collavre
     end
 
     def check_trigger_loop_completion
-      loop_config = creative.parent.data&.dig("trigger", "loop")
+      # Loop state is on the child creative (each child has its own loop)
+      loop_config = creative.data&.dig("trigger", "loop")
       return unless loop_config && loop_config["state"] == "running"
 
       cooldown = (loop_config["cooldown_seconds"] || 10).to_i

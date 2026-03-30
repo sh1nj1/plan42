@@ -18,7 +18,8 @@ module Collavre
       parent_creative = child_creative.parent
       return unless parent_creative&.drop_trigger_enabled?
 
-      loop_config = parent_creative.data&.dig("trigger", "loop")
+      # Loop state is stored on the child creative (each child has its own loop)
+      loop_config = child_creative.data&.dig("trigger", "loop")
       return unless loop_config && loop_config["state"] == "running"
 
       topic = Topic.find_by(id: loop_config["topic_id"] || task.topic_id)
@@ -31,9 +32,9 @@ module Collavre
 
       case status
       when :done
-        update_loop_state(parent_creative, "completed")
+        update_loop_state(child_creative, "completed")
       when :stuck
-        update_loop_state(parent_creative, "stuck")
+        update_loop_state(child_creative, "stuck")
         post_system_notice(child_creative, topic, I18n.t(
           "collavre.trigger_loop.stuck",
           iteration: loop_config["current_iteration"]
@@ -43,13 +44,13 @@ module Collavre
         max = loop_config["max_iterations"] || 10
 
         if iteration >= max
-          update_loop_state(parent_creative, "max_reached")
+          update_loop_state(child_creative, "max_reached")
           post_system_notice(child_creative, topic, I18n.t(
             "collavre.trigger_loop.max_reached",
             max: max
           ))
         else
-          update_loop_iteration(parent_creative, iteration, task.id)
+          update_loop_iteration(child_creative, iteration, task.id)
           post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
         end
       end
@@ -99,18 +100,18 @@ module Collavre
       :continue
     end
 
-    def update_loop_state(parent_creative, new_state)
-      data = parent_creative.data || {}
+    def update_loop_state(child_creative, new_state)
+      data = child_creative.data || {}
       trigger = data["trigger"] || {}
       loop_data = trigger["loop"] || {}
       loop_data["state"] = new_state
       trigger["loop"] = loop_data
       data["trigger"] = trigger
-      parent_creative.update!(data: data)
+      child_creative.update!(data: data)
     end
 
-    def update_loop_iteration(parent_creative, iteration, task_id)
-      data = parent_creative.data || {}
+    def update_loop_iteration(child_creative, iteration, task_id)
+      data = child_creative.data || {}
       trigger = data["trigger"] || {}
       loop_data = trigger["loop"] || {}
       loop_data["current_iteration"] = iteration
@@ -118,7 +119,7 @@ module Collavre
       loop_data["state"] = "running"
       trigger["loop"] = loop_data
       data["trigger"] = trigger
-      parent_creative.update!(data: data)
+      child_creative.update!(data: data)
     end
 
     def post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
