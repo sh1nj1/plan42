@@ -28,30 +28,12 @@ module CollavreGithub
 
       content = format_github_event(event, payload)
 
-      comment = creative.comments.create!(
+      creative.comments.create!(
         user: nil,
         content: content,
         private: false
       )
-
-      # Dispatch event for AI Agent routing
-      Collavre::SystemEvents::Dispatcher.dispatch("comment_created", {
-        comment: {
-          id: comment.id,
-          content: comment.content,
-          user_id: nil
-        },
-        creative: {
-          id: creative.id,
-          description: creative.description
-        },
-        topic: {
-          id: comment.topic_id
-        },
-        chat: {
-          content: comment.content
-        }
-      })
+      # Dispatch handled by Comment#after_create_commit (skipped for system messages with user: nil)
     end
 
     def format_github_event(event, payload)

@@ -55,19 +55,13 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
     assert_includes comment.content, "webhook-user/example"
   end
 
-  test "dispatches comment_created event for AI agent routing" do
+  test "does not dispatch for system comments (user nil)" do
     body = @payload.to_json
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
 
-    captured_event = nil
-    captured_context = nil
+    dispatched = false
 
-    dispatcher = ->(event_name, context) {
-      captured_event = event_name
-      captured_context = context
-    }
-
-    Collavre::SystemEvents::Dispatcher.stub :dispatch, dispatcher do
+    Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(*_args) { dispatched = true } do
       post "/github/webhook",
            params: body,
            headers: {
@@ -78,10 +72,7 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
-    assert_equal "comment_created", captured_event
-    assert_not_nil captured_context[:comment]
-    assert_not_nil captured_context[:creative]
-    assert_equal @creative.effective_origin.id, captured_context[:creative][:id]
+    refute dispatched, "System comments (user: nil) should not dispatch to orchestration"
   end
 
   test "does not create comment when repository link not found" do

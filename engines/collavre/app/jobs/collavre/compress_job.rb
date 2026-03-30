@@ -39,7 +39,7 @@ module Collavre
 
       unless agent
         error_msg = I18n.t("collavre.comments.compress_command.no_agent")
-        creative.comments.create!(user: user, topic_id: topic_id, content: "⚠️ #{error_msg}")
+        creative.comments.create!(user: user, topic_id: topic_id, content: "⚠️ #{error_msg}", skip_dispatch: true)
         Rails.logger.error("[CompressJob] No AI agent found for creative #{creative_id}, topic #{topic_id}")
         return
       end
@@ -80,7 +80,8 @@ module Collavre
       summary_comment = creative.comments.create!(
         user: user,
         topic_id: topic_id,
-        content: summary_content
+        content: summary_content,
+        skip_dispatch: true  # system-generated summary, not user input
       )
 
       # Save snapshot for recovery before deleting originals

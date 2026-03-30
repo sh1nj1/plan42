@@ -38,10 +38,12 @@ module Collavre
     include Approvable
 
     attribute :skip_default_user, :boolean, default: false
+    attribute :skip_dispatch, :boolean, default: false
 
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
     before_save :apply_link_previews, if: :should_apply_link_previews?
+    after_create_commit :dispatch_to_orchestration
 
     validates :content, presence: true, unless: -> { images.attached? }
     validate :creative_must_be_origin_creative
@@ -89,6 +91,41 @@ module Collavre
       scope = topic_id ? scope.where(topic_id: topic_id) : scope.where(topic_id: nil)
       task = scope.order(created_at: :desc).first
       task&.update!(status: "cancelled")
+    end
+
+    def dispatch_to_orchestration
+      return if private?
+      return if skip_default_user  # system notices should not trigger AI
+      return if skip_dispatch      # explicit opt-out (e.g., command processor responses)
+      return unless user_id        # nil user = system message
+      return if user&.ai_user?     # AI replies use A2aDispatcher, not this callback
+      return unless creative
+
+      SystemEvents::Dispatcher.dispatch("comment_created", {
+        comment: {
+          id: id,
+          content: content,
+          user_id: user_id,
+          from_ai: user&.searchable? || false,
+          quoted_comment_id: quoted_comment_id
+        }.compact,
+        creative: {
+          id: creative_id,
+          description: creative&.description
+        },
+        topic: {
+          id: topic_id
+        },
+        chat: {
+          content: content
+        }
+      })
+    rescue StandardError => e
+      Rails.logger.error(
+        "[Comment#dispatch_to_orchestration] Failed for comment #{id}: " \
+        "#{e.class} #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}"
+      )
+      raise  # re-raise so calling jobs (e.g. DropTriggerJob) can retry
     end
 
     def assign_default_user

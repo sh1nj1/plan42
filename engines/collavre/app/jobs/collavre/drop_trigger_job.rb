@@ -18,14 +18,17 @@ module Collavre
         return
       end
 
-      # Create trigger topic and comment on the CHILD creative
+      # Create trigger topic and comment on the CHILD creative.
+      # The comment's after_create_commit callback dispatches to orchestration
+      # automatically — same path as a normal user comment.
       topic = find_or_create_trigger_topic(child, agent)
-      comment = create_trigger_comment(child, parent, agent, topic)
 
-      scheduled_agents = dispatch_trigger_comment(comment, child, parent)
-      return if scheduled_agents.present?
+      # Idempotency: skip if a trigger comment already exists for this parent/child pair.
+      # This prevents duplicate comments when SolidQueue retries a job after
+      # after_create_commit succeeds but dispatch raises.
+      return if already_triggered?(child, parent, topic)
 
-      post_dispatch_failure_notice(child, parent, topic)
+      create_trigger_comment(child, parent, agent, topic)
     rescue StandardError => e
       Rails.logger.error(
         "[DropTriggerJob] Failed for parent=#{parent_creative_id} child=#{child_creative_id}: " \
@@ -46,13 +49,6 @@ module Collavre
       ))
     end
 
-    def post_dispatch_failure_notice(child, parent, topic)
-      post_system_notice(child, topic, I18n.t(
-        "collavre.drop_trigger.no_dispatch",
-        parent_description: parent.creative_snippet
-      ))
-    end
-
     def post_system_notice(child, topic, content)
       # System message (user: nil, skip_default_user: true) — not dispatched
       # to SystemEvents, so no AI agent will be triggered by this comment.
@@ -62,32 +58,6 @@ module Collavre
         private: false,
         skip_default_user: true
       )
-    end
-
-    def dispatch_trigger_comment(comment, child, parent)
-      SystemEvents::Dispatcher.dispatch("comment_created", {
-        comment: {
-          id: comment.id,
-          content: comment.content,
-          user_id: comment.user_id,
-          from_ai: comment.user&.searchable? || false,
-          quoted_comment_id: comment.quoted_comment_id
-        }.compact,
-        creative: {
-          id: child.id,
-          description: child.description
-        },
-        topic: {
-          id: comment.topic_id
-        },
-        chat: {
-          content: comment.content
-        },
-        drop_trigger: {
-          parent_id: parent.id,
-          parent_description: parent.description
-        }
-      })
     end
 
     def find_trigger_agent(creative)
@@ -106,6 +76,18 @@ module Collavre
       )
       topic.set_primary_agent!(agent)
       topic
+    end
+
+    def already_triggered?(child, parent, topic)
+      trigger_key = I18n.t(
+        "collavre.drop_trigger.child_entered",
+        child_description: child.creative_snippet,
+        child_id: child.id,
+        parent_description: parent.creative_snippet
+      )
+      child.comments.where(topic_id: topic.id)
+           .where("content LIKE ?", "%#{trigger_key.first(80)}%")
+           .exists?
     end
 
     def create_trigger_comment(child, parent, agent, topic)
