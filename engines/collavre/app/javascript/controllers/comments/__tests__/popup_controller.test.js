@@ -3,7 +3,7 @@
  * @jest-environment jsdom
  */
 
-import { Application, Controller } from '@hotwired/stimulus'
+import { Application } from '@hotwired/stimulus'
 import CommentsPopupController from '../popup_controller'
 
 describe('CommentsPopupController', () => {
@@ -110,4 +110,5 @@ describe('CommentsPopupController', () => {
 
         expect(popup.dataset.autoFocusOnOpen).toBe('true')
     })
+
 })

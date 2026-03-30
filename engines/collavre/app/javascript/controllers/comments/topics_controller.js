@@ -667,11 +667,23 @@ export default class extends Controller {
     }
 
     get currentTopicId() {
+        if (this.overrideTopicId !== undefined && this.overrideTopicId !== null) {
+            return this.overrideTopicId ? String(this.overrideTopicId) : ""
+        }
+
         const urlParams = new URLSearchParams(window.location.search)
         const urlTopicId = urlParams.get('topic_id')
         if (urlTopicId) return urlTopicId
 
         return this.serverLastTopicId || ""
+    }
+
+    setOverrideTopicId(id) {
+        this.overrideTopicId = id ? String(id) : ""
+    }
+
+    clearOverrideTopicId() {
+        this.overrideTopicId = undefined
     }
 
     set currentTopicId(id) {
