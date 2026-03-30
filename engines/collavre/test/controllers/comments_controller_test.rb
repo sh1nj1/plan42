@@ -907,4 +907,16 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, data["can_comment"]
     assert_equal true, data["has_access"]
   end
+
+  test "participants includes read-only shared users" do
+    other = users(:two)
+    other.update!(email_verified_at: Time.current)
+    grant_read_access_to_other_user(user: other, permission: :read)
+
+    get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    data = JSON.parse(response.body)
+    assert data["users"].any? { |u| u["id"] == other.id }
+  end
 end
