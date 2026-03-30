@@ -59,10 +59,10 @@ module Collavre
     private
 
     def find_last_agent_comment(creative, topic, task)
+      # Bind to this task's agent to avoid reading unrelated AI comments
+      # that may appear during cooldown delay
       creative.comments
-              .where(topic_id: topic.id)
-              .joins(:user)
-              .where.not(users: { llm_vendor: [ nil, "" ] })
+              .where(topic_id: topic.id, user_id: task.agent_id)
               .where("comments.created_at >= ?", task.created_at)
               .order(created_at: :desc)
               .first
