@@ -1,5 +1,18 @@
 module Collavre
 class CommentsPresenceChannel < ApplicationCable::Channel
+  def self.broadcast_shares_changed(creative_id, shared_user_id:, permission: nil, action: "updated")
+    ActionCable.server.broadcast(
+      "comments_presence:#{creative_id}",
+      {
+        shares_changed: {
+          user_id: shared_user_id,
+          permission: permission,
+          action: action
+        }
+      }
+    )
+  end
+
   # Broadcast status for any currently running AI agent tasks for a creative.
   # Called when a user subscribes to ensure they see ongoing agent activity.
   def self.broadcast_running_agents(creative_id)

@@ -25,7 +25,9 @@ module Collavre
     after_destroy :touch_creative_subtree
 
     after_commit :propagate_cache, on: [ :create, :update ]
+    after_commit :broadcast_share_change, on: [ :create, :update ]
     after_destroy_commit :remove_cache
+    after_destroy_commit :broadcast_share_destroy
 
     # Given ancestor_ids and ancestor_shares, returns the closest CreativeShare
     # in the ancestors. If there is no ancestor share, returns nil.
@@ -116,6 +118,24 @@ module Collavre
         creative_share_id: id,
         creative_id: creative_id,
         user_id: user_id
+      )
+    end
+
+    def broadcast_share_change
+      CommentsPresenceChannel.broadcast_shares_changed(
+        creative.effective_origin.id,
+        shared_user_id: user_id,
+        permission: permission,
+        action: previously_new_record? ? "created" : "updated"
+      )
+    end
+
+    def broadcast_share_destroy
+      CommentsPresenceChannel.broadcast_shares_changed(
+        creative.effective_origin.id,
+        shared_user_id: user_id,
+        permission: nil,
+        action: "destroyed"
       )
     end
   end

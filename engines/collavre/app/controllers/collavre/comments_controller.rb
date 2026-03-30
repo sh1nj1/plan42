@@ -291,7 +291,9 @@ module Collavre
       end
       render json: {
         users: user_data,
-        can_share: @creative.has_permission?(Current.user, :admin)
+        can_share: @creative.has_permission?(Current.user, :admin),
+        can_comment: @creative.has_permission?(Current.user, :feedback),
+        has_access: @creative.has_permission?(Current.user, :read)
       }
     end
 

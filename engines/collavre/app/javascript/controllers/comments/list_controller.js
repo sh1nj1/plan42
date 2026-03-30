@@ -185,6 +185,8 @@ export default class extends Controller {
       this.formController?.focusTextarea()
       this.markCommentsRead()
 
+    }).catch((error) => {
+      this.listTarget.innerHTML = `<div class="comments-list-error">${error.message}</div>`
     })
   }
 
@@ -253,10 +255,21 @@ export default class extends Controller {
     if (this.currentTopicId) {
       urlParams.set('topic_id', this.currentTopicId)
     }
-    return fetch(`/creatives/${this.creativeId}/comments?${urlParams.toString()}`).then((response) => {
+    return fetch(`/creatives/${this.creativeId}/comments?${urlParams.toString()}`).then(async (response) => {
       // Keep the CSRF meta tag in sync with the session cookie.
       // This is critical after the browser returns from a background/frozen state.
       updateCsrfTokenFromResponse(response)
+
+      if (!response.ok) {
+        let errorMessage = this.element.dataset.noPermissionText || 'No permission'
+        try {
+          const payload = await response.json()
+          errorMessage = payload.error || errorMessage
+        } catch (_error) {
+          // Ignore non-JSON error bodies and keep fallback text.
+        }
+        throw new Error(errorMessage)
+      }
 
       const serverTopicId = response.headers.get("X-Topic-Id")
       if (serverTopicId !== null && serverTopicId !== undefined) {
