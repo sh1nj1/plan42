@@ -140,6 +140,44 @@ module Collavre
       assert dispatched, "Should retry dispatch when only a cancelled Task exists"
     end
 
+    test "raises DispatchFailedError when dispatch returns no agents" do
+      # retry_on reschedules the job; verify the error is raised on perform_now
+      # by temporarily removing retry_on behavior
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [] }) do
+        error = assert_raises(Collavre::DropTriggerJob::DispatchFailedError) do
+          # perform_now bypasses retry_on wait scheduling
+          job = DropTriggerJob.new(@parent.id, @child.id)
+          job.perform(@parent.id, @child.id)
+        end
+        assert_includes error.message, "no agents"
+      end
+    end
+
+    test "comment survives dispatch failure for retry" do
+      # Simulate first attempt: dispatch fails
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [] }) do
+        begin
+          job = DropTriggerJob.new(@parent.id, @child.id)
+          job.perform(@parent.id, @child.id)
+        rescue Collavre::DropTriggerJob::DispatchFailedError
+          # Expected
+        end
+      end
+
+      # Comment should exist for next retry attempt
+      topic = @child.topics.find_by(name: "Drop Trigger")
+      assert topic, "Topic should exist"
+      trigger_comment = @child.comments.where(topic_id: topic.id).where.not(user_id: nil).first
+      assert trigger_comment, "Trigger comment should exist for retry"
+
+      # Simulate retry: dispatch succeeds
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [@ai_bot] }) do
+        assert_no_difference -> { @child.comments.count } do
+          DropTriggerJob.perform_now(@parent.id, @child.id)
+        end
+      end
+    end
+
     test "skips when parent trigger is disabled" do
       @parent.update!(data: {})
 

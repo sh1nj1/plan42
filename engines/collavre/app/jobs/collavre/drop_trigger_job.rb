@@ -4,6 +4,12 @@ module Collavre
   class DropTriggerJob < ApplicationJob
     queue_as :default
 
+    # Custom error raised when dispatch returns no scheduled agents.
+    # This triggers retry_on instead of silently succeeding.
+    class DispatchFailedError < StandardError; end
+
+    retry_on DispatchFailedError, wait: 5.seconds, attempts: 3
+
     # End-to-end idempotent: safe to retry at any point.
     #
     # 1. Find or create trigger comment (no duplicates)
@@ -132,10 +138,9 @@ module Collavre
       )
 
       if scheduled_agents.blank?
-        Rails.logger.warn(
-          "[DropTriggerJob] Dispatch returned no agents for comment #{comment.id} " \
+        raise DispatchFailedError,
+          "Dispatch returned no agents for comment #{comment.id} " \
           "(creative=#{comment.creative_id}, topic=#{comment.topic_id})"
-        )
       end
     end
   end
