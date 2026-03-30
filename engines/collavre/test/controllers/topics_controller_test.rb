@@ -143,8 +143,8 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
       params: { agent_id: ai_agent.id }, as: :json
 
     assert_response :success
-    policy = Collavre::OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: @topic.id)
-    assert_equal ai_agent.id, policy.config["primary_agent_id"]
+    @topic.reload
+    assert_equal ai_agent.id, @topic.primary_agent_id
   end
 
   test "should replace existing primary agent" do
@@ -162,8 +162,8 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
       params: { agent_id: new_agent.id }, as: :json
 
     assert_response :success
-    policy = Collavre::OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: @topic.id)
-    assert_equal new_agent.id, policy.config["primary_agent_id"]
+    @topic.reload
+    assert_equal new_agent.id, @topic.primary_agent_id
   end
 
   test "should reject non-AI user as primary agent" do
@@ -194,8 +194,7 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :created
     topic = @creative.topics.find_by(name: "Talk to Agent2")
     assert topic.present?
-    policy = Collavre::OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: topic.id)
-    assert_equal ai_agent.id, policy.config["primary_agent_id"]
+    assert_equal ai_agent.id, topic.primary_agent_id
   end
 
   test "should create topic with comment_ids and move comments" do

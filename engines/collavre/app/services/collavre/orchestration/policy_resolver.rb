@@ -96,7 +96,7 @@ module Collavre
       end
 
       def primary_agent_id
-        arbitration_config["primary_agent_id"]
+        topic_primary_agent_id || arbitration_config["primary_agent_id"]
       end
 
       # Bid strategy specific
@@ -159,6 +159,14 @@ module Collavre
         end
 
         config
+      end
+
+      # Read primary_agent_id directly from the topics table
+      def topic_primary_agent_id
+        topic_id = @context.dig("topic", "id")
+        return nil unless topic_id
+
+        Topic.where(id: topic_id).pick(:primary_agent_id)
       end
     end
   end

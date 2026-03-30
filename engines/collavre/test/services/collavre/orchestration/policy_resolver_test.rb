@@ -107,6 +107,43 @@ module Collavre
         assert_equal 100_000, config["daily_token_limit"]
         assert_equal 20, config["rate_limit_per_minute"]
       end
+
+      test "topic primary_agent_id column takes precedence over policy config" do
+        @topic.update!(primary_agent_id: @ai_agent.id)
+
+        # Set a different primary_agent_id in creative-level policy
+        other_agent = User.create!(
+          name: "Other Agent",
+          email: "other_#{SecureRandom.hex(4)}@example.com",
+          password: "password",
+          llm_vendor: "openai",
+          searchable: true
+        )
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration",
+          scope_type: "Creative",
+          scope_id: @creative.id,
+          config: { "strategy" => "primary_first", "primary_agent_id" => other_agent.id }
+        )
+
+        resolver = PolicyResolver.new(@context)
+
+        # Topic column should take precedence
+        assert_equal @ai_agent.id, resolver.primary_agent_id
+      end
+
+      test "falls back to policy primary_agent_id when topic column is nil" do
+        assert_nil @topic.primary_agent_id
+
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration",
+          config: { "strategy" => "primary_first", "primary_agent_id" => @ai_agent.id }
+        )
+
+        resolver = PolicyResolver.new(@context)
+
+        assert_equal @ai_agent.id, resolver.primary_agent_id
+      end
     end
   end
 end

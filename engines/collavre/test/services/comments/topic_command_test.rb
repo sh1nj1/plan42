@@ -93,12 +93,7 @@ module Collavre
 
         topic = Topic.find_by(creative: @creative, name: "Agent Topic")
         assert topic.present?
-
-        policy = OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: topic.id)
-        assert policy.present?
-        assert_equal "arbitration", policy.policy_type
-        assert_equal "primary_first", policy.config["strategy"]
-        assert_equal @ai_agent.id, policy.config["primary_agent_id"]
+        assert_equal @ai_agent.id, topic.primary_agent_id
       end
 
       test "creates topic without agent when mention not found" do
@@ -109,9 +104,9 @@ module Collavre
         assert_match(/No Agent Topic/, result)
         assert Topic.exists?(creative: @creative, name: "No Agent Topic")
 
-        # No policy should be created
+        # No primary agent should be set
         topic = Topic.find_by(creative: @creative, name: "No Agent Topic")
-        assert_nil OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: topic.id)
+        assert_nil topic.primary_agent_id
       end
 
       test "returns error when topic name is missing" do
@@ -149,10 +144,9 @@ module Collavre
         # No new topic created
         assert_equal topic_count_before, Topic.where(creative: @creative, name: "Existing Topic").count
 
-        # Policy created for existing topic
-        policy = OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: existing.id)
-        assert policy.present?
-        assert_equal @ai_agent.id, policy.config["primary_agent_id"]
+        # Primary agent set on existing topic
+        existing.reload
+        assert_equal @ai_agent.id, existing.primary_agent_id
         assert_match(/TestAgent/, result)
       end
 
@@ -164,20 +158,14 @@ module Collavre
           email: "other@test.local", password: "password123", name: "OtherAgent",
           llm_vendor: "openai", llm_model: "gpt-4", searchable: true
         )
-        OrchestratorPolicy.create!(
-          policy_type: "arbitration", scope_type: "Topic", scope_id: existing.id,
-          config: { "strategy" => "primary_first", "primary_agent_id" => other_agent.id },
-          priority: 10, enabled: true
-        )
+        existing.set_primary_agent!(other_agent)
 
         # Update to new agent
         comment = create_comment('/topic "Agent Swap Topic" @TestAgent: ')
         TopicCommand.new(comment: comment, user: @user).call
 
-        policy = OrchestratorPolicy.find_by(scope_type: "Topic", scope_id: existing.id)
-        assert_equal @ai_agent.id, policy.config["primary_agent_id"]
-        # Should be only one policy, not two
-        assert_equal 1, OrchestratorPolicy.where(scope_type: "Topic", scope_id: existing.id, policy_type: "arbitration").count
+        existing.reload
+        assert_equal @ai_agent.id, existing.primary_agent_id
       end
 
       test "reports already exists when topic exists without agent mention" do

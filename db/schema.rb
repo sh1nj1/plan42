@@ -745,6 +745,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_000000) do
     t.integer "creative_id", null: false
     t.string "name", null: false
     t.integer "position", default: 0, null: false
+    t.integer "primary_agent_id"
     t.integer "source_topic_id"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
@@ -752,6 +753,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_000000) do
     t.index ["creative_id", "name"], name: "index_topics_on_creative_id_and_name", unique: true
     t.index ["creative_id", "position"], name: "index_topics_on_creative_id_and_position"
     t.index ["creative_id"], name: "index_topics_on_creative_id"
+    t.index ["primary_agent_id"], name: "index_topics_on_primary_agent_id"
     t.index ["source_topic_id"], name: "index_topics_on_source_topic_id"
     t.index ["user_id"], name: "index_topics_on_user_id"
   end
