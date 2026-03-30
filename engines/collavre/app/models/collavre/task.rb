@@ -10,6 +10,8 @@ module Collavre
 
     validates :name, presence: true
 
+    after_update_commit :check_trigger_loop_completion, if: :trigger_loop_candidate?
+
     scope :running_for_topic, ->(topic_id, creative_id = nil) {
       rel = where(topic_id: topic_id, status: "running")
       rel = rel.where(creative_id: creative_id) if creative_id
@@ -36,6 +38,26 @@ module Collavre
 
     def all_sub_tasks_done?
       sub_tasks.where.not(status: %w[done cancelled]).empty?
+    end
+
+    private
+
+    def trigger_loop_candidate?
+      saved_change_to_attribute?("status") && status == "done" &&
+        trigger_event_name == "comment_created" &&
+        creative&.parent&.drop_trigger_enabled?
+    end
+
+    def check_trigger_loop_completion
+      loop_config = creative.parent.data&.dig("trigger", "loop")
+      return unless loop_config && loop_config["state"] == "running"
+
+      cooldown = (loop_config["cooldown_seconds"] || 10).to_i
+      if cooldown > 0
+        TriggerLoopCheckJob.set(wait: cooldown.seconds).perform_later(id)
+      else
+        TriggerLoopCheckJob.perform_later(id)
+      end
     end
   end
 end

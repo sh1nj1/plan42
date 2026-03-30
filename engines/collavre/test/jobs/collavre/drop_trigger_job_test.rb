@@ -171,7 +171,7 @@ module Collavre
       assert trigger_comment, "Trigger comment should exist for retry"
 
       # Simulate retry: dispatch succeeds
-      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [@ai_bot] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
         assert_no_difference -> { @child.comments.count } do
           DropTriggerJob.perform_now(@parent.id, @child.id)
         end

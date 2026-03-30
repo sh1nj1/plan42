@@ -34,6 +34,9 @@ module Collavre
 
       topic = find_or_create_trigger_topic(child, agent)
 
+      # Initialize trigger loop state on the parent creative
+      initialize_trigger_loop(parent, topic)
+
       # Step 1: Find existing or create new trigger comment (idempotent)
       comment = find_trigger_comment(child, parent, topic) ||
                 create_trigger_comment(child, parent, agent, topic)
@@ -107,7 +110,9 @@ module Collavre
     end
 
     def create_trigger_comment(child, parent, agent, topic)
-      content = "@#{agent.name}: #{trigger_content_key(child, parent)}"
+      trigger_text = trigger_content_key(child, parent)
+      loop_instructions = I18n.t("collavre.trigger_loop.instructions")
+      content = "@#{agent.name}: #{trigger_text}\n\n#{loop_instructions}"
       # skip_dispatch: true — we dispatch explicitly in Step 3,
       # not via after_create_commit, so retries can re-attempt dispatch
       # even when the comment already exists.
@@ -118,6 +123,28 @@ module Collavre
         user: child.user,
         skip_dispatch: true
       )
+    end
+
+    def initialize_trigger_loop(parent, topic)
+      data = parent.data || {}
+      trigger = data["trigger"] || {}
+
+      # Only initialize if loop doesn't exist yet
+      return if trigger["loop"].present?
+
+      trigger["loop"] = {
+        "state" => "running",
+        "current_iteration" => 0,
+        "max_iterations" => 10,
+        "completion_conditions" => [],
+        "stuck_conditions" => [],
+        "on_retry" => "continue",
+        "topic_id" => topic.id,
+        "last_task_id" => nil,
+        "cooldown_seconds" => 10
+      }
+      data["trigger"] = trigger
+      parent.update!(data: data)
     end
 
     def task_exists_for?(comment)

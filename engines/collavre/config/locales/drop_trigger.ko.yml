@@ -6,3 +6,18 @@ ko:
 
       toggle_on: "드롭 트리거 활성화됨"
       toggle_off: "드롭 트리거 비활성화됨"
+    trigger_loop:
+      instructions: |
+        ---
+        [LOOP INSTRUCTIONS]
+        이것은 루프 트리거입니다. 각 응답의 마지막에 상태를 보고해주세요:
+        - [STATUS: DONE] — 작업 완료
+        - [STATUS: CONTINUE] — 진행 중, 추가 반복 필요
+        - [STATUS: BLOCKED 사유] — 도움 없이 진행 불가
+
+        또한: 컨텍스트를 읽은 후 creative_update_service를 사용해 부모 크리에이티브의
+        trigger loop 설정(completion_conditions, stuck_conditions, max_iterations, on_retry)을
+        작업 컨텍스트에 맞게 설정해주세요.
+      continue: "🔄 트리거 루프 — 반복 %{iteration}/%{max}. 이전 작업이 미완료입니다. 이어서 진행하고 [STATUS: DONE/CONTINUE/BLOCKED]으로 보고해주세요."
+      stuck: "⚠️ 트리거 루프 일시정지 — 에이전트가 반복 %{iteration}에서 BLOCKED를 보고했습니다. 사용자 개입이 필요할 수 있습니다."
+      max_reached: "⚠️ 트리거 루프 중단 — 최대 반복 횟수(%{max})에 도달했습니다. 진행 상황을 확인하고 필요시 재시작해주세요."
