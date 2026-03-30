@@ -182,7 +182,10 @@ export default class extends Controller {
     if (data.shares_changed) {
       const affectedCurrentUser = this.currentUserId && String(data.shares_changed.user_id) === String(this.currentUserId)
       this.loadParticipants({ closeOnForbidden: affectedCurrentUser })
-      this.listController?.loadInitialComments()
+
+      if (affectedCurrentUser) {
+        this.listController?.loadInitialComments()
+      }
     }
     if (data.agent_status) {
       const { id, name, status, creative_id: agentCreativeId } = data.agent_status
