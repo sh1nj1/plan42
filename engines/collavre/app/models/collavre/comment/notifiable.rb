@@ -172,7 +172,6 @@ module Collavre
           { user: user&.display_name, tool_name: parsed_action_tool_name, creative: creative_markdown_link }
         )
       end
-
     end
   end
 end
