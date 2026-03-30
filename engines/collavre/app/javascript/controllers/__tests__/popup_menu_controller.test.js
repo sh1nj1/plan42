@@ -85,4 +85,18 @@ describe('PopupMenuController', () => {
     expect(menu.style.top).toBe('calc(100% + 4px)')
     expect(menu.style.bottom).toBe('auto')
   })
+
+  test('switches to right alignment when left alignment would overflow the viewport', async () => {
+    const rects = [
+      { top: 80, bottom: 260, left: 260, right: 460, width: 200, height: 180 },
+      { top: 80, bottom: 260, left: 140, right: 340, width: 200, height: 180 }
+    ]
+    let callCount = 0
+    jest.spyOn(menu, 'getBoundingClientRect').mockImplementation(() => rects[Math.min(callCount++, rects.length - 1)])
+
+    controller.show()
+    await new Promise(resolve => requestAnimationFrame(resolve))
+
+    expect(menu.classList.contains('popup-menu-right')).toBe(true)
+  })
 })

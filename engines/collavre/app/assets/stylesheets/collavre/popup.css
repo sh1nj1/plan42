@@ -325,11 +325,6 @@
     max-width: calc(100vw - 8px);
   }
 
-  .inline-delete-popup-menu {
-    right: 0;
-    left: auto;
-  }
-
   #mobile-more-menu button,
   #mobile-more-menu a {
     display: block;

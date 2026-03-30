@@ -43,6 +43,9 @@ export default class extends Controller {
     menu.style.display = 'block'
     menu.style.transform = ''
     menu.style.maxWidth = `calc(100vw - ${viewportPadding * 2}px)`
+    menu.classList.remove('popup-menu-right')
+    menu.style.top = 'calc(100% + 4px)'
+    menu.style.bottom = 'auto'
 
     this.buttonTarget?.setAttribute('aria-expanded', 'true')
 
@@ -56,9 +59,16 @@ export default class extends Controller {
         menu.style.top = 'auto'
         menu.style.bottom = 'calc(100% + 4px)'
         rect = menu.getBoundingClientRect()
-      } else {
-        menu.style.top = 'calc(100% + 4px)'
-        menu.style.bottom = 'auto'
+      }
+
+      if (rect.right > window.innerWidth - viewportPadding) {
+        menu.classList.add('popup-menu-right')
+        rect = menu.getBoundingClientRect()
+      }
+
+      if (rect.left < viewportPadding && menu.classList.contains('popup-menu-right')) {
+        menu.classList.remove('popup-menu-right')
+        rect = menu.getBoundingClientRect()
       }
 
       if (rect.right > window.innerWidth - viewportPadding) {
