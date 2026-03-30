@@ -75,6 +75,9 @@ module Collavre
                 show_zero: total_count.positive?
               }
             )
+
+            # Also update the global inbox badge when the creative is an inbox
+            broadcast_inbox_badge(origin, u, count: unread_count) if origin.inbox?
           end
         end
 
@@ -97,6 +100,32 @@ module Collavre
               show_zero: comments_count.positive?
             }
           )
+
+          # Also update the global inbox badge when the creative is an inbox
+          broadcast_inbox_badge(origin, user, count: unread_count) if origin.inbox?
+        end
+
+        # Broadcast updated inbox badge count to the user's global inbox badge.
+        # Called when inbox comments are created (via Notifiable) and when the
+        # user reads their inbox (via read pointer update / presence unsubscribe).
+        # Accepts an optional pre-computed count to avoid duplicate queries.
+        def broadcast_inbox_badge(inbox_creative, owner, count: nil)
+          return unless inbox_creative && owner
+
+          count ||= Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
+
+          %w[desktop-inbox-badge mobile-inbox-badge].each do |target_id|
+            Turbo::StreamsChannel.broadcast_replace_to(
+              [ "inbox", owner ],
+              target: target_id,
+              partial: "inbox/badge_component/count",
+              locals: {
+                count: count,
+                badge_id: target_id,
+                show_zero: false
+              }
+            )
+          end
         end
       end
 
