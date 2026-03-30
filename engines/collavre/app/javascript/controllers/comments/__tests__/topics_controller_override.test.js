@@ -2,16 +2,37 @@
  * @jest-environment jsdom
  */
 
+import { Application } from '@hotwired/stimulus'
 import TopicsController from '../topics_controller'
 
 describe('TopicsController override topic selection', () => {
+  let application
+  let container
   let controller
 
   beforeEach(() => {
-    controller = Object.create(TopicsController.prototype)
-    controller.serverLastTopicId = '533'
-    delete controller.overrideTopicId
-    window.history.replaceState({}, '', '/creatives/10544')
+    container = document.createElement('div')
+    container.innerHTML = `
+      <div id="topics" data-controller="comments--topics">
+        <div data-comments--topics-target="list"></div>
+      </div>
+    `
+    document.body.appendChild(container)
+
+    application = Application.start()
+    application.register('comments--topics', TopicsController)
+
+    return new Promise(resolve => setTimeout(resolve, 0)).then(() => {
+      const element = document.getElementById('topics')
+      controller = application.getControllerForElementAndIdentifier(element, 'comments--topics')
+      controller.serverLastTopicId = '533'
+    })
+  })
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+    application.stop()
+    window.history.replaceState({}, '', '/')
   })
 
   test('returns override topic id before saved topic id', () => {

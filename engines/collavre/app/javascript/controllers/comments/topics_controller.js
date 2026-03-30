@@ -666,9 +666,12 @@ export default class extends Controller {
         }
     }
 
+    // Priority: overrideTopicId (one-shot, set by deep-link) → URL topic_id → serverLastTopicId.
+    // overrideTopicId is a plain JS property (not a Stimulus value) because it is
+    // transient per popup session and should not survive connect/disconnect cycles.
     get currentTopicId() {
         if (this.overrideTopicId !== undefined && this.overrideTopicId !== null) {
-            return this.overrideTopicId ? String(this.overrideTopicId) : ""
+            return this.overrideTopicId
         }
 
         const urlParams = new URLSearchParams(window.location.search)
