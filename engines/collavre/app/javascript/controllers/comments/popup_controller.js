@@ -117,6 +117,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this._releaseWakeLock()
     this.clearPendingOpenFromUrl()
     document.removeEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.removeEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
@@ -374,6 +375,7 @@ export default class extends Controller {
 
     this._clearChatActiveRow()
     this._hideNavDropdown()
+    this._releaseWakeLock()
 
     this.element.style.display = 'none'
     this.element.classList.remove('open')
@@ -408,6 +410,7 @@ export default class extends Controller {
     if (this.isMobile()) {
       this.element.classList.add('open')
     }
+    this._requestWakeLock()
   }
 
   isFullscreen() {
@@ -554,6 +557,8 @@ export default class extends Controller {
   handleVisibilityChange() {
     if (!document.hidden && this.element.style.display === 'flex') {
       this.listController?.loadInitialComments()
+      // Re-acquire wake lock — released automatically when tab loses visibility
+      this._requestWakeLock()
     }
   }
 
@@ -1297,6 +1302,33 @@ export default class extends Controller {
     if (this.hasNavDropdownTarget) {
       this.navDropdownTarget.style.display = 'none'
       this.navDropdownTarget.innerHTML = ''
+    }
+  }
+
+  // ── Screen Wake Lock ──────────────────────────────────────────────
+  // Prevent the device screen from dimming/locking while the chat popup
+  // is open.  The browser automatically releases the lock when the tab
+  // loses visibility, so we re-acquire it in handleVisibilityChange().
+
+  async _requestWakeLock() {
+    if (!('wakeLock' in navigator)) return
+
+    try {
+      this._wakeLock = await navigator.wakeLock.request('screen')
+      this._wakeLock.addEventListener('release', () => {
+        this._wakeLock = null
+      })
+    } catch (err) {
+      // Wake lock request can fail (e.g. low battery, browser policy).
+      // This is non-critical — just log and continue.
+      console.debug('[chat] Wake lock request failed:', err.message)
+    }
+  }
+
+  _releaseWakeLock() {
+    if (this._wakeLock) {
+      this._wakeLock.release()
+      this._wakeLock = null
     }
   }
 }
