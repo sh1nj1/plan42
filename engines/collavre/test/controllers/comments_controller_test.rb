@@ -919,4 +919,13 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     data = JSON.parse(response.body)
     assert data["users"].any? { |u| u["id"] == other.id }
   end
+
+  test "participants disables caching" do
+    get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    assert_equal "no-store", response.headers["Cache-Control"]
+    assert_equal "no-cache", response.headers["Pragma"]
+    assert_equal "0", response.headers["Expires"]
+  end
 end

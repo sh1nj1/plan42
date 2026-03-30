@@ -99,7 +99,10 @@ export default class extends Controller {
 
   loadParticipants({ closeOnForbidden = false } = {}) {
     if (!this.creativeId) return
-    fetch(`/creatives/${this.creativeId}/comments/participants`)
+    fetch(`/creatives/${this.creativeId}/comments/participants`, {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    })
       .then(async (response) => {
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}))

@@ -289,6 +289,10 @@ module Collavre
           ai_user: u.ai_user?
         }
       end
+      response.headers["Cache-Control"] = "no-store"
+      response.headers["Pragma"] = "no-cache"
+      response.headers["Expires"] = "0"
+
       render json: {
         users: user_data,
         can_share: @creative.has_permission?(Current.user, :admin),
