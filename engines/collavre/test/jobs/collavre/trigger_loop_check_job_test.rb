@@ -42,7 +42,6 @@ module Collavre
             "completion_conditions" => [ "pr created" ],
             "stuck_conditions" => [ "need help" ],
             "on_retry" => "continue",
-            "topic_id" => @topic.id,
             "cooldown_seconds" => 0
           }
         }

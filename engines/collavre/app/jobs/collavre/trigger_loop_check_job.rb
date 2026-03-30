@@ -22,7 +22,8 @@ module Collavre
       loop_config = child_creative.data&.dig("trigger", "loop")
       return unless loop_config && loop_config["state"] == "running"
 
-      topic = Topic.find_by(id: loop_config["topic_id"] || task.topic_id)
+      # Use the task's topic directly — not a stored topic_id which can become stale
+      topic = Topic.find_by(id: task.topic_id)
       return unless topic
 
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)

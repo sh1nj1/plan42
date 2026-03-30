@@ -35,7 +35,7 @@ module Collavre
       topic = find_or_create_trigger_topic(child, agent)
 
       # Initialize trigger loop state on the child creative
-      initialize_trigger_loop(child, topic)
+      initialize_trigger_loop(child)
 
       # Step 1: Find existing or create new trigger comment (idempotent)
       comment = find_trigger_comment(child, parent, topic) ||
@@ -125,7 +125,7 @@ module Collavre
       )
     end
 
-    def initialize_trigger_loop(child, topic)
+    def initialize_trigger_loop(child)
       data = child.data || {}
       trigger = data["trigger"] || {}
 
@@ -139,7 +139,6 @@ module Collavre
         "completion_conditions" => [],
         "stuck_conditions" => [],
         "on_retry" => "continue",
-        "topic_id" => topic.id,
         "last_task_id" => nil,
         "cooldown_seconds" => 10
       }
