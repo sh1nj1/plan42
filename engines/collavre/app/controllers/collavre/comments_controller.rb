@@ -276,7 +276,7 @@ module Collavre
     end
 
     def participants
-      users = [ @creative.user ].compact + @creative.all_shared_users(:read).map(&:user)
+      users = [ @creative.user ].compact + @creative.all_shared_users(:feedback).map(&:user)
       users = users.uniq
       user_data = users.map do |u|
         {
