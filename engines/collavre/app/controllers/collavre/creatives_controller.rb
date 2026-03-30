@@ -335,7 +335,10 @@ module Collavre
         render json: { error: "Invalid JSON: #{e.message}" }, status: :unprocessable_entity
         return
       end
+      previous_enabled = creative.drop_trigger_enabled?
+
       if creative.update(data: new_data)
+        notify_drop_trigger_missing_agent!(creative) if !previous_enabled && creative.drop_trigger_enabled?
         head :ok
       else
         render json: { errors: creative.errors.full_messages }, status: :unprocessable_entity
@@ -419,6 +422,21 @@ module Collavre
 
       def reorderer
         @reorderer ||= ::Creatives::Reorderer.new(user: Current.user)
+      end
+
+      def notify_drop_trigger_missing_agent!(creative)
+        return if creative.all_shared_users(:write).map(&:user).any?(&:ai_user?)
+
+        topic = creative.topics.find_or_create_by!(name: "Drop Trigger") do |t|
+          t.user = creative.user
+        end
+
+        creative.comments.create!(
+          content: t("collavre.drop_trigger.no_agent", parent_description: creative.creative_snippet),
+          topic_id: topic.id,
+          private: false,
+          skip_default_user: true
+        )
       end
 
       def enforce_creatives_login_policy
