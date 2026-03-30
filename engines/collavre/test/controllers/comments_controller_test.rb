@@ -875,17 +875,22 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
-  test "participants returns users and can_share for admin" do
+  test "participants returns permission flags for admin" do
     get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
     assert_response :success
     data = JSON.parse(response.body)
     assert data.key?("users"), "Response should include users array"
     assert data.key?("can_share"), "Response should include can_share flag"
+    assert data.key?("can_comment"), "Response should include can_comment flag"
+    assert data.key?("has_access"), "Response should include has_access flag"
+    assert_equal true, data["can_share"]
+    assert_equal true, data["can_comment"]
+    assert_equal true, data["has_access"]
     assert_kind_of Array, data["users"]
     assert data["users"].any? { |u| u["id"] == @user.id }
   end
 
-  test "participants returns can_share false for non-admin shared user" do
+  test "participants returns correct permission flags for non-admin shared user" do
     other = users(:two)
     other.update!(email_verified_at: Time.current)
     grant_read_access_to_other_user(user: other, permission: :feedback)
@@ -897,5 +902,28 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     data = JSON.parse(response.body)
     assert_equal false, data["can_share"]
+    assert_equal true, data["can_comment"]
+    assert_equal true, data["has_access"]
+  end
+
+  test "participants excludes read-only shared users" do
+    other = users(:two)
+    other.update!(email_verified_at: Time.current)
+    grant_read_access_to_other_user(user: other, permission: :read)
+
+    get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    data = JSON.parse(response.body)
+    refute data["users"].any? { |u| u["id"] == other.id }
+  end
+
+  test "participants disables caching" do
+    get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    assert_equal "no-store", response.headers["Cache-Control"]
+    assert_equal "no-cache", response.headers["Pragma"]
+    assert_equal "0", response.headers["Expires"]
   end
 end

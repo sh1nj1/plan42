@@ -144,6 +144,18 @@ export default class extends Controller {
     this.resetForm()
   }
 
+  setCommentPermission(canComment) {
+    this.formTarget.style.display = canComment ? '' : 'none'
+
+    if (!canComment) {
+      this.stopSpeechRecognition()
+      this.resetForm()
+      return
+    }
+
+    requestAnimationFrame(() => this.textareaTarget.focus())
+  }
+
   onSelectionChanged({ size, moving }) {
     // Selection state now managed by list_controller action bar
   }

@@ -18,6 +18,7 @@ export default class extends Controller {
     this.presenceSubscription = null
     this.typingTimeoutHandle = null
     this.hasPresenceConnected = false
+    this.currentUserId = document.body.dataset.currentUserId
 
     this.handleInput = this.handleInput.bind(this)
     this.handleFocus = this.handleFocus.bind(this)
@@ -38,6 +39,14 @@ export default class extends Controller {
 
   get listController() {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--list')
+  }
+
+  get formController() {
+    return this.application.getControllerForElementAndIdentifier(this.element, 'comments--form')
+  }
+
+  get popupController() {
+    return this.application.getControllerForElementAndIdentifier(this.element, 'comments--popup')
   }
 
   onPopupOpened({ creativeId }) {
@@ -88,15 +97,36 @@ export default class extends Controller {
     }
   }
 
-  loadParticipants() {
+  loadParticipants({ closeOnForbidden = false } = {}) {
     if (!this.creativeId) return
-    fetch(`/creatives/${this.creativeId}/comments/participants`)
-      .then((response) => response.json())
+    fetch(`/creatives/${this.creativeId}/comments/participants`, {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}))
+          throw new Error(payload.error || this.element.dataset.noPermissionText || 'No permission')
+        }
+        return response.json()
+      })
       .then((data) => {
         this.participantsData = data.users
         this.canShare = data.can_share
+        this.formController?.setCommentPermission(data.can_comment)
         this.renderParticipants(this.currentPresentIds)
         this.renderTypingIndicator()
+      })
+      .catch((error) => {
+        this.participantsData = []
+        this.canShare = false
+        this.renderParticipants([])
+        this.renderTypingIndicator()
+
+        if (closeOnForbidden) {
+          alert(error.message)
+          this.popupController?.close()
+        }
       })
   }
 
@@ -151,6 +181,22 @@ export default class extends Controller {
         delete this.typingTimers[id]
       }
       this.renderTypingIndicator()
+    }
+    if (data.shares_changed) {
+      const shareChange = data.shares_changed
+      const affectedCurrentUser = this.currentUserId && String(shareChange.user_id) === String(this.currentUserId)
+
+      if (!affectedCurrentUser) {
+        this.loadParticipants()
+        return
+      }
+
+      if (shareChange.can_comment_changed && typeof shareChange.can_comment === 'boolean') {
+        this.formController?.setCommentPermission(shareChange.can_comment)
+      }
+
+      this.loadParticipants({ closeOnForbidden: shareChange.has_access === false })
+      return
     }
     if (data.agent_status) {
       const { id, name, status, creative_id: agentCreativeId } = data.agent_status
