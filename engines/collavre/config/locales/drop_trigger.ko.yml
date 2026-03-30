@@ -3,5 +3,6 @@ ko:
     drop_trigger:
       child_entered: "🔔 드롭 트리거 — 크리에이티브 '%{child_description}' (ID: %{child_id})가 '%{parent_description}'에 추가되었습니다. 이 단계의 목적에 맞게 처리해주세요."
       no_agent: "⚠️ 드롭 트리거 실패 — '%{parent_description}'에 쓰기 권한을 가진 AI 에이전트가 없습니다. 자동 처리를 위해 AI 에이전트에 쓰기 권한을 부여해주세요."
+      no_dispatch: "⚠️ 드롭 트리거 실패 — '%{parent_description}'용 트리거 메시지는 생성되었지만 AI 에이전트 작업이 예약되지 않았습니다. 오케스트레이션 설정을 확인하거나 다시 시도해주세요."
       toggle_on: "드롭 트리거 활성화됨"
       toggle_off: "드롭 트리거 비활성화됨"
