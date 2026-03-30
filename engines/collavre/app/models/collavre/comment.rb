@@ -64,6 +64,31 @@ module Collavre
       creative.creative_snippet
     end
 
+    # Build the dispatch payload for comment_created events.
+    # Used by both after_create_commit callback and DropTriggerJob
+    # to ensure a single source of truth (no payload drift).
+    def dispatch_payload
+      {
+        comment: {
+          id: id,
+          content: content,
+          user_id: user_id,
+          from_ai: user&.searchable? || false,
+          quoted_comment_id: quoted_comment_id
+        }.compact,
+        creative: {
+          id: creative_id,
+          description: creative&.description
+        },
+        topic: {
+          id: topic_id
+        },
+        chat: {
+          content: content
+        }
+      }
+    end
+
     private
 
     def nullify_selected_version
@@ -101,25 +126,7 @@ module Collavre
       return if user&.ai_user?     # AI replies use A2aDispatcher, not this callback
       return unless creative
 
-      SystemEvents::Dispatcher.dispatch("comment_created", {
-        comment: {
-          id: id,
-          content: content,
-          user_id: user_id,
-          from_ai: user&.searchable? || false,
-          quoted_comment_id: quoted_comment_id
-        }.compact,
-        creative: {
-          id: creative_id,
-          description: creative&.description
-        },
-        topic: {
-          id: topic_id
-        },
-        chat: {
-          content: content
-        }
-      })
+      SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload)
     rescue StandardError => e
       Rails.logger.error(
         "[Comment#dispatch_to_orchestration] Failed for comment #{id}: " \

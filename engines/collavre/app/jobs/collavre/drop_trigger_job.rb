@@ -115,31 +115,21 @@ module Collavre
     end
 
     def task_exists_for?(comment)
+      comment_id_str = comment.id.to_s
       Task.where(creative_id: comment.creative_id, topic_id: comment.topic_id)
           .where.not(status: "cancelled")
-          .any? { |t| t.trigger_event_payload&.dig("comment", "id").to_s == comment.id.to_s }
+          .find_each do |t|
+        return true if t.trigger_event_payload&.dig("comment", "id").to_s == comment_id_str
+      end
+      false
     end
 
     def dispatch_trigger(comment)
-      scheduled_agents = SystemEvents::Dispatcher.dispatch("comment_created", {
-        comment: {
-          id: comment.id,
-          content: comment.content,
-          user_id: comment.user_id,
-          from_ai: false,
-          quoted_comment_id: comment.quoted_comment_id
-        }.compact,
-        creative: {
-          id: comment.creative_id,
-          description: comment.creative&.description
-        },
-        topic: {
-          id: comment.topic_id
-        },
-        chat: {
-          content: comment.content
-        }
-      })
+      # Use Comment#dispatch_payload — single source of truth shared with
+      # the after_create_commit callback, preventing payload drift.
+      scheduled_agents = SystemEvents::Dispatcher.dispatch(
+        "comment_created", comment.dispatch_payload
+      )
 
       if scheduled_agents.blank?
         Rails.logger.warn(

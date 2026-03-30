@@ -23,7 +23,7 @@ module Collavre
     end
 
     test "creates trigger topic and comment on child creative" do
-      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [@ai_bot] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
         assert_difference -> { @child.comments.count }, 1 do
           assert_difference -> { @child.topics.count }, 1 do
             DropTriggerJob.perform_now(@parent.id, @child.id)
@@ -41,7 +41,7 @@ module Collavre
 
     test "dispatches exactly once via explicit call, not callback" do
       dispatch_calls = []
-      dispatcher = ->(*args) { dispatch_calls << args; [@ai_bot] }
+      dispatcher = ->(*args) { dispatch_calls << args; [ @ai_bot ] }
 
       SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
         DropTriggerJob.perform_now(@parent.id, @child.id)
@@ -54,12 +54,12 @@ module Collavre
     end
 
     test "reuses existing Drop Trigger topic" do
-      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [@ai_bot] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
         DropTriggerJob.perform_now(@parent.id, @child.id)
       end
 
       assert_no_difference -> { @child.topics.count } do
-        SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [@ai_bot] }) do
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
           DropTriggerJob.perform_now(@parent.id, @child.id)
         end
       end
@@ -78,7 +78,7 @@ module Collavre
 
       # Second run (retry): finds existing comment, retries dispatch successfully
       dispatch_calls = []
-      dispatcher = ->(*args) { dispatch_calls << args; [@ai_bot] }
+      dispatcher = ->(*args) { dispatch_calls << args; [ @ai_bot ] }
 
       SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
         assert_no_difference -> { @child.comments.count } do
@@ -91,7 +91,7 @@ module Collavre
 
     test "skips dispatch when task already exists for comment" do
       dispatched = false
-      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true; [@ai_bot] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true; [ @ai_bot ] }) do
         DropTriggerJob.perform_now(@parent.id, @child.id)
       end
       assert dispatched, "First run should dispatch"
@@ -110,14 +110,14 @@ module Collavre
       )
 
       dispatched = false
-      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true; [@ai_bot] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true; [ @ai_bot ] }) do
         DropTriggerJob.perform_now(@parent.id, @child.id)
       end
       refute dispatched, "Should skip dispatch when Task already exists"
     end
 
     test "retries dispatch when existing task is cancelled" do
-      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [@ai_bot] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
         DropTriggerJob.perform_now(@parent.id, @child.id)
       end
 
@@ -134,7 +134,7 @@ module Collavre
       )
 
       dispatched = false
-      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true; [@ai_bot] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true; [ @ai_bot ] }) do
         DropTriggerJob.perform_now(@parent.id, @child.id)
       end
       assert dispatched, "Should retry dispatch when only a cancelled Task exists"
@@ -184,7 +184,7 @@ module Collavre
     end
 
     test "comment mentions the AI agent for routing" do
-      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [@ai_bot] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
         DropTriggerJob.perform_now(@parent.id, @child.id)
       end
 
@@ -196,7 +196,7 @@ module Collavre
     test "uses creative_snippet for plain text names" do
       @child.update!(description: "<p>HTML <strong>description</strong> that is very long and should be truncated</p>")
 
-      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [@ai_bot] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
         DropTriggerJob.perform_now(@parent.id, @child.id)
       end
 
