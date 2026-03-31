@@ -330,12 +330,13 @@
   background: var(--surface-hover);
 }
 
+/* Inside popup menus, danger-link items use the same style as other items */
 .popup-menu .popup-menu-item.danger-link {
-  color: var(--color-danger);
+  color: inherit;
 }
 
 .popup-menu .popup-menu-item.danger-link:hover {
-  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  background: var(--surface-hover);
 }
 
 #user-menu button {
