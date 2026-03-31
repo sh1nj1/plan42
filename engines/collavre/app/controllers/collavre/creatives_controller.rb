@@ -127,6 +127,9 @@ module Collavre
             "trigger_v1"
           ].join(":")
 
+          trigger_loop_data = @creative.data&.dig("trigger", "loop")
+          Rails.logger.info "[TRIGGER_DEBUG] creative_id=#{@creative.id} trigger_loop=#{trigger_loop_data&.dig('state')} etag=#{etag.truncate(80)}"
+
           if stale?(etag: etag, last_modified: last_modified, public: false)
             root = params[:root_id] ? Creative.find_by(id: params[:root_id]) : nil
             depth = if root
@@ -146,9 +149,7 @@ module Collavre
               prompt: @creative.prompt_for(Current.user),
               has_children: children_count > 0,
               data: @creative.effective_origin(Set.new).data,
-              trigger_loop: @creative.data&.dig("trigger", "loop").tap { |tl|
-                Rails.logger.info "[TRIGGER_DEBUG] creative_id=#{@creative.id} trigger_loop=#{tl.inspect} data_trigger=#{@creative.data&.dig('trigger').inspect}"
-              },
+              trigger_loop: trigger_loop_data,
               can_edit: @creative.has_permission?(Current.user, :write)
             }
           end
