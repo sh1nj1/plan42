@@ -2,6 +2,8 @@
 
 module Collavre
   class TriggerLoopCheckJob < ApplicationJob
+    include TriggerLoopHelpers
+
     queue_as :default
 
     # Evaluates whether a trigger loop should continue after an AI agent
@@ -44,7 +46,9 @@ module Collavre
 
       case status
       when :done
-        update_loop_data(child_creative, state: "completed", infra_retry_count: 0)
+        # Transition to pending_verification and enqueue LLM verification
+        update_loop_data(child_creative, state: "pending_verification", infra_retry_count: 0)
+        TriggerLoopVerifyJob.perform_later(task.id)
       when :stuck
         update_loop_data(child_creative, state: "stuck", infra_retry_count: 0)
         post_system_notice(child_creative, topic, I18n.t(
@@ -71,16 +75,6 @@ module Collavre
     end
 
     private
-
-    def find_last_agent_comment(creative, topic, task)
-      # Bind to this task's agent to avoid reading unrelated AI comments
-      # that may appear during cooldown delay
-      creative.comments
-              .where(topic_id: topic.id, user_id: task.agent_id)
-              .where("comments.created_at >= ?", task.created_at)
-              .order(created_at: :desc)
-              .first
-    end
 
     # Detect infrastructure errors (timeout, connection failure, etc.)
     # These are NOT valid task results — the agent never actually worked.
@@ -149,18 +143,6 @@ module Collavre
       :continue
     end
 
-    # Single method to update loop state — avoids multiple DB writes per Job execution.
-    # Only the keys passed in `changes` are updated; others are preserved.
-    def update_loop_data(child_creative, **changes)
-      data = child_creative.data || {}
-      trigger = data["trigger"] || {}
-      loop_data = trigger["loop"] || {}
-      changes.each { |key, value| loop_data[key.to_s] = value }
-      trigger["loop"] = loop_data
-      data["trigger"] = trigger
-      child_creative.update!(data: data)
-    end
-
     def post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
       agent = find_trigger_agent(parent_creative)
       return unless agent
@@ -196,15 +178,6 @@ module Collavre
         private: false,
         user: child_creative.user,
         skip_dispatch: false
-      )
-    end
-
-    def post_system_notice(creative, topic, content)
-      creative.comments.create!(
-        content: content,
-        topic_id: topic.id,
-        private: false,
-        skip_default_user: true
       )
     end
 

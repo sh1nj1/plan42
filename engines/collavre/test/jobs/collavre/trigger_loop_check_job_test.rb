@@ -62,7 +62,7 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
-    test "completes loop when agent reports STATUS: DONE" do
+    test "transitions to pending_verification when agent reports STATUS: DONE" do
       @child.comments.create!(
         content: "All done! [STATUS: DONE]",
         topic_id: @topic.id,
@@ -70,10 +70,13 @@ module Collavre
         created_at: @task.created_at + 1.second
       )
 
-      TriggerLoopCheckJob.perform_now(@task.id)
+      # Stub VerifyJob to prevent inline execution from changing state
+      TriggerLoopVerifyJob.stub(:perform_later, ->(task_id) { }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
 
       @child.reload
-      assert_equal "completed", @child.data.dig("trigger", "loop", "state")
+      assert_equal "pending_verification", @child.data.dig("trigger", "loop", "state")
     end
 
     test "completes loop when agent reports STATUS: BLOCKED" do
