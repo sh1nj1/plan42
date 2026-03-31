@@ -124,12 +124,14 @@ module Collavre
             prompt_updated&.to_i,
             "children",
             children_key,
-            "trigger_v2",
+            "trigger_v3",
             @creative.data&.dig("trigger", "loop", "state"),
-            @creative.data&.dig("trigger", "loop", "current_iteration")
+            @creative.data&.dig("trigger", "loop", "current_iteration"),
+            @creative.parent&.drop_trigger_enabled?
           ].join(":")
 
           trigger_loop_data = @creative.data&.dig("trigger", "loop")
+          is_trigger_task = @creative.parent&.drop_trigger_enabled? || false
 
           if stale?(etag: etag, last_modified: last_modified, public: false)
             root = params[:root_id] ? Creative.find_by(id: params[:root_id]) : nil
@@ -151,6 +153,7 @@ module Collavre
               has_children: children_count > 0,
               data: @creative.effective_origin(Set.new).data,
               trigger_loop: trigger_loop_data,
+              is_trigger_task: is_trigger_task,
               can_edit: @creative.has_permission?(Current.user, :write)
             }
           end
