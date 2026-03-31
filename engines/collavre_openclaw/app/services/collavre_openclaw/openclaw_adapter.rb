@@ -335,7 +335,7 @@ module CollavreOpenclaw
     # Format: agent:<agent_id>:collavre:<user_id>:creative:<id>:topic:<id>
     def build_session_key
       creative_id = extract_id(@context, :creative) || @context[:creative_id]
-      topic_id = @context[:thread_id] || @context[:topic_id]
+      topic_id = @context[:thread_id] || @context[:topic_id] || infer_topic_id
       agent_id = extract_agent_id_from_email || "main"
 
       parts = [ "agent", agent_id, "collavre", @user.id ]
@@ -372,7 +372,7 @@ module CollavreOpenclaw
 
       creative_id = extract_id(@context, :creative) || @context[:creative_id]
       comment_id = extract_id(@context, :comment) || @context[:comment_id]
-      topic_id = @context[:thread_id] || @context[:topic_id]
+      topic_id = @context[:thread_id] || @context[:topic_id] || infer_topic_id
 
       callback = callback_url
       if callback.present? && creative_id.present?
@@ -591,6 +591,15 @@ module CollavreOpenclaw
     def extract_agent_id_from_email
       return nil unless @user&.email.present?
       @user.email.split("@").first
+    end
+
+    # Infer topic_id from the comment object in context when not explicitly provided.
+    # AiAgentService passes :comment (the reply or original comment) which carries topic_id.
+    def infer_topic_id
+      comment = @context[:comment]
+      return comment.topic_id if comment.respond_to?(:topic_id) && comment.topic_id.present?
+
+      nil
     end
 
     def default_url_options

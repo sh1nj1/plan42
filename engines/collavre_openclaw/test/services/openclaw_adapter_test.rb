@@ -291,6 +291,73 @@ module CollavreOpenclaw
       assert_not_equal adapter1.session_key, adapter2.session_key
     end
 
+    test "session key infers topic_id from comment object in context" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "bot@example.com")
+
+      # Simulate a comment object with topic_id (as passed by AiAgentService)
+      comment = Object.new
+      comment.define_singleton_method(:id) { 42 }
+      comment.define_singleton_method(:topic_id) { 789 }
+
+      creative = Object.new
+      creative.define_singleton_method(:id) { 100 }
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: { creative: creative, comment: comment }
+      )
+
+      session_key = adapter.session_key
+
+      assert_includes session_key, "creative:100"
+      assert_includes session_key, "topic:789"
+    end
+
+    test "session key does not include topic when comment has no topic_id" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "bot@example.com")
+
+      comment = Object.new
+      comment.define_singleton_method(:id) { 42 }
+      comment.define_singleton_method(:topic_id) { nil }
+
+      creative = Object.new
+      creative.define_singleton_method(:id) { 100 }
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: { creative: creative, comment: comment }
+      )
+
+      session_key = adapter.session_key
+
+      assert_includes session_key, "creative:100"
+      assert_not_includes session_key, "topic:"
+    end
+
+    test "explicit topic_id takes precedence over inferred from comment" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "bot@example.com")
+
+      comment = Object.new
+      comment.define_singleton_method(:id) { 42 }
+      comment.define_singleton_method(:topic_id) { 789 }
+
+      creative = Object.new
+      creative.define_singleton_method(:id) { 100 }
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "",
+        context: { creative: creative, comment: comment, topic_id: 555 }
+      )
+
+      session_key = adapter.session_key
+
+      assert_includes session_key, "topic:555"
+      assert_not_includes session_key, "topic:789"
+    end
+
     test "session key differs for different agents" do
       user1 = build_test_user(gateway_url: "https://test-gateway.com", email: "agent-a@example.com")
       user2 = build_test_user(gateway_url: "https://test-gateway.com", email: "agent-b@example.com")
