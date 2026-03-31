@@ -99,4 +99,50 @@ describe('PopupMenuController', () => {
 
     expect(menu.classList.contains('popup-menu-right')).toBe(true)
   })
+
+  test('preserves initial right alignment through show/hide cycle', async () => {
+    // Simulate a menu rendered with align: :right (server adds popup-menu-right)
+    menu.classList.add('popup-menu-right')
+
+    // Re-connect so controller picks up the initial state
+    const element = container.querySelector('[data-controller="popup-menu"]')
+    application.stop()
+    application = Application.start()
+    application.register('popup-menu', PopupMenuController)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    controller = application.getControllerForElementAndIdentifier(element, 'popup-menu')
+
+    jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+      top: 80, bottom: 260, left: 20, right: 220, width: 200, height: 180
+    })
+
+    // show() should preserve popup-menu-right
+    controller.show()
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    expect(menu.classList.contains('popup-menu-right')).toBe(true)
+
+    // hide() should also preserve it
+    controller.hide()
+    expect(menu.classList.contains('popup-menu-right')).toBe(true)
+  })
+
+  test('hide() cleans up inline styles set by show()', async () => {
+    jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+      top: 40, bottom: 220, left: 20, right: 220, width: 200, height: 180
+    })
+
+    controller.show()
+    await new Promise(resolve => requestAnimationFrame(resolve))
+
+    // Verify show() set some styles
+    expect(menu.style.display).toBe('block')
+
+    controller.hide()
+
+    expect(menu.style.display).toBe('none')
+    expect(menu.style.top).toBe('')
+    expect(menu.style.bottom).toBe('')
+    expect(menu.style.maxWidth).toBe('')
+    expect(menu.style.transform).toBe('')
+  })
 })

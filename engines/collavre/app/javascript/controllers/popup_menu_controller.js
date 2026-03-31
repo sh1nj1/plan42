@@ -7,6 +7,7 @@ export default class extends Controller {
   connect() {
     this.handleOutsideClick = this.handleOutsideClick.bind(this)
     this._popupId = 'popup-menu-' + (this.menuTarget.id || this.element.id || this.element.dataset.popupId || Math.random().toString(36).slice(2))
+    this._initialAlignRight = this.menuTarget.classList.contains('popup-menu-right')
     this._cleanupPopupListener = onOtherPopupOpen(this._popupId, () => {
       if (this.isOpen()) this.hide()
     })
@@ -43,7 +44,11 @@ export default class extends Controller {
     menu.style.display = 'block'
     menu.style.transform = ''
     menu.style.maxWidth = `calc(100vw - ${viewportPadding * 2}px)`
-    menu.classList.remove('popup-menu-right')
+    if (this._initialAlignRight) {
+      menu.classList.add('popup-menu-right')
+    } else {
+      menu.classList.remove('popup-menu-right')
+    }
     menu.style.top = 'calc(100% + 4px)'
     menu.style.bottom = 'auto'
 
@@ -90,7 +95,17 @@ export default class extends Controller {
   }
 
   hide() {
-    this.menuTarget.style.display = 'none'
+    const menu = this.menuTarget
+    menu.style.display = 'none'
+    menu.style.top = ''
+    menu.style.bottom = ''
+    menu.style.maxWidth = ''
+    menu.style.transform = ''
+    if (this._initialAlignRight) {
+      menu.classList.add('popup-menu-right')
+    } else {
+      menu.classList.remove('popup-menu-right')
+    }
     this.buttonTarget?.setAttribute('aria-expanded', 'false')
     this.removeOutsideClickListener()
   }
