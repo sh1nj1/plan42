@@ -13,7 +13,7 @@ module Tools
     tool_param :id, description: "The ID of the Creative to update.", required: true
     tool_param :description, description: "New content/title for the Creative. Accepts HTML format. If omitted, description remains unchanged.", required: false
     tool_param :progress, description: "Set to 1.0 to mark a leaf Creative as complete. Only 1.0 is allowed; partial progress and updates on parent Creatives are rejected.", required: false
-    tool_param :parent_id, description: "New parent Creative ID to move this Creative under. Use null/0 to make it a root Creative.", required: false
+    tool_param :parent_id, description: "New parent Creative ID to move this Creative under. If omitted, nil, or 0, the parent remains unchanged.", required: false
 
     sig { params(id: Integer, description: T.nilable(String), progress: T.nilable(Numeric), parent_id: T.nilable(Integer)).returns(T::Hash[Symbol, T.untyped]) }
     def call(id:, description: nil, progress: nil, parent_id: nil)
@@ -57,21 +57,25 @@ module Tools
       end
 
       # Handle parent change (on the creative itself, not base)
-      if parent_id.present? || parent_id == 0
-        new_parent_id = parent_id == 0 ? nil : parent_id
+      # Skip if parent_id is nil or 0 — these mean "don't change parent"
+      if parent_id.present? && parent_id != 0
+        new_parent_id = parent_id
 
-        if new_parent_id.present?
-          new_parent = Creative.find_by(id: new_parent_id)
-          unless new_parent
-            return { error: "New parent Creative not found", parent_id: new_parent_id }
-          end
-          unless new_parent.has_permission?(Current.user, :write)
-            return { error: "No write permission on new parent Creative", parent_id: new_parent_id }
-          end
-          # Prevent circular reference
-          if new_parent.self_and_ancestors.include?(creative)
-            return { error: "Cannot move Creative under its own descendant", parent_id: new_parent_id }
-          end
+        # Prevent self-reference
+        if new_parent_id == creative.id
+          return { error: "Cannot set a Creative as its own parent", id: id }
+        end
+
+        new_parent = Creative.find_by(id: new_parent_id)
+        unless new_parent
+          return { error: "New parent Creative not found", parent_id: new_parent_id }
+        end
+        unless new_parent.has_permission?(Current.user, :write)
+          return { error: "No write permission on new parent Creative", parent_id: new_parent_id }
+        end
+        # Prevent circular reference
+        if new_parent.self_and_ancestors.include?(creative)
+          return { error: "Cannot move Creative under its own descendant", parent_id: new_parent_id }
         end
 
         parent_updates[:parent_id] = new_parent_id
