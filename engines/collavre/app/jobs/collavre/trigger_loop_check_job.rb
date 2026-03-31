@@ -44,6 +44,12 @@ module Collavre
 
       status = evaluate_status(last_agent_comment, loop_config)
 
+      # LLM fallback: when agent doesn't use [STATUS: ...] tags, ask LLM
+      # to determine whether the work is actually done.
+      if status == :no_tag
+        status = llm_fallback_evaluate(child_creative, parent_creative, last_agent_comment)
+      end
+
       case status
       when :done
         # Transition to pending_verification and enqueue LLM verification
@@ -133,14 +139,13 @@ module Collavre
       end
 
       # Keyword fallback — only for stuck detection, NOT for completion.
-      # Completion requires explicit [STATUS: DONE] to prevent false positives.
       stuck = loop_config["stuck_conditions"] || []
       if stuck.any? { |kw| content.downcase.include?(kw.downcase) }
         return :stuck
       end
 
-      # Default: continue (agent didn't report DONE, so work is incomplete)
-      :continue
+      # No status tag found — signal for LLM fallback evaluation
+      :no_tag
     end
 
     def post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
@@ -185,6 +190,110 @@ module Collavre
       creative.all_shared_users(:write)
               .map(&:user)
               .find(&:ai_user?)
+    end
+
+    # LLM fallback: when the agent doesn't use [STATUS: ...] tags,
+    # ask an LLM to evaluate whether the work described in the response
+    # indicates completion, continuation, or a blocked state.
+    LLM_FALLBACK_SYSTEM_PROMPT = <<~PROMPT.freeze
+      You are a task status evaluator. Given the original task instructions and an AI agent's response, determine the task's current status.
+
+      Rules:
+      - DONE: The agent has executed all required actions (created PRs, moved items, updated records, etc.) — not merely described or planned them.
+      - CONTINUE: The agent made progress but explicitly mentions remaining work it intends to do.
+      - BLOCKED: The agent cannot proceed without external help (missing permissions, unclear requirements, dependency on others).
+
+      Respond with exactly one word: DONE, CONTINUE, or BLOCKED.
+    PROMPT
+
+    def llm_fallback_evaluate(child_creative, parent_creative, agent_comment)
+      verifier = pick_fallback_agent(parent_creative)
+
+      unless verifier
+        # No AI agent available for fallback — default to continue
+        return :continue
+      end
+
+      instructions = collect_fallback_instructions(child_creative, parent_creative)
+
+      prompt = <<~PROMPT
+        ## Task instructions:
+        #{instructions}
+
+        ## Agent's response:
+        #{agent_comment.content.to_s.truncate(3000)}
+
+        ## Question:
+        Based on the agent's response, is the task DONE, should it CONTINUE, or is it BLOCKED?
+        Respond with exactly one word: DONE, CONTINUE, or BLOCKED.
+      PROMPT
+
+      client = AiClient.new(
+        vendor: verifier.llm_vendor,
+        model: verifier.llm_model,
+        system_prompt: LLM_FALLBACK_SYSTEM_PROMPT,
+        llm_api_key: verifier.llm_api_key || verifier.creator&.llm_api_key,
+        context: {}
+      )
+
+      response_text = +""
+      client.chat([ { role: "user", text: prompt } ]) do |delta|
+        response_text << delta
+      end
+
+      cleaned = response_text.strip.upcase
+      case cleaned
+      when /\ADONE\b/
+        :done
+      when /\ABLOCKED\b/
+        :stuck
+      else
+        :continue
+      end
+    rescue StandardError => e
+      Rails.logger.error("[TriggerLoopCheckJob] LLM fallback failed: #{e.class} #{e.message}")
+      # On LLM failure, default to continue to avoid false completion
+      :continue
+    end
+
+    # Pick an AI agent for fallback evaluation — prefer feedback+ agents,
+    # fall back to the trigger agent itself.
+    def pick_fallback_agent(creative)
+      ai_agents = creative.all_shared_users(:feedback)
+                          .map(&:user)
+                          .select(&:ai_user?)
+
+      return ai_agents.first if ai_agents.any?
+
+      # Fall back to write-permission agents (the trigger agent)
+      creative.all_shared_users(:write)
+              .map(&:user)
+              .find(&:ai_user?)
+    end
+
+    # Collect instructions from context creatives for LLM evaluation
+    def collect_fallback_instructions(child_creative, parent_creative)
+      parts = []
+      seen_ids = Set.new
+
+      parent_creative.context_creatives.each do |ctx|
+        next if seen_ids.include?(ctx.id)
+        seen_ids.add(ctx.id)
+        desc = ctx.description.to_s.strip
+        parts << desc if desc.present?
+      end
+
+      child_creative.context_creatives.each do |ctx|
+        next if seen_ids.include?(ctx.id)
+        seen_ids.add(ctx.id)
+        desc = ctx.description.to_s.strip
+        parts << desc if desc.present?
+      end
+
+      child_desc = child_creative.description.to_s.strip
+      parts << "Task: #{child_desc}" if child_desc.present?
+
+      parts.join("\n\n---\n\n")
     end
   end
 end

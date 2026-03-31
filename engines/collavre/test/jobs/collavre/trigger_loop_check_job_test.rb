@@ -365,5 +365,115 @@ module Collavre
         TriggerLoopCheckJob.perform_now(@task.id)
       end
     end
+
+    # --- LLM fallback tests ---
+
+    test "LLM fallback: transitions to pending_verification when LLM says DONE" do
+      # Agent response without [STATUS: ...] tag
+      @child.comments.create!(
+        content: "I've created PR #42 and moved the creative. Everything is complete.",
+        topic_id: @topic.id,
+        user: @ai_bot,
+        created_at: @task.created_at + 1.second
+      )
+
+      # Stub AiClient with a fake that yields "DONE" to the block
+      fake_client = Object.new
+      fake_client.define_singleton_method(:chat) do |_messages, &block|
+        block.call("DONE") if block
+      end
+
+      TriggerLoopVerifyJob.stub(:perform_later, ->(task_id) { }) do
+        AiClient.stub(:new, ->(*_args) { fake_client }) do
+          TriggerLoopCheckJob.perform_now(@task.id)
+        end
+      end
+
+      @child.reload
+      assert_equal "pending_verification", @child.data.dig("trigger", "loop", "state")
+    end
+
+    test "LLM fallback: continues when LLM says CONTINUE" do
+      @child.comments.create!(
+        content: "I've made some progress but still need to create the PR.",
+        topic_id: @topic.id,
+        user: @ai_bot,
+        created_at: @task.created_at + 1.second
+      )
+
+      fake_client = Object.new
+      fake_client.define_singleton_method(:chat) do |_messages, &block|
+        block.call("CONTINUE") if block
+      end
+
+      AiClient.stub(:new, ->(*_args) { fake_client }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+
+      @child.reload
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
+    end
+
+    test "LLM fallback: marks stuck when LLM says BLOCKED" do
+      @child.comments.create!(
+        content: "I can't proceed because I don't have permission to access the repo.",
+        topic_id: @topic.id,
+        user: @ai_bot,
+        created_at: @task.created_at + 1.second
+      )
+
+      fake_client = Object.new
+      fake_client.define_singleton_method(:chat) do |_messages, &block|
+        block.call("BLOCKED") if block
+      end
+
+      AiClient.stub(:new, ->(*_args) { fake_client }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+
+      @child.reload
+      assert_equal "stuck", @child.data.dig("trigger", "loop", "state")
+    end
+
+    test "LLM fallback: defaults to continue on LLM error" do
+      @child.comments.create!(
+        content: "Some work done without status tags.",
+        topic_id: @topic.id,
+        user: @ai_bot,
+        created_at: @task.created_at + 1.second
+      )
+
+      # Stub AiClient to raise an error
+      AiClient.stub(:new, ->(*_args) { raise StandardError, "LLM unavailable" }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+
+      @child.reload
+      # Should default to continue (iteration increments)
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
+    end
+
+    test "LLM fallback: defaults to continue when no AI agent available" do
+      # Remove all AI agent shares so no fallback agent can be found
+      CreativeShare.where(creative: @parent, user: @ai_bot).destroy_all
+
+      @child.comments.create!(
+        content: "Work done but no status tag.",
+        topic_id: @topic.id,
+        user: @ai_bot,
+        created_at: @task.created_at + 1.second
+      )
+
+      # No agent → no continue comment posted, but state should still update
+      # However, post_continue_instruction returns early if no agent found,
+      # so the iteration still increments but no comment is posted
+      TriggerLoopCheckJob.perform_now(@task.id)
+
+      @child.reload
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
+    end
   end
 end
