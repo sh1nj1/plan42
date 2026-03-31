@@ -73,14 +73,13 @@
     <h3 id="comments-popup-title" data-comments--popup-target="title"><%= fullscreen && creative.present? ? creative.creative_snippet : t('collavre.comments.comments') %></h3>
     <span data-integration-badges class="integration-badges"></span>
     <div class="comments-popup-actions">
+      <%# Trigger: unified zap button for both container and task %>
       <button class="comments-popup-action drop-trigger-toggle-btn"
-              data-comments--drop-trigger-target="toggleButton"
-              data-action="click->comments--drop-trigger#toggle"
+              data-comments--drop-trigger-target="triggerButton"
+              data-action="click->comments--drop-trigger#triggerClick"
               type="button"
-              data-title-on="<%= t('collavre.drop_trigger.toggle_on') %>"
-              data-title-off="<%= t('collavre.drop_trigger.toggle_off') %>"
-              title="<%= t('collavre.drop_trigger.toggle_off') %>"
-              style="display:none;"><%= svg_tag "zap.svg", class: "comments-popup-action-icon", width: 16, height: 16 %></button>
+              title=""
+              style="display:none;"><%= svg_tag "zap.svg", class: "comments-popup-action-icon trigger-zap-icon", width: 16, height: 16 %></button>
       <button class="comments-popup-action context-toggle-btn"
               data-comments--contexts-target="toggleButton"
               data-action="click->comments--contexts#toggleVisibility"

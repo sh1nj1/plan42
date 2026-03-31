@@ -231,6 +231,13 @@ function findRowsForCreative(creativeId, originId) {
 }
 
 function handleUpdated(creative) {
+    // Notify popup controllers about creative data changes (e.g. trigger state)
+    // Must fire before the early return — popup may be open for a creative
+    // that isn't visible in the current tree view.
+    document.dispatchEvent(new CustomEvent('creative:updated', {
+        detail: { creativeId: creative.id, originId: creative.origin_id }
+    }))
+
     const rows = findRowsForCreative(creative.id, creative.origin_id)
     if (rows.length === 0) return
 
@@ -247,7 +254,6 @@ function handleUpdated(creative) {
         }
         applyRowProperties(row, creative)
     })
-
 }
 
 function handleDestroyed(creative) {

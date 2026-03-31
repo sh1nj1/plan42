@@ -1,0 +1,17 @@
+/* Trigger Status — zap icon animations */
+
+/* Running state: orbiting glow animation around the zap icon */
+.drop-trigger-toggle-btn.trigger-running .trigger-zap-icon {
+  animation: trigger-running-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes trigger-running-pulse {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 0px transparent); }
+  50% { opacity: 0.6; filter: drop-shadow(0 0 4px var(--color-active)); }
+}
+
+/* Active container state — filled zap */
+.drop-trigger-toggle-btn.drop-trigger-active .trigger-zap-icon {
+  fill: var(--color-active);
+  color: var(--color-active);
+}
