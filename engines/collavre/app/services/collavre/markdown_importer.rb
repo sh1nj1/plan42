@@ -108,6 +108,11 @@ module Collavre
           i += 1
         end
       end
+
+      # Broadcast all created creatives in a single batch job to guarantee
+      # parent-before-child ordering (prevents silent drops in frontend)
+      Creative::RealtimeBroadcastable.broadcast_batch_created(created)
+
       created
     end
 

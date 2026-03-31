@@ -3,9 +3,13 @@ require "test_helper"
 module Collavre
   module Tools
     class CreativeCreateServiceTest < ActiveSupport::TestCase
+      include ActiveJob::TestHelper
+
       setup do
         @user = User.create!(name: "Test User", email: "test_create@example.com", password: "password123")
         Current.user = @user
+        @original_adapter = ActiveJob::Base.queue_adapter
+        ActiveJob::Base.queue_adapter = :test
         @parent_creative = Creative.create!(
           description: "<p>Parent Creative</p>",
           user: @user
@@ -14,6 +18,7 @@ module Collavre
 
       teardown do
         Current.user = nil
+        ActiveJob::Base.queue_adapter = @original_adapter
       end
 
       test "creates a creative with plain text description" do
@@ -138,6 +143,18 @@ module Collavre
         assert result[:success]
         creative = Creative.find(result[:id])
         assert_equal "<p>New task with newlines</p>", creative.description
+      end
+
+      test "enqueues broadcast job after create" do
+        service = CreativeCreateService.new
+
+        assert_enqueued_with(job: CreativeBroadcastJob) do
+          result = service.call(
+            parent_id: @parent_creative.id,
+            description: "Broadcast test"
+          )
+          assert result[:success]
+        end
       end
 
       test "raises error when no current user" do

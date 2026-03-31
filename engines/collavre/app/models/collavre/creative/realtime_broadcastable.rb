@@ -143,6 +143,20 @@ module Collavre
         )
       end
 
+      # Enqueue a single batch job for multiple created creatives (e.g. MarkdownImporter).
+      # Processes all broadcasts sequentially within one job to guarantee parent-before-child
+      # ordering, preventing silent drops when child broadcasts arrive before parent DOM exists.
+      def self.broadcast_batch_created(creatives)
+        return if creatives.blank?
+
+        creative_ids = creatives.map(&:id)
+        CreativeBroadcastJob.perform_later(
+          creative_ids,
+          "batch_created",
+          current_user_id: Collavre.current_user&.id
+        )
+      end
+
       # Build a map of user_id → linked_creative_id for this creative
       # So each user receives the correct ID for their view
       def build_linked_creative_map(users)

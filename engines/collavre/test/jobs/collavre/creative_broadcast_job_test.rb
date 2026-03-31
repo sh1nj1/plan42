@@ -304,5 +304,60 @@ module Collavre
         )
       end
     end
+
+    # --- batch_created action ---
+
+    test "batch_created processes multiple creatives in order without raising" do
+      child2 = nil
+      perform_enqueued_jobs do
+        child2 = Creative.create!(user: @owner, parent: @root, description: "Batch child 2")
+      end
+
+      assert_nothing_raised do
+        CreativeBroadcastJob.perform_now(
+          [ @child.id, child2.id, @grandchild.id ],
+          "batch_created",
+          current_user_id: @owner.id
+        )
+      end
+    end
+
+    test "batch_created skips missing creative IDs gracefully" do
+      assert_nothing_raised do
+        CreativeBroadcastJob.perform_now(
+          [ @child.id, 999_999_999, @grandchild.id ],
+          "batch_created",
+          current_user_id: @owner.id
+        )
+      end
+    end
+
+    test "batch_created with empty array is no-op" do
+      assert_nothing_raised do
+        CreativeBroadcastJob.perform_now(
+          [],
+          "batch_created",
+          current_user_id: @owner.id
+        )
+      end
+    end
+
+    test "broadcast_batch_created enqueues single job with all creative IDs" do
+      saved_adapter = ActiveJob::Base.queue_adapter
+      ActiveJob::Base.queue_adapter = :test
+
+      begin
+        child2 = nil
+        perform_enqueued_jobs do
+          child2 = Creative.create!(user: @owner, parent: @root, description: "Batch test")
+        end
+
+        assert_enqueued_with(job: CreativeBroadcastJob) do
+          Creative::RealtimeBroadcastable.broadcast_batch_created([ @child, child2 ])
+        end
+      ensure
+        ActiveJob::Base.queue_adapter = saved_adapter
+      end
+    end
   end
 end

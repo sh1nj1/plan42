@@ -52,6 +52,10 @@ module Tools
       # Handle ordering
       handle_ordering(creative, before_id: before_id, after_id: after_id)
 
+      # Broadcast after ordering so sequence and previous_sibling are correct
+      creative.reload
+      creative.broadcast_creative_created(after_id: after_id)
+
       {
         success: true,
         id: creative.id,
