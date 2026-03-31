@@ -192,6 +192,38 @@ module Collavre
         assert_equal "<p>Updated with newlines</p>", @creative.description
       end
 
+      test "does not change parent_id when parent_id is nil" do
+        parent = Creative.create!(description: "<p>Parent</p>", user: @user)
+        @creative.update!(parent: parent)
+
+        service = CreativeUpdateService.new
+        result = service.call(id: @creative.id, description: "<p>Updated</p>", parent_id: nil)
+
+        assert result[:success]
+        @creative.reload
+        assert_equal parent.id, @creative.parent_id
+      end
+
+      test "does not change parent_id when parent_id is 0" do
+        parent = Creative.create!(description: "<p>Parent</p>", user: @user)
+        @creative.update!(parent: parent)
+
+        service = CreativeUpdateService.new
+        result = service.call(id: @creative.id, description: "<p>Updated</p>", parent_id: 0)
+
+        assert result[:success]
+        @creative.reload
+        assert_equal parent.id, @creative.parent_id
+      end
+
+      test "returns error when parent_id is set to self" do
+        service = CreativeUpdateService.new
+        result = service.call(id: @creative.id, parent_id: @creative.id)
+
+        assert result[:error].present?
+        assert_match(/own parent/i, result[:error])
+      end
+
       test "raises error when no current user" do
         Current.user = nil
         service = CreativeUpdateService.new
