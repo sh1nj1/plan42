@@ -498,14 +498,21 @@ module Collavre
         @reorderer ||= ::Creatives::Reorderer.new(user: Current.user)
       end
 
-      # Resume: post a continue instruction so the agent picks up where it left off
+      # Resume: post a continue instruction so the agent picks up where it left off.
+      # Creates a comment that triggers dispatch via after_create_commit.
       def post_continue_to_agent(creative, loop_data)
         parent = creative.parent
-        return unless parent
+        unless parent
+          Rails.logger.warn("[TriggerAction] resume: no parent for creative #{creative.id}")
+          return
+        end
 
         topic = creative.topics.find_by(name: "Drop Trigger")
         agent = parent.all_shared_users(:write).map(&:user).find(&:ai_user?)
-        return unless topic && agent
+        unless topic && agent
+          Rails.logger.warn("[TriggerAction] resume: missing topic=#{topic&.id} or agent for creative #{creative.id}")
+          return
+        end
 
         iteration = loop_data["current_iteration"] || 0
         max = loop_data["max_iterations"] || 10
@@ -515,23 +522,34 @@ module Collavre
           max: max
         )}"
 
-        creative.comments.create!(
+        # Use Current.user (human who clicked resume) as comment author
+        # so dispatch_to_orchestration doesn't skip it (it skips ai_user? authors)
+        comment = creative.comments.create!(
           content: content,
           topic_id: topic.id,
           private: false,
-          user: creative.user,
+          user: Current.user,
           skip_dispatch: false
         )
+        Rails.logger.info("[TriggerAction] resume: posted continue comment #{comment.id} for creative #{creative.id}")
       end
 
-      # Restart: create a fresh trigger comment and dispatch it
+      # Restart: create a fresh trigger comment and dispatch it explicitly.
+      # Uses skip_dispatch:true + manual SystemEvents dispatch to bypass
+      # after_create_commit (which would skip if user is ai_user?).
       def post_restart_trigger(creative)
         parent = creative.parent
-        return unless parent
+        unless parent
+          Rails.logger.warn("[TriggerAction] restart: no parent for creative #{creative.id}")
+          return
+        end
 
         topic = creative.topics.find_by(name: "Drop Trigger")
         agent = parent.all_shared_users(:write).map(&:user).find(&:ai_user?)
-        return unless topic && agent
+        unless topic && agent
+          Rails.logger.warn("[TriggerAction] restart: missing topic=#{topic&.id} or agent for creative #{creative.id}")
+          return
+        end
 
         trigger_text = t(
           "collavre.drop_trigger.child_entered",
@@ -546,11 +564,12 @@ module Collavre
           content: content,
           topic_id: topic.id,
           private: false,
-          user: creative.user,
+          user: Current.user,
           skip_dispatch: true
         )
 
-        SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload)
+        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload)
+        Rails.logger.info("[TriggerAction] restart: posted trigger comment #{comment.id}, dispatched to #{scheduled&.size || 0} agents")
       end
 
       def notify_drop_trigger_missing_agent!(creative)
