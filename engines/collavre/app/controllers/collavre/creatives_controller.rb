@@ -398,17 +398,17 @@ module Collavre
             trigger["loop"] = loop_data
             data["trigger"] = trigger
             creative.update!(data: data)
-            DropTriggerJob.perform_later(creative.parent_id, creative.id) if creative.parent_id
+            post_continue_to_agent(creative, loop_data)
           end
         when "restart"
           if loop_data && %w[completed max_reached stuck].include?(loop_data["state"])
-            loop_data["state"] = "idle"
+            loop_data["state"] = "running"
             loop_data["current_iteration"] = 0
             loop_data["infra_retry_count"] = 0
             trigger["loop"] = loop_data
             data["trigger"] = trigger
             creative.update!(data: data)
-            DropTriggerJob.perform_later(creative.parent_id, creative.id) if creative.parent_id
+            post_restart_trigger(creative)
           end
         end
       else
@@ -496,6 +496,61 @@ module Collavre
 
       def reorderer
         @reorderer ||= ::Creatives::Reorderer.new(user: Current.user)
+      end
+
+      # Resume: post a continue instruction so the agent picks up where it left off
+      def post_continue_to_agent(creative, loop_data)
+        parent = creative.parent
+        return unless parent
+
+        topic = creative.topics.find_by(name: "Drop Trigger")
+        agent = parent.all_shared_users(:write).map(&:user).find(&:ai_user?)
+        return unless topic && agent
+
+        iteration = loop_data["current_iteration"] || 0
+        max = loop_data["max_iterations"] || 10
+        content = "@#{agent.name}: #{t(
+          'collavre.trigger_loop.continue',
+          iteration: iteration,
+          max: max
+        )}"
+
+        creative.comments.create!(
+          content: content,
+          topic_id: topic.id,
+          private: false,
+          user: creative.user,
+          skip_dispatch: false
+        )
+      end
+
+      # Restart: create a fresh trigger comment and dispatch it
+      def post_restart_trigger(creative)
+        parent = creative.parent
+        return unless parent
+
+        topic = creative.topics.find_by(name: "Drop Trigger")
+        agent = parent.all_shared_users(:write).map(&:user).find(&:ai_user?)
+        return unless topic && agent
+
+        trigger_text = t(
+          "collavre.drop_trigger.child_entered",
+          child_description: creative.creative_snippet,
+          child_id: creative.id,
+          parent_description: parent.creative_snippet
+        )
+        loop_instructions = t("collavre.trigger_loop.instructions")
+        content = "@#{agent.name}: #{trigger_text}\n\n#{loop_instructions}"
+
+        comment = creative.comments.create!(
+          content: content,
+          topic_id: topic.id,
+          private: false,
+          user: creative.user,
+          skip_dispatch: true
+        )
+
+        SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload)
       end
 
       def notify_drop_trigger_missing_agent!(creative)
