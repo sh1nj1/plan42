@@ -23,6 +23,7 @@ const STATE_LABELS = {
 
 // Action label shown in tooltip: "Click to {action}"
 const ACTION_LABELS = {
+    start: "start",
     pause: "pause",
     resume: "resume",
     restart: "restart"
@@ -140,7 +141,8 @@ export default class extends Controller {
 
     _actionForState(state) {
         if (state === "running" || state === "pending_verification") return "pause"
-        if (state === "paused" || state === "idle" || state === "stuck") return "resume"
+        if (state === "idle") return "start"
+        if (state === "paused" || state === "stuck") return "resume"
         if (state === "completed" || state === "max_reached") return "restart"
         return null
     }
@@ -160,21 +162,27 @@ export default class extends Controller {
 
                 const triggerLoop = json.trigger_loop || null
                 const trigger = this._cachedData.trigger || {}
+                const isTriggerTask = json.is_trigger_task === true
 
-                if (triggerLoop && triggerLoop.state) {
+                if (isTriggerTask || (triggerLoop && triggerLoop.state)) {
+                    // Trigger task: parent is a trigger container
                     this._role = "task"
-                    this._loopState = triggerLoop.state
-                    this._loopIteration = triggerLoop.current_iteration || 0
-                    this._loopMax = triggerLoop.max_iterations || 10
+                    this._loopState = (triggerLoop && triggerLoop.state) ? triggerLoop.state : "idle"
+                    this._loopIteration = triggerLoop?.current_iteration || 0
+                    this._loopMax = triggerLoop?.max_iterations || 10
                     this.enabled = false
-                } else {
+                } else if (trigger.on_child_enter !== undefined || json.can_edit) {
                     this._role = "container"
                     this._loopState = null
                     this.enabled = trigger.on_child_enter === true
+                } else {
+                    this._role = "none"
+                    this._loopState = null
                 }
 
                 this._updateUI()
             } else {
+
             }
         } catch (e) {
             console.error("Failed to load trigger state", e)
@@ -192,7 +200,13 @@ export default class extends Controller {
         if (!this.hasTriggerButtonTarget) return
         const btn = this.triggerButtonTarget
 
-        if (this._role === "none" || !this.canWrite) {
+        if (this._role === "none") {
+            btn.style.display = 'none'
+            return
+        }
+
+        // Container toggle requires write permission; task status is visible to all
+        if (this._role === "container" && !this.canWrite) {
             btn.style.display = 'none'
             return
         }
@@ -223,10 +237,10 @@ export default class extends Controller {
 
             // Tooltip: state + action hint
             let tooltip = stateLabel
-            if (this._loopIteration !== undefined) {
+            if (this._loopIteration !== undefined && state !== "idle") {
                 tooltip += ` (${this._loopIteration}/${this._loopMax})`
             }
-            if (actionLabel) {
+            if (actionLabel && this.canWrite) {
                 tooltip += ` — click to ${actionLabel}`
             }
             btn.title = tooltip

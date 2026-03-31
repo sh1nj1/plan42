@@ -114,6 +114,9 @@ module Collavre
             prompt_updated
           ].compact.max
 
+          trigger_loop_data = @creative.data&.dig("trigger", "loop")
+          parent_trigger_enabled = @creative.parent&.drop_trigger_enabled? || false
+
           etag = [
             "creative",
             @creative.cache_key_with_version,
@@ -124,12 +127,11 @@ module Collavre
             prompt_updated&.to_i,
             "children",
             children_key,
-            "trigger_v2",
-            @creative.data&.dig("trigger", "loop", "state"),
-            @creative.data&.dig("trigger", "loop", "current_iteration")
+            "trigger_v3",
+            trigger_loop_data&.dig("state"),
+            trigger_loop_data&.dig("current_iteration"),
+            parent_trigger_enabled
           ].join(":")
-
-          trigger_loop_data = @creative.data&.dig("trigger", "loop")
 
           if stale?(etag: etag, last_modified: last_modified, public: false)
             root = params[:root_id] ? Creative.find_by(id: params[:root_id]) : nil
@@ -151,6 +153,7 @@ module Collavre
               has_children: children_count > 0,
               data: @creative.effective_origin(Set.new).data,
               trigger_loop: trigger_loop_data,
+              is_trigger_task: parent_trigger_enabled,
               can_edit: @creative.has_permission?(Current.user, :write)
             }
           end
@@ -373,6 +376,22 @@ module Collavre
         previous_enabled = creative.drop_trigger_enabled?
         creative.update!(data: data)
         notify_drop_trigger_missing_agent!(creative) if !previous_enabled && creative.drop_trigger_enabled?
+      when "start"
+        # Start trigger: fires DropTriggerJob as if the child was just dropped into the container
+        creative = @creative
+        unless creative.has_permission?(Current.user, :write)
+          render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
+          return
+        end
+
+        parent = creative.parent
+        unless parent&.drop_trigger_enabled?
+          render json: { error: t("collavre.drop_trigger.not_a_container") }, status: :unprocessable_entity
+          return
+        end
+
+        DropTriggerJob.perform_later(parent.id, creative.id)
+
       when "pause", "resume", "restart"
         # Loop actions operate on the creative itself (where loop state lives)
         creative = @creative

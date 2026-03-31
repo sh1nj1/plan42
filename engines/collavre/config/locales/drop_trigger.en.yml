@@ -4,6 +4,7 @@ en:
       child_entered: "🔔 Drop Trigger — Creative '%{child_description}' (ID: %{child_id}) was added to '%{parent_description}'. Please process this creative according to this stage's purpose."
       no_agent: "⚠️ Drop Trigger failed — No AI agent with write permission found on '%{parent_description}'. Please share an AI agent with write permission to enable automatic processing."
 
+      not_a_container: "Parent is not a trigger container"
       toggle_on: "Drop Trigger enabled"
       toggle_off: "Drop Trigger disabled"
     trigger_loop:
@@ -20,6 +21,7 @@ en:
       max_reached: "⚠️ Trigger Loop stopped — Reached maximum iterations (%{max}). Review progress and restart if needed."
       infra_stuck: "⚠️ Trigger Loop paused — %{count} consecutive infrastructure errors (timeout/connection). The service may be unavailable. User intervention needed."
       verification_failed: "🔍 Trigger Loop — iteration %{iteration}/%{max}. Your [STATUS: DONE] was not verified. The following actions were not completed:\n%{reason}\n\nPlease complete all remaining actions and report [STATUS: DONE/CONTINUE/BLOCKED]."
+      start: "Start"
       pause: "Pause"
       resume: "Resume"
       restart: "Restart"
