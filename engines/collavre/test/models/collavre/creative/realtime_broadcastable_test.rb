@@ -168,12 +168,23 @@ module Collavre
         Rails.cache.delete("system_setting:completion_mark")
       end
 
-      test "format_progress_text returns 100% when no completion mark set" do
+      test "format_progress_text returns empty string when completion mark is blank" do
+        Collavre::SystemSetting.find_or_initialize_by(key: "completion_mark").tap { |s| s.value = ""; s.save! }
+        Rails.cache.delete("system_setting:completion_mark")
+
+        text = @root.send(:format_progress_text, 1.0)
+        assert_equal "", text
+      ensure
+        Collavre::SystemSetting.find_by(key: "completion_mark")&.destroy
+        Rails.cache.delete("system_setting:completion_mark")
+      end
+
+      test "format_progress_text returns empty string when no completion mark record exists" do
         Collavre::SystemSetting.find_by(key: "completion_mark")&.destroy
         Rails.cache.delete("system_setting:completion_mark")
 
         text = @root.send(:format_progress_text, 1.0)
-        assert_equal "100%", text
+        assert_equal "", text
       end
 
       # --- add_progress_text! ---

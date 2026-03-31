@@ -165,7 +165,7 @@ module Collavre
       def format_progress_text(progress_value, _user = nil)
         pct = ((progress_value || 0) * 100).round
         completion_mark = Collavre::SystemSetting.completion_mark
-        if pct >= 100 && completion_mark.present?
+        if pct >= 100 && !completion_mark.nil?
           completion_mark
         else
           "#{pct}%"

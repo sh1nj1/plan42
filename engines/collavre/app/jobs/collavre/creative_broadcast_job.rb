@@ -165,7 +165,7 @@ module Collavre
       # Progress span (comes first, matching helper output order)
       css_class = pct >= 100 ? "creative-progress-complete" : "creative-progress-incomplete"
       completion_mark = Collavre::SystemSetting.completion_mark
-      display_text = pct >= 100 && completion_mark.present? ? completion_mark : "#{pct}%"
+      display_text = pct >= 100 && !completion_mark.nil? ? completion_mark : "#{pct}%"
       progress_span = %(<span class="#{css_class}">#{display_text}</span>)
 
       # Comment part — only render if user has feedback permission (matching helper behavior)
