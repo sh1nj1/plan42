@@ -11,7 +11,7 @@ import {
   createLinkMatcherWithRegExp
 } from "@lexical/react/LexicalAutoLinkPlugin"
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary"
-import { HeadingNode, QuoteNode } from "@lexical/rich-text"
+import { HeadingNode, QuoteNode, $isHeadingNode, $isQuoteNode } from "@lexical/rich-text"
 import {
   CodeNode,
   CodeHighlightNode,
@@ -19,7 +19,7 @@ import {
   $isCodeNode,
   registerCodeHighlighting
 } from "@lexical/code"
-import { ListItemNode, ListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
+import { ListItemNode, ListNode, $isListItemNode, $isListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
 import { $createLinkNode, LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
 import {
   $createParagraphNode,
@@ -490,6 +490,83 @@ function Toolbar() {
     [editor]
   )
 
+  const clearFormatting = useCallback(() => {
+    editor.update(() => {
+      const selection = $getSelection()
+      if (!$isRangeSelection(selection)) return
+
+      // 1. Clear inline text formats and styles
+      const extractedNodes = selection.extract()
+      extractedNodes.forEach((node) => {
+        if ($isTextNode(node)) {
+          node.setFormat(0)
+          node.setStyle("")
+        }
+      })
+
+      // 2. Convert block-level nodes (headings, quotes, code, lists) to paragraphs
+      const nodes = selection.getNodes()
+      const visited = new Set()
+      nodes.forEach((node) => {
+        const topLevel = node.getTopLevelElement()
+        if (!topLevel || visited.has(topLevel.getKey())) return
+        visited.add(topLevel.getKey())
+
+        if ($isHeadingNode(topLevel) || $isQuoteNode(topLevel)) {
+          // Replace heading/quote with paragraph preserving children
+          const paragraph = $createParagraphNode()
+          topLevel.getChildren().forEach((child) => paragraph.append(child))
+          topLevel.replace(paragraph)
+        } else if ($isCodeNode(topLevel)) {
+          // Convert code block to paragraphs (one per line)
+          const textContent = topLevel.getTextContent()
+          const lines = textContent.split("\n")
+          const firstParagraph = $createParagraphNode()
+          firstParagraph.append($createTextNode(lines[0] || ""))
+          topLevel.replace(firstParagraph)
+          let previous = firstParagraph
+          for (let i = 1; i < lines.length; i++) {
+            const p = $createParagraphNode()
+            p.append($createTextNode(lines[i]))
+            previous.insertAfter(p)
+            previous = p
+          }
+        } else if ($isListNode(topLevel)) {
+          // Replace list with paragraphs for each list item
+          const items = topLevel.getChildren()
+          const paragraphs = []
+          items.forEach((item) => {
+            const p = $createParagraphNode()
+            if ($isListItemNode(item)) {
+              item.getChildren().forEach((child) => {
+                if ($isListNode(child)) {
+                  // Nested list — flatten text content
+                  p.append($createTextNode(child.getTextContent()))
+                } else {
+                  p.append(child)
+                }
+              })
+            } else {
+              p.append($createTextNode(item.getTextContent()))
+            }
+            paragraphs.push(p)
+          })
+          if (paragraphs.length > 0) {
+            topLevel.replace(paragraphs[0])
+            let prev = paragraphs[0]
+            for (let i = 1; i < paragraphs.length; i++) {
+              prev.insertAfter(paragraphs[i])
+              prev = paragraphs[i]
+            }
+          }
+        }
+      })
+
+      setFontColor(DEFAULT_FONT_COLOR)
+      setBgColor(DEFAULT_BG_COLOR)
+    })
+  }, [editor])
+
   const toggleCodeBlock = useCallback(() => {
     editor.update(() => {
       const selection = $getSelection()
@@ -576,6 +653,13 @@ function Toolbar() {
         onClick={() => toggleFormat("strikethrough")}
         title="Strikethrough">
         S
+      </button>
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={clearFormatting}
+        title="Clear formatting">
+        Tₓ
       </button>
       <button
         type="button"
