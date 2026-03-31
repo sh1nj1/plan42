@@ -4,6 +4,7 @@ en:
       child_entered: "🔔 Drop Trigger — Creative '%{child_description}' (ID: %{child_id}) was added to '%{parent_description}'. Please process this creative according to this stage's purpose."
       no_agent: "⚠️ Drop Trigger failed — No AI agent with write permission found on '%{parent_description}'. Please share an AI agent with write permission to enable automatic processing."
 
+      not_a_container: "Parent is not a trigger container"
       toggle_on: "Drop Trigger enabled"
       toggle_off: "Drop Trigger disabled"
     trigger_loop:

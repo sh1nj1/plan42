@@ -4,6 +4,7 @@ ko:
       child_entered: "🔔 드롭 트리거 — 크리에이티브 '%{child_description}' (ID: %{child_id})가 '%{parent_description}'에 추가되었습니다. 이 단계의 목적에 맞게 처리해주세요."
       no_agent: "⚠️ 드롭 트리거 실패 — '%{parent_description}'에 쓰기 권한을 가진 AI 에이전트가 없습니다. 자동 처리를 위해 AI 에이전트에 쓰기 권한을 부여해주세요."
 
+      not_a_container: "부모가 트리거 컨테이너가 아닙니다"
       toggle_on: "드롭 트리거 활성화됨"
       toggle_off: "드롭 트리거 비활성화됨"
     trigger_loop:
