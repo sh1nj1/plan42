@@ -77,13 +77,7 @@ module Collavre
           render_progress_value(progress_value)
         end
 
-        trigger_part = render(Collavre::TriggerStatusComponent.new(
-          creative: creative,
-          can_write: can_write
-        ))
-
         safe_join([
-          trigger_part,
           progress_part,
           comment_part,
           tag.br,
