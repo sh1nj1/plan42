@@ -8,16 +8,29 @@ module Collavre
     retry_on StandardError, wait: 1.second, attempts: 3
     discard_on ActiveRecord::RecordNotFound
 
-    # @param creative_id [Integer]
-    # @param action [String] "created", "updated", or "destroyed"
+    # @param creative_id [Integer, Array<Integer>] single ID or array of IDs (for batch_created)
+    # @param action [String] "created", "updated", "destroyed", or "batch_created"
     # @param current_user_id [Integer, nil] user who triggered the change (excluded from broadcast)
     # @param payload [Hash] pre-built node payload (for created/updated) or destroy payload
     # @param options [Hash] extra options (after_id, destroy_users, destroy_linked_map)
     def perform(creative_id, action, current_user_id: nil, payload: {}, options: {})
-      creative = Creative.find_by(id: creative_id)
-
       case action
+      when "batch_created"
+        # creative_id is an array of IDs in tree order (parent before child).
+        # Process sequentially within a single job to guarantee ordering.
+        creative_ids = Array(creative_id)
+        creative_ids.each do |cid|
+          creative = Creative.find_by(id: cid)
+          next unless creative
+
+          creative.reload
+          node_payload = creative.broadcast_node_payload
+          node_payload[:previous_sibling_id] = creative.previous_sibling&.id
+          broadcast_change(creative, "created", current_user_id, node_payload)
+        end
+        return
       when "created", "updated"
+        creative = Creative.find_by(id: creative_id)
         return unless creative
 
         broadcast_change(creative, action, current_user_id, payload.deep_symbolize_keys)

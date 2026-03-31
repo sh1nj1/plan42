@@ -109,8 +109,9 @@ module Collavre
         end
       end
 
-      # Broadcast all created creatives for real-time UI sync
-      created.each { |c| c.reload.broadcast_creative_created }
+      # Broadcast all created creatives in a single batch job to guarantee
+      # parent-before-child ordering (prevents silent drops in frontend)
+      Creative::RealtimeBroadcastable.broadcast_batch_created(created)
 
       created
     end
