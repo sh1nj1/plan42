@@ -1,6 +1,6 @@
-require "application_system_test_case"
+require_relative "../application_system_test_case"
 
-class PlansSystemTest < ApplicationSystemTestCase
+class PlansSystemTest < CollavrePlanSystemTestCase
   setup do
     @user = User.create!(
       email: "plans-user@example.com",
