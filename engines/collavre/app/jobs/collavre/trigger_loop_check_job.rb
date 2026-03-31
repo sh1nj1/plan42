@@ -36,20 +36,17 @@ module Collavre
 
       # Infrastructure errors (timeout, connection failure) → retry without consuming iteration
       if infrastructure_error?(last_agent_comment)
-        retry_without_iteration(child_creative, topic, parent_creative, loop_config, task)
+        handle_infra_error(child_creative, topic, parent_creative, loop_config, task)
         return
       end
-
-      # Agent actually responded (not infra error) — reset infra retry count
-      reset_infra_retry_count(child_creative)
 
       status = evaluate_status(last_agent_comment, loop_config)
 
       case status
       when :done
-        update_loop_state(child_creative, "completed")
+        update_loop_data(child_creative, state: "completed", infra_retry_count: 0)
       when :stuck
-        update_loop_state(child_creative, "stuck")
+        update_loop_data(child_creative, state: "stuck", infra_retry_count: 0)
         post_system_notice(child_creative, topic, I18n.t(
           "collavre.trigger_loop.stuck",
           iteration: loop_config["current_iteration"]
@@ -59,13 +56,15 @@ module Collavre
         max = loop_config["max_iterations"] || 10
 
         if iteration >= max
-          update_loop_state(child_creative, "max_reached")
+          update_loop_data(child_creative, state: "max_reached", infra_retry_count: 0)
           post_system_notice(child_creative, topic, I18n.t(
             "collavre.trigger_loop.max_reached",
             max: max
           ))
         else
-          update_loop_iteration(child_creative, iteration, task.id)
+          update_loop_data(child_creative,
+            state: "running", current_iteration: iteration,
+            last_task_id: task.id, infra_retry_count: 0)
           post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
         end
       end
@@ -102,14 +101,13 @@ module Collavre
 
     # Retry without consuming an iteration — the agent never actually worked.
     # Safety net: after MAX_INFRA_RETRIES consecutive infra errors, transition to stuck.
-    def retry_without_iteration(child_creative, topic, parent_creative, loop_config, task)
+    def handle_infra_error(child_creative, topic, parent_creative, loop_config, task)
       max = loop_config["max_iterations"] || 10
       iteration = loop_config["current_iteration"] || 0
       infra_retries = (loop_config["infra_retry_count"] || 0) + 1
 
       if infra_retries >= MAX_INFRA_RETRIES
-        update_loop_state(child_creative, "stuck")
-        update_infra_retry_count(child_creative, infra_retries)
+        update_loop_data(child_creative, state: "stuck", infra_retry_count: infra_retries)
         post_system_notice(child_creative, topic, I18n.t(
           "collavre.trigger_loop.infra_stuck",
           count: infra_retries
@@ -117,8 +115,9 @@ module Collavre
         return
       end
 
-      update_loop_iteration(child_creative, iteration, task.id)
-      update_infra_retry_count(child_creative, infra_retries)
+      update_loop_data(child_creative,
+        state: "running", current_iteration: iteration,
+        last_task_id: task.id, infra_retry_count: infra_retries)
 
       post_retry_instruction(child_creative, topic, parent_creative, iteration, max)
     end
@@ -150,40 +149,13 @@ module Collavre
       :continue
     end
 
-    def update_loop_state(child_creative, new_state)
+    # Single method to update loop state — avoids multiple DB writes per Job execution.
+    # Only the keys passed in `changes` are updated; others are preserved.
+    def update_loop_data(child_creative, **changes)
       data = child_creative.data || {}
       trigger = data["trigger"] || {}
       loop_data = trigger["loop"] || {}
-      loop_data["state"] = new_state
-      trigger["loop"] = loop_data
-      data["trigger"] = trigger
-      child_creative.update!(data: data)
-    end
-
-    def update_infra_retry_count(child_creative, count)
-      data = child_creative.data || {}
-      trigger = data["trigger"] || {}
-      loop_data = trigger["loop"] || {}
-      loop_data["infra_retry_count"] = count
-      trigger["loop"] = loop_data
-      data["trigger"] = trigger
-      child_creative.update!(data: data)
-    end
-
-    def reset_infra_retry_count(child_creative)
-      loop_data = child_creative.data&.dig("trigger", "loop")
-      return unless loop_data&.key?("infra_retry_count") && loop_data["infra_retry_count"].to_i > 0
-
-      update_infra_retry_count(child_creative, 0)
-    end
-
-    def update_loop_iteration(child_creative, iteration, task_id)
-      data = child_creative.data || {}
-      trigger = data["trigger"] || {}
-      loop_data = trigger["loop"] || {}
-      loop_data["current_iteration"] = iteration
-      loop_data["last_task_id"] = task_id
-      loop_data["state"] = "running"
+      changes.each { |key, value| loop_data[key.to_s] = value }
       trigger["loop"] = loop_data
       data["trigger"] = trigger
       child_creative.update!(data: data)
