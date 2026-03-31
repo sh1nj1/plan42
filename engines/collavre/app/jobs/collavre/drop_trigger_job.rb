@@ -132,6 +132,7 @@ module Collavre
       # Only initialize if loop doesn't exist yet
       return if trigger["loop"].present?
 
+      topic = child.topics.find_by(name: "Drop Trigger")
       trigger["loop"] = {
         "state" => "running",
         "current_iteration" => 0,
@@ -140,7 +141,8 @@ module Collavre
         "stuck_conditions" => [],
         "on_retry" => "continue",
         "last_task_id" => nil,
-        "cooldown_seconds" => 10
+        "cooldown_seconds" => 10,
+        "trigger_topic_id" => topic&.id
       }
       data["trigger"] = trigger
       child.update!(data: data)

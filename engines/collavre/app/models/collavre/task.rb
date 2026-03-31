@@ -43,17 +43,22 @@ module Collavre
     private
 
     def trigger_loop_candidate?
-      saved_change_to_attribute?("status") && status == "done" &&
-        trigger_event_name == "comment_created" &&
-        creative&.parent&.drop_trigger_enabled?
+      return false unless saved_change_to_attribute?("status") && status == "done"
+      return false unless trigger_event_name == "comment_created"
+      return false unless creative&.parent&.drop_trigger_enabled?
+
+      # Only trigger loop check for tasks in the loop's trigger topic
+      # to avoid cross-topic contamination from unrelated AI conversations
+      loop_config = creative.data&.dig("trigger", "loop")
+      return false unless loop_config && loop_config["state"] == "running"
+
+      trigger_topic_id = loop_config["trigger_topic_id"]
+      trigger_topic_id.nil? || trigger_topic_id == topic_id
     end
 
     def check_trigger_loop_completion
-      # Loop state is on the child creative (each child has its own loop)
       loop_config = creative.data&.dig("trigger", "loop")
-      return unless loop_config && loop_config["state"] == "running"
-
-      cooldown = (loop_config["cooldown_seconds"] || 10).to_i
+      cooldown = (loop_config&.dig("cooldown_seconds") || 10).to_i
       if cooldown > 0
         TriggerLoopCheckJob.set(wait: cooldown.seconds).perform_later(id)
       else

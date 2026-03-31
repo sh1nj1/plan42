@@ -26,6 +26,11 @@ module Collavre
       topic = Topic.find_by(id: task.topic_id)
       return unless topic
 
+      # Only evaluate tasks from the loop's trigger topic to prevent
+      # cross-topic contamination from unrelated AI conversations
+      trigger_topic_id = loop_config["trigger_topic_id"]
+      return if trigger_topic_id.present? && trigger_topic_id != task.topic_id
+
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment
 

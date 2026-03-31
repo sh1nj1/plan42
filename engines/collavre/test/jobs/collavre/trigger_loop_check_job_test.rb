@@ -42,7 +42,8 @@ module Collavre
             "completion_conditions" => [ "pr created" ],
             "stuck_conditions" => [ "need help" ],
             "on_retry" => "continue",
-            "cooldown_seconds" => 0
+            "cooldown_seconds" => 0,
+            "trigger_topic_id" => @topic.id
           }
         }
       })
@@ -316,6 +317,39 @@ module Collavre
       assert_no_difference -> { @child.comments.count } do
         TriggerLoopCheckJob.perform_now(@task.id)
       end
+    end
+
+    test "skips when task is from a different topic than trigger_topic_id" do
+      other_topic = @child.topics.create!(name: "General Discussion", user: @human)
+
+      # Task is in a different topic
+      other_task = Task.create!(
+        name: "Response to comment_created",
+        status: "running",
+        trigger_event_name: "comment_created",
+        trigger_event_payload: { "comment" => { "id" => 888 } },
+        agent_id: @ai_bot.id,
+        creative_id: @child.id,
+        topic_id: other_topic.id
+      )
+      Task.where(id: other_task.id).update_all(status: "done")
+
+      @child.comments.create!(
+        content: "Some work done [STATUS: DONE]",
+        topic_id: other_topic.id,
+        user: @ai_bot,
+        created_at: other_task.created_at + 1.second
+      )
+
+      # The task callback should NOT enqueue TriggerLoopCheckJob for wrong topic
+      # Even if we call the job directly, loop state should not change
+      # because find_last_agent_comment scopes to task.topic_id
+      assert_no_difference -> { @child.comments.where(topic_id: @topic.id).count } do
+        TriggerLoopCheckJob.perform_now(other_task.id)
+      end
+
+      @child.reload
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
     end
 
     test "skips when parent has no drop trigger" do
