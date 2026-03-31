@@ -330,8 +330,12 @@
   background: var(--surface-hover);
 }
 
+.popup-menu .popup-menu-item.danger-link {
+  color: var(--color-danger);
+}
+
 .popup-menu .popup-menu-item.danger-link:hover {
-  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
 }
 
 #user-menu button {
