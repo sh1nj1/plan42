@@ -123,7 +123,8 @@ module Collavre
             "prompt",
             prompt_updated&.to_i,
             "children",
-            children_key
+            children_key,
+            "trigger_v1"
           ].join(":")
 
           if stale?(etag: etag, last_modified: last_modified, public: false)
@@ -145,7 +146,9 @@ module Collavre
               prompt: @creative.prompt_for(Current.user),
               has_children: children_count > 0,
               data: @creative.effective_origin(Set.new).data,
-              trigger_loop: @creative.data&.dig("trigger", "loop"),
+              trigger_loop: @creative.data&.dig("trigger", "loop").tap { |tl|
+                Rails.logger.info "[TRIGGER_DEBUG] creative_id=#{@creative.id} trigger_loop=#{tl.inspect} data_trigger=#{@creative.data&.dig('trigger').inspect}"
+              },
               can_edit: @creative.has_permission?(Current.user, :write)
             }
           end
