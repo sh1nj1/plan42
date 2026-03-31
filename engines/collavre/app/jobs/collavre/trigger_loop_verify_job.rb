@@ -26,6 +26,10 @@ module Collavre
       topic = Topic.find_by(id: task.topic_id)
       return unless topic
 
+      # Only verify tasks from the loop's trigger topic (cross-topic guard)
+      trigger_topic_id = loop_config["trigger_topic_id"]
+      return if trigger_topic_id.present? && trigger_topic_id != task.topic_id
+
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment
 
@@ -56,7 +60,7 @@ module Collavre
           update_loop_data(child_creative,
             state: "running", current_iteration: iteration,
             last_task_id: task.id)
-          post_verification_failed(child_creative, topic, parent_creative, iteration, max, result)
+          post_verification_failed(child_creative, topic, task.agent, iteration, max, result)
         end
       end
     end
@@ -71,17 +75,28 @@ module Collavre
               .first
     end
 
-    # Collect instructions from context creatives + parent description
+    # Collect instructions from context creatives of both parent and child
     def collect_instructions(child_creative, parent_creative)
       parts = []
+      seen_ids = Set.new
 
-      # Parent's trigger instructions (context creative descriptions)
+      # Parent's context creatives (trigger instructions, dev rules, etc.)
       parent_creative.context_creatives.each do |ctx|
+        next if seen_ids.include?(ctx.id)
+        seen_ids.add(ctx.id)
         desc = ctx.description.to_s.strip
         parts << desc if desc.present?
       end
 
-      # Child's own description
+      # Child's own context creatives (may have additional instructions)
+      child_creative.context_creatives.each do |ctx|
+        next if seen_ids.include?(ctx.id)
+        seen_ids.add(ctx.id)
+        desc = ctx.description.to_s.strip
+        parts << desc if desc.present?
+      end
+
+      # Child's own description (the task itself)
       child_desc = child_creative.description.to_s.strip
       parts << "Task: #{child_desc}" if child_desc.present?
 
@@ -137,15 +152,16 @@ module Collavre
       )
 
       response_text = +""
-      client.chat([{ role: "user", text: prompt }]) do |delta|
+      client.chat([ { role: "user", text: prompt } ]) do |delta|
         response_text << delta
       end
 
-      if response_text.strip.start_with?("VERIFIED")
+      cleaned = response_text.strip
+      if cleaned.blank? || cleaned.start_with?("VERIFIED")
         :verified
       else
         # Extract the incomplete reason for the feedback message
-        response_text.strip
+        cleaned
       end
     rescue StandardError => e
       Rails.logger.error("[TriggerLoopVerifyJob] LLM verification failed: #{e.class} #{e.message}")
@@ -163,11 +179,10 @@ module Collavre
       child_creative.update!(data: data)
     end
 
-    def post_verification_failed(child_creative, topic, parent_creative, iteration, max, reason)
-      agent = find_trigger_agent(parent_creative)
-      return unless agent
+    def post_verification_failed(child_creative, topic, task_agent, iteration, max, reason)
+      return unless task_agent
 
-      content = "@#{agent.name}: #{I18n.t(
+      content = "@#{task_agent.name}: #{I18n.t(
         'collavre.trigger_loop.verification_failed',
         iteration: iteration,
         max: max,
@@ -190,12 +205,6 @@ module Collavre
         private: false,
         skip_default_user: true
       )
-    end
-
-    def find_trigger_agent(creative)
-      creative.all_shared_users(:write)
-              .map(&:user)
-              .find(&:ai_user?)
     end
   end
 end
