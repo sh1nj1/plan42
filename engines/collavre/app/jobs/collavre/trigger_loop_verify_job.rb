@@ -2,6 +2,8 @@
 
 module Collavre
   class TriggerLoopVerifyJob < ApplicationJob
+    include TriggerLoopHelpers
+
     queue_as :default
 
     # Verifies whether an agent's [STATUS: DONE] claim is genuine by asking
@@ -66,14 +68,6 @@ module Collavre
     end
 
     private
-
-    def find_last_agent_comment(creative, topic, task)
-      creative.comments
-              .where(topic_id: topic.id, user_id: task.agent_id)
-              .where("comments.created_at >= ?", task.created_at)
-              .order(created_at: :desc)
-              .first
-    end
 
     # Collect instructions from context creatives of both parent and child
     def collect_instructions(child_creative, parent_creative)
@@ -169,16 +163,6 @@ module Collavre
       :verified
     end
 
-    def update_loop_data(child_creative, **changes)
-      data = child_creative.data || {}
-      trigger = data["trigger"] || {}
-      loop_data = trigger["loop"] || {}
-      changes.each { |key, value| loop_data[key.to_s] = value }
-      trigger["loop"] = loop_data
-      data["trigger"] = trigger
-      child_creative.update!(data: data)
-    end
-
     def post_verification_failed(child_creative, topic, task_agent, iteration, max, reason)
       return unless task_agent
 
@@ -195,15 +179,6 @@ module Collavre
         private: false,
         user: child_creative.user,
         skip_dispatch: false
-      )
-    end
-
-    def post_system_notice(creative, topic, content)
-      creative.comments.create!(
-        content: content,
-        topic_id: topic.id,
-        private: false,
-        skip_default_user: true
       )
     end
   end
