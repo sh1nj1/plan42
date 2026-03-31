@@ -495,17 +495,18 @@ function Toolbar() {
       const selection = $getSelection()
       if (!$isRangeSelection(selection)) return
 
-      // Clear format on all selected text nodes directly
-      const nodes = selection.getNodes()
-      nodes.forEach((node) => {
+      // Extract only the selected portion by splitting nodes at boundaries
+      const extractedNodes = selection.extract()
+      extractedNodes.forEach((node) => {
         if ($isTextNode(node)) {
           node.setFormat(0)
           node.setStyle("")
         }
       })
+
+      setFontColor(DEFAULT_FONT_COLOR)
+      setBgColor(DEFAULT_BG_COLOR)
     })
-    setFontColor(DEFAULT_FONT_COLOR)
-    setBgColor(DEFAULT_BG_COLOR)
   }, [editor])
 
   const toggleCodeBlock = useCallback(() => {
