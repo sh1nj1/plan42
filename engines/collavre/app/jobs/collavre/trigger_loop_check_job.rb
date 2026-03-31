@@ -22,19 +22,31 @@ module Collavre
       loop_config = child_creative.data&.dig("trigger", "loop")
       return unless loop_config && loop_config["state"] == "running"
 
-      topic = Topic.find_by(id: loop_config["topic_id"] || task.topic_id)
+      # Use the task's topic directly — not a stored topic_id which can become stale
+      topic = Topic.find_by(id: task.topic_id)
       return unless topic
+
+      # Only evaluate tasks from the loop's trigger topic to prevent
+      # cross-topic contamination from unrelated AI conversations
+      trigger_topic_id = loop_config["trigger_topic_id"]
+      return if trigger_topic_id.present? && trigger_topic_id != task.topic_id
 
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment
+
+      # Infrastructure errors (timeout, connection failure) → retry without consuming iteration
+      if infrastructure_error?(last_agent_comment)
+        handle_infra_error(child_creative, topic, parent_creative, loop_config, task)
+        return
+      end
 
       status = evaluate_status(last_agent_comment, loop_config)
 
       case status
       when :done
-        update_loop_state(child_creative, "completed")
+        update_loop_data(child_creative, state: "completed", infra_retry_count: 0)
       when :stuck
-        update_loop_state(child_creative, "stuck")
+        update_loop_data(child_creative, state: "stuck", infra_retry_count: 0)
         post_system_notice(child_creative, topic, I18n.t(
           "collavre.trigger_loop.stuck",
           iteration: loop_config["current_iteration"]
@@ -44,13 +56,15 @@ module Collavre
         max = loop_config["max_iterations"] || 10
 
         if iteration >= max
-          update_loop_state(child_creative, "max_reached")
+          update_loop_data(child_creative, state: "max_reached", infra_retry_count: 0)
           post_system_notice(child_creative, topic, I18n.t(
             "collavre.trigger_loop.max_reached",
             max: max
           ))
         else
-          update_loop_iteration(child_creative, iteration, task.id)
+          update_loop_data(child_creative,
+            state: "running", current_iteration: iteration,
+            last_task_id: task.id, infra_retry_count: 0)
           post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
         end
       end
@@ -68,10 +82,50 @@ module Collavre
               .first
     end
 
+    # Detect infrastructure errors (timeout, connection failure, etc.)
+    # These are NOT valid task results — the agent never actually worked.
+    MAX_INFRA_RETRIES = 3
+
+    INFRASTRUCTURE_ERROR_PATTERNS = [
+      /OpenClaw Error/i,
+      /(?:request|connection|server)\s+timed?\s*out/i,
+      /connection\s*(refused|reset|closed)/i,
+      /internal\s*server\s*error/i,
+      /\b50[234]\b.*(?:error|gateway|unavailable)/i
+    ].freeze
+
+    def infrastructure_error?(comment)
+      content = comment.content.to_s
+      INFRASTRUCTURE_ERROR_PATTERNS.any? { |pattern| content.match?(pattern) }
+    end
+
+    # Retry without consuming an iteration — the agent never actually worked.
+    # Safety net: after MAX_INFRA_RETRIES consecutive infra errors, transition to stuck.
+    def handle_infra_error(child_creative, topic, parent_creative, loop_config, task)
+      max = loop_config["max_iterations"] || 10
+      iteration = loop_config["current_iteration"] || 0
+      infra_retries = (loop_config["infra_retry_count"] || 0) + 1
+
+      if infra_retries >= MAX_INFRA_RETRIES
+        update_loop_data(child_creative, state: "stuck", infra_retry_count: infra_retries)
+        post_system_notice(child_creative, topic, I18n.t(
+          "collavre.trigger_loop.infra_stuck",
+          count: infra_retries
+        ))
+        return
+      end
+
+      update_loop_data(child_creative,
+        state: "running", current_iteration: iteration,
+        last_task_id: task.id, infra_retry_count: infra_retries)
+
+      post_retry_instruction(child_creative, topic, parent_creative, iteration, max)
+    end
+
     def evaluate_status(comment, loop_config)
       content = comment.content.to_s
 
-      # Parse structured [STATUS: ...] tag
+      # Parse structured [STATUS: ...] tag — DONE requires explicit tag
       if content.match?(/\[STATUS:\s*DONE\b/i)
         return :done
       end
@@ -84,39 +138,24 @@ module Collavre
         return :continue
       end
 
-      # Fallback: check completion_conditions keywords
-      conditions = loop_config["completion_conditions"] || []
-      if conditions.any? { |kw| content.downcase.include?(kw.downcase) }
-        return :done
-      end
-
-      # Fallback: check stuck_conditions keywords
+      # Keyword fallback — only for stuck detection, NOT for completion.
+      # Completion requires explicit [STATUS: DONE] to prevent false positives.
       stuck = loop_config["stuck_conditions"] || []
       if stuck.any? { |kw| content.downcase.include?(kw.downcase) }
         return :stuck
       end
 
-      # Default: continue
+      # Default: continue (agent didn't report DONE, so work is incomplete)
       :continue
     end
 
-    def update_loop_state(child_creative, new_state)
+    # Single method to update loop state — avoids multiple DB writes per Job execution.
+    # Only the keys passed in `changes` are updated; others are preserved.
+    def update_loop_data(child_creative, **changes)
       data = child_creative.data || {}
       trigger = data["trigger"] || {}
       loop_data = trigger["loop"] || {}
-      loop_data["state"] = new_state
-      trigger["loop"] = loop_data
-      data["trigger"] = trigger
-      child_creative.update!(data: data)
-    end
-
-    def update_loop_iteration(child_creative, iteration, task_id)
-      data = child_creative.data || {}
-      trigger = data["trigger"] || {}
-      loop_data = trigger["loop"] || {}
-      loop_data["current_iteration"] = iteration
-      loop_data["last_task_id"] = task_id
-      loop_data["state"] = "running"
+      changes.each { |key, value| loop_data[key.to_s] = value }
       trigger["loop"] = loop_data
       data["trigger"] = trigger
       child_creative.update!(data: data)
@@ -138,6 +177,25 @@ module Collavre
         private: false,
         user: child_creative.user,
         skip_dispatch: false  # Let after_create_commit dispatch this
+      )
+    end
+
+    def post_retry_instruction(child_creative, topic, parent_creative, iteration, max)
+      agent = find_trigger_agent(parent_creative)
+      return unless agent
+
+      content = "@#{agent.name}: #{I18n.t(
+        'collavre.trigger_loop.retry',
+        iteration: iteration,
+        max: max
+      )}"
+
+      child_creative.comments.create!(
+        content: content,
+        topic_id: topic.id,
+        private: false,
+        user: child_creative.user,
+        skip_dispatch: false
       )
     end
 

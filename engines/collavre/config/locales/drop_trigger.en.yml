@@ -14,11 +14,8 @@ en:
         - [STATUS: DONE] — task completed successfully
         - [STATUS: CONTINUE] — making progress, need another iteration
         - [STATUS: BLOCKED reason] — cannot proceed without help
-
-        Also: After reading the context, set the trigger loop configuration by updating
-        the parent creative's data using creative_update_service. Set appropriate
-        completion_conditions, stuck_conditions, max_iterations, and on_retry strategy
-        based on the task context.
       continue: "🔄 Trigger Loop — iteration %{iteration}/%{max}. Previous work is incomplete. Please continue where you left off and report [STATUS: DONE/CONTINUE/BLOCKED]."
+      retry: "🔄 Trigger Loop — iteration %{iteration}/%{max}. The previous attempt failed due to an infrastructure error (timeout/connection). Please try again from the beginning and report [STATUS: DONE/CONTINUE/BLOCKED]."
       stuck: "⚠️ Trigger Loop paused — Agent reported BLOCKED at iteration %{iteration}. User intervention may be needed."
       max_reached: "⚠️ Trigger Loop stopped — Reached maximum iterations (%{max}). Review progress and restart if needed."
+      infra_stuck: "⚠️ Trigger Loop paused — %{count} consecutive infrastructure errors (timeout/connection). The service may be unavailable. User intervention needed."

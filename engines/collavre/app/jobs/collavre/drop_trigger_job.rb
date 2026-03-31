@@ -139,9 +139,9 @@ module Collavre
         "completion_conditions" => [],
         "stuck_conditions" => [],
         "on_retry" => "continue",
-        "topic_id" => topic.id,
         "last_task_id" => nil,
-        "cooldown_seconds" => 10
+        "cooldown_seconds" => 10,
+        "trigger_topic_id" => topic&.id
       }
       data["trigger"] = trigger
       child.update!(data: data)

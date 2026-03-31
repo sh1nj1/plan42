@@ -42,8 +42,8 @@ module Collavre
             "completion_conditions" => [ "pr created" ],
             "stuck_conditions" => [ "need help" ],
             "on_retry" => "continue",
-            "topic_id" => @topic.id,
-            "cooldown_seconds" => 0
+            "cooldown_seconds" => 0,
+            "trigger_topic_id" => @topic.id
           }
         }
       })
@@ -137,9 +137,79 @@ module Collavre
       assert_equal "max_reached", @child.data.dig("trigger", "loop", "state")
     end
 
-    test "falls back to completion_conditions keywords" do
+    test "does NOT complete on keyword match alone — requires explicit STATUS DONE tag" do
+      @child.update!(data: {
+        "trigger" => {
+          "loop" => @child.data.dig("trigger", "loop").merge(
+            "completion_conditions" => [ "pr created" ]
+          )
+        }
+      })
+
       @child.comments.create!(
         content: "I have pr created successfully",
+        topic_id: @topic.id,
+        user: @ai_bot,
+        created_at: @task.created_at + 1.second
+      )
+
+      # Without explicit [STATUS: DONE], keyword match defaults to continue
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+
+      @child.reload
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
+    end
+
+    test "retries without consuming iteration on infrastructure error (timeout)" do
+      @child.comments.create!(
+        content: "OpenClaw Error: OpenClaw request timed out after 3 attempts",
+        topic_id: @topic.id,
+        user: @ai_bot,
+        created_at: @task.created_at + 1.second
+      )
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+
+      @child.reload
+      # Iteration stays at 0 — not consumed
+      assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      assert_equal 1, @child.data.dig("trigger", "loop", "infra_retry_count")
+      # Retry comment uses distinct message (not "continue where you left off")
+      last_comment = @child.comments.last
+      assert_includes last_comment.content, "🔄"
+    end
+
+    test "retries without consuming iteration on connection error" do
+      @child.comments.create!(
+        content: "OpenClaw Error: connection refused",
+        topic_id: @topic.id,
+        user: @ai_bot,
+        created_at: @task.created_at + 1.second
+      )
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+
+      @child.reload
+      assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      assert_equal 1, @child.data.dig("trigger", "loop", "infra_retry_count")
+    end
+
+    test "transitions to stuck after MAX_INFRA_RETRIES consecutive infra errors" do
+      # Set infra_retry_count to 2 (one below MAX_INFRA_RETRIES=3)
+      @child.data["trigger"]["loop"]["infra_retry_count"] = 2
+      @child.save!
+
+      @child.comments.create!(
+        content: "OpenClaw Error: server timed out",
         topic_id: @topic.id,
         user: @ai_bot,
         created_at: @task.created_at + 1.second
@@ -150,7 +220,48 @@ module Collavre
       end
 
       @child.reload
-      assert_equal "completed", @child.data.dig("trigger", "loop", "state")
+      assert_equal "stuck", @child.data.dig("trigger", "loop", "state")
+      assert_equal 3, @child.data.dig("trigger", "loop", "infra_retry_count")
+      assert_includes @child.comments.last.content, "⚠️"
+      assert_includes @child.comments.last.content, "3"
+    end
+
+    test "resets infra_retry_count on successful agent response" do
+      @child.data["trigger"]["loop"]["infra_retry_count"] = 2
+      @child.save!
+
+      @child.comments.create!(
+        content: "Making progress [STATUS: CONTINUE]",
+        topic_id: @topic.id,
+        user: @ai_bot,
+        created_at: @task.created_at + 1.second
+      )
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+
+      @child.reload
+      assert_equal 0, @child.data.dig("trigger", "loop", "infra_retry_count")
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+    end
+
+    test "does not false-positive on creative IDs containing 502/503/504" do
+      @child.comments.create!(
+        content: "Updated Creative #10504 successfully [STATUS: CONTINUE]",
+        topic_id: @topic.id,
+        user: @ai_bot,
+        created_at: @task.created_at + 1.second
+      )
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+
+      @child.reload
+      # Should NOT be treated as infra error — should continue normally
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
     end
 
     test "falls back to stuck_conditions keywords" do
@@ -206,6 +317,39 @@ module Collavre
       assert_no_difference -> { @child.comments.count } do
         TriggerLoopCheckJob.perform_now(@task.id)
       end
+    end
+
+    test "skips when task is from a different topic than trigger_topic_id" do
+      other_topic = @child.topics.create!(name: "General Discussion", user: @human)
+
+      # Task is in a different topic
+      other_task = Task.create!(
+        name: "Response to comment_created",
+        status: "running",
+        trigger_event_name: "comment_created",
+        trigger_event_payload: { "comment" => { "id" => 888 } },
+        agent_id: @ai_bot.id,
+        creative_id: @child.id,
+        topic_id: other_topic.id
+      )
+      Task.where(id: other_task.id).update_all(status: "done")
+
+      @child.comments.create!(
+        content: "Some work done [STATUS: DONE]",
+        topic_id: other_topic.id,
+        user: @ai_bot,
+        created_at: other_task.created_at + 1.second
+      )
+
+      # The task callback should NOT enqueue TriggerLoopCheckJob for wrong topic
+      # Even if we call the job directly, loop state should not change
+      # because find_last_agent_comment scopes to task.topic_id
+      assert_no_difference -> { @child.comments.where(topic_id: @topic.id).count } do
+        TriggerLoopCheckJob.perform_now(other_task.id)
+      end
+
+      @child.reload
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
     end
 
     test "skips when parent has no drop trigger" do
