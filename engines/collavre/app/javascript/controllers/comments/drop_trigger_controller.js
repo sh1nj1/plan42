@@ -121,14 +121,15 @@ export default class extends Controller {
                 this._cachedData = json.data || {}
                 this.canWrite = json.can_edit || false
 
+                // trigger_loop comes from the creative's own data (not effective_origin)
+                const triggerLoop = json.trigger_loop || null
                 const trigger = this._cachedData.trigger || {}
-                const loop = trigger.loop || {}
 
-                if (loop.state) {
+                if (triggerLoop && triggerLoop.state) {
                     this._role = "task"
-                    this._loopState = loop.state
-                    this._loopIteration = loop.current_iteration || 0
-                    this._loopMax = loop.max_iterations || 10
+                    this._loopState = triggerLoop.state
+                    this._loopIteration = triggerLoop.current_iteration || 0
+                    this._loopMax = triggerLoop.max_iterations || 10
                     this.enabled = false
                 } else {
                     this._role = "container"

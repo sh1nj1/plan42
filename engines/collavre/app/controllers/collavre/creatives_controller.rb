@@ -145,6 +145,7 @@ module Collavre
               prompt: @creative.prompt_for(Current.user),
               has_children: children_count > 0,
               data: @creative.effective_origin(Set.new).data,
+              trigger_loop: @creative.data&.dig("trigger", "loop"),
               can_edit: @creative.has_permission?(Current.user, :write)
             }
           end
@@ -346,55 +347,65 @@ module Collavre
     end
 
     def trigger_action
-      creative = @creative.effective_origin(Set.new)
-      unless creative.has_permission?(Current.user, :write)
-        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
-        return
-      end
-
       action = params[:action_name] || (request.content_type&.include?("json") ? request.request_parameters["action"] : params[:action])
-      data = creative.data || {}
-      trigger = data["trigger"] || {}
 
       case action
       when "toggle_container"
+        # Container toggle operates on effective_origin (where trigger config lives)
+        creative = @creative.effective_origin(Set.new)
+        unless creative.has_permission?(Current.user, :write)
+          render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
+          return
+        end
+
         enabled = ActiveModel::Type::Boolean.new.cast(
           request.content_type&.include?("json") ? request.request_parameters["enabled"] : params[:enabled]
         )
+        data = creative.data || {}
+        trigger = data["trigger"] || {}
         trigger["on_child_enter"] = enabled
         data["trigger"] = trigger
         previous_enabled = creative.drop_trigger_enabled?
         creative.update!(data: data)
         notify_drop_trigger_missing_agent!(creative) if !previous_enabled && creative.drop_trigger_enabled?
-      when "pause"
-        loop_data = trigger["loop"]
-        if loop_data && %w[running pending_verification].include?(loop_data["state"])
-          loop_data["state"] = "paused"
-          trigger["loop"] = loop_data
-          data["trigger"] = trigger
-          creative.update!(data: data)
+      when "pause", "resume", "restart"
+        # Loop actions operate on the creative itself (where loop state lives)
+        creative = @creative
+        unless creative.has_permission?(Current.user, :write)
+          render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
+          return
         end
-      when "resume"
+
+        data = creative.data || {}
+        trigger = data["trigger"] || {}
         loop_data = trigger["loop"]
-        if loop_data && %w[paused idle stuck].include?(loop_data["state"])
-          loop_data["state"] = "running"
-          trigger["loop"] = loop_data
-          data["trigger"] = trigger
-          creative.update!(data: data)
-          # Re-dispatch to continue the loop
-          DropTriggerJob.perform_later(creative.parent_id, creative.id) if creative.parent_id
-        end
-      when "restart"
-        loop_data = trigger["loop"]
-        if loop_data && %w[completed max_reached stuck].include?(loop_data["state"])
-          loop_data["state"] = "idle"
-          loop_data["current_iteration"] = 0
-          loop_data["infra_retry_count"] = 0
-          trigger["loop"] = loop_data
-          data["trigger"] = trigger
-          creative.update!(data: data)
-          # Re-trigger from scratch
-          DropTriggerJob.perform_later(creative.parent_id, creative.id) if creative.parent_id
+
+        case action
+        when "pause"
+          if loop_data && %w[running pending_verification].include?(loop_data["state"])
+            loop_data["state"] = "paused"
+            trigger["loop"] = loop_data
+            data["trigger"] = trigger
+            creative.update!(data: data)
+          end
+        when "resume"
+          if loop_data && %w[paused idle stuck].include?(loop_data["state"])
+            loop_data["state"] = "running"
+            trigger["loop"] = loop_data
+            data["trigger"] = trigger
+            creative.update!(data: data)
+            DropTriggerJob.perform_later(creative.parent_id, creative.id) if creative.parent_id
+          end
+        when "restart"
+          if loop_data && %w[completed max_reached stuck].include?(loop_data["state"])
+            loop_data["state"] = "idle"
+            loop_data["current_iteration"] = 0
+            loop_data["infra_retry_count"] = 0
+            trigger["loop"] = loop_data
+            data["trigger"] = trigger
+            creative.update!(data: data)
+            DropTriggerJob.perform_later(creative.parent_id, creative.id) if creative.parent_id
+          end
         end
       else
         render json: { error: "Unknown action" }, status: :unprocessable_entity
