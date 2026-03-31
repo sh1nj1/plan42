@@ -64,7 +64,7 @@ export default class extends Controller {
             const response = await csrfFetch(`/creatives/${creativeId}/trigger_action`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: "toggle_container", enabled: newState })
+                body: JSON.stringify({ action_name: "toggle_container", enabled: newState })
             })
 
             if (!response.ok) {
@@ -98,7 +98,7 @@ export default class extends Controller {
             const response = await csrfFetch(`/creatives/${creativeId}/trigger_action`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: actionName })
+                body: JSON.stringify({ action_name: actionName })
             })
 
             if (response.ok) {
