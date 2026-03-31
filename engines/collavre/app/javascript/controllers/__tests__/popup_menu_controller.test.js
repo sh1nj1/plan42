@@ -20,6 +20,7 @@ describe('PopupMenuController', () => {
   let container
   let controller
   let menu
+  let button
 
   beforeEach(async () => {
     document.body.innerHTML = ''
@@ -30,7 +31,9 @@ describe('PopupMenuController', () => {
     container.innerHTML = `
       <div data-controller="popup-menu">
         <button type="button" data-popup-menu-target="button">Open</button>
-        <div id="test-menu" data-popup-menu-target="menu" style="display:none"></div>
+        <div id="test-menu" data-popup-menu-target="menu" style="display:none">
+          <button class="popup-menu-item">Action</button>
+        </div>
       </div>
     `
     document.body.appendChild(container)
@@ -43,6 +46,7 @@ describe('PopupMenuController', () => {
     const element = container.querySelector('[data-controller="popup-menu"]')
     controller = application.getControllerForElementAndIdentifier(element, 'popup-menu')
     menu = container.querySelector('#test-menu')
+    button = container.querySelector('[data-popup-menu-target="button"]')
 
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 360 })
     Object.defineProperty(window, 'innerHeight', { writable: true, configurable: true, value: 640 })
@@ -54,54 +58,54 @@ describe('PopupMenuController', () => {
     jest.restoreAllMocks()
   })
 
-  test('flips upward when there is more space above than below', async () => {
-    const rects = [
-      { top: 520, bottom: 700, left: 20, right: 220, width: 200, height: 180 },
-      { top: 336, bottom: 516, left: 20, right: 220, width: 200, height: 180 }
-    ]
-    let callCount = 0
-    jest.spyOn(menu, 'getBoundingClientRect').mockImplementation(() => rects[Math.min(callCount++, rects.length - 1)])
-
-    controller.show()
-    await new Promise(resolve => requestAnimationFrame(resolve))
-
-    expect(menu.style.bottom).toBe('calc(100% + 4px)')
-    expect(menu.style.top).toBe('auto')
-  })
-
-  test('stays below when there is more space below than above', async () => {
+  test('uses fixed positioning to avoid creating scrollbars', async () => {
+    jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+      top: 40, bottom: 60, left: 20, right: 80, width: 60, height: 20
+    })
     jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
-      top: 40,
-      bottom: 220,
-      left: 20,
-      right: 220,
-      width: 200,
-      height: 180
+      top: 0, bottom: 180, left: 0, right: 200, width: 200, height: 180
     })
 
     controller.show()
     await new Promise(resolve => requestAnimationFrame(resolve))
 
-    expect(menu.style.top).toBe('calc(100% + 4px)')
-    expect(menu.style.bottom).toBe('auto')
+    expect(menu.style.position).toBe('fixed')
+    expect(menu.style.visibility).toBe('')
+    expect(menu.style.display).toBe('block')
   })
 
-  test('switches to right alignment when left alignment would overflow the viewport', async () => {
-    const rects = [
-      { top: 80, bottom: 260, left: 260, right: 460, width: 200, height: 180 },
-      { top: 80, bottom: 260, left: 140, right: 340, width: 200, height: 180 }
-    ]
-    let callCount = 0
-    jest.spyOn(menu, 'getBoundingClientRect').mockImplementation(() => rects[Math.min(callCount++, rects.length - 1)])
+  test('positions below the button when there is enough space', async () => {
+    jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+      top: 40, bottom: 60, left: 20, right: 80, width: 60, height: 20
+    })
+    jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+      top: 0, bottom: 180, left: 0, right: 200, width: 200, height: 180
+    })
 
     controller.show()
     await new Promise(resolve => requestAnimationFrame(resolve))
 
-    expect(menu.classList.contains('popup-menu-right')).toBe(true)
+    // Menu should be placed below button: btnRect.bottom + gap = 60 + 4 = 64
+    expect(menu.style.top).toBe('64px')
+    expect(menu.style.left).toBe('20px')
   })
 
-  test('preserves initial right alignment through show/hide cycle', async () => {
-    // Simulate a menu rendered with align: :right (server adds popup-menu-right)
+  test('positions above the button when more space above', async () => {
+    jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+      top: 580, bottom: 600, left: 20, right: 80, width: 60, height: 20
+    })
+    jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+      top: 0, bottom: 180, left: 0, right: 200, width: 200, height: 180
+    })
+
+    controller.show()
+    await new Promise(resolve => requestAnimationFrame(resolve))
+
+    // Menu should be above button: btnRect.top - gap - menuH = 580 - 4 - 180 = 396
+    expect(menu.style.top).toBe('396px')
+  })
+
+  test('right-aligns when _initialAlignRight is true', async () => {
     menu.classList.add('popup-menu-right')
 
     // Re-connect so controller picks up the initial state
@@ -112,37 +116,81 @@ describe('PopupMenuController', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     controller = application.getControllerForElementAndIdentifier(element, 'popup-menu')
 
+    jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+      top: 40, bottom: 60, left: 200, right: 260, width: 60, height: 20
+    })
     jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
-      top: 80, bottom: 260, left: 20, right: 220, width: 200, height: 180
+      top: 0, bottom: 180, left: 0, right: 200, width: 200, height: 180
     })
 
-    // show() should preserve popup-menu-right
     controller.show()
     await new Promise(resolve => requestAnimationFrame(resolve))
-    expect(menu.classList.contains('popup-menu-right')).toBe(true)
 
-    // hide() should also preserve it
-    controller.hide()
-    expect(menu.classList.contains('popup-menu-right')).toBe(true)
+    // Right-align: left = btnRect.right - menuW = 260 - 200 = 60
+    expect(menu.style.left).toBe('60px')
   })
 
-  test('hide() cleans up inline styles set by show()', async () => {
+  test('clamps menu to stay within viewport on narrow screens', async () => {
+    jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+      top: 40, bottom: 60, left: 300, right: 350, width: 50, height: 20
+    })
     jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
-      top: 40, bottom: 220, left: 20, right: 220, width: 200, height: 180
+      top: 0, bottom: 180, left: 0, right: 220, width: 220, height: 180
     })
 
     controller.show()
     await new Promise(resolve => requestAnimationFrame(resolve))
 
-    // Verify show() set some styles
-    expect(menu.style.display).toBe('block')
+    // Left would be 300, but 300 + 220 = 520 > 360 - 4 = 356
+    // So left = 356 - 220 = 136
+    expect(menu.style.left).toBe('136px')
+  })
+
+  test('hide() resets all inline styles', async () => {
+    jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+      top: 40, bottom: 60, left: 20, right: 80, width: 60, height: 20
+    })
+    jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+      top: 0, bottom: 180, left: 0, right: 200, width: 200, height: 180
+    })
+
+    controller.show()
+    await new Promise(resolve => requestAnimationFrame(resolve))
 
     controller.hide()
 
     expect(menu.style.display).toBe('none')
+    expect(menu.style.position).toBe('')
+    expect(menu.style.visibility).toBe('')
     expect(menu.style.top).toBe('')
     expect(menu.style.bottom).toBe('')
+    expect(menu.style.left).toBe('')
+    expect(menu.style.right).toBe('')
     expect(menu.style.maxWidth).toBe('')
     expect(menu.style.transform).toBe('')
+  })
+
+  test('hide() preserves initial popup-menu-right class', async () => {
+    menu.classList.add('popup-menu-right')
+
+    const element = container.querySelector('[data-controller="popup-menu"]')
+    application.stop()
+    application = Application.start()
+    application.register('popup-menu', PopupMenuController)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    controller = application.getControllerForElementAndIdentifier(element, 'popup-menu')
+
+    jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+      top: 40, bottom: 60, left: 20, right: 80, width: 60, height: 20
+    })
+    jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+      top: 0, bottom: 180, left: 0, right: 200, width: 200, height: 180
+    })
+
+    controller.show()
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    controller.hide()
+
+    expect(menu.classList.contains('popup-menu-right')).toBe(true)
   })
 })

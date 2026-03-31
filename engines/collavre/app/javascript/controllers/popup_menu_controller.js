@@ -40,55 +40,67 @@ export default class extends Controller {
     notifyPopupOpen(this._popupId)
     const menu = this.menuTarget
     const viewportPadding = 4
+    const gap = 4
 
-    menu.style.display = 'block'
+    // Use fixed positioning to avoid creating scrollbars on any parent
+    menu.style.position = 'fixed'
+    menu.style.left = '0'
+    menu.style.right = 'auto'
+    menu.style.top = '0'
+    menu.style.bottom = 'auto'
     menu.style.transform = ''
     menu.style.maxWidth = `calc(100vw - ${viewportPadding * 2}px)`
-    if (this._initialAlignRight) {
-      menu.classList.add('popup-menu-right')
-    } else {
-      menu.classList.remove('popup-menu-right')
-    }
-    menu.style.top = 'calc(100% + 4px)'
-    menu.style.bottom = 'auto'
+    menu.classList.remove('popup-menu-right')
+    // Render invisible while we compute position
+    menu.style.visibility = 'hidden'
+    menu.style.display = 'block'
 
     this.buttonTarget?.setAttribute('aria-expanded', 'true')
 
     requestAnimationFrame(() => {
-      const transforms = []
-      let rect = menu.getBoundingClientRect()
-      const spaceBelow = window.innerHeight - rect.bottom
-      const spaceAbove = rect.top
+      const btnRect = this.buttonTarget.getBoundingClientRect()
+      const menuRect = menu.getBoundingClientRect()
+      const menuW = menuRect.width
+      const menuH = menuRect.height
+      const vw = window.innerWidth
+      const vh = window.innerHeight
 
-      if (rect.bottom > window.innerHeight && spaceAbove > spaceBelow) {
-        menu.style.top = 'auto'
-        menu.style.bottom = 'calc(100% + 4px)'
-        rect = menu.getBoundingClientRect()
+      // Vertical: prefer below the button, flip above if not enough space
+      const spaceBelow = vh - btnRect.bottom - gap
+      const spaceAbove = btnRect.top - gap
+      let top
+      if (menuH <= spaceBelow || spaceBelow >= spaceAbove) {
+        top = btnRect.bottom + gap
+      } else {
+        top = btnRect.top - gap - menuH
       }
 
-      if (rect.right > window.innerWidth - viewportPadding) {
-        menu.classList.add('popup-menu-right')
-        rect = menu.getBoundingClientRect()
+      // Horizontal: align left edge to button, shift if overflowing
+      let left
+      if (this._initialAlignRight) {
+        // Right-align: menu right edge to button right edge
+        left = btnRect.right - menuW
+      } else {
+        left = btnRect.left
       }
 
-      if (rect.left < viewportPadding && menu.classList.contains('popup-menu-right')) {
-        menu.classList.remove('popup-menu-right')
-        rect = menu.getBoundingClientRect()
+      // Clamp within viewport
+      if (left + menuW > vw - viewportPadding) {
+        left = vw - viewportPadding - menuW
+      }
+      if (left < viewportPadding) {
+        left = viewportPadding
+      }
+      if (top + menuH > vh - viewportPadding) {
+        top = vh - viewportPadding - menuH
+      }
+      if (top < viewportPadding) {
+        top = viewportPadding
       }
 
-      if (rect.right > window.innerWidth - viewportPadding) {
-        transforms.push(`translateX(-${rect.right - window.innerWidth + viewportPadding}px)`)
-      } else if (rect.left < viewportPadding) {
-        transforms.push(`translateX(${viewportPadding - rect.left}px)`)
-      }
-
-      if (rect.bottom > window.innerHeight - viewportPadding) {
-        transforms.push(`translateY(-${rect.bottom - window.innerHeight + viewportPadding}px)`)
-      } else if (rect.top < viewportPadding) {
-        transforms.push(`translateY(${viewportPadding - rect.top}px)`)
-      }
-
-      menu.style.transform = transforms.join(' ')
+      menu.style.left = `${left}px`
+      menu.style.top = `${top}px`
+      menu.style.visibility = ''
     })
 
     this.addOutsideClickListener()
@@ -97,6 +109,10 @@ export default class extends Controller {
   hide() {
     const menu = this.menuTarget
     menu.style.display = 'none'
+    menu.style.position = ''
+    menu.style.visibility = ''
+    menu.style.left = ''
+    menu.style.right = ''
     menu.style.top = ''
     menu.style.bottom = ''
     menu.style.maxWidth = ''
