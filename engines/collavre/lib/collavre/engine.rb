@@ -113,7 +113,8 @@ module Collavre
           section: :main,
           type: :partial,
           partial: "collavre/shared/navigation/search_form",
-          priority: 105
+          priority: 105,
+          requires_auth: true
         )
 
         # ============================================
