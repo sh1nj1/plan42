@@ -330,6 +330,22 @@
   background: var(--surface-hover);
 }
 
+/* Hide mobile-only items in popup menus on desktop (overrides display: flex from popup-menu-item) */
+.popup-menu .popup-menu-item.mobile-only,
+.popup-menu .mobile-only {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .popup-menu .popup-menu-item.mobile-only {
+    display: flex !important;
+  }
+
+  .popup-menu .creative-overflow-divider.mobile-only {
+    display: block !important;
+  }
+}
+
 /* Inside popup menus, danger-link items inherit normal item styles */
 .popup-menu .popup-menu-item.danger-link {
   color: inherit;
