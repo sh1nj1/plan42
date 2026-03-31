@@ -1,45 +1,17 @@
-/* Trigger Status — comments popup header */
+/* Trigger Status — zap icon animations */
 
-/* Task status wrapper in popup header */
-.trigger-task-status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1, 4px);
-  vertical-align: middle;
+/* Running state: orbiting glow animation around the zap icon */
+.drop-trigger-toggle-btn.trigger-running .trigger-zap-icon {
+  animation: trigger-running-pulse 1.5s ease-in-out infinite;
 }
 
-/* Circular progress ring */
-.trigger-progress-ring {
-  flex-shrink: 0;
+@keyframes trigger-running-pulse {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 0px transparent); }
+  50% { opacity: 0.6; filter: drop-shadow(0 0 4px var(--color-active)); }
 }
 
-/* Pulse animation for pending_verification */
-.trigger-progress-pulse {
-  animation: trigger-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes trigger-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-/* Action button (pause/resume/restart) */
-.trigger-action-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: var(--space-1, 2px);
-  border-radius: var(--radius-2, 4px);
-  color: var(--text-muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  transition: color 0.15s ease, background-color 0.15s ease;
-}
-
-.trigger-action-btn:hover {
-  background-color: var(--bg-hover, rgba(0, 0, 0, 0.05));
-  color: var(--text-default);
+/* Active container state — filled zap */
+.drop-trigger-toggle-btn.drop-trigger-active .trigger-zap-icon {
+  fill: var(--color-active);
+  color: var(--color-active);
 }

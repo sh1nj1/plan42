@@ -73,32 +73,13 @@
     <h3 id="comments-popup-title" data-comments--popup-target="title"><%= fullscreen && creative.present? ? creative.creative_snippet : t('collavre.comments.comments') %></h3>
     <span data-integration-badges class="integration-badges"></span>
     <div class="comments-popup-actions">
-      <%# Trigger container: toggle button %>
+      <%# Trigger: unified zap button for both container and task %>
       <button class="comments-popup-action drop-trigger-toggle-btn"
-              data-comments--drop-trigger-target="toggleButton"
-              data-action="click->comments--drop-trigger#toggle"
+              data-comments--drop-trigger-target="triggerButton"
+              data-action="click->comments--drop-trigger#triggerClick"
               type="button"
-              data-title-on="<%= t('collavre.drop_trigger.toggle_on') %>"
-              data-title-off="<%= t('collavre.drop_trigger.toggle_off') %>"
-              title="<%= t('collavre.drop_trigger.toggle_off') %>"
-              style="display:none;"><%= svg_tag "zap.svg", class: "comments-popup-action-icon", width: 16, height: 16 %></button>
-      <%# Trigger task: progress ring + action button %>
-      <span class="comments-popup-action trigger-task-status"
-            data-comments--drop-trigger-target="taskStatus"
-            style="display:none;">
-        <svg class="trigger-progress-ring" width="20" height="20" viewBox="0 0 20 20"
-             data-comments--drop-trigger-target="progressRing">
-          <circle class="trigger-progress-ring__bg" cx="10" cy="10" r="7"
-                  fill="none" stroke="var(--border-default, #e0e0e0)" stroke-width="2"/>
-          <circle class="trigger-progress-ring__fg" cx="10" cy="10" r="7"
-                  fill="none" stroke="var(--text-muted)" stroke-width="2"
-                  stroke-dasharray="43.98" stroke-dashoffset="43.98"
-                  stroke-linecap="round" transform="rotate(-90 10 10)"
-                  data-comments--drop-trigger-target="progressFg"/>
-        </svg>
-        <button type="button" class="trigger-action-btn"
-                data-comments--drop-trigger-target="actionBtn"
-                data-action="click->comments--drop-trigger#triggerAction"
+              title=""
+              style="display:none;"><%= svg_tag "zap.svg", class: "comments-popup-action-icon trigger-zap-icon", width: 16, height: 16 %></button>
                 style="display:none;">
         </button>
       </span>
