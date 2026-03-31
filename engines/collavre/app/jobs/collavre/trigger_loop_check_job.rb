@@ -44,7 +44,9 @@ module Collavre
 
       case status
       when :done
-        update_loop_data(child_creative, state: "completed", infra_retry_count: 0)
+        # Transition to pending_verification and enqueue LLM verification
+        update_loop_data(child_creative, state: "pending_verification", infra_retry_count: 0)
+        TriggerLoopVerifyJob.perform_later(task.id)
       when :stuck
         update_loop_data(child_creative, state: "stuck", infra_retry_count: 0)
         post_system_notice(child_creative, topic, I18n.t(
