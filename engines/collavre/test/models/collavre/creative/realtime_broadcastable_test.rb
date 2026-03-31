@@ -157,17 +157,23 @@ module Collavre
         assert_equal "33%", text
       end
 
-      test "format_progress_text returns completion mark when user has one set" do
-        # completion_mark has NOT NULL constraint, so just check current behavior
-        mark = @owner.completion_mark
-        text = @root.send(:format_progress_text, 1.0, @owner)
-        if mark.present?
-          assert_equal mark, text
-        elsif mark == "" # blank but not nil
-          assert_equal "", text
-        else
-          assert_equal "100%", text
-        end
+      test "format_progress_text returns completion mark from system setting" do
+        Collavre::SystemSetting.find_or_initialize_by(key: "completion_mark").tap { |s| s.value = "✓"; s.save! }
+        Rails.cache.delete("system_setting:completion_mark")
+
+        text = @root.send(:format_progress_text, 1.0)
+        assert_equal "✓", text
+      ensure
+        Collavre::SystemSetting.find_by(key: "completion_mark")&.destroy
+        Rails.cache.delete("system_setting:completion_mark")
+      end
+
+      test "format_progress_text returns 100% when no completion mark set" do
+        Collavre::SystemSetting.find_by(key: "completion_mark")&.destroy
+        Rails.cache.delete("system_setting:completion_mark")
+
+        text = @root.send(:format_progress_text, 1.0)
+        assert_equal "100%", text
       end
 
       # --- add_progress_text! ---

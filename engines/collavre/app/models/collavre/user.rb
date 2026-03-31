@@ -5,7 +5,6 @@ module Collavre
     include HasInboxCreative
 
     has_many :user_themes, class_name: "Collavre::UserTheme", dependent: :destroy
-    DEFAULT_DISPLAY_LEVEL = 6
 
     has_secure_password
     has_many :sessions, class_name: "Collavre::Session", dependent: :destroy
@@ -50,8 +49,6 @@ module Collavre
 
     has_one_attached :avatar
 
-    attribute :display_level, :integer, default: DEFAULT_DISPLAY_LEVEL
-    attribute :completion_mark, :string, default: ""
     attribute :theme, :string
     attribute :calendar_id, :string
     attribute :name, :string
@@ -171,7 +168,6 @@ module Collavre
     validates :email, presence: true, uniqueness: true,
                       format: { with: URI::MailTo::EMAIL_REGEXP }
     validates :name, presence: true
-    validates :display_level, numericality: { only_integer: true, greater_than: 0 }
     validate :theme_accessibility
     validate :password_meets_minimum_length
     validates :timezone,

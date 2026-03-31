@@ -114,8 +114,9 @@ module Collavre
 
     def render_progress_value(value)
       text = number_to_percentage(value * 100, precision: 0)
-      if value == 1 && !Current.user&.completion_mark.nil?
-        text = Current.user.completion_mark
+      completion_mark = Collavre::SystemSetting.completion_mark
+      if value == 1 && completion_mark.present?
+        text = completion_mark
       end
       display_text = text.blank? ? "&nbsp;&nbsp;".html_safe : text
       content_tag(

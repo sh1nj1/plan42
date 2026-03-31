@@ -33,6 +33,10 @@ module Collavre
     DEFAULT_LIGHT_THEME_ID = nil
     DEFAULT_DARK_THEME_ID = nil
 
+    # Default creative display settings (system-wide)
+    DEFAULT_DISPLAY_LEVEL = 6
+    DEFAULT_COMPLETION_MARK = ""
+
     validates :key, presence: true, uniqueness: true
 
     # Clear cache after save
@@ -53,6 +57,7 @@ module Collavre
         password_reset_rate_limit password_reset_rate_period_minutes
         api_rate_limit api_rate_period_minutes auth_providers_disabled
         creatives_login_required home_page_path default_light_theme_id default_dark_theme_id
+        display_level completion_mark
       ].each { |k| Rails.cache.delete("system_setting:#{k}") }
     end
 
@@ -165,6 +170,16 @@ module Collavre
     def self.default_dark_theme
       id = default_dark_theme_id
       id ? Collavre::UserTheme.find_by(id: id) : nil
+    end
+
+    # Creative display settings (system-wide)
+    def self.display_level
+      cached_value("display_level")&.to_i || DEFAULT_DISPLAY_LEVEL
+    end
+
+    def self.completion_mark
+      value = cached_value("completion_mark")
+      value.nil? ? DEFAULT_COMPLETION_MARK : value
     end
   end
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_20_061144) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_31_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -783,10 +783,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_061144) do
     t.text "agent_conf"
     t.string "avatar_url"
     t.string "calendar_id"
-    t.string "completion_mark", default: "", null: false
     t.datetime "created_at", null: false
     t.integer "created_by_id"
-    t.integer "display_level", default: 6, null: false
     t.string "email", null: false
     t.datetime "email_verified_at"
     t.integer "failed_login_attempts", default: 0, null: false
