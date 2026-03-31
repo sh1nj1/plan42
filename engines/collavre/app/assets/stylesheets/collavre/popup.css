@@ -338,11 +338,11 @@
 
 @media (max-width: 768px) {
   .popup-menu .popup-menu-item.mobile-only {
-    display: flex;
+    display: flex !important;
   }
 
   .popup-menu .creative-overflow-divider.mobile-only {
-    display: block;
+    display: block !important;
   }
 }
 
