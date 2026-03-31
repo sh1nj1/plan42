@@ -180,6 +180,7 @@ export default class extends Controller {
 
                 this._updateUI()
             } else {
+
             }
         } catch (e) {
             console.error("Failed to load trigger state", e)
