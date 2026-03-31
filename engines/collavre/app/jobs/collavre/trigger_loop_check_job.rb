@@ -35,6 +35,9 @@ module Collavre
         return
       end
 
+      # Agent actually responded (not infra error) — reset infra retry count
+      reset_infra_retry_count(child_creative)
+
       status = evaluate_status(last_agent_comment, loop_config)
 
       case status
@@ -77,12 +80,14 @@ module Collavre
 
     # Detect infrastructure errors (timeout, connection failure, etc.)
     # These are NOT valid task results — the agent never actually worked.
+    MAX_INFRA_RETRIES = 3
+
     INFRASTRUCTURE_ERROR_PATTERNS = [
       /OpenClaw Error/i,
-      /timed?\s*out/i,
+      /(?:request|connection|server)\s+timed?\s*out/i,
       /connection\s*(refused|reset|closed)/i,
       /internal\s*server\s*error/i,
-      /502|503|504/
+      /\b50[234]\b.*(?:error|gateway|unavailable)/i
     ].freeze
 
     def infrastructure_error?(comment)
@@ -90,15 +95,27 @@ module Collavre
       INFRASTRUCTURE_ERROR_PATTERNS.any? { |pattern| content.match?(pattern) }
     end
 
-    # Retry without consuming an iteration — the agent never actually worked
+    # Retry without consuming an iteration — the agent never actually worked.
+    # Safety net: after MAX_INFRA_RETRIES consecutive infra errors, transition to stuck.
     def retry_without_iteration(child_creative, topic, parent_creative, loop_config, task)
       max = loop_config["max_iterations"] || 10
       iteration = loop_config["current_iteration"] || 0
+      infra_retries = (loop_config["infra_retry_count"] || 0) + 1
 
-      # Still update last_task_id to avoid re-evaluating the same error
+      if infra_retries >= MAX_INFRA_RETRIES
+        update_loop_state(child_creative, "stuck")
+        update_infra_retry_count(child_creative, infra_retries)
+        post_system_notice(child_creative, topic, I18n.t(
+          "collavre.trigger_loop.infra_stuck",
+          count: infra_retries
+        ))
+        return
+      end
+
       update_loop_iteration(child_creative, iteration, task.id)
+      update_infra_retry_count(child_creative, infra_retries)
 
-      post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
+      post_retry_instruction(child_creative, topic, parent_creative, iteration, max)
     end
 
     def evaluate_status(comment, loop_config)
@@ -138,6 +155,23 @@ module Collavre
       child_creative.update!(data: data)
     end
 
+    def update_infra_retry_count(child_creative, count)
+      data = child_creative.data || {}
+      trigger = data["trigger"] || {}
+      loop_data = trigger["loop"] || {}
+      loop_data["infra_retry_count"] = count
+      trigger["loop"] = loop_data
+      data["trigger"] = trigger
+      child_creative.update!(data: data)
+    end
+
+    def reset_infra_retry_count(child_creative)
+      loop_data = child_creative.data&.dig("trigger", "loop")
+      return unless loop_data&.key?("infra_retry_count") && loop_data["infra_retry_count"].to_i > 0
+
+      update_infra_retry_count(child_creative, 0)
+    end
+
     def update_loop_iteration(child_creative, iteration, task_id)
       data = child_creative.data || {}
       trigger = data["trigger"] || {}
@@ -166,6 +200,25 @@ module Collavre
         private: false,
         user: child_creative.user,
         skip_dispatch: false  # Let after_create_commit dispatch this
+      )
+    end
+
+    def post_retry_instruction(child_creative, topic, parent_creative, iteration, max)
+      agent = find_trigger_agent(parent_creative)
+      return unless agent
+
+      content = "@#{agent.name}: #{I18n.t(
+        'collavre.trigger_loop.retry',
+        iteration: iteration,
+        max: max
+      )}"
+
+      child_creative.comments.create!(
+        content: content,
+        topic_id: topic.id,
+        private: false,
+        user: child_creative.user,
+        skip_dispatch: false
       )
     end
 

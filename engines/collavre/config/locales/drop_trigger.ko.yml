@@ -15,5 +15,7 @@ ko:
         - [STATUS: CONTINUE] — 진행 중, 추가 반복 필요
         - [STATUS: BLOCKED 사유] — 도움 없이 진행 불가
       continue: "🔄 트리거 루프 — 반복 %{iteration}/%{max}. 이전 작업이 미완료입니다. 이어서 진행하고 [STATUS: DONE/CONTINUE/BLOCKED]으로 보고해주세요."
+      retry: "🔄 트리거 루프 — 반복 %{iteration}/%{max}. 이전 시도가 인프라 에러(타임아웃/연결 실패)로 실패했습니다. 처음부터 다시 시도하고 [STATUS: DONE/CONTINUE/BLOCKED]으로 보고해주세요."
       stuck: "⚠️ 트리거 루프 일시정지 — 에이전트가 반복 %{iteration}에서 BLOCKED를 보고했습니다. 사용자 개입이 필요할 수 있습니다."
       max_reached: "⚠️ 트리거 루프 중단 — 최대 반복 횟수(%{max})에 도달했습니다. 진행 상황을 확인하고 필요시 재시작해주세요."
+      infra_stuck: "⚠️ 트리거 루프 일시정지 — 연속 %{count}회 인프라 에러(타임아웃/연결 실패) 발생. 서비스가 불안정할 수 있습니다. 사용자 개입이 필요합니다."
