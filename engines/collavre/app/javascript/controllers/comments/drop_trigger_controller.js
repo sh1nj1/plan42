@@ -115,7 +115,7 @@ export default class extends Controller {
         if (!creativeId) return
 
         try {
-            const response = await fetch(`/creatives/${creativeId}.json`, { cache: 'no-cache' })
+            const response = await fetch(`/creatives/${creativeId}.json`, { cache: 'no-store' })
             if (response.ok) {
                 const json = await response.json()
                 this._cachedData = json.data || {}
