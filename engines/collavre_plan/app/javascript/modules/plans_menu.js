@@ -1,7 +1,7 @@
 // Plans menu functionality
 // Handles the plans menu button click and lazy-loads plans data
 
-import { notifyPopupOpen, onOtherPopupOpen } from '../lib/gnb_popup_manager'
+import { notifyPopupOpen, onOtherPopupOpen } from 'collavre/lib/gnb_popup_manager'
 
 const POPUP_ID = 'plans-menu'
 let initialized = false

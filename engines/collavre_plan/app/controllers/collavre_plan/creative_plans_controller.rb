@@ -1,4 +1,4 @@
-module Collavre
+module CollavrePlan
   class CreativePlansController < ApplicationController
     before_action :require_authentication
 
@@ -13,7 +13,7 @@ module Collavre
             failure_key: "collavre.creatives.index.plan_tag_failed",
             failure_default: "Please select a plan and at least one creative."
           )
-          redirect_back fallback_location: creatives_path(select_mode: 1)
+          redirect_back fallback_location: Collavre::Engine.routes.url_helpers.creatives_path(select_mode: 1)
         end
         format.json do
           if result.success?
@@ -36,7 +36,7 @@ module Collavre
             failure_key: "collavre.creatives.index.plan_tag_remove_failed",
             failure_default: "Please select a plan and at least one creative."
           )
-          redirect_back fallback_location: creatives_path(select_mode: 1)
+          redirect_back fallback_location: Collavre::Engine.routes.url_helpers.creatives_path(select_mode: 1)
         end
         format.json do
           if result.success?
@@ -51,7 +51,7 @@ module Collavre
     private
 
     def tagger
-      ::Creatives::PlanTagger.new(plan_id: params[:plan_id], creative_ids: parsed_creative_ids, user: Current.user)
+      Collavre::Creatives::PlanTagger.new(plan_id: params[:plan_id], creative_ids: parsed_creative_ids, user: Current.user)
     end
 
     def parsed_creative_ids

@@ -16,7 +16,7 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     event = create_event(user: @collaborator, creative: @creative, google_event_id: "collaborator-event")
 
     login_as(@owner)
-    get collavre.plans_url(format: :json)
+    get collavre_plan_engine.plans_path(format: :json)
 
     assert_response :success
     assert_includes json_ids, "calendar_event_#{event.id}"
@@ -32,7 +32,7 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     event = create_event(user: @owner, creative: child_creative, google_event_id: "owner-child-event")
 
     login_as(@collaborator)
-    get collavre.plans_url(format: :json)
+    get collavre_plan_engine.plans_path(format: :json)
 
     assert_response :success
     assert_includes json_ids, "calendar_event_#{event.id}"
@@ -45,7 +45,7 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     event = create_event(user: @owner, creative: @creative, google_event_id: "limited-permission-event")
 
     login_as(@collaborator)
-    get collavre.plans_url(format: :json)
+    get collavre_plan_engine.plans_path(format: :json)
 
     assert_response :success
     assert_not_includes json_ids, "calendar_event_#{event.id}"
@@ -66,7 +66,7 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     event = create_event(user: @owner, creative: child_creative, google_event_id: "inaccessible-child-event")
 
     login_as(@collaborator)
-    get collavre.plans_url(format: :json)
+    get collavre_plan_engine.plans_path(format: :json)
 
     assert_response :success
     assert_not_includes json_ids, "calendar_event_#{event.id}", "Event from no_access child should not be visible"
@@ -105,7 +105,7 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     plan = Plan.create!(target_date: Date.today, creative: creative, owner: users(:one))
 
     login_as(collaborator)
-    get collavre.plans_url(format: :json)
+    get collavre_plan_engine.plans_path(format: :json)
 
     assert_response :success
     assert_includes json_ids, plan.id, "User with read permission should see Creative-linked plan"
@@ -116,7 +116,7 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     plan = Plan.create!(target_date: Date.today, creative: creative, owner: users(:one))
 
     login_as(users(:two))
-    get collavre.plans_url(format: :json)
+    get collavre_plan_engine.plans_path(format: :json)
 
     assert_response :success
     refute_includes json_ids, plan.id, "User without permission should not see Creative-linked plan"
@@ -127,7 +127,7 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
 
     login_as(users(:one))
     assert_difference("Plan.count", 1) do
-      post collavre.plans_url(format: :json), params: {
+      post collavre_plan_engine.plans_path(format: :json), params: {
         plan: { target_date: Date.today, creative_id: creative.id }
       }
     end
@@ -150,7 +150,7 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     login_as(@collaborator)
     new_start_date = Date.current + 1.day
     new_target_date = Date.current + 6.days
-    patch collavre.plan_url(plan, format: :json), params: {
+    patch collavre_plan_engine.plan_path(plan, format: :json), params: {
       plan: { start_date: new_start_date, target_date: new_target_date },
       creative_id: creative.id
     }
@@ -167,7 +167,7 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     plan = Plan.create!(creative: creative, target_date: Date.today, owner: users(:one))
 
     login_as(users(:one))
-    get collavre.plans_url(format: :json)
+    get collavre_plan_engine.plans_path(format: :json)
     assert_response :success
 
     json = JSON.parse(response.body)

@@ -119,17 +119,6 @@ module Collavre
         # ============================================
         # Main Section - Mobile Only
         # ============================================
-        Navigation::Registry.instance.register(
-          key: :mobile_plans,
-          label: "app.plans",
-          type: :partial,
-          partial: "collavre/shared/navigation/mobile_plans_button",
-          priority: 100,
-          requires_auth: true,
-          desktop: false,
-          mobile: true
-        )
-
         # ============================================
         # Main Section - Desktop Navigation
         # ============================================
@@ -139,16 +128,6 @@ module Collavre
           type: :button,
           path: -> { main_app.root_path },
           priority: 110
-        )
-
-        Navigation::Registry.instance.register(
-          key: :plans,
-          label: "app.plans",
-          type: :partial,
-          partial: "collavre/shared/navigation/plans_button",
-          priority: 120,
-          requires_auth: true,
-          mobile: false
         )
 
         # Progress filter moved into search popup (search_form partial)
