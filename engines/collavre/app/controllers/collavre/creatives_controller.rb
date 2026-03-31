@@ -124,11 +124,12 @@ module Collavre
             prompt_updated&.to_i,
             "children",
             children_key,
-            "trigger_v1"
+            "trigger_v2",
+            @creative.data&.dig("trigger", "loop", "state"),
+            @creative.data&.dig("trigger", "loop", "current_iteration")
           ].join(":")
 
           trigger_loop_data = @creative.data&.dig("trigger", "loop")
-          Rails.logger.info "[TRIGGER_DEBUG] creative_id=#{@creative.id} trigger_loop=#{trigger_loop_data&.dig('state')} etag=#{etag.truncate(80)}"
 
           if stale?(etag: etag, last_modified: last_modified, public: false)
             root = params[:root_id] ? Creative.find_by(id: params[:root_id]) : nil

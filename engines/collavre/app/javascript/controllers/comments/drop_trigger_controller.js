@@ -50,7 +50,6 @@ export default class extends Controller {
     }
 
     async onPopupOpened({ creativeId }) {
-        console.log("[drop-trigger] onPopupOpened called, creativeId:", creativeId)
         this._creativeId = creativeId
         this.enabled = false
         this.canWrite = false
@@ -148,9 +147,7 @@ export default class extends Controller {
 
     async _loadTriggerState() {
         const creativeId = this.creativeId
-        console.log("[drop-trigger] _loadTriggerState, creativeId:", creativeId)
         if (!creativeId) {
-            console.log("[drop-trigger] no creativeId, aborting")
             return
         }
 
@@ -176,10 +173,8 @@ export default class extends Controller {
                     this.enabled = trigger.on_child_enter === true
                 }
 
-                console.log("[drop-trigger] loaded:", { role: this._role, state: this._loopState, canWrite: this.canWrite, hasBtn: this.hasTriggerButtonTarget })
                 this._updateUI()
             } else {
-                console.warn("[drop-trigger] fetch failed:", response.status)
             }
         } catch (e) {
             console.error("Failed to load trigger state", e)
