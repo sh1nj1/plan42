@@ -11,8 +11,8 @@ en:
         ---
         [LOOP INSTRUCTIONS]
         This is a looped trigger. Report your status at the end of each response:
-        - [STATUS: DONE] — task completed successfully
-        - [STATUS: CONTINUE] — making progress, need another iteration
+        - [STATUS: DONE] — ALL actions fully executed and verified. Do NOT report DONE if any action remains unexecuted (e.g. moving creatives, creating PRs, updating records). If you describe remaining work in your response, you are NOT done — use CONTINUE instead.
+        - [STATUS: CONTINUE] — making progress, but some actions still need to be executed
         - [STATUS: BLOCKED reason] — cannot proceed without help
       continue: "🔄 Trigger Loop — iteration %{iteration}/%{max}. Previous work is incomplete. Please continue where you left off and report [STATUS: DONE/CONTINUE/BLOCKED]."
       retry: "🔄 Trigger Loop — iteration %{iteration}/%{max}. The previous attempt failed due to an infrastructure error (timeout/connection). Please try again from the beginning and report [STATUS: DONE/CONTINUE/BLOCKED]."
