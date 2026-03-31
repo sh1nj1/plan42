@@ -40,10 +40,11 @@ export default class extends Controller {
     }
 
     get creativeId() {
-        return this.element.closest('#comments-popup')?.dataset?.creativeId
+        return this._creativeId || this.element.closest('#comments-popup')?.dataset?.creativeId
     }
 
     async onPopupOpened({ creativeId }) {
+        this._creativeId = creativeId
         this.enabled = false
         this.canWrite = false
         this._cachedData = null
@@ -54,6 +55,7 @@ export default class extends Controller {
     }
 
     onPopupClosed() {
+        this._creativeId = null
         this.enabled = false
         this.canWrite = false
         this._cachedData = null
