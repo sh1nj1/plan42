@@ -490,6 +490,24 @@ function Toolbar() {
     [editor]
   )
 
+  const clearFormatting = useCallback(() => {
+    editor.update(() => {
+      const selection = $getSelection()
+      if (!$isRangeSelection(selection)) return
+
+      // Clear format on all selected text nodes directly
+      const nodes = selection.getNodes()
+      nodes.forEach((node) => {
+        if ($isTextNode(node)) {
+          node.setFormat(0)
+          node.setStyle("")
+        }
+      })
+    })
+    setFontColor(DEFAULT_FONT_COLOR)
+    setBgColor(DEFAULT_BG_COLOR)
+  }, [editor])
+
   const toggleCodeBlock = useCallback(() => {
     editor.update(() => {
       const selection = $getSelection()
@@ -576,6 +594,13 @@ function Toolbar() {
         onClick={() => toggleFormat("strikethrough")}
         title="Strikethrough">
         S
+      </button>
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={clearFormatting}
+        title="Clear formatting">
+        Tₓ
       </button>
       <button
         type="button"
