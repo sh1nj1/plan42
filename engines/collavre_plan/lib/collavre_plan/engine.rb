@@ -37,10 +37,10 @@ module CollavrePlan
     # Register Plan navigation items via Collavre::Navigation::Registry
     initializer "collavre_plan.navigation", after: "collavre.navigation_reset" do
       Rails.application.config.to_prepare do
-        next unless defined?(Collavre::Navigation::Registry)
+        next unless defined?(Navigation::Registry)
 
         # Mobile plans button
-        Collavre::Navigation::Registry.instance.register(
+        Navigation::Registry.instance.register(
           key: :mobile_plans,
           label: "app.plans",
           type: :partial,
@@ -52,7 +52,7 @@ module CollavrePlan
         )
 
         # Desktop plans button
-        Collavre::Navigation::Registry.instance.register(
+        Navigation::Registry.instance.register(
           key: :plans,
           label: "app.plans",
           type: :partial,
