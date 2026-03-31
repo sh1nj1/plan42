@@ -37,6 +37,12 @@ export default class extends Controller {
         this._cachedData = null
         this._role = "none" // "container" | "task" | "none"
         this._loopState = null
+        this._onCreativeUpdated = this._handleCreativeUpdated.bind(this)
+        document.addEventListener('creative:updated', this._onCreativeUpdated)
+    }
+
+    disconnect() {
+        document.removeEventListener('creative:updated', this._onCreativeUpdated)
     }
 
     get creativeId() {
@@ -44,6 +50,7 @@ export default class extends Controller {
     }
 
     async onPopupOpened({ creativeId }) {
+        console.log("[drop-trigger] onPopupOpened called, creativeId:", creativeId)
         this._creativeId = creativeId
         this.enabled = false
         this.canWrite = false
@@ -62,6 +69,16 @@ export default class extends Controller {
         this._role = "none"
         this._loopState = null
         this._hideAll()
+    }
+
+    // Re-fetch trigger state when the current creative is updated via Turbo Stream
+    async _handleCreativeUpdated(event) {
+        const { creativeId, originId } = event.detail || {}
+        const myId = this.creativeId
+        if (!myId) return
+        if (String(creativeId) === String(myId) || String(originId) === String(myId)) {
+            await this._loadTriggerState()
+        }
     }
 
     // Unified click handler — delegates based on role
@@ -131,7 +148,11 @@ export default class extends Controller {
 
     async _loadTriggerState() {
         const creativeId = this.creativeId
-        if (!creativeId) return
+        console.log("[drop-trigger] _loadTriggerState, creativeId:", creativeId)
+        if (!creativeId) {
+            console.log("[drop-trigger] no creativeId, aborting")
+            return
+        }
 
         try {
             const response = await fetch(`/creatives/${creativeId}.json`, { cache: 'no-store' })
@@ -155,7 +176,10 @@ export default class extends Controller {
                     this.enabled = trigger.on_child_enter === true
                 }
 
+                console.log("[drop-trigger] loaded:", { role: this._role, state: this._loopState, canWrite: this.canWrite, hasBtn: this.hasTriggerButtonTarget })
                 this._updateUI()
+            } else {
+                console.warn("[drop-trigger] fetch failed:", response.status)
             }
         } catch (e) {
             console.error("Failed to load trigger state", e)

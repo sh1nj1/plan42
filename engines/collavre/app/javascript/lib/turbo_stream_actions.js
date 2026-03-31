@@ -248,6 +248,10 @@ function handleUpdated(creative) {
         applyRowProperties(row, creative)
     })
 
+    // Notify popup controllers about creative data changes (e.g. trigger state)
+    document.dispatchEvent(new CustomEvent('creative:updated', {
+        detail: { creativeId: creative.id, originId: creative.origin_id }
+    }))
 }
 
 function handleDestroyed(creative) {
