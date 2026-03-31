@@ -137,6 +137,7 @@ export default class extends Controller {
                     this.enabled = trigger.on_child_enter === true
                 }
 
+                console.log("[drop-trigger] role:", this._role, "triggerLoop:", triggerLoop, "trigger:", trigger, "canWrite:", this.canWrite)
                 this._updateUI()
             }
         } catch (e) {

@@ -9,7 +9,7 @@ module Collavre
     # Removed unauthenticated access to index and show actions
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
-    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive ]
+    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action ]
 
     def index
       respond_to do |format|
