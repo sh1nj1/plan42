@@ -383,7 +383,7 @@ module Collavre
           view_context: view_context,
           expanded_state_map: expanded_state_map,
           select_mode: select_mode,
-          max_level: Current.user&.display_level || User::DEFAULT_DISPLAY_LEVEL,
+          max_level: Collavre::SystemSetting.display_level,
           allowed_creative_ids: allowed_creative_ids,
           progress_map: progress_map
         ).build(collection, level: level)

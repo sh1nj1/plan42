@@ -37,6 +37,8 @@ module Collavre
         @default_light_theme_id = SystemSetting.default_light_theme_id
         @default_dark_theme_id = SystemSetting.default_dark_theme_id
         @available_themes = Collavre::UserTheme.all.order(:name)
+        @display_level = SystemSetting.display_level
+        @completion_mark = SystemSetting.completion_mark
       end
 
       def update_uiux
@@ -50,6 +52,14 @@ module Collavre
           dark_theme_setting = SystemSetting.find_or_initialize_by(key: "default_dark_theme_id")
           dark_theme_setting.value = dark_theme_id.present? ? dark_theme_id : nil
           dark_theme_setting.save!
+
+          # Creative display settings
+          dl = params[:display_level].to_i
+          dl = SystemSetting::DEFAULT_DISPLAY_LEVEL if dl < 1
+          SystemSetting.find_or_initialize_by(key: "display_level").tap { |s| s.value = dl.to_s; s.save! }
+
+          cm = params[:completion_mark].to_s
+          SystemSetting.find_or_initialize_by(key: "completion_mark").tap { |s| s.value = cm; s.save! }
         end
 
         redirect_to collavre.admin_uiux_path, notice: t("admin.settings.updated")
@@ -58,6 +68,8 @@ module Collavre
         @default_light_theme_id = params[:default_light_theme_id]
         @default_dark_theme_id = params[:default_dark_theme_id]
         @available_themes = Collavre::UserTheme.all.order(:name)
+        @display_level = params[:display_level].to_i.positive? ? params[:display_level].to_i : SystemSetting::DEFAULT_DISPLAY_LEVEL
+        @completion_mark = params[:completion_mark].to_s
         render :uiux, status: :unprocessable_entity
       end
 

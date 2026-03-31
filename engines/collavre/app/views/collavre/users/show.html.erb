@@ -74,14 +74,6 @@
           <%= f.text_field :avatar_url, placeholder: t('collavre.users.avatar_url'), data: { avatar_preview_target: 'urlInput', action: 'input->avatar-preview#updateFromUrl' } %>
         </div>
         <div>
-          <%= f.label :display_level, t('collavre.users.display_level') %>
-          <%= f.number_field :display_level, min: 1 %>
-        </div>
-        <div>
-          <%= f.label :completion_mark, t('collavre.users.completion_mark') %>
-          <%= f.text_field :completion_mark %>
-        </div>
-        <div>
         <div>
           <%= f.label :theme, t('collavre.users.theme') %>
           <%

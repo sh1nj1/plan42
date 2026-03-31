@@ -162,11 +162,11 @@ module Collavre
       # Format progress text for a user (100% → completion mark if set)
       # Matches render_progress_value helper: when value==1 and completion_mark is not nil,
       # use it (even if blank — blank becomes non-breaking spaces in display)
-      def format_progress_text(progress_value, user)
+      def format_progress_text(progress_value, _user = nil)
         pct = ((progress_value || 0) * 100).round
-        if pct >= 100 && !user.completion_mark.nil?
-          mark = user.completion_mark
-          mark.blank? ? "" : mark
+        completion_mark = Collavre::SystemSetting.completion_mark
+        if pct >= 100 && completion_mark.present?
+          completion_mark
         else
           "#{pct}%"
         end

@@ -82,8 +82,6 @@ module Collavre
       params.require(:user).permit(
         :avatar,
         :avatar_url,
-        :display_level,
-        :completion_mark,
         :theme,
         :name,
         :notifications_enabled,
