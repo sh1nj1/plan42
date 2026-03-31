@@ -23,6 +23,7 @@ const STATE_LABELS = {
 
 // Action label shown in tooltip: "Click to {action}"
 const ACTION_LABELS = {
+    start: "start",
     pause: "pause",
     resume: "resume",
     restart: "restart"
@@ -140,7 +141,8 @@ export default class extends Controller {
 
     _actionForState(state) {
         if (state === "running" || state === "pending_verification") return "pause"
-        if (state === "paused" || state === "idle" || state === "stuck") return "resume"
+        if (state === "idle") return "start"
+        if (state === "paused" || state === "stuck") return "resume"
         if (state === "completed" || state === "max_reached") return "restart"
         return null
     }

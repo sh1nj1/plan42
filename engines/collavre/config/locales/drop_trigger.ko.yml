@@ -20,6 +20,7 @@ ko:
       max_reached: "⚠️ 트리거 루프 중단 — 최대 반복 횟수(%{max})에 도달했습니다. 진행 상황을 확인하고 필요시 재시작해주세요."
       infra_stuck: "⚠️ 트리거 루프 일시정지 — 연속 %{count}회 인프라 에러(타임아웃/연결 실패) 발생. 서비스가 불안정할 수 있습니다. 사용자 개입이 필요합니다."
       verification_failed: "🔍 트리거 루프 — 반복 %{iteration}/%{max}. [STATUS: DONE] 검증에 실패했습니다. 다음 작업이 완료되지 않았습니다:\n%{reason}\n\n남은 작업을 모두 완료한 후 [STATUS: DONE/CONTINUE/BLOCKED]으로 보고해주세요."
+      start: "시작"
       pause: "일시정지"
       resume: "재개"
       restart: "재시작"

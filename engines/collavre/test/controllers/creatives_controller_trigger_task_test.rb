@@ -3,6 +3,8 @@
 require "test_helper"
 
 class CreativesControllerTriggerTaskTest < ActionDispatch::IntegrationTest
+  include ActiveJob::TestHelper
+
   setup do
     @user = users(:one)
     sign_in_as(@user, password: "password")
@@ -83,5 +85,44 @@ class CreativesControllerTriggerTaskTest < ActionDispatch::IntegrationTest
     json = JSON.parse(response.body)
     assert_equal true, json["is_trigger_task"]
     assert_equal "running", json["trigger_loop"]["state"]
+  end
+
+  test "trigger_action start enqueues DropTriggerJob for idle trigger task" do
+    child = Collavre::Creative.create!(
+      user: @user,
+      parent: @trigger_parent,
+      description: "Start Me"
+    )
+
+    prev_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+
+    begin
+      clear_enqueued_jobs
+      assert_enqueued_with(job: Collavre::DropTriggerJob) do
+        patch trigger_action_creative_path(child),
+              params: { action_name: "start" },
+              headers: { "ACCEPT" => "application/json", "CONTENT_TYPE" => "application/json" },
+              as: :json
+      end
+      assert_response :success
+    ensure
+      ActiveJob::Base.queue_adapter = prev_adapter
+    end
+  end
+
+  test "trigger_action start rejects non-trigger-container child" do
+    child = Collavre::Creative.create!(
+      user: @user,
+      parent: @normal_parent,
+      description: "Not Trigger"
+    )
+
+    patch trigger_action_creative_path(child),
+          params: { action_name: "start" },
+          headers: { "ACCEPT" => "application/json", "CONTENT_TYPE" => "application/json" },
+          as: :json
+
+    assert_response :unprocessable_entity
   end
 end
