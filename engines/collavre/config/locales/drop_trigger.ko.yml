@@ -11,8 +11,8 @@ ko:
         ---
         [LOOP INSTRUCTIONS]
         이것은 루프 트리거입니다. 각 응답의 마지막에 상태를 보고해주세요:
-        - [STATUS: DONE] — 작업 완료
-        - [STATUS: CONTINUE] — 진행 중, 추가 반복 필요
+        - [STATUS: DONE] — 모든 작업을 실제로 실행하고 검증 완료. 실행하지 않은 작업이 남아있으면 (예: 크리에이티브 이동, PR 생성, 레코드 업데이트 등) 절대 DONE을 보고하지 마세요. 응답에 남은 작업을 설명했다면 완료가 아닙니다 — CONTINUE를 사용하세요.
+        - [STATUS: CONTINUE] — 진행 중이지만 아직 실행해야 할 작업이 남아있음
         - [STATUS: BLOCKED 사유] — 도움 없이 진행 불가
       continue: "🔄 트리거 루프 — 반복 %{iteration}/%{max}. 이전 작업이 미완료입니다. 이어서 진행하고 [STATUS: DONE/CONTINUE/BLOCKED]으로 보고해주세요."
       retry: "🔄 트리거 루프 — 반복 %{iteration}/%{max}. 이전 시도가 인프라 에러(타임아웃/연결 실패)로 실패했습니다. 처음부터 다시 시도하고 [STATUS: DONE/CONTINUE/BLOCKED]으로 보고해주세요."
