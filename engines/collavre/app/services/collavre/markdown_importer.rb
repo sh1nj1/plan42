@@ -108,6 +108,10 @@ module Collavre
           i += 1
         end
       end
+
+      # Broadcast all created creatives for real-time UI sync
+      created.each { |c| c.reload.broadcast_creative_created }
+
       created
     end
 
