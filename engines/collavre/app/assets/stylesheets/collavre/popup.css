@@ -331,7 +331,7 @@
 }
 
 .popup-menu .popup-menu-item.danger-link:hover {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
 }
 
 #user-menu button {
