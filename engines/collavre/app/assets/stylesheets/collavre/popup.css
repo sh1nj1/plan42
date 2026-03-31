@@ -290,13 +290,14 @@
   z-index: var(--layer-modal);
   background: var(--surface-section);
   border: 1px solid var(--border-color);
-  padding: 0.5em;
-  box-shadow: var(--shadow-3);
-  border-radius: var(--radius-2);
+  padding: var(--space-1);
+  box-shadow: var(--shadow-2);
+  border-radius: var(--radius-3);
   min-width: 220px;
   top: calc(100% + 4px);
   left: 0;
   transform: translateX(0);
+  box-sizing: border-box;
 }
 
 .popup-menu-right {
@@ -304,11 +305,34 @@
   right: 0;
 }
 
+.popup-menu .popup-menu-item,
 .popup-menu-item button,
 .popup-menu-item a {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   width: 100%;
   text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-2);
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--text-1);
+  cursor: pointer;
+  transition: background 0.15s var(--ease-out-2);
+  white-space: nowrap;
+}
+
+.popup-menu .popup-menu-item:hover,
+.popup-menu-item button:hover,
+.popup-menu-item a:hover {
+  background: var(--surface-hover);
+}
+
+/* Inside popup menus, danger-link items inherit normal item styles */
+.popup-menu .popup-menu-item.danger-link {
+  color: inherit;
 }
 
 #user-menu button {
@@ -318,6 +342,10 @@
 }
 
 @media (max-width: 768px) {
+  .popup-menu {
+    min-width: min(220px, calc(100vw - 8px));
+    max-width: min(320px, calc(100vw - 8px));
+  }
 
   #mobile-more-menu button,
   #mobile-more-menu a {

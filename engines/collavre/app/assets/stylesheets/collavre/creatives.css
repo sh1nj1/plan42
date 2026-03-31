@@ -142,35 +142,12 @@ html.creative-alignment-ready .page-title {
 }
 
 /* === Overflow popup menu — GNB style === */
+/* #creative-overflow-menu inherits base styles from .popup-menu in popup.css */
 #creative-overflow-menu {
     min-width: 200px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-3);
-    box-shadow: var(--shadow-2);
-    padding: var(--space-1);
-    background: var(--surface-section);
 }
 
-#creative-overflow-menu .popup-menu-item {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    width: 100%;
-    text-align: left;
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-2);
-    border: none;
-    background: none;
-    color: var(--text-primary);
-    font-size: var(--text-1);
-    cursor: pointer;
-    transition: background 0.15s var(--ease-out-2);
-    white-space: nowrap;
-}
-
-#creative-overflow-menu .popup-menu-item:hover {
-    background: var(--surface-hover);
-}
+/* popup-menu-item base styles are now in popup.css */
 
 #creative-overflow-menu .popup-menu-item.active {
     background: color-mix(in srgb, var(--color-active) 15%, transparent);
