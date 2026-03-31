@@ -28,7 +28,7 @@ module Collavre
           node_payload[:previous_sibling_id] = creative.previous_sibling&.id
           broadcast_change(creative, "created", current_user_id, node_payload)
         end
-        return
+        nil
       when "created", "updated"
         creative = Creative.find_by(id: creative_id)
         return unless creative
