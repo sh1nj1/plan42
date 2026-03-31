@@ -1,0 +1,94 @@
+/* Trigger Status Component */
+.trigger-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  vertical-align: middle;
+}
+
+/* Container toggle */
+.trigger-container-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1, 2px);
+  border-radius: var(--radius-2, 4px);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.trigger-container-toggle:hover {
+  background-color: var(--bg-hover, rgba(0, 0, 0, 0.05));
+  color: var(--color-warning);
+}
+
+.trigger-container-toggle.trigger-container-active {
+  color: var(--color-warning);
+}
+
+.trigger-container-indicator {
+  color: var(--color-warning);
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1, 2px);
+}
+
+/* Task progress ring */
+.trigger-status--task {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 2px);
+}
+
+.trigger-progress-ring {
+  flex-shrink: 0;
+}
+
+/* Pulse animation for pending_verification */
+.trigger-status--pending_verification .trigger-progress-ring__fg {
+  animation: trigger-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes trigger-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Action button */
+.trigger-action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1, 2px);
+  border-radius: var(--radius-2, 4px);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  opacity: 0;
+}
+
+.trigger-status--task:hover .trigger-action-btn {
+  opacity: 1;
+}
+
+.trigger-action-btn:hover {
+  background-color: var(--bg-hover, rgba(0, 0, 0, 0.05));
+  color: var(--text-default);
+}
+
+/* State-specific styles */
+.trigger-status--stuck .trigger-progress-ring__fg,
+.trigger-status--stuck .trigger-action-btn {
+  color: var(--color-danger);
+}
+
+.trigger-status--completed .trigger-progress-ring__fg {
+  stroke: var(--color-success);
+}

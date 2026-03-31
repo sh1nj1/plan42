@@ -17,6 +17,7 @@ import CommentsMentionMenuController from "./comments/mention_menu_controller"
 import CommentsTopicsController from "./comments/topics_controller"
 import CommentsContextsController from "./comments/contexts_controller"
 import CommentsDropTriggerController from "./comments/drop_trigger_controller"
+import TriggerStatusController from "./trigger_status_controller"
 import CommentsPopupController from "./comments/popup_controller"
 import ClickTargetController from "./click_target_controller"
 import TabsController from "./tabs_controller"
@@ -89,6 +90,7 @@ export function registerControllers(application) {
   application.register("comments--topics", CommentsTopicsController)
   application.register("comments--contexts", CommentsContextsController)
   application.register("comments--drop-trigger", CommentsDropTriggerController)
+  application.register("trigger-status", TriggerStatusController)
   application.register("comments--popup", CommentsPopupController)
   application.register("click-target", ClickTargetController)
   application.register("tabs", TabsController)

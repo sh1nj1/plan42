@@ -115,6 +115,7 @@ Collavre::Engine.routes.draw do
       get :contexts
       patch :update_contexts
       patch :update_metadata
+      patch :trigger_action
     end
   end
 
