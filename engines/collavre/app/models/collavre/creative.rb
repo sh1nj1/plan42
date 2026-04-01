@@ -54,7 +54,7 @@ module Collavre
       return existing if existing
 
       create!(
-        description: "📥 Inbox",
+        description: "Inbox",
         data: { "kind" => "inbox" },
         user: user,
         progress: 0.0
