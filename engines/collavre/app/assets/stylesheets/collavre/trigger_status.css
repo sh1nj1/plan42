@@ -1,17 +1,255 @@
-/* Trigger Status — zap icon animations */
+/* Trigger Status — state-based visual design
+ * Inspired by Material Design 3 status button patterns.
+ * Uses CSS custom properties from design_tokens.css.
+ *
+ * States: idle, active (container on), running, pending_verification,
+ *         completed, stuck, max_reached, paused
+ */
 
-/* Running state: orbiting glow animation around the zap icon */
-.drop-trigger-toggle-btn.trigger-running .trigger-zap-icon {
+/* ──────────────────────────────────────────────
+ * Base: all state classes share these resets
+ * ────────────────────────────────────────────── */
+.drop-trigger-toggle-btn {
+  position: relative;
+  transition: background 0.25s ease,
+              color 0.25s ease,
+              border-color 0.25s ease,
+              box-shadow 0.25s ease,
+              transform 0.15s ease;
+}
+
+.drop-trigger-toggle-btn .trigger-zap-icon {
+  transition: color 0.25s ease,
+              fill 0.25s ease,
+              filter 0.25s ease,
+              opacity 0.25s ease;
+}
+
+/* ──────────────────────────────────────────────
+ * Container: active (trigger enabled)
+ * ────────────────────────────────────────────── */
+.drop-trigger-toggle-btn.drop-trigger-active {
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  border-color: color-mix(in srgb, var(--color-warning) 40%, transparent);
+}
+
+.drop-trigger-toggle-btn.drop-trigger-active .trigger-zap-icon {
+  color: var(--color-warning);
+  fill: var(--color-warning);
+  fill-opacity: 0.25;
+}
+
+/* ──────────────────────────────────────────────
+ * Task state: RUNNING
+ * Pulsing glow + orbiting border animation
+ * ────────────────────────────────────────────── */
+.drop-trigger-toggle-btn.trigger-state-running {
+  background: color-mix(in srgb, var(--color-active) 20%, transparent);
+  border-color: color-mix(in srgb, var(--color-active) 50%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-active) 30%, transparent);
+}
+
+.drop-trigger-toggle-btn.trigger-state-running .trigger-zap-icon {
+  color: var(--color-active);
   animation: trigger-running-pulse 1.5s ease-in-out infinite;
+}
+
+/* Orbiting border glow */
+.drop-trigger-toggle-btn.trigger-state-running::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  border-top-color: var(--color-active);
+  opacity: 0.6;
+  animation: trigger-orbit 1.2s linear infinite;
+  pointer-events: none;
 }
 
 @keyframes trigger-running-pulse {
   0%, 100% { opacity: 1; filter: drop-shadow(0 0 0px transparent); }
-  50% { opacity: 0.6; filter: drop-shadow(0 0 4px var(--color-active)); }
+  50% { opacity: 0.65; filter: drop-shadow(0 0 4px var(--color-active)); }
 }
 
-/* Active container state — filled zap */
-.drop-trigger-toggle-btn.drop-trigger-active .trigger-zap-icon {
-  fill: var(--color-active);
-  color: var(--color-active);
+@keyframes trigger-orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ──────────────────────────────────────────────
+ * Task state: PENDING VERIFICATION
+ * Amber warning with subtle pulse + badge
+ * ────────────────────────────────────────────── */
+.drop-trigger-toggle-btn.trigger-state-pending_verification {
+  background: color-mix(in srgb, var(--color-warning) 20%, transparent);
+  border-color: color-mix(in srgb, var(--color-warning) 50%, transparent);
+  animation: trigger-pending-pulse 2s ease-in-out infinite;
+}
+
+.drop-trigger-toggle-btn.trigger-state-pending_verification .trigger-zap-icon {
+  color: var(--color-warning);
+}
+
+/* Exclamation badge */
+.drop-trigger-toggle-btn.trigger-state-pending_verification::before {
+  content: '!';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  color: var(--surface-bg, #1a1a2e);
+  font-size: 8px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes trigger-pending-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-warning) 25%, transparent); }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-warning) 0%, transparent); }
+}
+
+/* ──────────────────────────────────────────────
+ * Task state: COMPLETED
+ * Green success with a brief pulse-out
+ * ────────────────────────────────────────────── */
+.drop-trigger-toggle-btn.trigger-state-completed {
+  background: color-mix(in srgb, var(--color-success) 20%, transparent);
+  border-color: color-mix(in srgb, var(--color-success) 50%, transparent);
+}
+
+.drop-trigger-toggle-btn.trigger-state-completed .trigger-zap-icon {
+  color: var(--color-success);
+}
+
+/* Success ripple on enter */
+.drop-trigger-toggle-btn.trigger-state-completed.trigger-flash {
+  animation: trigger-success-flash 0.6s ease-out;
+}
+
+@keyframes trigger-success-flash {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success) 40%, transparent); }
+  100% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--color-success) 0%, transparent); }
+}
+
+/* ──────────────────────────────────────────────
+ * Task state: STUCK / ERROR
+ * Red danger with shake + error badge
+ * ────────────────────────────────────────────── */
+.drop-trigger-toggle-btn.trigger-state-stuck {
+  background: color-mix(in srgb, var(--color-danger) 20%, transparent);
+  border-color: color-mix(in srgb, var(--color-danger) 50%, transparent);
+}
+
+.drop-trigger-toggle-btn.trigger-state-stuck .trigger-zap-icon {
+  color: var(--color-danger);
+}
+
+/* Error badge (×) */
+.drop-trigger-toggle-btn.trigger-state-stuck::before {
+  content: '×';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Shake on enter */
+.drop-trigger-toggle-btn.trigger-state-stuck.trigger-shake {
+  animation: trigger-shake 0.4s ease-out;
+}
+
+@keyframes trigger-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-2px); }
+  40% { transform: translateX(2px); }
+  60% { transform: translateX(-1px); }
+  80% { transform: translateX(1px); }
+}
+
+/* ──────────────────────────────────────────────
+ * Task state: MAX REACHED
+ * Warning-tinted, similar to pending
+ * ────────────────────────────────────────────── */
+.drop-trigger-toggle-btn.trigger-state-max_reached {
+  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+}
+
+.drop-trigger-toggle-btn.trigger-state-max_reached .trigger-zap-icon {
+  color: var(--color-warning);
+  opacity: 0.7;
+}
+
+/* ──────────────────────────────────────────────
+ * Task state: PAUSED
+ * Muted with pause indicator overlay
+ * ────────────────────────────────────────────── */
+.drop-trigger-toggle-btn.trigger-state-paused {
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  border-color: color-mix(in srgb, var(--text-muted) 20%, transparent);
+}
+
+.drop-trigger-toggle-btn.trigger-state-paused .trigger-zap-icon {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+/* Pause lines overlay */
+.drop-trigger-toggle-btn.trigger-state-paused::after {
+  content: '';
+  position: absolute;
+  width: 2px;
+  height: 8px;
+  background: var(--text-muted);
+  opacity: 0.5;
+  left: calc(50% - 3px);
+  top: calc(50% - 4px);
+  box-shadow: 4px 0 0 var(--text-muted);
+  pointer-events: none;
+}
+
+/* ──────────────────────────────────────────────
+ * Task state: IDLE
+ * Minimal, muted icon only
+ * ────────────────────────────────────────────── */
+.drop-trigger-toggle-btn.trigger-state-idle .trigger-zap-icon {
+  color: var(--text-muted);
+}
+
+/* ──────────────────────────────────────────────
+ * Hover & Focus for task states
+ * ────────────────────────────────────────────── */
+.drop-trigger-toggle-btn[class*="trigger-state-"]:hover {
+  transform: scale(1.08);
+  filter: brightness(1.1);
+}
+
+.drop-trigger-toggle-btn[class*="trigger-state-"]:active {
+  transform: scale(0.95);
+}
+
+.drop-trigger-toggle-btn:focus-visible {
+  outline: 2px solid var(--color-active);
+  outline-offset: 2px;
 }

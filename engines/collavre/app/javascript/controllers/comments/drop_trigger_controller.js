@@ -1,16 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import csrfFetch from "../../lib/api/csrf_fetch"
 
-const STATE_COLORS = {
-    idle:                   "var(--text-muted)",
-    running:                "var(--color-active)",
-    pending_verification:   "var(--color-warning)",
-    completed:              "var(--color-success)",
-    awaiting_user:          "var(--color-warning)",
-    stuck:                  "var(--color-danger)",
-    max_reached:            "var(--color-warning)",
-    paused:                 "var(--text-muted)"
-}
+const TRIGGER_STATES = ["idle", "running", "pending_verification", "completed", "awaiting_user", "stuck", "max_reached", "paused"]
 
 const STATE_LABELS = {
     idle: "Idle",
@@ -40,6 +31,7 @@ export default class extends Controller {
         this._cachedData = null
         this._role = "none" // "container" | "task" | "none"
         this._loopState = null
+        this._prevLoopState = null
         this._onCreativeUpdated = this._handleCreativeUpdated.bind(this)
         document.addEventListener('creative:updated', this._onCreativeUpdated)
     }
@@ -59,6 +51,7 @@ export default class extends Controller {
         this._cachedData = null
         this._role = "none"
         this._loopState = null
+        this._prevLoopState = null
         this._hideAll()
         await this._loadTriggerState()
     }
@@ -70,6 +63,7 @@ export default class extends Controller {
         this._cachedData = null
         this._role = "none"
         this._loopState = null
+        this._prevLoopState = null
         this._hideAll()
     }
 
@@ -194,8 +188,13 @@ export default class extends Controller {
     _hideAll() {
         if (this.hasTriggerButtonTarget) {
             this.triggerButtonTarget.style.display = 'none'
-            this.triggerButtonTarget.classList.remove('trigger-running', 'drop-trigger-active')
+            this._clearStateClasses(this.triggerButtonTarget)
         }
+    }
+
+    _clearStateClasses(btn) {
+        btn.classList.remove('drop-trigger-active', 'trigger-flash', 'trigger-shake')
+        TRIGGER_STATES.forEach(s => btn.classList.remove(`trigger-state-${s}`))
     }
 
     _updateUI() {
@@ -214,28 +213,34 @@ export default class extends Controller {
         }
 
         btn.style.display = ''
-        const icon = btn.querySelector('.trigger-zap-icon')
+        this._clearStateClasses(btn)
 
         if (this._role === "container") {
-            // Container: simple toggle, zap color = active or muted
+            // Container: simple toggle
             btn.classList.toggle('drop-trigger-active', this.enabled)
-            btn.classList.remove('trigger-running')
-            if (icon) icon.style.color = ''
             btn.title = this.enabled ? 'Drop Trigger ON — click to disable' : 'Drop Trigger OFF — click to enable'
 
         } else if (this._role === "task") {
             const state = this._loopState || "idle"
-            const color = STATE_COLORS[state] || "var(--text-muted)"
+            const prevState = this._prevLoopState
             const stateLabel = STATE_LABELS[state] || state
             const actionName = this._actionForState(state)
             const actionLabel = actionName ? ACTION_LABELS[actionName] : null
 
-            // Set zap icon color
-            btn.classList.remove('drop-trigger-active')
-            if (icon) icon.style.color = color
+            // Apply state class (drives all visual styling via CSS)
+            btn.classList.add(`trigger-state-${state}`)
 
-            // Running animation
-            btn.classList.toggle('trigger-running', state === "running")
+            // Entry animations for specific state transitions
+            if (prevState !== state) {
+                if (state === "completed") {
+                    btn.classList.add('trigger-flash')
+                    btn.addEventListener('animationend', () => btn.classList.remove('trigger-flash'), { once: true })
+                } else if (state === "stuck") {
+                    btn.classList.add('trigger-shake')
+                    btn.addEventListener('animationend', () => btn.classList.remove('trigger-shake'), { once: true })
+                }
+            }
+            this._prevLoopState = state
 
             // Tooltip: state + action hint
             let tooltip = stateLabel

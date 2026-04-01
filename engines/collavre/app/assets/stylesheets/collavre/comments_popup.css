@@ -1428,7 +1428,8 @@ body.chat-fullscreen {
     border-color: var(--color-secondary-active);
 }
 
-/* Drop trigger toggle button */
+/* Drop trigger toggle button — base layout
+ * State-specific styles are in trigger_status.css */
 .drop-trigger-toggle-btn {
     font-size: 0.75em;
     padding: 0.15em 0.4em;
@@ -1436,24 +1437,11 @@ body.chat-fullscreen {
     background: none;
     border: 1px solid transparent;
     cursor: pointer;
-    transition: all 0.2s;
     white-space: nowrap;
 }
 
 .drop-trigger-toggle-btn:hover {
     background: var(--color-secondary-background);
-}
-
-.drop-trigger-toggle-btn.drop-trigger-active {
-    background: color-mix(in srgb, var(--color-warning) 20%, transparent);
-    color: var(--color-warning);
-    border-color: var(--color-warning);
-}
-
-.drop-trigger-toggle-btn.drop-trigger-active svg {
-    stroke: var(--color-warning);
-    fill: var(--color-warning);
-    fill-opacity: 0.2;
 }
 
 .comment-topics-list {
