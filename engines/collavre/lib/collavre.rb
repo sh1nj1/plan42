@@ -3,6 +3,7 @@ require "collavre/configuration"
 require "collavre/engine"
 require "collavre/user_extensions"
 require "collavre/integration_registry"
+require "collavre/view_extensions"
 require "navigation/registry"
 
 module Collavre

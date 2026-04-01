@@ -1,13 +1,12 @@
 require_relative "../application_system_test_case"
 
 # Integration test: verify collavre core works when CollavrePlan engine is not loaded.
-# Temporarily hides the CollavrePlan constant and unregisters its navigation items
-# to simulate an environment without the plan engine.
+# Temporarily hides the CollavrePlan constant, unregisters navigation items,
+# and clears ViewExtensions slots to simulate an environment without the plan engine.
 #
 # Note: Routes are compiled at boot, so we can't fully unmount the engine mid-test.
-# Instead we remove the constant (so `defined?(CollavrePlan)` returns nil in views)
-# and unregister navigation items. Sign-in must happen BEFORE const removal since
-# removing CollavrePlan breaks Rails' lazy route set resolution.
+# Sign-in must happen BEFORE const removal since removing CollavrePlan breaks
+# Rails' lazy route set resolution.
 class WithoutPlanEngineTest < ApplicationSystemTestCase
   setup do
     @user = User.create!(
@@ -22,6 +21,12 @@ class WithoutPlanEngineTest < ApplicationSystemTestCase
     resize_window_to
     sign_in_via_ui(@user)
 
+    # Save ViewExtensions state before clearing
+    @saved_extensions = {}
+    %i[creative_toolbar creative_modals navigation_panels].each do |slot|
+      @saved_extensions[slot] = Collavre::ViewExtensions.for_slot(slot)
+    end
+
     # Now hide CollavrePlan to simulate it not being loaded
     @original_const = CollavrePlan
     Object.send(:remove_const, :CollavrePlan)
@@ -30,6 +35,9 @@ class WithoutPlanEngineTest < ApplicationSystemTestCase
     @registry = Navigation::Registry.instance
     @registry.unregister(:plans)
     @registry.unregister(:mobile_plans)
+
+    # Clear plan extension slots
+    Collavre::ViewExtensions.reset!
   end
 
   teardown do
@@ -56,6 +64,11 @@ class WithoutPlanEngineTest < ApplicationSystemTestCase
       requires_auth: true,
       mobile: false
     )
+
+    # Restore ViewExtensions
+    @saved_extensions&.each do |slot, entries|
+      entries.each { |entry| Collavre::ViewExtensions.register(slot, **entry) }
+    end
   end
 
   test "creatives page loads without plan engine" do

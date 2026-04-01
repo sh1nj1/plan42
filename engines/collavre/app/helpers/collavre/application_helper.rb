@@ -101,6 +101,45 @@ module Collavre
 
     public
 
+    # Render all partials registered for a named extension slot.
+    # Engines register their partials via Collavre::ViewExtensions.register.
+    # Returns empty string if no partials are registered for the slot.
+    #
+    #   <%= render_extension_slot(:creative_toolbar) %>
+    #   <%= render_extension_slot(:creative_modals, parent_creative: @parent_creative) %>
+    #
+    def render_extension_slot(slot, **locals)
+      entries = Collavre::ViewExtensions.for_slot(slot)
+      return "".html_safe if entries.empty? # rubocop:disable Rails/OutputSafety
+
+      safe_join(entries.map { |entry| render(partial: entry[:partial], locals: locals) })
+    end
+
+    # Render a label-type-specific partial if one exists.
+    # Engines provide partials at collavre/labels/_{type_underscore}_{suffix}.html.erb
+    # Falls back to nil when no matching partial is found.
+    #
+    #   <%= render_label_extra(label, parent_creative: @parent_creative) %>
+    #   <%= render_label_suffix(label) %>
+    #
+    def render_label_extra(label, **locals)
+      return nil if label.type.blank?
+
+      partial = "collavre/labels/#{label.type.underscore}_extra"
+      render(partial: partial, locals: locals.merge(label: label))
+    rescue ActionView::MissingTemplate
+      nil
+    end
+
+    def render_label_suffix(label)
+      return nil if label.type.blank?
+
+      partial = "collavre/labels/#{label.type.underscore}_suffix"
+      render(partial: partial, locals: { label: label })
+    rescue ActionView::MissingTemplate
+      nil
+    end
+
     # Maps semantic token names to their legacy alias names.
     # When custom themes inject semantic tokens on <body>, the legacy aliases
     # defined on :root still resolve to :root's light values. This map lets

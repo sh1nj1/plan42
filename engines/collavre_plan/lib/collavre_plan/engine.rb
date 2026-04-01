@@ -19,8 +19,9 @@ module CollavrePlan
     # Load locale files
     config.i18n.load_path += Dir[root.join("config", "locales", "*.yml")]
 
-    # Auto-mount engine routes into the Collavre engine's namespace
-    # Plans routes were previously in collavre core; mount at "/" to keep same paths
+    # Auto-mount engine routes at "/" to preserve existing URL paths (/plans, /creative_plan).
+    # Unlike slack/notion/github engines which have their own URL namespace, Plan routes
+    # don't conflict with core routes and are tightly integrated into the creatives UI.
     initializer "collavre_plan.routes", before: :add_routing_paths do |app|
       app.routes.append do
         mount CollavrePlan::Engine => "/", as: :collavre_plan_engine
@@ -61,6 +62,25 @@ module CollavrePlan
           requires_auth: true,
           mobile: false
         )
+      end
+    end
+
+    # Register Plan view extensions into core's extension slots
+    initializer "collavre_plan.view_extensions", after: "collavre.navigation_reset" do
+      Rails.application.config.to_prepare do
+        next unless defined?(Collavre::ViewExtensions)
+
+        # Set Plan button in creative toolbar (select mode)
+        Collavre::ViewExtensions.register(:creative_toolbar,
+          partial: "collavre_plan/creatives/set_plan_button")
+
+        # Set Plan modal in creative modals area
+        Collavre::ViewExtensions.register(:creative_modals,
+          partial: "collavre/creatives/set_plan_modal")
+
+        # Plans timeline panel in navigation panels
+        Collavre::ViewExtensions.register(:navigation_panels,
+          partial: "collavre_plan/shared/navigation/panels")
       end
     end
   end
