@@ -194,7 +194,10 @@ if (!plansTimelineScriptInitialized) {
       var dateStr = centerDate.toISOString().slice(0, 10);
       if (container.dataset.lastLoadedDate === dateStr) return;
       container.dataset.lastLoadedDate = dateStr;
-      fetch('/plans.json?date=' + dateStr)
+      var listArea = document.getElementById('plans-list-area')
+      var basePlansUrl = (listArea && listArea.dataset.plansUrl) || '/plans.json'
+      var separator = basePlansUrl.indexOf('?') >= 0 ? '&' : '?'
+      fetch(basePlansUrl + separator + 'date=' + dateStr)
         .then(function (r) { return r.json(); })
         .then(function (newPlans) {
           plans = newPlans.map(function (p) {

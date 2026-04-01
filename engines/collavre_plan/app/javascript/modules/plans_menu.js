@@ -28,7 +28,8 @@ function initPlansMenu() {
           notifyPopupOpen(POPUP_ID)
           area.style.display = 'block'
           if (!loaded) {
-            fetch('/plans.json')
+            const plansUrl = area.dataset.plansUrl || '/plans.json'
+            fetch(plansUrl)
               .then(function(r) { return r.json() })
               .then(function(plans) {
                 if (timeline) { timeline.dataset.plans = JSON.stringify(plans) }

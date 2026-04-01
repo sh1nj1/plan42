@@ -59,6 +59,8 @@ module CollavrePlan
 
     def destroy
       @plan = Collavre::Plan.find(params[:id])
+      return render_forbidden unless plan_editable_by_current_user?
+
       @plan.destroy
       respond_to do |format|
         format.html do

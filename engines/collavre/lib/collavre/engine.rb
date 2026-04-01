@@ -97,6 +97,7 @@ module Collavre
     initializer "collavre.navigation_reset" do
       ActiveSupport::Reloader.to_prepare(prepend: true) do
         Navigation::Registry.instance.reset!
+        Collavre::ViewExtensions.reset!
       end
     end
 
