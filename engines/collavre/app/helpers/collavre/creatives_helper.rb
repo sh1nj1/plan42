@@ -5,7 +5,7 @@ module Collavre
 
       index = 0
       safe_join(labels.map do |label|
-        suffix = " 🗓#{label.target_date}" if label.type == "Plan" and !name_only
+        suffix = name_only ? nil : render_label_suffix(label)
         index += 1
         content_tag(:span, class: "tag") do
           safe_join([

@@ -1,4 +1,11 @@
 PATH
+  remote: engines/collavre_plan
+  specs:
+    collavre_plan (0.1.0)
+      collavre
+      rails (>= 8.0)
+
+PATH
   remote: engines/collavre_completion_api
   specs:
     collavre_completion_api (0.2.0)
@@ -703,6 +710,7 @@ DEPENDENCIES
   collavre_github!
   collavre_notion!
   collavre_openclaw!
+  collavre_plan!
   collavre_slack!
   debug
   doorkeeper (~> 5.9)

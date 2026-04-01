@@ -37,8 +37,6 @@ Collavre::Engine.routes.draw do
     get :count, on: :collection
   end
 
-  resources :plans, only: [ :create, :destroy, :index, :update ]
-
   resources :user_themes, only: [ :index, :create, :destroy ] do
     member do
       post :apply
@@ -46,8 +44,6 @@ Collavre::Engine.routes.draw do
   end
 
   resources :creative_imports, only: [ :create ]
-  resource :creative_plan, only: [ :create, :destroy ], controller: "creative_plans"
-
   resources :creatives do
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]
     resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"

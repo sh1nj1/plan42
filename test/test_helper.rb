@@ -46,6 +46,11 @@ class ActionDispatch::IntegrationTest
   include IntegrationAuthHelper
   include Collavre::Engine.routes.url_helpers
 
+  # CollavrePlan engine routes — mounted at "/", paths are /plans, /creative_plan etc.
+  def collavre_plan_engine
+    CollavrePlan::Engine.routes.url_helpers
+  end
+
   # Helper to access main app routes when needed
   def main_app
     Rails.application.routes.url_helpers

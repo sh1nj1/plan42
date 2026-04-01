@@ -1,5 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 
+// Self-contained controller: attaches to the modal wrapper element
+// and listens for 'plan:open-modal' on document for cross-element communication.
 export default class extends Controller {
   static targets = ['modal', 'form', 'idsInput', 'planSelect']
   static values = {
@@ -7,11 +9,26 @@ export default class extends Controller {
     selectPlan: String,
   }
 
-  open(event) {
-    event.preventDefault()
+  connect() {
+    this._openHandler = () => this._open()
+    document.addEventListener('plan:open-modal', this._openHandler)
+  }
+
+  disconnect() {
+    document.removeEventListener('plan:open-modal', this._openHandler)
+  }
+
+  // Called via document event from the set-plan button
+  _open() {
     if (!this.hasModalTarget) return
     this.modalTarget.style.display = 'flex'
     document.body.classList.add('no-scroll')
+  }
+
+  // Can still be called via data-action for elements inside the controller scope
+  open(event) {
+    event.preventDefault()
+    this._open()
   }
 
   close(event) {

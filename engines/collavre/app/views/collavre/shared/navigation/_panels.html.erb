@@ -1,6 +1,4 @@
-<div id="plans-list-area" style="display:none;">
-  <%= render Collavre::PlansTimelineComponent.new(plans: Plan.none) %>
-</div>
+<%= render_extension_slot(:navigation_panels) %>
 
 <div id="creative-guide-popover" style="display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%); background:white; border:1px solid var(--color-border); box-shadow:0 2px 8px rgba(0,0,0,0.12); padding:1.2em; max-width:400px; z-index:1000; border-radius:8px;">
   <button type="button" id="close-creative-guide" class="popup-close-btn">&times;</button>

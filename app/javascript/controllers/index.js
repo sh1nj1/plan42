@@ -4,6 +4,9 @@ import { application } from "./application"
 import { registerControllers } from "collavre/controllers"
 registerControllers(application)
 
+import { registerControllers as registerPlanControllers } from "collavre_plan/controllers"
+registerPlanControllers(application)
+
 // Host app specific controllers
 import AvatarPreviewController from "./avatar_preview_controller"
 application.register("avatar-preview", AvatarPreviewController)

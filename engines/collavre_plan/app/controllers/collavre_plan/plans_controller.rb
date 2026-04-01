@@ -1,4 +1,4 @@
-module Collavre
+module CollavrePlan
   class PlansController < ApplicationController
     def index
       center = if params[:date].present?
@@ -8,11 +8,11 @@ module Collavre
       end
       start_date = center - 30
       end_date = center + 30
-      @plans = Plan.joins(:creative)
+      @plans = Collavre::Plan.joins(:creative)
                    .where("target_date >= ? AND DATE(creatives.created_at) <= ?", start_date, end_date)
                    .order(Arel.sql("DATE(creatives.created_at) ASC"))
                    .select { |plan| plan.readable_by?(Current.user) }
-      calendar_scope = CalendarEvent.includes(:creative)
+      calendar_scope = Collavre::CalendarEvent.includes(:creative)
                                     .where("DATE(start_time) <= ? AND DATE(end_time) >= ?", end_date, start_date)
                                     .order(:start_time)
       events_in_scope = calendar_scope.to_a
@@ -22,7 +22,7 @@ module Collavre
       @calendar_events = (own_events + shared_events).uniq.sort_by(&:start_time)
       respond_to do |format|
         format.html do
-          render html: render_to_string(PlansTimelineComponent.new(plans: @plans, calendar_events: @calendar_events), layout: false)
+          render html: render_to_string(Collavre::PlansTimelineComponent.new(plans: @plans, calendar_events: @calendar_events), layout: false)
         end
         format.json do
           plan_jsons = @plans.map { |p| plan_json(p) }
@@ -31,8 +31,9 @@ module Collavre
         end
       end
     end
+
     def create
-      @plan = Plan.new(plan_params)
+      @plan = Collavre::Plan.new(plan_params)
       @plan.owner = Current.user
       if @plan.save
         respond_to do |format|
@@ -57,7 +58,9 @@ module Collavre
     end
 
     def destroy
-      @plan = Plan.find(params[:id])
+      @plan = Collavre::Plan.find(params[:id])
+      return render_forbidden unless plan_editable_by_current_user?
+
       @plan.destroy
       respond_to do |format|
         format.html do
@@ -69,7 +72,7 @@ module Collavre
     end
 
     def update
-      @plan = Plan.find(params[:id])
+      @plan = Collavre::Plan.find(params[:id])
       return render_forbidden unless plan_editable_by_current_user?
 
       if @plan.update(plan_update_params)
@@ -109,7 +112,7 @@ module Collavre
       return true if @plan.owner_id == Current.user&.id
       return true if @plan.creative&.has_permission?(Current.user, :write)
 
-      tagged_creative = Creative.find_by(id: params[:creative_id])
+      tagged_creative = Collavre::Creative.find_by(id: params[:creative_id])
       return false unless tagged_creative
       return false unless @plan.tags.exists?(creative_id: tagged_creative.id)
 
@@ -148,18 +151,19 @@ module Collavre
         created_at: event.start_time.to_date,
         target_date: event.end_time.to_date,
         progress: event.creative&.progress || 0,
-        path: event.creative ? creative_path(event.creative) : event.html_link,
+        path: event.creative ? Collavre::Engine.routes.url_helpers.creative_path(event.creative) : event.html_link,
         deletable: event.user_id == Current.user&.id
       }
     end
 
     def plan_creatives_path(plan, creative_id: nil)
+      collavre_routes = Collavre::Engine.routes.url_helpers
       if creative_id.present?
-        creative_path(creative_id, tags: [ plan.id ])
+        collavre_routes.creative_path(creative_id, tags: [ plan.id ])
       elsif params[:id].present?
-        creative_path(params[:id], tags: [ plan.id ])
+        collavre_routes.creative_path(params[:id], tags: [ plan.id ])
       else
-        creatives_path(tags: [ plan.id ])
+        collavre_routes.creatives_path(tags: [ plan.id ])
       end
     end
   end
