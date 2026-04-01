@@ -153,7 +153,9 @@ export default class extends Controller {
       return
     }
 
-    requestAnimationFrame(() => this.textareaTarget.focus())
+    if (this.shouldAutoFocusOnOpen()) {
+      requestAnimationFrame(() => this.textareaTarget.focus())
+    }
   }
 
   onSelectionChanged({ size, moving }) {
