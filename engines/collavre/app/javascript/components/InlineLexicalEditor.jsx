@@ -274,25 +274,25 @@ function CodeHighlightingPlugin() {
 }
 
 const EDITOR_TEXT_TOKENS = [
-  { token: "var(--editor-text-default)", label: "Default" },
-  { token: "var(--editor-text-gray)", label: "Gray" },
-  { token: "var(--editor-text-red)", label: "Red" },
-  { token: "var(--editor-text-orange)", label: "Orange" },
-  { token: "var(--editor-text-green)", label: "Green" },
-  { token: "var(--editor-text-blue)", label: "Blue" },
-  { token: "var(--editor-text-purple)", label: "Purple" },
-  { token: "var(--editor-text-pink)", label: "Pink" }
+  { token: "var(--text-primary)", label: "Primary" },
+  { token: "var(--text-muted)", label: "Muted" },
+  { token: "var(--color-danger)", label: "Danger" },
+  { token: "var(--color-warning)", label: "Warning" },
+  { token: "var(--color-brand)", label: "Brand" },
+  { token: "var(--color-link)", label: "Link" },
+  { token: "var(--color-accent-text)", label: "Accent" },
+  { token: "var(--color-code-text)", label: "Code" }
 ]
 
 const EDITOR_BG_TOKENS = [
-  { token: "var(--editor-bg-default)", label: "Default" },
-  { token: "var(--editor-bg-gray)", label: "Gray" },
-  { token: "var(--editor-bg-red)", label: "Red" },
-  { token: "var(--editor-bg-orange)", label: "Orange" },
-  { token: "var(--editor-bg-green)", label: "Green" },
-  { token: "var(--editor-bg-blue)", label: "Blue" },
-  { token: "var(--editor-bg-purple)", label: "Purple" },
-  { token: "var(--editor-bg-pink)", label: "Pink" }
+  { token: "var(--surface-bg)", label: "Background" },
+  { token: "var(--color-highlight)", label: "Highlight" },
+  { token: "var(--color-brand)", label: "Brand" },
+  { token: "var(--color-accent-border)", label: "Accent" },
+  { token: "var(--color-danger)", label: "Danger" },
+  { token: "var(--color-warning)", label: "Warning" },
+  { token: "var(--color-code-bg)", label: "Code" },
+  { token: "var(--surface-hover)", label: "Hover" }
 ]
 
 function resolveColorForInput(color) {

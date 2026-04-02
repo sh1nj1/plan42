@@ -208,33 +208,6 @@
   /* -- Layout -- */
   --max-width: 960px;                /* content max width */
   --paragraph-space: 0.75rem;        /* gap between paragraphs */
-
-  /* ============================================================================
-   * EDITOR COLOR PALETTE
-   * Token colors for the Lexical rich-text editor color pickers.
-   * Using var(--editor-text-*) / var(--editor-bg-*) in inline styles makes
-   * the colors theme-responsive (light ↔ dark).
-   * ============================================================================ */
-
-  /* -- Editor text colors -- */
-  --editor-text-default: #202123;
-  --editor-text-gray: #787878;
-  --editor-text-red: #c4342d;
-  --editor-text-orange: #c07415;
-  --editor-text-green: #2d8a4e;
-  --editor-text-blue: #2563eb;
-  --editor-text-purple: #7c3aed;
-  --editor-text-pink: #c026d3;
-
-  /* -- Editor background colors -- */
-  --editor-bg-default: transparent;
-  --editor-bg-gray: #ededed;
-  --editor-bg-red: #fde8e8;
-  --editor-bg-orange: #fef3c7;
-  --editor-bg-green: #d1fae5;
-  --editor-bg-blue: #dbeafe;
-  --editor-bg-purple: #ede9fe;
-  --editor-bg-pink: #fce7f3;
 }
 
 /* ============================================================================
@@ -296,25 +269,6 @@ body.dark-mode {
   /* -- Effects -- */
   --hover-brightness: 110%;
 
-  /* -- Editor text colors (dark) -- */
-  --editor-text-default: #eaeaea;
-  --editor-text-gray: #999999;
-  --editor-text-red: #f87171;
-  --editor-text-orange: #fbbf24;
-  --editor-text-green: #34d399;
-  --editor-text-blue: #60a5fa;
-  --editor-text-purple: #a78bfa;
-  --editor-text-pink: #f472b6;
-
-  /* -- Editor background colors (dark) -- */
-  --editor-bg-default: transparent;
-  --editor-bg-gray: #3a3a3a;
-  --editor-bg-red: #4c1d1d;
-  --editor-bg-orange: #4a3520;
-  --editor-bg-green: #1a3a2a;
-  --editor-bg-blue: #1e2d4a;
-  --editor-bg-purple: #2e1f4a;
-  --editor-bg-pink: #4a1d3a;
 }
 
 /* ============================================================================
@@ -361,26 +315,6 @@ body.dark-mode {
     --border-drag-edge: #777777;
 
     --hover-brightness: 110%;
-
-    /* -- Editor text colors (system dark) -- */
-    --editor-text-default: #eaeaea;
-    --editor-text-gray: #999999;
-    --editor-text-red: #f87171;
-    --editor-text-orange: #fbbf24;
-    --editor-text-green: #34d399;
-    --editor-text-blue: #60a5fa;
-    --editor-text-purple: #a78bfa;
-    --editor-text-pink: #f472b6;
-
-    /* -- Editor background colors (system dark) -- */
-    --editor-bg-default: transparent;
-    --editor-bg-gray: #3a3a3a;
-    --editor-bg-red: #4c1d1d;
-    --editor-bg-orange: #4a3520;
-    --editor-bg-green: #1a3a2a;
-    --editor-bg-blue: #1e2d4a;
-    --editor-bg-purple: #2e1f4a;
-    --editor-bg-pink: #4a1d3a;
 
     /* Legacy aliases — must be redefined here so var() resolves against
        the dark semantic tokens above, not :root's light values. */
