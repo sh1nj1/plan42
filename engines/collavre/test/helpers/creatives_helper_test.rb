@@ -250,46 +250,6 @@ class CreativesHelperTest < ActionView::TestCase
     end
   end
 
-  test "render_creative_tree_markdown renders leaf creatives as plain text not headings" do
-    user = users(:one)
-
-    # A > B > B1, B2 and A > C
-    root_a = Collavre::Creative.create!(description: "A", user: user)
-    child_b = Collavre::Creative.create!(description: "B", parent: root_a, user: user)
-    Collavre::Creative.create!(description: "B1", parent: child_b, user: user)
-    Collavre::Creative.create!(description: "B2", parent: child_b, user: user)
-    Collavre::Creative.create!(description: "C", parent: root_a, user: user)
-
-    Current.set(user: user) do
-      md = render_creative_tree_markdown([ root_a ])
-
-      # A has children → heading
-      assert_match(/^# A$/, md)
-      # B has children → heading
-      assert_match(/^## B$/, md)
-      # B1, B2, C have no children → plain text (no heading prefix)
-      assert_match(/^B1$/, md)
-      assert_match(/^B2$/, md)
-      assert_match(/^C$/, md)
-      # Must NOT have ### for leaf nodes
-      assert_no_match(/^### /, md)
-    end
-  end
-
-  test "render_creative_tree_markdown renders single root without children as plain text" do
-    user = users(:one)
-
-    root = Collavre::Creative.create!(description: "Solo", user: user)
-
-    Current.set(user: user) do
-      md = render_creative_tree_markdown([ root ])
-
-      # Solo has no children → plain text
-      assert_match(/^Solo$/, md)
-      assert_no_match(/^# Solo$/, md)
-    end
-  end
-
   test "render_creative_tree_markdown without max_depth includes all levels" do
     user = users(:one)
 

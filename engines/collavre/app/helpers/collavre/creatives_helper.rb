@@ -144,9 +144,6 @@ module Collavre
         cleaned_markdown = markdown_content.strip
         rendered_table_block = false
 
-        children = creative.linked_children
-        has_children = children.present? && (max_depth.nil? || level < max_depth)
-
         table_match = cleaned_markdown.match(/^<div[^>]*>\s*<div[^>]*>\s*(\|.*?\|(?:\n\|.*?\|)*)\s*<\/div>\s*<\/div>$/m)
         if level <= 4 && table_match
           table_content = table_match[1].strip
@@ -157,28 +154,24 @@ module Collavre
         elsif level <= 4 && MarkdownConverter.table_block?(cleaned_markdown)
           md += "#{cleaned_markdown}\n\n"
           rendered_table_block = true
-        elsif level <= 4 && has_children
+        elsif level <= 4
           md += "#{'#' * level} #{ActionView::Base.full_sanitizer.sanitize(markdown_content).strip}\n\n"
         else
-          plain_text = ActionView::Base.full_sanitizer.sanitize(markdown_content).strip
-          if level <= 4
-            md += "#{plain_text}\n\n"
-          else
-            inner_html = begin
-              fragment = Nokogiri::HTML.fragment(raw_html)
-              wrapper = fragment.at_css("div.trix-content")
-              if wrapper
-                wrapper.inner_html.strip
-              else
-                plain_text
-              end
+          inner_html = begin
+            fragment = Nokogiri::HTML.fragment(raw_html)
+            wrapper = fragment.at_css("div.trix-content")
+            if wrapper
+              wrapper.inner_html.strip
+            else
+              ActionView::Base.full_sanitizer.sanitize(markdown_content).strip
             end
-            inner = ActionView::Base.full_sanitizer.sanitize(inner_html)
-            indent = "  " * (level - 5)
-            md += "#{indent}* #{inner}\n"
           end
+          inner = ActionView::Base.full_sanitizer.sanitize(inner_html)
+          indent = "  " * (level - 5)
+          md += "#{indent}* #{inner}\n"
         end
-        if has_children
+        children = creative.linked_children
+        if children.present? && (max_depth.nil? || level < max_depth)
           md += render_creative_tree_markdown(children, level + 1, with_progress, max_depth: max_depth)
         end
         md += "\n" if level <= 4 && !rendered_table_block
