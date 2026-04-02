@@ -621,6 +621,11 @@ creative-tree-row.chat-active .creative-row {
     font-size: 1.4em;
 }
 
+/* ── Title text: larger than default h1 ── */
+.creative-tree-title .page-title {
+    font-size: var(--text-5, 2rem);
+}
+
 
 /* Constrain images within creative-row to prevent overflow */
 .creative-row img {
