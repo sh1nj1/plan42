@@ -14,6 +14,7 @@ export default class extends Controller {
     this.currentPresentIds = []
     this.typingUsers = {}
     this.typingTimers = {}
+    this.activeAgentTasks = {} // agent_id -> { name, taskId }
     this.manualTypingMessage = null
     this.presenceSubscription = null
     this.typingTimeoutHandle = null
@@ -199,23 +200,33 @@ export default class extends Controller {
       return
     }
     if (data.agent_status) {
-      const { id, name, status, creative_id: agentCreativeId } = data.agent_status
+      const { id, name, status, task_id: taskId, creative_id: agentCreativeId } = data.agent_status
       // Only show typing indicator if agent is working on this specific creative
       if (agentCreativeId && agentCreativeId !== this.creativeId) {
         return
       }
       if (status === 'thinking' || status === 'streaming') {
         this.typingUsers[id] = name
+        if (taskId) {
+          this.activeAgentTasks[id] = { name, taskId }
+          // Expose for comment_controller to read
+          if (!window._activeAgentTasks) window._activeAgentTasks = {}
+          window._activeAgentTasks[id] = { name, taskId, creativeId: this.creativeId }
+        }
         // Safety timeout: auto-remove if no heartbeat within AGENT_STATUS_TIMEOUT
         if (!this.agentStatusTimers) this.agentStatusTimers = {}
         if (this.agentStatusTimers[id]) clearTimeout(this.agentStatusTimers[id])
         this.agentStatusTimers[id] = setTimeout(() => {
           delete this.typingUsers[id]
+          delete this.activeAgentTasks[id]
           delete this.agentStatusTimers[id]
+          if (window._activeAgentTasks) delete window._activeAgentTasks[id]
           this.renderTypingIndicator()
         }, AGENT_STATUS_TIMEOUT)
       } else {
         delete this.typingUsers[id]
+        delete this.activeAgentTasks[id]
+        if (window._activeAgentTasks) delete window._activeAgentTasks[id]
         if (this.agentStatusTimers?.[id]) {
           clearTimeout(this.agentStatusTimers[id])
           delete this.agentStatusTimers[id]
@@ -353,6 +364,51 @@ export default class extends Controller {
     const text = document.createElement('span')
     text.textContent = `${names.join(', ')} ...`
     this.typingIndicatorTarget.appendChild(text)
+
+    // Add stop button if any agent has an active task
+    const agentIds = ids.filter((id) => this.activeAgentTasks[id])
+    if (agentIds.length > 0) {
+      const stopBtn = document.createElement('button')
+      stopBtn.type = 'button'
+      stopBtn.className = 'stop-generating-btn'
+      stopBtn.textContent = this.element.dataset.stopGeneratingText || '■'
+      stopBtn.title = this.element.dataset.stopGeneratingText || 'Stop'
+      stopBtn.addEventListener('click', (e) => {
+        e.preventDefault()
+        agentIds.forEach((agentId) => this._cancelAgentTask(agentId))
+      })
+      this.typingIndicatorTarget.appendChild(stopBtn)
+    }
+  }
+
+  _cancelAgentTask(agentId) {
+    const agentInfo = this.activeAgentTasks[agentId]
+    if (!agentInfo || !this.creativeId) return
+
+    const { taskId } = agentInfo
+    const url = `/creatives/${this.creativeId}/comments/cancel_task`
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': document.querySelector('meta[name=csrf-token]')?.content || '',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ task_id: taskId }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          return response.json().then((data) => {
+            console.error('Cancel task failed:', data.error)
+          })
+        }
+        // Clean up immediately on success (broadcast will also arrive)
+        delete this.typingUsers[agentId]
+        delete this.activeAgentTasks[agentId]
+        if (window._activeAgentTasks) delete window._activeAgentTasks[agentId]
+        this.renderTypingIndicator()
+      })
+      .catch((error) => console.error('Cancel task error:', error))
   }
 
   clearTypingTimers() {

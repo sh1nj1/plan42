@@ -1682,6 +1682,52 @@ body.chat-fullscreen {
     50% { opacity: 0; }
 }
 
+/* Stop generating button on streaming comments */
+.comment-stop-btn {
+    background: var(--surface-btn);
+    color: var(--text-on-btn);
+    border: none;
+    border-radius: var(--radius-round);
+    width: 22px;
+    height: 22px;
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.8;
+    transition: opacity 0.15s;
+}
+
+.comment-stop-btn:hover {
+    opacity: 1;
+}
+
+/* Stop button in typing indicator */
+.stop-generating-btn {
+    background: var(--surface-btn);
+    color: var(--text-on-btn);
+    border: none;
+    border-radius: var(--radius-round);
+    width: 20px;
+    height: 20px;
+    font-size: 9px;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.4em;
+    opacity: 0.8;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+
+.stop-generating-btn:hover {
+    opacity: 1;
+}
+
 .review-hint {
     background: var(--surface-btn);
     color: var(--text-on-btn);

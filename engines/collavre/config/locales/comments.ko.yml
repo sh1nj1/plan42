@@ -72,6 +72,8 @@ ko:
       voice_stop: 중지
       speech_unavailable: 이 브라우저는 음성 인식을 지원하지 않습니다.
       move_button: 이동
+      stop_generating: 중지
+      cancel_task_error: 작업을 중지할 수 없습니다.
       review_button: 리뷰
       review_select_hint: 리뷰할 텍스트를 선택해 주세요
       review_feedback_placeholder: 이 인용에 대한 피드백을 입력하세요...

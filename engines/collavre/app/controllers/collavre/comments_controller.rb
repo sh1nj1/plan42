@@ -290,6 +290,39 @@ module Collavre
       render json: CommandMenuService.new(user: Current.user).items
     end
 
+    def cancel_task
+      unless @creative.has_permission?(Current.user, :feedback)
+        render json: { error: I18n.t("collavre.comments.no_permission") }, status: :forbidden and return
+      end
+
+      task = Task.find_by(id: params[:task_id])
+      unless task
+        render json: { error: "Task not found" }, status: :not_found and return
+      end
+
+      task_creative_id = task.trigger_event_payload&.dig("creative", "id")
+      unless task_creative_id == @creative.id
+        render json: { error: "Task does not belong to this creative" }, status: :forbidden and return
+      end
+
+      unless %w[running pending queued].include?(task.status)
+        render json: { error: "Task is not cancellable" }, status: :unprocessable_entity and return
+      end
+
+      task.update!(status: "cancelled")
+
+      CommentsPresenceChannel.broadcast_agent_status(
+        @creative.id,
+        status: "idle",
+        agent_id: task.agent_id,
+        agent_name: task.agent.display_name,
+        task_id: task.id,
+        source_creative_id: task_creative_id
+      )
+
+      render json: { success: true }
+    end
+
     def download_images
       images = @comment.images
       unless images.attached?

@@ -84,6 +84,7 @@ Collavre::Engine.routes.draw do
         delete :batch_destroy
         post :merge
         get :commands
+        post :cancel_task
 
         resources :snapshots, only: [ :index ], module: :comments do
           member do

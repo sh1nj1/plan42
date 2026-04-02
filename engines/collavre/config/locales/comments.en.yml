@@ -75,6 +75,8 @@ en:
       voice_stop: Stop
       speech_unavailable: Speech recognition is not supported in this browser.
       move_button: Move
+      stop_generating: Stop
+      cancel_task_error: Unable to stop the task.
       review_button: Review
       review_select_hint: Please select text to review
       review_feedback_placeholder: Write feedback for this quote...

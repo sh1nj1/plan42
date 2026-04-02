@@ -52,6 +52,55 @@ export default class extends Controller {
     return this._isStreaming || this._serverStreaming
   }
 
+  _showStopButton() {
+    // Only show if not already present
+    if (this.element.querySelector('.comment-stop-btn')) return
+
+    const actionContainer = this.element.querySelector('.comment-action-container')
+    if (!actionContainer) return
+
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'comment-stop-btn'
+    btn.textContent = '■'
+    btn.title = this.element.dataset.stopGeneratingText || 'Stop'
+    btn.addEventListener('click', (e) => {
+      e.preventDefault()
+      this._cancelTask()
+    })
+    actionContainer.prepend(btn)
+  }
+
+  _hideStopButton() {
+    const btn = this.element.querySelector('.comment-stop-btn')
+    if (btn) btn.remove()
+  }
+
+  _cancelTask() {
+    const userId = this.element.dataset.userId
+    const creativeId = this.element.dataset.creativeId
+    if (!userId || !creativeId) return
+
+    // Find task ID from global active agent tasks (set by presence_controller)
+    const agentInfo = window._activeAgentTasks?.[userId]
+    if (!agentInfo?.taskId) return
+
+    const url = `/creatives/${creativeId}/comments/cancel_task`
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': document.querySelector('meta[name=csrf-token]')?.content || '',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ task_id: agentInfo.taskId }),
+    })
+      .then((response) => {
+        if (response.ok) this._hideStopButton()
+      })
+      .catch((error) => console.error('Cancel task error:', error))
+  }
+
   _appendStreamingCursor(el) {
     const cursor = document.createElement('span')
     cursor.className = 'streaming-cursor'
@@ -87,6 +136,7 @@ export default class extends Controller {
       clearTimeout(this._streamingTimeout)
       this._streamingTimeout = null
     }
+    this._hideStopButton()
   }
 
   connect() {
@@ -101,6 +151,7 @@ export default class extends Controller {
           this._isStreaming = true
           contentElement.innerHTML = '<span class="streaming-dots"><span>.</span><span>.</span><span>.</span></span>'
           contentElement.classList.add('streaming')
+          this._showStopButton()
         } else if (this._shouldStream(text)) {
           // Streaming content arrived — render markdown with cursor
           this._isStreaming = true
@@ -108,10 +159,12 @@ export default class extends Controller {
           this._appendStreamingCursor(contentElement)
           contentElement.classList.add('streaming')
           this._resetStreamingTimeout()
+          this._showStopButton()
         } else {
           contentElement.innerHTML = renderCommentMarkdown(text)
           contentElement.classList.remove('streaming')
           if (this._isStreaming) this._cleanupStreaming()
+          this._hideStopButton()
         }
         contentElement.dataset.rendered = 'true'
       } finally {
