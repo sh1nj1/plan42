@@ -1,3 +1,11 @@
+## v0.12.1 (2026-04-03)
+
+### Changes
+- 68ced1a9 feat: increase creative tree title font size to 2rem (#1117)
+- 8b13bbf0 Revert "feat: render leaf creatives as plain text in markdown export (#1116)"
+- a8df93d3 feat: render leaf creatives as plain text in markdown export (#1116)
+- 65b25ba0 fix: make badge a perfect circle (#1114)
+
 ## v0.12.0 (2026-04-02)
 
 ### Changes
