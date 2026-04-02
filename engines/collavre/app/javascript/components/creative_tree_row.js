@@ -83,6 +83,7 @@ class CreativeTreeRow extends LitElement {
         this._stopAnimation();
       }
     }
+
   }
 
   disconnectedCallback() {
