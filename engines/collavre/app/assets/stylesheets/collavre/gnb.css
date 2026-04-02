@@ -113,14 +113,17 @@ nav .popup-menu-item a:hover {
     background: var(--color-badge-bg, red);
     color: var(--color-badge-text, white);
     border-radius: var(--radius-round);
-    padding: 0 6px;
     font-size: var(--text-00);
     font-weight: var(--weight-6);
-    line-height: 1.4;
+    line-height: 1;
     margin-left: var(--space-1);
     display: none;
-    min-width: 1.2em;
-    text-align: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
 }
 
 /* Responsive visibility helpers */
