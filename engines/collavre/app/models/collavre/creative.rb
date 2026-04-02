@@ -54,7 +54,7 @@ module Collavre
       return existing if existing
 
       create!(
-        description: "Inbox",
+        description: I18n.t("collavre.inbox.default_name"),
         data: { "kind" => "inbox" },
         user: user,
         progress: 0.0

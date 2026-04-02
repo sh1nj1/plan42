@@ -1,4 +1,11 @@
 PATH
+  remote: engines/collavre_plan
+  specs:
+    collavre_plan (0.1.0)
+      collavre
+      rails (>= 8.0)
+
+PATH
   remote: engines/collavre_completion_api
   specs:
     collavre_completion_api (0.2.0)
@@ -29,13 +36,6 @@ PATH
       eventmachine (~> 1.2)
       faraday (>= 2.0)
       faye-websocket (~> 0.11)
-      rails (>= 8.0)
-
-PATH
-  remote: engines/collavre_plan
-  specs:
-    collavre_plan (0.1.0)
-      collavre
       rails (>= 8.0)
 
 PATH
