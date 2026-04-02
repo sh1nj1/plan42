@@ -120,10 +120,10 @@ nav .popup-menu-item a:hover {
     display: none;
     min-width: var(--space-3);
     height: var(--space-3);
-    padding: 0;
+    padding: 0 0.3em;
     align-items: center;
     justify-content: center;
-    aspect-ratio: 1;
+    box-sizing: border-box;
 }
 
 /* Responsive visibility helpers */
