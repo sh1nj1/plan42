@@ -286,13 +286,13 @@ const EDITOR_TEXT_TOKENS = [
 
 const EDITOR_BG_TOKENS = [
   { token: "var(--surface-bg)", label: "Background" },
-  { token: "var(--surface-input)", label: "Input" },
-  { token: "var(--surface-btn)", label: "Button" },
   { token: "var(--color-highlight)", label: "Highlight" },
+  { token: "var(--color-brand)", label: "Brand" },
+  { token: "var(--color-accent-border)", label: "Accent" },
+  { token: "var(--color-danger)", label: "Danger" },
+  { token: "var(--color-warning)", label: "Warning" },
   { token: "var(--color-code-bg)", label: "Code" },
-  { token: "var(--surface-hover)", label: "Hover" },
-  { token: "var(--border-color)", label: "Border" },
-  { token: "var(--color-active)", label: "Active" }
+  { token: "var(--surface-hover)", label: "Hover" }
 ]
 
 function resolveColorForInput(color) {
