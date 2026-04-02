@@ -1,5 +1,5 @@
 <% has_comments = count.positive? || show_zero %>
-<% display = has_comments ? 'inline-block' : 'none' %>
+<% display = has_comments ? 'inline-flex' : 'none' %>
 <span id="<%= badge_id %>" class="badge" style="display:<%= display %>" data-count="<%= count %>"
   data-controller="comment-badge" data-comment-badge-has-comments-value="<%= has_comments %>"
 ><%= count if has_comments %></span>

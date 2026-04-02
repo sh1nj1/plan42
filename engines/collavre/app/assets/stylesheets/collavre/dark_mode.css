@@ -251,14 +251,16 @@ input[type="datetime-local"]::-webkit-datetime-edit-minute-field {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.2em;
-  padding: 0.05em 0.35em;
+  min-width: var(--space-3);
+  height: var(--space-3);
+  padding: 0 0.3em;
   font-size: 0.65rem;
   font-weight: 600;
   line-height: 1;
   border-radius: var(--radius-round, 9999px);
   background: var(--color-badge-bg);
   color: var(--text-on-badge);
+  box-sizing: border-box;
 }
 
 .badge-success {
