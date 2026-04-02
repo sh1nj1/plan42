@@ -75,8 +75,14 @@ function handleCreated(creative) {
         targetContainer.style.display = ''
         if (targetContainer.dataset) targetContainer.dataset.expanded = 'true'
 
-        const newRow = createRow(creative)
-        insertAtCorrectPosition(newRow, creative, targetContainer)
+        // Adjust broadcast level (absolute) to relative level for the current view
+        const relativeLevel = computeRelativeLevel(creative)
+        const adjustedCreative = relativeLevel != null
+            ? { ...creative, level: relativeLevel }
+            : creative
+
+        const newRow = createRow(adjustedCreative)
+        insertAtCorrectPosition(newRow, adjustedCreative, targetContainer)
     }
     // If no targetContainer found, the creative is relevant but we can't determine
     // the exact insertion point — it will appear on next page load.
@@ -230,6 +236,25 @@ function findRowsForCreative(creativeId, originId) {
     return rows
 }
 
+// Compute the correct relative level for a creative based on its parent's DOM level.
+// The broadcast sends absolute level (ancestors.size + 1), but the tree view uses
+// relative levels starting at 1. Without this adjustment, broadcasts after drag & drop
+// on sub-pages would overwrite the relative level with the absolute level, causing
+// creatives to appear 1-3 levels deeper than expected.
+function computeRelativeLevel(creative) {
+    const parentId = creative.parent_id
+    if (!parentId) return 1 // root-level creative
+
+    const parentRow = document.querySelector(`creative-tree-row[creative-id="${parentId}"]`)
+    if (!parentRow) return null // parent not in DOM — cannot compute
+
+    // Title row's children start at level 1 (same as title), not level + 1
+    if (parentRow.hasAttribute('is-title')) return 1
+
+    const parentLevel = Number(parentRow.getAttribute('level') || parentRow.level || 1)
+    return parentLevel + 1
+}
+
 function handleUpdated(creative) {
     // Notify popup controllers about creative data changes (e.g. trigger state)
     // Must fire before the early return — popup may be open for a creative
@@ -241,6 +266,13 @@ function handleUpdated(creative) {
     const rows = findRowsForCreative(creative.id, creative.origin_id)
     if (rows.length === 0) return
 
+    // Adjust broadcast level (absolute) to relative level (based on parent's DOM level).
+    // This prevents the level from jumping when viewing sub-pages.
+    const relativeLevel = computeRelativeLevel(creative)
+    const adjustedCreative = relativeLevel != null
+        ? { ...creative, level: relativeLevel }
+        : creative
+
     // Find currently editing creative ID to skip it
     const editForm = document.querySelector('#inline-edit-form-element')
     const editingId = editForm?.dataset?.creativeId
@@ -248,11 +280,11 @@ function handleUpdated(creative) {
     rows.forEach(row => {
         if (String(creative.id) === String(editingId)) {
             if (creative.inline_editor_payload) {
-                row.dataset.pendingSyncData = JSON.stringify(creative)
+                row.dataset.pendingSyncData = JSON.stringify(adjustedCreative)
             }
             return
         }
-        applyRowProperties(row, creative)
+        applyRowProperties(row, adjustedCreative)
     })
 }
 
