@@ -331,7 +331,7 @@ creative-tree-row.show-edit .creative-row {
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    padding-top: 4px;
+    padding-top: 3px;
 }
 
 .progress-toggle-wrap .creative-progress-complete,
