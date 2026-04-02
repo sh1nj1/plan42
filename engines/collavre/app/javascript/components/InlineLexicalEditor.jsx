@@ -48,6 +48,7 @@ import FileUploadPlugin, {
 import { ImageNode } from "../lib/lexical/image_node"
 import { AttachmentNode } from "../lib/lexical/attachment_node"
 import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
+import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
 import { updateResponsiveImages } from "../lib/responsive_images"
 
@@ -956,6 +957,7 @@ function EditorInner({
           blobUrlTemplate={blobUrlTemplate}
         />
         <AttachmentCleanupPlugin deletedAttachmentsRef={deletedAttachmentsRef} />
+        <MarkdownShortcutsPlugin />
         {onEnterKey && <EnterKeyPlugin onEnterKey={onEnterKey} />}
       </div>
     </div>
