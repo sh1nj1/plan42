@@ -152,6 +152,8 @@ ko:
         submit: 제출
       slide_view:
         go_to_creative: 현재 크리에이티브로 이동
+    inbox:
+      default_name: 인박스
     creative_mailer:
       in_stock:
         subject: 좋은 소식!

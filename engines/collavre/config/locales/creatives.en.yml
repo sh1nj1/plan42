@@ -167,6 +167,8 @@ en:
         submit: Submit
       slide_view:
         go_to_creative: Go to Creative
+    inbox:
+      default_name: Inbox
     creative_mailer:
       in_stock:
         subject: Good news!
