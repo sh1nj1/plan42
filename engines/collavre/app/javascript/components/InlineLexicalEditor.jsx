@@ -273,10 +273,40 @@ function CodeHighlightingPlugin() {
   return null
 }
 
-function ToolbarColorPicker({ icon, title, color, onChange, onClear }) {
+const EDITOR_TEXT_TOKENS = [
+  { token: "var(--editor-text-default)", label: "Default" },
+  { token: "var(--editor-text-gray)", label: "Gray" },
+  { token: "var(--editor-text-red)", label: "Red" },
+  { token: "var(--editor-text-orange)", label: "Orange" },
+  { token: "var(--editor-text-green)", label: "Green" },
+  { token: "var(--editor-text-blue)", label: "Blue" },
+  { token: "var(--editor-text-purple)", label: "Purple" },
+  { token: "var(--editor-text-pink)", label: "Pink" }
+]
+
+const EDITOR_BG_TOKENS = [
+  { token: "var(--editor-bg-default)", label: "Default" },
+  { token: "var(--editor-bg-gray)", label: "Gray" },
+  { token: "var(--editor-bg-red)", label: "Red" },
+  { token: "var(--editor-bg-orange)", label: "Orange" },
+  { token: "var(--editor-bg-green)", label: "Green" },
+  { token: "var(--editor-bg-blue)", label: "Blue" },
+  { token: "var(--editor-bg-purple)", label: "Purple" },
+  { token: "var(--editor-bg-pink)", label: "Pink" }
+]
+
+function resolveColorForInput(color) {
+  if (!color || !color.startsWith("var(")) return color
+  const match = color.match(/^var\(([^)]+)\)$/)
+  if (!match) return color
+  return getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim() || color
+}
+
+function ToolbarColorPicker({ icon, title, color, onChange, onClear, colorType }) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef(null)
   const popoverRef = useRef(null)
+  const tokens = colorType === "background" ? EDITOR_BG_TOKENS : EDITOR_TEXT_TOKENS
 
   useEffect(() => {
     if (!open) return
@@ -294,6 +324,8 @@ function ToolbarColorPicker({ icon, title, color, onChange, onClear }) {
     return () => document.removeEventListener("mousedown", handleClick)
   }, [open])
 
+  const resolvedColor = resolveColorForInput(color)
+
   return (
     <div className="lexical-toolbar-color" title={title}>
       <button
@@ -306,20 +338,37 @@ function ToolbarColorPicker({ icon, title, color, onChange, onClear }) {
       </button>
       {open ? (
         <div className="lexical-toolbar-color__popover" ref={popoverRef}>
-          <input
-            type="color"
-            value={color}
-            onChange={(event) => onChange(event.target.value)}
-          />
-          <button
-            type="button"
-            className="lexical-toolbar-btn lexical-toolbar-btn--small"
-            onClick={() => {
-              onClear()
-              setOpen(false)
-            }}>
-            ✕
-          </button>
+          <div className="lexical-toolbar-color__tokens">
+            {tokens.map(({ token, label }) => (
+              <button
+                key={token}
+                type="button"
+                className={`lexical-toolbar-color__token-btn${color === token ? " active" : ""}`}
+                style={{ backgroundColor: token }}
+                title={label}
+                onClick={() => {
+                  onChange(token)
+                  setOpen(false)
+                }}
+              />
+            ))}
+          </div>
+          <div className="lexical-toolbar-color__custom-row">
+            <input
+              type="color"
+              value={resolvedColor.startsWith("#") ? resolvedColor : "#000000"}
+              onChange={(event) => onChange(event.target.value)}
+            />
+            <button
+              type="button"
+              className="lexical-toolbar-btn lexical-toolbar-btn--small"
+              onClick={() => {
+                onClear()
+                setOpen(false)
+              }}>
+              ✕
+            </button>
+          </div>
         </div>
       ) : null}
     </div>
@@ -696,6 +745,7 @@ function Toolbar() {
         icon="🎨"
         title="Text color"
         color={fontColor}
+        colorType="text"
         onChange={(value) => {
           setFontColor(value)
           applyTextStyle({ color: value })
@@ -709,6 +759,7 @@ function Toolbar() {
         icon="🖌️"
         title="Background color"
         color={bgColor}
+        colorType="background"
         onChange={(value) => {
           setBgColor(value)
           applyTextStyle({ "background-color": value })

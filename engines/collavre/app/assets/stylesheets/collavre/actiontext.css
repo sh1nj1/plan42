@@ -56,14 +56,48 @@
   top: calc(100% + 0.35rem);
   left: 0;
   z-index: 10;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.4rem 0.5rem;
-  background: var(--surface-bg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--surface-section);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-2);
   box-shadow: var(--shadow-3);
+  min-width: 180px;
+}
+
+.lexical-toolbar-color__tokens {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-1);
+}
+
+.lexical-toolbar-color__token-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s var(--ease-out-2);
+}
+
+.lexical-toolbar-color__token-btn:hover {
+  transform: scale(1.15);
+  border-color: var(--color-active);
+}
+
+.lexical-toolbar-color__token-btn.active {
+  box-shadow: 0 0 0 2px var(--color-active);
+}
+
+.lexical-toolbar-color__custom-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-top: 1px solid var(--border-color);
+  padding-top: var(--space-2);
 }
 
 .lexical-toolbar-color__popover input[type="color"] {
@@ -74,6 +108,7 @@
   height: var(--space-7);
   padding: 0;
   background: transparent;
+  flex-shrink: 0;
 }
 
 .lexical-toolbar-btn--small {
