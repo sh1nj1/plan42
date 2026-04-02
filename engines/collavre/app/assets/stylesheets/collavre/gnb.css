@@ -124,6 +124,7 @@ nav .popup-menu-item a:hover {
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
+    vertical-align: middle;
 }
 
 /* Responsive visibility helpers */
