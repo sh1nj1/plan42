@@ -1,3 +1,13 @@
+## v0.5.0 (2026-04-02)
+
+### Changes
+- 75520d21 fix: infer topic_id from comment in OpenClaw session key (#1101)
+- 914f3085 fix: send image attachments in openclaw websocket mode (#1075)
+- 3a889a69 fix: preserve openclaw callback topic context (#1076)
+- ab6ab132 fix(openclaw): send full context in WebSocket mode, matching HTTP behavior
+- 3d225af8 feat(openclaw): WebSocket production hardening and bug fixes (#1072)
+- a62e4dbc feat: transform inbox into creative-based chat system (#1008)
+
 ## v0.4.0 (2026-02-20)
 
 ### Changes

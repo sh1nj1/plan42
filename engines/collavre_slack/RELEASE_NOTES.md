@@ -1,3 +1,9 @@
+## v0.2.4 (2026-04-02)
+
+### Changes
+- 0365a14b refactor: move comment dispatch from controller to model callback (#1086)
+- a62e4dbc feat: transform inbox into creative-based chat system (#1008)
+
 ## v0.2.3 (2026-03-16)
 
 ### Changes

@@ -1,3 +1,9 @@
+## v0.4.0 (2026-04-02)
+
+### Changes
+- 0365a14b refactor: move comment dispatch from controller to model callback (#1086)
+- cacedf7c feat(github): complete OAuth flow in popup with repository selection (#977)
+
 ## v0.3.3 (2026-03-12)
 
 ### Changes
