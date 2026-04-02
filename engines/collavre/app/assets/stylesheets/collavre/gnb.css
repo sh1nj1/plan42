@@ -118,8 +118,8 @@ nav .popup-menu-item a:hover {
     line-height: 1;
     margin-left: var(--space-1);
     display: none;
-    min-width: 16px;
-    height: 16px;
+    min-width: var(--space-3);
+    height: var(--space-3);
     padding: 0;
     align-items: center;
     justify-content: center;
