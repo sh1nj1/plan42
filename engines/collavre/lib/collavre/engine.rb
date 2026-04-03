@@ -207,7 +207,6 @@ module Collavre
               label: "collavre.users.profile",
               type: :button,
               path: -> { Collavre::Engine.routes.url_helpers.user_path(Current.user) },
-              html_class: "popup-menu-item",
               priority: 100
             },
             {

@@ -298,6 +298,7 @@
   left: 0;
   transform: translateX(0);
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .popup-menu-right {
@@ -305,9 +306,22 @@
   right: 0;
 }
 
-.popup-menu .popup-menu-item,
+/* Wrapper div: layout only, no interaction styles */
+div.popup-menu-item {
+  display: flex;
+  width: 100%;
+}
+
+/* Ensure forms from button_to fill the full width */
+.popup-menu .popup-menu-item form {
+  width: 100%;
+}
+
+/* Interactive elements: button/a inside wrapper OR directly classed as popup-menu-item */
 .popup-menu-item button,
-.popup-menu-item a {
+.popup-menu-item a,
+button.popup-menu-item,
+a.popup-menu-item {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -324,9 +338,10 @@
   white-space: nowrap;
 }
 
-.popup-menu .popup-menu-item:hover,
 .popup-menu-item button:hover,
-.popup-menu-item a:hover {
+.popup-menu-item a:hover,
+button.popup-menu-item:hover,
+a.popup-menu-item:hover {
   background: var(--surface-hover);
 }
 
