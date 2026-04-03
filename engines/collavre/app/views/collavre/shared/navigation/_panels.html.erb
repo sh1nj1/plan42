@@ -1,5 +1,10 @@
 <%= render_extension_slot(:navigation_panels) %>
 
+<% if Current.user %>
+  <%= render 'collavre/comments/comments_popup',
+             auto_fullscreen: content_for?(:comments_popup_auto_fullscreen) %>
+<% end %>
+
 <div id="creative-guide-popover" style="display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%); background:white; border:1px solid var(--color-border); box-shadow:0 2px 8px rgba(0,0,0,0.12); padding:1.2em; max-width:400px; z-index:1000; border-radius:8px;">
   <button type="button" id="close-creative-guide" class="popup-close-btn">&times;</button>
   <div style="margin-top:0.5em; color:#444; font-size:1em; line-height:1.5;">
