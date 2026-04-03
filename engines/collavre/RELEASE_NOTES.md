@@ -1,3 +1,8 @@
+## v0.12.3 (2026-04-03)
+
+### Changes
+- 1f0a3734 fix: popup menu hover background bleeds past corners and click area limited to text (#1125)
+
 ## v0.12.2 (2026-04-03)
 
 ### Changes
