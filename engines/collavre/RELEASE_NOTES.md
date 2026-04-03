@@ -1,3 +1,11 @@
+## v0.12.2 (2026-04-03)
+
+### Changes
+- a1352ea6 fix: render comments popup globally in navigation panels (#1124)
+- 5de865d1 fix: compute relative level from parent DOM in broadcast handlers (#1118)
+- 3fc34f0a fix: use existing semantic tokens in editor color pickers (#1120)
+- 2fa98449 feat: add design token colors to editor toolbar color pickers (#1119)
+
 ## v0.12.1 (2026-04-03)
 
 ### Changes
