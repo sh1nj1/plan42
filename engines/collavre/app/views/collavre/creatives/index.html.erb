@@ -2,6 +2,9 @@
 <% if authenticated? %>
   <%= turbo_stream_from Current.user, :creative_tree %>
 <% end %>
+<% if @auto_fullscreen %>
+  <% content_for :comments_popup_auto_fullscreen, "true" %>
+<% end %>
 
 <div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor share-modal"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"
@@ -222,7 +225,6 @@
       }
     ) %>
 
-<%= render 'collavre/comments/comments_popup', auto_fullscreen: @auto_fullscreen %>
 <%= render 'inline_edit_form' %>
 
 <%= render_extension_slot(:creative_modals) %>
