@@ -148,25 +148,32 @@ module Collavre
       return if user&.ai_user?             # must be a human, not an AI agent
       return unless creative
 
-      loop_data = creative.data&.dig("trigger", "loop")
-      return unless loop_data && loop_data["state"] == "awaiting_user"
+      # Use pessimistic lock to prevent duplicate resume from concurrent comments
+      iteration = nil
+      max = nil
+      creative.with_lock do
+        loop_data = creative.data&.dig("trigger", "loop")
+        return unless loop_data && loop_data["state"] == "awaiting_user"
 
-      # Only resume if this comment is in the trigger topic
-      trigger_topic_id = loop_data["trigger_topic_id"]
-      return if trigger_topic_id.present? && trigger_topic_id != topic_id
+        # Only resume if this comment is in the trigger topic
+        trigger_topic_id = loop_data["trigger_topic_id"]
+        return if trigger_topic_id.present? && trigger_topic_id != topic_id
 
-      # Transition to running and post continue instruction
-      data = creative.data || {}
-      trigger = data["trigger"] || {}
-      loop_cfg = trigger["loop"] || {}
-      iteration = loop_cfg["current_iteration"] || 0
-      max = loop_cfg["max_iterations"] || 10
-      loop_cfg["state"] = "running"
-      trigger["loop"] = loop_cfg
-      data["trigger"] = trigger
-      creative.update!(data: data)
+        # Transition to running and post continue instruction atomically
+        data = creative.data || {}
+        trigger = data["trigger"] || {}
+        loop_cfg = trigger["loop"] || {}
+        iteration = loop_cfg["current_iteration"] || 0
+        max = loop_cfg["max_iterations"] || 10
+        loop_cfg["state"] = "running"
+        trigger["loop"] = loop_cfg
+        data["trigger"] = trigger
+        creative.update!(data: data)
+      end
 
-      # Find the trigger agent from parent to post continue instruction
+      # Post continue instruction outside lock (state already committed)
+      return unless iteration # guard: lock block returned early
+
       parent = creative.parent
       return unless parent&.drop_trigger_enabled?
 
