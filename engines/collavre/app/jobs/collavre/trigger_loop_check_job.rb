@@ -11,7 +11,7 @@ module Collavre
     # tags to determine next action.
     #
     # Status flow:
-    #   idle → running → completed | stuck | max_reached
+    #   idle → running → completed | awaiting_user | stuck | max_reached
     def perform(task_id)
       task = Task.find_by(id: task_id)
       return unless task&.creative
@@ -55,10 +55,10 @@ module Collavre
         # Transition to pending_verification and enqueue LLM verification
         update_loop_data(child_creative, state: "pending_verification", infra_retry_count: 0)
         TriggerLoopVerifyJob.perform_later(task.id)
-      when :stuck
-        update_loop_data(child_creative, state: "stuck", infra_retry_count: 0)
+      when :awaiting_user
+        update_loop_data(child_creative, state: "awaiting_user", infra_retry_count: 0)
         post_system_notice(child_creative, topic, I18n.t(
-          "collavre.trigger_loop.stuck",
+          "collavre.trigger_loop.awaiting_user",
           iteration: loop_config["current_iteration"]
         ))
       when :continue
@@ -131,17 +131,17 @@ module Collavre
       end
 
       if content.match?(/\[STATUS:\s*BLOCKED\b/i)
-        return :stuck
+        return :awaiting_user
       end
 
       if content.match?(/\[STATUS:\s*CONTINUE\b/i)
         return :continue
       end
 
-      # Keyword fallback — only for stuck detection, NOT for completion.
+      # Keyword fallback — only for blocked detection, NOT for completion.
       stuck = loop_config["stuck_conditions"] || []
       if stuck.any? { |kw| content.downcase.include?(kw.downcase) }
-        return :stuck
+        return :awaiting_user
       end
 
       # No status tag found — signal for LLM fallback evaluation
@@ -246,7 +246,7 @@ module Collavre
       when /\ADONE\b/
         :done
       when /\ABLOCKED\b/
-        :stuck
+        :awaiting_user
       else
         :continue
       end

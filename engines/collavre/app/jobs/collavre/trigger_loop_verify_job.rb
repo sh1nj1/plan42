@@ -48,6 +48,13 @@ module Collavre
 
       if result == :verified
         update_loop_data(child_creative, state: "completed")
+      elsif result == :awaiting_user
+        # Agent correctly paused to wait for user — do NOT re-loop
+        update_loop_data(child_creative, state: "awaiting_user")
+        post_system_notice(child_creative, topic, I18n.t(
+          "collavre.trigger_loop.awaiting_user",
+          iteration: loop_config["current_iteration"]
+        ))
       else
         # Verification failed — continue the loop
         iteration = (loop_config["current_iteration"] || 0) + 1
@@ -120,6 +127,7 @@ module Collavre
       - "Completed" means the agent EXECUTED the action (e.g. created a PR, moved a creative, updated a record), not merely described or planned it.
       - If the agent says something "needs to be done" or "should be done" but didn't do it, that is NOT completed.
       - Be strict: if ANY required action was not executed, respond INCOMPLETE.
+      - IMPORTANT: If the agent correctly identified that it needs user approval, user input, or user action before it can proceed, and has paused/stopped to wait for the user, respond AWAITING_USER. This is NOT incomplete work — the agent did the right thing by asking.
     PROMPT
 
     def verify_completion(verifier, instructions, agent_response)
@@ -134,6 +142,7 @@ module Collavre
         Did the agent actually execute ALL required actions in the instructions?
         Respond with exactly one of:
         - VERIFIED — all actions were executed
+        - AWAITING_USER — the agent correctly paused to wait for user approval/input/action
         - INCOMPLETE: [list the unexecuted actions]
       PROMPT
 
@@ -153,6 +162,8 @@ module Collavre
       cleaned = response_text.strip
       if cleaned.blank? || cleaned.start_with?("VERIFIED")
         :verified
+      elsif cleaned.start_with?("AWAITING_USER")
+        :awaiting_user
       else
         # Extract the incomplete reason for the feedback message
         cleaned

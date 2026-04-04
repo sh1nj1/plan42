@@ -6,6 +6,7 @@ const STATE_COLORS = {
     running:                "var(--color-active)",
     pending_verification:   "var(--color-warning)",
     completed:              "var(--color-success)",
+    awaiting_user:          "var(--color-warning)",
     stuck:                  "var(--color-danger)",
     max_reached:            "var(--color-warning)",
     paused:                 "var(--text-muted)"
@@ -16,6 +17,7 @@ const STATE_LABELS = {
     running: "Running",
     pending_verification: "Verifying",
     completed: "Completed",
+    awaiting_user: "Awaiting user",
     stuck: "Stuck",
     max_reached: "Max reached",
     paused: "Paused"
@@ -142,7 +144,7 @@ export default class extends Controller {
     _actionForState(state) {
         if (state === "running" || state === "pending_verification") return "pause"
         if (state === "idle") return "start"
-        if (state === "paused" || state === "stuck") return "resume"
+        if (state === "paused" || state === "stuck" || state === "awaiting_user") return "resume"
         if (state === "completed" || state === "max_reached") return "restart"
         return null
     }
