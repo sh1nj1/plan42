@@ -1365,19 +1365,6 @@ body.chat-fullscreen {
     opacity: 0.5;
 }
 
-.comment-drag-image {
-    position: fixed;
-    top: -1000px;
-    left: -1000px;
-    padding: var(--space-2) var(--space-3);
-    background-color: var(--color-active);
-    color: var(--color-badge-text);
-    border-radius: var(--radius-2);
-    font-size: 0.9em;
-    font-weight: 500;
-    white-space: nowrap;
-}
-
 /* Hide the topic link if the message is displayed within that topic's context */
 /* Use Javascript to set data-current-topic-id on the list container */
 .comment-topic-link {

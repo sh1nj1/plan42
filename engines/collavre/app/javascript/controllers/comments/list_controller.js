@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { copyTextToClipboard } from '../../utils/clipboard'
+import { attachBundleDragImage } from '../../utils/drag_bundle_image'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
@@ -751,47 +752,10 @@ export default class extends Controller {
     
     // Create bundle drag image for multi-select
     if (commentIds.length > 1) {
-      const dragImage = this.createBundleDragImage(commentIds, item)
-      document.body.appendChild(dragImage)
-      event.dataTransfer.setDragImage(dragImage, 24, 24)
-      requestAnimationFrame(() => dragImage.remove())
+      const bodyEl = item.querySelector('.comment-body')
+      const text = bodyEl ? bodyEl.textContent.trim() : ''
+      attachBundleDragImage(event, commentIds.length, text)
     }
-  }
-
-  createBundleDragImage(commentIds, primaryItem) {
-    const container = document.createElement('div')
-    container.className = 'drag-bundle-image'
-
-    const count = commentIds.length
-
-    // Stacked cards behind
-    if (count > 2) {
-      const backCard = document.createElement('div')
-      backCard.className = 'drag-bundle-card drag-bundle-card--back'
-      container.appendChild(backCard)
-    }
-    if (count > 1) {
-      const midCard = document.createElement('div')
-      midCard.className = 'drag-bundle-card drag-bundle-card--mid'
-      container.appendChild(midCard)
-    }
-
-    // Front card with message preview
-    const frontCard = document.createElement('div')
-    frontCard.className = 'drag-bundle-card drag-bundle-card--front'
-    const bodyEl = primaryItem.querySelector('.comment-body')
-    const text = bodyEl ? bodyEl.textContent.trim() : ''
-    const truncated = text.length > 40 ? text.slice(0, 40) + '…' : text
-    frontCard.textContent = truncated || '—'
-    container.appendChild(frontCard)
-
-    // Count badge
-    const badge = document.createElement('span')
-    badge.className = 'drag-bundle-badge'
-    badge.textContent = count
-    container.appendChild(badge)
-
-    return container
   }
 
   handleDragEnd(event) {
