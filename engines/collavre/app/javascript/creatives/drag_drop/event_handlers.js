@@ -505,6 +505,51 @@ function notifyInvalidDrop() {
   }
 }
 
+function getCreativeText(id) {
+  if (typeof document === 'undefined') return '';
+  const rowEl = document.querySelector(`creative-tree-row[creative-id="${id}"]`);
+  if (!rowEl) return '';
+  const content = rowEl.querySelector('.creative-content');
+  return content ? content.textContent.trim() : '';
+}
+
+function createBundleDragImage(selectedIds, primaryId) {
+  const container = document.createElement('div');
+  container.className = 'drag-bundle-image';
+
+  const count = selectedIds.length;
+
+  // Stacked cards behind the primary card
+  if (count > 2) {
+    const backCard = document.createElement('div');
+    backCard.className = 'drag-bundle-card drag-bundle-card--back';
+    container.appendChild(backCard);
+  }
+  if (count > 1) {
+    const midCard = document.createElement('div');
+    midCard.className = 'drag-bundle-card drag-bundle-card--mid';
+    container.appendChild(midCard);
+  }
+
+  // Front card with text preview
+  const frontCard = document.createElement('div');
+  frontCard.className = 'drag-bundle-card drag-bundle-card--front';
+  const text = getCreativeText(primaryId);
+  const truncated = text.length > 40 ? text.slice(0, 40) + '…' : text;
+  frontCard.textContent = truncated || '—';
+  container.appendChild(frontCard);
+
+  // Count badge
+  if (count > 1) {
+    const badge = document.createElement('span');
+    badge.className = 'drag-bundle-badge';
+    badge.textContent = count;
+    container.appendChild(badge);
+  }
+
+  return container;
+}
+
 export function handleDragStart(event) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
   if (!tree || tree.draggable === false) return;
@@ -525,6 +570,14 @@ export function handleDragStart(event) {
     selectedCreativeIds,
   });
   event.dataTransfer.effectAllowed = 'move';
+
+  // Custom bundle drag image for multi-select
+  if (selectedCreativeIds.length > 1) {
+    const dragImage = createBundleDragImage(selectedCreativeIds, creativeId);
+    document.body.appendChild(dragImage);
+    event.dataTransfer.setDragImage(dragImage, 24, 24);
+    requestAnimationFrame(() => dragImage.remove());
+  }
 
   const sessionToken = ensureDragSessionToken();
   const serialized = serializeDragState(getDraggedState(), sessionToken);
