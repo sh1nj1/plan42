@@ -579,6 +579,19 @@ class CreativeTreeRow extends LitElement {
   }
 
   _handleContentClick(event) {
+    // In select mode, block navigation and toggle selection instead
+    if (this.selectMode) {
+      event.preventDefault();
+      event.stopPropagation();
+      const checkbox = this.querySelector('.select-creative-checkbox');
+      if (checkbox) {
+        checkbox.checked = !checkbox.checked;
+        const row = this.querySelector('.creative-row');
+        if (row) row.classList.toggle('selected', checkbox.checked);
+      }
+      return;
+    }
+
     // Check if the clicked element is an interactive element or inside one
     const target = event.target;
     if (target.tagName === 'A' || target.closest('a') ||
