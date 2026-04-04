@@ -79,7 +79,7 @@ module Collavre
       assert_equal "pending_verification", @child.data.dig("trigger", "loop", "state")
     end
 
-    test "completes loop when agent reports STATUS: BLOCKED" do
+    test "transitions to awaiting_user when agent reports STATUS: BLOCKED" do
       @child.comments.create!(
         content: "Cannot proceed [STATUS: BLOCKED need credentials]",
         topic_id: @topic.id,
@@ -94,8 +94,8 @@ module Collavre
       end
 
       @child.reload
-      assert_equal "stuck", @child.data.dig("trigger", "loop", "state")
-      assert_includes @child.comments.last.content, "⚠️"
+      assert_equal "awaiting_user", @child.data.dig("trigger", "loop", "state")
+      assert_includes @child.comments.last.content, "⏸️"
     end
 
     test "continues loop when agent reports STATUS: CONTINUE" do
@@ -267,7 +267,7 @@ module Collavre
       assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
     end
 
-    test "falls back to stuck_conditions keywords" do
+    test "falls back to stuck_conditions keywords as awaiting_user" do
       @child.comments.create!(
         content: "I need help with this",
         topic_id: @topic.id,
@@ -280,7 +280,7 @@ module Collavre
       end
 
       @child.reload
-      assert_equal "stuck", @child.data.dig("trigger", "loop", "state")
+      assert_equal "awaiting_user", @child.data.dig("trigger", "loop", "state")
     end
 
     test "defaults to continue when no status tag or keywords match" do
@@ -415,7 +415,7 @@ module Collavre
       assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
     end
 
-    test "LLM fallback: marks stuck when LLM says BLOCKED" do
+    test "LLM fallback: marks awaiting_user when LLM says BLOCKED" do
       @child.comments.create!(
         content: "I can't proceed because I don't have permission to access the repo.",
         topic_id: @topic.id,
@@ -433,7 +433,7 @@ module Collavre
       end
 
       @child.reload
-      assert_equal "stuck", @child.data.dig("trigger", "loop", "state")
+      assert_equal "awaiting_user", @child.data.dig("trigger", "loop", "state")
     end
 
     test "LLM fallback: defaults to continue on LLM error" do

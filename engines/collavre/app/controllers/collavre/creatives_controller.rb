@@ -413,7 +413,7 @@ module Collavre
             creative.update!(data: data)
           end
         when "resume"
-          if loop_data && %w[paused idle stuck].include?(loop_data["state"])
+          if loop_data && %w[paused idle stuck awaiting_user].include?(loop_data["state"])
             loop_data["state"] = "running"
             trigger["loop"] = loop_data
             data["trigger"] = trigger

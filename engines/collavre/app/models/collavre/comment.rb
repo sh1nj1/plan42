@@ -44,6 +44,7 @@ module Collavre
     before_validation :assign_default_user, on: :create
     before_save :apply_link_previews, if: :should_apply_link_previews?
     after_create_commit :dispatch_to_orchestration
+    after_create_commit :resume_trigger_loop_if_awaiting
 
     validates :content, presence: true, unless: -> { images.attached? }
     validate :creative_must_be_origin_creative
@@ -138,6 +139,56 @@ module Collavre
     def assign_default_user
       return if skip_default_user
       self.user ||= Collavre.current_user
+    end
+
+    # When a human user comments in a trigger topic that is awaiting user input,
+    # auto-resume the trigger loop so the agent can continue working.
+    def resume_trigger_loop_if_awaiting
+      return unless user_id                # must have a user (not system)
+      return if user&.ai_user?             # must be a human, not an AI agent
+      return unless creative
+
+      loop_data = creative.data&.dig("trigger", "loop")
+      return unless loop_data && loop_data["state"] == "awaiting_user"
+
+      # Only resume if this comment is in the trigger topic
+      trigger_topic_id = loop_data["trigger_topic_id"]
+      return if trigger_topic_id.present? && trigger_topic_id != topic_id
+
+      # Transition to running and post continue instruction
+      data = creative.data || {}
+      trigger = data["trigger"] || {}
+      loop_cfg = trigger["loop"] || {}
+      iteration = loop_cfg["current_iteration"] || 0
+      max = loop_cfg["max_iterations"] || 10
+      loop_cfg["state"] = "running"
+      trigger["loop"] = loop_cfg
+      data["trigger"] = trigger
+      creative.update!(data: data)
+
+      # Find the trigger agent from parent to post continue instruction
+      parent = creative.parent
+      return unless parent&.drop_trigger_enabled?
+
+      agent = parent.all_shared_users(:write).map(&:user).find(&:ai_user?)
+      return unless agent
+
+      creative.comments.create!(
+        content: "@#{agent.name}: #{I18n.t(
+          'collavre.trigger_loop.user_resumed',
+          iteration: iteration,
+          max: max
+        )}",
+        topic_id: topic_id,
+        private: false,
+        user: creative.user,
+        skip_dispatch: false
+      )
+    rescue StandardError => e
+      Rails.logger.error(
+        "[Comment#resume_trigger_loop_if_awaiting] Failed for comment #{id}: " \
+        "#{e.class} #{e.message}"
+      )
     end
 
     def use_origin_creative
