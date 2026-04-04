@@ -3,6 +3,7 @@ import {
     createEditor,
     DecoratorNode,
 } from "lexical"
+import ImageResizer from "../../components/ImageResizer"
 
 export class ImageNode extends DecoratorNode {
     __src
@@ -110,24 +111,13 @@ export class ImageNode extends DecoratorNode {
     }
 
     decorate() {
-        const handleClick = (e) => {
-            // Stop propagation to prevent creative-row navigation
-            // and prevent default to stop parent link navigation
-            e.stopPropagation()
-            e.preventDefault()
-        }
-
         return (
-            <img
+            <ImageResizer
                 src={this.__src}
-                alt={this.__altText}
-                onClick={handleClick}
-                style={{
-                    width: this.__width === "inherit" ? "auto" : this.__width,
-                    height: this.__height === "inherit" ? "auto" : this.__height,
-                    maxWidth: "100%",
-                    cursor: "default",
-                }}
+                altText={this.__altText}
+                width={this.__width}
+                height={this.__height}
+                nodeKey={this.getKey()}
             />
         )
     }
