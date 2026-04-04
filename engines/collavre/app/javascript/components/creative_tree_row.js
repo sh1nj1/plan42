@@ -579,16 +579,11 @@ class CreativeTreeRow extends LitElement {
   }
 
   _handleContentClick(event) {
-    // In select mode, block navigation and toggle selection instead
+    // In select mode, block navigation — selection toggle is handled by
+    // select_mode_controller's mousedown handler to avoid double-toggling.
     if (this.selectMode) {
       event.preventDefault();
       event.stopPropagation();
-      const checkbox = this.querySelector('.select-creative-checkbox');
-      if (checkbox) {
-        checkbox.checked = !checkbox.checked;
-        const row = this.querySelector('.creative-row');
-        if (row) row.classList.toggle('selected', checkbox.checked);
-      }
       return;
     }
 
