@@ -20,7 +20,11 @@ module CollavreOpenclaw
       @context = context
     end
 
-    def chat(messages, &block)
+    # @param messages_data [Hash, Array] Either a Hash with :messages, :first_message,
+    #   :context_changed keys (from MessageBuilder) or a plain Array for backward compat.
+    def chat(messages_data, &block)
+      parse_messages_data!(messages_data)
+
       unless @user&.gateway_url.present?
         Rails.logger.error("[CollavreOpenclaw] No Gateway URL configured for user #{@user&.id}")
         yield "Error: OpenClaw Gateway URL not configured" if block_given?
@@ -38,11 +42,11 @@ module CollavreOpenclaw
       # Set OPENCLAW_TRANSPORT=http to force HTTP-only mode
       if CollavreOpenclaw.config.transport == "http"
         Rails.logger.info("[CollavreOpenclaw::WS] TRANSPORT mode=http_forced")
-        chat_via_http(messages, &block)
+        chat_via_http(&block)
       elsif websocket_available?
-        chat_via_websocket(messages, &block)
+        chat_via_websocket(&block)
       else
-        chat_via_http(messages, &block)
+        chat_via_http(&block)
       end
     end
 
@@ -69,6 +73,34 @@ module CollavreOpenclaw
 
     private
 
+    CONTEXT_KINDS = %i[creative_context context_creative referenced_creative].freeze
+
+    def parse_messages_data!(data)
+      if data.is_a?(Hash)
+        @all_messages    = data[:messages] || []
+        @first_message   = data[:first_message]
+        @context_changed = data[:context_changed]
+      else
+        # Backward compatibility: treat plain Array as first message
+        @all_messages    = Array(data)
+        @first_message   = true
+        @context_changed = false
+      end
+    end
+
+    def context_messages
+      @all_messages.select { |m| CONTEXT_KINDS.include?(m[:kind]) }
+    end
+
+    def trigger_message
+      @all_messages.find { |m| m[:kind] == :trigger }
+    end
+
+    # Send system prompt and context on first message or when they changed.
+    def include_full_context?
+      @first_message || @context_changed
+    end
+
     # ─────────────────────────────────────────────
     # WebSocket transport
     # ─────────────────────────────────────────────
@@ -83,14 +115,14 @@ module CollavreOpenclaw
       false
     end
 
-    def chat_via_websocket(messages, &block)
+    def chat_via_websocket(&block)
       response_content = +""
 
       begin
         client = ConnectionManager.instance.connection_for(@user)
-        payload = build_ws_chat_payload(messages)
+        payload = build_ws_chat_payload
 
-        Rails.logger.info("[CollavreOpenclaw] Sending via WebSocket (session: #{session_key})")
+        Rails.logger.info("[CollavreOpenclaw] Sending via WebSocket (session: #{session_key}, first: #{@first_message}, changed: #{@context_changed})")
 
         client.chat_send(
           session_key: session_key,
@@ -121,7 +153,7 @@ module CollavreOpenclaw
       rescue CollavreOpenclaw::ConnectionError,
              CollavreOpenclaw::TimeoutError => e
         Rails.logger.warn("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
-        chat_via_http(messages, &block)
+        chat_via_http(&block)
       rescue CollavreOpenclaw::ChatError, CollavreOpenclaw::RpcError => e
         Rails.logger.error("[CollavreOpenclaw] WebSocket chat error: #{e.message}")
         error_msg = "OpenClaw Error: #{e.message}"
@@ -131,71 +163,45 @@ module CollavreOpenclaw
         Rails.logger.error("[CollavreOpenclaw] WebSocket unexpected error: #{e.message}\n" \
                            "#{e.backtrace.first(5).join("\n")}")
         Rails.logger.info("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
-        chat_via_http(messages, &block)
+        chat_via_http(&block)
       end
     end
 
     # Build WebSocket chat.send payload.
     #
-    # Includes the same full text context as HTTP mode plus optional base64
-    # image attachments supported by the Gateway's chat.send.attachments field.
-    def build_ws_chat_payload(messages)
+    # Token optimization: only includes system prompt and creative context on
+    # the first message or when context has changed. The Gateway maintains its
+    # own session history, so chat history is never sent — only the trigger.
+    def build_ws_chat_payload
+      trigger = trigger_message
       {
-        message: format_message_for_ws(messages),
-        attachments: extract_ws_attachments(messages).presence
+        message: format_message_for_ws,
+        attachments: trigger ? extract_ws_attachments([ trigger ]).presence : nil
       }
     end
 
     # Format messages for WebSocket chat.send text payload.
     #
-    # Includes full context on EVERY request, matching HTTP mode behavior.
-    # The Gateway's WS session may be new (no prior history), so we cannot
-    # assume context was sent before. This is consistent with how the HTTP
-    # Chat Completions API works (full history on every request).
+    # On first message (or context change):
+    #   [system prompt] + [creative context] + [trigger]
+    # On subsequent messages:
+    #   [trigger only]
     #
-    # Message structure sent:
-    #   [system prompt]
-    #   [creative context messages]
-    #   [context creative messages]
-    #   [chat history]
-    #   [latest user message]
-    def format_message_for_ws(messages)
-      formatted = Array(messages)
-      return "" if formatted.empty?
-
+    # Chat history is NOT included — the Gateway's SessionManager tracks
+    # conversation turns automatically.
+    def format_message_for_ws
       parts = []
 
-      # 1. System prompt (same as HTTP mode's build_payload)
-      parts << @system_prompt if @system_prompt.present?
-
-      # 2. All context messages (Creative:, Context Creative:, Referenced Creative:)
-      formatted.each do |m|
-        role = m[:role] || m["role"]
-        next unless role.to_s == "user"
-
-        text = extract_message_text(m)
-        next unless text.present?
-        next unless text.match?(/\A(Creative|Context Creative|Referenced Creative)\s*\(/)
-
-        parts << text
-      end
-
-      # 3. Chat history (prior user/assistant exchanges)
-      formatted.each do |m|
-        role = (m[:role] || m["role"]).to_s
-        text = extract_message_text(m)
-        next unless text.present?
-
-        # Skip context messages (already included above)
-        next if text.match?(/\A(Creative|Context Creative|Referenced Creative)\s*\(/)
-
-        case role
-        when "user"
-          parts << text
-        when "assistant", "model"
-          parts << "[Assistant]: #{text}"
+      if include_full_context?
+        parts << @system_prompt if @system_prompt.present?
+        context_messages.each do |m|
+          text = extract_message_text(m)
+          parts << text if text.present?
         end
       end
+
+      trigger = trigger_message
+      parts << extract_message_text(trigger) if trigger
 
       parts.join("\n\n")
     end
@@ -297,13 +303,13 @@ module CollavreOpenclaw
     # HTTP transport (fallback)
     # ─────────────────────────────────────────────
 
-    def chat_via_http(messages, &block)
+    def chat_via_http(&block)
       response_content = +""
 
       begin
-        payload = build_payload(messages)
+        payload = build_payload
 
-        Rails.logger.info("[CollavreOpenclaw] Sending via HTTP to #{api_endpoint} (session: #{session_key})")
+        Rails.logger.info("[CollavreOpenclaw] Sending via HTTP to #{api_endpoint} (session: #{session_key}, first: #{@first_message}, changed: #{@context_changed})")
 
         stream_response(payload) do |chunk|
           response_content << chunk
@@ -349,22 +355,35 @@ module CollavreOpenclaw
     # HTTP payload building
     # ─────────────────────────────────────────────
 
-    def build_payload(messages)
+    # Build HTTP payload with token optimization.
+    #
+    # On first message (or context change):
+    #   system prompt + creative context + trigger
+    # On subsequent messages:
+    #   trigger only
+    #
+    # Chat history is NOT included — the Gateway's SessionManager tracks
+    # conversation turns via the stable session key.
+    def build_payload
       agent_id = extract_agent_id_from_email
       model_value = agent_id.present? ? "openclaw:#{agent_id}" : "openclaw"
 
-      payload = {
-        model: model_value,
-        messages: format_messages(messages),
-        stream: true
-      }
+      formatted = []
 
-      if @system_prompt.present?
-        payload[:messages].unshift({ role: "system", content: @system_prompt })
+      if include_full_context?
+        formatted << { role: "system", content: @system_prompt } if @system_prompt.present?
+        context_messages.each { |m| formatted << format_single_message(m) }
       end
 
-      payload[:user] = build_user_context
-      payload
+      trigger = trigger_message
+      formatted << format_single_message(trigger) if trigger
+
+      {
+        model: model_value,
+        messages: formatted,
+        stream: true,
+        user: build_user_context
+      }
     end
 
     def build_user_context
@@ -400,28 +419,26 @@ module CollavreOpenclaw
       end
     end
 
-    def format_messages(messages)
-      Array(messages).map do |msg|
-        role = msg[:role] || msg["role"]
-        text = extract_message_text(msg)
+    def format_single_message(msg)
+      role = msg[:role] || msg["role"]
+      text = extract_message_text(msg)
 
-        sender_name = msg[:sender_name] || msg["sender_name"]
-        if sender_name.present? && normalize_role(role) == "user"
-          text = "[#{sender_name}]: #{text}"
+      sender_name = msg[:sender_name] || msg["sender_name"]
+      if sender_name.present? && normalize_role(role) == "user"
+        text = "[#{sender_name}]: #{text}"
+      end
+
+      image_sources = extract_image_sources(msg)
+
+      if image_sources.any?
+        content_parts = [ { type: "text", text: text.to_s } ]
+        image_sources.each do |source|
+          image_data = encode_image_source(source)
+          content_parts << image_data if image_data
         end
-
-        image_sources = extract_image_sources(msg)
-
-        if image_sources.any?
-          content_parts = [ { type: "text", text: text.to_s } ]
-          image_sources.each do |source|
-            image_data = encode_image_source(source)
-            content_parts << image_data if image_data
-          end
-          { role: normalize_role(role), content: content_parts }
-        else
-          { role: normalize_role(role), content: text.to_s }
-        end
+        { role: normalize_role(role), content: content_parts }
+      else
+        { role: normalize_role(role), content: text.to_s }
       end
     end
 

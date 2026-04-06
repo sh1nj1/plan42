@@ -21,8 +21,8 @@ module Collavre
 
         # Build context and messages
         @original_comment = find_original_comment
-        messages = build_messages
-        log_action("prompt_generated", { messages: messages })
+        messages_data = build_messages
+        log_action("prompt_generated", { messages: messages_data[:messages] })
 
         # Prepare rendering context and prompts
         @creative = find_creative
@@ -49,7 +49,7 @@ module Collavre
 
         # Execute AI chat with streaming
         @client = build_ai_client(system_prompt)
-        stream_response(@client, messages)
+        stream_response(@client, messages_data)
 
         log_action("completion", { response: @streamer.content })
 
@@ -145,8 +145,8 @@ module Collavre
       )
     end
 
-    def stream_response(client, messages)
-      client.chat(messages, tools: @agent.tools || []) do |delta|
+    def stream_response(client, messages_data)
+      client.chat(messages_data, tools: @agent.tools || []) do |delta|
         @lifecycle_manager.check_cancelled!
         @streamer.append(delta)
         @lifecycle_manager.heartbeat_if_needed

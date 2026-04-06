@@ -27,6 +27,10 @@ module CollavreOpenclaw
           context: context
         )
 
+        # contents may be a Hash { messages:, first_message:, context_changed: }
+        # or a plain Array for backward compatibility
+        log_messages = contents.is_a?(Hash) ? contents[:messages] : Array(contents)
+
         response_content = nil
         error_message = nil
 
@@ -37,7 +41,7 @@ module CollavreOpenclaw
           raise
         ensure
           log_interaction(
-            messages: Array(contents),
+            messages: log_messages,
             tools: [],
             response_content: response_content,
             error_message: error_message,
@@ -49,8 +53,9 @@ module CollavreOpenclaw
         return response_content
       end
 
-      # Fall back to original implementation
-      super
+      # Fall back to original RubyLLM implementation (expects Array)
+      raw_messages = contents.is_a?(Hash) ? contents[:messages] : contents
+      super(raw_messages, tools: tools, &block)
     end
 
     private

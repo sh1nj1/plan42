@@ -30,7 +30,8 @@ module Collavre
         @comment.update!(content: context.dig("comment", "content"))
 
         builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
-        messages = builder.build
+        result = builder.build
+        messages = result[:messages]
 
         referenced_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.include?("Referenced Creative") }
         assert_not_nil referenced_msg, "Should include referenced creative context"
@@ -50,7 +51,8 @@ module Collavre
         @comment.update!(content: context.dig("comment", "content"))
 
         builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
-        messages = builder.build
+        result = builder.build
+        messages = result[:messages]
 
         referenced_msgs = messages.select { |m| m[:parts]&.first&.dig(:text)&.include?("Referenced Creative") }
         assert_empty referenced_msgs, "Should not include current creative as referenced"
@@ -72,7 +74,8 @@ module Collavre
         }
 
         builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
-        messages = builder.build
+        result = builder.build
+        messages = result[:messages]
 
         context_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.include?("Context Creative") }
         assert_not_nil context_msg, "Should include context creative"
@@ -97,7 +100,8 @@ module Collavre
         }
 
         builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
-        messages = builder.build
+        result = builder.build
+        messages = result[:messages]
 
         context_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.include?("Context Creative") }
         assert_nil context_msg, "Should not include disabled context creative"
@@ -112,7 +116,8 @@ module Collavre
         }
 
         builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
-        messages = builder.build
+        result = builder.build
+        messages = result[:messages]
 
         # Should NOT include full subtree
         full_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Creative (id:") }
@@ -143,7 +148,8 @@ module Collavre
         }
 
         builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
-        messages = builder.build
+        result = builder.build
+        messages = result[:messages]
 
         # Should appear as Context Creative, NOT also as Referenced Creative
         context_msgs = messages.select { |m| m[:parts]&.first&.dig(:text)&.include?("Context Creative") }
@@ -162,10 +168,127 @@ module Collavre
         }
 
         builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
-        messages = builder.build
+        result = builder.build
+        messages = result[:messages]
 
         referenced_msgs = messages.select { |m| m[:parts]&.first&.dig(:text)&.include?("Referenced Creative") }
         assert_empty referenced_msgs
+      end
+
+      test "build returns Hash with messages, first_message, and context_changed" do
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Hello" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        result = builder.build
+
+        assert_instance_of Hash, result
+        assert result.key?(:messages)
+        assert result.key?(:first_message)
+        assert result.key?(:context_changed)
+        assert_instance_of Array, result[:messages]
+      end
+
+      test "first_message is true when no chat history exists" do
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Hello" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        result = builder.build
+
+        assert result[:first_message], "Should be first_message when no chat history"
+      end
+
+      test "first_message is false when chat history exists" do
+        # Create prior history
+        @creative.comments.create!(content: "Prior question", user: @user, topic_id: @comment.topic_id)
+        @creative.comments.create!(content: "Prior answer", user: @agent, topic_id: @comment.topic_id)
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Follow-up" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        result = builder.build
+
+        assert_not result[:first_message], "Should not be first_message when history exists"
+      end
+
+      test "messages have kind tags" do
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Hello" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        result = builder.build
+        messages = result[:messages]
+
+        # Should have creative_context and trigger at minimum
+        kinds = messages.map { |m| m[:kind] }
+        assert_includes kinds, :creative_context
+        assert_includes kinds, :trigger
+      end
+
+      test "context_changed detects creative update after last reply" do
+        # Create prior conversation
+        @creative.comments.create!(content: "Question", user: @user, topic_id: @comment.topic_id)
+        agent_reply = @creative.comments.create!(content: "Answer", user: @agent, topic_id: @comment.topic_id)
+
+        # Update creative AFTER the agent's reply
+        @creative.update!(description: "<p>Updated content</p>")
+        assert @creative.updated_at > agent_reply.created_at
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Follow-up" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        result = builder.build
+
+        assert result[:context_changed], "Should detect creative content change"
+      end
+
+      test "context_changed is false when creative unchanged since last reply" do
+        # Create prior conversation
+        @creative.comments.create!(content: "Question", user: @user, topic_id: @comment.topic_id)
+        @creative.comments.create!(content: "Answer", user: @agent, topic_id: @comment.topic_id)
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Follow-up" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        result = builder.build
+
+        assert_not result[:context_changed], "Should not flag context_changed when unchanged"
+      end
+
+      test "context_changed detects agent settings update" do
+        # Create prior conversation
+        @creative.comments.create!(content: "Question", user: @user, topic_id: @comment.topic_id)
+        agent_reply = @creative.comments.create!(content: "Answer", user: @agent, topic_id: @comment.topic_id)
+
+        # Update agent AFTER the agent's reply
+        @agent.update!(name: "Updated Bot Name")
+        assert @agent.updated_at > agent_reply.created_at
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Follow-up" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        result = builder.build
+
+        assert result[:context_changed], "Should detect agent settings change"
       end
     end
   end
