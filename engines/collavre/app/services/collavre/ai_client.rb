@@ -28,7 +28,7 @@ module Collavre
       output_tokens = nil
 
       normalized_vendor = vendor.to_s.downcase
-      unless %w[google gemini openai anthropic].include?(normalized_vendor)
+      unless VENDOR_TO_PROVIDER.key?(normalized_vendor)
         Rails.logger.warn "Unsupported LLM vendor '#{@vendor}'. Attempting to use default (google)."
       end
 
