@@ -613,6 +613,33 @@ module CollavreOpenclaw
       assert adapter.send(:websocket_available?)
     end
 
+    test "chat accepts plain Array input for standalone callers" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com",
+                             llm_api_key: "test-key")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      # Simulate what AiClientExtension.normalize_messages_input produces
+      # from a standalone caller like CompressJob
+      normalized = {
+        messages: [ { role: "user", text: "Summarize this", kind: :trigger } ],
+        first_message: true,
+        context_changed: false
+      }
+
+      adapter.send(:parse_messages_data!, normalized)
+      payload = adapter.send(:build_payload)
+
+      # Should include system prompt (first_message) + the trigger
+      assert_equal 2, payload[:messages].length
+      assert_equal "system", payload[:messages][0][:role]
+      assert_equal "user", payload[:messages][1][:role]
+    end
+
     test "chat uses websocket when transport is auto" do
       original_transport = CollavreOpenclaw.config.transport
       CollavreOpenclaw.config.transport = "auto"
