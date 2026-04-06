@@ -20,8 +20,7 @@ module CollavreOpenclaw
       @context = context
     end
 
-    # @param messages_data [Hash, Array] Either a Hash with :messages, :first_message,
-    #   :context_changed keys (from MessageBuilder) or a plain Array for backward compat.
+    # @param messages_data [Hash] { messages:, first_message:, context_changed: }
     def chat(messages_data, &block)
       parse_messages_data!(messages_data)
 
@@ -76,16 +75,9 @@ module CollavreOpenclaw
     CONTEXT_KINDS = %i[creative_context context_creative referenced_creative].freeze
 
     def parse_messages_data!(data)
-      if data.is_a?(Hash)
-        @all_messages    = data[:messages] || []
-        @first_message   = data[:first_message]
-        @context_changed = data[:context_changed]
-      else
-        # Backward compatibility: treat plain Array as first message
-        @all_messages    = Array(data)
-        @first_message   = true
-        @context_changed = false
-      end
+      @all_messages    = data[:messages] || []
+      @first_message   = data[:first_message]
+      @context_changed = data[:context_changed]
     end
 
     def context_messages

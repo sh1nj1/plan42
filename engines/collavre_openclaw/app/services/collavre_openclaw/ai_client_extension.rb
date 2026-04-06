@@ -12,7 +12,8 @@ module CollavreOpenclaw
       end
     end
 
-    def chat(contents, tools: [], &block)
+    # @param messages_data [Hash] { messages:, first_message:, context_changed: }
+    def chat(messages_data, tools: [], &block)
       normalized_vendor = vendor.to_s.downcase
 
       # Check if we have a custom adapter for this vendor
@@ -27,21 +28,17 @@ module CollavreOpenclaw
           context: context
         )
 
-        # contents may be a Hash { messages:, first_message:, context_changed: }
-        # or a plain Array for backward compatibility
-        log_messages = contents.is_a?(Hash) ? contents[:messages] : Array(contents)
-
         response_content = nil
         error_message = nil
 
         begin
-          response_content = adapter.chat(contents, &block)
+          response_content = adapter.chat(messages_data, &block)
         rescue StandardError => e
           error_message = e.message
           raise
         ensure
           log_interaction(
-            messages: log_messages,
+            messages: messages_data[:messages],
             tools: [],
             response_content: response_content,
             error_message: error_message,
@@ -54,8 +51,7 @@ module CollavreOpenclaw
       end
 
       # Fall back to original RubyLLM implementation (expects Array)
-      raw_messages = contents.is_a?(Hash) ? contents[:messages] : contents
-      super(raw_messages, tools: tools, &block)
+      super(messages_data[:messages], tools: tools, &block)
     end
 
     private
