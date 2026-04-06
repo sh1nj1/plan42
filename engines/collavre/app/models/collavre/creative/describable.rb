@@ -34,10 +34,11 @@ module Collavre
       def sanitize_description_html
         table_tags = %w[table thead tbody tfoot tr th td]
         table_attrs = %w[colspan rowspan]
+        attachment_attrs = %w[download data-filesize]
         self.description = ActionController::Base.helpers.sanitize(
           description,
           tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags,
-          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + %w[data-lexical]
+          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + %w[data-lexical]
         )
       end
 

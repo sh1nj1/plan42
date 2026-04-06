@@ -59,10 +59,9 @@ export default function FileUploadPlugin({
             const upload = new UploadConstructor(file, resolvedDirectUploadUrl)
 
             upload.create((error, attributes) => {
-                if (onUploadStateChange) onUploadStateChange(false)
-
                 if (error) {
                     console.error("Upload failed", error)
+                    if (onUploadStateChange) onUploadStateChange(false)
                     return
                 }
 
@@ -102,6 +101,10 @@ export default function FileUploadPlugin({
                         paragraph.selectStart()
                     }
                 })
+
+                // Notify upload complete AFTER editor update so onChange captures
+                // the new content before save can proceed
+                if (onUploadStateChange) onUploadStateChange(false)
             })
         },
         [blobUrlTemplate, directUploadUrl, editor, onUploadStateChange]
