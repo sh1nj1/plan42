@@ -34,11 +34,9 @@
 
   <div class="form-group">
     <%= form.label :llm_vendor, t('collavre.users.new_ai.vendor_label', default: 'LLM Provider') %>
-    <%= form.select :llm_vendor, options_for_select([
-      ["Google (Gemini)", "google"],
-      ["OpenAI", "openai"],
-      ["OpenClaw", "openclaw"]
-    ], @copy_source&.llm_vendor || "google"), {}, class: "stacked-form-control" %>
+    <%= form.select :llm_vendor, options_for_select(
+      Collavre::User::LLM_VENDOR_OPTIONS, @copy_source&.llm_vendor || "google"
+    ), {}, class: "stacked-form-control" %>
     <small class="form-text text-muted"><%= t('collavre.users.new_ai.vendor_help', default: 'Select the AI provider for this agent') %></small>
   </div>
 

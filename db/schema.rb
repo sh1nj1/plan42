@@ -62,33 +62,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_120000) do
     t.index ["user_id"], name: "index_activity_logs_on_user_id"
   end
 
-  create_table "agent_actions", force: :cascade do |t|
-    t.integer "agent_run_id", null: false
-    t.json "arguments", default: {}
-    t.datetime "created_at", null: false
-    t.text "result"
-    t.string "status", default: "pending"
-    t.string "tool_name"
-    t.datetime "updated_at", null: false
-    t.index ["agent_run_id"], name: "index_agent_actions_on_agent_run_id"
-  end
-
-  create_table "agent_runs", force: :cascade do |t|
-    t.integer "ai_user_id", null: false
-    t.json "context", default: {}
-    t.datetime "created_at", null: false
-    t.integer "creative_id", null: false
-    t.text "goal"
-    t.integer "iteration_count", default: 0
-    t.datetime "next_run_at"
-    t.string "state", default: "planning"
-    t.string "status", default: "pending"
-    t.json "transcript", default: []
-    t.datetime "updated_at", null: false
-    t.index ["ai_user_id"], name: "index_agent_runs_on_ai_user_id"
-    t.index ["creative_id"], name: "index_agent_runs_on_creative_id"
-  end
-
   create_table "calendar_events", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "creative_id"
@@ -169,7 +142,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_120000) do
     t.text "quoted_text"
     t.integer "review_type", limit: 1
     t.integer "selected_version_id"
-    t.boolean "streaming", default: false, null: false
     t.integer "topic_id"
     t.datetime "updated_at", null: false
     t.integer "user_id"
@@ -238,7 +210,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_120000) do
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["archived_at"], name: "index_creatives_on_archived_at", where: "archived_at IS NOT NULL"
-    t.index ["data"], name: "index_creatives_on_data"
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
@@ -854,7 +825,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_120000) do
   add_foreign_key "contacts", "users", column: "contact_user_id"
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
-  add_foreign_key "creative_shares", "users", column: "shared_by_id"
+  add_foreign_key "creative_shares", "users", column: "shared_by_id", on_delete: :nullify
   add_foreign_key "creatives", "creatives", column: "origin_id"
   add_foreign_key "creatives", "creatives", column: "parent_id"
   add_foreign_key "creatives", "users"
@@ -899,6 +870,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_120000) do
   add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "tags", "labels"
   add_foreign_key "task_actions", "tasks"
+  add_foreign_key "tasks", "creatives", on_delete: :nullify
+  add_foreign_key "tasks", "tasks", column: "parent_task_id", on_delete: :nullify
   add_foreign_key "tasks", "users", column: "agent_id"
   add_foreign_key "topics", "creatives"
   add_foreign_key "topics", "users"
