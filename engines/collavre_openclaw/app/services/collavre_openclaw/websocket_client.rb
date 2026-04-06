@@ -265,6 +265,21 @@ module CollavreOpenclaw
       end
     end
 
+    # Inject an assistant message into a session transcript.
+    # Useful for pre-populating context without triggering an agent run.
+    #
+    # @param session_key [String]
+    # @param message [String] content to inject
+    # @param label [String, nil] optional label for the injected message
+    def chat_inject(session_key:, message:, label: nil)
+      ensure_connected!
+      touch_activity!
+
+      params = { sessionKey: session_key, message: message }
+      params[:label] = label if label
+      send_rpc("chat.inject", params)
+    end
+
     # Fetch chat history for a session
     def chat_history(session_key:, limit: nil)
       ensure_connected!

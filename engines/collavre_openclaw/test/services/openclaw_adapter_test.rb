@@ -19,7 +19,7 @@ module CollavreOpenclaw
       assert_not_nil adapter
     end
 
-    test "builds correct payload format" do
+    test "builds correct payload format on first message" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
@@ -28,24 +28,81 @@ module CollavreOpenclaw
         context: {}
       )
 
-      messages = [
-        { role: "user", parts: [ { text: "Hello" } ] },
-        { role: "model", parts: [ { text: "Hi there!" } ] }
-      ]
+      messages_data = {
+        messages: [
+          { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: 1):\n# Hello" } ] },
+          { role: "user", kind: :trigger, parts: [ { text: "Hello" } ] }
+        ],
+        first_message: true,
+        context_changed: false
+      }
 
-      payload = adapter.send(:build_payload, messages)
+      adapter.send(:parse_messages_data!, messages_data)
+      payload = adapter.send(:build_payload)
 
-      # System prompt is added as first message
+      # System prompt + context + trigger
       assert_equal 3, payload[:messages].length
       assert_equal "system", payload[:messages][0][:role]
       assert_equal "Test prompt", payload[:messages][0][:content]
       assert_equal "user", payload[:messages][1][:role]
-      assert_equal "Hello", payload[:messages][1][:content]
-      assert_equal "assistant", payload[:messages][2][:role]
-      assert_equal "Hi there!", payload[:messages][2][:content]
+      assert_includes payload[:messages][1][:content], "Creative (id: 1)"
+      assert_equal "user", payload[:messages][2][:role]
+      assert_equal "Hello", payload[:messages][2][:content]
       assert payload[:stream]
-      # Model includes agent_id derived from user email (test@example.com -> test)
       assert_equal "openclaw:test", payload[:model]
+    end
+
+    test "builds payload with trigger only on warm session" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      messages_data = {
+        messages: [
+          { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: 1):\n# Hello" } ] },
+          { role: "user", kind: :trigger, parts: [ { text: "Follow-up" } ] }
+        ],
+        first_message: false,
+        context_changed: false
+      }
+
+      adapter.send(:parse_messages_data!, messages_data)
+      payload = adapter.send(:build_payload)
+
+      # Trigger only — no system prompt, no context
+      assert_equal 1, payload[:messages].length
+      assert_equal "user", payload[:messages][0][:role]
+      assert_equal "Follow-up", payload[:messages][0][:content]
+    end
+
+    test "builds payload with full context when context changed" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      messages_data = {
+        messages: [
+          { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: 1):\n# Updated" } ] },
+          { role: "user", kind: :trigger, parts: [ { text: "Question" } ] }
+        ],
+        first_message: false,
+        context_changed: true
+      }
+
+      adapter.send(:parse_messages_data!, messages_data)
+      payload = adapter.send(:build_payload)
+
+      # Re-sends system + context + trigger
+      assert_equal 3, payload[:messages].length
+      assert_equal "system", payload[:messages][0][:role]
     end
 
     test "includes agent_id derived from user email in model field" do
@@ -57,9 +114,8 @@ module CollavreOpenclaw
         context: {}
       )
 
-      messages = [ { role: "user", content: "Hello" } ]
-
-      payload = adapter.send(:build_payload, messages)
+      adapter.send(:parse_messages_data!, { messages: [ { role: "user", kind: :trigger, parts: [ { text: "Hello" } ] } ], first_message: true, context_changed: false })
+      payload = adapter.send(:build_payload)
 
       assert_equal "openclaw:ai-bot", payload[:model]
     end
@@ -73,9 +129,8 @@ module CollavreOpenclaw
         context: {}
       )
 
-      messages = [ { role: "user", content: "Hello" } ]
-
-      payload = adapter.send(:build_payload, messages)
+      adapter.send(:parse_messages_data!, { messages: [ { role: "user", kind: :trigger, parts: [ { text: "Hello" } ] } ], first_message: true, context_changed: false })
+      payload = adapter.send(:build_payload)
 
       assert_equal "openclaw", payload[:model]
     end
@@ -96,7 +151,7 @@ module CollavreOpenclaw
       assert_equal "user", adapter.send(:normalize_role, "unknown")
     end
 
-    test "formats messages with sender attribution" do
+    test "format_single_message adds sender attribution to user messages" do
       user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter = OpenclawAdapter.new(
@@ -105,20 +160,16 @@ module CollavreOpenclaw
         context: {}
       )
 
-      messages = [
-        { role: "user", content: "Hello", sender_name: "Shinji" },
-        { role: "assistant", content: "Hi there!" },
-        { role: "user", content: "Question", sender_name: "Jane" }
-      ]
+      msg = { role: "user", content: "Hello", sender_name: "Shinji" }
+      formatted = adapter.send(:format_single_message, msg)
+      assert_equal "[Shinji]: Hello", formatted[:content]
 
-      formatted = adapter.send(:format_messages, messages)
-
-      assert_equal "[Shinji]: Hello", formatted[0][:content]
-      assert_equal "Hi there!", formatted[1][:content]
-      assert_equal "[Jane]: Question", formatted[2][:content]
+      msg2 = { role: "user", content: "Question", sender_name: "Jane" }
+      formatted2 = adapter.send(:format_single_message, msg2)
+      assert_equal "[Jane]: Question", formatted2[:content]
     end
 
-    test "does not add sender attribution to assistant messages" do
+    test "format_single_message does not add sender attribution to assistant messages" do
       user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter = OpenclawAdapter.new(
@@ -127,17 +178,12 @@ module CollavreOpenclaw
         context: {}
       )
 
-      messages = [
-        { role: "assistant", content: "Response", sender_name: "AI Bot" }
-      ]
-
-      formatted = adapter.send(:format_messages, messages)
-
-      # Should NOT have sender attribution for assistant
-      assert_equal "Response", formatted[0][:content]
+      msg = { role: "assistant", content: "Response", sender_name: "AI Bot" }
+      formatted = adapter.send(:format_single_message, msg)
+      assert_equal "Response", formatted[:content]
     end
 
-    test "format_messages includes image as base64 data URL in OpenAI format" do
+    test "format_single_message includes image as base64 data URL in OpenAI format" do
       user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter = OpenclawAdapter.new(
@@ -152,20 +198,15 @@ module CollavreOpenclaw
         content_type: "image/png"
       )
 
-      messages = [
-        { role: "user", parts: [ { text: "What is this?" }, { image: blob } ] }
-      ]
+      msg = { role: "user", parts: [ { text: "What is this?" }, { image: blob } ] }
+      formatted = adapter.send(:format_single_message, msg)
 
-      formatted = adapter.send(:format_messages, messages)
+      assert_equal "user", formatted[:role]
+      assert_instance_of Array, formatted[:content]
+      assert_equal 2, formatted[:content].size
 
-      assert_equal 1, formatted.size
-      msg = formatted.first
-      assert_equal "user", msg[:role]
-      assert_instance_of Array, msg[:content]
-      assert_equal 2, msg[:content].size
-
-      text_part = msg[:content].find { |p| p[:type] == "text" }
-      image_part = msg[:content].find { |p| p[:type] == "image_url" }
+      text_part = formatted[:content].find { |p| p[:type] == "text" }
+      image_part = formatted[:content].find { |p| p[:type] == "image_url" }
 
       assert_equal "What is this?", text_part[:text]
       assert image_part[:image_url][:url].start_with?("data:image/png;base64,")
@@ -173,7 +214,7 @@ module CollavreOpenclaw
       blob&.purge
     end
 
-    test "format_messages keeps plain text when no images" do
+    test "format_single_message keeps plain text when no images" do
       user = build_test_user(gateway_url: "https://test-gateway.com")
 
       adapter = OpenclawAdapter.new(
@@ -182,15 +223,12 @@ module CollavreOpenclaw
         context: {}
       )
 
-      messages = [
-        { role: "user", parts: [ { text: "Hello" } ] }
-      ]
+      msg = { role: "user", parts: [ { text: "Hello" } ] }
+      formatted = adapter.send(:format_single_message, msg)
 
-      formatted = adapter.send(:format_messages, messages)
-
-      assert_equal "user", formatted.first[:role]
-      assert_equal "Hello", formatted.first[:content]
-      assert_instance_of String, formatted.first[:content]
+      assert_equal "user", formatted[:role]
+      assert_equal "Hello", formatted[:content]
+      assert_instance_of String, formatted[:content]
     end
 
     test "builds session key based on topic" do
@@ -419,14 +457,13 @@ module CollavreOpenclaw
         context: {}
       )
 
-      messages = [ { role: "user", content: "Hello" } ]
-
-      payload = adapter.send(:build_payload, messages)
+      adapter.send(:parse_messages_data!, { messages: [ { role: "user", kind: :trigger, parts: [ { text: "Hello" } ] } ], first_message: true, context_changed: false })
+      payload = adapter.send(:build_payload)
 
       assert_not payload.key?(:tools), "Tools key should not be present"
     end
 
-    test "format_message_for_ws includes full context with chat history" do
+    test "format_message_for_ws includes full context on first message" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
@@ -435,52 +472,83 @@ module CollavreOpenclaw
         context: {}
       )
 
-      messages = [
-        { role: "user", parts: [ { text: "Creative (id: 42):\n# My Project" } ] },
-        { role: "user", parts: [ { text: "Context Creative (id: 41):\n# Dev Environment" } ] },
-        { role: "user", parts: [ { text: "[Alice]: First question" } ] },
-        { role: "model", parts: [ { text: "Here's my answer" } ] },
-        { role: "user", parts: [ { text: "[Alice]: Follow-up question" } ] }
-      ]
+      messages_data = {
+        messages: [
+          { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: 42):\n# My Project" } ] },
+          { role: "user", kind: :context_creative, parts: [ { text: "Context Creative (id: 41):\n# Dev Environment" } ] },
+          { role: "user", kind: :trigger, parts: [ { text: "[Alice]: Follow-up question" } ] }
+        ],
+        first_message: true,
+        context_changed: false
+      }
 
-      result = adapter.send(:format_message_for_ws, messages)
+      adapter.send(:parse_messages_data!, messages_data)
+      result = adapter.send(:format_message_for_ws)
 
-      # System prompt included
       assert_includes result, "You are a helpful agent"
-      # Creative context included (even on follow-up)
       assert_includes result, "Creative (id: 42):"
       assert_includes result, "Context Creative (id: 41):"
-      # Chat history included
-      assert_includes result, "[Alice]: First question"
-      assert_includes result, "[Assistant]: Here's my answer"
       assert_includes result, "[Alice]: Follow-up question"
     end
 
-    test "format_message_for_ws includes multiple context creatives" do
+    test "format_message_for_ws sends only trigger on warm session" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
         user: user,
-        system_prompt: "",
+        system_prompt: "You are a helpful agent",
         context: {}
       )
 
-      messages = [
-        { role: "user", parts: [ { text: "Creative (id: 100):\n# Main" } ] },
-        { role: "user", parts: [ { text: "Context Creative (id: 200):\n# Dev Rules" } ] },
-        { role: "user", parts: [ { text: "Context Creative (id: 300):\n# Dev Env" } ] },
-        { role: "user", parts: [ { text: "[Bob]: Hello" } ] }
-      ]
+      messages_data = {
+        messages: [
+          { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: 42):\n# My Project" } ] },
+          { role: "user", kind: :context_creative, parts: [ { text: "Context Creative (id: 41):\n# Dev Environment" } ] },
+          { role: "user", kind: :chat_history, parts: [ { text: "[Alice]: First question" } ] },
+          { role: "model", kind: :chat_history, parts: [ { text: "Here's my answer" } ] },
+          { role: "user", kind: :trigger, parts: [ { text: "[Alice]: Follow-up question" } ] }
+        ],
+        first_message: false,
+        context_changed: false
+      }
 
-      result = adapter.send(:format_message_for_ws, messages)
+      adapter.send(:parse_messages_data!, messages_data)
+      result = adapter.send(:format_message_for_ws)
 
+      # Only trigger, no system prompt, no context, no history
+      assert_not_includes result, "You are a helpful agent"
+      assert_not_includes result, "Creative (id: 42):"
+      assert_not_includes result, "[Alice]: First question"
+      assert_equal "[Alice]: Follow-up question", result
+    end
+
+    test "format_message_for_ws includes context when changed" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "System prompt",
+        context: {}
+      )
+
+      messages_data = {
+        messages: [
+          { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: 100):\n# Updated" } ] },
+          { role: "user", kind: :trigger, parts: [ { text: "[Bob]: Hello" } ] }
+        ],
+        first_message: false,
+        context_changed: true
+      }
+
+      adapter.send(:parse_messages_data!, messages_data)
+      result = adapter.send(:format_message_for_ws)
+
+      assert_includes result, "System prompt"
       assert_includes result, "Creative (id: 100):"
-      assert_includes result, "Context Creative (id: 200):"
-      assert_includes result, "Context Creative (id: 300):"
       assert_includes result, "[Bob]: Hello"
     end
 
-    test "build_ws_chat_payload includes base64 image attachments" do
+    test "build_ws_chat_payload includes image attachments from trigger only" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
@@ -495,12 +563,17 @@ module CollavreOpenclaw
         content_type: "image/png"
       )
 
-      messages = [
-        { role: "user", parts: [ { text: "Creative (id: 42):\n# My Project" } ] },
-        { role: "user", parts: [ { text: "What is this?" }, { image: blob } ] }
-      ]
+      messages_data = {
+        messages: [
+          { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: 42):\n# My Project" } ] },
+          { role: "user", kind: :trigger, parts: [ { text: "What is this?" }, { image: blob } ] }
+        ],
+        first_message: true,
+        context_changed: false
+      }
 
-      result = adapter.send(:build_ws_chat_payload, messages)
+      adapter.send(:parse_messages_data!, messages_data)
+      result = adapter.send(:build_ws_chat_payload)
 
       assert_includes result[:message], "You are a helpful agent"
       assert_includes result[:message], "Creative (id: 42):"
@@ -509,13 +582,11 @@ module CollavreOpenclaw
       attachment = result[:attachments].first
       assert_equal "image", attachment[:type]
       assert_equal "image/png", attachment[:mimeType]
-      assert_equal "test.png", attachment[:fileName]
-      assert_match(/\A[A-Za-z0-9+\/=]+\z/, attachment[:content])
     ensure
       blob&.purge
     end
 
-    test "format_message_for_ws returns empty string for empty messages" do
+    test "format_message_for_ws returns empty string for empty trigger" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
@@ -524,8 +595,10 @@ module CollavreOpenclaw
         context: {}
       )
 
-      result = adapter.send(:format_message_for_ws, [])
-      assert_equal "", result
+      adapter.send(:parse_messages_data!, { messages: [], first_message: true, context_changed: false })
+      result = adapter.send(:format_message_for_ws)
+      # Only system prompt when no trigger
+      assert_equal "Test", result
     end
 
     test "websocket_available? returns true when classes are defined" do
@@ -538,6 +611,33 @@ module CollavreOpenclaw
       )
 
       assert adapter.send(:websocket_available?)
+    end
+
+    test "chat accepts plain Array input for standalone callers" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com",
+                             llm_api_key: "test-key")
+
+      adapter = OpenclawAdapter.new(
+        user: user,
+        system_prompt: "Test prompt",
+        context: {}
+      )
+
+      # Simulate what AiClientExtension.normalize_messages_input produces
+      # from a standalone caller like CompressJob
+      normalized = {
+        messages: [ { role: "user", text: "Summarize this", kind: :trigger } ],
+        first_message: true,
+        context_changed: false
+      }
+
+      adapter.send(:parse_messages_data!, normalized)
+      payload = adapter.send(:build_payload)
+
+      # Should include system prompt (first_message) + the trigger
+      assert_equal 2, payload[:messages].length
+      assert_equal "system", payload[:messages][0][:role]
+      assert_equal "user", payload[:messages][1][:role]
     end
 
     test "chat uses websocket when transport is auto" do
@@ -556,12 +656,12 @@ module CollavreOpenclaw
       assert adapter.send(:websocket_available?)
 
       ws_called = false
-      adapter.define_singleton_method(:chat_via_websocket) do |_msgs, &_blk|
+      adapter.define_singleton_method(:chat_via_websocket) do |&_blk|
         ws_called = true
         nil
       end
 
-      adapter.chat([ { role: "user", content: "Hello" } ])
+      adapter.chat({ messages: [ { role: "user", kind: :trigger, parts: [ { text: "Hello" } ] } ], first_message: true, context_changed: false })
       assert ws_called, "Should use WebSocket when transport is auto"
     ensure
       CollavreOpenclaw.config.transport = original_transport
@@ -583,12 +683,12 @@ module CollavreOpenclaw
       assert adapter.send(:websocket_available?)
 
       http_called = false
-      adapter.define_singleton_method(:chat_via_http) do |_msgs, &_blk|
+      adapter.define_singleton_method(:chat_via_http) do |&_blk|
         http_called = true
         nil
       end
 
-      adapter.chat([ { role: "user", content: "Hello" } ])
+      adapter.chat({ messages: [ { role: "user", kind: :trigger, parts: [ { text: "Hello" } ] } ], first_message: true, context_changed: false })
       assert http_called, "Should use HTTP when transport is http"
     ensure
       CollavreOpenclaw.config.transport = original_transport

@@ -20,10 +20,14 @@ module Collavre
         append_creative_context(messages)
         append_context_creatives(messages)
         append_referenced_creative_contexts(messages)
-        append_chat_history(messages)
+        history_count = append_chat_history(messages)
         append_trigger_message(messages)
 
-        messages
+        {
+          messages: messages,
+          first_message: history_count == 0,
+          context_changed: history_count > 0 && context_changed_since_last_reply?
+        }
       end
 
       private
@@ -44,7 +48,7 @@ module Collavre
           # knows where in the hierarchy the conversation is happening
           ancestry = build_ancestry_chain(creative)
           @injected_creative_ids << creative.id
-          messages << { role: "user", parts: [ { text: "Current Creative (id: #{creative.id}):#{topic_info}\nPath: #{ancestry}" } ] }
+          messages << { role: "user", kind: :creative_context, parts: [ { text: "Current Creative (id: #{creative.id}):#{topic_info}\nPath: #{ancestry}" } ] }
         else
           # Full self-context: inject the creative subtree
           children_level = @agent.creative_children_level
@@ -54,7 +58,7 @@ module Collavre
           )
 
           @injected_creative_ids << creative.id
-          messages << { role: "user", parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
+          messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
         end
       end
 
@@ -91,6 +95,7 @@ module Collavre
 
           messages << {
             role: "user",
+            kind: :context_creative,
             parts: [ { text: "Context Creative (id: #{ctx.id}):\n#{markdown}" } ]
           }
         end
@@ -118,20 +123,23 @@ module Collavre
 
           messages << {
             role: "user",
+            kind: :referenced_creative,
             parts: [ { text: "Referenced Creative (id: #{creative.id}):\n#{markdown}" } ]
           }
         end
       end
 
+      # Appends chat history messages and returns the count of messages added.
       def append_chat_history(messages)
         creative_id = @context.dig("creative", "id")
-        return unless creative_id
+        return 0 unless creative_id
 
         topic_id = trigger_comment&.topic_id
 
         history_limit = @agent.chat_history_limit
         history_size_limit = @agent.chat_history_size_limit
         history_chars = 0
+        count = 0
 
         Comment.where(creative_id: creative_id, private: false)
                .where(topic_id: topic_id)
@@ -155,8 +163,11 @@ module Collavre
           history_chars += content.length
           break if history_chars > history_size_limit
 
-          messages << { role: role, parts: [ { text: content } ] }
+          messages << { role: role, kind: :chat_history, parts: [ { text: content } ] }
+          count += 1
         end
+
+        count
       end
 
       def append_trigger_message(messages)
@@ -184,7 +195,7 @@ module Collavre
           end
         end
 
-        messages << { role: "user", parts: trigger_parts }
+        messages << { role: "user", kind: :trigger, parts: trigger_parts }
       end
 
       def trigger_comment
@@ -202,6 +213,43 @@ module Collavre
 
       def review_eligible?
         ReviewHandler.eligible?(@original_comment, @agent)
+      end
+
+      # Detects whether creative context or agent settings have changed
+      # since the agent's last reply in this topic. Used to decide whether
+      # to re-send system prompt and context to the Gateway.
+      #
+      # Checks the injected creatives AND their rendered subtrees (descendants
+      # up to max_depth), since render_creative_tree_markdown includes children.
+      def context_changed_since_last_reply?
+        creative_id = @context.dig("creative", "id")
+        return false unless creative_id
+
+        topic_id = trigger_comment&.topic_id
+
+        last_reply_at = Comment.where(creative_id: creative_id, topic_id: topic_id, user_id: @agent.id)
+                               .maximum(:created_at)
+        return true unless last_reply_at
+
+        # Collect all IDs that were rendered (roots + their subtrees)
+        all_rendered_ids = collect_rendered_creative_ids
+
+        creative_changed = Creative.where(id: all_rendered_ids)
+                                   .where("updated_at > ?", last_reply_at)
+                                   .exists?
+        agent_changed = @agent.updated_at > last_reply_at
+
+        creative_changed || agent_changed
+      end
+
+      # Collects the IDs of all creatives whose content is included in the
+      # rendered context: each injected root plus its full subtree.
+      # This is slightly broader than what's actually rendered (which is
+      # limited by children_level), but ensures no descendant change is missed.
+      def collect_rendered_creative_ids
+        @injected_creative_ids.flat_map do |root_id|
+          Creative.find_by(id: root_id)&.subtree_ids || [ root_id ]
+        end.uniq
       end
     end
   end

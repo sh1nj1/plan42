@@ -122,14 +122,19 @@ class AiAgentJobTest < ActiveJob::TestCase
   end
 
   class MessageCaptureClient
-    attr_reader :captured_messages
+    attr_reader :captured_messages_data
 
     def initialize(*args); end
 
-    def chat(messages, tools: [], &block)
-      @captured_messages = messages
+    def chat(messages_data, tools: [], &block)
+      @captured_messages_data = messages_data
       block.call("AI Response") if block
       "AI Response"
+    end
+
+    # Extract the messages array from the Hash (or return as-is for backward compat)
+    def captured_messages
+      @captured_messages_data.is_a?(Hash) ? @captured_messages_data[:messages] : @captured_messages_data
     end
   end
 
