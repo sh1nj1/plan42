@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { copyTextToClipboard } from '../../utils/clipboard'
+import { attachBundleDragImage } from '../../utils/drag_bundle_image'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
@@ -749,14 +750,11 @@ export default class extends Controller {
     // Add visual feedback
     this.listTarget.classList.add('dragging-comments')
     
-    // Create custom drag image showing count
+    // Create bundle drag image for multi-select
     if (commentIds.length > 1) {
-      const dragImage = document.createElement('div')
-      dragImage.className = 'comment-drag-image'
-      dragImage.textContent = `${commentIds.length} messages`
-      document.body.appendChild(dragImage)
-      event.dataTransfer.setDragImage(dragImage, 0, 0)
-      setTimeout(() => dragImage.remove(), 0)
+      const bodyEl = item.querySelector('.comment-body')
+      const text = bodyEl ? bodyEl.textContent.trim() : ''
+      attachBundleDragImage(event, commentIds.length, text)
     }
   }
 

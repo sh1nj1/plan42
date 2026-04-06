@@ -505,6 +505,16 @@ function notifyInvalidDrop() {
   }
 }
 
+import { attachBundleDragImage } from '../../utils/drag_bundle_image.js';
+
+function getCreativeText(id) {
+  if (typeof document === 'undefined') return '';
+  const rowEl = document.querySelector(`creative-tree-row[creative-id="${id}"]`);
+  if (!rowEl) return '';
+  const content = rowEl.querySelector('.creative-content');
+  return content ? content.textContent.trim() : '';
+}
+
 export function handleDragStart(event) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
   if (!tree || tree.draggable === false) return;
@@ -525,6 +535,11 @@ export function handleDragStart(event) {
     selectedCreativeIds,
   });
   event.dataTransfer.effectAllowed = 'move';
+
+  // Custom bundle drag image for multi-select
+  if (selectedCreativeIds.length > 1) {
+    attachBundleDragImage(event, selectedCreativeIds.length, getCreativeText(creativeId));
+  }
 
   const sessionToken = ensureDragSessionToken();
   const serialized = serializeDragState(getDraggedState(), sessionToken);

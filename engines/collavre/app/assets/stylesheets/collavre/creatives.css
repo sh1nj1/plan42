@@ -976,3 +976,67 @@ creative-tree-row.is-being-edited .creative-tree {
 .creative-progress-area {
     display: contents;
 }
+
+/* ─── Bundle drag image (shared by creatives + comments) ─── */
+
+.drag-bundle-image {
+    position: fixed;
+    top: -1000px;
+    left: -1000px;
+    width: 220px;
+    pointer-events: none;
+}
+
+.drag-bundle-card {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 42px;
+    border-radius: var(--radius-2);
+    border: var(--border-1) solid var(--border-muted);
+    background-color: var(--surface-base);
+    box-shadow: var(--shadow-2);
+}
+
+.drag-bundle-card--back {
+    transform: translate(6px, -6px) rotate(2deg);
+    opacity: 0.5;
+}
+
+.drag-bundle-card--mid {
+    transform: translate(3px, -3px) rotate(1deg);
+    opacity: 0.75;
+}
+
+.drag-bundle-card--front {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-3);
+    font-size: var(--text-1);
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background-color: var(--surface-base);
+}
+
+.drag-bundle-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: var(--radius-round);
+    background-color: var(--color-active);
+    color: var(--color-badge-text);
+    font-size: var(--text-0);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-2);
+}
