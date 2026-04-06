@@ -10,11 +10,12 @@ module Collavre
 
     attr_reader :last_input_tokens, :last_output_tokens
 
-    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, context: {})
+    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {})
       @vendor = vendor
       @model = model
       @system_prompt = system_prompt
       @llm_api_key = llm_api_key
+      @gateway_url = gateway_url
       @context = context
       @last_input_tokens = 0
       @last_output_tokens = 0
@@ -53,7 +54,7 @@ module Collavre
       # and log a warning if the vendor is unsupported.
 
       normalized_vendor = vendor.to_s.downcase
-      unless %w[google gemini].include?(normalized_vendor)
+      unless %w[google gemini openai].include?(normalized_vendor)
         Rails.logger.warn "Unsupported LLM vendor '#{@vendor}'. Attempting to use default (google)."
       end
 
@@ -124,16 +125,24 @@ module Collavre
 
     private
 
-    attr_reader :vendor, :model, :system_prompt, :llm_api_key, :context
+    attr_reader :vendor, :model, :system_prompt, :llm_api_key, :gateway_url, :context
 
     def build_conversation(tools = [])
-      # Using RubyLLM.context to ensure we can potentially switch keys if we had them.
-      # We explicitly set the key from ENV for now, as RubyLLM might not pick it up from global config in context?
-      # Or maybe the global config was not loaded in the runner context properly?
-      # Regardless, setting it here ensures it works like GeminiChatClient.
+      normalized_vendor = @vendor.to_s.downcase
 
-      api_key = @llm_api_key.presence || ENV["GEMINI_API_KEY"]
-      RubyLLM.context { |config| config.gemini_api_key = api_key }
+      context_block = if normalized_vendor == "openai"
+        api_key = @llm_api_key.presence || ENV["OPENAI_API_KEY"]
+        base_url = @gateway_url.presence
+        proc do |config|
+          config.openai_api_key = api_key
+          config.openai_api_base = base_url if base_url
+        end
+      else
+        api_key = @llm_api_key.presence || ENV["GEMINI_API_KEY"]
+        proc { |config| config.gemini_api_key = api_key }
+      end
+
+      RubyLLM.context(&context_block)
              .chat(model: model).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
         chat.on_tool_call do |tool_call|
