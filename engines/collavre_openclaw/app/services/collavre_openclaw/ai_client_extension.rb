@@ -12,9 +12,11 @@ module CollavreOpenclaw
       end
     end
 
-    # @param messages_data [Hash] { messages:, first_message:, context_changed: }
-    def chat(messages_data, tools: [], &block)
+    # @param messages_input [Hash, Array] Hash { messages:, first_message:, context_changed: }
+    #   from MessageBuilder, or a plain Array from standalone callers (e.g., CompressJob).
+    def chat(messages_input, tools: [], &block)
       normalized_vendor = vendor.to_s.downcase
+      messages_data = normalize_messages_input(messages_input)
 
       # Check if we have a custom adapter for this vendor
       adapter_class = self.class.adapter_registry[normalized_vendor]
@@ -57,5 +59,17 @@ module CollavreOpenclaw
     private
 
     attr_reader :vendor, :system_prompt, :context
+
+    # Wrap plain Array input (from standalone callers like CompressJob)
+    # into the Hash format expected by the adapter.
+    def normalize_messages_input(input)
+      return input if input.is_a?(Hash)
+
+      {
+        messages: Array(input).map { |m| m.merge(kind: :trigger) },
+        first_message: true,
+        context_changed: false
+      }
+    end
   end
 end

@@ -218,6 +218,9 @@ module Collavre
       # Detects whether creative context or agent settings have changed
       # since the agent's last reply in this topic. Used to decide whether
       # to re-send system prompt and context to the Gateway.
+      #
+      # Checks the injected creatives AND their rendered subtrees (descendants
+      # up to max_depth), since render_creative_tree_markdown includes children.
       def context_changed_since_last_reply?
         creative_id = @context.dig("creative", "id")
         return false unless creative_id
@@ -228,12 +231,25 @@ module Collavre
                                .maximum(:created_at)
         return true unless last_reply_at
 
-        creative_changed = Creative.where(id: @injected_creative_ids.to_a)
+        # Collect all IDs that were rendered (roots + their subtrees)
+        all_rendered_ids = collect_rendered_creative_ids
+
+        creative_changed = Creative.where(id: all_rendered_ids)
                                    .where("updated_at > ?", last_reply_at)
                                    .exists?
         agent_changed = @agent.updated_at > last_reply_at
 
         creative_changed || agent_changed
+      end
+
+      # Collects the IDs of all creatives whose content is included in the
+      # rendered context: each injected root plus its full subtree.
+      # This is slightly broader than what's actually rendered (which is
+      # limited by children_level), but ensures no descendant change is missed.
+      def collect_rendered_creative_ids
+        @injected_creative_ids.flat_map do |root_id|
+          Creative.find_by(id: root_id)&.subtree_ids || [ root_id ]
+        end.uniq
       end
     end
   end
