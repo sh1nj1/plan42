@@ -41,6 +41,7 @@ OmniAuth.config.allowed_request_methods = %i[get post]
 # Enable OmniAuth mock mode in development when no real GitHub credentials are configured.
 # The mock server (bin/rails collavre_github:mock_server) runs by default via Procfile.dev.
 # Set GITHUB_MOCK=0 to explicitly disable mock mode even without credentials.
+github_client_id = ENV["GITHUB_CLIENT_ID"] || Rails.application.credentials.dig(:github, :client_id)
 github_mock_enabled = if ENV.key?("GITHUB_MOCK")
                         ENV["GITHUB_MOCK"] == "1"
 else
