@@ -626,3 +626,62 @@
   flex-basis: 50%;
   max-width: 50%;
 }
+
+/* ── Lexical Image Resizer ── */
+
+.lexical-image-container {
+  position: relative;
+  display: inline-block;
+  cursor: default;
+  user-select: none;
+  line-height: 0;
+}
+
+.lexical-image-container img {
+  display: block;
+}
+
+.lexical-image-selected {
+  outline: 2px solid var(--color-active, #3b82f6);
+  outline-offset: 2px;
+  border-radius: var(--radius-1, 2px);
+}
+
+.lexical-image-resizing {
+  cursor: nwse-resize;
+}
+
+.lexical-image-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--surface-bg, #fff);
+  border: 2px solid var(--color-active, #3b82f6);
+  border-radius: var(--radius-1, 2px);
+  z-index: 2;
+  box-sizing: border-box;
+}
+
+.lexical-image-handle--nw {
+  top: -5px;
+  left: -5px;
+  cursor: nwse-resize;
+}
+
+.lexical-image-handle--ne {
+  top: -5px;
+  right: -5px;
+  cursor: nesw-resize;
+}
+
+.lexical-image-handle--sw {
+  bottom: -5px;
+  left: -5px;
+  cursor: nesw-resize;
+}
+
+.lexical-image-handle--se {
+  bottom: -5px;
+  right: -5px;
+  cursor: nwse-resize;
+}
