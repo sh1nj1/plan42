@@ -130,6 +130,13 @@ module Collavre
       end
     end
 
+    LLM_VENDOR_OPTIONS = [
+      [ "Google (Gemini)", "google" ],
+      [ "OpenAI", "openai" ],
+      [ "Anthropic", "anthropic" ],
+      [ "OpenClaw", "openclaw" ]
+    ].freeze
+
     SUPPORTED_LLM_MODELS = [
       "gemini-3-flash-preview",
       "gemini-1.5-flash",

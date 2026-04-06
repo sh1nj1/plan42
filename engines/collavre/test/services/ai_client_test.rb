@@ -66,7 +66,7 @@ class AiClientTest < ActiveSupport::TestCase
     fake_chat = FakeConversation.new
 
     mock_context = Object.new
-    mock_context.define_singleton_method(:chat) do |model:|
+    mock_context.define_singleton_method(:chat) do |**kwargs|
       fake_chat
     end
 
@@ -97,7 +97,7 @@ class AiClientTest < ActiveSupport::TestCase
     fake_chat = FakeConversation.new
 
     mock_context = Object.new
-    mock_context.define_singleton_method(:chat) do |model:|
+    mock_context.define_singleton_method(:chat) do |**kwargs|
       fake_chat
     end
 

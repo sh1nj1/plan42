@@ -10,11 +10,12 @@ module Collavre
 
     attr_reader :last_input_tokens, :last_output_tokens
 
-    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, context: {})
+    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {})
       @vendor = vendor
       @model = model
       @system_prompt = system_prompt
       @llm_api_key = llm_api_key
+      @gateway_url = gateway_url
       @context = context
       @last_input_tokens = 0
       @last_output_tokens = 0
@@ -26,34 +27,8 @@ module Collavre
       input_tokens = nil
       output_tokens = nil
 
-      # For now, we assume the API key is in the environment variable GEMINI_API_KEY
-      # In a real generic implementation, we might need to fetch keys based on vendor.
-      # Since the user request mentioned "ruby_llm", we try to use it.
-      # However, RubyLLM configuration in this project seems to be static in initializer.
-      # We might need to adjust RubyLLM usage to be dynamic if possible, or just support Gemini for now via RubyLLM
-      # but allowing model configuration.
-
-      # Current RubyLLM initializer:
-      # RubyLLM.configure do |config|
-      #   config.gemini_api_key = ENV["GEMINI_API_KEY"]
-      # end
-
-      # We can use RubyLLM.context to override config per request if needed,
-      # but for now we'll stick to the pattern in GeminiChatClient but make it slightly more generic
-      # if RubyLLM supports other vendors.
-
-      # NOTE: The current requirement implies we should support what RubyLLM supports.
-      # If the user enters vendor='google', we use Gemini.
-
-      # For now, we assume the API key is in the environment variable GEMINI_API_KEY
-      # In a real generic implementation, we might need to fetch keys based on vendor.
-      # Since the user request mentioned "ruby_llm", we try to use it.
-      # Previously the method returned early unless vendor was "google" which caused AI responses
-      # to be omitted for agents with a different or nil vendor. We now proceed for any vendor
-      # and log a warning if the vendor is unsupported.
-
       normalized_vendor = vendor.to_s.downcase
-      unless %w[google gemini].include?(normalized_vendor)
+      unless VENDOR_TO_PROVIDER.key?(normalized_vendor)
         Rails.logger.warn "Unsupported LLM vendor '#{@vendor}'. Attempting to use default (google)."
       end
 
@@ -124,17 +99,41 @@ module Collavre
 
     private
 
-    attr_reader :vendor, :model, :system_prompt, :llm_api_key, :context
+    attr_reader :vendor, :model, :system_prompt, :llm_api_key, :gateway_url, :context
+
+    VENDOR_TO_PROVIDER = {
+      "openai" => :openai,
+      "anthropic" => :anthropic,
+      "google" => :gemini,
+      "gemini" => :gemini
+    }.freeze
 
     def build_conversation(tools = [])
-      # Using RubyLLM.context to ensure we can potentially switch keys if we had them.
-      # We explicitly set the key from ENV for now, as RubyLLM might not pick it up from global config in context?
-      # Or maybe the global config was not loaded in the runner context properly?
-      # Regardless, setting it here ensures it works like GeminiChatClient.
+      normalized_vendor = @vendor.to_s.downcase
 
-      api_key = @llm_api_key.presence || ENV["GEMINI_API_KEY"]
-      RubyLLM.context { |config| config.gemini_api_key = api_key }
-             .chat(model: model).tap do |chat|
+      context_block = case normalized_vendor
+      when "openai"
+        api_key = @llm_api_key.presence || ENV["OPENAI_API_KEY"]
+        base_url = @gateway_url.presence
+        proc do |config|
+          config.openai_api_key = api_key
+          config.openai_api_base = base_url if base_url
+        end
+      when "anthropic"
+        api_key = @llm_api_key.presence || ENV["ANTHROPIC_API_KEY"]
+        proc { |config| config.anthropic_api_key = api_key }
+      else
+        api_key = @llm_api_key.presence || ENV["GEMINI_API_KEY"]
+        proc { |config| config.gemini_api_key = api_key }
+      end
+
+      provider = VENDOR_TO_PROVIDER[normalized_vendor]
+      chat_opts = { model: model }
+      chat_opts[:provider] = provider if provider
+      chat_opts[:assume_model_exists] = true if provider
+
+      RubyLLM.context(&context_block)
+             .chat(**chat_opts).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
         chat.on_tool_call do |tool_call|
           check_tool_approval!(tool_call)
