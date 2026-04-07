@@ -185,7 +185,7 @@ textarea.modal-dialog-input {
   display: flex;
   gap: var(--space-3);
   font-size: var(--text-0);
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 
 .modal-dialog-hint {
@@ -206,7 +206,7 @@ textarea.modal-dialog-input {
   border-radius: var(--radius-1, 4px);
   font-size: var(--text-00, 11px);
   font-family: inherit;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   line-height: 1;
 }
 
@@ -304,6 +304,7 @@ textarea.modal-dialog-input {
   left: 50%;
   transform: translate(-50%, -50%);
   max-height: 80%;
+  animation: modal-dialog-scoped-slide 0.15s var(--ease-out-3, ease-out);
 }
 
 .modal-dialog--scoped.open {
@@ -319,10 +320,6 @@ textarea.modal-dialog-input {
     opacity: 1;
     transform: translate(-50%, -50%) scale(1);
   }
-}
-
-.modal-dialog--scoped {
-  animation: modal-dialog-scoped-slide 0.15s var(--ease-out-3, ease-out);
 }
 
 /* ── Mobile ── */

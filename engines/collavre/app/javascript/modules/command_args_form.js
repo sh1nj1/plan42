@@ -113,9 +113,15 @@ export default class CommandArgsForm {
     // Header
     const header = document.createElement('div')
     header.className = 'modal-dialog-header'
-    header.innerHTML = `<span class="modal-dialog-title">${command.label}</span>`
+    const title = document.createElement('span')
+    title.className = 'modal-dialog-title'
+    title.textContent = command.label
+    header.appendChild(title)
     if (command.description) {
-      header.innerHTML += `<span class="modal-dialog-desc">${command.description}</span>`
+      const desc = document.createElement('span')
+      desc.className = 'modal-dialog-desc'
+      desc.textContent = command.description
+      header.appendChild(desc)
     }
     this.dialog.appendChild(header)
 
@@ -467,10 +473,18 @@ export default class CommandArgsForm {
       li.className = 'modal-dialog-mention-item'
       if (index === 0) li.classList.add('active')
 
-      const avatar = user.avatar_url
-        ? `<img src="${user.avatar_url}" width="20" height="20" class="avatar" />`
-        : ''
-      li.innerHTML = `${avatar}<span class="modal-dialog-mention-name">${user.name}</span>`
+      if (user.avatar_url) {
+        const avatar = document.createElement('img')
+        avatar.src = user.avatar_url
+        avatar.width = 20
+        avatar.height = 20
+        avatar.className = 'avatar'
+        li.appendChild(avatar)
+      }
+      const nameSpan = document.createElement('span')
+      nameSpan.className = 'modal-dialog-mention-name'
+      nameSpan.textContent = user.name
+      li.appendChild(nameSpan)
 
       li.addEventListener('mouseenter', () => {
         dropdown.querySelectorAll('.active').forEach((el) => el.classList.remove('active'))

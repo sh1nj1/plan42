@@ -111,13 +111,9 @@ if (!commandMenuInitialized) {
       textarea.setSelectionRange(replaced.length, replaced.length)
     }
 
-    function hide() {
-      popupMenu.hide()
-    }
-
     function show(commands, query) {
       if (!commands || commands.length === 0) {
-        hide()
+        popupMenu.hide()
         return
       }
 
@@ -130,7 +126,7 @@ if (!commandMenuInitialized) {
       })
 
       if (filtered.length === 0) {
-        hide()
+        popupMenu.hide()
         return
       }
 
@@ -182,7 +178,7 @@ if (!commandMenuInitialized) {
       // Only trigger when "/" is at the very beginning of the message
       const match = before.match(/^\/([^\s/]*)$/)
       if (!match) {
-        hide()
+        popupMenu.hide()
         return
       }
 
