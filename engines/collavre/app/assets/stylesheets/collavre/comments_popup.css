@@ -1033,19 +1033,23 @@ body.chat-fullscreen {
 .agent-stop-btn {
     background: var(--surface-3);
     border: 1px solid var(--surface-4);
-    border-radius: var(--radius-round);
+    border-radius: var(--radius-2);
     color: var(--text-2);
     cursor: pointer;
-    font-size: var(--text-0);
-    width: 20px;
-    height: 20px;
-    padding: 0;
+    font-size: var(--text-00);
+    padding: 2px 8px;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    margin-right: 4px;
+    gap: 3px;
+    margin-right: 6px;
     flex-shrink: 0;
-    transition: background 0.15s;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+    line-height: 1;
+}
+
+.agent-stop-btn .agent-stop-icon {
+    font-size: 8px;
 }
 
 .agent-stop-btn:hover {

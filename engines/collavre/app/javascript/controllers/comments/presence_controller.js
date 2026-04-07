@@ -338,8 +338,9 @@ export default class extends Controller {
       const stopBtn = document.createElement('button')
       stopBtn.type = 'button'
       stopBtn.className = 'agent-stop-btn'
-      stopBtn.textContent = '\u25A0'
-      stopBtn.title = this.typingIndicatorTarget.dataset.stopAgentText || 'Stop'
+      const stopLabel = this.typingIndicatorTarget.dataset.stopAgentText || 'Stop'
+      stopBtn.innerHTML = `<span class="agent-stop-icon">\u25A0</span> ${stopLabel}`
+      stopBtn.title = stopLabel
       stopBtn.addEventListener('click', () => {
         ids.forEach((id) => {
           const taskId = this.activeAgentTasks?.[id]
