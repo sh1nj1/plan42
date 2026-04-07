@@ -173,6 +173,7 @@ ko:
         delete: 이 버전 삭제
         delete_confirm: 이 버전을 삭제하시겠습니까?
         select: 선택
+      stop_agent: 중지
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
       lightbox:

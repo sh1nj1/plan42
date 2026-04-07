@@ -70,6 +70,7 @@ module Collavre
       raise
     rescue CancelledError
       handle_cancelled
+      abort_openclaw_if_needed
       raise
     end
 
@@ -232,6 +233,26 @@ module Collavre
 
     def build_policy_resolver
       Orchestration::PolicyResolver.new(@context)
+    end
+
+    def abort_openclaw_if_needed
+      return unless @agent.llm_vendor&.downcase == "openclaw"
+      return unless defined?(CollavreOpenclaw::ConnectionManager)
+
+      adapter = CollavreOpenclaw::OpenclawAdapter.new(
+        user: @agent,
+        system_prompt: "",
+        context: {
+          creative: @creative,
+          user: @agent,
+          task: @task,
+          comment: @reply_comment || @original_comment
+        }
+      )
+      conn = CollavreOpenclaw::ConnectionManager.instance.connection_for(@agent)
+      conn.chat_abort(session_key: adapter.session_key)
+    rescue StandardError => e
+      Rails.logger.warn("[AiAgentService] OpenClaw abort fallback failed: #{e.message}")
     end
   end
 end

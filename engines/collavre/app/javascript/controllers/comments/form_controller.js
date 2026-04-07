@@ -79,6 +79,10 @@ export default class extends Controller {
     this.textareaTarget.addEventListener('input', this._autoResize)
 
     this.textareaTarget.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        this.presenceController?.cancelAllAgentTasks()
+        return
+      }
       if (event.key === 'Enter' && !event.shiftKey) {
         if (this.isMentionMenuVisible()) return
         this.handleSend(event)

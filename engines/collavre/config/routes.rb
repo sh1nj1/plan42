@@ -44,6 +44,11 @@ Collavre::Engine.routes.draw do
   end
 
   resources :creative_imports, only: [ :create ]
+  resources :tasks, only: [] do
+    member do
+      post :cancel
+    end
+  end
   resources :creatives do
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]
     resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"

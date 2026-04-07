@@ -176,6 +176,7 @@ en:
         delete: Delete this version
         delete_confirm: Are you sure you want to delete this version?
         select: Select
+      stop_agent: Stop
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
       lightbox:
