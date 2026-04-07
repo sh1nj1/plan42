@@ -86,6 +86,12 @@
   z-index: calc(var(--layer-modal) + 10);
 }
 
+/* When chat is fullscreen, these modals must sit above it */
+body.chat-fullscreen #link-creative-modal,
+body.chat-fullscreen #topic-search-modal {
+  z-index: calc(var(--layer-fullscreen) + 1);
+}
+
 .common-popup {
   position: absolute;
   z-index: var(--layer-modal);
