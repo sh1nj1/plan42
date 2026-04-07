@@ -16,7 +16,7 @@
   display: none;
   position: fixed;
   inset: 0;
-  z-index: var(--layer-popup, 100);
+  z-index: calc(var(--layer-modal, 1000) + 1);
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -39,7 +39,7 @@
   top: 15vh;
   left: 50%;
   transform: translateX(-50%);
-  z-index: calc(var(--layer-popup, 100) + 1);
+  z-index: calc(var(--layer-modal, 1000) + 2);
   width: 520px;
   max-width: calc(100vw - 2rem);
   max-height: 70vh;
