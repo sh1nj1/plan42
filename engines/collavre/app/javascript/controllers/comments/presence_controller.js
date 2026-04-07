@@ -62,6 +62,7 @@ export default class extends Controller {
     this.participantsData = null
     this.currentPresentIds = []
     this.typingUsers = {}
+    this.activeAgentTasks = {}
     this.clearTypingTimers()
     this.clearManualTypingMessage()
     this.renderParticipants([])
@@ -199,23 +200,27 @@ export default class extends Controller {
       return
     }
     if (data.agent_status) {
-      const { id, name, status, creative_id: agentCreativeId } = data.agent_status
+      const { id, name, status, task_id, creative_id: agentCreativeId } = data.agent_status
       // Only show typing indicator if agent is working on this specific creative
       if (agentCreativeId && agentCreativeId !== this.creativeId) {
         return
       }
       if (status === 'thinking' || status === 'streaming') {
         this.typingUsers[id] = name
+        if (!this.activeAgentTasks) this.activeAgentTasks = {}
+        if (task_id) this.activeAgentTasks[id] = task_id
         // Safety timeout: auto-remove if no heartbeat within AGENT_STATUS_TIMEOUT
         if (!this.agentStatusTimers) this.agentStatusTimers = {}
         if (this.agentStatusTimers[id]) clearTimeout(this.agentStatusTimers[id])
         this.agentStatusTimers[id] = setTimeout(() => {
           delete this.typingUsers[id]
           delete this.agentStatusTimers[id]
+          delete this.activeAgentTasks?.[id]
           this.renderTypingIndicator()
         }, AGENT_STATUS_TIMEOUT)
       } else {
         delete this.typingUsers[id]
+        delete this.activeAgentTasks?.[id]
         if (this.agentStatusTimers?.[id]) {
           clearTimeout(this.agentStatusTimers[id])
           delete this.agentStatusTimers[id]
@@ -353,6 +358,43 @@ export default class extends Controller {
     const text = document.createElement('span')
     text.textContent = `${names.join(', ')} ...`
     this.typingIndicatorTarget.appendChild(text)
+
+    // Add stop button for active agent tasks
+    ids.forEach((id) => {
+      const taskId = this.activeAgentTasks?.[id]
+      if (taskId) {
+        const stopBtn = document.createElement('button')
+        stopBtn.type = 'button'
+        stopBtn.className = 'agent-stop-btn'
+        stopBtn.textContent = '\u25A0'
+        stopBtn.title = this.typingIndicatorTarget.dataset.stopAgentText || 'Stop'
+        stopBtn.addEventListener('click', () => this.cancelAgentTask(taskId, id))
+        this.typingIndicatorTarget.appendChild(stopBtn)
+      }
+    })
+  }
+
+  cancelAgentTask(taskId, agentId) {
+    const csrfToken = document.querySelector('meta[name=csrf-token]')?.content
+    fetch(`/tasks/${taskId}/cancel`, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': csrfToken,
+        'Content-Type': 'application/json',
+      },
+    })
+      .then((response) => {
+        if (response.ok) {
+          delete this.typingUsers[agentId]
+          delete this.activeAgentTasks?.[agentId]
+          if (this.agentStatusTimers?.[agentId]) {
+            clearTimeout(this.agentStatusTimers[agentId])
+            delete this.agentStatusTimers[agentId]
+          }
+          this.renderTypingIndicator()
+        }
+      })
+      .catch(() => {})
   }
 
   clearTypingTimers() {

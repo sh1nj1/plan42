@@ -1030,6 +1030,28 @@ body.chat-fullscreen {
     filter: grayscale(1);
 }
 
+.agent-stop-btn {
+    background: var(--surface-3);
+    border: 1px solid var(--surface-4);
+    border-radius: var(--radius-round);
+    color: var(--text-2);
+    cursor: pointer;
+    font-size: var(--text-0);
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 4px;
+    transition: background 0.15s;
+}
+
+.agent-stop-btn:hover {
+    background: var(--red-5);
+    color: white;
+}
+
 /* --- Context Chips --- */
 .comment-contexts-list {
     display: flex;
