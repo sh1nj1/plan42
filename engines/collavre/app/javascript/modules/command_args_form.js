@@ -344,8 +344,7 @@ export default class CommandArgsForm {
     const parts = [command.label]
     if (values.topic_name) parts.push(`"${values.topic_name}"`)
     if (values.agent_name) {
-      const agent = values.agent_name.startsWith('@') ? values.agent_name : `@${values.agent_name}`
-      parts.push(agent)
+      parts.push(values.agent_name)
     }
     return parts.join(' ')
   }
@@ -353,8 +352,7 @@ export default class CommandArgsForm {
   _buildWorkText(command, values) {
     const parts = [command.label]
     if (values.agent_name) {
-      const agent = values.agent_name.startsWith('@') ? values.agent_name : `@${values.agent_name}`
-      parts.push(agent)
+      parts.push(values.agent_name)
     }
     if (values.context) parts.push(values.context)
     return parts.join(' ')
@@ -479,7 +477,7 @@ export default class CommandArgsForm {
       })
       li.addEventListener('mousedown', (e) => e.preventDefault())
       li.addEventListener('click', () => {
-        input.value = user.name
+        input.value = `@${user.name}: `
         dropdown.style.display = 'none'
         // Move focus to next input
         const allInputs = Array.from(this.dialog.querySelectorAll('[data-param-name]'))
