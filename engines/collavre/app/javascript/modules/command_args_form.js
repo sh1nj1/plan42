@@ -384,9 +384,10 @@ export default class CommandArgsForm {
     dropdown.className = 'modal-dialog-mention-dropdown'
     dropdown.style.display = 'none'
 
-    // Search on input
+    // Search on input — strip leading "@" so API gets a clean query
     input.addEventListener('input', () => {
-      const q = input.value.trim()
+      const raw = input.value.trim()
+      const q = raw.replace(/^@/, '')
       if (q.length === 0) {
         dropdown.style.display = 'none'
         return
