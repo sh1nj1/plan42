@@ -1,3 +1,39 @@
+## v0.13.0 (2026-04-08)
+
+### Changes
+- 4ab957c8 Merge pull request #1134 from sh1nj1/feat/command-args-form
+- cd9195c1 Merge pull request #1135 from sh1nj1/feat/cancel-agent-task
+- 47952e4e fix: always use JSON format for MCP command args to preserve spaces
+- 1ffe06d4 feat: add focus trap to search popup via shared modal-dialog class
+- a08b1237 fix: use valid design tokens for agent stop button CSS
+- bfe2d4da refactor: extract focus trap into shared modal_dialog.js module
+- 0065a0fd feat: show stop label text next to icon on agent stop button
+- b8ab35a6 feat: add focus trap for Tab/Shift+Tab within command args form
+- 677ebb1a fix: position scoped modal from top instead of center to prevent clipping
+- da3e720e fix: address code review issues — XSS, design tokens, dead code, CSS duplication
+- c16f32ae fix: strip leading @ from mention field input before API search
+- 1d318174 fix: format mention values as @{name}: with colon suffix
+- 88be787d feat: add mention popup for agent_name fields in command args form
+- bc0e89b7 fix: resolve stop button not showing and session_key mismatch
+- e1a18e53 feat: scope command args form modal inside chat popup
+- 79a501ea fix: include modal_dialog.css in COLLAVRE_STYLESHEETS
+- 26f7b96b fix: raise modal-dialog z-index above comments-popup layer
+- 26197c0f refactor: extract shared modal-dialog CSS for search popup and command args form
+- 7c15ffd2 style: apply design tokens to command-args-form CSS
+- 32dd6488 fix: move stop button to typing indicator start and add ESC shortcut
+- a9e0ebe1 fix: skip textarea auto-focus on mobile to prevent keyboard push-up (#1137)
+- 20584a0a Fix dark mode syntax highlighting readability in code blocks (#1136)
+- d05ef8d4 test: add controller tests for task cancel endpoint
+- 5c12bd84 feat: add stop button for AI agent responses
+- 217a9ec4 feat: add auto-generated input form for slash command arguments
+- 030b0ba5 feat: optimize OpenClaw token usage with conditional context sending (#1133)
+- fee52691 feat: add inline image resize support in Creative editor (#1127)
+- 7f6a5cff fix: use relative paths for direct upload URLs in inline editor (#1132)
+- ed4a7fe2 fix: preserve attachment attributes in inline editor and fix upload issues (#1130)
+- ca84398f feat: bundle drag image for multi-select drag operations (#1126)
+- e869bb24 feat: add OpenAI provider support for AI agents (#1131)
+- 9e2664eb feat: add awaiting_user state for trigger loop BLOCKED handling (#1128)
+
 ## v0.12.3 (2026-04-03)
 
 ### Changes

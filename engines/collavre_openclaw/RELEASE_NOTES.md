@@ -1,3 +1,8 @@
+## v0.6.0 (2026-04-08)
+
+### Changes
+- 030b0ba5 feat: optimize OpenClaw token usage with conditional context sending (#1133)
+
 ## v0.5.0 (2026-04-02)
 
 ### Changes
