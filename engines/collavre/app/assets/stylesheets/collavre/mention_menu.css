@@ -74,10 +74,10 @@
 
 /* Command Args Form */
 .command-args-form {
-  position: absolute;
+  position: fixed;
   z-index: var(--layer-modal);
   background: var(--surface-section);
-  border: 1px solid var(--border-color);
+  border: var(--border-1) solid var(--border-color);
   box-shadow: var(--shadow-3);
   border-radius: var(--radius-2);
   padding: var(--space-3);
@@ -91,7 +91,7 @@
   gap: var(--space-1);
   margin-bottom: var(--space-3);
   padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: var(--border-1) solid var(--border-color);
 }
 
 .command-args-title {
@@ -100,7 +100,7 @@
 }
 
 .command-args-desc {
-  font-size: 0.85em;
+  font-size: var(--text-0);
   color: var(--text-muted);
 }
 
@@ -117,9 +117,9 @@
 }
 
 .command-args-label {
-  font-size: 0.85em;
+  font-size: var(--text-0);
   font-weight: var(--weight-5);
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 
 .command-args-required {
@@ -129,28 +129,37 @@
 
 .command-args-input {
   padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border-color);
+  border: var(--border-1) solid var(--border-color);
   border-radius: var(--radius-1);
   background: var(--surface-input);
   color: var(--text-primary);
   font-size: var(--text-0);
   font-family: inherit;
   outline: none;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s var(--ease-2);
 }
 
 .command-args-input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
+  border-color: var(--color-active);
+  box-shadow: 0 0 0 var(--border-1) var(--color-active);
 }
 
 .command-args-input.command-args-error {
   border-color: var(--color-danger);
-  box-shadow: 0 0 0 1px var(--color-danger);
+  box-shadow: 0 0 0 var(--border-1) var(--color-danger);
 }
 
 .command-args-input::placeholder {
   color: var(--text-muted);
+}
+
+textarea.command-args-input {
+  resize: none;
+  overflow: hidden;
+  min-height: 1.6em;
+  max-height: 8em;
+  line-height: var(--leading-3);
+  field-sizing: content;
 }
 
 .command-args-actions {
@@ -164,16 +173,16 @@
 .command-args-submit {
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-1);
-  font-size: 0.85em;
+  font-size: var(--text-0);
   font-family: inherit;
   cursor: pointer;
-  border: 1px solid var(--border-color);
-  transition: background 0.15s ease;
+  border: var(--border-1) solid var(--border-color);
+  transition: background 0.15s var(--ease-2);
 }
 
 .command-args-cancel {
   background: var(--surface-section);
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 
 .command-args-cancel:hover {
@@ -181,9 +190,9 @@
 }
 
 .command-args-submit {
-  background: var(--color-primary);
-  color: var(--text-on-primary);
-  border-color: var(--color-primary);
+  background: var(--color-active);
+  color: var(--text-on-badge);
+  border-color: var(--color-active);
 }
 
 .command-args-submit:hover {
