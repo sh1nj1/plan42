@@ -540,24 +540,6 @@ export default class CommandArgsForm {
       return
     }
 
-    // Focus trap — Tab/Shift+Tab cycles within dialog only
-    if (event.key === 'Tab' && this.dialog) {
-      const focusable = Array.from(
-        this.dialog.querySelectorAll('input, select, textarea, button, [tabindex]:not([tabindex="-1"])')
-      ).filter((el) => !el.disabled && el.offsetParent !== null)
-
-      if (focusable.length === 0) return
-
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
+    // Focus trap is handled by shared modal_dialog.js (auto-applies to .modal-dialog)
   }
 }
