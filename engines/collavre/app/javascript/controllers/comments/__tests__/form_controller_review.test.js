@@ -93,7 +93,7 @@ describe('FormController - Review Quote Chips', () => {
       const resetFormSpy = jest.spyOn(controller, 'resetForm').mockImplementation(() => {})
       const focusSpy = jest.spyOn(controller.textareaTarget, 'focus').mockImplementation(() => {})
       const originalInnerWidth = window.innerWidth
-      Object.defineProperty(window, 'innerWidth', { value: 500, configurable: true })
+      Object.defineProperty(window, 'innerWidth', { value: 760, configurable: true })
 
       controller.onPopupOpened({ creativeId: '123', canComment: true })
 
