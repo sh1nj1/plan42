@@ -27,7 +27,7 @@
   <%# Overlay backdrop %>
   <div class="search-popup-overlay" data-search-popup-target="overlay" data-action="click->search-popup#close"></div>
 
-  <div class="search-popup-dropdown" data-search-popup-target="popup">
+  <div class="search-popup-dropdown modal-dialog" data-search-popup-target="popup">
     <form action="<%= collavre.creatives_path %>" method="get" class="search-popup-form">
       <% if params[:id].present? %>
         <input type="hidden" name="id" value="<%= params[:id] %>" />
