@@ -1,5 +1,6 @@
 import CommonPopup from '../lib/common_popup'
 import { getCaretClientRect } from '../utils/caret_position'
+import CommandArgsForm from './command_args_form'
 
 let commandMenuInitialized = false
 
@@ -14,6 +15,29 @@ if (!commandMenuInitialized) {
 
     const list = menu.querySelector('[data-popup-list]')
     const commandCache = new Map()
+
+    const argsForm = new CommandArgsForm({
+      container: popup,
+      creativeIdFn: () => popup.dataset.creativeId,
+      labels: {
+        submit: menu.dataset.formSubmit || 'OK',
+        cancel: menu.dataset.formCancel || 'Cancel'
+      },
+      onSubmit: (commandText) => {
+        popupMenu.hide()
+        textarea.value = commandText
+        textarea.dispatchEvent(new Event('input', { bubbles: true }))
+        // Trigger form submission directly
+        const submitBtn = document.querySelector('#new-comment-form [data-comments--form-target="submit"]')
+        if (submitBtn) {
+          submitBtn.click()
+        }
+      },
+      onCancel: () => {
+        popupMenu.hide()
+        textarea.focus()
+      }
+    })
 
     const popupMenu = new CommonPopup(menu, {
       listElement: list,
@@ -40,11 +64,29 @@ if (!commandMenuInitialized) {
           popupMenu.hide()
           return
         }
+
+        // If the command has an input schema, show the args form instead
+        if (command.input_schema?.length) {
+          popupMenu.hide()
+          clearCommandText()
+          argsForm.show(command)
+          return
+        }
+
         insert(command)
         popupMenu.hide()
         textarea.focus()
       }
     })
+
+    function clearCommandText() {
+      const pos = textarea.selectionStart
+      const after = textarea.value.slice(pos)
+      const before = textarea.value.slice(0, pos)
+      const cleaned = before.replace(/^\/\S*\s*/, '')
+      textarea.value = cleaned + after
+      textarea.setSelectionRange(cleaned.length, cleaned.length)
+    }
 
     function fetchCommands(creativeId) {
       if (!creativeId) return Promise.resolve([])
@@ -69,13 +111,9 @@ if (!commandMenuInitialized) {
       textarea.setSelectionRange(replaced.length, replaced.length)
     }
 
-    function hide() {
-      popupMenu.hide()
-    }
-
     function show(commands, query) {
       if (!commands || commands.length === 0) {
-        hide()
+        popupMenu.hide()
         return
       }
 
@@ -88,7 +126,7 @@ if (!commandMenuInitialized) {
       })
 
       if (filtered.length === 0) {
-        hide()
+        popupMenu.hide()
         return
       }
 
@@ -105,12 +143,7 @@ if (!commandMenuInitialized) {
       if (!controller) return
 
       // Clear the command text (e.g. "/crea", "/creative") from textarea
-      const pos = textarea.selectionStart
-      const before = textarea.value.slice(0, pos)
-      const after = textarea.value.slice(pos)
-      const cleaned = before.replace(/^\/\S*\s*/, '')
-      textarea.value = cleaned + after
-      textarea.setSelectionRange(cleaned.length, cleaned.length)
+      clearCommandText()
 
       const caretRect = getCaretClientRect(textarea) || textarea.getBoundingClientRect()
       controller.open(
@@ -137,12 +170,15 @@ if (!commandMenuInitialized) {
     })
 
     textarea.addEventListener('input', function () {
+      // If args form is open, don't show command menu
+      if (argsForm.isOpen()) return
+
       const pos = textarea.selectionStart
       const before = textarea.value.slice(0, pos)
       // Only trigger when "/" is at the very beginning of the message
       const match = before.match(/^\/([^\s/]*)$/)
       if (!match) {
-        hide()
+        popupMenu.hide()
         return
       }
 

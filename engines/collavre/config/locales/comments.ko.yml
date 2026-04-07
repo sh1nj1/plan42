@@ -130,6 +130,15 @@ ko:
         compress_description: "현재 토픽의 모든 메세지를 요약하고 원본을 삭제합니다."
         compress_args: "[추가 지시사항]"
         creative_description: "크리에이티브 링크를 삽입합니다. AI 채팅에서는 링크된 크리에이티브 트리가 컨텍스트로 주입됩니다."
+        calendar_date_hint: "YYYY-MM-DD@HH:MM (today, tomorrow, +3days, +mon/+월)"
+        calendar_memo_hint: "이벤트 메모 (선택사항)"
+        topic_name_hint: "토픽 이름"
+        topic_agent_hint: "@에이전트이름 (선택사항)"
+        work_agent_hint: "@에이전트이름"
+        work_context_hint: "워크플로우 컨텍스트 (선택사항)"
+        compress_instructions_hint: "추가 지시사항 (선택사항)"
+        form_submit: "확인"
+        form_cancel: "취소"
       calendar_command:
         event_created: '이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})'
         event_created_local: '이벤트가 생성되었습니다 (로컬 전용 - 구글 캘린더 연동 시 동기화됩니다)'

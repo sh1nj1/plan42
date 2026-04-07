@@ -17,6 +17,7 @@ module Collavre
       collavre/code_highlight
       collavre/comment_versions
       collavre/mention_menu
+      collavre/modal_dialog
       collavre/slide_view
       collavre/image_lightbox
       collavre/search_popup
