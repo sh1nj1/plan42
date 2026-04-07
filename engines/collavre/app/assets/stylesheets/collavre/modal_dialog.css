@@ -234,6 +234,49 @@ textarea.modal-dialog-input {
   margin-left: 0.15em;
 }
 
+/* ── Scoped variant ──
+ * When a container element is specified, the modal is rendered inside that
+ * element instead of the full viewport. The container gets `position: relative`
+ * so overlay + dialog stay contained within it.
+ */
+.modal-dialog-container {
+  position: relative;
+}
+
+.modal-dialog-overlay--scoped {
+  position: absolute;
+  z-index: 1;                /* relative to the container, not the page */
+  border-radius: inherit;    /* match container shape */
+}
+
+.modal-dialog--scoped {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-height: 80%;
+}
+
+.modal-dialog--scoped.open {
+  display: block;
+}
+
+@keyframes modal-dialog-scoped-slide {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.modal-dialog--scoped {
+  animation: modal-dialog-scoped-slide 0.15s var(--ease-out-3, ease-out);
+}
+
 /* ── Mobile ── */
 @media (max-width: 768px) {
   .modal-dialog {

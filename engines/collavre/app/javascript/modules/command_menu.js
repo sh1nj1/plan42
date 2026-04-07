@@ -17,6 +17,7 @@ if (!commandMenuInitialized) {
     const commandCache = new Map()
 
     const argsForm = new CommandArgsForm({
+      container: popup,
       labels: {
         submit: menu.dataset.formSubmit || 'OK',
         cancel: menu.dataset.formCancel || 'Cancel'

@@ -11,10 +11,19 @@ const OVERLAY_ID = 'command-args-overlay'
 const DIALOG_ID = 'command-args-dialog'
 
 export default class CommandArgsForm {
-  constructor({ onSubmit, onCancel, labels } = {}) {
+  /**
+   * @param {Object} opts
+   * @param {Function} opts.onSubmit  - called with the final command string
+   * @param {Function} opts.onCancel  - called when the form is dismissed
+   * @param {Object}   opts.labels    - { submit, cancel } button text
+   * @param {Element}  opts.container - if set, the modal is scoped inside this element
+   *                                    (overlay covers only the container, content is blurred)
+   */
+  constructor({ onSubmit, onCancel, labels, container } = {}) {
     this.onSubmit = onSubmit || (() => {})
     this.onCancel = onCancel || (() => {})
     this.labels = labels || { submit: 'OK', cancel: 'Cancel' }
+    this.container = container || null
     this.command = null
     this.overlay = null
     this.dialog = null
@@ -48,6 +57,10 @@ export default class CommandArgsForm {
       this.dialog.remove()
       this.dialog = null
     }
+    // Restore container state
+    if (this.container) {
+      this.container.classList.remove('modal-dialog-container')
+    }
     this.command = null
     document.removeEventListener('keydown', this._handleKeydown)
   }
@@ -59,20 +72,32 @@ export default class CommandArgsForm {
   // --- Private ---
 
   _buildModal(command) {
+    const scoped = !!this.container
+    const host = scoped ? this.container : document.body
+
+    // When scoped, mark the container so CSS can apply position:relative
+    if (scoped) {
+      this.container.classList.add('modal-dialog-container')
+    }
+
     // Overlay
     this.overlay = document.createElement('div')
     this.overlay.id = OVERLAY_ID
-    this.overlay.className = 'modal-dialog-overlay open'
+    this.overlay.className = scoped
+      ? 'modal-dialog-overlay modal-dialog-overlay--scoped open'
+      : 'modal-dialog-overlay open'
     this.overlay.addEventListener('click', () => {
       this.hide()
       this.onCancel()
     })
-    document.body.appendChild(this.overlay)
+    host.appendChild(this.overlay)
 
     // Dialog panel
     this.dialog = document.createElement('div')
     this.dialog.id = DIALOG_ID
-    this.dialog.className = 'modal-dialog modal-dialog-compact open'
+    this.dialog.className = scoped
+      ? 'modal-dialog modal-dialog-compact modal-dialog--scoped open'
+      : 'modal-dialog modal-dialog-compact open'
 
     // Prevent overlay click when clicking inside dialog
     this.dialog.addEventListener('mousedown', (e) => e.stopPropagation())
@@ -132,7 +157,7 @@ export default class CommandArgsForm {
     footer.appendChild(submitBtn)
     this.dialog.appendChild(footer)
 
-    document.body.appendChild(this.dialog)
+    host.appendChild(this.dialog)
   }
 
   _buildField(param, index) {
