@@ -1,6 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 import { createSubscription } from '../../services/cable'
 import TouchDragHandler from '../../lib/touch_drag'
+import csrfFetch from '../../lib/api/csrf_fetch'
 
 const TYPING_TIMEOUT = 3000
 const AGENT_STATUS_TIMEOUT = 10000 // Safety timeout for agent_status (heartbeat expected every 3s)
@@ -202,7 +203,7 @@ export default class extends Controller {
     if (data.agent_status) {
       const { id, name, status, task_id, creative_id: agentCreativeId } = data.agent_status
       // Only show typing indicator if agent is working on this specific creative
-      if (agentCreativeId && agentCreativeId !== this.creativeId) {
+      if (agentCreativeId && String(agentCreativeId) !== String(this.creativeId)) {
         return
       }
       if (status === 'thinking' || status === 'streaming') {
@@ -389,13 +390,9 @@ export default class extends Controller {
   }
 
   cancelAgentTask(taskId, agentId) {
-    const csrfToken = document.querySelector('meta[name=csrf-token]')?.content
-    fetch(`/tasks/${taskId}/cancel`, {
+    csrfFetch(`/tasks/${taskId}/cancel`, {
       method: 'POST',
-      headers: {
-        'X-CSRF-Token': csrfToken,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
     })
       .then((response) => {
         if (response.ok) {
@@ -408,7 +405,7 @@ export default class extends Controller {
           this.renderTypingIndicator()
         }
       })
-      .catch(() => {})
+      .catch((err) => console.warn('[presence] cancel agent task failed:', err))
   }
 
   clearTypingTimers() {

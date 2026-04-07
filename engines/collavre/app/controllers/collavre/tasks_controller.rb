@@ -35,11 +35,19 @@ module Collavre
     end
 
     def build_session_key(task)
-      context = task.trigger_event_payload || {}
+      payload = task.trigger_event_payload || {}
+      creative = task.creative || Creative.find_by(id: payload.dig("creative", "id"))
+      comment = Comment.find_by(id: payload.dig("comment", "id"))
+
       CollavreOpenclaw::OpenclawAdapter.new(
         user: task.agent,
         system_prompt: "",
-        context: context
+        context: {
+          creative: creative,
+          user: task.agent,
+          task: task,
+          comment: comment
+        }
       ).session_key
     end
   end
