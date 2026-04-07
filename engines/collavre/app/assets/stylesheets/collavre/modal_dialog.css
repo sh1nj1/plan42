@@ -234,6 +234,54 @@ textarea.modal-dialog-input {
   margin-left: 0.15em;
 }
 
+/* ── Mention dropdown (inside form fields) ── */
+.modal-dialog-mention-field {
+  position: relative;
+}
+
+.modal-dialog-mention-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1) 0;
+  list-style: none;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2, 0 4px 12px rgba(0, 0, 0, 0.15));
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.modal-dialog-mention-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  font-size: var(--text-1);
+  color: var(--text-primary);
+}
+
+.modal-dialog-mention-item:hover,
+.modal-dialog-mention-item.active {
+  background: var(--surface-hover);
+}
+
+.modal-dialog-mention-item .avatar {
+  border-radius: var(--radius-round, 50%);
+  flex-shrink: 0;
+}
+
+.modal-dialog-mention-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Scoped variant ──
  * When a container element is specified, the modal is rendered inside that
  * element instead of the full viewport. The container gets `position: relative`

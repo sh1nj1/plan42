@@ -32,7 +32,7 @@ module Collavre
           args: I18n.t("collavre.comments.command_menu.topic_args"),
           input_schema: [
             { name: "topic_name", type: "string", required: true, description: I18n.t("collavre.comments.command_menu.topic_name_hint") },
-            { name: "agent_name", type: "string", required: false, description: I18n.t("collavre.comments.command_menu.topic_agent_hint") }
+            { name: "agent_name", type: "string", format: "mention", required: false, description: I18n.t("collavre.comments.command_menu.topic_agent_hint") }
           ]
         },
         {
@@ -41,7 +41,7 @@ module Collavre
           description: I18n.t("collavre.comments.command_menu.work_description"),
           args: I18n.t("collavre.comments.command_menu.work_args"),
           input_schema: [
-            { name: "agent_name", type: "string", required: true, description: I18n.t("collavre.comments.command_menu.work_agent_hint") },
+            { name: "agent_name", type: "string", format: "mention", required: true, description: I18n.t("collavre.comments.command_menu.work_agent_hint") },
             { name: "context", type: "string", required: false, description: I18n.t("collavre.comments.command_menu.work_context_hint") }
           ]
         },

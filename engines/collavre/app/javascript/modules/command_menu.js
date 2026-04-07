@@ -18,17 +18,23 @@ if (!commandMenuInitialized) {
 
     const argsForm = new CommandArgsForm({
       container: popup,
+      creativeIdFn: () => popup.dataset.creativeId,
       labels: {
         submit: menu.dataset.formSubmit || 'OK',
         cancel: menu.dataset.formCancel || 'Cancel'
       },
       onSubmit: (commandText) => {
+        popupMenu.hide()
         textarea.value = commandText
-        textarea.setSelectionRange(commandText.length, commandText.length)
-        textarea.focus()
         textarea.dispatchEvent(new Event('input', { bubbles: true }))
+        // Trigger form submission directly
+        const submitBtn = document.querySelector('#new-comment-form [data-comments--form-target="submit"]')
+        if (submitBtn) {
+          submitBtn.click()
+        }
       },
       onCancel: () => {
+        popupMenu.hide()
         textarea.focus()
       }
     })

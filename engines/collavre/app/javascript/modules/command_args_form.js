@@ -9,6 +9,7 @@
 
 const OVERLAY_ID = 'command-args-overlay'
 const DIALOG_ID = 'command-args-dialog'
+const MENTION_DEBOUNCE_MS = 200
 
 export default class CommandArgsForm {
   /**
@@ -18,15 +19,20 @@ export default class CommandArgsForm {
    * @param {Object}   opts.labels    - { submit, cancel } button text
    * @param {Element}  opts.container - if set, the modal is scoped inside this element
    *                                    (overlay covers only the container, content is blurred)
+   * @param {Function} opts.creativeIdFn - returns current creative ID for mention search
    */
-  constructor({ onSubmit, onCancel, labels, container } = {}) {
+  constructor({ onSubmit, onCancel, labels, container, creativeIdFn } = {}) {
     this.onSubmit = onSubmit || (() => {})
     this.onCancel = onCancel || (() => {})
     this.labels = labels || { submit: 'OK', cancel: 'Cancel' }
     this.container = container || null
+    this._creativeIdFn = creativeIdFn || (() => null)
     this.command = null
     this.overlay = null
     this.dialog = null
+    this._mentionPopup = null
+    this._mentionTimer = null
+    this._activeMentionInput = null
     this._handleKeydown = this._handleKeydown.bind(this)
   }
 
@@ -49,6 +55,7 @@ export default class CommandArgsForm {
   }
 
   hide() {
+    clearTimeout(this._mentionTimer)
     if (this.overlay) {
       this.overlay.remove()
       this.overlay = null
@@ -176,6 +183,11 @@ export default class CommandArgsForm {
     wrapper.appendChild(label)
 
     let input
+    if (param.format === 'mention') {
+      input = this._buildMentionField(param, wrapper)
+      wrapper.appendChild(input)
+      return wrapper
+    }
     if (param.enum && param.enum.length > 0) {
       input = document.createElement('select')
       input.className = 'modal-dialog-input'
@@ -352,6 +364,146 @@ export default class CommandArgsForm {
     const parts = [command.label]
     if (values.instructions) parts.push(values.instructions)
     return parts.join(' ')
+  }
+
+  _buildMentionField(param, wrapper) {
+    const fieldContainer = document.createElement('div')
+    fieldContainer.className = 'modal-dialog-mention-field'
+    fieldContainer.style.position = 'relative'
+
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'modal-dialog-input'
+    input.dataset.paramName = param.name
+    input.dataset.paramType = 'string'
+    input.dataset.paramFormat = 'mention'
+    input.dataset.paramRequired = param.required ? 'true' : 'false'
+    if (param.description) input.placeholder = param.description
+    input.autocomplete = 'off'
+
+    // Mention dropdown list
+    const dropdown = document.createElement('ul')
+    dropdown.className = 'modal-dialog-mention-dropdown'
+    dropdown.style.display = 'none'
+
+    // Search on input
+    input.addEventListener('input', () => {
+      const q = input.value.trim()
+      if (q.length === 0) {
+        dropdown.style.display = 'none'
+        return
+      }
+      clearTimeout(this._mentionTimer)
+      this._mentionTimer = setTimeout(() => {
+        this._fetchMentions(q).then((users) => {
+          this._renderMentionDropdown(dropdown, input, users)
+        })
+      }, MENTION_DEBOUNCE_MS)
+    })
+
+    // Enter submits form (not mention selection)
+    input.addEventListener('keydown', (e) => {
+      if (dropdown.style.display === 'block') {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          this._moveMentionActive(dropdown, 1)
+          return
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          this._moveMentionActive(dropdown, -1)
+          return
+        }
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          const active = dropdown.querySelector('.active')
+          if (active) {
+            e.preventDefault()
+            active.click()
+            return
+          }
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          dropdown.style.display = 'none'
+          return
+        }
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        this._submit()
+      }
+    })
+
+    // Hide dropdown on blur (delayed so click can register)
+    input.addEventListener('blur', () => {
+      setTimeout(() => { dropdown.style.display = 'none' }, 200)
+    })
+
+    fieldContainer.appendChild(input)
+    fieldContainer.appendChild(dropdown)
+    return fieldContainer
+  }
+
+  _fetchMentions(query) {
+    const url = new URL('/users/search', window.location.origin)
+    url.searchParams.set('q', query)
+    const creativeId = this._creativeIdFn()
+    if (creativeId) {
+      url.searchParams.set('creative_id', creativeId)
+    }
+    return fetch(url, { headers: { Accept: 'application/json' } })
+      .then((r) => r.ok ? r.json() : [])
+      .catch(() => [])
+  }
+
+  _renderMentionDropdown(dropdown, input, users) {
+    dropdown.innerHTML = ''
+    if (!users || users.length === 0) {
+      dropdown.style.display = 'none'
+      return
+    }
+
+    users.forEach((user, index) => {
+      const li = document.createElement('li')
+      li.className = 'modal-dialog-mention-item'
+      if (index === 0) li.classList.add('active')
+
+      const avatar = user.avatar_url
+        ? `<img src="${user.avatar_url}" width="20" height="20" class="avatar" />`
+        : ''
+      li.innerHTML = `${avatar}<span class="modal-dialog-mention-name">${user.name}</span>`
+
+      li.addEventListener('mouseenter', () => {
+        dropdown.querySelectorAll('.active').forEach((el) => el.classList.remove('active'))
+        li.classList.add('active')
+      })
+      li.addEventListener('mousedown', (e) => e.preventDefault())
+      li.addEventListener('click', () => {
+        input.value = user.name
+        dropdown.style.display = 'none'
+        // Move focus to next input
+        const allInputs = Array.from(this.dialog.querySelectorAll('[data-param-name]'))
+        const currentIdx = allInputs.indexOf(input)
+        if (currentIdx >= 0 && currentIdx < allInputs.length - 1) {
+          allInputs[currentIdx + 1].focus()
+        }
+      })
+      dropdown.appendChild(li)
+    })
+
+    dropdown.style.display = 'block'
+  }
+
+  _moveMentionActive(dropdown, direction) {
+    const items = Array.from(dropdown.querySelectorAll('.modal-dialog-mention-item'))
+    if (items.length === 0) return
+    const activeIdx = items.findIndex((el) => el.classList.contains('active'))
+    items.forEach((el) => el.classList.remove('active'))
+    let next = activeIdx + direction
+    if (next < 0) next = items.length - 1
+    if (next >= items.length) next = 0
+    items[next].classList.add('active')
+    items[next].scrollIntoView({ block: 'nearest' })
   }
 
   _autoResize(textarea) {
