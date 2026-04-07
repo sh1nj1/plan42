@@ -1031,17 +1031,17 @@ body.chat-fullscreen {
 }
 
 .agent-stop-btn {
-    background: var(--surface-3);
-    border: 1px solid var(--surface-4);
+    background: var(--surface-btn);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-2);
-    color: var(--text-2);
+    color: var(--text-muted);
     cursor: pointer;
     font-size: var(--text-00);
-    padding: 2px 8px;
+    padding: var(--space-px-1) var(--space-px-2);
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    margin-right: 6px;
+    gap: var(--space-px-1);
+    margin-right: var(--space-px-1);
     flex-shrink: 0;
     transition: background 0.15s, color 0.15s;
     white-space: nowrap;
@@ -1049,12 +1049,12 @@ body.chat-fullscreen {
 }
 
 .agent-stop-btn .agent-stop-icon {
-    font-size: 8px;
+    font-size: var(--text-00);
 }
 
 .agent-stop-btn:hover {
-    background: var(--red-5);
-    color: white;
+    background: var(--color-danger);
+    color: var(--text-on-btn);
 }
 
 /* --- Context Chips --- */
