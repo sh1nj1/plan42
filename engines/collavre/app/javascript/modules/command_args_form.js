@@ -329,14 +329,8 @@ export default class CommandArgsForm {
       return this._buildCompressText(command, values)
     }
 
-    // MCP commands: use key=value for simple types, JSON if any complex values
-    const hasComplex = keys.some((k) => typeof values[k] === 'object')
-    if (hasComplex) {
-      return `${command.label} ${JSON.stringify(values)}`
-    }
-
-    const pairs = keys.map((k) => `${k}=${values[k]}`).join(' ')
-    return `${command.label} ${pairs}`
+    // MCP commands: always use JSON to preserve values with spaces
+    return `${command.label} ${JSON.stringify(values)}`
   }
 
   _buildCalendarText(command, values) {
