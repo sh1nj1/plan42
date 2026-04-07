@@ -133,6 +133,15 @@ en:
         compress_description: "Summarize all messages in the current topic and remove originals."
         compress_args: "[additional instructions]"
         creative_description: "Insert a link to a creative. In AI chats, the linked creative tree is injected as context."
+        calendar_date_hint: "YYYY-MM-DD@HH:MM (today, tomorrow, +3days, +mon)"
+        calendar_memo_hint: "Event memo (optional)"
+        topic_name_hint: "Topic name"
+        topic_agent_hint: "@agent_name (optional)"
+        work_agent_hint: "@agent_name"
+        work_context_hint: "Workflow context (optional)"
+        compress_instructions_hint: "Additional instructions (optional)"
+        form_submit: "OK"
+        form_cancel: "Cancel"
       calendar_command:
         event_created: 'event created: [Google Calendar event](%{url})'
         event_created_local: 'event created (local only - connect Google Calendar to sync)'

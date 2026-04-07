@@ -71,3 +71,121 @@
   font-size: 0.85em;
   color: var(--text-muted);
 }
+
+/* Command Args Form */
+.command-args-form {
+  position: absolute;
+  z-index: var(--layer-modal);
+  background: var(--surface-section);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-3);
+  border-radius: var(--radius-2);
+  padding: var(--space-3);
+  min-width: 280px;
+  max-width: min(400px, 90vw);
+}
+
+.command-args-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.command-args-title {
+  font-weight: var(--weight-6);
+  font-size: var(--text-1);
+}
+
+.command-args-desc {
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.command-args-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.command-args-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.command-args-label {
+  font-size: 0.85em;
+  font-weight: var(--weight-5);
+  color: var(--text-secondary);
+}
+
+.command-args-required {
+  color: var(--color-danger);
+  margin-left: 0.15em;
+}
+
+.command-args-input {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-1);
+  background: var(--surface-input);
+  color: var(--text-primary);
+  font-size: var(--text-0);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.command-args-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.command-args-input.command-args-error {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 1px var(--color-danger);
+}
+
+.command-args-input::placeholder {
+  color: var(--text-muted);
+}
+
+.command-args-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.command-args-cancel,
+.command-args-submit {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-1);
+  font-size: 0.85em;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  transition: background 0.15s ease;
+}
+
+.command-args-cancel {
+  background: var(--surface-section);
+  color: var(--text-secondary);
+}
+
+.command-args-cancel:hover {
+  background: var(--surface-hover);
+}
+
+.command-args-submit {
+  background: var(--color-primary);
+  color: var(--text-on-primary);
+  border-color: var(--color-primary);
+}
+
+.command-args-submit:hover {
+  opacity: 0.9;
+}

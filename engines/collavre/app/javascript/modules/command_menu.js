@@ -1,5 +1,6 @@
 import CommonPopup from '../lib/common_popup'
 import { getCaretClientRect } from '../utils/caret_position'
+import CommandArgsForm from './command_args_form'
 
 let commandMenuInitialized = false
 
@@ -14,6 +15,22 @@ if (!commandMenuInitialized) {
 
     const list = menu.querySelector('[data-popup-list]')
     const commandCache = new Map()
+
+    const argsForm = new CommandArgsForm({
+      labels: {
+        submit: menu.dataset.formSubmit || 'OK',
+        cancel: menu.dataset.formCancel || 'Cancel'
+      },
+      onSubmit: (commandText) => {
+        textarea.value = commandText
+        textarea.setSelectionRange(commandText.length, commandText.length)
+        textarea.focus()
+        textarea.dispatchEvent(new Event('input', { bubbles: true }))
+      },
+      onCancel: () => {
+        textarea.focus()
+      }
+    })
 
     const popupMenu = new CommonPopup(menu, {
       listElement: list,
@@ -40,11 +57,30 @@ if (!commandMenuInitialized) {
           popupMenu.hide()
           return
         }
+
+        // If the command has an input schema, show the args form instead
+        if (command.input_schema?.length) {
+          popupMenu.hide()
+          clearCommandText()
+          const rect = textarea.getBoundingClientRect()
+          argsForm.show(command, rect)
+          return
+        }
+
         insert(command)
         popupMenu.hide()
         textarea.focus()
       }
     })
+
+    function clearCommandText() {
+      const pos = textarea.selectionStart
+      const after = textarea.value.slice(pos)
+      const before = textarea.value.slice(0, pos)
+      const cleaned = before.replace(/^\/\S*\s*/, '')
+      textarea.value = cleaned + after
+      textarea.setSelectionRange(cleaned.length, cleaned.length)
+    }
 
     function fetchCommands(creativeId) {
       if (!creativeId) return Promise.resolve([])
@@ -105,12 +141,7 @@ if (!commandMenuInitialized) {
       if (!controller) return
 
       // Clear the command text (e.g. "/crea", "/creative") from textarea
-      const pos = textarea.selectionStart
-      const before = textarea.value.slice(0, pos)
-      const after = textarea.value.slice(pos)
-      const cleaned = before.replace(/^\/\S*\s*/, '')
-      textarea.value = cleaned + after
-      textarea.setSelectionRange(cleaned.length, cleaned.length)
+      clearCommandText()
 
       const caretRect = getCaretClientRect(textarea) || textarea.getBoundingClientRect()
       controller.open(
@@ -137,6 +168,9 @@ if (!commandMenuInitialized) {
     })
 
     textarea.addEventListener('input', function () {
+      // If args form is open, don't show command menu
+      if (argsForm.isOpen()) return
+
       const pos = textarea.selectionStart
       const before = textarea.value.slice(0, pos)
       // Only trigger when "/" is at the very beginning of the message
