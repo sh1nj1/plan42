@@ -189,6 +189,10 @@ body.dark-mode {
   color: var(--syntax-meta);
 }
 
+.comment-content .hljs-punctuation {
+  color: var(--color-code-text);
+}
+
 .comment-content .hljs-deletion {
   color: var(--syntax-deletion-text);
   background: var(--syntax-deletion-bg);
