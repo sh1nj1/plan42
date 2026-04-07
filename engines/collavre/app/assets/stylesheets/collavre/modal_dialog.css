@@ -300,9 +300,9 @@ textarea.modal-dialog-input {
 .modal-dialog--scoped {
   position: absolute;
   z-index: 2;
-  top: 50%;
+  top: 15%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   max-height: 80%;
   animation: modal-dialog-scoped-slide 0.15s var(--ease-out-3, ease-out);
 }
@@ -314,11 +314,11 @@ textarea.modal-dialog-input {
 @keyframes modal-dialog-scoped-slide {
   from {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.98);
+    transform: translateX(-50%) translateY(8px) scale(0.98);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: translateX(-50%) translateY(0) scale(1);
   }
 }
 
@@ -328,6 +328,10 @@ textarea.modal-dialog-input {
     width: calc(100vw - 2rem);
     top: 10vh;
     border-radius: var(--radius-3, 12px);
+  }
+
+  .modal-dialog--scoped {
+    top: 10%;
   }
 
   .modal-dialog-hints {
