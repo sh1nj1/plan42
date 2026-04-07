@@ -87,6 +87,21 @@ describe('FormController - Review Quote Chips', () => {
       focusSpy.mockRestore()
       resetFormSpy.mockRestore()
     })
+
+    test('skips initial focus on mobile even when autoFocusOnOpen is true', () => {
+      container.querySelector('#comments-popup').dataset.autoFocusOnOpen = 'true'
+      const resetFormSpy = jest.spyOn(controller, 'resetForm').mockImplementation(() => {})
+      const focusSpy = jest.spyOn(controller.textareaTarget, 'focus').mockImplementation(() => {})
+      const originalInnerWidth = window.innerWidth
+      Object.defineProperty(window, 'innerWidth', { value: 500, configurable: true })
+
+      controller.onPopupOpened({ creativeId: '123', canComment: true })
+
+      expect(focusSpy).not.toHaveBeenCalled()
+      Object.defineProperty(window, 'innerWidth', { value: originalInnerWidth, configurable: true })
+      focusSpy.mockRestore()
+      resetFormSpy.mockRestore()
+    })
   })
 
   describe('appendReviewQuote', () => {

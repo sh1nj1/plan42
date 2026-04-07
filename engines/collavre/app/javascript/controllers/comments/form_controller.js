@@ -163,6 +163,7 @@ export default class extends Controller {
   }
 
   shouldAutoFocusOnOpen() {
+    if (window.innerWidth <= 600) return false
     return this.element.dataset.autoFocusOnOpen !== 'false'
   }
 
