@@ -330,6 +330,24 @@ export default class extends Controller {
     }
 
     this.typingIndicatorTarget.style.opacity = '1'
+
+    // Add stop button first (before avatars/names) for active agent tasks
+    const hasActiveTask = ids.some((id) => this.activeAgentTasks?.[id])
+    if (hasActiveTask) {
+      const stopBtn = document.createElement('button')
+      stopBtn.type = 'button'
+      stopBtn.className = 'agent-stop-btn'
+      stopBtn.textContent = '\u25A0'
+      stopBtn.title = this.typingIndicatorTarget.dataset.stopAgentText || 'Stop'
+      stopBtn.addEventListener('click', () => {
+        ids.forEach((id) => {
+          const taskId = this.activeAgentTasks?.[id]
+          if (taskId) this.cancelAgentTask(taskId, id)
+        })
+      })
+      this.typingIndicatorTarget.appendChild(stopBtn)
+    }
+
     if (this.participantsData) {
       ids.forEach((id) => {
         const user = this.participantsData.find((participant) => participant.id === parseInt(id, 10))
@@ -358,20 +376,16 @@ export default class extends Controller {
     const text = document.createElement('span')
     text.textContent = `${names.join(', ')} ...`
     this.typingIndicatorTarget.appendChild(text)
+  }
 
-    // Add stop button for active agent tasks
+  cancelAllAgentTasks() {
+    const ids = Object.keys(this.activeAgentTasks || {})
+    if (ids.length === 0) return false
     ids.forEach((id) => {
-      const taskId = this.activeAgentTasks?.[id]
-      if (taskId) {
-        const stopBtn = document.createElement('button')
-        stopBtn.type = 'button'
-        stopBtn.className = 'agent-stop-btn'
-        stopBtn.textContent = '\u25A0'
-        stopBtn.title = this.typingIndicatorTarget.dataset.stopAgentText || 'Stop'
-        stopBtn.addEventListener('click', () => this.cancelAgentTask(taskId, id))
-        this.typingIndicatorTarget.appendChild(stopBtn)
-      }
+      const taskId = this.activeAgentTasks[id]
+      if (taskId) this.cancelAgentTask(taskId, id)
     })
+    return true
   }
 
   cancelAgentTask(taskId, agentId) {

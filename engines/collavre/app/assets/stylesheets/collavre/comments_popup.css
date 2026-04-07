@@ -1043,7 +1043,8 @@ body.chat-fullscreen {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    margin-left: 4px;
+    margin-right: 4px;
+    flex-shrink: 0;
     transition: background 0.15s;
 }
 
