@@ -1,12 +1,14 @@
 /**
- * Command Args Form — renders a dynamic form panel for slash command parameters.
+ * Command Args Form — renders a modal dialog for slash command parameters.
  *
+ * Uses the shared .modal-dialog pattern (overlay + centered panel).
  * When a command with `input_schema` is selected from the command menu,
  * this module shows a form with labeled inputs, validates required fields,
  * and builds the final command string to insert into the textarea.
  */
 
-const FORM_ID = 'command-args-form'
+const OVERLAY_ID = 'command-args-overlay'
+const DIALOG_ID = 'command-args-dialog'
 
 export default class CommandArgsForm {
   constructor({ onSubmit, onCancel, labels } = {}) {
@@ -14,77 +16,106 @@ export default class CommandArgsForm {
     this.onCancel = onCancel || (() => {})
     this.labels = labels || { submit: 'OK', cancel: 'Cancel' }
     this.command = null
-    this.element = null
+    this.overlay = null
+    this.dialog = null
     this._handleKeydown = this._handleKeydown.bind(this)
   }
 
   /**
    * Show the args form for the given command.
    * @param {Object} command - Command object with label, input_schema, name, etc.
-   * @param {DOMRect} anchorRect - Position anchor (e.g. textarea bounding rect).
    */
-  show(command, anchorRect) {
+  show(command) {
     this.hide()
     if (!command?.input_schema?.length) return
 
     this.command = command
-    this.element = this._buildForm(command)
-    document.body.appendChild(this.element)
-    this._position(anchorRect)
+    this._buildModal(command)
 
     // Focus the first input
-    const firstInput = this.element.querySelector('input, select, textarea')
+    const firstInput = this.dialog.querySelector('input, select, textarea')
     if (firstInput) firstInput.focus()
 
     document.addEventListener('keydown', this._handleKeydown)
   }
 
   hide() {
-    if (this.element) {
-      this.element.remove()
-      this.element = null
+    if (this.overlay) {
+      this.overlay.remove()
+      this.overlay = null
+    }
+    if (this.dialog) {
+      this.dialog.remove()
+      this.dialog = null
     }
     this.command = null
     document.removeEventListener('keydown', this._handleKeydown)
   }
 
   isOpen() {
-    return !!this.element
+    return !!this.dialog
   }
 
   // --- Private ---
 
-  _buildForm(command) {
-    const container = document.createElement('div')
-    container.id = FORM_ID
-    container.className = 'command-args-form'
+  _buildModal(command) {
+    // Overlay
+    this.overlay = document.createElement('div')
+    this.overlay.id = OVERLAY_ID
+    this.overlay.className = 'modal-dialog-overlay open'
+    this.overlay.addEventListener('click', () => {
+      this.hide()
+      this.onCancel()
+    })
+    document.body.appendChild(this.overlay)
+
+    // Dialog panel
+    this.dialog = document.createElement('div')
+    this.dialog.id = DIALOG_ID
+    this.dialog.className = 'modal-dialog modal-dialog-compact open'
+
+    // Prevent overlay click when clicking inside dialog
+    this.dialog.addEventListener('mousedown', (e) => e.stopPropagation())
+    this.dialog.addEventListener('touchstart', (e) => e.stopPropagation())
 
     // Header
     const header = document.createElement('div')
-    header.className = 'command-args-header'
-    header.innerHTML = `<span class="command-args-title">${command.label}</span>`
+    header.className = 'modal-dialog-header'
+    header.innerHTML = `<span class="modal-dialog-title">${command.label}</span>`
     if (command.description) {
-      header.innerHTML += `<span class="command-args-desc">${command.description}</span>`
+      header.innerHTML += `<span class="modal-dialog-desc">${command.description}</span>`
     }
-    container.appendChild(header)
+    this.dialog.appendChild(header)
 
-    // Fields
+    // Body — fields
+    const body = document.createElement('div')
+    body.className = 'modal-dialog-body'
+
     const fields = document.createElement('div')
-    fields.className = 'command-args-fields'
+    fields.className = 'modal-dialog-fields'
 
     command.input_schema.forEach((param, index) => {
       const field = this._buildField(param, index)
       fields.appendChild(field)
     })
-    container.appendChild(fields)
+    body.appendChild(fields)
+    this.dialog.appendChild(body)
 
-    // Actions
-    const actions = document.createElement('div')
-    actions.className = 'command-args-actions'
+    // Footer — actions + hints
+    const footer = document.createElement('div')
+    footer.className = 'modal-dialog-footer'
+
+    const hints = document.createElement('div')
+    hints.className = 'modal-dialog-hints'
+    hints.style.marginRight = 'auto'
+    hints.innerHTML =
+      `<span class="modal-dialog-hint"><kbd>↵</kbd> OK</span>` +
+      `<span class="modal-dialog-hint"><kbd>ESC</kbd> Cancel</span>`
+    footer.appendChild(hints)
 
     const cancelBtn = document.createElement('button')
     cancelBtn.type = 'button'
-    cancelBtn.className = 'command-args-cancel'
+    cancelBtn.className = 'modal-dialog-btn modal-dialog-btn-secondary'
     cancelBtn.textContent = this.labels.cancel
     cancelBtn.addEventListener('click', () => {
       this.hide()
@@ -93,31 +124,27 @@ export default class CommandArgsForm {
 
     const submitBtn = document.createElement('button')
     submitBtn.type = 'button'
-    submitBtn.className = 'command-args-submit'
+    submitBtn.className = 'modal-dialog-btn modal-dialog-btn-primary'
     submitBtn.textContent = this.labels.submit
     submitBtn.addEventListener('click', () => this._submit())
 
-    actions.appendChild(cancelBtn)
-    actions.appendChild(submitBtn)
-    container.appendChild(actions)
+    footer.appendChild(cancelBtn)
+    footer.appendChild(submitBtn)
+    this.dialog.appendChild(footer)
 
-    // Prevent clicks from dismissing (stop propagation to outside-click handlers)
-    container.addEventListener('mousedown', (e) => e.stopPropagation())
-    container.addEventListener('touchstart', (e) => e.stopPropagation())
-
-    return container
+    document.body.appendChild(this.dialog)
   }
 
   _buildField(param, index) {
     const wrapper = document.createElement('div')
-    wrapper.className = 'command-args-field'
+    wrapper.className = 'modal-dialog-field'
 
     const label = document.createElement('label')
-    label.className = 'command-args-label'
+    label.className = 'modal-dialog-label'
     label.textContent = param.name
     if (param.required) {
       const req = document.createElement('span')
-      req.className = 'command-args-required'
+      req.className = 'modal-dialog-required'
       req.textContent = '*'
       label.appendChild(req)
     }
@@ -126,11 +153,11 @@ export default class CommandArgsForm {
     let input
     if (param.enum && param.enum.length > 0) {
       input = document.createElement('select')
-      input.className = 'command-args-input'
+      input.className = 'modal-dialog-input'
       if (!param.required) {
         const opt = document.createElement('option')
         opt.value = ''
-        opt.textContent = '—'
+        opt.textContent = '\u2014'
         input.appendChild(opt)
       }
       param.enum.forEach((val) => {
@@ -141,10 +168,10 @@ export default class CommandArgsForm {
       })
     } else if (param.type === 'boolean') {
       input = document.createElement('select')
-      input.className = 'command-args-input'
+      input.className = 'modal-dialog-input'
       const optEmpty = document.createElement('option')
       optEmpty.value = ''
-      optEmpty.textContent = '—'
+      optEmpty.textContent = '\u2014'
       const optTrue = document.createElement('option')
       optTrue.value = 'true'
       optTrue.textContent = 'true'
@@ -157,12 +184,13 @@ export default class CommandArgsForm {
     } else if (param.type === 'integer' || param.type === 'float') {
       input = document.createElement('input')
       input.type = 'number'
-      input.className = 'command-args-input'
+      input.className = 'modal-dialog-input'
       if (param.type === 'float') input.step = 'any'
     } else {
-      input = document.createElement('input')
-      input.type = 'text'
-      input.className = 'command-args-input'
+      input = document.createElement('textarea')
+      input.className = 'modal-dialog-input'
+      input.rows = 1
+      input.addEventListener('input', () => this._autoResize(input))
     }
 
     input.dataset.paramName = param.name
@@ -170,7 +198,7 @@ export default class CommandArgsForm {
     input.dataset.paramRequired = param.required ? 'true' : 'false'
     if (param.description) input.placeholder = param.description
 
-    // Submit on Enter from last field
+    // Enter submits; Shift+Enter inserts newline (textarea only)
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
@@ -192,9 +220,9 @@ export default class CommandArgsForm {
   }
 
   _collectValues() {
-    if (!this.element) return null
+    if (!this.dialog) return null
 
-    const inputs = this.element.querySelectorAll('[data-param-name]')
+    const inputs = this.dialog.querySelectorAll('[data-param-name]')
     const values = {}
     let valid = true
 
@@ -203,10 +231,10 @@ export default class CommandArgsForm {
       const required = input.dataset.paramRequired === 'true'
       const val = input.value.trim()
 
-      input.classList.remove('command-args-error')
+      input.classList.remove('modal-dialog-error')
 
       if (required && !val) {
-        input.classList.add('command-args-error')
+        input.classList.add('modal-dialog-error')
         valid = false
         return
       }
@@ -218,7 +246,7 @@ export default class CommandArgsForm {
 
     if (!valid) {
       // Focus first error field
-      const errorField = this.element.querySelector('.command-args-error')
+      const errorField = this.dialog.querySelector('.modal-dialog-error')
       if (errorField) errorField.focus()
       return null
     }
@@ -301,25 +329,16 @@ export default class CommandArgsForm {
     return parts.join(' ')
   }
 
-  _position(anchorRect) {
-    if (!this.element || !anchorRect) return
-
-    const boundsPadding = 8
-    const formRect = this.element.getBoundingClientRect()
-    let left = anchorRect.left
-    let top = anchorRect.top - formRect.height - 4
-
-    // If no room above, show below
-    if (top < boundsPadding) {
-      top = anchorRect.bottom + 4
+  _autoResize(textarea) {
+    textarea.style.height = 'auto'
+    const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 20
+    const maxHeight = lineHeight * 5
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
+    if (textarea.scrollHeight > maxHeight) {
+      textarea.style.overflow = 'auto'
+    } else {
+      textarea.style.overflow = 'hidden'
     }
-
-    // Clamp horizontal
-    const maxLeft = window.innerWidth - formRect.width - boundsPadding
-    left = Math.max(boundsPadding, Math.min(left, maxLeft))
-
-    this.element.style.left = `${left}px`
-    this.element.style.top = `${top}px`
   }
 
   _handleKeydown(event) {

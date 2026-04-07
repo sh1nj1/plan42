@@ -1,0 +1,248 @@
+/* ── Modal Dialog ──
+ * Shared centered-panel style for command palette, forms, and dialogs.
+ * Used by: search-popup, command-args-form, and any future centered modal.
+ *
+ * Structure:
+ *   .modal-dialog-overlay        (backdrop)
+ *   .modal-dialog                (centered panel)
+ *     .modal-dialog-header       (title area, border-bottom)
+ *     .modal-dialog-body         (scrollable content)
+ *     .modal-dialog-footer       (actions / hints, border-top)
+ *     .modal-dialog-input        (standard text input inside dialog)
+ */
+
+/* ── Overlay ── */
+.modal-dialog-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-popup, 100);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: modal-dialog-fade-in 0.15s var(--ease-out-3, ease-out);
+}
+
+.modal-dialog-overlay.open {
+  display: block;
+}
+
+@keyframes modal-dialog-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Panel ── */
+.modal-dialog {
+  display: none;
+  position: fixed;
+  top: 15vh;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: calc(var(--layer-popup, 100) + 1);
+  width: 520px;
+  max-width: calc(100vw - 2rem);
+  max-height: 70vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-4, 16px);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  padding: 0;
+  font-size: initial;
+  line-height: normal;
+  text-align: left;
+  animation: modal-dialog-slide-up 0.2s var(--ease-out-3, ease-out);
+}
+
+.modal-dialog.open {
+  display: block;
+}
+
+/* Compact variant — narrower for small forms */
+.modal-dialog.modal-dialog-compact {
+  width: 400px;
+}
+
+@keyframes modal-dialog-slide-up {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* ── Header ── */
+.modal-dialog-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-dialog-title {
+  font-weight: var(--weight-6);
+  font-size: var(--text-2, 1.125rem);
+  color: var(--text-primary);
+}
+
+.modal-dialog-desc {
+  font-size: var(--text-0);
+  color: var(--text-muted);
+}
+
+/* ── Body ── */
+.modal-dialog-body {
+  padding: var(--space-3) var(--space-4);
+}
+
+/* ── Footer ── */
+.modal-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  gap: var(--space-2);
+}
+
+/* ── Input ── */
+.modal-dialog-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--surface-input, var(--color-bg));
+  color: var(--text-primary);
+  font-size: var(--text-1);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s var(--ease-2);
+}
+
+.modal-dialog-input:focus {
+  border-color: var(--color-active);
+  box-shadow: 0 0 0 1px var(--color-active);
+}
+
+.modal-dialog-input::placeholder {
+  color: var(--text-muted);
+}
+
+.modal-dialog-input.modal-dialog-error {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 1px var(--color-danger);
+}
+
+textarea.modal-dialog-input {
+  resize: none;
+  overflow: hidden;
+  min-height: 1.6em;
+  max-height: 8em;
+  line-height: var(--leading-3);
+  field-sizing: content;
+}
+
+/* ── Buttons ── */
+.modal-dialog-btn {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-2);
+  font-size: var(--text-0);
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  transition: background 0.15s var(--ease-2);
+}
+
+.modal-dialog-btn-secondary {
+  background: var(--surface-section);
+  color: var(--text-muted);
+}
+
+.modal-dialog-btn-secondary:hover {
+  background: var(--surface-hover);
+}
+
+.modal-dialog-btn-primary {
+  background: var(--color-active);
+  color: var(--text-on-badge);
+  border-color: var(--color-active);
+}
+
+.modal-dialog-btn-primary:hover {
+  opacity: 0.9;
+}
+
+/* ── Footer hints (keyboard shortcuts) ── */
+.modal-dialog-hints {
+  display: flex;
+  gap: var(--space-3);
+  font-size: var(--text-0);
+  color: var(--text-secondary);
+}
+
+.modal-dialog-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.modal-dialog-hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-1);
+  background: var(--surface-input, var(--color-bg));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-1, 4px);
+  font-size: var(--text-00, 11px);
+  font-family: inherit;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+/* ── Field layout (for form dialogs) ── */
+.modal-dialog-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.modal-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.modal-dialog-label {
+  font-size: var(--text-0);
+  font-weight: var(--weight-5);
+  color: var(--text-muted);
+}
+
+.modal-dialog-required {
+  color: var(--color-danger);
+  margin-left: 0.15em;
+}
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+  .modal-dialog {
+    width: calc(100vw - 2rem);
+    top: 10vh;
+    border-radius: var(--radius-3, 12px);
+  }
+
+  .modal-dialog-hints {
+    display: none;
+  }
+}

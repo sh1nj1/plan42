@@ -62,8 +62,7 @@ if (!commandMenuInitialized) {
         if (command.input_schema?.length) {
           popupMenu.hide()
           clearCommandText()
-          const rect = textarea.getBoundingClientRect()
-          argsForm.show(command, rect)
+          argsForm.show(command)
           return
         }
 
