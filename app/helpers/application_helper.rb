@@ -88,5 +88,4 @@ module ApplicationHelper
       link_to(creative_title_for_display(creative), collavre.creative_path(creative), class: "creative-chip")
     end)
   end
-
 end
