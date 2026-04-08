@@ -5,6 +5,7 @@ import csrfFetch from '../../lib/api/csrf_fetch'
 
 const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
+const STREAMING_HEARTBEAT_TIMEOUT = 5000 // Transition streaming → thinking if no heartbeat
 
 export default class extends Controller {
   static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox']
@@ -19,6 +20,8 @@ export default class extends Controller {
     this.presenceSubscription = null
     this.typingTimeoutHandle = null
     this.activeAgentTasks = {} // { agentId: [taskId, ...] } - ordered, last is most recent
+    this.agentStates = {} // { agentId: 'streaming' | 'thinking' }
+    this.streamingHeartbeatTimers = {} // { agentId: timeoutHandle }
     this.agentTaskPollHandle = null
     this.hasPresenceConnected = false
     this.currentUserId = document.body.dataset.currentUserId
@@ -36,6 +39,7 @@ export default class extends Controller {
   disconnect() {
     this.unsubscribe()
     this.stopAgentTaskPoll()
+    this.clearAllStreamingHeartbeats()
     this.textareaTarget.removeEventListener('input', this.handleInput)
     this.textareaTarget.removeEventListener('focus', this.handleFocus)
     this.textareaTarget.removeEventListener('blur', this.handleBlur)
@@ -68,6 +72,8 @@ export default class extends Controller {
     this.currentPresentIds = []
     this.typingUsers = {}
     this.activeAgentTasks = {}
+    this.agentStates = {}
+    this.clearAllStreamingHeartbeats()
     this.clearTypingTimers()
     this.clearManualTypingMessage()
     this.renderParticipants([])
@@ -212,13 +218,24 @@ export default class extends Controller {
       }
       if (status === 'thinking' || status === 'streaming') {
         this.typingUsers[id] = name
+        this.agentStates[id] = status
         if (!this.activeAgentTasks[id]) this.activeAgentTasks[id] = []
         if (task_id && !this.activeAgentTasks[id].includes(task_id)) {
           this.activeAgentTasks[id].push(task_id)
         }
+        // Streaming heartbeat: transition to thinking if no update within timeout
+        this.clearStreamingHeartbeat(id)
+        if (status === 'streaming') {
+          this.streamingHeartbeatTimers[id] = setTimeout(() => {
+            this.agentStates[id] = 'thinking'
+            delete this.streamingHeartbeatTimers[id]
+            this.renderTypingIndicator()
+          }, STREAMING_HEARTBEAT_TIMEOUT)
+        }
         this.startAgentTaskPoll()
       } else {
         // idle/done - remove specific task or all tasks for this agent
+        this.clearStreamingHeartbeat(id)
         if (this.activeAgentTasks[id]) {
           if (task_id) {
             const idx = this.activeAgentTasks[id].indexOf(task_id)
@@ -227,9 +244,11 @@ export default class extends Controller {
           if (!task_id || this.activeAgentTasks[id].length === 0) {
             delete this.activeAgentTasks[id]
             delete this.typingUsers[id]
+            delete this.agentStates[id]
           }
         } else {
           delete this.typingUsers[id]
+          delete this.agentStates[id]
         }
         this.maybeStopAgentTaskPoll()
       }
@@ -383,9 +402,13 @@ export default class extends Controller {
         this.typingIndicatorTarget.appendChild(wrapper)
       })
     }
-    const names = ids.map((id) => this.typingUsers[id])
     const text = document.createElement('span')
-    text.textContent = `${names.join(', ')} ...`
+    const parts = ids.map((id) => {
+      const name = this.typingUsers[id]
+      const isAgentThinking = this.activeAgentTasks[id]?.length > 0 && this.agentStates[id] !== 'streaming'
+      return isAgentThinking ? `${name} \u23F3` : `${name} ...`
+    })
+    text.textContent = parts.join('  ')
     this.typingIndicatorTarget.appendChild(text)
   }
 
@@ -414,9 +437,13 @@ export default class extends Controller {
             if (this.activeAgentTasks[agentId].length === 0) {
               delete this.activeAgentTasks[agentId]
               delete this.typingUsers[agentId]
+              delete this.agentStates[agentId]
+              this.clearStreamingHeartbeat(agentId)
             }
           } else {
             delete this.typingUsers[agentId]
+            delete this.agentStates[agentId]
+            this.clearStreamingHeartbeat(agentId)
           }
           this.maybeStopAgentTaskPoll()
           this.renderTypingIndicator()
@@ -428,6 +455,20 @@ export default class extends Controller {
   clearTypingTimers() {
     Object.values(this.typingTimers).forEach((timer) => clearTimeout(timer))
     this.typingTimers = {}
+  }
+
+  // ── Streaming heartbeat ─────────────────────────────────
+
+  clearStreamingHeartbeat(agentId) {
+    if (this.streamingHeartbeatTimers[agentId]) {
+      clearTimeout(this.streamingHeartbeatTimers[agentId])
+      delete this.streamingHeartbeatTimers[agentId]
+    }
+  }
+
+  clearAllStreamingHeartbeats() {
+    Object.values(this.streamingHeartbeatTimers).forEach((timer) => clearTimeout(timer))
+    this.streamingHeartbeatTimers = {}
   }
 
   // ── Agent task status polling ──────────────────────────
@@ -475,6 +516,8 @@ export default class extends Controller {
           if (this.activeAgentTasks[agentId].length === 0) {
             delete this.activeAgentTasks[agentId]
             delete this.typingUsers[agentId]
+            delete this.agentStates[agentId]
+            this.clearStreamingHeartbeat(agentId)
           }
         })
 
