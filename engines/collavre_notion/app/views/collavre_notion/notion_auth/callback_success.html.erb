@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head><title>Notion Connected</title></head>
+<body>
+  <script>
+    if (window.opener) {
+      window.opener.postMessage({ type: 'notion_oauth_success', connected: true }, '*');
+      window.close();
+    } else {
+      window.location.href = '<%= @fallback_path %>';
+    }
+  </script>
+  <p><%= t("collavre_notion.notion_auth.connected") %></p>
+  <p>This window should close automatically. If not, you can close it manually.</p>
+</body>
+</html>

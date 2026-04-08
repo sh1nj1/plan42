@@ -1,5 +1,6 @@
 module Collavre
   class CommentsController < ApplicationController
+    include Collavre::Comments::CommentScoping
     include Collavre::Comments::ApprovalActions
     include Collavre::Comments::Conversion
     include Collavre::Comments::BatchOperations
@@ -346,10 +347,6 @@ module Collavre
       unless @creative.has_permission?(Current.user, :read)
         render json: { error: I18n.t("collavre.creatives.errors.no_permission") }, status: :forbidden
       end
-    end
-
-    def set_comment
-      @comment = @creative.comments.visible_to(Current.user).find(params[:id])
     end
 
     def comment_params

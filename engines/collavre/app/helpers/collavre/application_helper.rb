@@ -78,8 +78,7 @@ module Collavre
         styles << render_theme_media_query(dark_theme, "dark")
       end
 
-      # Safe: CSS generated from admin-configured theme settings (CSS variables only)
-      styles.join("\n").html_safe # rubocop:disable Rails/OutputSafety
+      safe_join(styles, "\n")
     end
 
     private
