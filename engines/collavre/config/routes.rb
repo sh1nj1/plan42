@@ -45,6 +45,9 @@ Collavre::Engine.routes.draw do
 
   resources :creative_imports, only: [ :create ]
   resources :tasks, only: [] do
+    collection do
+      get :active_statuses
+    end
     member do
       post :cancel
     end

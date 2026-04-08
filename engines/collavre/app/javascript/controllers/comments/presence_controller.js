@@ -4,7 +4,7 @@ import TouchDragHandler from '../../lib/touch_drag'
 import csrfFetch from '../../lib/api/csrf_fetch'
 
 const TYPING_TIMEOUT = 3000
-const AGENT_STATUS_TIMEOUT = 10000 // Safety timeout for agent_status (heartbeat expected every 3s)
+const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
 
 export default class extends Controller {
   static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox']
@@ -18,6 +18,8 @@ export default class extends Controller {
     this.manualTypingMessage = null
     this.presenceSubscription = null
     this.typingTimeoutHandle = null
+    this.activeAgentTasks = {} // { agentId: [taskId, ...] } - ordered, last is most recent
+    this.agentTaskPollHandle = null
     this.hasPresenceConnected = false
     this.currentUserId = document.body.dataset.currentUserId
 
@@ -33,6 +35,7 @@ export default class extends Controller {
 
   disconnect() {
     this.unsubscribe()
+    this.stopAgentTaskPoll()
     this.textareaTarget.removeEventListener('input', this.handleInput)
     this.textareaTarget.removeEventListener('focus', this.handleFocus)
     this.textareaTarget.removeEventListener('blur', this.handleBlur)
@@ -60,6 +63,7 @@ export default class extends Controller {
 
   onPopupClosed() {
     this.unsubscribe()
+    this.stopAgentTaskPoll()
     this.participantsData = null
     this.currentPresentIds = []
     this.typingUsers = {}
@@ -208,24 +212,26 @@ export default class extends Controller {
       }
       if (status === 'thinking' || status === 'streaming') {
         this.typingUsers[id] = name
-        if (!this.activeAgentTasks) this.activeAgentTasks = {}
-        if (task_id) this.activeAgentTasks[id] = task_id
-        // Safety timeout: auto-remove if no heartbeat within AGENT_STATUS_TIMEOUT
-        if (!this.agentStatusTimers) this.agentStatusTimers = {}
-        if (this.agentStatusTimers[id]) clearTimeout(this.agentStatusTimers[id])
-        this.agentStatusTimers[id] = setTimeout(() => {
-          delete this.typingUsers[id]
-          delete this.agentStatusTimers[id]
-          delete this.activeAgentTasks?.[id]
-          this.renderTypingIndicator()
-        }, AGENT_STATUS_TIMEOUT)
-      } else {
-        delete this.typingUsers[id]
-        delete this.activeAgentTasks?.[id]
-        if (this.agentStatusTimers?.[id]) {
-          clearTimeout(this.agentStatusTimers[id])
-          delete this.agentStatusTimers[id]
+        if (!this.activeAgentTasks[id]) this.activeAgentTasks[id] = []
+        if (task_id && !this.activeAgentTasks[id].includes(task_id)) {
+          this.activeAgentTasks[id].push(task_id)
         }
+        this.startAgentTaskPoll()
+      } else {
+        // idle/done - remove specific task or all tasks for this agent
+        if (this.activeAgentTasks[id]) {
+          if (task_id) {
+            const idx = this.activeAgentTasks[id].indexOf(task_id)
+            if (idx !== -1) this.activeAgentTasks[id].splice(idx, 1)
+          }
+          if (!task_id || this.activeAgentTasks[id].length === 0) {
+            delete this.activeAgentTasks[id]
+            delete this.typingUsers[id]
+          }
+        } else {
+          delete this.typingUsers[id]
+        }
+        this.maybeStopAgentTaskPoll()
       }
       this.renderTypingIndicator()
     }
@@ -333,7 +339,7 @@ export default class extends Controller {
     this.typingIndicatorTarget.style.opacity = '1'
 
     // Add stop button first (before avatars/names) for active agent tasks
-    const hasActiveTask = ids.some((id) => this.activeAgentTasks?.[id])
+    const hasActiveTask = ids.some((id) => this.activeAgentTasks[id]?.length > 0)
     if (hasActiveTask) {
       const stopBtn = document.createElement('button')
       stopBtn.type = 'button'
@@ -343,8 +349,11 @@ export default class extends Controller {
       stopBtn.title = stopLabel
       stopBtn.addEventListener('click', () => {
         ids.forEach((id) => {
-          const taskId = this.activeAgentTasks?.[id]
-          if (taskId) this.cancelAgentTask(taskId, id)
+          const tasks = this.activeAgentTasks[id]
+          if (tasks?.length > 0) {
+            // Cancel the last (most recent) task
+            this.cancelAgentTask(tasks[tasks.length - 1], id)
+          }
         })
       })
       this.typingIndicatorTarget.appendChild(stopBtn)
@@ -381,11 +390,13 @@ export default class extends Controller {
   }
 
   cancelAllAgentTasks() {
-    const ids = Object.keys(this.activeAgentTasks || {})
-    if (ids.length === 0) return false
-    ids.forEach((id) => {
-      const taskId = this.activeAgentTasks[id]
-      if (taskId) this.cancelAgentTask(taskId, id)
+    const agentIds = Object.keys(this.activeAgentTasks)
+    if (agentIds.length === 0) return false
+    agentIds.forEach((agentId) => {
+      const tasks = this.activeAgentTasks[agentId]
+      if (tasks?.length > 0) {
+        this.cancelAgentTask(tasks[tasks.length - 1], agentId)
+      }
     })
     return true
   }
@@ -397,12 +408,17 @@ export default class extends Controller {
     })
       .then((response) => {
         if (response.ok) {
-          delete this.typingUsers[agentId]
-          delete this.activeAgentTasks?.[agentId]
-          if (this.agentStatusTimers?.[agentId]) {
-            clearTimeout(this.agentStatusTimers[agentId])
-            delete this.agentStatusTimers[agentId]
+          if (this.activeAgentTasks[agentId]) {
+            const idx = this.activeAgentTasks[agentId].indexOf(taskId)
+            if (idx !== -1) this.activeAgentTasks[agentId].splice(idx, 1)
+            if (this.activeAgentTasks[agentId].length === 0) {
+              delete this.activeAgentTasks[agentId]
+              delete this.typingUsers[agentId]
+            }
+          } else {
+            delete this.typingUsers[agentId]
           }
+          this.maybeStopAgentTaskPoll()
           this.renderTypingIndicator()
         }
       })
@@ -412,6 +428,60 @@ export default class extends Controller {
   clearTypingTimers() {
     Object.values(this.typingTimers).forEach((timer) => clearTimeout(timer))
     this.typingTimers = {}
+  }
+
+  // ── Agent task status polling ──────────────────────────
+
+  startAgentTaskPoll() {
+    if (this.agentTaskPollHandle) return
+    this.agentTaskPollHandle = setInterval(() => this.pollAgentTaskStatuses(), AGENT_TASK_POLL_INTERVAL)
+  }
+
+  stopAgentTaskPoll() {
+    if (this.agentTaskPollHandle) {
+      clearInterval(this.agentTaskPollHandle)
+      this.agentTaskPollHandle = null
+    }
+  }
+
+  maybeStopAgentTaskPoll() {
+    if (Object.keys(this.activeAgentTasks).length === 0) this.stopAgentTaskPoll()
+  }
+
+  pollAgentTaskStatuses() {
+    const allTaskIds = Object.values(this.activeAgentTasks).flat()
+    if (allTaskIds.length === 0) {
+      this.stopAgentTaskPoll()
+      return
+    }
+
+    csrfFetch(`/tasks/active_statuses?task_ids=${allTaskIds.join(',')}`, {
+      headers: { Accept: 'application/json' },
+    })
+      .then((response) => {
+        if (!response.ok) return null
+        return response.json()
+      })
+      .then((data) => {
+        if (!data) return
+        const activeStatuses = new Set(['running', 'pending', 'queued'])
+        const activeTaskIds = new Set(data.tasks.filter((t) => activeStatuses.has(t.status)).map((t) => t.id))
+
+        let changed = false
+        Object.keys(this.activeAgentTasks).forEach((agentId) => {
+          const before = this.activeAgentTasks[agentId].length
+          this.activeAgentTasks[agentId] = this.activeAgentTasks[agentId].filter((taskId) => activeTaskIds.has(taskId))
+          if (this.activeAgentTasks[agentId].length !== before) changed = true
+          if (this.activeAgentTasks[agentId].length === 0) {
+            delete this.activeAgentTasks[agentId]
+            delete this.typingUsers[agentId]
+          }
+        })
+
+        if (changed) this.renderTypingIndicator()
+        this.maybeStopAgentTaskPoll()
+      })
+      .catch((err) => console.warn('[presence] poll agent task statuses failed:', err))
   }
 
   handleInput() {

@@ -2,6 +2,14 @@
 
 module Collavre
   class TasksController < ApplicationController
+    def active_statuses
+      task_ids = params[:task_ids].to_s.split(",").map(&:to_i).reject(&:zero?)
+      return render json: { tasks: [] } if task_ids.empty?
+
+      tasks = Task.where(id: task_ids).pluck(:id, :status)
+      render json: { tasks: tasks.map { |id, status| { id: id, status: status } } }
+    end
+
     def cancel
       task = Task.find(params[:id])
       creative = task.creative || Creative.find_by(id: task.trigger_event_payload&.dig("creative", "id"))
