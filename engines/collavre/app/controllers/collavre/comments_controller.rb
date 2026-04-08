@@ -26,12 +26,7 @@ module Collavre
     def index
       limit = 20
 
-      visible_scope = @creative.comments.where(
-        "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
-        false,
-        Current.user.id,
-        Current.user.id
-      )
+      visible_scope = @creative.comments.visible_to(Current.user)
       scope = visible_scope.with_attached_images.includes(:topic, :comment_reactions, :comment_versions, :snapshot_as_result)
 
       if params[:search].present?
@@ -354,14 +349,7 @@ module Collavre
     end
 
     def set_comment
-      @comment = @creative.comments
-                             .where(
-                               "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
-                               false,
-                               Current.user.id,
-                               Current.user.id
-                             )
-                             .find(params[:id])
+      @comment = @creative.comments.visible_to(Current.user).find(params[:id])
     end
 
     def comment_params

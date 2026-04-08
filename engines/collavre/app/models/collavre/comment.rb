@@ -16,6 +16,13 @@ module Collavre
     belongs_to :topic, class_name: "Collavre::Topic", optional: true
     belongs_to :quoted_comment, class_name: "Collavre::Comment", optional: true
 
+    scope :visible_to, ->(user) {
+      where(
+        "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
+        false, user.id, user.id
+      )
+    }
+
     # review_type: nil = normal chat, 0 = review, 1 = question
     enum :review_type, { review: 0, question: 1 }, prefix: true
 

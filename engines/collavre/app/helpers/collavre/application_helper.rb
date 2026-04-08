@@ -111,7 +111,7 @@ module Collavre
     #
     def render_extension_slot(slot, **locals)
       entries = Collavre::ViewExtensions.for_slot(slot)
-      return "".html_safe if entries.empty? # rubocop:disable Rails/OutputSafety
+      return safe_join([]) if entries.empty?
 
       safe_join(entries.map { |entry| render(partial: entry[:partial], locals: locals) })
     end

@@ -56,12 +56,6 @@ module ApplicationHelper
     end
   end
 
-  def linkify_urls(text)
-    ERB::Util.html_escape(text.to_s).gsub(%r{https?://[^\s]+}) do |url|
-      link_to(url, url, target: "_blank", rel: "noopener")
-    end.html_safe
-  end
-
   def embed_youtube_iframe(html)
     return html if html.blank?
     html = html.to_s
@@ -88,17 +82,11 @@ module ApplicationHelper
   end
 
   def render_contact_creatives(creatives)
-    return "".html_safe if creatives.blank?
+    return safe_join([]) if creatives.blank?
 
     safe_join(creatives.map do |creative|
       link_to(creative_title_for_display(creative), collavre.creative_path(creative), class: "creative-chip")
     end)
   end
 
-  def render_last_login_for(user, last_login_map)
-    timestamp = last_login_map[user.id]
-    return t("users.table.last_login_unknown") unless timestamp
-
-    I18n.l(timestamp, format: :short)
-  end
 end
