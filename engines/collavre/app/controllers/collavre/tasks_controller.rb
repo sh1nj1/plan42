@@ -6,8 +6,15 @@ module Collavre
       task_ids = params[:task_ids].to_s.split(",").map(&:to_i).reject(&:zero?)
       return render json: { tasks: [] } if task_ids.empty?
 
-      tasks = Task.where(id: task_ids).pluck(:id, :status)
-      render json: { tasks: tasks.map { |id, status| { id: id, status: status } } }
+      tasks = Task.where(id: task_ids).includes(:creative)
+      results = tasks.filter_map do |task|
+        creative = task.creative || Creative.find_by(id: task.trigger_event_payload&.dig("creative", "id"))
+        next unless creative&.has_permission?(Current.user, :read)
+
+        { id: task.id, status: task.status }
+      end
+
+      render json: { tasks: results }
     end
 
     def cancel
