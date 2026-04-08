@@ -51,6 +51,9 @@ module Collavre
         @client = build_ai_client(system_prompt)
         stream_response(@client, messages_data)
 
+        # Signal thinking state during finalize so the indicator shows ⏳
+        @lifecycle_manager.broadcast_status("thinking")
+
         log_action("completion", { response: @streamer.content })
 
         # Finalize and dispatch (skip A2A for review-flow updates)
