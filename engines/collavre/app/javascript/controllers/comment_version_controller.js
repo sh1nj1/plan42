@@ -1,5 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
-import { renderCommentMarkdown } from "../lib/utils/markdown"
+import { renderCommentMarkdown, renderMermaidDiagrams } from "../lib/utils/markdown"
 
 export default class extends Controller {
   static targets = ["prevBtn", "nextBtn", "indicator", "deleteBtn", "selectBtn"]
@@ -127,6 +127,7 @@ export default class extends Controller {
     if (target) {
       target.innerHTML = renderCommentMarkdown(text)
       target.dataset.rendered = "true"
+      renderMermaidDiagrams(target)
     }
   }
 

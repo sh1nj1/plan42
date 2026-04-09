@@ -1,5 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
-import { renderCommentMarkdown } from '../lib/utils/markdown'
+import { renderCommentMarkdown, renderMermaidDiagrams } from '../lib/utils/markdown'
 import { addTableDownloadButtons } from '../lib/utils/table_download'
 import CommonPopup from '../lib/common_popup'
 
@@ -112,6 +112,7 @@ export default class extends Controller {
         } else {
           contentElement.innerHTML = renderCommentMarkdown(text)
           addTableDownloadButtons(contentElement)
+          renderMermaidDiagrams(contentElement)
           contentElement.classList.remove('streaming')
           if (this._isStreaming) this._cleanupStreaming()
         }
