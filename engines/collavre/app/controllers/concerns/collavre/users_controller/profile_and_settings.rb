@@ -29,6 +29,7 @@ module Collavre
 
     def update
       @user = Collavre::User.find(params[:id])
+      return head :forbidden unless @user == Current.user || Current.user.system_admin?
       if @user.update(profile_params)
         redirect_to user_path(@user), notice: I18n.t("collavre.users.profile_updated")
       else
@@ -46,6 +47,7 @@ module Collavre
 
     def edit_password
       @user = Collavre::User.find(params[:id])
+      return head :forbidden unless @user == Current.user || Current.user.system_admin?
     end
 
     def passkeys
