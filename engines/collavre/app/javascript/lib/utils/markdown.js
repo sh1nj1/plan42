@@ -1,5 +1,6 @@
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { addTableDownloadButtons } from './table_download'
 import hljs from 'highlight.js/lib/core'
 
 // Register only commonly used languages to keep the bundle small
@@ -129,5 +130,6 @@ export function renderMarkdownInContainer(container) {
     if (element.dataset.rendered === 'true') return
     element.innerHTML = renderCommentMarkdown(element.textContent)
     element.dataset.rendered = 'true'
+    addTableDownloadButtons(element)
   })
 }

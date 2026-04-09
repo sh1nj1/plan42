@@ -1,5 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 import { renderCommentMarkdown } from '../lib/utils/markdown'
+import { addTableDownloadButtons } from '../lib/utils/table_download'
 import CommonPopup from '../lib/common_popup'
 
 // Global tracker: persists streaming state across Turbo replacements
@@ -110,6 +111,7 @@ export default class extends Controller {
           this._resetStreamingTimeout()
         } else {
           contentElement.innerHTML = renderCommentMarkdown(text)
+          addTableDownloadButtons(contentElement)
           contentElement.classList.remove('streaming')
           if (this._isStreaming) this._cleanupStreaming()
         }
