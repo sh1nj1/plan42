@@ -107,6 +107,7 @@ DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
   if (node.tagName === 'DIV' && data.attrName === 'class') {
     const classes = data.attrValue.split(/\s+/)
     if (classes.includes('mermaid-chart')) {
+      data.attrValue = 'mermaid-chart'
       data.forceKeepAttr = true
     }
   }
@@ -147,7 +148,11 @@ export async function renderMermaidDiagrams(container) {
     mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' })
     mermaidReady = true
   }
-  await mermaid.run({ nodes: Array.from(charts) })
+  try {
+    await mermaid.run({ nodes: Array.from(charts) })
+  } catch (e) {
+    console.warn('Mermaid rendering failed:', e)
+  }
 }
 
 export function renderMarkdownInContainer(container) {
