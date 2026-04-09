@@ -10,6 +10,8 @@ ko:
       archived_topics: "아카이브된 토픽 (%{count}개)"
       not_ai_agent: AI 에이전트만 Primary Agent로 설정할 수 있습니다.
       default_name_prefix: "토픽"
+      branch_prefix: "분기"
+      main_name: "메인"
       create_and_move: '"%{name}" 생성후 이동'
       move:
         no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.
@@ -101,12 +103,17 @@ ko:
         one: "메시지 1개"
         other: "메시지 %{count}개"
       selection_merge: 병합
+      selection_branch: 분기
       merge_confirm: "선택한 메시지를 하나로 병합하시겠습니까? 첫 번째 메시지가 업데이트되고 나머지는 삭제됩니다."
       merge:
         started: "⏳ 메시지 병합 중..."
         minimum_required: "병합하려면 2개 이상의 메시지를 선택하세요."
         not_authorized: "메시지를 병합할 권한이 없습니다."
         own_messages_only: "자신의 메시지 또는 자신의 AI 에이전트 메시지만 병합할 수 있습니다."
+      branch:
+        no_selection: "분기할 메시지를 선택하세요."
+        not_authorized: "메시지를 분기할 권한이 없습니다."
+        comments_not_found: "일부 선택한 메시지를 찾을 수 없습니다."
       batch_delete_confirm: 선택한 메시지를 삭제하시겠습니까?
       batch_delete_no_selection: 삭제할 메시지를 선택해주세요.
       batch_delete_not_found: 일부 선택한 메시지를 찾을 수 없습니다.

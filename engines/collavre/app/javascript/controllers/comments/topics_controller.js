@@ -126,10 +126,11 @@ export default class extends Controller {
             const agentAvatar = topic.primary_agent
                 ? this.renderAgentAvatar(topic.primary_agent)
                 : ''
+            const branchIcon = topic.source_topic_id ? '<span class="topic-branch-icon" title="Branched">↗</span>' : ''
             html += `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
-                          data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}" 
-                          data-id="${topic.id}">
-                        ${agentAvatar}#${topic.name}`
+                          data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}"
+                          data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
+                        ${agentAvatar}${branchIcon}#${topic.name}`
 
             if (canManage) {
                 html += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
@@ -471,6 +472,15 @@ export default class extends Controller {
         if (event.target.closest('.delete-topic-btn')) return
         // Ignore if clicking on edit input
         if (event.target.closest('.topic-edit-input')) return
+
+        // Navigate to source topic when clicking branch icon
+        if (event.target.closest('.topic-branch-icon')) {
+            const sourceTopicId = event.currentTarget.dataset.sourceTopicId
+            if (sourceTopicId) {
+                this.selectTopic(sourceTopicId)
+                return
+            }
+        }
 
         const id = event.currentTarget.dataset.id
 

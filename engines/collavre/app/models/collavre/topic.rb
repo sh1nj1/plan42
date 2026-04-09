@@ -4,8 +4,10 @@ module Collavre
 
     belongs_to :creative, class_name: "Collavre::Creative"
     belongs_to :user, class_name: Collavre.configuration.user_class_name
+    belongs_to :source_topic, class_name: "Collavre::Topic", optional: true
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
+    has_many :branches, class_name: "Collavre::Topic", foreign_key: :source_topic_id, dependent: :nullify
     has_many :user_creative_preferences_as_last_topic, class_name: "Collavre::UserCreativePreference",
              foreign_key: :last_topic_id, dependent: :nullify, inverse_of: :last_topic
 

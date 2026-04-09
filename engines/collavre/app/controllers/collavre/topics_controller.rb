@@ -268,7 +268,7 @@ module Collavre
     end
 
     def topic_json(topic)
-      data = topic.slice(:id, :name)
+      data = topic.slice(:id, :name, :source_topic_id)
       agent = topic.instance_variable_get(:@_primary_agent) || topic.primary_agent
       if agent
         data[:primary_agent] = agent_json(agent)
@@ -277,7 +277,7 @@ module Collavre
     end
 
     def topic_json_with_agent(topic, agent)
-      data = topic.slice(:id, :name)
+      data = topic.slice(:id, :name, :source_topic_id)
       data[:primary_agent] = agent_json(agent)
       data
     end

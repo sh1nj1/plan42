@@ -10,6 +10,8 @@ en:
       archived_topics: "Archived topics (%{count})"
       not_ai_agent: Only AI agents can be set as primary agent.
       default_name_prefix: "Topic"
+      branch_prefix: "Branch"
+      main_name: "Main"
       create_and_move: 'Create "%{name}" and move'
       move:
         no_target_permission: You don't have write permission on the target creative.
@@ -104,12 +106,17 @@ en:
         one: "1 message"
         other: "%{count} messages"
       selection_merge: Merge
+      selection_branch: Branch
       merge_confirm: "Merge the selected messages into one? The first message will be updated and the rest will be deleted."
       merge:
         started: "⏳ Merging messages..."
         minimum_required: "Select at least 2 messages to merge."
         not_authorized: "You don't have permission to merge messages."
         own_messages_only: "You can only merge your own messages or messages from your AI agents."
+      branch:
+        no_selection: "Select at least one message to branch."
+        not_authorized: "You don't have permission to branch messages."
+        comments_not_found: "Some selected messages could not be found."
       batch_delete_confirm: Are you sure you want to delete the selected messages?
       batch_delete_no_selection: Select at least one message to delete.
       batch_delete_not_found: Some selected messages could not be found.
