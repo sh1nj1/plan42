@@ -352,6 +352,68 @@ body.chat-fullscreen {
     margin: 0;
 }
 
+/* Table styling */
+.comment-content table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.85em;
+    margin: 0;
+}
+
+.comment-content table th,
+.comment-content table td {
+    border: 1px solid var(--color-border);
+    padding: 0.3em 0.6em;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.comment-content table th {
+    background: var(--color-section-bg);
+    font-weight: 600;
+}
+
+.comment-content table tr:hover td {
+    background: color-mix(in srgb, var(--color-section-bg) 40%, transparent);
+}
+
+/* Table download wrapper */
+.table-download-wrapper {
+    position: relative;
+    overflow-x: auto;
+    margin: 0.4em 0;
+}
+
+.table-download-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.3em;
+    padding: 0.15em 0;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.table-download-wrapper:hover .table-download-toolbar {
+    opacity: 1;
+}
+
+.table-download-btn {
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-2);
+    color: var(--color-muted);
+    font-size: 0.75em;
+    padding: 0.15em 0.5em;
+    cursor: pointer;
+    line-height: 1.4;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.table-download-btn:hover {
+    color: var(--color-active);
+    border-color: var(--color-active);
+}
+
 /* Quote indicator in form */
 .comment-quote-indicator {
     display: flex;

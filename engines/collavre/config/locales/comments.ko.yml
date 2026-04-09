@@ -193,6 +193,9 @@ ko:
       stop_agent: 중지
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
+      table_download:
+        csv: CSV
+        excel: Excel
       lightbox:
         close: 닫기
         previous: 이전

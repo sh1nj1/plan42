@@ -196,6 +196,9 @@ en:
       stop_agent: Stop
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
+      table_download:
+        csv: CSV
+        excel: Excel
       lightbox:
         close: Close
         previous: Previous
