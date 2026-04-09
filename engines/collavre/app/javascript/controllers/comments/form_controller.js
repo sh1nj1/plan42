@@ -97,6 +97,9 @@ export default class extends Controller {
 
   handleTopicChange(event) {
     this.currentTopicId = event.detail.topicId
+    this._isInbox = event.detail.isInbox || false
+    this._systemTopicId = event.detail.systemTopicId || null
+    this._updateInboxReplyMode()
   }
 
 
@@ -196,6 +199,7 @@ export default class extends Controller {
     this.submitTarget.innerHTML = this.defaultSubmitHTML
     this.submitTarget.disabled = false
     this.submitTarget.classList.remove('review-submit-btn')
+    this.submitTarget.classList.remove('inbox-reply-btn')
     if (this.cancelTarget) this.cancelTarget.style.display = 'none'
     this.presenceController?.clearManualTypingMessage()
     this.clearImageAttachments()
@@ -928,6 +932,65 @@ export default class extends Controller {
     return this.element.dataset[key] || fallback
   }
 
+  // --- Inbox inline reply mode ---
+
+  get _isInboxSystemTopic() {
+    return this._isInbox && this._systemTopicId &&
+      String(this.currentTopicId) === String(this._systemTopicId)
+  }
+
+  _updateInboxReplyMode() {
+    if (!this._isInboxSystemTopic) {
+      this._inboxReplyMode = false
+      // Reset submit button if not in review mode
+      if (!this._reviewStore || this._reviewStore.isEmpty) {
+        this.submitTarget.innerHTML = this.defaultSubmitHTML
+        this.submitTarget.classList.remove('inbox-reply-btn')
+      }
+      if (this._inboxReplyIndicator) {
+        this.quoteIndicatorTarget.style.display = 'none'
+        this.quoteIndicatorTextTarget.textContent = ''
+        this._inboxReplyIndicator = false
+      }
+      return
+    }
+
+    this._inboxReplyMode = true
+
+    // Find the latest alarm (system message) in the comment list
+    const latestAlarm = this._findLatestAlarm()
+    if (latestAlarm) {
+      const alarmText = latestAlarm.textContent?.trim() || ''
+      const truncated = alarmText.length > 100 ? alarmText.substring(0, 100) + '…' : alarmText
+      this.quoteIndicatorTarget.style.display = ''
+      this.quoteIndicatorTextTarget.textContent = truncated
+      this._inboxReplyIndicator = true
+    }
+
+    // Change submit button to reply text
+    this.submitTarget.textContent = this._getI18nText('inboxReplyButton', 'Reply')
+    this.submitTarget.classList.add('inbox-reply-btn')
+  }
+
+  _findLatestAlarm() {
+    const list = document.getElementById('comments-list')
+    if (!list) return null
+
+    // System messages have data-user-id="" (no user)
+    const allComments = list.querySelectorAll('.comment-item')
+    let latest = null
+    for (const el of allComments) {
+      if (!el.dataset.userId) {
+        latest = el
+      }
+    }
+    // Get the content element from the latest system message
+    if (latest) {
+      return latest.querySelector('.comment-content')
+    }
+    return null
+  }
+
   cancelQuote() {
     this.quotedCommentIdTarget.value = ''
     this.quotedTextTarget.value = ''
@@ -937,6 +1000,10 @@ export default class extends Controller {
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
     this.textareaTarget.placeholder = ''
+    // Re-apply inbox reply mode indicator if we're in inbox System topic
+    if (this._isInboxSystemTopic) {
+      requestAnimationFrame(() => this._updateInboxReplyMode())
+    }
   }
 
   renderCommentHtml(html, { replaceExisting = false } = {}) {

@@ -186,6 +186,7 @@ export default class extends Controller {
       if (this.formController?.shouldAutoFocusOnOpen()) {
         this.formController.focusTextarea()
       }
+      this.formController?._updateInboxReplyMode?.()
       this.markCommentsRead()
 
     }).catch((error) => {
