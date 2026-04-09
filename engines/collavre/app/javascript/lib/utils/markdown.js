@@ -68,11 +68,15 @@ function sanitizeLang(lang) {
   return lang.replace(/[^a-zA-Z0-9_-]/g, '')
 }
 
-// Custom renderer for code blocks with syntax highlighting
+// Custom renderer for code blocks with syntax highlighting + mermaid
 marked.use({
   renderer: {
     code({ text, lang }) {
       const safeLang = sanitizeLang(lang)
+      if (safeLang === 'mermaid') {
+        const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        return `<div class="mermaid-chart">${escaped}</div>`
+      }
       const highlighted = highlightCode(text, safeLang)
       const langClass = safeLang ? ` language-${safeLang}` : ''
       return `<pre><code class="hljs${langClass}">${highlighted}</code></pre>`
@@ -96,6 +100,14 @@ DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
     const safe = classes.filter(c => c === 'hljs' || c.startsWith('language-'))
     if (safe.length > 0) {
       data.attrValue = safe.join(' ')
+      data.forceKeepAttr = true
+    }
+  }
+  // Allow mermaid-chart class on div elements
+  if (node.tagName === 'DIV' && data.attrName === 'class') {
+    const classes = data.attrValue.split(/\s+/)
+    if (classes.includes('mermaid-chart')) {
+      data.attrValue = 'mermaid-chart'
       data.forceKeepAttr = true
     }
   }
@@ -125,6 +137,24 @@ export function renderCommentMarkdown(text) {
   return sanitize(html.trim())
 }
 
+// Lazy-load mermaid and render diagrams in a container
+let mermaidReady = false
+
+export async function renderMermaidDiagrams(container) {
+  const charts = container.querySelectorAll('.mermaid-chart:not([data-processed])')
+  if (charts.length === 0) return
+  const { default: mermaid } = await import('mermaid')
+  if (!mermaidReady) {
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' })
+    mermaidReady = true
+  }
+  try {
+    await mermaid.run({ nodes: Array.from(charts) })
+  } catch (e) {
+    console.warn('Mermaid rendering failed:', e)
+  }
+}
+
 export function renderMarkdownInContainer(container) {
   container.querySelectorAll('.comment-content').forEach((element) => {
     if (element.dataset.rendered === 'true') return
@@ -132,4 +162,5 @@ export function renderMarkdownInContainer(container) {
     element.dataset.rendered = 'true'
     addTableDownloadButtons(element)
   })
+  renderMermaidDiagrams(container)
 }
