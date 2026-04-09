@@ -97,6 +97,35 @@ module Collavre
       end
     end
 
+    test "does not cross-post when user lacks feedback permission on original creative" do
+      # Use a third user who has no permission on @creative
+      third_user = users(:three)
+      third_inbox = Creative.inbox_for(third_user)
+      third_system_topic = third_inbox.system_topic(fallback_user: third_user)
+
+      # Simulate alarm in third user's inbox
+      alarm = Comment.create!(
+        creative: third_inbox,
+        topic: third_system_topic,
+        content: 'Notification about original',
+        user: nil,
+        skip_default_user: true,
+        quoted_comment: @original_comment
+      )
+
+      reply = Comment.create!(
+        creative: third_inbox,
+        topic: third_system_topic,
+        content: "Reply from unauthorized user",
+        user: third_user,
+        skip_dispatch: true
+      )
+
+      assert_no_difference("Comment.count") do
+        InboxReplyService.call(reply)
+      end
+    end
+
     test "does not cross-post when alarm has no quoted_comment" do
       @alarm.update!(quoted_comment: nil)
 

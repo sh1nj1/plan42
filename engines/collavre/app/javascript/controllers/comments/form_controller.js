@@ -93,6 +93,9 @@ export default class extends Controller {
 
     this.handleTopicChange = this.handleTopicChange.bind(this)
     this.element.addEventListener('comments--topics:change', this.handleTopicChange)
+
+    this.handleListLoaded = () => this._updateInboxReplyMode()
+    this.element.addEventListener('comments--list:loaded', this.handleListLoaded)
   }
 
   handleTopicChange(event) {
@@ -126,6 +129,7 @@ export default class extends Controller {
     this.formTarget.removeEventListener('drop', this.handleDrop)
     this.textareaTarget.removeEventListener('paste', this.handlePaste)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
+    this.element.removeEventListener('comments--list:loaded', this.handleListLoaded)
   }
 
   get listController() {

@@ -50,7 +50,15 @@ module Collavre
     end
 
     def cross_post(original)
-      Comment.create!(
+      unless original.creative.has_permission?(@comment.user, :feedback)
+        Rails.logger.warn(
+          "[InboxReplyService] User #{@comment.user_id} lacks :feedback permission " \
+          "on creative #{original.creative_id}, skipping cross-post"
+        )
+        return nil
+      end
+
+      cross_posted = Comment.create!(
         creative: original.creative,
         topic: original.topic,
         content: @comment.content,
@@ -58,12 +66,22 @@ module Collavre
         quoted_comment: original,
         private: false
       )
+
+      copy_images(cross_posted) if @comment.images.attached?
+
+      cross_posted
     rescue StandardError => e
       Rails.logger.error(
         "[InboxReplyService] Failed to cross-post comment #{@comment.id}: " \
         "#{e.class} #{e.message}"
       )
       nil
+    end
+
+    def copy_images(target)
+      @comment.images.each do |image|
+        target.images.attach(image.blob)
+      end
     end
   end
 end

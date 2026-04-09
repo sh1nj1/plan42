@@ -186,7 +186,7 @@ export default class extends Controller {
       if (this.formController?.shouldAutoFocusOnOpen()) {
         this.formController.focusTextarea()
       }
-      this.formController?._updateInboxReplyMode?.()
+      this.element.dispatchEvent(new CustomEvent('comments--list:loaded', { bubbles: true }))
       this.markCommentsRead()
 
     }).catch((error) => {
