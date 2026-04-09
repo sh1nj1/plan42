@@ -53,3 +53,5 @@ vendor/bundle
 
 # Release build artifacts
 /build/
+.claude
+
