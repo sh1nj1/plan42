@@ -22,6 +22,10 @@ export default class extends Controller {
 
   // Called when keyword input changes
   keywordChanged() {
+    // Strip double quotes to prevent Liquid injection
+    const input = this.keywordInputTarget
+    const sanitized = input.value.replace(/"/g, '')
+    if (input.value !== sanitized) input.value = sanitized
     this.updateExpression()
   }
 
@@ -76,7 +80,7 @@ export default class extends Controller {
         expression = 'chat.mentioned_user.id == agent.id'
         break
       case 'keyword': {
-        const keyword = this.keywordInputTarget.value.trim()
+        const keyword = this.keywordInputTarget.value.trim().replace(/"/g, '')
         expression = keyword ? `chat.content contains "${keyword}"` : ''
         break
       }
