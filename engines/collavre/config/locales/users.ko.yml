@@ -31,6 +31,16 @@ ko:
         searchable_help: 활성화하면 다른 사용자가 이름으로 이 AI를 찾고 멘션할 수 있습니다.
         submit: AI 에이전트 추가
         tools_note: 에이전트 생성 후 사용 가능한 도구를 확인하고 테스트할 수 있습니다.
+        trigger_label: 트리거
+        trigger_auto: 자동 응답
+        trigger_auto_help: 새 댓글에 자동으로 응답합니다.
+        trigger_mention: 멘션으로 호출
+        trigger_mention_help: "@멘션되었을 때만 응답합니다."
+        trigger_keyword: 특정 메시지 포함
+        trigger_keyword_help: 메시지에 특정 키워드가 포함되면 응답합니다.
+        trigger_keyword_placeholder: 키워드 입력
+        trigger_advanced: 고급 (Liquid 표현식)
+        trigger_advanced_help: "직접 Liquid 표현식을 작성합니다. 예: chat.content contains \"help\" and event_name == \"comment_created\""
       create_ai:
         success: AI 에이전트가 생성되었습니다.
       copy_ai:

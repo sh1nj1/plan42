@@ -1,5 +1,6 @@
 // Collavre Engine Controllers
 // Import all controllers
+import AgentTriggerController from "./agent_trigger_controller"
 import PopupMenuController from "./popup_menu_controller"
 import ProgressFilterController from "./progress_filter_controller"
 import CreativesImportController from "./creatives/import_controller"
@@ -35,6 +36,7 @@ import SearchPopupController from "./search_popup_controller"
 
 // Export all controllers
 export {
+  AgentTriggerController,
   PopupMenuController,
   ProgressFilterController,
   CreativesImportController,
@@ -70,6 +72,7 @@ export {
 
 // Registration function for use with a Stimulus application
 export function registerControllers(application) {
+  application.register("agent-trigger", AgentTriggerController)
   application.register("popup-menu", PopupMenuController)
   application.register("progress-filter", ProgressFilterController)
   application.register("creatives--import", CreativesImportController)
