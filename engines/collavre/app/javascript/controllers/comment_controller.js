@@ -121,7 +121,7 @@ export default class extends Controller {
 
     // Text selection quote support
     this.handleMouseUp = this.handleMouseUp.bind(this)
-    this.element.addEventListener('mouseup', this.handleMouseUp)
+    document.addEventListener('mouseup', this.handleMouseUp)
 
     this.currentUserId = document.body.dataset.currentUserId
     const commentAuthorId = this.element.dataset.userId
@@ -223,7 +223,7 @@ export default class extends Controller {
       clearTimeout(this._streamingTimeout)
       this._streamingTimeout = null
     }
-    this.element.removeEventListener('mouseup', this.handleMouseUp)
+    document.removeEventListener('mouseup', this.handleMouseUp)
     this.hideReviewPopup()
     if (this._reviewPopupEl) {
       this._reviewPopupEl.remove()
