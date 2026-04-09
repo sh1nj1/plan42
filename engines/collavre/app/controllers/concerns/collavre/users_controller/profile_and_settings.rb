@@ -47,7 +47,7 @@ module Collavre
 
     def edit_password
       @user = Collavre::User.find(params[:id])
-      return head :forbidden unless @user == Current.user || Current.user.system_admin?
+      head :forbidden unless @user == Current.user || Current.user.system_admin?
     end
 
     def passkeys
