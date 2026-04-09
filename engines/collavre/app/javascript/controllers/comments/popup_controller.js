@@ -1171,6 +1171,13 @@ export default class extends Controller {
     } else if (event.altKey && event.key === 'ArrowRight') {
       event.preventDefault()
       this.navigateForward()
+    } else if ((event.ctrlKey || event.metaKey) && event.key === 'a') {
+      // Ctrl+A / Cmd+A: select all messages — but only when not typing in an input
+      const tag = document.activeElement?.tagName
+      if (tag === 'TEXTAREA' || tag === 'INPUT' || document.activeElement?.isContentEditable) return
+      if (!this.element.contains(document.activeElement) && document.activeElement !== document.body) return
+      event.preventDefault()
+      this.listController?.selectAll()
     }
   }
 

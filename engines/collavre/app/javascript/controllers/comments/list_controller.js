@@ -563,28 +563,11 @@ export default class extends Controller {
 
     // Select All toggle handler
     selectAllCheckbox.addEventListener('change', () => {
-      const shouldSelect = selectAllCheckbox.checked
-      this.listTarget.querySelectorAll('.comment-select-checkbox').forEach((checkbox) => {
-        const commentId = checkbox.value
-        const item = checkbox.closest('.comment-item')
-        if (shouldSelect && !checkbox.checked) {
-          checkbox.checked = true
-          this.selection.add(commentId)
-          if (item) {
-            item.classList.add('selected-for-move')
-            item.setAttribute('draggable', 'true')
-          }
-        } else if (!shouldSelect && checkbox.checked) {
-          checkbox.checked = false
-          this.selection.delete(commentId)
-          if (item) {
-            item.classList.remove('selected-for-move')
-            item.removeAttribute('draggable')
-          }
-        }
-      })
-      this.notifySelectionChange()
-      this.updateSelectionActionBar()
+      if (selectAllCheckbox.checked) {
+        this.selectAll()
+      } else {
+        this.clearSelection()
+      }
     })
 
     bar.querySelector('.selection-action-delete').addEventListener('click', (e) => { e.stopPropagation(); this.deleteSelectedComments() })
@@ -796,6 +779,23 @@ export default class extends Controller {
   notifySelectionChange() {
     const size = this.selection.size
     this.formController?.onSelectionChanged({ size, moving: this.movingComments })
+  }
+
+  selectAll() {
+    this.listTarget.querySelectorAll('.comment-select-checkbox').forEach((checkbox) => {
+      if (!checkbox.checked) {
+        checkbox.checked = true
+        const commentId = checkbox.value
+        this.selection.add(commentId)
+        const item = checkbox.closest('.comment-item')
+        if (item) {
+          item.classList.add('selected-for-move')
+          item.setAttribute('draggable', 'true')
+        }
+      }
+    })
+    this.notifySelectionChange()
+    this.updateSelectionActionBar()
   }
 
   clearSelection() {
