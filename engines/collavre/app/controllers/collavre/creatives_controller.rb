@@ -528,7 +528,7 @@ module Collavre
         end
 
         topic = creative.topics.find_by(name: "Drop Trigger")
-        agent = parent.all_shared_users(:write).map(&:user).find(&:ai_user?)
+        agent = parent.find_ai_agent(:write)
         unless topic && agent
           Rails.logger.warn("[TriggerAction] resume: missing topic=#{topic&.id} or agent for creative #{creative.id}")
           return
@@ -565,7 +565,7 @@ module Collavre
         end
 
         topic = creative.topics.find_by(name: "Drop Trigger")
-        agent = parent.all_shared_users(:write).map(&:user).find(&:ai_user?)
+        agent = parent.find_ai_agent(:write)
         unless topic && agent
           Rails.logger.warn("[TriggerAction] restart: missing topic=#{topic&.id} or agent for creative #{creative.id}")
           return
@@ -593,7 +593,7 @@ module Collavre
       end
 
       def notify_drop_trigger_missing_agent!(creative)
-        return if creative.all_shared_users(:write).map(&:user).any?(&:ai_user?)
+        return if creative.find_ai_agent(:write)
 
         topic = creative.topics.find_or_create_by!(name: "Drop Trigger") do |t|
           t.user = creative.user

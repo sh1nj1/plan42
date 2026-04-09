@@ -120,12 +120,11 @@ module Collavre
 
         Creative.where("progress < 1.0")
                 .where("updated_at < ?", threshold_time)
+                .includes(creative_shares: :user)
                 .find_each do |creative|
           # Skip if no AI agents have access
-          ai_agents = creative.creative_shares.joins(:user)
-                              .where(users: { llm_vendor: [ nil, "" ].map { |v| v } })
-                              .or(creative.creative_shares.joins(:user).where.not(users: { llm_vendor: nil }))
-                              .where.not(permission: "no_access")
+          ai_agents = creative.creative_shares
+                              .reject { |s| s.permission == "no_access" }
                               .map(&:user)
                               .select(&:ai_user?)
 
@@ -162,13 +161,10 @@ module Collavre
 
       def find_creative_escalation_targets(creative)
         # Find users with admin permission on the creative or its ancestors
-        admin_users = []
-
-        ([ creative ] + creative.ancestors.to_a).each do |c|
-          c.creative_shares.where(permission: "admin").includes(:user).each do |share|
-            admin_users << share.user unless share.user.ai_user?
-          end
-        end
+        ancestor_ids = [ creative.id ] + creative.ancestor_ids
+        admin_users = CreativeShare.where(creative_id: ancestor_ids, permission: "admin")
+                                   .includes(:user)
+                                   .filter_map { |share| share.user unless share.user.ai_user? }
 
         # Also include the creative owner
         admin_users << creative.user if creative.user && !creative.user.ai_user?
