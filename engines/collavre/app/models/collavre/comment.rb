@@ -184,7 +184,7 @@ module Collavre
       parent = creative.parent
       return unless parent&.drop_trigger_enabled?
 
-      agent = parent.all_shared_users(:write).map(&:user).find(&:ai_user?)
+      agent = parent.find_ai_agent(:write)
       return unless agent
 
       creative.comments.create!(
