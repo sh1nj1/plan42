@@ -66,23 +66,6 @@
         </div>
       </div>
 
-      <%# TODO: Search results mode (flat/tree) — currently locked by filter state, re-enable when independent %>
-      <% if false # disabled: search results mode %>
-      <div class="search-popup-filter-section">
-        <span class="search-popup-filter-label"><%= t('collavre.search_popup.search_results') %></span>
-        <div class="search-popup-filter-buttons">
-          <button type="button"
-                  class="search-popup-filter-btn<%= ' active' if search_mode == 'flat' %>"
-                  data-mode="flat"
-                  data-action="click->search-popup#applySearchMode"><%= t('collavre.search_popup.flat_view') %></button>
-          <button type="button"
-                  class="search-popup-filter-btn<%= ' active' if search_mode == 'tree' %>"
-                  data-mode="tree"
-                  data-action="click->search-popup#applySearchMode"><%= t('collavre.search_popup.tree_view') %></button>
-        </div>
-      </div>
-      <% end %>
-
       <div class="search-popup-filter-section">
         <span class="search-popup-filter-label"><%= t('collavre.search_popup.other_filters') %></span>
         <div class="search-popup-filter-buttons">
