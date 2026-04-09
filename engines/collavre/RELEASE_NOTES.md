@@ -1,3 +1,26 @@
+## v0.14.0 (2026-04-09)
+
+### Changes
+- ff48abc5 feat: replace routing expression with trigger type selector (#1157)
+- f998daf4 feat: inline reply from inbox System topic (#1156)
+- b6df34b3 fix: make branch icon clickable to navigate to source topic
+- aeae831d fix: remove unused branchComments export from topics.js
+- 95359707 test: add integration tests for chat branching
+- b2a59bb1 feat: add chat branching — copy selected messages into a new topic
+- c98ceab2 Merge pull request #1153 from sh1nj1/fix/review-popup-mouseup
+- 9c0e664c feat: add Ctrl+A to select all messages in chat popup (#1152)
+- c2ed1117 fix: bind mouseup to document so review popup appears when mouse released outside comment
+- 29d6e1c3 chore: add CommandMenuComponent test and remove dead search mode block (#1151)
+- 6ff9df2d fix: resolve N+1 queries in stuck_detector and creatives_controller (#1150)
+- aa2603c0 chore: remove dead code — unused partials, helpers, route, and model methods (#1149)
+- f5473d32 refactor: replace inline comment visibility queries with visible_to scope (#1148)
+- ddd75680 fix: add ownership checks for user profile, AI user, and Slack account (#1147)
+- 8639865c refactor: extract OpenClaw abort logic into shared service (#1146)
+- 390cb1f9 fix: patch XSS vulnerabilities and update action_text-trix (#1145)
+- 31823b43 chore: daily code cleanup — fix N+1, extract concerns, remove dead code (#1140)
+- a615ace3 fix: use --layer-fullscreen design token instead of hardcoded z-index
+- aff11d22 fix: raise z-index of creative picker modal above fullscreen chat
+
 ## v0.13.0 (2026-04-08)
 
 ### Changes

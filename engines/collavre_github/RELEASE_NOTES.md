@@ -1,3 +1,8 @@
+## v0.4.1 (2026-04-09)
+
+### Changes
+- 31823b43 chore: daily code cleanup — fix N+1, extract concerns, remove dead code (#1140)
+
 ## v0.4.0 (2026-04-02)
 
 ### Changes

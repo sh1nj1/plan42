@@ -9,7 +9,7 @@ PATH
 PATH
   remote: engines/collavre_github
   specs:
-    collavre_github (0.4.0)
+    collavre_github (0.4.1)
       collavre
       octokit
       rails (>= 8.0)
@@ -17,7 +17,7 @@ PATH
 PATH
   remote: engines/collavre_notion
   specs:
-    collavre_notion (0.1.1)
+    collavre_notion (0.1.2)
       collavre
       httparty
       rails (>= 8.0)
@@ -41,7 +41,7 @@ PATH
 PATH
   remote: engines/collavre_slack
   specs:
-    collavre_slack (0.2.4)
+    collavre_slack (0.2.5)
       collavre
       faraday
       faraday-retry
@@ -50,7 +50,7 @@ PATH
 PATH
   remote: engines/collavre
   specs:
-    collavre (0.13.0)
+    collavre (0.14.0)
       bcrypt
       closure_tree
       httparty

@@ -1,3 +1,9 @@
+## v0.1.2 (2026-04-09)
+
+### Changes
+- 390cb1f9 fix: patch XSS vulnerabilities and update action_text-trix (#1145)
+- 31823b43 chore: daily code cleanup — fix N+1, extract concerns, remove dead code (#1140)
+
 ## v0.1.1 (2026-02-20)
 
 ### Changes

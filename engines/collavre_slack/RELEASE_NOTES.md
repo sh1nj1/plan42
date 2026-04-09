@@ -1,3 +1,10 @@
+## v0.2.5 (2026-04-09)
+
+### Changes
+- ddd75680 fix: add ownership checks for user profile, AI user, and Slack account (#1147)
+- 390cb1f9 fix: patch XSS vulnerabilities and update action_text-trix (#1145)
+- 31823b43 chore: daily code cleanup — fix N+1, extract concerns, remove dead code (#1140)
+
 ## v0.2.4 (2026-04-02)
 
 ### Changes
