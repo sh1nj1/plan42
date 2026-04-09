@@ -21,8 +21,6 @@ module Collavre
     validates :message_key, presence: true
 
     scope :new_items, -> { where(state: "new") }
-    scope :read_items, -> { where(state: "read") }
-
 
     def read?
       state == "read"

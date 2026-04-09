@@ -14,7 +14,7 @@
     - Examples: `progress`, `description`, `user`, `children`, and similar accessors.
     - Implemented via helper methods such as `effective_attribute`, `effective_description`, and `effective_origin`.
 - Authorization relies on `has_permission?`, granting access to the owner and anyone with a shared link.
-- Tree and parent lookups go through `owning_parent`, which returns the parent Creative owned by the current user, falling back to the origin's parent when necessary.
+- Tree and parent lookups return the parent Creative owned by the current user, falling back to the origin's parent when necessary.
 - `children_with_permission` returns only the origin's children that the current user is allowed to see.
 
 ## Progress and tree updates
@@ -31,7 +31,7 @@
 - **creatives_helper.rb**
     - Provides helper methods to pull details such as the description from the Linked Creative's origin when rendering the tree.
 - **index.html.erb**
-    - Uses `owning_parent` when navigating to the parent node.
+    - Navigates to the parent node via the standard parent association.
     - Renders the tree with only the children that pass the permission filter.
 
 ## Additional notes
