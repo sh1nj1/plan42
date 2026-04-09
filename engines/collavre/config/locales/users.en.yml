@@ -33,6 +33,16 @@ en:
         searchable_help: When enabled, others can find and mention this AI by name.
         submit: Add AI Agent
         tools_note: You can check and test available tools after creating the agent.
+        trigger_label: Trigger
+        trigger_auto: Auto-respond
+        trigger_auto_help: Agent responds to all new comments automatically.
+        trigger_mention: Respond on mention
+        trigger_mention_help: Agent responds only when @mentioned by name.
+        trigger_keyword: Respond on keyword
+        trigger_keyword_help: Agent responds when message contains a specific keyword.
+        trigger_keyword_placeholder: Enter keyword
+        trigger_advanced: Advanced (Liquid expression)
+        trigger_advanced_help: "Write a custom Liquid expression. Example: chat.content contains \"help\" and event_name == \"comment_created\""
       create_ai:
         success: AI User created successfully.
       copy_ai:

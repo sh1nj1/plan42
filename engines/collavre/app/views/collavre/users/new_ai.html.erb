@@ -26,11 +26,7 @@
     <%= form.text_area :system_prompt, required: true, class: "stacked-form-control", rows: 5, value: @copy_source&.system_prompt || AiClient::SYSTEM_INSTRUCTIONS %>
   </div>
 
-  <div class="form-group">
-    <%= form.label :routing_expression, "Routing Expression (Liquid)" %>
-    <%= form.text_area :routing_expression, class: "stacked-form-control", rows: 2, placeholder: "chat.mentioned_user.id == agent.id", value: @copy_source&.routing_expression %>
-    <small class="form-text text-muted">Liquid expression to determine if this agent should handle an event. Example: <code>chat.mentioned_user.id == agent.id</code></small>
-  </div>
+  <%= render "collavre/users/trigger_field", form: form, routing_expression: @copy_source&.routing_expression %>
 
   <div class="form-group">
     <%= form.label :llm_vendor, t('collavre.users.new_ai.vendor_label', default: 'LLM Provider') %>

@@ -12,11 +12,7 @@
     <%= form.text_area :system_prompt, required: true, class: "stacked-form-control", rows: 5 %>
   </div>
 
-  <div class="form-group">
-    <%= form.label :routing_expression, "Routing Expression (Liquid)" %>
-    <%= form.text_area :routing_expression, class: "stacked-form-control", rows: 2, placeholder: "chat.mentioned_user.id == agent.id" %>
-    <small class="form-text text-muted">Liquid expression to determine if this agent should handle an event. Example: <code>chat.mentioned_user.id == agent.id</code></small>
-  </div>
+  <%= render "collavre/users/trigger_field", form: form, routing_expression: @user.routing_expression %>
 
   <div class="form-group">
     <%= form.label :llm_vendor, t('collavre.users.new_ai.vendor_label', default: 'LLM Provider') %>
