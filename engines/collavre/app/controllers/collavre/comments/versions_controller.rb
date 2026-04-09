@@ -3,6 +3,8 @@
 module Collavre
   module Comments
     class VersionsController < ApplicationController
+      include Collavre::Comments::CommentScoping
+
       before_action :set_creative
       before_action :set_comment
 
@@ -62,21 +64,6 @@ module Collavre
       end
 
       private
-
-      def set_creative
-        @creative = Creative.find(params[:creative_id]).effective_origin
-      end
-
-      def set_comment
-        @comment = @creative.comments
-                             .where(
-                               "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
-                               false,
-                               Current.user.id,
-                               Current.user.id
-                             )
-                             .find(params[:comment_id])
-      end
     end
   end
 end

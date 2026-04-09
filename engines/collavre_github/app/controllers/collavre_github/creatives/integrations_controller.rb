@@ -1,6 +1,8 @@
 module CollavreGithub
   module Creatives
     class IntegrationsController < ApplicationController
+      include Collavre::IntegrationPermission
+
       before_action :set_creative
       before_action :set_origin
       before_action :ensure_read_permission
@@ -71,7 +73,7 @@ module CollavreGithub
 
       def destroy
         unless @creative.has_permission?(Current.user, :write)
-          render json: { error: I18n.t("collavre_github.errors.forbidden") }, status: :forbidden
+          render json: { error: integration_forbidden_message }, status: :forbidden
           return
         end
 
@@ -145,16 +147,8 @@ module CollavreGithub
         @origin = @creative.effective_origin
       end
 
-      def ensure_read_permission
-        return if @creative.has_permission?(Current.user, :read)
-
-        render json: { error: I18n.t("collavre_github.errors.forbidden") }, status: :forbidden
-      end
-
-      def ensure_admin_permission
-        return if @creative.has_permission?(Current.user, :admin)
-
-        render json: { error: I18n.t("collavre_github.errors.forbidden") }, status: :forbidden
+      def integration_forbidden_message
+        I18n.t("collavre_github.errors.forbidden")
       end
 
       def linked_repository_links(account)

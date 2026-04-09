@@ -1,6 +1,8 @@
 module CollavreNotion
   module Creatives
     class NotionIntegrationsController < ApplicationController
+      include Collavre::IntegrationPermission
+
       before_action :set_creative
       before_action :ensure_read_permission
       before_action :ensure_admin_permission, only: [ :show, :update ]
@@ -78,7 +80,7 @@ module CollavreNotion
 
       def destroy
         unless @creative.has_permission?(Current.user, :write)
-          render json: { error: "forbidden" }, status: :forbidden
+          render json: { error: integration_forbidden_message }, status: :forbidden
           return
         end
 
@@ -122,18 +124,6 @@ module CollavreNotion
 
       def set_creative
         @creative = Collavre::Creative.find(params[:creative_id])
-      end
-
-      def ensure_read_permission
-        return if @creative.has_permission?(Current.user, :read)
-
-        render json: { error: "forbidden" }, status: :forbidden
-      end
-
-      def ensure_admin_permission
-        return if @creative.has_permission?(Current.user, :admin)
-
-        render json: { error: "forbidden" }, status: :forbidden
       end
 
       def linked_page_links(account)

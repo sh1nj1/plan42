@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head><title><%= t("collavre_slack.views.auth.success_title") %></title></head>
+<body>
+  <p><%= t("collavre_slack.views.auth.success_message") %></p>
+  <script>
+    if (window.opener) {
+      window.opener.postMessage({ type: 'slack-auth-success' }, '*');
+    }
+    window.close();
+  </script>
+</body>
+</html>

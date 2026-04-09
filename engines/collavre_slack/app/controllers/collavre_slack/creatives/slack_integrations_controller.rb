@@ -2,11 +2,10 @@ module CollavreSlack
   module Creatives
     class SlackIntegrationsController < ApplicationController
       before_action :set_creative
+      before_action :set_origin
 
       def index
-        # Always use origin creative for Slack links (chat messages are on origin)
-        target_creative = @creative.effective_origin
-        @links = SlackChannelLink.where(creative: target_creative)
+        @links = SlackChannelLink.where(creative: @origin)
         respond_to do |format|
           format.json do
             slack_account = Current.user ? SlackAccount.find_by(user: Current.user) : nil
@@ -47,11 +46,8 @@ module CollavreSlack
           return
         end
 
-        # Always link to origin creative (chat messages are on origin)
-        target_creative = @creative.effective_origin
-
         service = SlackIntegrationService.new(user: Current.user, slack_account: slack_account)
-        link = service.link_channel(creative: target_creative, channel_id: params[:channel_id], channel_name: params[:channel_name])
+        link = service.link_channel(creative: @origin, channel_id: params[:channel_id], channel_name: params[:channel_name])
 
         if link.persisted?
           render json: { success: true, link: { id: link.id, channel_id: link.channel_id, channel_name: link.channel_name } }, status: :created
@@ -60,10 +56,8 @@ module CollavreSlack
         end
       end
 
-      # Lightweight endpoint for badge display — returns only existing links, no Slack API calls
       def badge
-        target_creative = @creative.effective_origin
-        links = SlackChannelLink.where(creative: target_creative)
+        links = SlackChannelLink.where(creative: @origin)
         render json: {
           links: links.map { |link|
             { channel_name: link.channel_name }
@@ -73,9 +67,7 @@ module CollavreSlack
 
       def destroy
         link = SlackChannelLink.find(params[:id])
-        # Check against origin creative
-        target_creative = @creative.effective_origin
-        unless link.creative_id == target_creative.id
+        unless link.creative_id == @origin.id
           render json: { success: false, error: I18n.t("collavre_slack.errors.not_found") }, status: :not_found
           return
         end
@@ -93,6 +85,10 @@ module CollavreSlack
 
       def set_creative
         @creative = Collavre::Creative.find(params[:creative_id])
+      end
+
+      def set_origin
+        @origin = @creative.effective_origin
       end
 
       def fetch_channels(slack_account)

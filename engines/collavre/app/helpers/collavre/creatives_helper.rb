@@ -118,7 +118,7 @@ module Collavre
       if value == 1 && !completion_mark.nil?
         text = completion_mark
       end
-      display_text = text.blank? ? "&nbsp;&nbsp;".html_safe : text
+      display_text = text.blank? ? "\u00A0\u00A0" : text
       content_tag(
         :span,
         display_text,

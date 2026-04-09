@@ -56,16 +56,13 @@ module ApplicationHelper
     end
   end
 
-  def linkify_urls(text)
-    ERB::Util.html_escape(text.to_s).gsub(%r{https?://[^\s]+}) do |url|
-      link_to(url, url, target: "_blank", rel: "noopener")
-    end.html_safe
-  end
+  EMBED_ALLOWED_TAGS = %w[iframe a p div span br strong em b i u ul ol li h1 h2 h3 h4 h5 h6 blockquote code pre img hr table thead tbody tr th td figure figcaption action-text-attachment].freeze
+  EMBED_ALLOWED_ATTRS = %w[src title frameborder allow allowfullscreen style href class alt width height target rel sgid content-type filename colspan rowspan].freeze
 
   def embed_youtube_iframe(html)
     return html if html.blank?
     html = html.to_s
-    html.gsub(%r{<a[^>]+href=["']https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([\w-]{11})[^"']*["'][^>]*>.*?</a>}i) do
+    result = html.gsub(%r{<a[^>]+href=["']https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([\w-]{11})[^"']*["'][^>]*>.*?</a>}i) do
       video_id = Regexp.last_match(1)
       tag.iframe(
         "",
@@ -76,7 +73,8 @@ module ApplicationHelper
         allowfullscreen: true,
         style: "width: min(60vw, calc(var(--max-width) - 60px)); aspect-ratio: 16 / 9;"
       )
-    end.html_safe
+    end
+    sanitize(result, tags: EMBED_ALLOWED_TAGS, attributes: EMBED_ALLOWED_ATTRS)
   end
 
   def creative_title_for_display(creative, length: 12)
@@ -88,17 +86,10 @@ module ApplicationHelper
   end
 
   def render_contact_creatives(creatives)
-    return "".html_safe if creatives.blank?
+    return safe_join([]) if creatives.blank?
 
     safe_join(creatives.map do |creative|
       link_to(creative_title_for_display(creative), collavre.creative_path(creative), class: "creative-chip")
     end)
-  end
-
-  def render_last_login_for(user, last_login_map)
-    timestamp = last_login_map[user.id]
-    return t("users.table.last_login_unknown") unless timestamp
-
-    I18n.l(timestamp, format: :short)
   end
 end

@@ -168,8 +168,11 @@ module Collavre
 
         agent_permissions = {}
 
-        creatives_to_check.each do |creative|
-          creative.creative_shares.includes(:user).each do |share|
+        # Single query for all shares across the entire ancestor chain (fixes N+1)
+        CreativeShare
+          .where(creative_id: creatives_to_check.map(&:id))
+          .includes(:user)
+          .each do |share|
             user = share.user
             next unless user&.ai_user?
             next if share.permission == "no_access"
@@ -180,7 +183,6 @@ module Collavre
               agent_permissions[user] = share.permission
             end
           end
-        end
 
         agent_permissions.to_a
       end
