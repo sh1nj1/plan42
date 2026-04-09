@@ -473,6 +473,15 @@ export default class extends Controller {
         // Ignore if clicking on edit input
         if (event.target.closest('.topic-edit-input')) return
 
+        // Navigate to source topic when clicking branch icon
+        if (event.target.closest('.topic-branch-icon')) {
+            const sourceTopicId = event.currentTarget.dataset.sourceTopicId
+            if (sourceTopicId) {
+                this.selectTopic(sourceTopicId)
+                return
+            }
+        }
+
         const id = event.currentTarget.dataset.id
 
         // If clicking on already active topic (not Main), show edit mode

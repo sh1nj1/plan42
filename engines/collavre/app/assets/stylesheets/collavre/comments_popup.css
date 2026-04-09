@@ -1514,6 +1514,10 @@ body.chat-fullscreen {
     font-size: 0.75em;
     opacity: 0.6;
     margin-right: 1px;
+    cursor: pointer;
+}
+.topic-branch-icon:hover {
+    opacity: 1;
 }
 .archive-topic-btn,
 .unarchive-topic-btn {
