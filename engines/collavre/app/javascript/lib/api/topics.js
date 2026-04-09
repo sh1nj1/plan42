@@ -56,6 +56,40 @@ export async function saveLastTopic(creativeId, topicId) {
  * @param {string[]|number[]} commentIds - comments to move (optional)
  * @returns {Promise<{ok: boolean, topic?: object, error?: string}>}
  */
+/**
+ * Branch (copy) selected comments into a new topic.
+ * @param {string|number} creativeId
+ * @param {string[]|number[]} commentIds
+ * @param {string|number|null} topicId - source topic (null for Main)
+ * @returns {Promise<{ok: boolean, topic?: object, error?: string}>}
+ */
+export async function branchComments(creativeId, commentIds, topicId = null) {
+    try {
+        const body = { comment_ids: commentIds }
+        if (topicId) body.topic_id = topicId
+
+        const response = await fetch(`/creatives/${creativeId}/comments/branch`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken()
+            },
+            body: JSON.stringify(body)
+        })
+
+        if (response.ok) {
+            const data = await response.json()
+            return { ok: true, topic: data.topic }
+        } else {
+            const data = await response.json().catch(() => ({}))
+            return { ok: false, error: data.error || 'Failed to branch comments' }
+        }
+    } catch (e) {
+        console.error('Error branching comments', e)
+        return { ok: false, error: e.message }
+    }
+}
+
 export async function createTopicWithComments(creativeId, name, commentIds = []) {
     try {
         const body = { topic: { name } }

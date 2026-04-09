@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_01_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_09_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -719,12 +719,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_120000) do
     t.integer "creative_id", null: false
     t.string "name", null: false
     t.integer "position", default: 0, null: false
+    t.integer "source_topic_id"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["archived_at"], name: "index_topics_on_archived_at", where: "archived_at IS NOT NULL"
     t.index ["creative_id", "name"], name: "index_topics_on_creative_id_and_name", unique: true
     t.index ["creative_id", "position"], name: "index_topics_on_creative_id_and_position"
     t.index ["creative_id"], name: "index_topics_on_creative_id"
+    t.index ["source_topic_id"], name: "index_topics_on_source_topic_id"
     t.index ["user_id"], name: "index_topics_on_user_id"
   end
 
@@ -874,6 +876,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_120000) do
   add_foreign_key "tasks", "tasks", column: "parent_task_id", on_delete: :nullify
   add_foreign_key "tasks", "users", column: "agent_id"
   add_foreign_key "topics", "creatives"
+  add_foreign_key "topics", "topics", column: "source_topic_id", on_delete: :nullify
   add_foreign_key "topics", "users"
   add_foreign_key "user_creative_preferences", "creatives"
   add_foreign_key "user_creative_preferences", "topics", column: "last_topic_id", on_delete: :nullify

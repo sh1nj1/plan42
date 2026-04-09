@@ -548,6 +548,7 @@ export default class extends Controller {
         <button type="button" class="selection-action-bar-btn selection-action-merge" title="${i18n('selectionMergeText', 'Merge')}"${count < 2 ? ' disabled' : ''}>🔗 ${i18n('selectionMergeText', 'Merge')}</button>
         <button type="button" class="selection-action-bar-btn selection-action-move" title="${i18n('selectionMoveText', 'Move')}">📤 ${i18n('selectionMoveText', 'Move')}</button>
         <button type="button" class="selection-action-bar-btn selection-action-topic" title="${i18n('selectionTopicMoveText', 'Move to topic')}">🏷 ${i18n('selectionTopicMoveText', 'Move to topic')}</button>
+        <button type="button" class="selection-action-bar-btn selection-action-branch" title="${i18n('selectionBranchText', 'Branch')}">🌿 ${i18n('selectionBranchText', 'Branch')}</button>
         <button type="button" class="selection-action-bar-close" title="${i18n('selectionCloseText', 'Cancel')}">✕</button>
       </div>
       <div class="selection-action-bar-hint no-touch">
@@ -574,6 +575,7 @@ export default class extends Controller {
     bar.querySelector('.selection-action-merge').addEventListener('click', (e) => { e.stopPropagation(); this.mergeSelectedComments() })
     bar.querySelector('.selection-action-move').addEventListener('click', (e) => this.openMoveModal(e))
     bar.querySelector('.selection-action-topic').addEventListener('click', (e) => this.openTopicSearchPopup(e))
+    bar.querySelector('.selection-action-branch').addEventListener('click', (e) => { e.stopPropagation(); this.branchSelectedComments() })
     bar.querySelector('.selection-action-bar-close').addEventListener('click', () => this.clearSelection())
 
     // Insert before typing indicator so it stays inside the popup window
@@ -641,6 +643,39 @@ export default class extends Controller {
     } catch (error) {
       console.error('Error merging comments:', error)
       alert('Failed to merge comments')
+    }
+  }
+
+  async branchSelectedComments() {
+    if (this.selection.size === 0) return
+
+    const commentIds = Array.from(this.selection)
+    try {
+      const body = { comment_ids: commentIds }
+      if (this.currentTopicId) body.topic_id = this.currentTopicId
+
+      const response = await fetch(`/creatives/${this.creativeId}/comments/branch`, {
+        method: 'POST',
+        headers: {
+          'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      })
+      if (response.ok) {
+        const data = await response.json()
+        this.clearSelection()
+        // Switch to the new branched topic
+        if (data.topic?.id) {
+          this.switchToTopic(data.topic.id)
+        }
+      } else {
+        const data = await response.json().catch(() => ({}))
+        alert(data.error || 'Failed to branch comments')
+      }
+    } catch (error) {
+      console.error('Error branching comments:', error)
+      alert('Failed to branch comments')
     }
   }
 
