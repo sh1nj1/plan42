@@ -56,7 +56,6 @@ Rails.application.config.to_prepare do
   set_alias(Object, :CreativesHelper, Collavre::CreativesHelper)
   set_alias(Object, :CommentsHelper, Collavre::CommentsHelper)
   set_alias(Object, :NavigationHelper, Collavre::NavigationHelper)
-  set_alias(Object, :UserThemesHelper, Collavre::UserThemesHelper)
 
   # Mailers
   set_alias(Object, :InboxMailer, Collavre::InboxMailer)
