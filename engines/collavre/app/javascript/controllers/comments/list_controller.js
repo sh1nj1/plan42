@@ -798,6 +798,23 @@ export default class extends Controller {
     this.formController?.onSelectionChanged({ size, moving: this.movingComments })
   }
 
+  selectAll() {
+    this.listTarget.querySelectorAll('.comment-select-checkbox').forEach((checkbox) => {
+      if (!checkbox.checked) {
+        checkbox.checked = true
+        const commentId = checkbox.value
+        this.selection.add(commentId)
+        const item = checkbox.closest('.comment-item')
+        if (item) {
+          item.classList.add('selected-for-move')
+          item.setAttribute('draggable', 'true')
+        }
+      }
+    })
+    this.notifySelectionChange()
+    this.updateSelectionActionBar()
+  }
+
   clearSelection() {
     this.selection.clear()
     this.listTarget.querySelectorAll('.comment-select-checkbox').forEach((checkbox) => {
