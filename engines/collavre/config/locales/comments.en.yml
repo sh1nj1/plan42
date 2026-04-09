@@ -90,6 +90,7 @@ en:
       navigate_forward: Next chat
       recent_chats: Recent chats
       remove_from_history: Remove from history
+      inbox_reply_button: Reply
       replace_button: Replace
       move_no_selection: Select at least one message to move.
       move_error: Unable to move messages.

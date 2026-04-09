@@ -478,6 +478,11 @@ body.chat-fullscreen {
     white-space: nowrap;
 }
 
+.inbox-reply-btn {
+    font-size: var(--text-0) !important;
+    white-space: nowrap;
+}
+
 .comment-highlight {
     background: color-mix(in srgb, var(--color-active) 15%, transparent) !important;
     transition: background 0.3s ease;

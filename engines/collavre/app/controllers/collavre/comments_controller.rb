@@ -181,6 +181,9 @@ module Collavre
         @comment.skip_dispatch = true
       end
       if @comment.save
+        # Cross-post inbox inline replies to the original creative/topic
+        InboxReplyService.call(@comment)
+
         # Dispatch is handled by Comment#after_create_commit callback
         @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
         render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }, status: :created

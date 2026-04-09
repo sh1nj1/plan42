@@ -76,6 +76,8 @@ export default class extends Controller {
                 this.canCreateTopic = canCreateTopic
                 this.archivedTopics = data.archived_topics || []
                 this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+                this.isInbox = !!data.is_inbox
+                this.systemTopicId = data.system_topic_id ? String(data.system_topic_id) : null
 
                 // Migrate localStorage to server if server has no value
                 this.migrateLocalStorage()
@@ -499,7 +501,7 @@ export default class extends Controller {
             this.clearNewMessageBadge(id)
         }
         // Dispatch event
-        this.dispatch("change", { detail: { topicId: id } })
+        this.dispatch("change", { detail: { topicId: id, isInbox: this.isInbox, systemTopicId: this.systemTopicId } })
     }
 
     showEditInput(topicEl, topicId) {
