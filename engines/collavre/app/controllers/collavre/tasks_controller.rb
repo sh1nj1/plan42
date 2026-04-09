@@ -24,31 +24,7 @@ module Collavre
     private
 
     def abort_openclaw_session(task)
-      return unless task.agent.llm_vendor&.downcase == "openclaw"
-      return unless defined?(CollavreOpenclaw::ConnectionManager)
-
-      conn = CollavreOpenclaw::ConnectionManager.instance.connection_for(task.agent)
-      session_key = build_session_key(task)
-      conn.chat_abort(session_key: session_key)
-    rescue StandardError => e
-      Rails.logger.warn("[TasksController] OpenClaw abort failed: #{e.message}")
-    end
-
-    def build_session_key(task)
-      payload = task.trigger_event_payload || {}
-      creative = task.creative || Creative.find_by(id: payload.dig("creative", "id"))
-      comment = Comment.find_by(id: payload.dig("comment", "id"))
-
-      CollavreOpenclaw::OpenclawAdapter.new(
-        user: task.agent,
-        system_prompt: "",
-        context: {
-          creative: creative,
-          user: task.agent,
-          task: task,
-          comment: comment
-        }
-      ).session_key
+      Collavre::OpenclawAbortService.call(agent: task.agent, task: task)
     end
   end
 end
