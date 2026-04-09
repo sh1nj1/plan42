@@ -152,12 +152,6 @@ module Collavre
       super
     end
 
-    def owning_parent
-      if parent.present?
-        Creative.find_by(origin_id: parent.id, user: Collavre.current_user) || parent
-      end
-    end
-
     def prompt_for(user)
       comments
         .where(private: true, user: user)

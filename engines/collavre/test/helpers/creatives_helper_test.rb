@@ -8,12 +8,6 @@ class CreativesHelperTest < ActionView::TestCase
     assert_equal expected, markdown_links_to_html(input)
   end
 
-  test "html_links_to_markdown converts HTML link to markdown" do
-    input = "See <a href=\"https://example.com\">example</a> for details"
-    expected = "See [example](https://example.com) for details"
-    assert_equal expected, html_links_to_markdown(input)
-  end
-
   test "markdown list items are single line" do
     user = users(:one)
     creative = Creative.create!(user: user, description: "<div>Item</div>\n")
@@ -25,7 +19,7 @@ class CreativesHelperTest < ActionView::TestCase
     md = "This is **bold** text"
     html = markdown_links_to_html(md)
     assert_equal "This is <strong>bold</strong> text", html
-    back = html_links_to_markdown(html)
+    back = Collavre::MarkdownConverter.html_to_markdown(html)
     assert_equal "This is **bold** text", back
   end
 
@@ -38,14 +32,14 @@ class CreativesHelperTest < ActionView::TestCase
   test "html bold with attributes converts to markdown" do
     input = '<strong class="highlight">bold</strong> text'
     expected = "**bold** text"
-    assert_equal expected, html_links_to_markdown(input)
+    assert_equal expected, Collavre::MarkdownConverter.html_to_markdown(input)
   end
 
   test "escaped characters round trip" do
     md = "A \\*star\\* \\-dash\\- \\#hash\\# \\~tilde\\~ \\+plus\\+ example"
     html = markdown_links_to_html(md)
     assert_equal "A *star* -dash- #hash# ~tilde~ +plus+ example", html
-    back = html_links_to_markdown(html)
+    back = Collavre::MarkdownConverter.html_to_markdown(html)
     assert_equal md, back
   end
 
@@ -53,7 +47,7 @@ class CreativesHelperTest < ActionView::TestCase
     md = "Image: ![alt](data:image/png;base64,aGk=)"
     html = markdown_links_to_html(md)
     assert_match(/<img[^>]+src=\"[^\"]*\"[^>]*alt=\"alt\"[^>]*\/?>/, html)
-    back = html_links_to_markdown(html)
+    back = Collavre::MarkdownConverter.html_to_markdown(html)
     assert_equal md, back
   end
 
@@ -61,7 +55,7 @@ class CreativesHelperTest < ActionView::TestCase
     md = "Look ![][img1]\n\n[img1]: <data:image/png;base64,aGk=>"
     html = markdown_links_to_html(md)
     assert_match(/<img[^>]+src=\"[^\"]*\"[^>]*\/?>/, html)
-    back = html_links_to_markdown(html)
+    back = Collavre::MarkdownConverter.html_to_markdown(html)
     assert_equal "Look ![](data:image/png;base64,aGk=)", back
   end
 
@@ -92,7 +86,7 @@ class CreativesHelperTest < ActionView::TestCase
       | Alice | 3 |
       | Bob | 5 |
     MD
-    assert_equal expected, html_links_to_markdown(html.strip)
+    assert_equal expected, Collavre::MarkdownConverter.html_to_markdown(html.strip)
   end
 
   test "html table escapes pipe characters in cells" do
@@ -117,7 +111,7 @@ class CreativesHelperTest < ActionView::TestCase
       | --- | --- |
       | A \\| B | Either A or B |
     MD
-    assert_equal expected, html_links_to_markdown(html.strip)
+    assert_equal expected, Collavre::MarkdownConverter.html_to_markdown(html.strip)
   end
 
   test "render_creative_tree_markdown exports tables without heading prefix" do
@@ -154,14 +148,6 @@ class CreativesHelperTest < ActionView::TestCase
     expected << "\n"
 
     assert_equal expected, markdown
-  end
-
-  test "expanded_from_expanded_state defaults to collapsed" do
-    assert_not expanded_from_expanded_state(1, {})
-  end
-
-  test "expanded_from_expanded_state returns true when expanded" do
-    assert expanded_from_expanded_state(1, { "1" => true })
   end
 
   test "markdown importer preserves bold formatting" do

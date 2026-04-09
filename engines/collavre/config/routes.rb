@@ -106,7 +106,6 @@ Collavre::Engine.routes.draw do
     end
     member do
       get :children
-      post :share, to: "creatives#share", as: :share_creative
       post :request_permission, to: "creatives#request_permission"
       post :unconvert
       patch :archive

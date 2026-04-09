@@ -130,21 +130,6 @@ class NavigationHelperTest < ActionView::TestCase
     assert_match(/creative-guide-link/, html)
   end
 
-  test "render_mobile_navigation_item wraps in div" do
-    Navigation::Registry.instance.register(
-      key: :test,
-      label: "Test Button",
-      type: :button,
-      path: -> { "/" }
-    )
-
-    item = Navigation::Registry.instance.find(:test)
-    html = render_mobile_navigation_item(item)
-
-    assert_match(/<div>/, html)
-    assert_match(/Test Button/, html)
-  end
-
   test "navigation partial renders mobile guest help and sign in buttons" do
     Navigation::Registry.instance.register(
       key: :help,

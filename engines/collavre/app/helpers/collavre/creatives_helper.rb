@@ -126,10 +126,6 @@ module Collavre
       )
     end
 
-    def expanded_from_expanded_state(creative_id, expanded_state_map)
-      !!(expanded_state_map && expanded_state_map[creative_id.to_s])
-    end
-
     def render_creative_tree_markdown(creatives, level = 1, with_progress = false, max_depth: nil)
       return "" if creatives.blank?
       md = ""
@@ -183,10 +179,6 @@ module Collavre
     # These methods are used in views and by MarkdownImporter via ApplicationController.helpers.
     def markdown_links_to_html(text, image_refs = {})
       MarkdownConverter.markdown_to_html(text, image_refs)
-    end
-
-    def html_links_to_markdown(text)
-      MarkdownConverter.html_to_markdown(text)
     end
   end
 end
