@@ -4,7 +4,7 @@
 <body>
   <script>
     if (window.opener) {
-      window.opener.postMessage({ type: 'notion_oauth_success', connected: true }, '*');
+      window.opener.postMessage({ type: 'notion_oauth_success', connected: true }, window.location.origin);
       window.close();
     } else {
       window.location.href = '<%= @fallback_path %>';

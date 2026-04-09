@@ -5,7 +5,7 @@
   <p><%= t("collavre_slack.views.auth.success_message") %></p>
   <script>
     if (window.opener) {
-      window.opener.postMessage({ type: 'slack-auth-success' }, '*');
+      window.opener.postMessage({ type: 'slack-auth-success' }, window.location.origin);
     }
     window.close();
   </script>
