@@ -180,6 +180,5 @@ module Collavre
     def markdown_links_to_html(text, image_refs = {})
       MarkdownConverter.markdown_to_html(text, image_refs)
     end
-
   end
 end
