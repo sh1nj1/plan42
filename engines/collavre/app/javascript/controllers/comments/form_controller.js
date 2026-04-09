@@ -21,6 +21,7 @@ export default class extends Controller {
     'quoteIndicator',
     'quoteIndicatorText',
     'reviewQuotesContainer',
+    'quoteCancelButton',
   ]
 
   connect() {
@@ -956,10 +957,18 @@ export default class extends Controller {
         this.quoteIndicatorTextTarget.textContent = ''
         this._inboxReplyIndicator = false
       }
+      if (this.hasQuoteCancelButtonTarget) {
+        this.quoteCancelButtonTarget.style.display = ''
+      }
       return
     }
 
     this._inboxReplyMode = true
+
+    // Hide cancel button — inbox reply mode has no cancel action
+    if (this.hasQuoteCancelButtonTarget) {
+      this.quoteCancelButtonTarget.style.display = 'none'
+    }
 
     // Find the latest alarm (system message) in the comment list
     const latestAlarm = this._findLatestAlarm()
