@@ -83,7 +83,7 @@ module Collavre
 
         def broadcast_badge(creative, user)
           origin = creative.effective_origin
-          visible_comments = origin.comments.where("comments.private = ? OR comments.user_id = ?", false, user.id)
+          visible_comments = origin.comments.visible_to(user)
           comments_count = visible_comments.count
           pointer = CommentReadPointer.find_by(user: user, creative: origin)
           last_read_id = pointer&.last_read_comment_id

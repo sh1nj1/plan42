@@ -14,10 +14,7 @@ module Collavre
         is_admin = @creative.has_permission?(Current.user, :admin)
         is_creative_owner = @creative.user == Current.user
 
-        visible_scope = @creative.comments.where(
-          "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
-          false, Current.user.id, Current.user.id
-        )
+        visible_scope = @creative.comments.visible_to(Current.user)
         comments = visible_scope.where(id: comment_ids).to_a
 
         if comments.length != comment_ids.length
@@ -47,10 +44,7 @@ module Collavre
           render json: { error: I18n.t("collavre.comments.merge.not_authorized") }, status: :forbidden and return
         end
 
-        visible_scope = @creative.comments.where(
-          "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
-          false, Current.user.id, Current.user.id
-        )
+        visible_scope = @creative.comments.visible_to(Current.user)
         comments = visible_scope.where(id: comment_ids).to_a
 
         if comments.length != comment_ids.length
