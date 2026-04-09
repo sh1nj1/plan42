@@ -1,6 +1,0 @@
-<% current_creative = @parent_creative || @creative %>
-<button id="share-creative-btn" class="btn btn-primary desktop-only"
-        data-action="click->share-modal#open"
-        data-share-modal-url-param="<%= collavre.creative_creative_shares_path(current_creative) %>">
-  <span aria-hidden="true"><%= svg_tag 'share.svg', class: 'icon-up', width: 22, height: 20 %></span>
-</button>
