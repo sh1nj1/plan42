@@ -1,3 +1,10 @@
+## v0.15.0 (2026-04-09)
+
+### Changes
+- e34a180e Merge pull request #1158 from sh1nj1/feat/table-download
+- 6e83bd4b fix: add table download buttons to server-rendered messages
+- 809fd1c0 feat: add CSV and Excel download buttons for tables in chat messages
+
 ## v0.14.0 (2026-04-09)
 
 ### Changes
