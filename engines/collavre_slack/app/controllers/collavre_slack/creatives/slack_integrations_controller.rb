@@ -36,7 +36,7 @@ module CollavreSlack
 
         # Find the user's Slack account
         slack_account = if params[:slack_account_id].present?
-          SlackAccount.find(params[:slack_account_id])
+          SlackAccount.find_by!(id: params[:slack_account_id], user: Current.user)
         else
           SlackAccount.find_by(user: Current.user)
         end

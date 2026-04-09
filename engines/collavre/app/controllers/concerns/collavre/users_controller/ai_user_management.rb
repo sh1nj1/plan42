@@ -5,7 +5,7 @@ module Collavre
     included do
       before_action :set_user_for_ai_actions, only: [ :edit_ai, :update_ai ]
       before_action :verify_ai_user, only: [ :edit_ai, :update_ai ]
-      before_action :verify_ai_user_authorization, only: [ :update_ai ]
+      before_action :verify_ai_user_authorization, only: [ :edit_ai, :update_ai ]
     end
 
     def new_ai
