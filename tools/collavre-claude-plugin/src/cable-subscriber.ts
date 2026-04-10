@@ -20,6 +20,10 @@ type CommentCallback = (event: CommentEvent) => void;
  * Implements the Rails ActionCable WebSocket protocol.
  */
 export class CableSubscriber {
+  private static readonly MAX_RECONNECT_ATTEMPTS = 20;
+  private static readonly BASE_RECONNECT_DELAY_MS = 1_000;
+  private static readonly MAX_RECONNECT_DELAY_MS = 60_000;
+
   private ws: WebSocket | null = null;
   private baseUrl: string;
   private token: string;
@@ -28,6 +32,7 @@ export class CableSubscriber {
   private channelIdentifier: string;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectAttempts = 0;
 
   constructor(
     baseUrl: string,
@@ -50,6 +55,7 @@ export class CableSubscriber {
     this.ws = new WebSocket(wsUrl);
 
     this.ws.on("open", () => {
+      this.reconnectAttempts = 0; // Reset on successful connection
       this.subscribe();
       // Ping every 30s to keep connection alive
       this.pingTimer = setInterval(() => {
@@ -142,10 +148,27 @@ export class CableSubscriber {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
+
+    this.reconnectAttempts++;
+    if (this.reconnectAttempts > CableSubscriber.MAX_RECONNECT_ATTEMPTS) {
+      process.stderr.write(
+        `[collavre-plugin] Max reconnect attempts (${CableSubscriber.MAX_RECONNECT_ATTEMPTS}) reached, giving up\n`,
+      );
+      return;
+    }
+
+    const delay = Math.min(
+      CableSubscriber.BASE_RECONNECT_DELAY_MS * 2 ** (this.reconnectAttempts - 1),
+      CableSubscriber.MAX_RECONNECT_DELAY_MS,
+    );
+    process.stderr.write(
+      `[collavre-plugin] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${CableSubscriber.MAX_RECONNECT_ATTEMPTS})\n`,
+    );
+
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
-    }, 3_000);
+    }, delay);
   }
 
   private clearTimers(): void {

@@ -135,6 +135,7 @@ module Collavre
 
     def broadcast_to_agent_channel
       return unless topic_id
+      return if private?
       AgentChannel.broadcast_comment(topic_id, self)
     end
 

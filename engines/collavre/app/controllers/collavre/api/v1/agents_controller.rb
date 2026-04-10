@@ -51,6 +51,7 @@ module Collavre
 
         # DELETE /api/v1/agent/:id
         # Archives the agent's topic (session ended)
+        # Accepts optional topic_id param; falls back to finding by primary_agent association
         def destroy
           ai_user = User.find_by(id: params[:id])
           unless ai_user&.ai_user? && ai_user.created_by_id == current_user.id
@@ -58,8 +59,12 @@ module Collavre
             return
           end
 
-          inbox = Creative.inbox_for(current_user)
-          topic = inbox.topics.active.find_by(name: "Claude #{ai_user.email.split('@').first}")
+          topic = if params[:topic_id].present?
+            inbox = Creative.inbox_for(current_user)
+            inbox.topics.active.find_by(id: params[:topic_id])
+          else
+            find_agent_topic(ai_user)
+          end
           topic&.archive!
 
           head :no_content
@@ -77,6 +82,11 @@ module Collavre
           creative = topic.creative&.effective_origin
           unless creative
             render json: { error: "Creative not found" }, status: :not_found
+            return
+          end
+
+          unless creative.has_permission?(current_user, :feedback)
+            render json: { error: "Not authorized" }, status: :forbidden
             return
           end
 
@@ -99,6 +109,13 @@ module Collavre
           else
             render json: { errors: comment.errors.full_messages }, status: :unprocessable_entity
           end
+        end
+        private
+
+        # Find the active topic where this AI user is the primary agent
+        def find_agent_topic(ai_user)
+          inbox = Creative.inbox_for(current_user)
+          inbox.topics.active.find { |t| t.primary_agent&.id == ai_user.id }
         end
       end
     end

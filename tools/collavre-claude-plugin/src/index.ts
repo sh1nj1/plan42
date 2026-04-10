@@ -124,7 +124,7 @@ async function main(): Promise<void> {
 
   const cleanup = async () => {
     cable.disconnect();
-    await client.unregister(reg.agent_id);
+    await client.unregister(reg.agent_id, reg.topic_id);
     process.exit(0);
   };
 

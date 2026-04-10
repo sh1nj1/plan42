@@ -54,8 +54,12 @@ export class CollavreClient {
     return res.json() as Promise<{ comment_id: number }>;
   }
 
-  async unregister(agentId: number): Promise<void> {
-    await fetch(`${this.baseUrl}/api/v1/agent/${agentId}`, {
+  async unregister(agentId: number, topicId?: number): Promise<void> {
+    const url = new URL(`${this.baseUrl}/api/v1/agent/${agentId}`);
+    if (topicId !== undefined) {
+      url.searchParams.set("topic_id", String(topicId));
+    }
+    await fetch(url.toString(), {
       method: "DELETE",
       headers: {
         Authorization: `Bearer ${this.token}`,
