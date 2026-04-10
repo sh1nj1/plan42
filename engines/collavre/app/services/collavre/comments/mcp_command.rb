@@ -3,10 +3,11 @@ module Collavre
 
   module Comments
     class McpCommand
-      def initialize(comment:, user:, tool:, meta_tool_service: default_meta_tool_service)
+      def initialize(comment:, user:, tool:, creative: nil, meta_tool_service: default_meta_tool_service)
         @comment = comment
         @user = user
         @tool = tool
+        @creative = creative
         @meta_tool_service = meta_tool_service
       end
 
@@ -25,7 +26,7 @@ module Collavre
 
       private
 
-      attr_reader :comment, :user, :tool, :meta_tool_service
+      attr_reader :comment, :user, :tool, :creative, :meta_tool_service
 
       def command_match?
         comment.content.to_s.strip.match?(command_pattern)
@@ -41,11 +42,17 @@ module Collavre
 
       def parsed_arguments
         body = command_body
-        return {} if body.blank?
+        explicit_args = if body.blank?
+          {}
+        else
+          begin
+            JSON.parse(body)
+          rescue JSON::ParserError
+            key_value_arguments(body)
+          end
+        end
 
-        JSON.parse(body)
-      rescue JSON::ParserError
-        key_value_arguments(body)
+        merge_with_defaults(explicit_args)
       end
 
       def key_value_arguments(body)
@@ -59,6 +66,15 @@ module Collavre
         return args if args.present?
 
         nil
+      end
+
+      def merge_with_defaults(explicit_args)
+        return explicit_args unless explicit_args.is_a?(Hash)
+
+        defaults = creative&.data&.dig("tools", tool_name)
+        return explicit_args unless defaults.is_a?(Hash)
+
+        defaults.merge(explicit_args)
       end
 
       def cast_value(value)

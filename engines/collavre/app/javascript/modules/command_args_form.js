@@ -241,6 +241,20 @@ export default class CommandArgsForm {
     input.dataset.paramRequired = param.required ? 'true' : 'false'
     if (param.description) input.placeholder = param.description
 
+    // Pre-fill with default value from creative tool defaults
+    if (param.default_value != null) {
+      const dv = String(param.default_value)
+      if (input.tagName === 'SELECT') {
+        input.value = dv
+      } else {
+        input.value = dv
+        if (input.tagName === 'TEXTAREA') {
+          // Trigger auto-resize for pre-filled textarea
+          requestAnimationFrame(() => this._autoResize(input))
+        }
+      }
+    }
+
     // Enter submits; Shift+Enter inserts newline (textarea only)
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {

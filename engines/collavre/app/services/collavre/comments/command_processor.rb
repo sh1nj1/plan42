@@ -35,7 +35,7 @@ module Collavre
       end
 
       def mcp_commands
-        Collavre::Comments::McpCommandBuilder.new(comment: comment, user: user).commands
+        Collavre::Comments::McpCommandBuilder.new(comment: comment, user: user, creative: comment.creative).commands
       end
     end
   end
