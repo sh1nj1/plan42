@@ -1,0 +1,20 @@
+{
+  "name": "collavre-claude-plugin",
+  "version": "0.1.0",
+  "description": "MCP stdio plugin that connects Claude Code sessions to Collavre via channels",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "typescript": "^5.7.0"
+  }
+}

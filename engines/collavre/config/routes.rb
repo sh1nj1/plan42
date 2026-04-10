@@ -136,6 +136,15 @@ Collavre::Engine.routes.draw do
   patch "/creatives/:creative_id/user_creative_preferences/update_last_topic", to: "user_creative_preferences#update_last_topic", as: :update_last_topic
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
 
+  # Agent API (Claude Channel MCP plugin)
+  namespace :api do
+    namespace :v1 do
+      post "agent/register", to: "agents#register"
+      post "agent/reply", to: "agents#reply"
+      delete "agent/:id", to: "agents#destroy"
+    end
+  end
+
   # Admin settings & orchestration
   scope "/admin", as: :admin do
     get "/", to: "admin/settings#index", as: :settings
