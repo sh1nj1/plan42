@@ -41,7 +41,7 @@
 
 .markdown-editor-textarea:focus {
   border-color: var(--color-active);
-  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-active) 15%, transparent);
 }
 
 .markdown-preview {
@@ -491,7 +491,7 @@ body.dark-mode {
 
 .lexical-attachment.is-selected {
   border-color: var(--color-active);
-  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-active) 20%, transparent);
 }
 
 .lexical-attachment__remove {
@@ -589,7 +589,7 @@ body.dark-mode {
 .lexical-attachment__caption-input:focus {
   outline: none;
   border-color: var(--color-active);
-  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-active) 15%, transparent);
 }
 
 .lexical-attachment__caption-size {

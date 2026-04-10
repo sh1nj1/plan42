@@ -1344,6 +1344,8 @@ export function initializeCreativeRowEditor() {
           if (shouldPersistProgress) {
             row.dataset.progressValue = String(currentProgress);
           }
+          row.dataset.contentType = capturedContentType;
+          row.dataset.markdownSource = isMarkdownSave ? capturedMarkdownSource : '';
           if (currentParentId) {
             tree.dataset.parentId = currentParentId;
             row.parentId = currentParentId;
