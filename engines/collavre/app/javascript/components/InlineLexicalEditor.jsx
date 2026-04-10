@@ -966,14 +966,16 @@ function EnterKeyPlugin({ onEnterKey }) {
   const [editor] = useLexicalComposerContext()
 
   useEffect(() => {
-    // Use capture-phase keydown on the root element to intercept Enter
-    // BEFORE Lexical's own handlers process it and insert a paragraph.
+    // Use capture-phase keydown on the root element to intercept Shift+Enter
+    // BEFORE Lexical's own handlers process it.
+    // Bare Enter is left to Lexical for newline insertion.
     const rootElement = editor.getRootElement()
     if (!rootElement) return
 
     const handler = (event) => {
       if (event.key !== 'Enter') return
-      if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return
+      if (!event.shiftKey) return // only intercept Shift+Enter
+      if (event.altKey || event.ctrlKey || event.metaKey) return
       if (event.isComposing) return
 
       if (onEnterKey(event, editor) === true) {
