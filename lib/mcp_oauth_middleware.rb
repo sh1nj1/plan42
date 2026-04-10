@@ -46,6 +46,7 @@ class McpOauthMiddleware
         if user
           Rails.logger.info "McpOauthMiddleware: Found user #{user.id} for token"
           Current.user = user
+          Collavre::Current.mcp_request = true if defined?(Collavre::Current)
           true
         else
           Rails.logger.warn "McpOauthMiddleware: User missing for token #{token.resource_owner_id}"
