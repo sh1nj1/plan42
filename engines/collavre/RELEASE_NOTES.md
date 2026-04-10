@@ -1,3 +1,9 @@
+## v0.16.0 (2026-04-10)
+
+### Changes
+- b25234c5 fix: address mermaid code review issues
+- 5f4d787b feat: add Mermaid diagram rendering in markdown
+
 ## v0.15.0 (2026-04-09)
 
 ### Changes
