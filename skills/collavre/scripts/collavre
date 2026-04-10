@@ -423,6 +423,96 @@ const commands = {
       printResult(result);
     });
   },
+
+  async tool(argv) {
+    const { args, positional } = parseArgs(argv);
+    const sub = positional[0];
+
+    if (!sub || sub === "help") {
+      console.log(`Usage: collavre tool <subcommand> [options]
+
+Subcommands:
+  list                          List available tools (summary)
+  list --full                   List with full details
+  search <query>                Search tools by name/description
+  info <tool_name>              Show tool parameters and usage
+  run <tool_name> --json '{}'   Run tool with JSON arguments
+  run <tool_name> --key value   Run tool with flag arguments`);
+      process.exit(0);
+    }
+
+    await withClient(async (client) => {
+      switch (sub) {
+        case "list": {
+          const action = args.full ? "list" : "list_summary";
+          const result = await client.callTool("meta_tool", { action });
+          printResult(result);
+          break;
+        }
+
+        case "search": {
+          const query = positional[1];
+          if (!query) {
+            console.error("Usage: collavre tool search <query>");
+            process.exit(1);
+          }
+          const result = await client.callTool("meta_tool", {
+            action: "search",
+            query,
+          });
+          printResult(result);
+          break;
+        }
+
+        case "info": {
+          const toolName = positional[1];
+          if (!toolName) {
+            console.error("Usage: collavre tool info <tool_name>");
+            process.exit(1);
+          }
+          const result = await client.callTool("meta_tool", {
+            action: "get",
+            tool_name: toolName,
+          });
+          printResult(result);
+          break;
+        }
+
+        case "run": {
+          const toolName = positional[1];
+          if (!toolName) {
+            console.error("Usage: collavre tool run <tool_name> [--json '{}' | --key value ...]");
+            process.exit(1);
+          }
+          let toolArgs = {};
+          if (args.json) {
+            toolArgs = JSON.parse(args.json);
+          } else {
+            // Build arguments from remaining --key value flags
+            const { json: _, ...rest } = args;
+            for (const [k, v] of Object.entries(rest)) {
+              // Auto-parse numbers and booleans
+              if (v === "true") toolArgs[k] = true;
+              else if (v === "false") toolArgs[k] = false;
+              else if (v !== true && !isNaN(v) && v !== "") toolArgs[k] = Number(v);
+              else toolArgs[k] = v;
+            }
+          }
+          const result = await client.callTool("meta_tool", {
+            action: "run",
+            tool_name: toolName,
+            arguments: toolArgs,
+          });
+          printResult(result);
+          break;
+        }
+
+        default:
+          console.error(`Unknown subcommand: ${sub}. Run 'collavre tool help' for usage.`);
+          process.exit(1);
+      }
+    });
+  },
 };
 
 // --- Main ---
@@ -443,6 +533,7 @@ Commands:
   update   <id> [--desc] [--progress 1.0]  Update creative
   import   --parent <id> --file <path>     Import markdown
   batch    --file <ops.json>               Batch operations
+  tool     <list|search|info|run>          Discover & run any tool
   help                                     Show this help`);
     process.exit(0);
   }

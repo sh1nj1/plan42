@@ -74,6 +74,16 @@ ops.json format:
 ]
 ```
 
+### Discover & run tools (meta)
+```bash
+collavre tool list                                # list available tools
+collavre tool list --full                         # list with full details
+collavre tool search "github"                     # search by name/description
+collavre tool info <tool_name>                    # show tool parameters
+collavre tool run <tool_name> --json '{"k":"v"}'  # run with JSON args
+collavre tool run <tool_name> --key value         # run with flag args
+```
+
 ## Key Concepts
 
 - **Tree structure**: Creatives nest via `parent_id`. Use `--level` to control depth.
