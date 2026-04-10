@@ -4,8 +4,12 @@
   "description": "MCP stdio plugin that connects Claude Code sessions to Collavre via channels",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "collavre-claude-plugin": "dist/index.js"
+  },
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
     "dev": "tsc --watch"
   },
   "dependencies": {
