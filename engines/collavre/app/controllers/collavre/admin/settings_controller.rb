@@ -21,6 +21,9 @@ module Collavre
         # Session timeout settings
         @session_timeout_minutes = SystemSetting.session_timeout_minutes
 
+        # LLM settings
+        @llm_request_timeout_seconds = SystemSetting.llm_request_timeout_seconds
+
         # Rate limiting settings
         @password_reset_rate_limit = SystemSetting.password_reset_rate_limit
         @password_reset_rate_period_minutes = SystemSetting.password_reset_rate_period_minutes
@@ -143,6 +146,11 @@ module Collavre
           api_period = SystemSetting::DEFAULT_API_RATE_PERIOD_MINUTES if api_period < 1
           SystemSetting.find_or_initialize_by(key: "api_rate_period_minutes").tap { |s| s.value = api_period.to_s; s.save! }
 
+          # LLM Settings
+          llm_timeout = params[:llm_request_timeout_seconds].to_i
+          llm_timeout = SystemSetting::DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS if llm_timeout < 30
+          SystemSetting.find_or_initialize_by(key: "llm_request_timeout_seconds").tap { |s| s.value = llm_timeout.to_s; s.save! }
+
           # Auth Providers
           auth_providers = Array(params[:auth_providers]).reject(&:blank?)
           if auth_providers.empty?
@@ -171,6 +179,7 @@ module Collavre
         @password_reset_rate_period_minutes = params[:password_reset_rate_period_minutes].to_i.positive? ? params[:password_reset_rate_period_minutes].to_i : SystemSetting::DEFAULT_PASSWORD_RESET_RATE_PERIOD_MINUTES
         @api_rate_limit = params[:api_rate_limit].to_i.positive? ? params[:api_rate_limit].to_i : SystemSetting::DEFAULT_API_RATE_LIMIT
         @api_rate_period_minutes = params[:api_rate_period_minutes].to_i.positive? ? params[:api_rate_period_minutes].to_i : SystemSetting::DEFAULT_API_RATE_PERIOD_MINUTES
+        @llm_request_timeout_seconds = params[:llm_request_timeout_seconds].to_i.positive? ? params[:llm_request_timeout_seconds].to_i : SystemSetting::DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS
         @enabled_auth_providers = params[:auth_providers] || []
         render :index, status: :unprocessable_entity
       end

@@ -33,6 +33,9 @@ module Collavre
     DEFAULT_LIGHT_THEME_ID = nil
     DEFAULT_DARK_THEME_ID = nil
 
+    # Default LLM request timeout (seconds)
+    DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS = 1800
+
     # Default creative display settings (system-wide)
     DEFAULT_DISPLAY_LEVEL = 6
     DEFAULT_COMPLETION_MARK = ""
@@ -57,7 +60,7 @@ module Collavre
         password_reset_rate_limit password_reset_rate_period_minutes
         api_rate_limit api_rate_period_minutes auth_providers_disabled
         creatives_login_required home_page_path default_light_theme_id default_dark_theme_id
-        display_level completion_mark
+        display_level completion_mark llm_request_timeout_seconds
       ].each { |k| Rails.cache.delete("system_setting:#{k}") }
     end
 
@@ -180,6 +183,12 @@ module Collavre
     def self.completion_mark
       value = cached_value("completion_mark")
       value.nil? ? DEFAULT_COMPLETION_MARK : value
+    end
+
+    # LLM request timeout (seconds)
+    def self.llm_request_timeout_seconds
+      value = cached_value("llm_request_timeout_seconds")&.to_i
+      value.nil? || value < 30 ? DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS : value
     end
   end
 end

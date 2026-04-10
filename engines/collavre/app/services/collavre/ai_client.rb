@@ -132,6 +132,9 @@ module Collavre
       chat_opts[:provider] = provider if provider
       chat_opts[:assume_model_exists] = true if provider
 
+      # Apply current system timeout setting (picks up changes without restart)
+      RubyLLM.config.request_timeout = SystemSetting.llm_request_timeout_seconds
+
       RubyLLM.context(&context_block)
              .chat(**chat_opts).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?

@@ -27,7 +27,11 @@ module CollavreOpenclaw
 
     def initialize
       @open_timeout = ENV.fetch("OPENCLAW_OPEN_TIMEOUT", 10).to_i
-      @read_timeout = ENV.fetch("OPENCLAW_READ_TIMEOUT", 180).to_i  # 3 minutes for AI responses
+      @read_timeout = begin
+        Collavre::SystemSetting.llm_request_timeout_seconds
+      rescue ActiveRecord::StatementInvalid, ActiveRecord::NoDatabaseError, NameError
+        1800
+      end
       @max_retries = ENV.fetch("OPENCLAW_MAX_RETRIES", 2).to_i
       @ws_idle_timeout = ENV.fetch("OPENCLAW_WS_IDLE_TIMEOUT", 1800).to_i     # 30 minutes
       @ws_reconnect_max = ENV.fetch("OPENCLAW_WS_RECONNECT_MAX", 10).to_i
