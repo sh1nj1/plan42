@@ -20,23 +20,9 @@ module Collavre
       # No cleanup needed
     end
 
-    # Broadcast a comment event to the agent stream for a topic.
-    def self.broadcast_comment(topic_id, comment)
-      ActionCable.server.broadcast(
-        "agent:topic:#{topic_id}",
-        {
-          type: "comment",
-          comment: {
-            id: comment.id,
-            content: comment.content,
-            author_id: comment.user_id,
-            author_name: comment.user&.display_name,
-            topic_id: comment.topic_id,
-            creative_id: comment.creative_id,
-            created_at: comment.created_at.iso8601
-          }
-        }
-      )
+    # Broadcast an arbitrary payload to a topic's agent stream.
+    def self.broadcast_to_topic(topic_id, payload)
+      ActionCable.server.broadcast("agent:topic:#{topic_id}", payload)
     end
 
     private

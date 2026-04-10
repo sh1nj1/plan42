@@ -49,26 +49,11 @@ module Collavre
       assert subscription.rejected?
     end
 
-    test "broadcast_comment sends correct payload" do
-      comment = @creative.comments.create!(
-        content: "Test broadcast",
-        user: @user,
-        topic: @topic
-      )
+    test "broadcast_to_topic sends arbitrary payload" do
+      payload = { type: "dispatch", agent_id: 1, comment: { id: 1, content: "test" } }
 
-      assert_broadcast_on("agent:topic:#{@topic.id}", {
-        type: "comment",
-        comment: {
-          id: comment.id,
-          content: "Test broadcast",
-          author_id: @user.id,
-          author_name: @user.display_name,
-          topic_id: @topic.id,
-          creative_id: @creative.id,
-          created_at: comment.created_at.iso8601
-        }
-      }) do
-        AgentChannel.broadcast_comment(@topic.id, comment)
+      assert_broadcast_on("agent:topic:#{@topic.id}", payload) do
+        AgentChannel.broadcast_to_topic(@topic.id, payload)
       end
     end
   end

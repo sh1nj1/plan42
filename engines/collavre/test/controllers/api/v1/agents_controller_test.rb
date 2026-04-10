@@ -40,10 +40,10 @@ module Collavre
 
         # --- Register ---
 
-        test "register creates AI user and topic in inbox" do
+        test "register creates single Claude Channel agent and topic" do
           assert_difference -> { User.count }, 1 do
             post "/api/v1/agent/register",
-              params: { name: "test-host-a1b2" },
+              params: { name: "session-a1b2" },
               headers: auth_headers,
               as: :json
           end
@@ -52,49 +52,52 @@ module Collavre
           body = JSON.parse(response.body)
 
           assert body["agent_id"].present?
-          assert_equal "Claude test-host-a1b2", body["agent_name"]
+          assert_equal "Claude Channel", body["agent_name"]
           assert body["topic_id"].present?
-          assert_equal "Claude test-host-a1b2", body["topic_name"]
+          assert_equal "Claude session-a1b2", body["topic_name"]
           assert body["inbox_creative_id"].present?
 
-          # Verify AI user was created correctly
           ai_user = User.find(body["agent_id"])
           assert_equal "anthropic", ai_user.llm_vendor
           assert_equal "claude-code", ai_user.llm_model
+          assert_equal "true", ai_user.routing_expression
           assert_equal @user.id, ai_user.created_by_id
           assert ai_user.ai_user?
+          assert ai_user.claude_channel_agent?
 
-          # Verify topic has primary agent set
           topic = Topic.find(body["topic_id"])
           assert_equal ai_user, topic.primary_agent
 
-          # Verify AI agent has feedback permission on inbox
           inbox = Creative.find(body["inbox_creative_id"])
           share = CreativeShare.find_by(creative: inbox, user: ai_user)
           assert_not_nil share
           assert_equal "feedback", share.permission
 
-          # Verify AI agent is NOT in contacts
           assert_not Contact.exists?(user: @user, contact_user: ai_user)
         end
 
-        test "register reuses existing AI user" do
+        test "register reuses same agent across sessions with different topics" do
           post "/api/v1/agent/register",
-            params: { name: "reuse-agent" },
+            params: { name: "session-1" },
             headers: auth_headers,
             as: :json
           assert_response :ok
-          first_agent_id = JSON.parse(response.body)["agent_id"]
+          first = JSON.parse(response.body)
 
           assert_no_difference -> { User.count } do
             post "/api/v1/agent/register",
-              params: { name: "reuse-agent" },
+              params: { name: "session-2" },
               headers: auth_headers,
               as: :json
           end
 
           assert_response :ok
-          assert_equal first_agent_id, JSON.parse(response.body)["agent_id"]
+          second = JSON.parse(response.body)
+
+          assert_equal first["agent_id"], second["agent_id"]
+          assert_not_equal first["topic_id"], second["topic_id"]
+          assert_equal "Claude session-1", first["topic_name"]
+          assert_equal "Claude session-2", second["topic_name"]
         end
 
         test "register requires name" do

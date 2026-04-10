@@ -191,6 +191,87 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert_not dispatched, "Should not dispatch A2A when no mention present"
   end
 
+  test "delegates to ClaudeChannelAdapter for claude_channel_agent" do
+    claude_agent = User.create!(
+      email: "cc-svc-test@agent.collavre.local",
+      password: SecureRandom.hex(32),
+      name: "Claude CC",
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      created_by_id: @user.id,
+      searchable: false
+    )
+
+    topic = @creative.topics.create!(name: "CC Topic", user: @user)
+    comment = @creative.comments.create!(content: "Hello CC", user: @user, topic: topic)
+
+    task = Task.create!(
+      name: "CC Task",
+      status: "running",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: {
+        "comment" => { "id" => comment.id, "content" => comment.content },
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => topic.id }
+      },
+      agent: claude_agent
+    )
+
+    initial_count = @creative.comments.count
+
+    broadcasts = []
+    ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
+      result = AiAgentService.new(task).call
+      assert_nil result
+    end
+
+    # No reply comment created (reply comes via API)
+    assert_equal initial_count, @creative.comments.count
+
+    # Logs delegated action
+    assert task.task_actions.exists?(action_type: "delegated")
+
+    # Broadcast dispatch event
+    dispatch = broadcasts.find { |b| b[:data][:type] == "dispatch" }
+    assert_not_nil dispatch
+  end
+
+  test "does not call AiClient for claude_channel_agent" do
+    claude_agent = User.create!(
+      email: "cc-noclient@agent.collavre.local",
+      password: SecureRandom.hex(32),
+      name: "Claude NoClient",
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      created_by_id: @user.id,
+      searchable: false
+    )
+
+    topic = @creative.topics.create!(name: "NoClient Topic", user: @user)
+    comment = @creative.comments.create!(content: "Test", user: @user, topic: topic)
+
+    task = Task.create!(
+      name: "NoClient Task",
+      status: "running",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: {
+        "comment" => { "id" => comment.id, "content" => comment.content },
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => topic.id }
+      },
+      agent: claude_agent
+    )
+
+    ai_client_called = false
+    AiClient.stub :new, ->(*) { ai_client_called = true; raise "Should not be called" } do
+      ActionCable.server.stub :broadcast, ->(*) { } do
+        AiAgentService.new(task).call
+      end
+    end
+
+    assert_not ai_client_called, "AiClient should not be instantiated for Claude Channel agents"
+  end
+
   test "saves partial content when cancelled" do
     task_id = @task.id
     mock_client = Object.new

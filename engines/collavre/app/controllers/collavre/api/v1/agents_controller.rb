@@ -10,29 +10,16 @@ module Collavre
         # 2. Creates a Topic in the user's inbox
         # 3. Sets the AI user as primary agent on the topic
         def register
-          agent_name = params[:name].to_s.strip
-          if agent_name.blank?
+          session_name = params[:name].to_s.strip
+          if session_name.blank?
             render json: { error: "name is required" }, status: :unprocessable_entity
             return
           end
 
-          email = "#{agent_name}@agent.collavre.local"
-
-          ai_user = User.find_or_initialize_by(email: email)
-          if ai_user.new_record?
-            ai_user.assign_attributes(
-              name: "Claude #{agent_name}",
-              password: SecureRandom.hex(32),
-              llm_vendor: "anthropic",
-              llm_model: "claude-code",
-              created_by_id: current_user.id,
-              searchable: false
-            )
-            ai_user.save!
-          end
+          ai_user = find_or_create_claude_channel_agent
 
           inbox = Creative.inbox_for(current_user)
-          topic_name = "Claude #{agent_name}"
+          topic_name = "Claude #{session_name}"
           topic = inbox.topics.find_or_create_by!(name: topic_name) do |t|
             t.user = current_user
           end
@@ -127,6 +114,26 @@ module Collavre
               "topic" => { "id" => comment.topic_id }
             }
           ).dispatch
+        end
+
+        def find_or_create_claude_channel_agent
+          email = "claude-channel-#{current_user.id}@agent.collavre.local"
+
+          ai_user = User.find_or_initialize_by(email: email)
+          if ai_user.new_record?
+            ai_user.assign_attributes(
+              name: "Claude Channel",
+              password: SecureRandom.hex(32),
+              llm_vendor: "anthropic",
+              llm_model: "claude-code",
+              created_by_id: current_user.id,
+              searchable: false,
+              routing_expression: "true"
+            )
+            ai_user.save!
+          end
+
+          ai_user
         end
 
         # Find the active topic where this AI user is the primary agent

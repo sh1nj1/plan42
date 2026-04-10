@@ -17,52 +17,11 @@ module Collavre
 
     def call
       Current.set(user: @agent) do
-        log_action("start", { message: "Starting agent execution" })
-
-        # Build context and messages
-        @original_comment = find_original_comment
-        messages_data = build_messages
-        log_action("prompt_generated", { messages: messages_data[:messages] })
-
-        # Prepare rendering context and prompts
-        @creative = find_creative
-        rendering_context = prepare_rendering_context
-        system_prompt = render_system_prompt(rendering_context)
-
-        # Resolve session context (decides what to send)
-        resolved = resolve_session_context(messages_data, system_prompt)
-
-        # Create placeholder comment if needed
-        @reply_comment = create_reply_comment_if_needed
-
-        # Initialize lifecycle manager
-        @lifecycle_manager = AiAgent::AgentLifecycleManager.new(
-          task: @task,
-          agent: @agent,
-          creative: @creative
-        )
-
-        # Initialize response streamer
-        @streamer = AiAgent::ResponseStreamer.new(
-          reply_comment: @reply_comment,
-          creative: @creative
-        )
-
-        @lifecycle_manager.broadcast_status("thinking")
-
-        # Execute AI chat with streaming
-        @client = build_ai_client(resolved[:system_prompt])
-        stream_response(@client, resolved)
-
-        log_action("completion", { response: @streamer.content })
-
-        # Finalize and dispatch (skip A2A for review-flow updates)
-        finalized_comment = finalize_response
-        dispatch_a2a(finalized_comment) unless @finalizer&.review_flow
-
-        @lifecycle_manager.broadcast_status("idle")
-
-        @streamer.content
+        if @agent.claude_channel_agent?
+          delegate_to_claude_channel
+        else
+          execute_llm_conversation
+        end
       end
     rescue ApprovalPendingError => e
       summary = generate_approval_summary(e)
@@ -78,6 +37,59 @@ module Collavre
     end
 
     private
+
+    def delegate_to_claude_channel
+      log_action("start", { message: "Delegating to Claude Channel via MCP" })
+
+      AiAgent::ClaudeChannelAdapter.new(
+        agent: @agent,
+        context: @context
+      ).deliver
+
+      log_action("delegated", { message: "Message delivered to Claude Channel" })
+      nil
+    end
+
+    def execute_llm_conversation
+      log_action("start", { message: "Starting agent execution" })
+
+      @original_comment = find_original_comment
+      messages_data = build_messages
+      log_action("prompt_generated", { messages: messages_data[:messages] })
+
+      @creative = find_creative
+      rendering_context = prepare_rendering_context
+      system_prompt = render_system_prompt(rendering_context)
+
+      resolved = resolve_session_context(messages_data, system_prompt)
+
+      @reply_comment = create_reply_comment_if_needed
+
+      @lifecycle_manager = AiAgent::AgentLifecycleManager.new(
+        task: @task,
+        agent: @agent,
+        creative: @creative
+      )
+
+      @streamer = AiAgent::ResponseStreamer.new(
+        reply_comment: @reply_comment,
+        creative: @creative
+      )
+
+      @lifecycle_manager.broadcast_status("thinking")
+
+      @client = build_ai_client(resolved[:system_prompt])
+      stream_response(@client, resolved)
+
+      log_action("completion", { response: @streamer.content })
+
+      finalized_comment = finalize_response
+      dispatch_a2a(finalized_comment) unless @finalizer&.review_flow
+
+      @lifecycle_manager.broadcast_status("idle")
+
+      @streamer.content
+    end
 
     def find_original_comment
       target_comment_id = @context.dig("comment", "id")

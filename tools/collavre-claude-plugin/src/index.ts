@@ -17,7 +17,9 @@ function shortId(): string {
 }
 
 async function main(): Promise<void> {
+  const DEBUG = process.env.COLLAVRE_DEBUG === "1";
   const config = loadConfig();
+  process.stderr.write(`[collavre] Config loaded: url=${config.url}\n`);
   const client = new CollavreClient(config);
   const agentName = `${hostname().split(".")[0]}-${shortId()}`;
 
@@ -38,38 +40,6 @@ async function main(): Promise<void> {
       ].join("\n"),
     },
   );
-
-  // Register agent — creates AI User + inbox Topic on the server
-  const reg = await client.register(agentName);
-  process.stderr.write(
-    `[collavre] Registered: ${reg.agent_name} → topic #${reg.topic_id} (${reg.topic_name})\n`,
-  );
-
-  // Subscribe to ActionCable for real-time comment push
-  const cable = new CableSubscriber(config.url, config.token, reg.topic_id, async (event) => {
-    // Ignore own messages
-    if (event.comment.author_id === reg.agent_id) return;
-
-    try {
-      await server.notification({
-        method: "notifications/claude/channel",
-        params: {
-          content: event.comment.content,
-          meta: {
-            topic_id: String(reg.topic_id),
-            comment_id: String(event.comment.id),
-            author: event.comment.author_name,
-            author_id: String(event.comment.author_id),
-          },
-        },
-      });
-    } catch (err) {
-      process.stderr.write(
-        `[collavre] Failed to forward message: ${err instanceof Error ? err.message : err}\n`,
-      );
-    }
-  });
-  cable.connect();
 
   // --- Tools ---
 
@@ -120,6 +90,54 @@ async function main(): Promise<void> {
     };
   });
 
+  // Connect stdio transport FIRST — Claude Code sends an MCP initialize
+  // request immediately after spawning this process and will timeout if
+  // we block on network calls before reading stdin.
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  process.stderr.write("[collavre] MCP server started\n");
+
+  // Register agent — creates AI User + inbox Topic on the server
+  const reg = await client.register(agentName);
+  process.stderr.write(
+    `[collavre] Registered: ${reg.agent_name} → topic #${reg.topic_id} (${reg.topic_name})\n`,
+  );
+
+  // Subscribe to ActionCable for orchestrated dispatch events
+  const cable = new CableSubscriber(config.url, config.token, reg.topic_id, async (event) => {
+    if (event.type !== "dispatch" || !event.comment) {
+      if (DEBUG) process.stderr.write(`[collavre] Ignoring non-dispatch event: ${JSON.stringify(event).slice(0, 200)}\n`);
+      return;
+    }
+
+    process.stderr.write(
+      `[collavre] Dispatch: comment #${event.comment.id} by ${event.comment.author_name} (id=${event.comment.author_id})\n`,
+    );
+
+    const notification = {
+      method: "notifications/claude/channel" as const,
+      params: {
+        content: event.comment.content,
+        meta: {
+          topic_id: String(reg.topic_id),
+          comment_id: String(event.comment.id),
+          author: event.comment.author_name,
+          author_id: String(event.comment.author_id),
+        },
+      },
+    };
+
+    try {
+      await server.notification(notification);
+      process.stderr.write(`[collavre] Notification sent OK\n`);
+    } catch (err) {
+      process.stderr.write(
+        `[collavre] Failed to forward message: ${err instanceof Error ? err.stack : err}\n`,
+      );
+    }
+  }, DEBUG);
+  cable.connect();
+
   // --- Lifecycle ---
 
   const cleanup = async () => {
@@ -130,11 +148,6 @@ async function main(): Promise<void> {
 
   process.on("SIGTERM", cleanup);
   process.on("SIGINT", cleanup);
-
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-
-  process.stderr.write("[collavre] MCP server started\n");
 }
 
 main().catch((err) => {

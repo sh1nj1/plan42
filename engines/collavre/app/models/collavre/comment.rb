@@ -55,7 +55,6 @@ module Collavre
     before_validation :assign_main_topic, on: :create
     before_save :apply_link_previews, if: :should_apply_link_previews?
     after_create_commit :dispatch_to_orchestration
-    after_create_commit :broadcast_to_agent_channel
     after_create_commit :resume_trigger_loop_if_awaiting
 
     validates :content, presence: true, unless: -> { images.attached? }
@@ -131,12 +130,6 @@ module Collavre
       scope = topic_id ? scope.where(topic_id: topic_id) : scope.where(topic_id: nil)
       task = scope.order(created_at: :desc).first
       task&.update!(status: "cancelled")
-    end
-
-    def broadcast_to_agent_channel
-      return unless topic_id
-      return if private?
-      AgentChannel.broadcast_comment(topic_id, self)
     end
 
     def dispatch_to_orchestration

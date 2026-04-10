@@ -1,7 +1,8 @@
 import WebSocket from "ws";
 
-export interface CommentEvent {
-  type: "comment";
+export interface AgentEvent {
+  type: "dispatch" | "comment";
+  agent_id?: number;
   comment: {
     id: number;
     content: string;
@@ -9,11 +10,11 @@ export interface CommentEvent {
     author_name: string;
     topic_id: number;
     creative_id: number;
-    created_at: string;
+    created_at?: string;
   };
 }
 
-type CommentCallback = (event: CommentEvent) => void;
+type EventCallback = (event: AgentEvent) => void;
 
 /**
  * Subscribes to a Collavre ActionCable channel for real-time comment events.
@@ -28,22 +29,25 @@ export class CableSubscriber {
   private baseUrl: string;
   private token: string;
   private topicId: number;
-  private callback: CommentCallback;
+  private callback: EventCallback;
   private channelIdentifier: string;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectAttempts = 0;
+  private debug: boolean;
 
   constructor(
     baseUrl: string,
     token: string,
     topicId: number,
-    callback: CommentCallback
+    callback: EventCallback,
+    debug = false,
   ) {
     this.baseUrl = baseUrl;
     this.token = token;
     this.topicId = topicId;
     this.callback = callback;
+    this.debug = debug;
     this.channelIdentifier = JSON.stringify({
       channel: "Collavre::AgentChannel",
       topic_id: topicId,
@@ -52,12 +56,15 @@ export class CableSubscriber {
 
   connect(): void {
     const wsUrl = this.buildWsUrl();
-    this.ws = new WebSocket(wsUrl);
+    process.stderr.write(`[collavre-cable] Connecting to ${wsUrl.replace(/token=[^&]+/, "token=***")}\n`);
+    this.ws = new WebSocket(wsUrl, ["actioncable-v1-json", "actioncable-unsupported"], {
+      headers: { Origin: this.baseUrl },
+    });
 
     this.ws.on("open", () => {
-      this.reconnectAttempts = 0; // Reset on successful connection
+      process.stderr.write(`[collavre-cable] WebSocket OPEN\n`);
+      this.reconnectAttempts = 0;
       this.subscribe();
-      // Ping every 30s to keep connection alive
       this.pingTimer = setInterval(() => {
         if (this.ws?.readyState === WebSocket.OPEN) {
           this.ws.ping();
@@ -66,17 +73,25 @@ export class CableSubscriber {
     });
 
     this.ws.on("message", (data: WebSocket.Data) => {
-      this.handleMessage(data.toString());
+      const raw = data.toString();
+      if (this.debug) {
+        const parsed = JSON.parse(raw).type;
+        if (parsed !== "ping") {
+          process.stderr.write(`[collavre-cable] ← ${raw.slice(0, 300)}\n`);
+        }
+      }
+      this.handleMessage(raw);
     });
 
-    this.ws.on("close", () => {
+    this.ws.on("close", (code: number, reason: Buffer) => {
+      process.stderr.write(`[collavre-cable] WebSocket CLOSED code=${code} reason=${reason.toString()}\n`);
       this.clearTimers();
       this.scheduleReconnect();
     });
 
     this.ws.on("error", (err: Error) => {
       process.stderr.write(
-        `[collavre-plugin] WebSocket error: ${err.message}\n`
+        `[collavre-cable] WebSocket ERROR: ${err.message}\n`
       );
     });
   }
@@ -106,7 +121,7 @@ export class CableSubscriber {
     let msg: {
       type?: string;
       identifier?: string;
-      message?: CommentEvent;
+      message?: AgentEvent;
     };
 
     try {
@@ -135,8 +150,13 @@ export class CableSubscriber {
     }
 
     // Data message
-    if (msg.identifier === this.channelIdentifier && msg.message) {
-      this.callback(msg.message);
+    if (msg.message) {
+      if (msg.identifier === this.channelIdentifier) {
+        process.stderr.write(`[collavre-cable] Received comment event, invoking callback\n`);
+        this.callback(msg.message);
+      } else if (this.debug) {
+        process.stderr.write(`[collavre-cable] Identifier mismatch:\n  expected: ${this.channelIdentifier}\n  got:      ${msg.identifier}\n`);
+      }
     }
   }
 
