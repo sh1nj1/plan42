@@ -243,15 +243,9 @@ export default class CommandArgsForm {
 
     // Pre-fill with default value from creative tool defaults
     if (param.default_value != null) {
-      const dv = String(param.default_value)
-      if (input.tagName === 'SELECT') {
-        input.value = dv
-      } else {
-        input.value = dv
-        if (input.tagName === 'TEXTAREA') {
-          // Trigger auto-resize for pre-filled textarea
-          requestAnimationFrame(() => this._autoResize(input))
-        }
+      input.value = String(param.default_value)
+      if (input.tagName === 'TEXTAREA') {
+        requestAnimationFrame(() => this._autoResize(input))
       }
     }
 
