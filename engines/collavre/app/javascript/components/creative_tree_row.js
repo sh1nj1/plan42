@@ -579,6 +579,14 @@ class CreativeTreeRow extends LitElement {
   }
 
   _handleContentClick(event) {
+    // In select mode, block navigation — selection toggle is handled by
+    // select_mode_controller's mousedown handler to avoid double-toggling.
+    if (this.selectMode) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     // Check if the clicked element is an interactive element or inside one
     const target = event.target;
     if (target.tagName === 'A' || target.closest('a') ||
