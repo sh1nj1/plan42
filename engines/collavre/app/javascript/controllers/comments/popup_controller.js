@@ -705,9 +705,10 @@ export default class extends Controller {
       }
 
       // Clean up inline styles after transition ends
-      const cleanup = () => {
-        el.removeEventListener('transitionend', cleanup)
+      this._enterCleanupFn = () => {
+        el.removeEventListener('transitionend', this._enterCleanupFn)
         this._enterCleanupTimer = null
+        this._enterCleanupFn = null
         el.style.top = ''
         el.style.left = ''
         el.style.right = ''
@@ -716,9 +717,9 @@ export default class extends Controller {
         el.style.height = ''
         el.style.position = ''
       }
-      el.addEventListener('transitionend', cleanup, { once: true })
+      el.addEventListener('transitionend', this._enterCleanupFn, { once: true })
       // Fallback if transitionend doesn't fire
-      this._enterCleanupTimer = setTimeout(cleanup, 300)
+      this._enterCleanupTimer = setTimeout(this._enterCleanupFn, 300)
 
     } else {
       // Cancel any pending enter-fullscreen cleanup to prevent it from
@@ -726,6 +727,10 @@ export default class extends Controller {
       if (this._enterCleanupTimer) {
         clearTimeout(this._enterCleanupTimer)
         this._enterCleanupTimer = null
+      }
+      if (this._enterCleanupFn) {
+        el.removeEventListener('transitionend', this._enterCleanupFn)
+        this._enterCleanupFn = null
       }
 
       const savedStyles = this._savedStyles
