@@ -15,6 +15,97 @@
   padding: 0 0 var(--space-3) 0;
 }
 
+/* Markdown Editor */
+.markdown-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.markdown-editor-textarea {
+  width: 100%;
+  min-height: 6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2);
+  background: var(--surface-section, var(--surface-bg));
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.markdown-editor-textarea:focus {
+  border-color: var(--color-active);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+.markdown-preview {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2);
+  background: var(--surface-btn, var(--surface-bg));
+  min-height: 2rem;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.markdown-preview:empty::before {
+  content: "Preview";
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.markdown-preview h1, .markdown-preview h2, .markdown-preview h3 {
+  margin: 0 0 var(--space-2) 0;
+}
+
+.markdown-preview ul, .markdown-preview ol {
+  margin: 0 0 0.75rem 1.25rem;
+  padding: 0;
+}
+
+.markdown-preview pre {
+  background: var(--color-code-bg, #f6f8fa);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2);
+  padding: 0.75rem;
+  overflow-x: auto;
+  font-size: 0.9em;
+}
+
+.markdown-preview code {
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9em;
+}
+
+.markdown-preview blockquote {
+  border-left: 3px solid var(--border-color);
+  margin: 0 0 0.75rem 0;
+  padding-left: 0.75rem;
+  color: var(--text-muted);
+}
+
+.markdown-preview table {
+  border-collapse: collapse;
+  margin: 0 0 0.75rem 0;
+}
+
+.markdown-preview th, .markdown-preview td {
+  border: 1px solid var(--border-color);
+  padding: 0.35rem 0.6rem;
+}
+
+.markdown-preview img {
+  max-width: 100%;
+  height: auto;
+}
+
 .lexical-editor-shell {
   display: flex;
   flex-direction: column;

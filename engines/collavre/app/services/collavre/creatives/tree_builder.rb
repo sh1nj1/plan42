@@ -188,10 +188,13 @@ module Creatives
     end
 
     def inline_editor_payload_for(creative)
+      effective = creative.effective_origin(Set.new)
       {
         description_raw_html: creative.effective_description(nil, true),
         progress: creative.progress,
-        origin_id: creative.origin_id
+        origin_id: creative.origin_id,
+        content_type: effective.data&.dig("content_type"),
+        markdown_source: effective.data&.dig("markdown_source")
       }
     end
 

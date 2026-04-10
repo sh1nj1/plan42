@@ -154,6 +154,8 @@ module Collavre
               prompt: @creative.prompt_for(Current.user),
               has_children: children_count > 0,
               data: @creative.effective_origin(Set.new).data,
+              content_type: effective.data&.dig("content_type"),
+              markdown_source: effective.data&.dig("markdown_source"),
               trigger_loop: trigger_loop_data,
               is_trigger_task: parent_trigger_enabled,
               can_edit: @creative.has_permission?(Current.user, :write)
@@ -499,7 +501,7 @@ module Collavre
       end
 
       def creative_params
-        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id)
+        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input)
       end
 
       def any_filter_active?

@@ -4,6 +4,7 @@ import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $i
 import { createInlineEditor } from './lexical_inline_editor'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
 import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
+import { renderMarkdown } from '../lib/utils/markdown'
 import yaml from 'js-yaml'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
@@ -106,6 +107,16 @@ export function initializeCreativeRowEditor() {
     const metadataEditor = document.getElementById('metadata-yaml-editor');
     const metadataSaveBtn = document.getElementById('metadata-save-btn');
     const metadataCloseBtn = document.getElementById('metadata-popup-close');
+
+    // Markdown editor elements
+    const contentTypeInput = document.getElementById('inline-content-type');
+    const markdownSourceInput = document.getElementById('inline-markdown-source');
+    const markdownWrapper = document.getElementById('markdown-editor-wrapper');
+    const markdownTextarea = document.getElementById('markdown-editor-textarea');
+    const markdownPreview = document.getElementById('markdown-preview');
+    const toggleMarkdownBtn = document.getElementById('inline-toggle-markdown');
+    let markdownMode = false;
+    let markdownPreviewTimer = null;
 
     let lexicalEditor = null;
     if (editorContainer) {
@@ -239,6 +250,12 @@ export function initializeCreativeRowEditor() {
       if (Object.prototype.hasOwnProperty.call(data, 'origin_id')) {
         setRowDatasetValue(row, 'originId', data.origin_id ?? '');
       }
+      if (Object.prototype.hasOwnProperty.call(data, 'content_type')) {
+        setRowDatasetValue(row, 'contentType', data.content_type ?? '');
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'markdown_source')) {
+        setRowDatasetValue(row, 'markdownSource', data.markdown_source ?? '');
+      }
       if (Object.prototype.hasOwnProperty.call(data, 'has_children')) {
         if (data.has_children) {
           row.setAttribute('has-children', '');
@@ -277,7 +294,9 @@ export function initializeCreativeRowEditor() {
         description_raw_html: rawHtml,
         origin_id: row.dataset?.originId || '',
         parent_id: parentId,
-        progress: Number.isNaN(progressValue) ? 0 : progressValue
+        progress: Number.isNaN(progressValue) ? 0 : progressValue,
+        content_type: row.dataset?.contentType || null,
+        markdown_source: row.dataset?.markdownSource || null
       };
     }
 
@@ -289,6 +308,43 @@ export function initializeCreativeRowEditor() {
       return (temp.textContent || '').trim().length === 0;
     }
 
+    function isMarkdownEmpty(md) {
+      return !md || md.trim().length === 0;
+    }
+
+    function activateMarkdownMode(source) {
+      markdownMode = true;
+      if (contentTypeInput) contentTypeInput.value = 'markdown';
+      if (markdownTextarea) markdownTextarea.value = source || '';
+      if (markdownWrapper) markdownWrapper.style.display = '';
+      if (editorContainer) editorContainer.style.display = 'none';
+      if (markdownPreview) markdownPreview.innerHTML = source ? renderMarkdown(source) : '';
+      if (toggleMarkdownBtn) {
+        toggleMarkdownBtn.textContent = toggleMarkdownBtn.dataset.labelRichtext || 'Rich Text';
+        toggleMarkdownBtn.classList.add('active');
+      }
+      if (markdownTextarea) markdownTextarea.focus();
+    }
+
+    function deactivateMarkdownMode() {
+      markdownMode = false;
+      if (contentTypeInput) contentTypeInput.value = 'html';
+      if (markdownSourceInput) markdownSourceInput.value = '';
+      if (markdownWrapper) markdownWrapper.style.display = 'none';
+      if (editorContainer) editorContainer.style.display = '';
+      if (toggleMarkdownBtn) {
+        toggleMarkdownBtn.textContent = toggleMarkdownBtn.dataset.labelMarkdown || 'MD';
+        toggleMarkdownBtn.classList.remove('active');
+      }
+    }
+
+    function syncMarkdownToForm() {
+      if (!markdownMode) return;
+      const md = markdownTextarea ? markdownTextarea.value : '';
+      if (markdownSourceInput) markdownSourceInput.value = md;
+      if (descriptionInput) descriptionInput.value = renderMarkdown(md);
+    }
+
     function applyCreativeData(data, tree) {
       if (!data) return;
       const creativeId = data.id;
@@ -298,10 +354,21 @@ export function initializeCreativeRowEditor() {
       form.dataset.creativeId = creativeId;
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
-      lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
+
+      // Handle markdown vs rich text mode
+      const isMarkdown = data.content_type === 'markdown';
+      if (isMarkdown) {
+        activateMarkdownMode(data.markdown_source || '');
+        // Also load Lexical with HTML for fallback/switching
+        lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
+      } else {
+        deactivateMarkdownMode();
+        lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
+      }
+
       pendingSave = false;
       // Track original content for dirty state detection
-      originalContent = content;
+      originalContent = isMarkdown ? (data.markdown_source || '') : content;
       isDirty = false;
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
@@ -323,7 +390,9 @@ export function initializeCreativeRowEditor() {
       const effectiveParent = parentInput.value;
       if (unconvertBtn) unconvertBtn.style.display = effectiveParent ? '' : 'none';
       originalProgress = normalizedProgress;
-      lexicalEditor.focus();
+      if (!isMarkdown) {
+        lexicalEditor.focus();
+      }
       updateActionButtonStates();
       // Reload metadata if the popup is open
       if (isMetadataPopupVisible()) {
@@ -973,7 +1042,13 @@ export function initializeCreativeRowEditor() {
         if (saving) return savePromise;
         clearTimeout(saveTimer);
 
-        if (isHtmlEmpty(descriptionInput.value)) {
+        // Sync markdown form fields before saving
+        if (markdownMode) syncMarkdownToForm();
+
+        const isEmpty = markdownMode
+          ? isMarkdownEmpty(markdownTextarea?.value)
+          : isHtmlEmpty(descriptionInput.value);
+        if (isEmpty) {
           pendingSave = false;
           return Promise.resolve();
         }
@@ -984,7 +1059,7 @@ export function initializeCreativeRowEditor() {
         saving = true;
 
         // Capture values being saved to update dirty state on success
-        const savedContent = descriptionInput.value;
+        const savedContent = markdownMode ? (markdownTextarea?.value || '') : descriptionInput.value;
         const shouldPersistProgress = progressValueChanged();
         const savedProgress = shouldPersistProgress ? readProgressValue() : progressBaselineValueFrom(originalProgress);
         const savedOriginId = originIdInput ? originIdInput.value : '';
@@ -1010,7 +1085,8 @@ export function initializeCreativeRowEditor() {
             originalOriginId = savedOriginId;
 
             // If current values match what was just saved, clear dirty flag
-            if (descriptionInput.value === savedContent &&
+            const currentContent = markdownMode ? (markdownTextarea?.value || '') : descriptionInput.value;
+            if (currentContent === savedContent &&
               readProgressValue() === savedProgress &&
               originIdInput.value === savedOriginId) {
               isDirty = false;
@@ -1197,6 +1273,8 @@ export function initializeCreativeRowEditor() {
 
       // CRITICAL: Capture ALL values BEFORE awaiting, because the editor may switch
       // to a different creative while we're waiting for uploads
+      const isMarkdownSave = markdownMode;
+      if (isMarkdownSave) syncMarkdownToForm();
       let currentContent = descriptionInput.value;
       let currentProgress = readProgressValue();
       let shouldPersistProgress = progressValueChanged();
@@ -1204,10 +1282,15 @@ export function initializeCreativeRowEditor() {
       const currentBeforeId = tree.previousElementSibling ? creativeIdFrom(tree.previousElementSibling) : '';
       const currentAfterId = tree.nextElementSibling ? creativeIdFrom(tree.nextElementSibling) : '';
       const startCreativeId = creativeId;
+      const capturedMarkdownSource = isMarkdownSave ? (markdownTextarea?.value || '') : '';
+      const capturedContentType = isMarkdownSave ? 'markdown' : 'html';
 
       // Prevent saving empty content, matching saveForm behavior
       // This avoids overwriting existing descriptions with empty strings during quick navigation
-      if (isHtmlEmpty(currentContent)) {
+      const isEmpty = isMarkdownSave
+        ? isMarkdownEmpty(capturedMarkdownSource)
+        : isHtmlEmpty(currentContent);
+      if (isEmpty) {
         pendingSave = false;
         return;
       }
@@ -1228,8 +1311,12 @@ export function initializeCreativeRowEditor() {
       // Note: before_id and after_id must be top-level params, not nested under creative[]
       // because CreativesController reads params[:before_id] and params[:after_id] for positioning
       const body = {
-        'creative[description]': currentContent
+        'creative[description]': currentContent,
+        'creative[content_type_input]': capturedContentType
       };
+      if (isMarkdownSave) {
+        body['creative[markdown_source]'] = capturedMarkdownSource;
+      }
 
       if (shouldPersistProgress) {
         body['creative[progress]'] = currentProgress;
@@ -1739,6 +1826,7 @@ export function initializeCreativeRowEditor() {
           afterInput.value = afterId || '';
           if (childInput) childInput.value = childId || '';
           resetOriginTracking();
+          deactivateMarkdownMode();
           descriptionInput.value = '';
           lexicalEditor.reset(`new-${Date.now()}`);
           setProgressState(0);
@@ -1781,10 +1869,23 @@ export function initializeCreativeRowEditor() {
     }
 
     function onLexicalChange(html) {
+      if (markdownMode) return; // Ignore Lexical changes in markdown mode
       descriptionInput.value = html;
       // Mark as dirty if content changed from original
       isDirty = (html !== originalContent);
       scheduleSave();
+    }
+
+    function onMarkdownTextareaInput() {
+      const md = markdownTextarea.value;
+      syncMarkdownToForm();
+      isDirty = (md !== originalContent);
+      scheduleSave();
+      // Debounced live preview
+      clearTimeout(markdownPreviewTimer);
+      markdownPreviewTimer = setTimeout(() => {
+        if (markdownPreview) markdownPreview.innerHTML = renderMarkdown(md);
+      }, 300);
     }
 
     // Intercepts Shift+Enter via capture-phase keydown on Lexical's root element.
@@ -2173,6 +2274,49 @@ export function initializeCreativeRowEditor() {
           }
         });
       }
+    }
+
+    // Markdown toggle button
+    if (toggleMarkdownBtn) {
+      toggleMarkdownBtn.addEventListener('click', function () {
+        if (markdownMode) {
+          // Switching from Markdown → Rich Text
+          const confirmMsg = toggleMarkdownBtn.dataset.confirmToRichtext;
+          if (confirmMsg && !confirm(confirmMsg)) return;
+          const md = markdownTextarea?.value || '';
+          const html = md ? renderMarkdown(md) : '';
+          deactivateMarkdownMode();
+          descriptionInput.value = html;
+          lexicalEditor.load(html, `creative-switch-${Date.now()}`);
+          lexicalEditor.focus();
+          isDirty = true;
+          scheduleSave();
+        } else {
+          // Switching from Rich Text → Markdown
+          activateMarkdownMode('');
+          isDirty = true;
+          scheduleSave();
+        }
+      });
+    }
+
+    // Markdown textarea input handler
+    if (markdownTextarea) {
+      markdownTextarea.addEventListener('input', onMarkdownTextareaInput);
+
+      // Support keyboard shortcuts in markdown textarea
+      markdownTextarea.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          hideCurrent();
+          return;
+        }
+        // Shift+Enter → add new sibling (same as Lexical)
+        if (event.key === 'Enter' && event.shiftKey) {
+          event.preventDefault();
+          addNew();
+        }
+      });
     }
   });
 }
