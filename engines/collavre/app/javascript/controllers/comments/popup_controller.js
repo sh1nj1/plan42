@@ -623,6 +623,16 @@ export default class extends Controller {
   // Enter fullscreen immediately without animation (for auto-fullscreen on page load)
   _enterFullscreenImmediate() {
     const el = this.element
+
+    // Save current inline styles so exit-fullscreen can restore them
+    this._savedStyles = {
+      top: el.style.top,
+      right: el.style.right,
+      left: el.style.left,
+      width: el.style.width,
+      height: el.style.height,
+    }
+
     el.style.transition = 'none'
     el.dataset.fullscreen = 'true'
     document.body.classList.add('chat-fullscreen')
@@ -695,8 +705,10 @@ export default class extends Controller {
       }
 
       // Clean up inline styles after transition ends
-      const cleanup = () => {
-        el.removeEventListener('transitionend', cleanup)
+      this._enterCleanupFn = () => {
+        el.removeEventListener('transitionend', this._enterCleanupFn)
+        this._enterCleanupTimer = null
+        this._enterCleanupFn = null
         el.style.top = ''
         el.style.left = ''
         el.style.right = ''
@@ -705,11 +717,22 @@ export default class extends Controller {
         el.style.height = ''
         el.style.position = ''
       }
-      el.addEventListener('transitionend', cleanup, { once: true })
+      el.addEventListener('transitionend', this._enterCleanupFn, { once: true })
       // Fallback if transitionend doesn't fire
-      setTimeout(cleanup, 300)
+      this._enterCleanupTimer = setTimeout(this._enterCleanupFn, 300)
 
     } else {
+      // Cancel any pending enter-fullscreen cleanup to prevent it from
+      // wiping inline styles mid-exit animation (race condition fix)
+      if (this._enterCleanupTimer) {
+        clearTimeout(this._enterCleanupTimer)
+        this._enterCleanupTimer = null
+      }
+      if (this._enterCleanupFn) {
+        el.removeEventListener('transitionend', this._enterCleanupFn)
+        this._enterCleanupFn = null
+      }
+
       const savedStyles = this._savedStyles
       this._savedStyles = null
       const creativeId = el.dataset.creativeId
