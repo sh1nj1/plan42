@@ -2,7 +2,7 @@
     display: none;
     position: fixed;
     right: 2em;
-    /* top: 10em; */
+    top: 10em;
     z-index: var(--layer-modal);
     width: 420px;
     height: 640px;
