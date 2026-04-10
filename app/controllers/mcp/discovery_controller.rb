@@ -10,9 +10,9 @@ module Mcp
     # without authentication per RFC 8414 and MCP specification requirements.
     allow_unauthenticated_access
 
-    # Rate limiting to prevent abuse of public endpoints
-    # Allow 60 requests per minute per IP address
-    rate_limit to: 60, within: 1.minute, with: -> {
+    RATE_LIMIT_PER_MINUTE = 60
+
+    rate_limit to: RATE_LIMIT_PER_MINUTE, within: 1.minute, with: -> {
       render json: { error: I18n.t("mcp.discovery.rate_limit_exceeded") },
              status: :too_many_requests
     }

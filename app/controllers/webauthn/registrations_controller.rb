@@ -1,5 +1,9 @@
 module Webauthn
   class RegistrationsController < ApplicationController
+    include WebauthnChallenge
+
+    CHALLENGE_KEY = :creation_challenge
+
     def new
       Current.user.update!(webauthn_id: WebAuthn.generate_user_id) unless Current.user.webauthn_id
 
@@ -16,7 +20,7 @@ module Webauthn
         }
       )
 
-      session[:creation_challenge] = create_options.challenge
+      store_challenge(CHALLENGE_KEY, create_options.challenge)
 
       render json: create_options
     end
@@ -25,7 +29,7 @@ module Webauthn
       webauthn_credential = WebAuthn::Credential.from_create(params)
 
       begin
-        webauthn_credential.verify(session[:creation_challenge])
+        webauthn_credential.verify(consume_challenge(CHALLENGE_KEY))
 
         credential = Current.user.webauthn_credentials.build(
           webauthn_id: webauthn_credential.id,
@@ -37,12 +41,10 @@ module Webauthn
         if credential.save
           render json: { status: "ok" }, status: :created
         else
-          render json: { status: "error", message: "Credential could not be saved" }, status: :unprocessable_entity
+          render json: { status: "error", message: I18n.t("users.webauthn.credential_save_failed") }, status: :unprocessable_entity
         end
       rescue WebAuthn::Error => e
-        render json: { status: "error", message: "Verification failed: #{e.message}" }, status: :unprocessable_entity
-      ensure
-        session.delete(:creation_challenge)
+        render json: { status: "error", message: I18n.t("users.webauthn.verification_failed", message: e.message) }, status: :unprocessable_entity
       end
     end
   end
