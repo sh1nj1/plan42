@@ -110,12 +110,24 @@ module Collavre
           )
 
           if comment.save
+            dispatch_a2a(agent, comment)
             render json: { comment_id: comment.id }, status: :created
           else
             render json: { errors: comment.errors.full_messages }, status: :unprocessable_entity
           end
         end
         private
+
+        def dispatch_a2a(agent, comment)
+          AiAgent::A2aDispatcher.new(
+            agent: agent,
+            reply_comment: comment,
+            context: {
+              "creative" => { "id" => comment.creative_id },
+              "topic" => { "id" => comment.topic_id }
+            }
+          ).dispatch
+        end
 
         # Find the active topic where this AI user is the primary agent
         def find_agent_topic(ai_user)

@@ -128,6 +128,32 @@ module Collavre
           assert_equal ai_user.id, comment.user_id
         end
 
+        test "reply dispatches A2A when mentioning another agent" do
+          reg = register_agent("a2a-test")
+          bot = users(:ai_bot)
+          text = "@#{bot.name}: what do you think?"
+
+          dispatcher_args = nil
+          mock_new = lambda { |**kwargs|
+            dispatcher_args = kwargs
+            mock = Minitest::Mock.new
+            mock.expect(:dispatch, nil)
+            mock
+          }
+
+          Collavre::AiAgent::A2aDispatcher.stub(:new, mock_new) do
+            post "/api/v1/agent/reply",
+              params: { topic_id: reg["topic_id"], text: text },
+              headers: auth_headers,
+              as: :json
+          end
+
+          assert_response :created
+          assert_not_nil dispatcher_args, "A2aDispatcher should have been instantiated"
+          assert_equal reg["agent_id"], dispatcher_args[:agent].id
+          assert_equal text, dispatcher_args[:reply_comment].content
+        end
+
         test "reply checks creative permission" do
           reg = register_agent("perm-test")
           topic = Topic.find(reg["topic_id"])
