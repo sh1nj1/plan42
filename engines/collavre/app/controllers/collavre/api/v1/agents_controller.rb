@@ -39,6 +39,11 @@ module Collavre
 
           topic.set_primary_agent!(ai_user)
 
+          CreativeShare.find_or_create_by!(creative: inbox, user: ai_user) do |s|
+            s.permission = :feedback
+            s.shared_by = current_user
+          end
+
           render json: {
             agent_id: ai_user.id,
             agent_name: ai_user.name,

@@ -22,15 +22,5 @@
       "server": "collavre"
     }
   ],
-  "mcpServers": {
-    "collavre": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/index.js"],
-      "env": {
-        "CLAUDE_PLUGIN_OPTION_url": "${user_config.url}",
-        "CLAUDE_PLUGIN_OPTION_token": "${user_config.token}"
-      }
-    }
-  },
   "hooks": "hooks/hooks.json"
 }

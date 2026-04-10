@@ -67,6 +67,15 @@ module Collavre
           # Verify topic has primary agent set
           topic = Topic.find(body["topic_id"])
           assert_equal ai_user, topic.primary_agent
+
+          # Verify AI agent has feedback permission on inbox
+          inbox = Creative.find(body["inbox_creative_id"])
+          share = CreativeShare.find_by(creative: inbox, user: ai_user)
+          assert_not_nil share
+          assert_equal "feedback", share.permission
+
+          # Verify AI agent is NOT in contacts
+          assert_not Contact.exists?(user: @user, contact_user: ai_user)
         end
 
         test "register reuses existing AI user" do

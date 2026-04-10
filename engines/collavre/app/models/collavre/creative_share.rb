@@ -64,6 +64,7 @@ module Collavre
 
     def notify_recipient
       return unless Current.user && user
+      return if user.ai_user?
       inbox_creative = Creative.inbox_for(user)
       short_title = ActionController::Base.helpers.truncate(
         ActionController::Base.helpers.strip_tags(creative.effective_description),
