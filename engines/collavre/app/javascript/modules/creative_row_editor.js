@@ -1786,17 +1786,13 @@ export function initializeCreativeRowEditor() {
       scheduleSave();
     }
 
-    // Intercepts bare Enter via capture-phase keydown on Lexical's root element.
-    // Returning true triggers preventDefault + stopImmediatePropagation,
-    // preventing Lexical from inserting a paragraph node.
-    // PC: Enter → addNew (complete & move to next)
-    // Mobile: Enter → newline (let Lexical handle it)
+    // Intercepts Shift+Enter via capture-phase keydown on Lexical's root element.
+    // Returning true triggers preventDefault + stopImmediatePropagation.
+    // Shift+Enter → addNew (save & add next)
+    // Bare Enter → newline (handled by Lexical)
     function handleEditorEnterKey(event, editorInstance) {
-      if (window.innerWidth > 600) {
-        addNew();
-        return true; // handled — suppress Lexical's newline
-      }
-      return false; // mobile: let Lexical insert newline
+      addNew();
+      return true; // handled — suppress default behavior
     }
 
     function handleEditorKeyDown(event, editorInstance) {
@@ -1811,8 +1807,6 @@ export function initializeCreativeRowEditor() {
         addChild();
         return;
       }
-      // Note: bare Enter is handled by handleEditorEnterKey via capture-phase keydown
-      // on Lexical's root element to prevent newline insertion before addNew().
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === '.' || event.key === '>')) {
         event.preventDefault();
         levelDown();
