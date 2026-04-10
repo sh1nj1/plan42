@@ -94,3 +94,34 @@ Import a markdown document as a Creative tree. Uses the built-in MarkdownImporte
 - Inline images and links → preserved in description HTML
 
 **Returns:** `{ success, parent_id, created_count, tree[] }`
+
+## meta_tool
+
+Introspect and dynamically run any registered MCP tool. Enables tool discovery without CLI updates.
+
+| Param | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `action` | String | **Yes** | — | `list`, `list_summary`, `search`, `get`, or `run` |
+| `tool_name` | String | No | — | Target tool name (required for `get` and `run`) |
+| `query` | String | No | — | Search term (for `search` action) |
+| `arguments` | Object | No | `{}` | Arguments to pass to the tool (for `run` action) |
+
+**Actions:**
+
+| Action | Description |
+|--------|-------------|
+| `list` | Full list of all tools with names, descriptions, and parameters |
+| `list_summary` | Compact list with names and one-line descriptions only |
+| `search` | Filter tools by name or description matching `query` |
+| `get` | Full schema for a single tool (params, types, usage) |
+| `run` | Execute a tool by name, passing `arguments` through |
+
+**CLI mapping:**
+
+| CLI Command | meta_tool Action |
+|-------------|------------------|
+| `collavre tool list` | `list_summary` |
+| `collavre tool list --full` | `list` |
+| `collavre tool search <q>` | `search` |
+| `collavre tool info <name>` | `get` |
+| `collavre tool run <name>` | `run` |
