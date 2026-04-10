@@ -99,10 +99,11 @@ module Collavre
         return { error: "Creative not found", id: id } unless creative
         return { error: "No write permission on this Creative", id: id } unless creative.has_permission?(Current.user, :write)
 
-        Creatives::DestroyService.new(
+        result = Creatives::DestroyService.new(
           creative: creative,
           user: Current.user
         ).call
+        return { error: "Failed to destroy creative", id: id } unless result
         { success: true, id: id, deleted: true }
       end
     end
