@@ -489,7 +489,7 @@ Subcommands:
             toolArgs = JSON.parse(args.json);
           } else {
             // Build arguments from remaining --key value flags
-            const { json: _, full: __, ...rest } = args;
+            const { json: _, ...rest } = args;
             for (const [k, v] of Object.entries(rest)) {
               // Auto-parse numbers and booleans
               if (v === "true") toolArgs[k] = true;
