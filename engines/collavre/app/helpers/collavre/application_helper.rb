@@ -107,6 +107,8 @@ module Collavre
 
     def safe_css_declarations(variables)
       variables.filter_map { |k, v|
+        k = k.to_s
+        v = v.to_s
         next unless k.match?(CSS_VARIABLE_KEY_PATTERN) && v.match?(CSS_VARIABLE_VALUE_PATTERN)
         "#{k}: #{v} !important;"
       }.join("\n            ")
