@@ -83,9 +83,15 @@ module Collavre
 
     private
 
+    CSS_VARIABLE_KEY_PATTERN = /\A--[a-zA-Z0-9_-]+\z/
+    CSS_VARIABLE_VALUE_PATTERN = /\A[^;}{<>"']+\z/
+    ALLOWED_COLOR_SCHEMES = %w[light dark].freeze
+
     def render_theme_media_query(theme, mode)
-      vars = theme.variables.map { |k, v| "#{k}: #{v} !important;" }.join("\n            ")
-      legacy = legacy_alias_declarations(theme.variables).map { |k, v| "#{k}: #{v} !important;" }.join("\n            ")
+      return "" unless ALLOWED_COLOR_SCHEMES.include?(mode)
+
+      vars = safe_css_declarations(theme.variables)
+      legacy = safe_css_declarations(legacy_alias_declarations(theme.variables))
       dark_filter = theme.dark? ? "--date-icon-filter: invert(0.8) !important;" : ""
 
       <<~CSS
@@ -97,6 +103,15 @@ module Collavre
           }
         }
       CSS
+    end
+
+    def safe_css_declarations(variables)
+      variables.filter_map { |k, v|
+        k = k.to_s
+        v = v.to_s
+        next unless k.match?(CSS_VARIABLE_KEY_PATTERN) && v.match?(CSS_VARIABLE_VALUE_PATTERN)
+        "#{k}: #{v} !important;"
+      }.join("\n            ")
     end
 
     public

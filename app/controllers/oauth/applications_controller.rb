@@ -3,19 +3,17 @@ module Oauth
     layout "application"
 
     before_action :authenticate_user!
+    before_action :set_application, only: %i[show create_access_token show_access_token destroy_access_token]
+    before_action :set_token, only: %i[show_access_token destroy_access_token]
 
     def index
       @applications = current_resource_owner.oauth_applications
     end
 
     def show
-      @application = current_resource_owner.oauth_applications.find(params[:id])
-
-      # Filter active tokens in Ruby (simpler, adapter-agnostic)
-      @active_tokens = Doorkeeper::AccessToken.where(application_id: @application.id, resource_owner_id: current_resource_owner.id)
-                                              .where(revoked_at: nil)
+      @active_tokens = Doorkeeper::AccessToken.not_expired
+                                              .where(application_id: @application.id, resource_owner_id: current_resource_owner.id)
                                               .order(created_at: :desc)
-                                              .select { |t| !t.expired? }
     end
 
     def create
@@ -31,8 +29,6 @@ module Oauth
     end
 
     def create_access_token
-      @application = current_resource_owner.oauth_applications.find(params[:id])
-
       # Calculate expiration
       expires_in = case params[:expiration_type]
       when "never"
@@ -49,7 +45,6 @@ module Oauth
       end
 
       # Create a new access token (allowing multiple tokens)
-      # Fix: Use application scopes instead of default scopes
       allowed_scopes = @application.scopes.presence || Doorkeeper.configuration.default_scopes
 
       token = Doorkeeper::AccessToken.new(
@@ -71,21 +66,15 @@ module Oauth
     end
 
     def show_access_token
-      @application = current_resource_owner.oauth_applications.find(params[:id])
-      token = Doorkeeper::AccessToken.find_by(id: params[:token_id], application_id: @application.id, resource_owner_id: current_resource_owner.id)
-
-      if token && !token.revoked? && !token.expired?
-        render json: { token: token.token }
+      if @token && !@token.revoked? && !@token.expired?
+        render json: { token: @token.token }
       else
         render json: { error: I18n.t("doorkeeper.applications.personal_access_token.flash.revoke_error") }, status: :not_found
       end
     end
 
     def destroy_access_token
-      @application = current_resource_owner.oauth_applications.find(params[:id])
-      token = Doorkeeper::AccessToken.find_by(id: params[:token_id], application_id: @application.id, resource_owner_id: current_resource_owner.id)
-
-      if token&.revoke
+      if @token&.revoke
         flash[:notice] = I18n.t("doorkeeper.applications.personal_access_token.flash.revoke_notice")
       else
         flash[:alert] = I18n.t("doorkeeper.applications.personal_access_token.flash.revoke_error")
@@ -98,6 +87,18 @@ module Oauth
 
     def authenticate_user!
       redirect_to new_session_url unless Current.user
+    end
+
+    def set_application
+      @application = current_resource_owner.oauth_applications.find(params[:id])
+    end
+
+    def set_token
+      @token = Doorkeeper::AccessToken.find_by(
+        id: params[:token_id],
+        application_id: @application.id,
+        resource_owner_id: current_resource_owner.id
+      )
     end
   end
 end

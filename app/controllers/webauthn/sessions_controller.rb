@@ -1,12 +1,16 @@
 module Webauthn
   class SessionsController < ApplicationController
+    include WebauthnChallenge
+
     allow_unauthenticated_access only: [ :new, :create ]
     before_action -> { enforce_auth_provider!(:passkey) }, only: %i[new create]
+
+    CHALLENGE_KEY = :authentication_challenge
 
     def new
       get_options = WebAuthn::Credential.options_for_get
 
-      session[:authentication_challenge] = get_options.challenge
+      store_challenge(CHALLENGE_KEY, get_options.challenge)
 
       render json: get_options
     end
@@ -19,7 +23,7 @@ module Webauthn
       if credential
         begin
           webauthn_credential.verify(
-            session[:authentication_challenge],
+            consume_challenge(CHALLENGE_KEY),
             public_key: credential.public_key,
             sign_count: credential.sign_count
           )
@@ -37,12 +41,10 @@ module Webauthn
             render json: { status: "error", message: I18n.t("users.sessions.new.email_not_verified") }, status: :unprocessable_entity
           end
         rescue WebAuthn::Error => e
-          render json: { status: "error", message: "Verification failed: #{e.message}" }, status: :unprocessable_entity
-        ensure
-          session.delete(:authentication_challenge)
+          render json: { status: "error", message: I18n.t("users.webauthn.verification_failed", message: e.message) }, status: :unprocessable_entity
         end
       else
-        session.delete(:authentication_challenge)
+        consume_challenge(CHALLENGE_KEY)
         render json: { status: "error", message: I18n.t("users.webauthn.credential_not_found") }, status: :unprocessable_entity
       end
     end

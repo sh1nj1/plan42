@@ -14,6 +14,9 @@ module ApplicationHelper
   end
 
   def svg_tag(name, options = {})
+    # Reject path traversal attempts
+    return content_tag(:div, "(invalid svg name: #{ERB::Util.html_escape(name)})") if name.include?("..") || name.include?("/")
+
     # Resolve path (looks in app/assets/images by default)
     file_path = Rails.root.join("app", "assets", "images", "#{name.end_with?('.svg') ? name : "#{name}.svg"}")
 
