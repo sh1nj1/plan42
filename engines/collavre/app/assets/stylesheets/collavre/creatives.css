@@ -364,13 +364,15 @@ creative-tree-row.show-edit .creative-row {
 
     .creative-row:hover .progress-toggle-wrap .creative-progress-complete,
     .creative-row:hover .progress-toggle-wrap .creative-progress-incomplete {
-        display: none;
+        visibility: hidden;
     }
 
     .creative-row:hover .progress-toggle-checkbox {
         visibility: visible;
         opacity: 1;
-        position: relative;
+        position: absolute;
+        inset: 0;
+        margin: auto;
         pointer-events: auto;
         accent-color: var(--color-brand);
     }
