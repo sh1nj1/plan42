@@ -29,7 +29,7 @@ module CollavreOpenclaw
       @open_timeout = ENV.fetch("OPENCLAW_OPEN_TIMEOUT", 10).to_i
       @read_timeout = begin
         Collavre::SystemSetting.llm_request_timeout_seconds
-      rescue ActiveRecord::StatementInvalid, ActiveRecord::NoDatabaseError, NameError
+      rescue StandardError
         1800
       end
       @max_retries = ENV.fetch("OPENCLAW_MAX_RETRIES", 2).to_i
