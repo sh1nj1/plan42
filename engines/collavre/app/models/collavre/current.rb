@@ -5,6 +5,7 @@ module Collavre
     attribute :session
     attribute :creative_share_cache
     attribute :mcp_tool_approval_required
+    attribute :mcp_request
     attribute :user
 
     def user

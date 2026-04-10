@@ -27,7 +27,9 @@ module Collavre
         # Skip broadcast when only progress changed (cascade from update_parent_progress).
         # The original creative's broadcast already includes ancestor progress in its payload,
         # so receivers update parent rows without needing separate broadcasts per ancestor.
-        return if progress_only_change?
+        # Exception: MCP requests must always broadcast because the browser has no HTTP
+        # response to update from — WebSocket is the only delivery channel.
+        return if progress_only_change? && !Collavre::Current.mcp_request
 
         enqueue_broadcast(:updated, broadcast_node_payload)
       rescue StandardError => e
@@ -58,7 +60,7 @@ module Collavre
       def broadcast_creative_destroyed
         return if @_destroy_broadcast_users.blank?
 
-        current_user_id = Collavre.current_user&.id
+        current_user_id = Collavre::Current.mcp_request ? nil : Collavre.current_user&.id
         CreativeBroadcastJob.perform_later(
           id,
           "destroyed",
@@ -134,11 +136,14 @@ module Collavre
 
       # Enqueue broadcast as a background job to avoid blocking the request cycle.
       # Payload is built synchronously (needs fresh DB state), then delivery is async.
+      # For MCP requests, current_user_id is nil so the job broadcasts to ALL users
+      # including the requester (whose browser relies solely on WebSocket updates).
       def enqueue_broadcast(action, payload)
+        user_id = Collavre::Current.mcp_request ? nil : Collavre.current_user&.id
         CreativeBroadcastJob.perform_later(
           id,
           action.to_s,
-          current_user_id: Collavre.current_user&.id,
+          current_user_id: user_id,
           payload: payload
         )
       end
@@ -150,10 +155,11 @@ module Collavre
         return if creatives.blank?
 
         creative_ids = creatives.map(&:id)
+        user_id = Collavre::Current.mcp_request ? nil : Collavre.current_user&.id
         CreativeBroadcastJob.perform_later(
           creative_ids,
           "batch_created",
-          current_user_id: Collavre.current_user&.id
+          current_user_id: user_id
         )
       end
 
