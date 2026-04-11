@@ -95,6 +95,12 @@ module Collavre
 
     def list_calendars
       @service.list_calendar_lists.items.map { |c| [ c.summary, c.id ] }.to_h
+    rescue Google::Apis::AuthorizationError => e
+      Rails.logger.error("Google Calendar list_calendars auth error for user #{@user.id}: #{e.message}")
+      raise GoogleCalendarError, I18n.t("collavre.google_calendar.errors.reconnect")
+    rescue Faraday::ConnectionFailed, Faraday::TimeoutError, Google::Apis::TransmissionError => e
+      Rails.logger.error("Google Calendar list_calendars network error for user #{@user.id}: #{e.class} - #{e.message}")
+      raise GoogleCalendarError, I18n.t("collavre.google_calendar.errors.network")
     end
 
     private
@@ -109,6 +115,12 @@ module Collavre
         scope:         [ Google::Apis::CalendarV3::AUTH_CALENDAR_APP_CREATED ],
         refresh_token: token
       ).tap(&:fetch_access_token!)
+    rescue Signet::AuthorizationError => e
+      Rails.logger.error("Google Calendar fetch_access_token! auth error for user #{@user.id}: #{e.message}")
+      raise GoogleCalendarError, I18n.t("collavre.google_calendar.errors.reconnect")
+    rescue Faraday::ConnectionFailed, Faraday::TimeoutError => e
+      Rails.logger.error("Google Calendar fetch_access_token! network error for user #{@user.id}: #{e.class} - #{e.message}")
+      raise GoogleCalendarError, I18n.t("collavre.google_calendar.errors.network")
     end
 
     def refresh_token
@@ -161,9 +173,22 @@ module Collavre
         if @user.calendar_id.nil?
           @user.calendar_id = create_app_calendar
         else
-          calendar = @service.get_calendar(@user.calendar_id)
-          if calendar.id != @user.calendar_id
-            @user.calendar_id = create_app_calendar
+          begin
+            calendar = @service.get_calendar(@user.calendar_id)
+            if calendar.id != @user.calendar_id
+              @user.calendar_id = create_app_calendar
+            end
+          rescue Google::Apis::ClientError => e
+            if e.status_code == 404
+              Rails.logger.error("Google Calendar not found (deleted?) for user #{@user.id}, calendar_id=#{@user.calendar_id}")
+              @user.calendar_id = create_app_calendar
+            else
+              Rails.logger.error("Google Calendar get_calendar error for user #{@user.id}: #{e.class} #{e.status_code} - #{e.message}")
+              raise
+            end
+          rescue Google::Apis::AuthorizationError => e
+            Rails.logger.error("Google Calendar get_calendar auth error for user #{@user.id}: #{e.message}")
+            raise GoogleCalendarError, I18n.t("collavre.google_calendar.errors.reconnect")
           end
         end
       end
