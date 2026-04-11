@@ -94,7 +94,7 @@ module CollavreOpenclaw
       EmReactor.next_tick do
         begin
           do_connect!(queue)
-        rescue => e
+        rescue StandardError => e
           queue.push({ error: e.message })
         end
       end
@@ -659,7 +659,7 @@ module CollavreOpenclaw
               schedule_reconnect!
             end
           end
-        rescue => e
+        rescue StandardError => e
           Rails.logger.error("[CollavreOpenclaw::WS] RECONNECT gateway=#{url} state=fail reason=#{e.message}")
           schedule_reconnect!
         end

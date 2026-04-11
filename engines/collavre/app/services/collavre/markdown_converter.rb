@@ -92,7 +92,7 @@ module Collavre
               token = "__IMG#{index}__"; index += 1
               placeholders[token] = "![#{alt_text}](data:#{blob.content_type};base64,#{data})"
               token
-            rescue
+            rescue StandardError
               match
             end
           else
