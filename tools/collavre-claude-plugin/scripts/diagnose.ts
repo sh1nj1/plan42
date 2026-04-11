@@ -6,7 +6,6 @@
  */
 
 import { loadConfig } from "../src/config.js";
-import { CableSubscriber } from "../src/cable-subscriber.js";
 import WebSocket from "ws";
 
 const PASS = "✓";

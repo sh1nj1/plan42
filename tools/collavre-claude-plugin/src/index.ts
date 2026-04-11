@@ -7,29 +7,30 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { hostname } from "os";
-import { randomBytes } from "crypto";
 import { CollavreClient } from "./collavre-client.js";
-import { CableSubscriber } from "./cable-subscriber.js";
+import { CableSubscriber, type AgentEvent } from "./cable-subscriber.js";
 import { loadConfig } from "./config.js";
 
-function shortId(): string {
-  return randomBytes(2).toString("hex");
+function buildAgentName(): string {
+  // pid is unique among concurrent processes on the same machine, so
+  // running multiple Claude Code sessions in parallel cannot collide.
+  return `${hostname().split(".")[0]}-${process.pid}`;
 }
 
-async function main(): Promise<void> {
-  const DEBUG = process.env.COLLAVRE_DEBUG === "1";
-  const config = loadConfig();
-  process.stderr.write(`[collavre] Config loaded: url=${config.url}\n`);
-  const client = new CollavreClient(config);
-  const agentName = `${hostname().split(".")[0]}-${shortId()}`;
+function errorResult(message: string) {
+  return {
+    content: [{ type: "text" as const, text: message }],
+    isError: true as const,
+  };
+}
 
+function buildServer(client: CollavreClient): Server {
   const server = new Server(
     { name: "collavre", version: "0.1.0" },
     {
       capabilities: {
         experimental: {
           "claude/channel": {},
-          "claude/channel/permission": {},
         },
         tools: {},
       },
@@ -41,8 +42,6 @@ async function main(): Promise<void> {
     },
   );
 
-  // --- Tools ---
-
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       {
@@ -52,7 +51,7 @@ async function main(): Promise<void> {
           type: "object" as const,
           properties: {
             topic_id: {
-              type: "string",
+              type: "number",
               description: "Topic ID from the channel message meta",
             },
             text: {
@@ -67,28 +66,80 @@ async function main(): Promise<void> {
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    if (req.params.name === "reply") {
-      const args = req.params.arguments as { topic_id: string; text: string };
-      const topicId = parseInt(args.topic_id, 10);
-      if (isNaN(topicId)) {
-        return {
-          content: [{ type: "text" as const, text: "Invalid topic_id" }],
-          isError: true,
-        };
-      }
-      const result = await client.reply(topicId, args.text);
-      return {
-        content: [
-          { type: "text" as const, text: `Sent (comment #${result.comment_id})` },
-        ],
-      };
+    if (req.params.name !== "reply") {
+      return errorResult(`Unknown tool: ${req.params.name}`);
     }
 
+    const args = req.params.arguments;
+    if (!args || typeof args !== "object") {
+      return errorResult("Invalid arguments");
+    }
+    const record = args as Record<string, unknown>;
+    const topicId = Number(record.topic_id);
+    const text = record.text;
+    if (!Number.isFinite(topicId)) {
+      return errorResult("topic_id must be a number");
+    }
+    if (typeof text !== "string" || text.length === 0) {
+      return errorResult("text must be a non-empty string");
+    }
+
+    const result = await client.reply(topicId, text);
     return {
-      content: [{ type: "text" as const, text: `Unknown tool: ${req.params.name}` }],
-      isError: true,
+      content: [
+        { type: "text" as const, text: `Sent (comment #${result.comment_id})` },
+      ],
     };
   });
+
+  return server;
+}
+
+function makeEventHandler(server: Server, debug: boolean) {
+  return async (event: AgentEvent): Promise<void> => {
+    if (event.type !== "dispatch" || !event.comment) {
+      if (debug) {
+        process.stderr.write(
+          `[collavre] Ignoring non-dispatch event: ${JSON.stringify(event).slice(0, 200)}\n`,
+        );
+      }
+      return;
+    }
+
+    process.stderr.write(
+      `[collavre] Dispatch: comment #${event.comment.id} by ${event.comment.author_name} (id=${event.comment.author_id})\n`,
+    );
+
+    try {
+      await server.notification({
+        method: "notifications/claude/channel" as const,
+        params: {
+          content: event.comment.content,
+          meta: {
+            topic_id: String(event.comment.topic_id),
+            comment_id: String(event.comment.id),
+            author: event.comment.author_name,
+            author_id: String(event.comment.author_id),
+          },
+        },
+      });
+      process.stderr.write(`[collavre] Notification sent OK\n`);
+    } catch (err) {
+      process.stderr.write(
+        `[collavre] Failed to forward message: ${err instanceof Error ? err.stack : err}\n`,
+      );
+    }
+  };
+}
+
+async function main(): Promise<void> {
+  const debug = process.env.COLLAVRE_DEBUG === "1";
+  const config = loadConfig();
+  process.stderr.write(`[collavre] Config loaded: url=${config.url}\n`);
+
+  const client = new CollavreClient(config);
+  const agentName = buildAgentName();
+  const server = buildServer(client);
 
   // Connect stdio transport FIRST — Claude Code sends an MCP initialize
   // request immediately after spawning this process and will timeout if
@@ -97,48 +148,25 @@ async function main(): Promise<void> {
   await server.connect(transport);
   process.stderr.write("[collavre] MCP server started\n");
 
-  // Register agent — creates AI User + inbox Topic on the server
+  // Open the WebSocket before register() to minimize (but not eliminate)
+  // the window where comments posted between register() and subscribeTo()
+  // could be lost. Closing the gap entirely requires the server to replay
+  // missed messages on subscription confirm.
+  const cable = new CableSubscriber(
+    config.url,
+    config.token,
+    makeEventHandler(server, debug),
+    debug,
+  );
+  await cable.connect();
+  process.stderr.write("[collavre] WebSocket ready\n");
+
   const reg = await client.register(agentName);
   process.stderr.write(
     `[collavre] Registered: ${reg.agent_name} → topic #${reg.topic_id} (${reg.topic_name})\n`,
   );
 
-  // Subscribe to ActionCable for orchestrated dispatch events
-  const cable = new CableSubscriber(config.url, config.token, reg.topic_id, async (event) => {
-    if (event.type !== "dispatch" || !event.comment) {
-      if (DEBUG) process.stderr.write(`[collavre] Ignoring non-dispatch event: ${JSON.stringify(event).slice(0, 200)}\n`);
-      return;
-    }
-
-    process.stderr.write(
-      `[collavre] Dispatch: comment #${event.comment.id} by ${event.comment.author_name} (id=${event.comment.author_id})\n`,
-    );
-
-    const notification = {
-      method: "notifications/claude/channel" as const,
-      params: {
-        content: event.comment.content,
-        meta: {
-          topic_id: String(reg.topic_id),
-          comment_id: String(event.comment.id),
-          author: event.comment.author_name,
-          author_id: String(event.comment.author_id),
-        },
-      },
-    };
-
-    try {
-      await server.notification(notification);
-      process.stderr.write(`[collavre] Notification sent OK\n`);
-    } catch (err) {
-      process.stderr.write(
-        `[collavre] Failed to forward message: ${err instanceof Error ? err.stack : err}\n`,
-      );
-    }
-  }, DEBUG);
-  cable.connect();
-
-  // --- Lifecycle ---
+  cable.subscribeTo(reg.topic_id);
 
   const cleanup = async () => {
     cable.disconnect();
@@ -151,6 +179,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  process.stderr.write(`[collavre] Fatal: ${err instanceof Error ? err.message : err}\n`);
+  process.stderr.write(
+    `[collavre] Fatal: ${err instanceof Error ? err.message : err}\n`,
+  );
   process.exit(1);
 });
