@@ -30,14 +30,14 @@ module CollavreSlack
 
       begin
         state_data = message_verifier.verify(params[:state]).with_indifferent_access
-        Rails.logger.info("[SlackAuth] State data: #{state_data.inspect}")
+        Rails.logger.info("[SlackAuth] State verified successfully")
         # Check expiration
         if state_data[:exp] && Time.at(state_data[:exp]) < Time.current
           render json: { error: I18n.t("collavre_slack.errors.invalid_oauth_state") }, status: :unprocessable_entity
           return
         end
         user = ::User.find(state_data[:user_id])
-        Rails.logger.info("[SlackAuth] Verified user_id=#{user.id} from signed state")
+        Rails.logger.info("[SlackAuth] User resolved from signed state")
       rescue ActiveSupport::MessageVerifier::InvalidSignature => e
         Rails.logger.warn("[SlackAuth] Invalid state signature: #{e.message}")
         render json: { error: I18n.t("collavre_slack.errors.invalid_oauth_state") }, status: :unprocessable_entity
@@ -54,7 +54,7 @@ module CollavreSlack
         return
       end
 
-      Rails.logger.info("[SlackAuth] OAuth response: team=#{oauth_response.dig(:team, :id)}, user=#{user&.id}")
+      Rails.logger.info("[SlackAuth] OAuth exchange successful")
 
       account = SlackAccount.find_or_initialize_by(team_id: oauth_response.dig(:team, :id))
       account.user ||= user

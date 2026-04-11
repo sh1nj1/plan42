@@ -31,18 +31,19 @@ module ApplicationHelper
 
           [ :class, :width, :height ].each do |attr|
             next unless options[attr].present?
+            escaped_value = ERB::Util.html_escape(options[attr])
 
             if attr == :class
               if attrs =~ /\bclass=\"([^\"]*)\"/
-                attrs = attrs.sub(/\bclass=\"([^\"]*)\"/, "class=\"#{$1} #{options[:class]}\"")
+                attrs = attrs.sub(/\bclass=\"([^\"]*)\"/, "class=\"#{$1} #{escaped_value}\"")
               else
-                attrs = "#{attrs} class=\"#{options[:class]}\""
+                attrs = "#{attrs} class=\"#{escaped_value}\""
               end
             else
               if attrs =~ /\b#{attr}=\"[^\"]*\"/
-                attrs = attrs.sub(/\b#{attr}=\"[^\"]*\"/, "#{attr}=\"#{options[attr]}\"")
+                attrs = attrs.sub(/\b#{attr}=\"[^\"]*\"/, "#{attr}=\"#{escaped_value}\"")
               else
-                attrs = "#{attrs} #{attr}=\"#{options[attr]}\""
+                attrs = "#{attrs} #{attr}=\"#{escaped_value}\""
               end
             end
           end
@@ -53,7 +54,7 @@ module ApplicationHelper
 
       raw(svg) # mark as HTML safe
     else
-      "<div>(missing svg: #{name})</div>"
+      content_tag(:div, "(missing svg: #{ERB::Util.html_escape(name)})")
     end
   end
 
