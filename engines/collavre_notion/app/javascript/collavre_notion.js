@@ -1,3 +1,5 @@
+import { csrfToken, showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose } from 'collavre/modules/integration_wizard';
+
 let notionIntegrationInitialized = false;
 
 if (!notionIntegrationInitialized) {
@@ -43,10 +45,6 @@ if (!notionIntegrationInitialized) {
     let exportType = 'new-page';
     let selectedParentPage = null;
 
-    function csrfToken() {
-      return document.querySelector('meta[name="csrf-token"]')?.content;
-    }
-
     function resetWizard() {
       currentStep = 'connect';
       hasExistingIntegration = false;
@@ -55,8 +53,7 @@ if (!notionIntegrationInitialized) {
       exportType = 'new-page';
       selectedParentPage = null;
       statusEl.textContent = '';
-      errorEl.style.display = 'none';
-      errorEl.textContent = '';
+      clearError(errorEl);
       if (existingContainer) {
         existingContainer.style.display = 'none';
       }
@@ -74,12 +71,7 @@ if (!notionIntegrationInitialized) {
     }
 
     function updateStep() {
-      ['connect', 'workspace', 'summary']
-        .forEach(function (step) {
-          const el = document.getElementById(`notion-step-${step}`);
-          if (!el) return;
-          el.style.display = (step === currentStep) ? 'block' : 'none';
-        });
+      updateStepVisibility(currentStep, ['connect', 'workspace', 'summary'], 'notion-step');
 
       if (currentStep === 'connect') {
         prevBtn.style.display = 'none';
@@ -105,29 +97,13 @@ if (!notionIntegrationInitialized) {
       }
     }
 
-    function showError(message) {
-      errorEl.textContent = message;
-      errorEl.style.display = 'block';
-    }
-
-    function clearError() {
-      errorEl.style.display = 'none';
-      errorEl.textContent = '';
-    }
-
     function loadIntegrationStatus() {
       if (!creativeId) return;
 
       statusEl.textContent = modal.dataset.loading;
-      clearError();
+      clearError(errorEl);
 
-      fetch(`/notion/creatives/${creativeId}/notion_integration`, {
-        method: 'GET',
-        headers: {
-          'X-CSRF-Token': csrfToken(),
-          'Content-Type': 'application/json'
-        }
-      })
+      fetchWithCsrf(`/notion/creatives/${creativeId}/notion_integration`)
         .then(response => response.json())
         .then(data => {
           console.log('Notion integration status:', data);
@@ -168,7 +144,7 @@ if (!notionIntegrationInitialized) {
         .catch(error => {
           console.error('Error loading integration status:', error);
           statusEl.textContent = '';
-          showError(modal.dataset.loadFailed);
+          showError(errorEl, modal.dataset.loadFailed);
         });
     }
 
@@ -285,13 +261,13 @@ if (!notionIntegrationInitialized) {
 
     function performExport() {
       if (!creativeId) {
-        showError(modal.dataset.noCreative);
+        showError(errorEl, modal.dataset.noCreative);
         return;
       }
 
       exportBtn.disabled = true;
       exportBtn.textContent = modal.dataset.exporting;
-      clearError();
+      clearError(errorEl);
 
       const requestData = {
         action: 'export'
@@ -304,13 +280,9 @@ if (!notionIntegrationInitialized) {
       console.log('Sending export request:', requestData);
       console.log('Export type:', exportType, 'Selected parent page:', selectedParentPage);
 
-      fetch(`/notion/creatives/${creativeId}/notion_integration`, {
+      fetchWithCsrf(`/notion/creatives/${creativeId}/notion_integration`, {
         method: 'PATCH',
-        headers: {
-          'X-CSRF-Token': csrfToken(),
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestData)
+        body: requestData
       })
         .then(response => response.json())
         .then(data => {
@@ -322,12 +294,12 @@ if (!notionIntegrationInitialized) {
               resetWizard();
             }, 2000);
           } else {
-            showError(data.message || modal.dataset.exportFailed);
+            showError(errorEl, data.message || modal.dataset.exportFailed);
           }
         })
         .catch(error => {
           console.error('Export error:', error);
-          showError(modal.dataset.exportFailed);
+          showError(errorEl, modal.dataset.exportFailed);
         })
         .finally(() => {
           exportBtn.disabled = false;
@@ -340,15 +312,11 @@ if (!notionIntegrationInitialized) {
 
       syncBtn.disabled = true;
       syncBtn.textContent = modal.dataset.syncing;
-      clearError();
+      clearError(errorEl);
 
-      fetch(`/notion/creatives/${creativeId}/notion_integration`, {
+      fetchWithCsrf(`/notion/creatives/${creativeId}/notion_integration`, {
         method: 'PATCH',
-        headers: {
-          'X-CSRF-Token': csrfToken(),
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ action: 'sync' })
+        body: { action: 'sync' }
       })
         .then(response => response.json())
         .then(data => {
@@ -356,12 +324,12 @@ if (!notionIntegrationInitialized) {
             statusEl.textContent = modal.dataset.syncSuccess || 'Sync completed successfully';
             statusEl.style.color = 'green';
           } else {
-            showError(data.message || modal.dataset.syncFailed);
+            showError(errorEl, data.message || modal.dataset.syncFailed);
           }
         })
         .catch(error => {
           console.error('Sync error:', error);
-          showError(modal.dataset.syncFailed);
+          showError(errorEl, modal.dataset.syncFailed);
         })
         .finally(() => {
           syncBtn.disabled = false;
@@ -374,15 +342,9 @@ if (!notionIntegrationInitialized) {
 
       deleteBtn.disabled = true;
       deleteBtn.textContent = modal.dataset.removing;
-      clearError();
+      clearError(errorEl);
 
-      fetch(`/notion/creatives/${creativeId}/notion_integration`, {
-        method: 'DELETE',
-        headers: {
-          'X-CSRF-Token': csrfToken(),
-          'Content-Type': 'application/json'
-        }
-      })
+      fetchWithCsrf(`/notion/creatives/${creativeId}/notion_integration`, { method: 'DELETE' })
         .then(response => response.json())
         .then(data => {
           if (data.success) {
@@ -393,12 +355,12 @@ if (!notionIntegrationInitialized) {
               resetWizard();
             }, 2000);
           } else {
-            showError(data.message || modal.dataset.deleteFailed);
+            showError(errorEl, data.message || modal.dataset.deleteFailed);
           }
         })
         .catch(error => {
           console.error('Delete error:', error);
-          showError(modal.dataset.deleteFailed);
+          showError(errorEl, modal.dataset.deleteFailed);
         })
         .finally(() => {
           deleteBtn.disabled = false;
@@ -418,10 +380,7 @@ if (!notionIntegrationInitialized) {
       loadIntegrationStatus();
     });
 
-    closeBtn.addEventListener('click', function () {
-      modal.style.display = 'none';
-      resetWizard();
-    });
+    setupModalClose(modal, closeBtn, resetWizard);
 
     // Listen for OAuth success message from popup window
     window.addEventListener('message', function(event) {
@@ -436,26 +395,19 @@ if (!notionIntegrationInitialized) {
 
     loginBtn.addEventListener('click', function () {
       console.log('Notion login button clicked');
-      const width = parseInt(this.dataset.windowWidth) || 600;
-      const height = parseInt(this.dataset.windowHeight) || 700;
-      const left = (screen.width - width) / 2;
-      const top = (screen.height - height) / 2;
+      const authWindow = openOAuthPopup('notion-auth-window', {
+        width: parseInt(this.dataset.windowWidth) || 600,
+        height: parseInt(this.dataset.windowHeight) || 700,
+        onClose: function () {
+          console.log('Auth window closed, reloading integration status');
+          loadIntegrationStatus();
+        }
+      });
 
-      const authWindow = window.open('', 'notion-auth-window', 
-        `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`);
-      
       if (authWindow) {
         loginForm.target = 'notion-auth-window';
         loginForm.submit();
         console.log('Auth form submitted to popup window');
-        
-        const checkClosed = setInterval(() => {
-          if (authWindow.closed) {
-            clearInterval(checkClosed);
-            console.log('Auth window closed, reloading integration status');
-            setTimeout(() => loadIntegrationStatus(), 1000);
-          }
-        }, 1000);
       } else {
         loginForm.target = '_blank';
         loginForm.submit();
@@ -472,7 +424,7 @@ if (!notionIntegrationInitialized) {
     });
 
     nextBtn.addEventListener('click', function () {
-      clearError();
+      clearError(errorEl);
       if (currentStep === 'connect') {
         currentStep = 'workspace';
         updateParentPageOptions();
@@ -501,11 +453,5 @@ if (!notionIntegrationInitialized) {
       });
     }
 
-    modal.addEventListener('click', function (e) {
-      if (e.target === modal) {
-        modal.style.display = 'none';
-        resetWizard();
-      }
-    });
   });
 }
