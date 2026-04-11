@@ -39,7 +39,7 @@ module Collavre
             result: result
           }
         )
-      rescue => e
+      rescue StandardError => e
         Rails.logger.error("Failed to log tool activity: #{e.message}")
       end
 
@@ -55,7 +55,7 @@ module Collavre
         Rails.logger.error(error_msg)
         raise error_msg
       end
-    rescue => e
+    rescue StandardError => e
       Rails.logger.error("Failed to register tool from source: #{e.message}")
       raise e
     end
@@ -131,7 +131,7 @@ module Collavre
       if result[:error]
         Rails.logger.error("Failed to delete tool #{tool_name}: #{result[:error]}")
       end
-    rescue => e
+    rescue StandardError => e
       Rails.logger.error("Failed to delete tool #{tool_name}: #{e.message}")
     end
 

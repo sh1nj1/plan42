@@ -12,7 +12,7 @@ module Collavre
       head :no_content
     rescue ActiveRecord::RecordNotFound
       head :not_found
-    rescue => e
+    rescue StandardError => e
       Rails.logger.error("Failed to delete attachment: #{e.message}")
       head :internal_server_error
     end

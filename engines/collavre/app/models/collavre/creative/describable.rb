@@ -60,7 +60,7 @@ module Collavre
             blob.purge
           rescue ActiveRecord::RecordNotFound, ActiveSupport::MessageVerifier::InvalidSignature
             Rails.logger.warn("Creative##{id}: could not find blob for signed_id=#{signed_id}")
-          rescue => e
+          rescue StandardError => e
             Rails.logger.error("Creative##{id}: failed to purge blob #{signed_id}: #{e.message}")
           end
         end

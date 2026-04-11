@@ -130,10 +130,11 @@ module Collavre
     end
 
     def raw_google_refresh_token
-      result = ActiveRecord::Base.connection.select_value(
-        "SELECT google_refresh_token FROM users WHERE id = #{@user.id}"
+      ActiveRecord::Base.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array(
+          ["SELECT google_refresh_token FROM users WHERE id = ?", @user.id]
+        )
       )
-      result
     end
 
     def encrypted_value?(value)

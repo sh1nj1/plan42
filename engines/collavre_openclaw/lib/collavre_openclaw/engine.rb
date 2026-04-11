@@ -50,7 +50,7 @@ module CollavreOpenclaw
           ConnectionManager.instance.disconnect_all
         end
         EmReactor.stop! if EmReactor.running?
-      rescue => e
+      rescue StandardError => e
         Rails.logger.warn("[CollavreOpenclaw] Shutdown cleanup error: #{e.message}")
       end
     end
