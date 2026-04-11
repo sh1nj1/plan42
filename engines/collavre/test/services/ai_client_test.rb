@@ -152,6 +152,34 @@ class AiClientTest < ActiveSupport::TestCase
     assert_equal({ "X-Session-Id" => "creative_42_topic_7" }, fake_chat.headers_set)
   end
 
+  test "build_conversation sets X-Session-Id header from top-level topic_id context" do
+    creative = OpenStruct.new(id: 42)
+
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: nil,
+      llm_api_key: "api-key",
+      context: { creative: creative, topic_id: 7 }
+    )
+
+    fake_chat = FakeConversation.new
+
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**_kwargs| fake_chat }
+
+    context_stub = proc do |&block|
+      block.call(OpenStruct.new) if block
+      mock_context
+    end
+
+    RubyLLM.stub(:context, context_stub) do
+      client.send(:build_conversation)
+    end
+
+    assert_equal({ "X-Session-Id" => "creative_42_topic_7" }, fake_chat.headers_set)
+  end
+
   test "build_conversation omits X-Session-Id when topic is missing" do
     creative = OpenStruct.new(id: 42)
     comment = OpenStruct.new(topic_id: nil)

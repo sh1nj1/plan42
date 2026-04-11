@@ -153,7 +153,7 @@ module Collavre
 
     def build_session_id
       creative_id = context&.dig(:creative)&.id
-      topic_id = context&.dig(:comment)&.topic_id
+      topic_id = context&.dig(:comment)&.topic_id || context&.dig(:topic_id)
       return nil unless creative_id && topic_id
 
       "creative_#{creative_id}_topic_#{topic_id}"
