@@ -1,6 +1,7 @@
 module CollavreNotion
   module Creatives
     class NotionIntegrationsController < ApplicationController
+      include Collavre::IntegrationSetup
       include Collavre::IntegrationPermission
 
       before_action :set_creative
@@ -121,10 +122,6 @@ module CollavreNotion
       end
 
       private
-
-      def set_creative
-        @creative = Collavre::Creative.find(params[:creative_id])
-      end
 
       def linked_page_links(account)
         return CollavreNotion::NotionPageLink.none unless account
