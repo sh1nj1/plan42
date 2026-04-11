@@ -213,6 +213,8 @@ en:
     google_calendar:
       errors:
         not_connected: Google Calendar is not connected. Please connect your Google account first.
+        reconnect: Google Calendar authorization has expired. Please reconnect your Google account.
+        network: Unable to reach Google Calendar. Please try again later.
     inbox:
       mark_read: Read
       mark_unread: Unread
