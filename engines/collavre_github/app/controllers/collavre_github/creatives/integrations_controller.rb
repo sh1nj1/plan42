@@ -1,6 +1,7 @@
 module CollavreGithub
   module Creatives
     class IntegrationsController < ApplicationController
+      include Collavre::IntegrationSetup
       include Collavre::IntegrationPermission
 
       before_action :set_creative
@@ -138,14 +139,6 @@ module CollavreGithub
       end
 
       private
-
-      def set_creative
-        @creative = Collavre::Creative.find(params[:creative_id])
-      end
-
-      def set_origin
-        @origin = @creative.effective_origin
-      end
 
       def integration_forbidden_message
         I18n.t("collavre_github.errors.forbidden")

@@ -1,6 +1,9 @@
 module CollavreSlack
   module Creatives
     class SlackIntegrationsController < ApplicationController
+      include Collavre::IntegrationSetup
+      include Collavre::IntegrationPermission
+
       before_action :set_creative
       before_action :set_origin
 
@@ -30,7 +33,7 @@ module CollavreSlack
 
       def create
         unless @creative.has_permission?(Current.user, :feedback)
-          render json: { success: false, error: I18n.t("collavre_slack.errors.forbidden") }, status: :forbidden
+          render json: { success: false, error: integration_forbidden_message }, status: :forbidden
           return
         end
 
@@ -73,7 +76,7 @@ module CollavreSlack
         end
 
         unless @creative.has_permission?(Current.user, :feedback)
-          render json: { success: false, error: I18n.t("collavre_slack.errors.forbidden") }, status: :forbidden
+          render json: { success: false, error: integration_forbidden_message }, status: :forbidden
           return
         end
 
@@ -83,12 +86,8 @@ module CollavreSlack
 
       private
 
-      def set_creative
-        @creative = Collavre::Creative.find(params[:creative_id])
-      end
-
-      def set_origin
-        @origin = @creative.effective_origin
+      def integration_forbidden_message
+        I18n.t("collavre_slack.errors.forbidden")
       end
 
       def fetch_channels(slack_account)
