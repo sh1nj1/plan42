@@ -132,7 +132,7 @@ module Collavre
     def raw_google_refresh_token
       ActiveRecord::Base.connection.select_value(
         ActiveRecord::Base.sanitize_sql_array(
-          ["SELECT google_refresh_token FROM users WHERE id = ?", @user.id]
+          [ "SELECT google_refresh_token FROM users WHERE id = ?", @user.id ]
         )
       )
     end
