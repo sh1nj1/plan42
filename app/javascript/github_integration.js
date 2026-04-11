@@ -1,3 +1,5 @@
+import { csrfToken, showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose } from 'collavre/modules/integration_wizard';
+
 let githubIntegrationInitialized = false;
 
 if (!githubIntegrationInitialized) {

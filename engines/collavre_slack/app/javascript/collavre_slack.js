@@ -1,4 +1,5 @@
 import { filterChannels, reconcileSelection, buildChannelViewModels } from './slack_channel_list.js';
+import { csrfToken, showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose } from 'collavre/modules/integration_wizard';
 
 let slackIntegrationInitialized = false;
 
@@ -35,10 +36,6 @@ if (!slackIntegrationInitialized) {
     let selectedChannel = null;
     let existingLinks = [];
 
-    function csrfToken() {
-      return document.querySelector('meta[name="csrf-token"]')?.content;
-    }
-
     function resetWizard() {
       currentStep = 'connect';
       hasExistingIntegration = false;
@@ -46,8 +43,7 @@ if (!slackIntegrationInitialized) {
       selectedChannel = null;
       existingLinks = [];
       statusEl.textContent = '';
-      errorEl.style.display = 'none';
-      errorEl.textContent = '';
+      clearError(errorEl);
       if (connectedStatus) {
         connectedStatus.style.display = 'none';
       }
@@ -69,12 +65,7 @@ if (!slackIntegrationInitialized) {
     }
 
     function updateStep() {
-      ['connect', 'channels', 'summary']
-        .forEach(function (step) {
-          const el = document.getElementById(`slack-step-${step}`);
-          if (!el) return;
-          el.style.display = (step === currentStep) ? 'block' : 'none';
-        });
+      updateStepVisibility(currentStep, ['connect', 'channels', 'summary'], 'slack-step');
 
       if (currentStep === 'connect') {
         prevBtn.style.display = 'none';
@@ -99,29 +90,13 @@ if (!slackIntegrationInitialized) {
       }
     }
 
-    function showError(message) {
-      errorEl.textContent = message;
-      errorEl.style.display = 'block';
-    }
-
-    function clearError() {
-      errorEl.style.display = 'none';
-      errorEl.textContent = '';
-    }
-
     function loadIntegrationStatus() {
       if (!creativeId) return;
 
       statusEl.textContent = modal.dataset.loading || 'Loading...';
-      clearError();
+      clearError(errorEl);
 
-      fetch(`/slack/creatives/${creativeId}/slack_integrations`, {
-        method: 'GET',
-        headers: {
-          'X-CSRF-Token': csrfToken(),
-          'Accept': 'application/json'
-        }
-      })
+      fetchWithCsrf(`/slack/creatives/${creativeId}/slack_integrations`)
         .then(response => response.json())
         .then(data => {
           console.log('Slack integration status:', data);
@@ -147,7 +122,7 @@ if (!slackIntegrationInitialized) {
         .catch(error => {
           console.error('Error loading integration status:', error);
           statusEl.textContent = '';
-          showError('Failed to load integration status');
+          showError(errorEl, 'Failed to load integration status');
         });
     }
 
@@ -218,15 +193,9 @@ if (!slackIntegrationInitialized) {
       const btn = event.target;
       btn.disabled = true;
       btn.textContent = '...';
-      clearError();
+      clearError(errorEl);
 
-      fetch(`/slack/creatives/${creativeId}/slack_integrations/${link.id}`, {
-        method: 'DELETE',
-        headers: {
-          'X-CSRF-Token': csrfToken(),
-          'Accept': 'application/json'
-        }
-      })
+      fetchWithCsrf(`/slack/creatives/${creativeId}/slack_integrations/${link.id}`, { method: 'DELETE' })
         .then(response => response.json())
         .then(data => {
           if (data.success) {
@@ -240,14 +209,14 @@ if (!slackIntegrationInitialized) {
             statusEl.textContent = modal.dataset.deleteSuccess || 'Channel link removed';
             statusEl.style.color = 'green';
           } else {
-            showError(data.message || data.error || 'Deletion failed');
+            showError(errorEl, data.message || data.error || 'Deletion failed');
             btn.disabled = false;
             btn.textContent = modal.dataset.deleteButtonLabel || 'Remove';
           }
         })
         .catch(error => {
           console.error('Delete error:', error);
-          showError('Deletion failed');
+          showError(errorEl, 'Deletion failed');
           btn.disabled = false;
           btn.textContent = modal.dataset.deleteButtonLabel || 'Remove';
         });
@@ -316,25 +285,20 @@ if (!slackIntegrationInitialized) {
 
     function performLink() {
       if (!creativeId || !selectedChannel) {
-        showError(modal.dataset.noCreative);
+        showError(errorEl, modal.dataset.noCreative);
         return;
       }
 
       finishBtn.disabled = true;
       finishBtn.textContent = modal.dataset.linking || 'Linking...';
-      clearError();
+      clearError(errorEl);
 
-      fetch(`/slack/creatives/${creativeId}/slack_integrations`, {
+      fetchWithCsrf(`/slack/creatives/${creativeId}/slack_integrations`, {
         method: 'POST',
-        headers: {
-          'X-CSRF-Token': csrfToken(),
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({
+        body: {
           channel_id: selectedChannel.id,
           channel_name: selectedChannel.name
-        })
+        }
       })
         .then(response => response.json())
         .then(data => {
@@ -346,12 +310,12 @@ if (!slackIntegrationInitialized) {
               resetWizard();
             }, 2000);
           } else {
-            showError(data.message || data.error || 'Failed to link channel');
+            showError(errorEl, data.message || data.error || 'Failed to link channel');
           }
         })
         .catch(error => {
           console.error('Link error:', error);
-          showError('Failed to link channel');
+          showError(errorEl, 'Failed to link channel');
         })
         .finally(() => {
           finishBtn.disabled = false;
@@ -371,34 +335,20 @@ if (!slackIntegrationInitialized) {
       loadIntegrationStatus();
     });
 
-    closeBtn.addEventListener('click', function () {
-      modal.style.display = 'none';
-      resetWizard();
-    });
+    setupModalClose(modal, closeBtn, resetWizard);
 
     loginBtn.addEventListener('click', function (e) {
       e.preventDefault();
       console.log('Slack login button clicked');
-      const width = parseInt(this.dataset.windowWidth) || 600;
-      const height = parseInt(this.dataset.windowHeight) || 700;
-      const left = (screen.width - width) / 2;
-      const top = (screen.height - height) / 2;
-
-      const authUrl = this.href;
-      const authWindow = window.open(authUrl, 'slack-auth-window',
-        `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`);
-
-      if (authWindow) {
-        console.log('Auth window opened');
-
-        const checkClosed = setInterval(() => {
-          if (authWindow.closed) {
-            clearInterval(checkClosed);
-            console.log('Auth window closed, reloading integration status');
-            setTimeout(() => loadIntegrationStatus(), 1000);
-          }
-        }, 1000);
-      }
+      openOAuthPopup('slack-auth-window', {
+        width: parseInt(this.dataset.windowWidth) || 600,
+        height: parseInt(this.dataset.windowHeight) || 700,
+        url: this.href,
+        onClose: function () {
+          console.log('Auth window closed, reloading integration status');
+          loadIntegrationStatus();
+        }
+      });
     });
 
     prevBtn.addEventListener('click', function () {
@@ -411,14 +361,14 @@ if (!slackIntegrationInitialized) {
     });
 
     nextBtn.addEventListener('click', function () {
-      clearError();
+      clearError(errorEl);
       if (currentStep === 'connect') {
         currentStep = 'channels';
         if (channelSearchEl) channelSearchEl.value = '';
         renderChannelList();
       } else if (currentStep === 'channels') {
         if (!selectedChannel) {
-          showError('Please select a channel');
+          showError(errorEl, 'Please select a channel');
           return;
         }
         updateSummary();
@@ -451,13 +401,7 @@ if (!slackIntegrationInitialized) {
         refreshBtn.textContent = modal.dataset.loading || 'Loading...';
         selectedChannel = null;
 
-        fetch(`/slack/creatives/${creativeId}/slack_integrations`, {
-          method: 'GET',
-          headers: {
-            'X-CSRF-Token': csrfToken(),
-            'Accept': 'application/json'
-          }
-        })
+        fetchWithCsrf(`/slack/creatives/${creativeId}/slack_integrations`)
           .then(response => response.json())
           .then(data => {
             if (data.connected) {
@@ -468,7 +412,7 @@ if (!slackIntegrationInitialized) {
           })
           .catch(error => {
             console.error('Error refreshing channels:', error);
-            showError(modal.dataset.refreshError || 'Failed to refresh channels');
+            showError(errorEl, modal.dataset.refreshError || 'Failed to refresh channels');
           })
           .finally(() => {
             refreshBtn.disabled = false;
@@ -478,12 +422,6 @@ if (!slackIntegrationInitialized) {
       });
     }
 
-    modal.addEventListener('click', function (e) {
-      if (e.target === modal) {
-        modal.style.display = 'none';
-        resetWizard();
-      }
-    });
   });
 
   // Slack badge for comments popup
