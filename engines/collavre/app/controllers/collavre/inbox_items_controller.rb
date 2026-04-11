@@ -58,7 +58,7 @@ module Collavre
     private
 
     def set_inbox_item
-      @inbox_item = InboxItem.find(params[:id])
+      @inbox_item = InboxItem.where(owner: Current.user).find(params[:id])
     end
   end
 end
