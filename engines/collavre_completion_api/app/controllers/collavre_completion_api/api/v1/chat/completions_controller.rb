@@ -37,7 +37,7 @@ module CollavreCompletionApi
               system_prompt: system_prompt,
               llm_api_key: api_key,
               gateway_url: agent.respond_to?(:gateway_url) ? agent.gateway_url : nil,
-              context: { creative: collavre_creative, user: current_user }
+              context: { creative: collavre_creative, user: current_user, topic_id: collavre_topic&.id }
             )
 
             model_name = params[:model] || agent_model_id(agent)
