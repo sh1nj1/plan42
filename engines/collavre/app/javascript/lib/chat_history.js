@@ -33,10 +33,20 @@ class ChatNavigationHistory {
     )
 
     if (existingIdx !== -1) {
-      // Already in list — update metadata and move cursor there
       this.entries[existingIdx].snippet = entry.snippet || this.entries[existingIdx].snippet
       this.entries[existingIdx].canComment = !!entry.canComment
-      this.currentIndex = existingIdx
+
+      if (existingIdx === this.currentIndex) {
+        this._save()
+        return
+      }
+
+      // Move to after current position to reflect visit order (LRU)
+      const [moved] = this.entries.splice(existingIdx, 1)
+      if (existingIdx < this.currentIndex) this.currentIndex--
+      const insertAt = this.currentIndex + 1
+      this.entries.splice(insertAt, 0, moved)
+      this.currentIndex = insertAt
       this._save()
       return
     }
