@@ -32,6 +32,13 @@ Pass optional headers to inject Collavre context into AI prompts:
 - `X-Collavre-Creative: <creative_id>` — Include creative context
 - `X-Collavre-Topic: <topic_id>` — Filter context to specific topic
 
+## Session Tracking
+
+When both `X-Collavre-Creative` and `X-Collavre-Topic` headers are present, the
+completion API forwards an `X-Session-Id` header (`creative_{id}_topic_{id}`) to
+the upstream LLM provider. This allows the gateway to group requests by
+creative/topic pair.
+
 ## Installation
 
 Add to your host app's `Gemfile`:

@@ -127,27 +127,7 @@ class AiClientTest < ActiveSupport::TestCase
     creative = OpenStruct.new(id: 42)
     comment = OpenStruct.new(topic_id: 7)
 
-    client = AiClient.new(
-      vendor: "google",
-      model: "gemini-pro",
-      system_prompt: nil,
-      llm_api_key: "api-key",
-      context: { creative: creative, comment: comment }
-    )
-
-    fake_chat = FakeConversation.new
-
-    mock_context = Object.new
-    mock_context.define_singleton_method(:chat) { |**_kwargs| fake_chat }
-
-    context_stub = proc do |&block|
-      block.call(OpenStruct.new) if block
-      mock_context
-    end
-
-    RubyLLM.stub(:context, context_stub) do
-      client.send(:build_conversation)
-    end
+    fake_chat = build_conversation_with_context(creative: creative, comment: comment)
 
     assert_equal({ "X-Session-Id" => "creative_42_topic_7" }, fake_chat.headers_set)
   end
@@ -155,27 +135,7 @@ class AiClientTest < ActiveSupport::TestCase
   test "build_conversation sets X-Session-Id header from top-level topic_id context" do
     creative = OpenStruct.new(id: 42)
 
-    client = AiClient.new(
-      vendor: "google",
-      model: "gemini-pro",
-      system_prompt: nil,
-      llm_api_key: "api-key",
-      context: { creative: creative, topic_id: 7 }
-    )
-
-    fake_chat = FakeConversation.new
-
-    mock_context = Object.new
-    mock_context.define_singleton_method(:chat) { |**_kwargs| fake_chat }
-
-    context_stub = proc do |&block|
-      block.call(OpenStruct.new) if block
-      mock_context
-    end
-
-    RubyLLM.stub(:context, context_stub) do
-      client.send(:build_conversation)
-    end
+    fake_chat = build_conversation_with_context(creative: creative, topic_id: 7)
 
     assert_equal({ "X-Session-Id" => "creative_42_topic_7" }, fake_chat.headers_set)
   end
@@ -184,52 +144,13 @@ class AiClientTest < ActiveSupport::TestCase
     creative = OpenStruct.new(id: 42)
     comment = OpenStruct.new(topic_id: nil)
 
-    client = AiClient.new(
-      vendor: "google",
-      model: "gemini-pro",
-      system_prompt: nil,
-      llm_api_key: "api-key",
-      context: { creative: creative, comment: comment }
-    )
-
-    fake_chat = FakeConversation.new
-
-    mock_context = Object.new
-    mock_context.define_singleton_method(:chat) { |**_kwargs| fake_chat }
-
-    context_stub = proc do |&block|
-      block.call(OpenStruct.new) if block
-      mock_context
-    end
-
-    RubyLLM.stub(:context, context_stub) do
-      client.send(:build_conversation)
-    end
+    fake_chat = build_conversation_with_context(creative: creative, comment: comment)
 
     assert_nil fake_chat.headers_set
   end
 
   test "build_conversation omits X-Session-Id when context is empty" do
-    client = AiClient.new(
-      vendor: "google",
-      model: "gemini-pro",
-      system_prompt: nil,
-      llm_api_key: "api-key"
-    )
-
-    fake_chat = FakeConversation.new
-
-    mock_context = Object.new
-    mock_context.define_singleton_method(:chat) { |**_kwargs| fake_chat }
-
-    context_stub = proc do |&block|
-      block.call(OpenStruct.new) if block
-      mock_context
-    end
-
-    RubyLLM.stub(:context, context_stub) do
-      client.send(:build_conversation)
-    end
+    fake_chat = build_conversation_with_context
 
     assert_nil fake_chat.headers_set
   end
@@ -417,6 +338,25 @@ class AiClientTest < ActiveSupport::TestCase
     result = client.ask("test")
     assert_nil result
   end
+
+  private
+
+  def build_conversation_with_context(context_hash = {})
+    client = AiClient.new(vendor: "google", model: "gemini-pro",
+                          system_prompt: nil, llm_api_key: "api-key",
+                          context: context_hash.presence || {})
+    fake_chat = FakeConversation.new
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**_kwargs| fake_chat }
+    context_stub = proc do |&block|
+      block.call(OpenStruct.new) if block
+      mock_context
+    end
+    RubyLLM.stub(:context, context_stub) { client.send(:build_conversation) }
+    fake_chat
+  end
+
+  public
 
   test "logs error details when chat fails" do
     ActivityLog.delete_all
