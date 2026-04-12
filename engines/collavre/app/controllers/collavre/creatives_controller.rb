@@ -282,7 +282,7 @@ module Collavre
       own_creatives = Creative.where(id: own_ids).index_by(&:id)
       inherited_creatives = Creative.where(id: inherited_ids).index_by(&:id)
 
-      disabled_ids = Array(creative.data&.dig("disabled_context_ids"))
+      disabled_ids = creative.effective_disabled_context_ids
 
       own = own_ids.filter_map do |cid|
         c = own_creatives[cid]

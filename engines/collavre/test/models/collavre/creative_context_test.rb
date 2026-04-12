@@ -61,6 +61,39 @@ module Collavre
       refute_includes creatives, @features
     end
 
+    # --- effective_disabled_context_ids ---
+
+    test "effective_disabled_context_ids returns empty when nothing disabled" do
+      assert_equal [], @feature_a.effective_disabled_context_ids
+    end
+
+    test "effective_disabled_context_ids returns own disabled IDs" do
+      @features.update!(data: { "context_ids" => [ @development.id ], "disabled_context_ids" => [ @development.id ] })
+      assert_equal [ @development.id ], @features.effective_disabled_context_ids
+    end
+
+    test "effective_disabled_context_ids inherits from parent" do
+      @features.update!(data: { "context_ids" => [ @development.id ], "disabled_context_ids" => [ @development.id ] })
+      assert_includes @feature_a.effective_disabled_context_ids, @development.id
+    end
+
+    test "effective_disabled_context_ids combines own and parent disabled" do
+      @features.update!(data: { "context_ids" => [ @development.id ], "disabled_context_ids" => [ @development.id ] })
+      @feature_a.update!(data: { "context_ids" => [ @goal.id ], "disabled_context_ids" => [ @goal.id ] })
+
+      disabled = @feature_a.effective_disabled_context_ids
+      assert_includes disabled, @development.id
+      assert_includes disabled, @goal.id
+    end
+
+    test "effective_disabled_context_ids deduplicates" do
+      @features.update!(data: { "disabled_context_ids" => [ @development.id ] })
+      @feature_a.update!(data: { "disabled_context_ids" => [ @development.id ] })
+
+      disabled = @feature_a.effective_disabled_context_ids
+      assert_equal 1, disabled.count(@development.id)
+    end
+
     test "R&D inherits different context than Features" do
       @features.update!(data: { "context_ids" => [ @development.id ] })
       @rnd.update!(data: { "context_ids" => [ @goal.id ] })

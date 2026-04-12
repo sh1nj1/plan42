@@ -113,6 +113,17 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
     assert_includes context_ids, @development.id, "Other contexts should still be present"
   end
 
+  test "GET contexts inherits disabled state from parent" do
+    @features.update!(data: { "context_ids" => [ @development.id ], "disabled_context_ids" => [ @development.id ] })
+
+    get contexts_creative_path(@feature_a), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    json = JSON.parse(response.body)
+    ctx = json["contexts"].find { |c| c["id"] == @development.id }
+    assert ctx, "Development context should appear in child"
+    assert ctx["disabled"], "Disabled state from parent should be inherited by child"
+  end
+
   test "PATCH update_contexts requires admin permission" do
     regular_user = users(:two)
     sign_in_as(regular_user, password: "password")
