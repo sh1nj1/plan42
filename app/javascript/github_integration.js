@@ -41,10 +41,13 @@ if (!githubIntegrationInitialized) {
     let organizations = [];
     let selectedOrg = null;
     let selectedRepos = new Set();
+    let markdownSyncRepos = new Set();
     let webhookDetails = {};
-    
+
     let hasExistingIntegration = false;
     let selectedReposForDeletion = new Set();
+
+    const markdownSyncList = document.getElementById('github-markdown-sync-list');
 
     function csrfToken() {
       return document.querySelector('meta[name="csrf-token"]')?.content;
@@ -55,8 +58,9 @@ if (!githubIntegrationInitialized) {
       organizations = [];
       selectedOrg = null;
       selectedRepos = new Set();
+      markdownSyncRepos = new Set();
       webhookDetails = {};
-      
+
       hasExistingIntegration = false;
       selectedReposForDeletion = new Set();
       statusEl.textContent = '';
@@ -85,7 +89,7 @@ if (!githubIntegrationInitialized) {
     }
 
     function updateStep() {
-      ['connect', 'organization', 'repositories', 'summary']
+      ['connect', 'organization', 'repositories', 'markdown-sync', 'summary']
         .forEach(function (step) {
           const el = document.getElementById(`github-step-${step}`);
           if (!el) return;
@@ -111,12 +115,54 @@ if (!githubIntegrationInitialized) {
         nextBtn.style.display = 'block';
         nextBtn.disabled = false;
         finishBtn.style.display = 'none';
+      } else if (currentStep === 'markdown-sync') {
+        prevBtn.style.display = 'block';
+        nextBtn.style.display = 'block';
+        nextBtn.disabled = false;
+        finishBtn.style.display = 'none';
       } else if (currentStep === 'summary') {
         prevBtn.style.display = 'block';
         nextBtn.style.display = 'none';
         finishBtn.style.display = 'block';
         updateSummary();
       }
+    }
+
+    function populateMarkdownSync() {
+      if (!markdownSyncList) return;
+      markdownSyncList.innerHTML = '';
+      const repos = Array.from(selectedRepos);
+      if (!repos.length) {
+        markdownSyncList.innerHTML = '<p style="padding:0.5em;color:#999;">No repositories selected.</p>';
+        return;
+      }
+      repos.forEach(function (fullName) {
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '0.5em';
+        label.style.marginBottom = '0.5em';
+        label.style.cursor = 'pointer';
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = fullName;
+        input.checked = markdownSyncRepos.has(fullName);
+        input.addEventListener('change', function () {
+          if (input.checked) {
+            markdownSyncRepos.add(fullName);
+          } else {
+            markdownSyncRepos.delete(fullName);
+          }
+        });
+
+        const span = document.createElement('span');
+        span.textContent = fullName + ' — Markdown Sync';
+
+        label.appendChild(input);
+        label.appendChild(span);
+        markdownSyncList.appendChild(label);
+      });
     }
 
     function showModal() {
@@ -427,7 +473,11 @@ if (!githubIntegrationInitialized) {
 
     function saveSelection() {
       clearError();
-      const payload = { repositories: Array.from(selectedRepos) };
+      const markdownSync = {};
+      Array.from(selectedRepos).forEach(function (repo) {
+        markdownSync[repo] = markdownSyncRepos.has(repo);
+      });
+      const payload = { repositories: Array.from(selectedRepos), markdown_sync: markdownSync };
       
       fetch(`/github/creatives/${creativeId}/integration`, {
         method: 'PATCH',
@@ -477,8 +527,10 @@ if (!githubIntegrationInitialized) {
         currentStep = 'connect';
       } else if (currentStep === 'repositories') {
         currentStep = 'organization';
-      } else if (currentStep === 'summary') {
+      } else if (currentStep === 'markdown-sync') {
         currentStep = 'repositories';
+      } else if (currentStep === 'summary') {
+        currentStep = 'markdown-sync';
       }
       updateStep();
       if (currentStep === 'organization' && organizations.length === 0) loadOrganizations();
@@ -496,6 +548,10 @@ if (!githubIntegrationInitialized) {
         updateStep();
         loadRepositories();
       } else if (currentStep === 'repositories') {
+        currentStep = 'markdown-sync';
+        updateStep();
+        populateMarkdownSync();
+      } else if (currentStep === 'markdown-sync') {
         currentStep = 'summary';
         updateStep();
       }

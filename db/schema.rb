@@ -260,13 +260,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_094811) do
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
     t.integer "github_account_id", null: false
+    t.datetime "last_synced_at"
+    t.integer "markdown_root_creative_id"
+    t.boolean "markdown_sync_enabled", default: false, null: false
     t.string "repository_full_name", null: false
     t.bigint "repository_id"
+    t.string "sync_branch"
     t.datetime "updated_at", null: false
     t.string "webhook_secret", null: false
     t.index ["creative_id", "repository_full_name"], name: "index_github_links_on_creative_and_repo", unique: true
     t.index ["creative_id"], name: "index_github_repository_links_on_creative_id"
     t.index ["github_account_id"], name: "index_github_repository_links_on_github_account_id"
+    t.index ["markdown_sync_enabled"], name: "index_github_repository_links_on_markdown_sync_enabled"
     t.index ["repository_full_name"], name: "index_github_repository_links_on_repository_full_name"
   end
 

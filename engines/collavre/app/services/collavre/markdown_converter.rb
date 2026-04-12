@@ -1,6 +1,7 @@
 require "base64"
 require "securerandom"
 require "nokogiri"
+require "commonmarker"
 
 module Collavre
   # Converts between Markdown and HTML for creative descriptions.
@@ -9,19 +10,20 @@ module Collavre
   # outside of view contexts and reusable from services (e.g. MarkdownImporter).
   class MarkdownConverter
     class << self
-      # Convert lightweight Markdown (links, bold, images) to HTML.
+      # Convert Markdown to HTML using commonmarker (GFM full support).
+      # Falls back to lightweight regex conversion for short inline fragments.
       def markdown_to_html(text, image_refs = {})
         return "" if text.nil?
-        html = text.dup
+        input = text.dup
 
         # Collect reference-style data-URI images: [alt]: <data:...>
-        html.gsub!(/^\s*\[([^\]]+)\]:\s*<\s*(data:image\/[^>]+)\s*>\s*$/) do
+        input.gsub!(/^\s*\[([^\]]+)\]:\s*<\s*(data:image\/[^>]+)\s*>\s*$/) do
           image_refs[$1] = $2.strip
           ""
         end
 
-        # Reference-style images: ![alt][ref]
-        html.gsub!(/(?<!\\)!\[([^\]]*)\]\[([^\]]+)\]/) do
+        # Convert data-URI images to Active Storage before rendering
+        input.gsub!(/(?<!\\)!\[([^\]]*)\]\[([^\]]+)\]/) do
           if (data_url = image_refs[$2])
             data_image_to_attachment(data_url, $1)
           else
@@ -29,24 +31,17 @@ module Collavre
           end
         end
 
-        # Inline data-URI images: ![alt](data:...)
-        html.gsub!(/(?<!\\)!\[([^\]]*)\]\((data:image\/[^)]+)\)/) do
+        input.gsub!(/(?<!\\)!\[([^\]]*)\]\((data:image\/[^)]+)\)/) do
           data_image_to_attachment($2, $1)
         end
 
-        # Inline links: [text](url)
-        html.gsub!(/(?<!\\)\[([^\]]+)\]\(([^)]+)\)/) do
-          "<a href=\"#{$2}\">#{$1}</a>"
-        end
+        # Render with commonmarker (GFM extensions: table, strikethrough, autolink, tasklist, tagfilter)
+        html = Commonmarker.to_html(input, options: {
+          parse: { smart: true },
+          render: { unsafe: true },
+          extension: { table: true, strikethrough: true, autolink: true, tasklist: true, tagfilter: true }
+        })
 
-        # Bold: **text** or __text__
-        html.gsub!(/(?<!\\)(\*\*|__)(.+?)\1/m) do
-          "<strong>#{$2}</strong>"
-        end
-
-        # Unescape backslash-escaped chars
-        html.gsub!(/\\([\\*_\[\]()!#~+\-])/, '\\1')
-        html.gsub!(/\\\\/, "\\")
         html.strip!
         html
       end

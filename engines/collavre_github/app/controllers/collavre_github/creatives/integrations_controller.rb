@@ -7,7 +7,7 @@ module CollavreGithub
       before_action :set_creative
       before_action :set_origin
       before_action :ensure_read_permission
-      before_action :ensure_admin_permission, only: [ :show, :update ]
+      before_action :ensure_admin_permission, only: [ :show, :update, :resync ]
 
       def show
         account = Current.user.github_account
@@ -26,7 +26,14 @@ module CollavreGithub
           },
           selected_repositories: links.map(&:repository_full_name),
           all_repositories: all_repositories,
-          webhooks: serialize_webhooks(links)
+          webhooks: serialize_webhooks(links),
+          markdown_sync: links.each_with_object({}) { |l, h|
+            h[l.repository_full_name] = {
+              enabled: l.markdown_sync_enabled?,
+              last_synced_at: l.last_synced_at,
+              sync_branch: l.markdown_sync_branch
+            }
+          }
         }
       end
 
@@ -63,13 +70,61 @@ module CollavreGithub
           webhook_url: github_webhook_url
         ) if links.present?
 
+        # Handle markdown sync toggle
+        markdown_sync = integration_attributes[:markdown_sync]
+        if markdown_sync.is_a?(Hash)
+          links.each do |link|
+            repo = link.repository_full_name
+            if markdown_sync[repo].present?
+              enabled = ActiveModel::Type::Boolean.new.cast(markdown_sync[repo])
+              was_enabled = link.markdown_sync_enabled?
+              link.update!(markdown_sync_enabled: enabled)
+
+              if enabled && !was_enabled
+                CollavreGithub::InitialMarkdownSyncJob.perform_later(link.id)
+              end
+            end
+          end
+        end
+
         render json: {
           success: true,
           selected_repositories: links.map(&:repository_full_name),
-          webhooks: serialize_webhooks(links)
+          webhooks: serialize_webhooks(links),
+          markdown_sync: links.each_with_object({}) { |l, h|
+            h[l.repository_full_name] = {
+              enabled: l.markdown_sync_enabled?,
+              last_synced_at: l.last_synced_at,
+              sync_branch: l.markdown_sync_branch
+            }
+          }
         }
       rescue ActiveRecord::RecordInvalid => e
         render json: { error: e.message }, status: :unprocessable_entity
+      end
+
+      def resync
+        account = Current.user.github_account
+        unless account
+          render json: { error: I18n.t("collavre_github.errors.not_connected") }, status: :unprocessable_entity
+          return
+        end
+
+        repo = params[:repository]
+        link = linked_repository_links(account).find_by(repository_full_name: repo)
+        unless link&.markdown_sync_enabled?
+          render json: { error: I18n.t("collavre_github.markdown_sync.not_enabled") }, status: :unprocessable_entity
+          return
+        end
+
+        # Archive existing synced tree and re-import
+        if link.markdown_root_creative
+          link.markdown_root_creative.archive! if link.markdown_root_creative.respond_to?(:archive!)
+          link.update!(markdown_root_creative_id: nil)
+        end
+
+        CollavreGithub::InitialMarkdownSyncJob.perform_later(link.id)
+        render json: { success: true, message: I18n.t("collavre_github.markdown_sync.resync_started") }
       end
 
       def destroy
@@ -151,7 +206,7 @@ module CollavreGithub
       end
 
       def integration_params
-        params.permit(repositories: [])
+        params.permit(repositories: [], markdown_sync: {})
       end
 
       def serialize_webhooks(links)

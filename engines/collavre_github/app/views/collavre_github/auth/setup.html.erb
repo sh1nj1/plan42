@@ -101,7 +101,13 @@
       </div>
     </div>
 
-    <!-- Step 3: Summary -->
+    <!-- Step 3: Markdown Sync -->
+    <div class="step" id="step-markdown-sync">
+      <p class="step-subtext"><%= t('collavre_github.markdown_sync.step_description', default: 'Enable Markdown Sync to import .md files as read-only creatives. Auto-synced on push.') %></p>
+      <div id="markdown-sync-list" class="list-box"></div>
+    </div>
+
+    <!-- Step 4: Summary -->
     <div class="step" id="step-summary">
       <p class="step-subtext"><%= t('collavre_github.integration.summary') %></p>
       <p id="webhook-instructions" class="step-subtext" style="display:none;"><%= t('collavre_github.integration.webhook_instructions') %></p>
@@ -139,10 +145,11 @@
       var loadReposError = wizard.dataset.loadReposError;
       var saveErrorMsg = wizard.dataset.saveError;
 
-      var steps = ['organization', 'repositories', 'summary', 'done'];
+      var steps = ['organization', 'repositories', 'markdown-sync', 'summary', 'done'];
       var currentStepIndex = 0;
       var selectedOrg = null;
       var selectedRepos = new Set();
+      var markdownSyncRepos = new Set();
       var webhookDetails = {};
 
       var prevBtn = document.getElementById('prev-btn');
@@ -278,6 +285,39 @@
           });
       }
 
+      function populateMarkdownSync() {
+        var syncList = document.getElementById('markdown-sync-list');
+        syncList.innerHTML = '';
+        var repos = Array.from(selectedRepos);
+        if (!repos.length) {
+          syncList.innerHTML = '<p style="padding:0.5em;color:#999;">No repositories selected.</p>';
+          return;
+        }
+        repos.forEach(function(fullName) {
+          var label = document.createElement('label');
+          label.className = 'list-item';
+
+          var input = document.createElement('input');
+          input.type = 'checkbox';
+          input.value = fullName;
+          input.checked = markdownSyncRepos.has(fullName);
+          input.addEventListener('change', function() {
+            if (input.checked) {
+              markdownSyncRepos.add(fullName);
+            } else {
+              markdownSyncRepos.delete(fullName);
+            }
+          });
+
+          var span = document.createElement('span');
+          span.textContent = fullName + ' — Markdown Sync';
+
+          label.appendChild(input);
+          label.appendChild(span);
+          syncList.appendChild(label);
+        });
+      }
+
       function updateSummary() {
         var summaryList = document.getElementById('summary-repos');
         var summaryEmpty = document.getElementById('summary-empty');
@@ -320,7 +360,11 @@
 
       function saveSelection() {
         clearError();
-        var payload = { repositories: Array.from(selectedRepos) };
+        var markdownSync = {};
+        Array.from(selectedRepos).forEach(function(repo) {
+          markdownSync[repo] = markdownSyncRepos.has(repo);
+        });
+        var payload = { repositories: Array.from(selectedRepos), markdown_sync: markdownSync };
 
         fetch('/github/creatives/' + creativeId + '/integration', {
           method: 'PATCH',
@@ -371,6 +415,7 @@
         var nextIndex = currentStepIndex + 1;
         showStep(nextIndex);
         if (steps[nextIndex] === 'repositories') loadRepositories();
+        if (steps[nextIndex] === 'markdown-sync') populateMarkdownSync();
       });
 
       finishBtn.addEventListener('click', function() {

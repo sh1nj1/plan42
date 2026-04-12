@@ -43,6 +43,11 @@
       <div id="github-repository-list" class="github-list github-modal-list-box" style="max-height:240px;overflow:auto;"></div>
     </div>
 
+    <div class="github-wizard-step" id="github-step-markdown-sync" style="display:none;">
+      <p class="github-modal-subtext"><%= t('collavre_github.markdown_sync.step_description', default: 'Enable Markdown Sync to import .md files as read-only creatives. Changes are auto-synced on push to the default branch.') %></p>
+      <div id="github-markdown-sync-list" class="github-list github-modal-list-box" style="max-height:240px;overflow:auto;"></div>
+    </div>
+
     <div class="github-wizard-step" id="github-step-summary" style="display:none;">
       <p class="github-modal-subtext"><%= t('collavre_github.integration.summary', default: 'The following repositories will be linked to this Creative:') %></p>
       <p id="github-webhook-instructions" class="github-modal-subtext" style="display:none;margin-bottom:0.5em;"><%= t('collavre_github.integration.webhook_instructions', default: 'Configure each repository with the webhook details below.') %></p>

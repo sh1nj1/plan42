@@ -1,6 +1,7 @@
 module CollavreGithub
   class WebhookProvisioner
     EVENTS = %w[pull_request].freeze
+    EVENTS_WITH_PUSH = %w[pull_request push].freeze
     CONTENT_TYPE = "json".freeze
 
     def self.ensure_for_links(account:, links:, webhook_url:)
@@ -91,7 +92,7 @@ module CollavreGithub
         repository_full_name,
         url: webhook_url,
         secret: secret,
-        events: EVENTS,
+        events: events_for(repository_full_name),
         content_type: CONTENT_TYPE
       )
     end
@@ -102,9 +103,16 @@ module CollavreGithub
         hook_id,
         url: webhook_url,
         secret: secret,
-        events: EVENTS,
+        events: events_for(repository_full_name),
         content_type: CONTENT_TYPE
       )
+    end
+
+    def events_for(repository_full_name)
+      has_markdown_sync = CollavreGithub::RepositoryLink
+        .where(repository_full_name: repository_full_name, markdown_sync_enabled: true)
+        .exists?
+      has_markdown_sync ? EVENTS_WITH_PUSH : EVENTS
     end
 
     def primary_link_for(repository_full_name)

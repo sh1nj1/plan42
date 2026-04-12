@@ -31,6 +31,9 @@ Gem::Specification.new do |spec|
   spec.add_dependency "ruby_llm"               # LLM integration for AI agents
   spec.add_dependency "liquid"                 # Liquid templates for AI system prompts
 
+  # Markdown rendering
+  spec.add_dependency "commonmarker"           # GitHub-flavored Markdown to HTML
+
   # Integrations
   spec.add_dependency "httparty"               # HTTP client for link previews and APIs
   spec.add_dependency "nokogiri"               # HTML/XML parsing

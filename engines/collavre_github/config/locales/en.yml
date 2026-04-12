@@ -34,6 +34,10 @@ en:
     auth:
       login_first: "Please log in first to connect your GitHub account"
       connected: "GitHub account connected successfully"
+    markdown_sync:
+      step_description: "Enable Markdown Sync to import .md files as read-only creatives. Changes are auto-synced on push to the default branch."
+      not_enabled: "Markdown sync is not enabled for this repository."
+      resync_started: "Re-sync started. The tree will update shortly."
     errors:
       not_connected: "GitHub account not connected"
       forbidden: "You don't have permission to perform this action"

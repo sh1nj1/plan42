@@ -108,6 +108,47 @@ module CollavreGithub
       client.remove_hook(repo_full_name, hook_id)
     end
 
+    # Fetch the default branch name for a repository
+    def default_branch(repo_full_name)
+      repo = client.repository(repo_full_name)
+      repo.default_branch
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub default branch fetch failed: #{e.message}")
+      "main"
+    end
+
+    # Fetch the full recursive tree for a given branch/sha
+    def tree(repo_full_name, branch)
+      sha = client.ref(repo_full_name, "heads/#{branch}").object.sha
+      result = client.tree(repo_full_name, sha, recursive: true)
+      result.tree
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub tree fetch failed: #{e.message}")
+      []
+    end
+
+    # Fetch file content (decoded) for a given path and ref
+    def file_content(repo_full_name, path, ref: nil)
+      opts = ref ? { ref: ref } : {}
+      content = client.contents(repo_full_name, path: path, **opts)
+      if content.encoding == "base64"
+        Base64.decode64(content.content).force_encoding("UTF-8")
+      else
+        content.content
+      end
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub file content fetch failed for #{path}: #{e.message}")
+      nil
+    end
+
+    # Compare two commits and return changed files
+    def compare(repo_full_name, base, head)
+      client.compare(repo_full_name, base, head)
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub compare failed: #{e.message}")
+      nil
+    end
+
     private
 
     attr_reader :client

@@ -34,6 +34,10 @@ ko:
     auth:
       login_first: "GitHub 계정을 연결하려면 먼저 로그인하세요"
       connected: "GitHub 계정이 연결되었습니다"
+    markdown_sync:
+      step_description: "Markdown Sync를 활성화하면 .md 파일이 읽기전용 크리에이티브로 가져와집니다. 기본 브랜치에 push하면 자동으로 동기화됩니다."
+      not_enabled: "이 저장소에 Markdown Sync가 활성화되어 있지 않습니다."
+      resync_started: "재동기화가 시작되었습니다. 곧 트리가 업데이트됩니다."
     errors:
       not_connected: "GitHub 계정이 연결되지 않았습니다"
       forbidden: "이 작업을 수행할 권한이 없습니다"

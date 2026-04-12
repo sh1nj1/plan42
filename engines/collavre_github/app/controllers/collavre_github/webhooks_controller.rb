@@ -14,6 +14,7 @@ module CollavreGithub
 
       payload = payload.presence || {}
       create_system_comment(event, payload) if @repository_link&.creative
+      trigger_markdown_sync(event, payload) if @repository_link&.markdown_sync_enabled?
 
       head :ok
     rescue JSON::ParserError
@@ -200,6 +201,15 @@ module CollavreGithub
 
     def t_webhook(key, **options)
       I18n.t("collavre_github.webhooks.#{key}", **options)
+    end
+
+    def trigger_markdown_sync(event, payload)
+      return unless event == "push"
+
+      CollavreGithub::MarkdownSyncJob.perform_later(
+        @repository_link.id,
+        payload.as_json
+      )
     end
 
     def find_repository_link(payload)
