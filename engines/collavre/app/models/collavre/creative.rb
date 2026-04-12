@@ -124,6 +124,11 @@ module Collavre
       Array(data&.dig("context_ids"))
     end
 
+    # Returns the directly-configured disabled context IDs for this creative.
+    def disabled_context_ids
+      Array(data&.dig("disabled_context_ids"))
+    end
+
     # Returns the effective context IDs: own + inherited from ancestors (deduplicated).
     def effective_context_ids(visited_ids = Set.new)
       return [] if visited_ids.include?(id)
@@ -139,7 +144,7 @@ module Collavre
       return [] if visited_ids.include?(id)
 
       visited_ids.add(id)
-      own = Array(data&.dig("disabled_context_ids"))
+      own = disabled_context_ids
       parent_disabled = parent&.effective_disabled_context_ids(visited_ids) || []
       (own + parent_disabled).uniq
     end
