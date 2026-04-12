@@ -65,6 +65,8 @@ module CollavreGithub
 
         Collavre::Creative::RealtimeBroadcastable.broadcast_batch_created(created) if created.size > 1
         created
+      ensure
+        Collavre::Current.markdown_sync = false
       end
 
       private

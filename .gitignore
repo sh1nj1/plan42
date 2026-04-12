@@ -55,3 +55,4 @@ vendor/bundle
 /build/
 .claude
 
+.gstack/

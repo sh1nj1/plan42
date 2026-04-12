@@ -107,6 +107,8 @@ module CollavreGithub
 
         @link.update!(last_synced_at: Time.current)
         Collavre::Creative::RealtimeBroadcastable.broadcast_batch_created(created) if created.any?
+      ensure
+        Collavre::Current.markdown_sync = false
       end
 
       private

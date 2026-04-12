@@ -124,6 +124,7 @@ module Creatives
           expanded: expanded,
           is_root: creative.parent.nil?,
           archived: creative.archived?,
+          github_source: creative.data.is_a?(Hash) && creative.data.dig("source", "type") == "github_markdown",
           sequence: creative.sequence,
           link_url: view_context.collavre.creative_path(creative),
           templates: template_payload_for(creative, has_children: filtered_children.any?),
