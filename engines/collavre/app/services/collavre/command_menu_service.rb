@@ -1,7 +1,8 @@
 module Collavre
   class CommandMenuService
-    def initialize(user:)
+    def initialize(user:, creative: nil)
       @user = user
+      @creative = creative
     end
 
     def items
@@ -10,7 +11,7 @@ module Collavre
 
     private
 
-    attr_reader :user
+    attr_reader :user, :creative
 
     def built_in_items
       [
@@ -70,12 +71,16 @@ module Collavre
         next unless tool_name
 
         raw_params = tool[:params] || tool["params"]
+        schema = normalize_params(raw_params)
+        defaults = tool_defaults_for(tool_name)
+        apply_defaults_to_schema(schema, defaults) if defaults.present?
+
         {
           name: tool_name,
           label: "/#{tool_name}",
           description: tool[:description] || tool["description"],
           args: format_args(raw_params),
-          input_schema: normalize_params(raw_params)
+          input_schema: schema
         }
       end
     end
@@ -108,6 +113,21 @@ module Collavre
           description: value[:description] || value["description"],
           enum: value[:enum] || value["enum"]
         }.compact
+      end
+    end
+
+    def tool_defaults_for(tool_name)
+      creative&.data&.dig("tools", tool_name)
+    end
+
+    def apply_defaults_to_schema(schema, defaults)
+      return unless schema.is_a?(Array) && defaults.is_a?(Hash)
+
+      schema.each do |param|
+        name = param[:name]
+        if defaults.key?(name)
+          param[:default_value] = defaults[name]
+        end
       end
     end
 

@@ -286,7 +286,7 @@ module Collavre
         head :forbidden and return
       end
 
-      render json: CommandMenuService.new(user: Current.user).items
+      render json: CommandMenuService.new(user: Current.user, creative: @creative).items
     end
 
     def download_images

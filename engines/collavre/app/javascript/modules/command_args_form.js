@@ -241,6 +241,14 @@ export default class CommandArgsForm {
     input.dataset.paramRequired = param.required ? 'true' : 'false'
     if (param.description) input.placeholder = param.description
 
+    // Pre-fill with default value from creative tool defaults
+    if (param.default_value != null) {
+      input.value = String(param.default_value)
+      if (input.tagName === 'TEXTAREA') {
+        requestAnimationFrame(() => this._autoResize(input))
+      }
+    }
+
     // Enter submits; Shift+Enter inserts newline (textarea only)
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
