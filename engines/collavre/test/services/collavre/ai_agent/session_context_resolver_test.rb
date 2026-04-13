@@ -8,11 +8,11 @@ module Collavre
       setup do
         @system_prompt = "You are a helpful assistant"
         @full_messages = [
-          { role: "user", kind: :creative_context, parts: [{ text: "Creative (id: 1):\n# Hello" }] },
-          { role: "user", kind: :context_creative, parts: [{ text: "Context Creative (id: 2):\n# Config" }] },
-          { role: "user", kind: :chat_history, parts: [{ text: "[Alice]: hi" }] },
-          { role: "model", kind: :chat_history, parts: [{ text: "Hello!" }] },
-          { role: "user", kind: :trigger, parts: [{ text: "[Alice]: Follow-up" }] }
+          { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: 1):\n# Hello" } ] },
+          { role: "user", kind: :context_creative, parts: [ { text: "Context Creative (id: 2):\n# Config" } ] },
+          { role: "user", kind: :chat_history, parts: [ { text: "[Alice]: hi" } ] },
+          { role: "model", kind: :chat_history, parts: [ { text: "Hello!" } ] },
+          { role: "user", kind: :trigger, parts: [ { text: "[Alice]: Follow-up" } ] }
         ]
       end
 
@@ -75,7 +75,7 @@ module Collavre
       test "incremental payload preserves multiple trigger messages" do
         agent = build_agent(supports_session: true)
         messages_with_two_triggers = @full_messages + [
-          { role: "user", kind: :trigger, parts: [{ text: "Another trigger" }] }
+          { role: "user", kind: :trigger, parts: [ { text: "Another trigger" } ] }
         ]
         messages_data = { messages: messages_with_two_triggers, first_message: false, context_changed: false }
 
