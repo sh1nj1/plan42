@@ -545,7 +545,7 @@ module CollavreOpenclaw
       assert_includes result, "[Bob]: Hello"
     end
 
-    test "build_ws_chat_payload includes image attachments from trigger only" do
+    test "build_ws_chat_payload includes image attachments from all messages" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(

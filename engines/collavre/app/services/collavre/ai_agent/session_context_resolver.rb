@@ -3,8 +3,6 @@
 module Collavre
   module AiAgent
     class SessionContextResolver
-      CONTEXT_KINDS = %i[creative_context context_creative referenced_creative].freeze
-
       def initialize(agent:, messages_data:, system_prompt:)
         @agent = agent
         @messages_data = messages_data
