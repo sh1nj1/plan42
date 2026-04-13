@@ -139,6 +139,23 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
       "Inherited disabled IDs should be filtered out, not copied to child"
   end
 
+  test "PATCH update_contexts preserves child-local disables when parent also disables the same context" do
+    # Child disables X first
+    @feature_a.update!(data: { "context_ids" => [ @development.id ], "disabled_context_ids" => [ @development.id ] })
+    # Parent also disables X
+    @features.update!(data: { "context_ids" => [ @development.id ], "disabled_context_ids" => [ @development.id ] })
+
+    # Child saves again (client sends all disabled IDs including X)
+    patch update_contexts_creative_path(@feature_a), params: {
+      disabled_context_ids: [ @development.id ]
+    }, headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    @feature_a.reload
+    assert_equal [ @development.id ], @feature_a.data["disabled_context_ids"],
+      "Child's own disable should be preserved even when parent also disables the same context"
+  end
+
   test "PATCH update_contexts requires admin permission" do
     regular_user = users(:two)
     sign_in_as(regular_user, password: "password")

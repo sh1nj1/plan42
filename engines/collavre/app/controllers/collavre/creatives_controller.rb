@@ -317,7 +317,8 @@ module Collavre
       if params.key?(:disabled_context_ids)
         requested_disabled = Array(params[:disabled_context_ids]).map(&:to_i)
         parent_disabled = creative.parent&.effective_disabled_context_ids || []
-        current_data["disabled_context_ids"] = requested_disabled - parent_disabled
+        inherited_only = parent_disabled - creative.disabled_context_ids
+        current_data["disabled_context_ids"] = requested_disabled - inherited_only
         current_data.delete("disabled_context_ids") if current_data["disabled_context_ids"].empty?
       end
       if params.key?(:disabled_self_context)
