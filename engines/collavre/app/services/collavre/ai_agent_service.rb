@@ -29,6 +29,9 @@ module Collavre
         rendering_context = prepare_rendering_context
         system_prompt = render_system_prompt(rendering_context)
 
+        # Resolve session context (decides what to send)
+        resolved = resolve_session_context(messages_data, system_prompt)
+
         # Create placeholder comment if needed
         @reply_comment = create_reply_comment_if_needed
 
@@ -48,8 +51,8 @@ module Collavre
         @lifecycle_manager.broadcast_status("thinking")
 
         # Execute AI chat with streaming
-        @client = build_ai_client(system_prompt)
-        stream_response(@client, messages_data)
+        @client = build_ai_client(resolved[:system_prompt])
+        stream_response(@client, resolved)
 
         log_action("completion", { response: @streamer.content })
 
@@ -87,6 +90,14 @@ module Collavre
         context: @context,
         original_comment: @original_comment
       ).build
+    end
+
+    def resolve_session_context(messages_data, system_prompt)
+      AiAgent::SessionContextResolver.new(
+        agent: @agent,
+        messages_data: messages_data,
+        system_prompt: system_prompt
+      ).resolve
     end
 
     def find_creative

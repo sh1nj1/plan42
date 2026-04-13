@@ -52,7 +52,7 @@ module CollavreOpenclaw
       assert_equal "openclaw:test", payload[:model]
     end
 
-    test "builds payload with trigger only on warm session" do
+    test "builds payload with all received messages (pure transport)" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
@@ -61,9 +61,9 @@ module CollavreOpenclaw
         context: {}
       )
 
+      # SessionContextResolver already filtered to trigger-only for warm sessions
       messages_data = {
         messages: [
-          { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: 1):\n# Hello" } ] },
           { role: "user", kind: :trigger, parts: [ { text: "Follow-up" } ] }
         ],
         first_message: false,
@@ -73,36 +73,39 @@ module CollavreOpenclaw
       adapter.send(:parse_messages_data!, messages_data)
       payload = adapter.send(:build_payload)
 
-      # Trigger only — no system prompt, no context
-      assert_equal 1, payload[:messages].length
-      assert_equal "user", payload[:messages][0][:role]
-      assert_equal "Follow-up", payload[:messages][0][:content]
+      # System prompt + trigger (adapter sends everything it receives)
+      assert_equal 2, payload[:messages].length
+      assert_equal "system", payload[:messages][0][:role]
+      assert_equal "Test prompt", payload[:messages][0][:content]
+      assert_equal "user", payload[:messages][1][:role]
+      assert_equal "Follow-up", payload[:messages][1][:content]
     end
 
-    test "builds payload with full context when context changed" do
+    test "builds payload without system prompt when nil" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
+      # SessionContextResolver sets system_prompt to nil for incremental sessions
       adapter = OpenclawAdapter.new(
         user: user,
-        system_prompt: "Test prompt",
+        system_prompt: nil,
         context: {}
       )
 
       messages_data = {
         messages: [
-          { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: 1):\n# Updated" } ] },
-          { role: "user", kind: :trigger, parts: [ { text: "Question" } ] }
+          { role: "user", kind: :trigger, parts: [ { text: "Follow-up" } ] }
         ],
         first_message: false,
-        context_changed: true
+        context_changed: false
       }
 
       adapter.send(:parse_messages_data!, messages_data)
       payload = adapter.send(:build_payload)
 
-      # Re-sends system + context + trigger
-      assert_equal 3, payload[:messages].length
-      assert_equal "system", payload[:messages][0][:role]
+      # Trigger only — no system prompt
+      assert_equal 1, payload[:messages].length
+      assert_equal "user", payload[:messages][0][:role]
+      assert_equal "Follow-up", payload[:messages][0][:content]
     end
 
     test "includes agent_id derived from user email in model field" do
@@ -491,21 +494,18 @@ module CollavreOpenclaw
       assert_includes result, "[Alice]: Follow-up question"
     end
 
-    test "format_message_for_ws sends only trigger on warm session" do
+    test "format_message_for_ws sends all received messages (pure transport)" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
+      # SessionContextResolver already filtered to trigger-only for warm sessions
       adapter = OpenclawAdapter.new(
         user: user,
-        system_prompt: "You are a helpful agent",
+        system_prompt: nil,
         context: {}
       )
 
       messages_data = {
         messages: [
-          { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: 42):\n# My Project" } ] },
-          { role: "user", kind: :context_creative, parts: [ { text: "Context Creative (id: 41):\n# Dev Environment" } ] },
-          { role: "user", kind: :chat_history, parts: [ { text: "[Alice]: First question" } ] },
-          { role: "model", kind: :chat_history, parts: [ { text: "Here's my answer" } ] },
           { role: "user", kind: :trigger, parts: [ { text: "[Alice]: Follow-up question" } ] }
         ],
         first_message: false,
@@ -515,14 +515,11 @@ module CollavreOpenclaw
       adapter.send(:parse_messages_data!, messages_data)
       result = adapter.send(:format_message_for_ws)
 
-      # Only trigger, no system prompt, no context, no history
       assert_not_includes result, "You are a helpful agent"
-      assert_not_includes result, "Creative (id: 42):"
-      assert_not_includes result, "[Alice]: First question"
       assert_equal "[Alice]: Follow-up question", result
     end
 
-    test "format_message_for_ws includes context when changed" do
+    test "format_message_for_ws includes all messages when provided" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(
@@ -548,7 +545,7 @@ module CollavreOpenclaw
       assert_includes result, "[Bob]: Hello"
     end
 
-    test "build_ws_chat_payload includes image attachments from trigger only" do
+    test "build_ws_chat_payload includes image attachments from all messages" do
       user = build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com")
 
       adapter = OpenclawAdapter.new(

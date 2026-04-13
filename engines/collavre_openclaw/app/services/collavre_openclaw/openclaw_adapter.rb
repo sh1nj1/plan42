@@ -3,9 +3,11 @@ require "json"
 
 module CollavreOpenclaw
   class OpenclawAdapter
-    # Adapter for OpenClaw AI Gateway
+    # Pure transport adapter for OpenClaw AI Gateway.
+    # Session context filtering (full vs incremental) is handled upstream
+    # by SessionContextResolver — this adapter sends exactly what it receives.
     #
-    # Supports two transport modes:
+    # Transport modes:
     # 1. WebSocket (primary) - via faye-websocket + EventMachine
     # 2. HTTP (fallback) - via Faraday POST /v1/chat/completions
     #
@@ -72,25 +74,10 @@ module CollavreOpenclaw
 
     private
 
-    CONTEXT_KINDS = %i[creative_context context_creative referenced_creative].freeze
-
     def parse_messages_data!(data)
       @all_messages    = data[:messages] || []
       @first_message   = data[:first_message]
       @context_changed = data[:context_changed]
-    end
-
-    def context_messages
-      @all_messages.select { |m| CONTEXT_KINDS.include?(m[:kind]) }
-    end
-
-    def trigger_message
-      @all_messages.find { |m| m[:kind] == :trigger }
-    end
-
-    # Send system prompt and context on first message or when they changed.
-    def include_full_context?
-      @first_message || @context_changed
     end
 
     # ─────────────────────────────────────────────
@@ -159,41 +146,23 @@ module CollavreOpenclaw
       end
     end
 
-    # Build WebSocket chat.send payload.
-    #
-    # Token optimization: only includes system prompt and creative context on
-    # the first message or when context has changed. The Gateway maintains its
-    # own session history, so chat history is never sent — only the trigger.
     def build_ws_chat_payload
-      trigger = trigger_message
       {
         message: format_message_for_ws,
-        attachments: trigger ? extract_ws_attachments([ trigger ]).presence : nil
+        attachments: extract_ws_attachments(@all_messages).presence
       }
     end
 
-    # Format messages for WebSocket chat.send text payload.
-    #
-    # On first message (or context change):
-    #   [system prompt] + [creative context] + [trigger]
-    # On subsequent messages:
-    #   [trigger only]
-    #
-    # Chat history is NOT included — the Gateway's SessionManager tracks
-    # conversation turns automatically.
+    # SessionContextResolver already decided what to include.
+    # We just format and send everything we received.
     def format_message_for_ws
       parts = []
+      parts << @system_prompt if @system_prompt.present?
 
-      if include_full_context?
-        parts << @system_prompt if @system_prompt.present?
-        context_messages.each do |m|
-          text = extract_message_text(m)
-          parts << text if text.present?
-        end
+      @all_messages.each do |m|
+        text = extract_message_text(m)
+        parts << text if text.present?
       end
-
-      trigger = trigger_message
-      parts << extract_message_text(trigger) if trigger
 
       parts.join("\n\n")
     end
@@ -347,28 +316,14 @@ module CollavreOpenclaw
     # HTTP payload building
     # ─────────────────────────────────────────────
 
-    # Build HTTP payload with token optimization.
-    #
-    # On first message (or context change):
-    #   system prompt + creative context + trigger
-    # On subsequent messages:
-    #   trigger only
-    #
-    # Chat history is NOT included — the Gateway's SessionManager tracks
-    # conversation turns via the stable session key.
+    # SessionContextResolver already decided what to include.
     def build_payload
       agent_id = extract_agent_id_from_email
       model_value = agent_id.present? ? "openclaw:#{agent_id}" : "openclaw"
 
       formatted = []
-
-      if include_full_context?
-        formatted << { role: "system", content: @system_prompt } if @system_prompt.present?
-        context_messages.each { |m| formatted << format_single_message(m) }
-      end
-
-      trigger = trigger_message
-      formatted << format_single_message(trigger) if trigger
+      formatted << { role: "system", content: @system_prompt } if @system_prompt.present?
+      @all_messages.each { |m| formatted << format_single_message(m) }
 
       {
         model: model_value,

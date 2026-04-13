@@ -77,7 +77,8 @@ module Collavre
         "chat_history" => 50,
         "chat_history_size" => 100_000,
         "creative_children_level" => nil
-      }
+      },
+      "session" => { "enabled" => nil }
     }.freeze
 
     # Default creative children level when agent_conf doesn't specify one
@@ -110,6 +111,15 @@ module Collavre
     def creative_children_level
       level = parsed_agent_conf.dig("context", "creative_children_level")
       level.nil? ? DEFAULT_CREATIVE_CHILDREN_LEVEL : level.to_i
+    end
+
+    # Whether this agent uses stateful sessions (incremental messaging).
+    # nil in agent_conf = auto-detect by vendor (openclaw → true).
+    def supports_session?
+      explicit = parsed_agent_conf.dig("session", "enabled")
+      return ActiveModel::Type::Boolean.new.cast(explicit) unless explicit.nil?
+
+      llm_vendor&.downcase == "openclaw"
     end
 
     encrypts :llm_api_key, deterministic: false
