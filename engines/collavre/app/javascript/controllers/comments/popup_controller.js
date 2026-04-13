@@ -1085,20 +1085,14 @@ export default class extends Controller {
       if (hasOverflowY || hasOverflowX) {
         const style = getComputedStyle(el)
 
-        // Check dominant axis first for better matching
         if (dominantAxis === 'x' && hasOverflowX) {
           const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
           if (scrollableX) return { element: el, axis: 'x' }
         }
 
-        if (hasOverflowY) {
+        if (dominantAxis === 'y' && hasOverflowY) {
           const scrollableY = style.overflowY === 'auto' || style.overflowY === 'scroll'
           if (scrollableY) return { element: el, axis: 'y' }
-        }
-
-        if (dominantAxis !== 'x' && hasOverflowX) {
-          const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
-          if (scrollableX) return { element: el, axis: 'x' }
         }
       }
 
