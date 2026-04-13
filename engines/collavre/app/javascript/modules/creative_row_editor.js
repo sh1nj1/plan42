@@ -1095,11 +1095,9 @@ export function initializeCreativeRowEditor() {
       // Notify sync controller that editing stopped
       stopEditingPing();
       const editCreativeId = form.dataset.creativeId;
-      if (editCreativeId) {
-        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
-          detail: { creativeId: parseInt(editCreativeId, 10) }
-        }));
-      }
+      document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+        detail: { creativeId: editCreativeId ? parseInt(editCreativeId, 10) : null }
+      }));
 
       currentTree = null;
       currentRowElement = null;
