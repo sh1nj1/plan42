@@ -314,8 +314,12 @@ module Collavre
 
       current_data = (creative.data || {}).dup
       current_data["context_ids"] = Array(params[:context_ids]).map(&:to_i) if params.key?(:context_ids)
-      current_data["disabled_context_ids"] = Array(params[:disabled_context_ids]).map(&:to_i) if params.key?(:disabled_context_ids)
-      current_data.delete("disabled_context_ids") if current_data["disabled_context_ids"]&.empty?
+      if params.key?(:disabled_context_ids)
+        requested_disabled = Array(params[:disabled_context_ids]).map(&:to_i)
+        parent_disabled = creative.parent&.effective_disabled_context_ids || []
+        current_data["disabled_context_ids"] = requested_disabled - parent_disabled
+        current_data.delete("disabled_context_ids") if current_data["disabled_context_ids"].empty?
+      end
       if params.key?(:disabled_self_context)
         if ActiveModel::Type::Boolean.new.cast(params[:disabled_self_context])
           current_data["disabled_self_context"] = true
