@@ -33,6 +33,8 @@ export default class extends Controller {
     this.openFromUrlTimeout = null
     this.handleCreativeClick = this.handleCreativeClick.bind(this)
     this.handleCreativeDestroyed = this.handleCreativeDestroyed.bind(this)
+    this.handleEditingStart = this.handleEditingStart.bind(this)
+    this.handleEditingStop = this.handleEditingStop.bind(this)
     this.handleTouchStart = this.handleTouchStart.bind(this)
     this.handleTouchEnd = this.handleTouchEnd.bind(this)
     this.handleResizeMove = this.handleResizeMove.bind(this)
@@ -54,6 +56,8 @@ export default class extends Controller {
 
     document.addEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.addEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
+    document.addEventListener('creative-editing:start', this.handleEditingStart)
+    document.addEventListener('creative-editing:stop', this.handleEditingStop)
     this.element.addEventListener('wheel', this.handlePopupWheel, { passive: false })
     window.addEventListener('online', this.handleOnline)
     window.addEventListener('focus', this.handleWindowFocus)
@@ -121,6 +125,8 @@ export default class extends Controller {
     this.clearPendingOpenFromUrl()
     document.removeEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.removeEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
+    document.removeEventListener('creative-editing:start', this.handleEditingStart)
+    document.removeEventListener('creative-editing:stop', this.handleEditingStop)
     this.element.removeEventListener('wheel', this.handlePopupWheel)
     window.removeEventListener('online', this.handleOnline)
     window.removeEventListener('focus', this.handleWindowFocus)
@@ -200,6 +206,16 @@ export default class extends Controller {
     if (destroyedIds.includes(this.element.dataset.creativeId)) {
       this.close()
     }
+  }
+
+  handleEditingStart() {
+    if (this.element.style.display === 'flex' && !this.isFullscreen()) {
+      this.element.classList.add('editor-behind')
+    }
+  }
+
+  handleEditingStop() {
+    this.element.classList.remove('editor-behind')
   }
 
   async open(button, { creativeId, highlightId } = {}) {
@@ -378,7 +394,7 @@ export default class extends Controller {
     this._releaseWakeLock()
 
     this.element.style.display = 'none'
-    this.element.classList.remove('open')
+    this.element.classList.remove('open', 'editor-behind')
     this.element.style.width = ''
     this.element.style.height = ''
     this.element.style.left = ''
