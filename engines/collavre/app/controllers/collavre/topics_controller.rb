@@ -1,6 +1,11 @@
 module Collavre
   class TopicsController < ApplicationController
+    include Collavre::CreativePermissionGuard
+
     before_action :set_creative
+    before_action :require_creative_read!, only: %i[next_name]
+    before_action :require_creative_admin!, only: %i[update destroy move reorder]
+    before_action :require_creative_write!, only: %i[create archive unarchive set_primary_agent]
 
     def index
       is_owner = @creative.user == Current.user
@@ -31,10 +36,6 @@ module Collavre
     end
 
     def create
-      unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
-        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
-      end
-
       topic = @creative.topics.build(topic_params)
       topic.user = Current.user
 
@@ -70,18 +71,10 @@ module Collavre
     end
 
     def next_name
-      unless @creative.has_permission?(Current.user, :read) || @creative.user == Current.user
-        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
-      end
-
       render json: { name: generate_next_topic_name }
     end
 
     def update
-      unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
-        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
-      end
-
       topic = @creative.topics.find(params[:id])
 
       if topic.update(topic_params)
@@ -96,10 +89,6 @@ module Collavre
     end
 
     def destroy
-      unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
-        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
-      end
-
       topic = @creative.topics.find(params[:id])
       topic_id = topic.id
 
@@ -114,10 +103,6 @@ module Collavre
     end
 
     def move
-      unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
-        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
-      end
-
       topic = @creative.topics.find(params[:id])
       target_creative = Creative.find(params[:target_creative_id]).effective_origin
 
@@ -148,10 +133,6 @@ module Collavre
     end
 
     def archive
-      unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
-        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
-      end
-
       topic = @creative.topics.find(params[:id])
       topic.archive!
 
@@ -163,10 +144,6 @@ module Collavre
     end
 
     def unarchive
-      unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
-        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
-      end
-
       topic = @creative.topics.find(params[:id])
       topic.unarchive!
 
@@ -178,10 +155,6 @@ module Collavre
     end
 
     def reorder
-      unless @creative.has_permission?(Current.user, :admin) || @creative.user == Current.user
-        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
-      end
-
       topic_ids = params[:topic_ids]
       unless topic_ids.is_a?(Array) && topic_ids.present?
         render json: { error: "Invalid topic_ids" }, status: :unprocessable_entity and return
@@ -202,10 +175,6 @@ module Collavre
     end
 
     def set_primary_agent
-      unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
-        render json: { error: I18n.t("collavre.topics.no_permission") }, status: :forbidden and return
-      end
-
       topic = @creative.topics.find(params[:id])
       agent = User.find_by(id: params[:agent_id])
 

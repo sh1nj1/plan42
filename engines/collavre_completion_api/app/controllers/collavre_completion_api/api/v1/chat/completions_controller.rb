@@ -80,7 +80,7 @@ module CollavreCompletionApi
             end
 
             scope = collavre_creative.comments
-                                     .where(private: false)
+                                     .public_only
                                      .order(created_at: :desc)
             scope = scope.where(topic_id: collavre_topic.id) if collavre_topic
             recent_comments = scope.limit(CREATIVE_CONTEXT_COMMENT_LIMIT)

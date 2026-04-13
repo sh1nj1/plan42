@@ -3,6 +3,8 @@
 module Collavre
   module Comments
     class SnapshotsController < ApplicationController
+      include Collavre::Comments::CommentScoping
+
       before_action :set_creative
       before_action :set_snapshot, only: [ :restore ]
 
@@ -28,13 +30,6 @@ module Collavre
       end
 
       private
-
-      def set_creative
-        @creative = Creative.find(params[:creative_id]).effective_origin
-        unless @creative.has_permission?(Current.user, :read)
-          render json: { error: I18n.t("collavre.creatives.errors.no_permission") }, status: :forbidden
-        end
-      end
 
       def set_snapshot
         @snapshot = @creative.comment_snapshots.find(params[:id])

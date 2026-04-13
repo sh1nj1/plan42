@@ -27,7 +27,7 @@ module Collavre
           pointers = CommentReadPointer.where(user_id: user_ids, creative: origin).index_by(&:user_id)
           present_user_ids = CommentPresenceStore.list(origin.id)
 
-          public_count = origin.comments.where(private: false).count
+          public_count = origin.comments.public_only.count
           private_counts = origin.comments
             .where(private: true, user_id: user_ids)
             .group(:user_id)

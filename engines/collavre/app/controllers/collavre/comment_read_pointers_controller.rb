@@ -44,11 +44,11 @@ module Collavre
     end
 
     def find_nearest_public_comment_id(creative, comment_id)
-      creative.comments.where(private: false).where("id <= ?", comment_id).maximum(:id)
+      creative.comments.public_only.where("id <= ?", comment_id).maximum(:id)
     end
 
     def fetch_users_on_effective_id(creative, effective_id)
-      next_public_id = creative.comments.where(private: false).where("id > ?", effective_id).minimum(:id)
+      next_public_id = creative.comments.public_only.where("id > ?", effective_id).minimum(:id)
 
       query = CommentReadPointer.where(creative: creative)
                                 .where("last_read_comment_id >= ?", effective_id)
