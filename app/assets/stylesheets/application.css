@@ -91,10 +91,10 @@ textarea:focus-visible {
 }
 
 /* Form inputs need more padding than compact nav inputs */
-.stacked-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="submit"]),
+.stacked-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]),
 .stacked-form select,
 .stacked-form textarea,
-.profile-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="submit"]),
+.profile-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]),
 .profile-form select,
 .profile-form textarea {
     padding: var(--space-2) var(--space-3);
