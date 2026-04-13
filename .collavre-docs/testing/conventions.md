@@ -99,6 +99,6 @@ end
 After fixture loading, rebuild the tree:
 ```ruby
 setup do
-  Creative.rebuild! if defined?(Creative)
+  Collavre::Creative.rebuild! if defined?(Collavre::Creative)
 end
 ```

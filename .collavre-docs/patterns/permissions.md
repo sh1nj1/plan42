@@ -2,19 +2,23 @@
 
 ## Permission Levels
 
-Three levels, hierarchical:
+Five levels, hierarchical (ascending order):
+- `:no_access` - Explicitly blocked
 - `:read` - View content
-- `:write` - Edit content (includes read)
+- `:feedback` - View and leave comments
+- `:write` - Edit content (includes feedback)
 - `:admin` - Manage permissions (includes write)
 
 ## Permission Model
 
+Permissions are stored as `CreativeShare` records:
+
 ```ruby
-class Permission < ApplicationRecord
-  belongs_to :user
+class CreativeShare < ApplicationRecord
+  belongs_to :user, optional: true  # nil = public share
   belongs_to :creative
-  
-  enum :level, { read: 0, write: 1, admin: 2 }
+
+  enum :permission, { no_access: 0, read: 1, feedback: 2, write: 3, admin: 4 }
 end
 ```
 
@@ -24,11 +28,12 @@ Permissions inherit from the **origin** (root) creative:
 
 ```ruby
 # For nested creatives
-creative.origin          # The root creative
 creative.effective_origin  # Self if root, else origin
 
-# Permission check considers inheritance
-creative.readable_by?(user)  # Checks effective_origin's permissions
+# Permission check considers inheritance (uses CreativeSharesCache)
+creative.has_permission?(user, :read)   # => true/false
+creative.has_permission?(user, :write)
+creative.has_permission?(user, :admin)
 ```
 
 ## Controller Authorization
@@ -43,17 +48,17 @@ class CreativesController < ApplicationController
   private
 
   def ensure_read_permission
-    return if @creative.readable_by?(Current.user)
+    return if @creative.has_permission?(Current.user, :read)
     render_forbidden
   end
 
   def ensure_write_permission
-    return if @creative.writable_by?(Current.user)
+    return if @creative.has_permission?(Current.user, :write)
     render_forbidden
   end
 
   def ensure_admin_permission
-    return if @creative.admin_by?(Current.user)
+    return if @creative.has_permission?(Current.user, :admin)
     render_forbidden
   end
 end
@@ -63,7 +68,7 @@ end
 
 ```ruby
 # Grant access
-Permission.create!(user: user, creative: root_creative, level: :write)
+CreativeShare.create!(user: user, creative: root_creative, permission: :write)
 
 # Via invitation
 Invitation.create!(
@@ -75,11 +80,6 @@ Invitation.create!(
 
 ## Owner Permissions
 
-The creative's owner (`user_id`) always has admin access:
-
-```ruby
-def admin_by?(user)
-  return true if self.user_id == user.id
-  effective_permission_for(user) == :admin
-end
-```
+The creative's owner (`user_id`) always has admin access. This is enforced in
+`Collavre::Creatives::PermissionChecker`, which grants the owner full access
+regardless of any `CreativeShare` record.

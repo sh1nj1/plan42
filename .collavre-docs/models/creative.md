@@ -28,9 +28,11 @@ end
 # Core fields
 description: text          # Main content (markdown)
 progress: decimal          # 0.0 to 1.0
-due_at: datetime          # Optional deadline
 user_id: integer          # Creator/owner
 origin_id: integer        # Root for permission inheritance
+sequence: integer         # Sort order within siblings
+archived_at: datetime     # Set when archived (nil = active)
+data: jsonb               # Flexible metadata (e.g. kind: 'inbox')
 
 # Computed
 effective_origin          # Self if root, else origin
@@ -38,46 +40,43 @@ effective_origin          # Self if root, else origin
 
 ## Permission Model
 
-Permissions cascade from root (origin) creative:
+Permissions are stored as `CreativeShare` records and cascade from the root (origin) creative:
 
 ```ruby
-# Direct permissions
-creative.permissions.find_by(user: user)&.level  # :read, :write, :admin
+# Check permission (uses CreativeSharesCache for fast lookups)
+creative.has_permission?(user, :read)   # => true/false
+creative.has_permission?(user, :write)
+creative.has_permission?(user, :admin)
 
-# Effective permission (considers inheritance)
-creative.effective_permission_for(user)
-
-# Checks
-creative.readable_by?(user)
-creative.writable_by?(user)
-creative.admin_by?(user)
+# Permission levels (in ascending order)
+# :no_access, :read, :feedback, :write, :admin
 ```
 
 ## Rich Text & Attachments
 
 ```ruby
 creative.description              # Plain markdown text
-creative.attachments              # ActiveStorage has_many_attached
-creative.cover_image              # First image attachment
+creative.comments                 # Has-many comments (images attached to comments)
 ```
 
 ## Tree Operations
 
 ```ruby
 # Rebuild closure tree (after bulk imports)
-Creative.rebuild!
+Collavre::Creative.rebuild!
 
 # Move in tree
 creative.update(parent: new_parent)
 
 # Reorder siblings
-creative.update(sort_order: 2)
+creative.update(sequence: 2)
 ```
 
 ## Scopes
 
 ```ruby
 Creative.roots                    # All root creatives
-Creative.for_user(user)           # Readable by user
-Creative.with_descendants         # Eager load descendants
+Creative.active                   # Not archived (archived_at IS NULL)
+Creative.archived                 # Archived (archived_at IS NOT NULL)
+Creative.inboxes                  # Inbox creatives (data->kind = 'inbox')
 ```

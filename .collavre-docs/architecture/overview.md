@@ -6,11 +6,15 @@ Collavre uses a Rails 8 multi-engine architecture:
 
 ```
 collavre/
-├── app/                    # Host app (minimal, mostly mounts engines)
+├── app/                          # Host app (minimal, mostly mounts engines)
 ├── engines/
-│   ├── collavre/           # Core engine (users, creatives, permissions)
-│   ├── collavre_openclaw/  # OpenClaw AI agent integration
-│   └── collavre_notion/    # Notion export integration
+│   ├── collavre/                 # Core engine (users, creatives, permissions)
+│   ├── collavre_openclaw/        # OpenClaw AI agent integration
+│   ├── collavre_notion/          # Notion export integration
+│   ├── collavre_github/          # GitHub integration (OAuth, webhooks, PR tools)
+│   ├── collavre_slack/           # Slack integration (channel sync, message dispatch)
+│   ├── collavre_completion_api/  # OpenAI-compatible chat completion API
+│   └── collavre_plan/            # Plans timeline and tagging
 ```
 
 ## Engine Responsibilities
@@ -31,6 +35,26 @@ collavre/
 - Notion OAuth integration
 - Creative tree export to Notion pages
 - Block-level sync tracking
+
+### GitHub Engine (`engines/collavre_github/`)
+- GitHub OAuth integration
+- Repository link management
+- Webhook provisioning and PR tool services
+
+### Slack Engine (`engines/collavre_slack/`)
+- Slack OAuth and channel linking
+- Comment/reaction dispatch to Slack channels
+- Inbound event handling
+
+### Completion API Engine (`engines/collavre_completion_api/`)
+- Exposes an OpenAI-compatible `/v1/chat/completions` endpoint
+- Exposes a `/v1/models` endpoint
+- Mounts at the root path
+
+### Plan Engine (`engines/collavre_plan/`)
+- Plan tagging on creatives
+- Plans timeline view
+- Navigation and toolbar view extensions
 
 ## Namespace Pattern
 
