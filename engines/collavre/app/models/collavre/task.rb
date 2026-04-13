@@ -32,14 +32,6 @@ module Collavre
       false
     end
 
-    def workflow_parent?
-      workflow_state.present? && parent_task_id.nil?
-    end
-
-    def all_sub_tasks_done?
-      sub_tasks.where.not(status: %w[done cancelled]).empty?
-    end
-
     private
 
     def trigger_loop_candidate?

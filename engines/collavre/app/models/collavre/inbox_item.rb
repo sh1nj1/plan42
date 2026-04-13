@@ -22,10 +22,6 @@ module Collavre
 
     scope :new_items, -> { where(state: "new") }
 
-    def read?
-      state == "read"
-    end
-
     def localized_message(locale: I18n.locale)
       msg =
         if message_key.present?
