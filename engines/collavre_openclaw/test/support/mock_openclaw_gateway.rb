@@ -51,7 +51,7 @@ module CollavreOpenclaw
           @port = use_port
           @started = true
           ready.push({ ok: true, port: use_port })
-        rescue => e
+        rescue StandardError => e
           ready.push({ error: e.message })
         end
       end
@@ -74,7 +74,7 @@ module CollavreOpenclaw
             EM.stop_server(@server_signature)
             @server_signature = nil
           end
-        rescue => e
+        rescue StandardError => e
           # Ignore cleanup errors
         ensure
           @started = false

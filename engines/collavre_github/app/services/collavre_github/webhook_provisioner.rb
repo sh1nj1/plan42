@@ -23,8 +23,15 @@ module CollavreGithub
     end
 
     def remove_for_repositories(repositories)
+      # Batch-query to avoid N+1: find all repo names that still have links
+      linked_names = CollavreGithub::RepositoryLink
+        .where(repository_full_name: repositories)
+        .distinct
+        .pluck(:repository_full_name)
+        .to_set
+
       repositories.each do |repository_full_name|
-        next if CollavreGithub::RepositoryLink.where(repository_full_name: repository_full_name).exists?
+        next if linked_names.include?(repository_full_name)
 
         remove_webhook(repository_full_name)
       end
