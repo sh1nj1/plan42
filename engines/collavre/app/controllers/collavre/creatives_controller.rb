@@ -282,7 +282,7 @@ module Collavre
       own_creatives = Creative.where(id: own_ids).index_by(&:id)
       inherited_creatives = Creative.where(id: inherited_ids).index_by(&:id)
 
-      disabled_ids = Array(creative.data&.dig("disabled_context_ids"))
+      disabled_ids = creative.effective_disabled_context_ids
 
       own = own_ids.filter_map do |cid|
         c = own_creatives[cid]
@@ -314,8 +314,13 @@ module Collavre
 
       current_data = (creative.data || {}).dup
       current_data["context_ids"] = Array(params[:context_ids]).map(&:to_i) if params.key?(:context_ids)
-      current_data["disabled_context_ids"] = Array(params[:disabled_context_ids]).map(&:to_i) if params.key?(:disabled_context_ids)
-      current_data.delete("disabled_context_ids") if current_data["disabled_context_ids"]&.empty?
+      if params.key?(:disabled_context_ids)
+        requested_disabled = Array(params[:disabled_context_ids]).map(&:to_i)
+        parent_disabled = creative.parent&.effective_disabled_context_ids || []
+        inherited_only = parent_disabled - creative.disabled_context_ids
+        current_data["disabled_context_ids"] = requested_disabled - inherited_only
+        current_data.delete("disabled_context_ids") if current_data["disabled_context_ids"].empty?
+      end
       if params.key?(:disabled_self_context)
         if ActiveModel::Type::Boolean.new.cast(params[:disabled_self_context])
           current_data["disabled_self_context"] = true
