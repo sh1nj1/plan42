@@ -88,6 +88,8 @@ module Collavre
 
       # Convenience methods
       def arbitration_strategy
+        return "primary_first" if topic_primary_agent_id.present?
+
         arbitration_config["strategy"]
       end
 

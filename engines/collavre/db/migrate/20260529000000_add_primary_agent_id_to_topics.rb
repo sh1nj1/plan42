@@ -5,44 +5,34 @@ class AddPrimaryAgentIdToTopics < ActiveRecord::Migration[8.0]
     add_column :topics, :primary_agent_id, :integer
     add_index :topics, :primary_agent_id
 
-    # Migrate existing data from orchestrator_policies
-    execute <<~SQL
-      UPDATE topics
-      SET primary_agent_id = CAST(
-        json_extract(orchestrator_policies.config, '$.primary_agent_id') AS INTEGER
-      )
-      FROM orchestrator_policies
-      WHERE orchestrator_policies.scope_type = 'Topic'
-        AND orchestrator_policies.scope_id = topics.id
-        AND orchestrator_policies.policy_type = 'arbitration'
-        AND orchestrator_policies.enabled = 1
-        AND json_extract(orchestrator_policies.config, '$.primary_agent_id') IS NOT NULL
-    SQL
+    # Migrate existing data from orchestrator_policies using ActiveRecord (adapter-agnostic)
+    Collavre::OrchestratorPolicy
+      .where(policy_type: "arbitration", scope_type: "Topic", enabled: true)
+      .find_each do |policy|
+        agent_id = policy.config&.dig("primary_agent_id")
+        next unless agent_id.present?
+
+        Collavre::Topic.where(id: policy.scope_id).update_all(primary_agent_id: agent_id)
+      end
 
     # Remove migrated topic-scoped arbitration policies
-    execute <<~SQL
-      DELETE FROM orchestrator_policies
-      WHERE scope_type = 'Topic'
-        AND policy_type = 'arbitration'
-    SQL
+    Collavre::OrchestratorPolicy
+      .where(scope_type: "Topic", policy_type: "arbitration")
+      .delete_all
   end
 
   def down
     # Re-create orchestrator_policies from topics with primary_agent_id
-    execute <<~SQL
-      INSERT INTO orchestrator_policies (policy_type, scope_type, scope_id, config, priority, enabled, created_at, updated_at)
-      SELECT
-        'arbitration',
-        'Topic',
-        id,
-        json_object('strategy', 'primary_first', 'primary_agent_id', primary_agent_id),
-        10,
-        1,
-        CURRENT_TIMESTAMP,
-        CURRENT_TIMESTAMP
-      FROM topics
-      WHERE primary_agent_id IS NOT NULL
-    SQL
+    Collavre::Topic.where.not(primary_agent_id: nil).find_each do |topic|
+      Collavre::OrchestratorPolicy.create!(
+        policy_type: "arbitration",
+        scope_type: "Topic",
+        scope_id: topic.id,
+        config: { "strategy" => "primary_first", "primary_agent_id" => topic.primary_agent_id },
+        priority: 10,
+        enabled: true
+      )
+    end
 
     remove_index :topics, :primary_agent_id
     remove_column :topics, :primary_agent_id

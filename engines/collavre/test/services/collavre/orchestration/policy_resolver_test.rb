@@ -144,6 +144,40 @@ module Collavre
 
         assert_equal @ai_agent.id, resolver.primary_agent_id
       end
+
+      test "auto-selects primary_first strategy when topic has primary_agent_id" do
+        @topic.update!(primary_agent_id: @ai_agent.id)
+
+        resolver = PolicyResolver.new(@context)
+
+        assert_equal "primary_first", resolver.arbitration_strategy
+      end
+
+      test "auto-selects primary_first strategy even when global policy sets different strategy" do
+        @topic.update!(primary_agent_id: @ai_agent.id)
+
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration",
+          config: { "strategy" => "round_robin" }
+        )
+
+        resolver = PolicyResolver.new(@context)
+
+        assert_equal "primary_first", resolver.arbitration_strategy
+      end
+
+      test "uses policy strategy when topic has no primary_agent_id" do
+        assert_nil @topic.primary_agent_id
+
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration",
+          config: { "strategy" => "round_robin" }
+        )
+
+        resolver = PolicyResolver.new(@context)
+
+        assert_equal "round_robin", resolver.arbitration_strategy
+      end
     end
   end
 end
