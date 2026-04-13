@@ -1749,6 +1749,9 @@ export function initializeCreativeRowEditor() {
           pendingSave = false;
           lexicalEditor.focus();
           updateActionButtonStates();
+          document.dispatchEvent(new CustomEvent('creative-editing:start', {
+            detail: { creativeId: null }
+          }));
           if (parentSuggestions) {
             parentSuggestions.style.display = 'none';
             parentSuggestions.innerHTML = '';
