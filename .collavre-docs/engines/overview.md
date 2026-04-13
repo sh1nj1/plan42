@@ -140,8 +140,8 @@ OpenAI-compatible chat completion API.
 
 ### Routes
 ```
-/v1/chat/completions    # Chat completion endpoint
-/v1/models              # Available models list
+/api/v1/chat/completions    # Chat completion endpoint
+/api/v1/models              # Available models list
 ```
 
 ---
@@ -159,5 +159,5 @@ Plans timeline and tagging for creatives.
 ### Routes
 ```
 /plans                       # Plans index
-/creatives/:id/creative_plan # Plan association for a creative
+/creative_plan               # Plan association for a creative
 ```
