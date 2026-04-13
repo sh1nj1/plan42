@@ -3,9 +3,11 @@ require "json"
 
 module CollavreOpenclaw
   class OpenclawAdapter
-    # Adapter for OpenClaw AI Gateway
+    # Pure transport adapter for OpenClaw AI Gateway.
+    # Session context filtering (full vs incremental) is handled upstream
+    # by SessionContextResolver — this adapter sends exactly what it receives.
     #
-    # Supports two transport modes:
+    # Transport modes:
     # 1. WebSocket (primary) - via faye-websocket + EventMachine
     # 2. HTTP (fallback) - via Faraday POST /v1/chat/completions
     #

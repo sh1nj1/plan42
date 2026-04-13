@@ -119,7 +119,7 @@ module Collavre
       explicit = parsed_agent_conf.dig("session", "enabled")
       return ActiveModel::Type::Boolean.new.cast(explicit) unless explicit.nil?
 
-      llm_vendor == "openclaw"
+      llm_vendor&.downcase == "openclaw"
     end
 
     encrypts :llm_api_key, deterministic: false
