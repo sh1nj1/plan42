@@ -95,5 +95,17 @@ module Collavre
       @user.agent_conf = nil
       assert_not @user.supports_session?
     end
+
+    test "supports_session? handles quoted string 'false' as false" do
+      @user.llm_vendor = "openclaw"
+      @user.agent_conf = "session:\n  enabled: 'false'"
+      assert_not @user.supports_session?
+    end
+
+    test "supports_session? handles quoted string 'true' as true" do
+      @user.llm_vendor = "google"
+      @user.agent_conf = "session:\n  enabled: 'true'"
+      assert @user.supports_session?
+    end
   end
 end

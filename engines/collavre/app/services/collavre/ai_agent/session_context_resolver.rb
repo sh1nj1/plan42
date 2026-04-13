@@ -24,8 +24,14 @@ module Collavre
       end
 
       def full_payload
+        msgs = if @agent.supports_session?
+                 @messages_data[:messages].reject { |m| m[:kind] == :chat_history }
+               else
+                 @messages_data[:messages]
+               end
+
         {
-          messages: @messages_data[:messages],
+          messages: msgs,
           system_prompt: @system_prompt,
           first_message: @messages_data[:first_message],
           context_changed: @messages_data[:context_changed]

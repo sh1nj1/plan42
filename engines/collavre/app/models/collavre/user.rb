@@ -117,7 +117,7 @@ module Collavre
     # nil in agent_conf = auto-detect by vendor (openclaw → true).
     def supports_session?
       explicit = parsed_agent_conf.dig("session", "enabled")
-      return explicit unless explicit.nil?
+      return ActiveModel::Type::Boolean.new.cast(explicit) unless explicit.nil?
 
       llm_vendor == "openclaw"
     end

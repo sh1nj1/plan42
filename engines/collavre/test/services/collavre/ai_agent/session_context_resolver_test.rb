@@ -38,7 +38,7 @@ module Collavre
           agent: agent, messages_data: messages_data, system_prompt: @system_prompt
         ).resolve
 
-        assert_equal @full_messages, result[:messages]
+        assert_no_chat_history(result[:messages])
         assert_equal @system_prompt, result[:system_prompt]
         assert_equal true, result[:first_message]
       end
@@ -51,9 +51,36 @@ module Collavre
           agent: agent, messages_data: messages_data, system_prompt: @system_prompt
         ).resolve
 
-        assert_equal @full_messages, result[:messages]
+        assert_no_chat_history(result[:messages])
         assert_equal @system_prompt, result[:system_prompt]
         assert_equal true, result[:context_changed]
+      end
+
+      test "full payload for session agent excludes chat_history but keeps context and trigger" do
+        agent = build_agent(supports_session: true)
+        messages_data = { messages: @full_messages, first_message: true, context_changed: false }
+
+        result = SessionContextResolver.new(
+          agent: agent, messages_data: messages_data, system_prompt: @system_prompt
+        ).resolve
+
+        kinds = result[:messages].map { |m| m[:kind] }
+        assert_includes kinds, :creative_context
+        assert_includes kinds, :context_creative
+        assert_includes kinds, :trigger
+        assert_not_includes kinds, :chat_history
+      end
+
+      test "full payload for non-session agent includes chat_history" do
+        agent = build_agent(supports_session: false)
+        messages_data = { messages: @full_messages, first_message: true, context_changed: false }
+
+        result = SessionContextResolver.new(
+          agent: agent, messages_data: messages_data, system_prompt: @system_prompt
+        ).resolve
+
+        kinds = result[:messages].map { |m| m[:kind] }
+        assert_includes kinds, :chat_history
       end
 
       test "returns incremental payload for warm session" do
@@ -95,7 +122,7 @@ module Collavre
           agent: agent, messages_data: messages_data, system_prompt: @system_prompt
         ).resolve
 
-        assert_equal @full_messages, result[:messages]
+        assert_no_chat_history(result[:messages])
         assert_equal @system_prompt, result[:system_prompt]
       end
 
@@ -106,6 +133,11 @@ module Collavre
         val = supports_session
         agent.define_singleton_method(:supports_session?) { val }
         agent
+      end
+
+      def assert_no_chat_history(messages)
+        chat_history = messages.select { |m| m[:kind] == :chat_history }
+        assert_empty chat_history, "Expected no chat_history messages but found #{chat_history.length}"
       end
     end
   end
