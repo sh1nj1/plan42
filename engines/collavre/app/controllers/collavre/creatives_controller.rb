@@ -195,6 +195,10 @@ module Collavre
     end
 
     def parent_suggestions
+      unless @creative.has_permission?(Current.user, :read)
+        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
+      end
+
       suggestions = ::GeminiParentRecommender.new.recommend(@creative)
       render json: suggestions
     end
@@ -276,6 +280,10 @@ module Collavre
     end
 
     def contexts
+      unless @creative.has_permission?(Current.user, :read)
+        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
+      end
+
       creative = @creative.effective_origin(Set.new)
       own_ids = creative.context_ids - [ creative.id ]
       inherited_ids = (creative.effective_context_ids - own_ids - [ creative.id ]).uniq
