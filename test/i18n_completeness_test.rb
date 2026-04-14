@@ -165,7 +165,7 @@ class I18nCompletenessTest < ActiveSupport::TestCase
 
   def translation_exists?(key, locale)
     I18n.exists?(key, locale)
-  rescue
+  rescue StandardError
     false
   end
 

@@ -48,7 +48,7 @@ module Collavre
         before_call: before_call,
         after_call: after_call
       )
-      puts("Registered tool: #{result}")
+      Rails.logger.info("Registered tool: #{result}")
 
       if result[:error]
         error_msg = "Failed to register tool: #{result[:error]}"
