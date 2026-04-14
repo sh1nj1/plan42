@@ -151,7 +151,7 @@ module Collavre
         model: verifier.llm_model,
         system_prompt: VERIFY_SYSTEM_PROMPT,
         llm_api_key: verifier.llm_api_key || verifier.creator&.llm_api_key,
-        gateway_url: verifier.gateway_url || verifier.creator&.gateway_url,
+        gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
         context: {}
       )
 
