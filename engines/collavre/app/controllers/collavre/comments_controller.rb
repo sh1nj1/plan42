@@ -169,9 +169,7 @@ module Collavre
 
       @comment = @creative.comments.build(comment_attributes)
 
-      if @comment.topic_id.present? && !@creative.topics.where(id: @comment.topic_id).exists?
-        render json: { error: I18n.t("collavre.comments.invalid_topic") }, status: :unprocessable_entity and return
-      end
+      validate_topic_id!(@comment.topic_id) or return
 
       @comment.user = Current.user
       @comment.images.attach(image_attachments) if image_attachments.present?
@@ -195,9 +193,7 @@ module Collavre
     def update
       if @comment.user == Current.user
         safe_params = comment_params.except(:quoted_comment_id, :quoted_text)
-        if safe_params[:topic_id].present? && !@creative.topics.where(id: safe_params[:topic_id]).exists?
-          render json: { error: I18n.t("collavre.comments.invalid_topic") }, status: :unprocessable_entity and return
-        end
+        validate_topic_id!(safe_params[:topic_id]) or return
 
         if @comment.update(safe_params)
           @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
@@ -258,17 +254,7 @@ module Collavre
     def participants
       users = [ @creative.user ].compact + @creative.all_shared_users(:feedback).map(&:user)
       users = users.uniq
-      user_data = users.map do |u|
-        {
-          id: u.id,
-          email: u.email,
-          name: u.display_name,
-          avatar_url: view_context.user_avatar_url(u, size: 20),
-          default_avatar: !u.avatar.attached? && u.avatar_url.blank?,
-          initial: u.display_name[0].upcase,
-          ai_user: u.ai_user?
-        }
-      end
+      user_data = users.map { |u| view_context.user_json(u, email: true, ai_user: true) }
       response.headers["Cache-Control"] = "no-store"
       response.headers["Pragma"] = "no-cache"
       response.headers["Expires"] = "0"
@@ -351,6 +337,12 @@ module Collavre
 
     def current_topic_context
       params[:topic_id].presence || params.dig(:comment, :topic_id).presence
+    end
+
+    def validate_topic_id!(topic_id)
+      return true if topic_id.blank? || @creative.topics.where(id: topic_id).exists?
+      render json: { error: I18n.t("collavre.comments.invalid_topic") }, status: :unprocessable_entity
+      false
     end
   end
 end
