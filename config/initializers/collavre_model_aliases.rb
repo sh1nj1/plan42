@@ -32,7 +32,7 @@ Rails.application.config.to_prepare do
   set_alias(Object, :InboxSummaryJob, Collavre::InboxSummaryJob)
   set_alias(Object, :NotionExportJob, CollavreNotion::NotionExportJob)
   set_alias(Object, :NotionSyncJob, CollavreNotion::NotionSyncJob)
-  set_alias(Object, :PermissionCacheCleanupJob, Collavre::PermissionCacheCleanupJob)
+
   set_alias(Object, :PermissionCacheJob, Collavre::PermissionCacheJob)
   set_alias(Object, :PushNotificationJob, Collavre::PushNotificationJob)
 
@@ -76,7 +76,7 @@ Rails.application.config.to_prepare do
   set_alias(Creatives, :PermissionCacheBuilder, Collavre::Creatives::PermissionCacheBuilder)
   set_alias(Creatives, :TreeBuilder, Collavre::Creatives::TreeBuilder)
   set_alias(Creatives, :Importer, Collavre::Creatives::Importer)
-  set_alias(Creatives, :PathExporter, Collavre::Creatives::PathExporter)
+
 
   # Filters module
   Creatives.const_set(:Filters, Module.new) unless Creatives.const_defined?(:Filters, false)

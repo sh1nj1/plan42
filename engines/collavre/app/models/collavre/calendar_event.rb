@@ -9,10 +9,6 @@ module Collavre
 
     after_commit :delete_google_event, on: :destroy
 
-    def synced_to_google?
-      google_event_id.present?
-    end
-
     private
 
     def delete_google_event

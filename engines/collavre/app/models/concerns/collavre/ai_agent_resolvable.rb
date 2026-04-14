@@ -30,13 +30,5 @@ module Collavre
       context["topic"] = { "id" => topic_id } if topic_id.present?
       context
     end
-
-    def default_vendor
-      "google"
-    end
-
-    def default_model
-      "gemini-3-flash-preview"
-    end
   end
 end

@@ -49,7 +49,7 @@ class CalendarEventTest < ActiveSupport::TestCase
     assert_not delete_called, "Expected delete_event NOT to be called for local-only event"
   end
 
-  test "synced_to_google? returns true when google_event_id present" do
+  test "google_event_id.present? returns true when google_event_id present" do
     user = User.create!(email: "calendar-user-sync@example.com", password: TEST_PASSWORD, name: "Calendar Sync User")
     event = CalendarEvent.create!(
       user: user,
@@ -58,10 +58,10 @@ class CalendarEventTest < ActiveSupport::TestCase
       end_time: 1.hour.from_now
     )
 
-    assert event.synced_to_google?
+    assert event.google_event_id.present?
   end
 
-  test "synced_to_google? returns false when google_event_id nil" do
+  test "google_event_id.present? returns false when google_event_id nil" do
     user = User.create!(email: "calendar-user-nosync@example.com", password: TEST_PASSWORD, name: "Calendar NoSync User")
     event = CalendarEvent.create!(
       user: user,
@@ -70,6 +70,6 @@ class CalendarEventTest < ActiveSupport::TestCase
       end_time: 1.hour.from_now
     )
 
-    assert_not event.synced_to_google?
+    assert_not event.google_event_id.present?
   end
 end
