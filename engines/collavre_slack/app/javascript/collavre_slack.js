@@ -135,7 +135,9 @@ if (!slackIntegrationInitialized) {
         li.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:0.5em 0.75em;margin-bottom:0.5em;background:var(--color-bg-alt);border-radius:4px;';
 
         const channelInfo = document.createElement('div');
-        channelInfo.innerHTML = `<strong>#${link.channel_name || link.channel_id}</strong>`;
+        const channelStrong = document.createElement('strong');
+        channelStrong.textContent = `#${link.channel_name || link.channel_id}`;
+        channelInfo.appendChild(channelStrong);
 
         if (link.last_synced_at) {
           const syncInfo = document.createElement('span');
@@ -250,10 +252,15 @@ if (!slackIntegrationInitialized) {
         div.className = 'slack-channel-item';
 
         const linkedLabel = modal.dataset.linkedLabel || '(linked)';
-        div.innerHTML = `
-          <strong>#${channel.name}</strong>
-          ${isLinked ? `<span style="color:green;margin-left:0.5em;">${linkedLabel}</span>` : ''}
-        `;
+        const nameStrong = document.createElement('strong');
+        nameStrong.textContent = `#${channel.name}`;
+        div.appendChild(nameStrong);
+        if (isLinked) {
+          const linkedSpan = document.createElement('span');
+          linkedSpan.style.cssText = 'color:green;margin-left:0.5em;';
+          linkedSpan.textContent = linkedLabel;
+          div.appendChild(linkedSpan);
+        }
 
         if (isSelected) {
           div.classList.add('active');

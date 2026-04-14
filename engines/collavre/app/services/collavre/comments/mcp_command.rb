@@ -105,9 +105,12 @@ module Collavre
           result.to_s
         end
 
+        escaped_tool = ERB::Util.html_escape(tool_name)
+        escaped_content = ERB::Util.html_escape(content)
+
         <<~HTML
-        <details><summary>#{tool_name} response</summary>
-        <pre><code>#{content}</code></pre>
+        <details><summary>#{escaped_tool} response</summary>
+        <pre><code>#{escaped_content}</code></pre>
         </details>
         HTML
       end
