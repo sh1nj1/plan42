@@ -49,6 +49,7 @@ module Collavre
         model: agent.llm_model,
         system_prompt: system_prompt,
         llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
+        gateway_url: agent.gateway_url || agent.creator&.gateway_url,
         context: {
           creative: creative,
           user: agent,
