@@ -141,7 +141,7 @@ module Collavre
         history_chars = 0
         count = 0
 
-        Comment.where(creative_id: creative_id, private: false)
+        Comment.public_only.where(creative_id: creative_id)
                .where(topic_id: topic_id)
                .where.not(user_id: nil)
                .includes(:user)

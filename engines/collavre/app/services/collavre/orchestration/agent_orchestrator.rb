@@ -59,8 +59,8 @@ module Collavre
         return unless creative_id && context&.key?("topic")
 
         topic_id = context.dig("topic", "id")
-        scope = Comment
-          .where(creative_id: creative_id, topic_id: topic_id, private: false)
+        scope = Comment.public_only
+          .where(creative_id: creative_id, topic_id: topic_id)
           .where.not(user_id: [ task.agent_id, nil ])
           .order(created_at: :desc)
         latest_comment = scope.first

@@ -16,6 +16,8 @@ module Collavre
     belongs_to :topic, class_name: "Collavre::Topic", optional: true
     belongs_to :quoted_comment, class_name: "Collavre::Comment", optional: true
 
+    scope :public_only, -> { where(private: false) }
+
     scope :visible_to, ->(user) {
       where(
         "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",

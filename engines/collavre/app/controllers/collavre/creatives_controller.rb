@@ -4,12 +4,14 @@ module Collavre
     include Collavre::Concerns::Exportable
     include Collavre::Concerns::TreeManageable
     include Collavre::Concerns::Shareable
+    include Collavre::CreativePermissionGuard
 
     # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
     # Removed unauthenticated access to index and show actions
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
     before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action ]
+    before_action :require_creative_write!, only: %i[archive unarchive]
 
     def index
       respond_to do |format|
@@ -453,19 +455,11 @@ module Collavre
     end
 
     def archive
-      unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
-        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
-      end
-
       @creative.archive!
       head :ok
     end
 
     def unarchive
-      unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
-        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
-      end
-
       @creative.unarchive!
       head :ok
     end
@@ -498,6 +492,10 @@ module Collavre
 
       def set_creative
         @creative = Creative.find(params[:id])
+      end
+
+      def creative_permission_denied_message
+        t("collavre.creatives.errors.no_permission")
       end
 
       def creative_params

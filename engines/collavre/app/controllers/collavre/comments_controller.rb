@@ -128,7 +128,7 @@ module Collavre
         # Fetch all visible IDs for correct read-receipt placement transparency
         # Only map read receipts to PUBLIC comments.
         # Users who read private comments will appear on the nearest preceding public comment.
-        public_ids = @creative.comments.where(private: false).order(id: :asc).pluck(:id)
+        public_ids = @creative.comments.public_only.order(id: :asc).pluck(:id)
 
         pointers.each do |pointer|
           effective_id = pointer.effective_comment_id(public_ids)
@@ -344,13 +344,6 @@ module Collavre
     end
 
     private
-
-    def set_creative
-      @creative = Creative.find(params[:creative_id]).effective_origin
-      unless @creative.has_permission?(Current.user, :read)
-        render json: { error: I18n.t("collavre.creatives.errors.no_permission") }, status: :forbidden
-      end
-    end
 
     def comment_params
       params.require(:comment).permit(:content, :private, :topic_id, :quoted_comment_id, :quoted_text, :review_type, images: [])
