@@ -75,8 +75,8 @@ module Collavre
       topic = @creative.topics.find(params[:id])
 
       if topic.update(topic_params)
-        broadcast_topic_event("updated", topic: topic.slice(:id, :name))
-        render json: topic
+        broadcast_topic_event("updated", topic: topic_json(topic))
+        render json: topic_json(topic)
       else
         render json: { errors: topic.errors.full_messages }, status: :unprocessable_entity
       end

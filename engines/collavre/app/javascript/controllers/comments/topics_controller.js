@@ -837,7 +837,7 @@ export default class extends Controller {
         const index = topics.findIndex(t => String(t.id) === String(updatedTopic.id))
         if (index === -1) return
 
-        this.topics[index] = updatedTopic
+        this.topics[index] = { ...this.topics[index], ...updatedTopic }
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
         this.restoreSelection()
     }
