@@ -81,6 +81,19 @@ module Collavre
       safe_join(styles, "\n")
     end
 
+    def user_json(user, email: false, ai_user: false)
+      data = {
+        id: user.id,
+        name: user.display_name,
+        avatar_url: user_avatar_url(user, size: 20),
+        default_avatar: !user.avatar.attached? && user.avatar_url.blank?,
+        initial: user.display_name&.at(0)&.upcase || "?"
+      }
+      data[:email] = user.email if email
+      data[:ai_user] = user.ai_user? if ai_user
+      data
+    end
+
     private
 
     CSS_VARIABLE_KEY_PATTERN = /\A--[a-zA-Z0-9_-]+\z/

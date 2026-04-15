@@ -57,10 +57,7 @@ module Collavre
           end
 
           broadcast_data = agent ? topic_json_with_agent(topic, agent) : topic.slice(:id, :name)
-          TopicsChannel.broadcast_to(
-            @creative,
-            { action: "created", topic: broadcast_data, user_id: Current.user.id }
-          )
+          broadcast_topic_event("created", topic: broadcast_data, user_id: Current.user.id)
           render json: topic, status: :created
         else
           render json: { errors: topic.errors.full_messages }, status: :unprocessable_entity
@@ -78,10 +75,7 @@ module Collavre
       topic = @creative.topics.find(params[:id])
 
       if topic.update(topic_params)
-        TopicsChannel.broadcast_to(
-          @creative,
-          { action: "updated", topic: topic.slice(:id, :name) }
-        )
+        broadcast_topic_event("updated", topic: topic.slice(:id, :name))
         render json: topic
       else
         render json: { errors: topic.errors.full_messages }, status: :unprocessable_entity
@@ -95,10 +89,7 @@ module Collavre
       # last_topic_id is nullified by DB FK (on_delete: :nullify) and model dependent: :nullify
       topic.destroy
 
-      TopicsChannel.broadcast_to(
-        @creative,
-        { action: "deleted", topic_id: topic_id }
-      )
+      broadcast_topic_event("deleted", topic_id: topic_id)
       head :no_content
     end
 
@@ -120,14 +111,8 @@ module Collavre
         topic.update!(creative: target_creative)
       end
 
-      TopicsChannel.broadcast_to(
-        @creative,
-        { action: "deleted", topic_id: topic.id }
-      )
-      TopicsChannel.broadcast_to(
-        target_creative,
-        { action: "created", topic: topic.slice(:id, :name) }
-      )
+      broadcast_topic_event("deleted", topic_id: topic.id)
+      broadcast_topic_event("created", creative: target_creative, topic: topic.slice(:id, :name))
 
       render json: { success: true, topic: topic.slice(:id, :name), target_creative_id: target_creative.id }
     end
@@ -136,10 +121,7 @@ module Collavre
       topic = @creative.topics.find(params[:id])
       topic.archive!
 
-      TopicsChannel.broadcast_to(
-        @creative,
-        { action: "archived", topic: topic.slice(:id, :name) }
-      )
+      broadcast_topic_event("archived", topic: topic.slice(:id, :name))
       render json: { success: true }
     end
 
@@ -147,10 +129,7 @@ module Collavre
       topic = @creative.topics.find(params[:id])
       topic.unarchive!
 
-      TopicsChannel.broadcast_to(
-        @creative,
-        { action: "unarchived", topic: topic.slice(:id, :name, :archived_at) }
-      )
+      broadcast_topic_event("unarchived", topic: topic.slice(:id, :name, :archived_at))
       render json: { success: true }
     end
 
@@ -166,10 +145,7 @@ module Collavre
         end
       end
 
-      TopicsChannel.broadcast_to(
-        @creative,
-        { action: "reordered", topic_ids: topic_ids }
-      )
+      broadcast_topic_event("reordered", topic_ids: topic_ids)
 
       render json: { success: true }
     end
@@ -184,13 +160,7 @@ module Collavre
 
       topic.set_primary_agent!(agent)
 
-      TopicsChannel.broadcast_to(
-        @creative,
-        {
-          action: "updated",
-          topic: topic_json_with_agent(topic, agent)
-        }
-      )
+      broadcast_topic_event("updated", topic: topic_json_with_agent(topic, agent))
 
       render json: { success: true, topic: topic_json_with_agent(topic, agent) }
     end
@@ -256,13 +226,11 @@ module Collavre
     end
 
     def agent_json(agent)
-      {
-        id: agent.id,
-        name: agent.display_name,
-        avatar_url: view_context.user_avatar_url(agent, size: 20),
-        default_avatar: !agent.avatar.attached? && agent.avatar_url.blank?,
-        initial: agent.display_name&.at(0)&.upcase || "?"
-      }
+      view_context.user_json(agent)
+    end
+
+    def broadcast_topic_event(action, creative: @creative, **payload)
+      TopicsChannel.broadcast_to(creative, { action: action, **payload })
     end
   end
 end
