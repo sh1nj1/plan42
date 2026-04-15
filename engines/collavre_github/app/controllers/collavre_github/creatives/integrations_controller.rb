@@ -64,28 +64,29 @@ module CollavreGithub
           links = linked_repository_links(account).to_a
         end
 
+        # Handle markdown sync toggle BEFORE webhook provisioning
+        # so events_for() sees the updated markdown_sync_enabled state
+        markdown_sync = integration_attributes[:markdown_sync]
+        if markdown_sync.is_a?(ActionController::Parameters) || markdown_sync.is_a?(Hash)
+          links.each do |link|
+            repo = link.repository_full_name
+            next unless markdown_sync.key?(repo)
+
+            enabled = ActiveModel::Type::Boolean.new.cast(markdown_sync[repo])
+            was_enabled = link.markdown_sync_enabled?
+            link.update!(markdown_sync_enabled: enabled)
+
+            if enabled && !was_enabled
+              CollavreGithub::InitialMarkdownSyncJob.perform_later(link.id)
+            end
+          end
+        end
+
         CollavreGithub::WebhookProvisioner.ensure_for_links(
           account: account,
           links: links,
           webhook_url: github_webhook_url
         ) if links.present?
-
-        # Handle markdown sync toggle
-        markdown_sync = integration_attributes[:markdown_sync]
-        if markdown_sync.is_a?(ActionController::Parameters) || markdown_sync.is_a?(Hash)
-          links.each do |link|
-            repo = link.repository_full_name
-            if markdown_sync[repo].present?
-              enabled = ActiveModel::Type::Boolean.new.cast(markdown_sync[repo])
-              was_enabled = link.markdown_sync_enabled?
-              link.update!(markdown_sync_enabled: enabled)
-
-              if enabled && !was_enabled
-                CollavreGithub::InitialMarkdownSyncJob.perform_later(link.id)
-              end
-            end
-          end
-        end
 
         render json: {
           success: true,

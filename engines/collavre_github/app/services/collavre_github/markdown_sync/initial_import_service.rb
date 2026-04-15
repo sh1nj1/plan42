@@ -20,8 +20,6 @@ module CollavreGithub
           md_entries = md_entries.first(MAX_FILES)
         end
 
-        return if md_entries.empty?
-
         parent_creative = @link.creative
         root_creative = create_root_creative(parent_creative)
         @link.update!(markdown_root_creative_id: root_creative.id, last_synced_at: Time.current)
@@ -29,6 +27,11 @@ module CollavreGithub
         dir_map = { "" => root_creative }
         created = [ root_creative ]
         file_creatives = []
+
+        if md_entries.empty?
+          Collavre::Creative::RealtimeBroadcastable.broadcast_batch_created(created) if created.size > 1
+          return created
+        end
 
         md_entries.sort_by(&:path).each do |entry|
           parts = entry.path.split("/")
