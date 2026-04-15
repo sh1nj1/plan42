@@ -80,6 +80,7 @@ export default class extends Controller {
         }
       }
       this._isStreaming = false
+      this._updateStopButton()
     }, 10000)
   }
 
@@ -175,7 +176,6 @@ export default class extends Controller {
 
   _getActiveTaskId() {
     if (!this._isAiComment) return null
-    if (!this._isStreaming) return null
     const userId = this.element.dataset.userId
     return window._activeAgentTasks?.[userId] || null
   }
