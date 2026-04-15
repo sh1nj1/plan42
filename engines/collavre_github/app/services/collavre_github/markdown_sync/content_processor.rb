@@ -31,7 +31,7 @@ module CollavreGithub
           end
         end
 
-        [content, blobs]
+        [ content, blobs ]
       end
 
       private

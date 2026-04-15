@@ -137,7 +137,7 @@ module CollavreGithub
             sorted = siblings.sort_by do |c|
               path = c.data&.dig("source", "path") || ""
               is_dir = path.end_with?("/") || path == ""
-              [is_dir ? 0 : 1, c.description.to_s.downcase]
+              [ is_dir ? 0 : 1, c.description.to_s.downcase ]
             end
             sorted.each_with_index do |c, idx|
               c.update_column(:sequence, idx)
