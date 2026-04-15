@@ -72,7 +72,7 @@ module CollavreGithub
 
         # Handle markdown sync toggle
         markdown_sync = integration_attributes[:markdown_sync]
-        if markdown_sync.is_a?(Hash)
+        if markdown_sync.is_a?(ActionController::Parameters) || markdown_sync.is_a?(Hash)
           links.each do |link|
             repo = link.repository_full_name
             if markdown_sync[repo].present?

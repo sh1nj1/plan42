@@ -47,12 +47,14 @@ module CollavreGithub
           h[entry.path] = entry.sha
         end
 
-        # Pre-load all synced creatives for this link to avoid N+1 queries
         @synced_creatives = load_synced_creatives
+        processor = ContentProcessor.new(
+          client: @client, repo: @repo, branch: branch,
+          path_to_creative_map: @synced_creatives
+        )
 
         created = []
 
-        # Handle removed files
         removed_paths.each do |path|
           creative = @synced_creatives[path]
           next unless creative
@@ -60,7 +62,6 @@ module CollavreGithub
           @synced_creatives.delete(path)
         end
 
-        # Handle modified files
         modified_paths.each do |path|
           creative = @synced_creatives[path]
           next unless creative
@@ -74,13 +75,14 @@ module CollavreGithub
           )
           source.delete("rendered_html")
           creative.update!(data: creative.data.merge("source" => source))
-          update_content_comment(creative, content)
+
+          processed, blobs = processor.process(content, path)
+          update_content_comment(creative, processed, blobs)
         end
 
-        # Handle added files
         added_paths.each do |path|
           parts = path.split("/")
-          parts.pop # remove filename
+          parts.pop
 
           parent = ensure_parent_directories(parts, root)
           content = @client.file_content(@repo, path, ref: branch)
@@ -102,11 +104,15 @@ module CollavreGithub
               }
             }
           )
-          create_content_comment(creative, content)
           @synced_creatives[path] = creative
+
+          processed, blobs = processor.process(content, path)
+          comment = create_content_comment(creative, processed)
+          attach_blobs(comment, blobs) if blobs.any?
           created << creative
         end
 
+        resequence_affected_parents(created)
         @link.update!(last_synced_at: Time.current)
         Collavre::Creative::RealtimeBroadcastable.broadcast_batch_created(created) if created.any?
       ensure
@@ -144,13 +150,36 @@ module CollavreGithub
         )
       end
 
-      def update_content_comment(creative, markdown_content)
+      def update_content_comment(creative, markdown_content, blobs = [])
         topic = creative.content_topic(fallback_user: @user)
         comment = creative.comments.where(topic: topic).order(:created_at).first
         if comment
+          comment.images.purge if comment.images.attached?
           comment.update!(content: markdown_content)
+          attach_blobs(comment, blobs) if blobs.any?
         else
-          create_content_comment(creative, markdown_content)
+          comment = create_content_comment(creative, markdown_content)
+          attach_blobs(comment, blobs) if blobs.any?
+        end
+      end
+
+      def attach_blobs(comment, blobs)
+        blobs.each { |blob| comment.images.attach(blob) }
+      end
+
+      def resequence_affected_parents(new_creatives)
+        parent_ids = new_creatives.map(&:parent_id).compact.uniq
+        parent_ids.each do |pid|
+          siblings = Collavre::Creative.where(parent_id: pid, archived_at: nil)
+            .select(:id, :data, :description, :sequence)
+          sorted = siblings.sort_by do |c|
+            path = c.data&.dig("source", "path") || ""
+            is_dir = path.end_with?("/") || path == ""
+            [is_dir ? 0 : 1, c.description.to_s.downcase]
+          end
+          sorted.each_with_index do |c, idx|
+            c.update_column(:sequence, idx) if c.sequence != idx
+          end
         end
       end
 

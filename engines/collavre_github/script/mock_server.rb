@@ -149,12 +149,12 @@ def route(method, path, query_params)
   elsif method == "GET" && (m = path.match(tree_pattern))
     [ 200, { sha: m[2], tree: MOCK_TREE, truncated: false } ]
 
-  # GET /repos/:owner/:repo/contents/:path — file content (base64)
+  # GET /repos/:owner/:repo/contents/:path — file content (base64, supports binary)
   elsif method == "GET" && (m = path.match(contents_pattern))
     file_path = URI.decode_www_form_component(m[2])
     full_path = File.join(PROJECT_ROOT, file_path)
     if File.file?(full_path)
-      content = File.read(full_path, encoding: "UTF-8")
+      content = File.binread(full_path)
       sha = Digest::SHA1.hexdigest("blob #{content.bytesize}\0#{content}")
       [ 200, {
         name: File.basename(file_path),
