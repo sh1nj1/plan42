@@ -23,6 +23,7 @@ module Collavre
       end
 
       system_topic_id = @creative.inbox? ? @creative.topics.find_by(name: Creative::SYSTEM_TOPIC_NAME)&.id : nil
+      main_topic_id = @creative.main_topic(fallback_user: Current.user).id
 
       render json: {
         topics: active_topics.map { |t| topic_json(t) },
@@ -31,7 +32,8 @@ module Collavre
         can_create_topic: can_create_topic,
         last_topic_id: last_topic_id,
         is_inbox: @creative.inbox?,
-        system_topic_id: system_topic_id
+        system_topic_id: system_topic_id,
+        main_topic_id: main_topic_id
       }
     end
 
@@ -84,9 +86,12 @@ module Collavre
 
     def destroy
       topic = @creative.topics.find(params[:id])
-      topic_id = topic.id
 
-      # last_topic_id is nullified by DB FK (on_delete: :nullify) and model dependent: :nullify
+      if topic.name == Creative::MAIN_TOPIC_NAME
+        render json: { error: I18n.t("collavre.topics.cannot_delete_main") }, status: :unprocessable_entity and return
+      end
+
+      topic_id = topic.id
       topic.destroy
 
       broadcast_topic_event("deleted", topic_id: topic_id)

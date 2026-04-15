@@ -12,6 +12,7 @@ ko:
       default_name_prefix: "토픽"
       branch_prefix: "분기"
       main_name: "메인"
+      cannot_delete_main: "메인 토픽은 삭제할 수 없습니다."
       create_and_move: '"%{name}" 생성후 이동'
       move:
         no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.
@@ -120,7 +121,7 @@ ko:
       batch_delete_no_selection: 삭제할 메시지를 선택해주세요.
       batch_delete_not_found: 일부 선택한 메시지를 찾을 수 없습니다.
       topic_search_placeholder: 토픽 검색...
-      topic_main: 메인
+      topic_main: 전체 메세지
       fullscreen: 전체 화면
       exit_fullscreen: 전체 화면 종료
       move_invalid_target: 이동할 크리에이티브를 선택해주세요.

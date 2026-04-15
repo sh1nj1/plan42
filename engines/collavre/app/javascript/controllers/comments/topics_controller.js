@@ -78,6 +78,7 @@ export default class extends Controller {
                 this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
                 this.isInbox = !!data.is_inbox
                 this.systemTopicId = data.system_topic_id ? String(data.system_topic_id) : null
+                this.mainTopicId = data.main_topic_id ? String(data.main_topic_id) : null
 
                 // Migrate localStorage to server if server has no value
                 this.migrateLocalStorage()
@@ -102,10 +103,7 @@ export default class extends Controller {
             }
         }
 
-        // Always dispatch change event to ensure form controller gets the correct topic.
-        // Without this, switching to a creative with no stored topic leaves the form
-        // controller with a stale topic_id from the previous creative.
-        this.selectTopic("")
+        this.selectTopic(this.mainTopicId || "")
     }
 
     renderTopics(topics, canManage = false, canCreateTopic = canManage) {
@@ -117,30 +115,39 @@ export default class extends Controller {
             ? 'dragover->comments--topics#handleTopicReorderDragOver dragleave->comments--topics#handleTopicReorderDragLeave drop->comments--topics#handleTopicReorderDrop'
             : ''
 
-        let html = `<span class="topic-tag topic-drop-target ${this.currentTopicId ? '' : 'active'}" 
-                          data-action="click->comments--topics#select ${dropActions}" 
-                          data-id="">#Main</span>`
+        const allMessagesLabel = this.element.dataset.topicMainText || 'All Messages'
 
-        topics.forEach(topic => {
-            // Ensure comparison handles string/number difference
+        const mainTopic = this.mainTopicId ? topics.find(t => String(t.id) === String(this.mainTopicId)) : null
+        const otherTopics = topics.filter(t => !mainTopic || String(t.id) !== String(this.mainTopicId))
+
+        let html = ''
+
+        const renderTopic = (topic) => {
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
             const draggable = canManage ? 'draggable="true"' : ''
             const agentAvatar = topic.primary_agent
                 ? this.renderAgentAvatar(topic.primary_agent)
                 : ''
             const branchIcon = topic.source_topic_id ? '<span class="topic-branch-icon" title="Branched">↗</span>' : ''
-            html += `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
+            const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)
+            let s = `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
                           data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}"
                           data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
                         ${agentAvatar}${branchIcon}#${topic.name}`
-
-            if (canManage) {
-                html += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
-                html += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
+            if (canManage && !isMainTopic) {
+                s += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
+                s += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
             }
+            s += `</span>`
+            return s
+        }
 
-            html += `</span>`
-        })
+        if (mainTopic) html += renderTopic(mainTopic)
+        otherTopics.forEach(topic => { html += renderTopic(topic) })
+
+        html += `<span class="topic-tag topic-drop-target topic-all-messages ${this.currentTopicId ? '' : 'active'}"
+                      data-action="click->comments--topics#select ${dropActions}"
+                      data-id="">📋 ${allMessagesLabel}</span>`
 
         // Archived topics section
         if (this.archivedTopics && this.archivedTopics.length > 0) {
@@ -191,7 +198,7 @@ export default class extends Controller {
         const agentJson = event.dataTransfer.getData('application/x-agent-drop')
         if (agentJson) {
             const agent = JSON.parse(agentJson)
-            const targetTopicId = event.currentTarget.dataset.id
+            const targetTopicId = event.currentTarget.dataset.id || this.mainTopicId
             if (targetTopicId) {
                 await this.setTopicPrimaryAgent(targetTopicId, agent)
             }
@@ -205,7 +212,7 @@ export default class extends Controller {
         const commentIds = JSON.parse(commentIdsJson)
         if (!commentIds || commentIds.length === 0) return
 
-        const targetTopicId = event.currentTarget.dataset.id // Empty string for Main
+        const targetTopicId = event.currentTarget.dataset.id || this.mainTopicId
 
         // Dispatch event for list_controller to handle the move
         this.dispatch('move-to-topic', {
@@ -363,7 +370,7 @@ export default class extends Controller {
             if (response.ok) {
                 if (String(this.currentTopicId) === String(topicId)) {
                     this.currentTopicId = "" // Switch to Main
-                    this.dispatch("change", { detail: { topicId: "" } })
+                    this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
                 this.loadTopics()
             } else {
@@ -390,7 +397,7 @@ export default class extends Controller {
             if (response.ok) {
                 if (String(this.currentTopicId) === String(topicId)) {
                     this.currentTopicId = ""
-                    this.dispatch("change", { detail: { topicId: "" } })
+                    this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
                 this.loadTopics()
             } else {
@@ -501,7 +508,7 @@ export default class extends Controller {
             this.clearNewMessageBadge(id)
         }
         // Dispatch event
-        this.dispatch("change", { detail: { topicId: id, isInbox: this.isInbox, systemTopicId: this.systemTopicId } })
+        this.dispatch("change", { detail: { topicId: id, isInbox: this.isInbox, systemTopicId: this.systemTopicId, mainTopicId: this.mainTopicId } })
     }
 
     showEditInput(topicEl, topicId) {
@@ -618,7 +625,7 @@ export default class extends Controller {
             // If we were viewing the moved topic, switch to Main
             if (String(this.currentTopicId) === String(topicId)) {
                 this.currentTopicId = ""
-                this.dispatch("change", { detail: { topicId: "" } })
+                this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
             }
             this.loadTopics()
         }
@@ -666,7 +673,7 @@ export default class extends Controller {
                 await this.flushSaveLastTopic(topic.id)
                 await this.loadTopics()
                 // Dispatch change event manually since we skipped the click handler
-                this.dispatch("change", { detail: { topicId: topic.id } })
+                this.dispatch("change", { detail: { topicId: topic.id, mainTopicId: this.mainTopicId } })
             } else {
                 alert("Failed to create topic")
             }
@@ -851,7 +858,7 @@ export default class extends Controller {
         this.topics = nextTopics
         if (String(this.currentTopicId) === String(topicId)) {
             this.currentTopicId = ""
-            this.dispatch("change", { detail: { topicId: "" } })
+            this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
         }
 
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
@@ -900,7 +907,7 @@ export default class extends Controller {
             this.currentTopicId = result.topic.id
             await this.flushSaveLastTopic(result.topic.id)
             await this.loadTopics()
-            this.dispatch("change", { detail: { topicId: result.topic.id } })
+            this.dispatch("change", { detail: { topicId: result.topic.id, mainTopicId: this.mainTopicId } })
 
             // Clear selection in list controller
             const listController = this.application.getControllerForElementAndIdentifier(
@@ -955,7 +962,7 @@ export default class extends Controller {
                 this.currentTopicId = topic.id
                 await this.flushSaveLastTopic(topic.id)
                 await this.loadTopics()
-                this.dispatch("change", { detail: { topicId: topic.id } })
+                this.dispatch("change", { detail: { topicId: topic.id, mainTopicId: this.mainTopicId } })
             } else {
                 console.error('Failed to create topic with agent')
             }

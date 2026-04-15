@@ -40,7 +40,7 @@ module Collavre
     end
 
     def fetch_comments(comment_ids)
-      scope = source_topic ? source_topic.comments.visible_to(user) : creative.comments.visible_to(user).where(topic_id: nil)
+      scope = source_topic ? source_topic.comments.visible_to(user) : creative.comments.visible_to(user)
       comments = scope.where(id: comment_ids).order(:created_at).to_a
       if comments.length != comment_ids.length
         raise BranchError, I18n.t("collavre.comments.branch.comments_not_found")
@@ -50,7 +50,7 @@ module Collavre
 
     def create_branch_topic
       prefix = I18n.t("collavre.topics.branch_prefix")
-      source_name = source_topic&.name || I18n.t("collavre.topics.main_name", default: "Main")
+      source_name = source_topic&.name || I18n.t("collavre.comments.topic_main", default: "All Messages")
       name = "#{prefix}:#{source_name}"
 
       # Ensure uniqueness

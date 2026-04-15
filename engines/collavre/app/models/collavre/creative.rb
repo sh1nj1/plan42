@@ -13,7 +13,7 @@ module Collavre
     after_save :touch_subtree_on_move, if: :saved_change_to_parent_id?
     after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
     after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
-
+    after_create :create_main_topic
 
     include Linkable
     include Permissible
@@ -34,6 +34,7 @@ module Collavre
     scope :inboxes, -> { where("data->>'kind' = 'inbox'") }
 
     SYSTEM_TOPIC_NAME = "System"
+    MAIN_TOPIC_NAME = "Main"
 
     def inbox?
       data&.dig("kind") == "inbox"
@@ -43,6 +44,12 @@ module Collavre
     # Re-creates it if the user deletes it.
     def system_topic(fallback_user: user)
       topics.find_or_create_by!(name: SYSTEM_TOPIC_NAME) do |topic|
+        topic.user = fallback_user
+      end
+    end
+
+    def main_topic(fallback_user: user)
+      topics.find_or_create_by!(name: MAIN_TOPIC_NAME) do |topic|
         topic.user = fallback_user
       end
     end
@@ -301,6 +308,13 @@ module Collavre
       return unless parent&.drop_trigger_enabled?
 
       DropTriggerJob.perform_later(parent_id, id)
+    end
+
+    def create_main_topic
+      effective_user = user || Collavre.current_user
+      return unless effective_user
+
+      topics.create!(name: MAIN_TOPIC_NAME, user: effective_user)
     end
   end
 end
