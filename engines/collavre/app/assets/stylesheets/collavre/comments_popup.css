@@ -926,6 +926,36 @@ body.chat-fullscreen {
     display: none;
 }
 
+.comment-stop-btn.comment-stop-hidden {
+    display: none;
+}
+
+.comment-stop-btn {
+    background: var(--surface-btn);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2);
+    cursor: pointer;
+    padding: var(--space-px-1) var(--space-px-2);
+    font-size: var(--text-00);
+    color: var(--color-danger);
+    line-height: 1;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-px-1);
+    transition: background 0.15s, color 0.15s;
+}
+
+.comment-stop-btn:hover {
+    background: var(--color-danger);
+    color: var(--text-on-btn);
+}
+
+.comment-stop-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .comment-copy-notice {
     position: absolute;
     right: 0.2em;

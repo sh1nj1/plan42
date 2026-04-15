@@ -2,6 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import { renderCommentMarkdown, renderMermaidDiagrams } from '../lib/utils/markdown'
 import { addTableDownloadButtons } from '../lib/utils/table_download'
 import CommonPopup from '../lib/common_popup'
+import csrfFetch from '../lib/api/csrf_fetch'
 
 // Global tracker: persists streaming state across Turbo replacements
 // (each replacement creates a new controller instance, losing instance state)
@@ -9,7 +10,7 @@ if (!window._streamingCommentIds) window._streamingCommentIds = new Set()
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls"]
+  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "stopTask"]
 
   get _commentId() {
     return this.element.dataset.commentId
@@ -79,6 +80,7 @@ export default class extends Controller {
         }
       }
       this._isStreaming = false
+      this._updateStopButton()
     }, 10000)
   }
 
@@ -122,6 +124,11 @@ export default class extends Controller {
       }
     }
 
+    // Stop-task button visibility
+    this._handleAgentTasksChanged = this._handleAgentTasksChanged.bind(this)
+    window.addEventListener('agent-tasks-changed', this._handleAgentTasksChanged)
+    this._updateStopButton()
+
     // Text selection quote support
     this.handleMouseUp = this.handleMouseUp.bind(this)
     document.addEventListener('mouseup', this.handleMouseUp)
@@ -161,6 +168,43 @@ export default class extends Controller {
         el.classList.remove('comment-approve-hidden')
       })
     }
+  }
+
+  _handleAgentTasksChanged() {
+    this._updateStopButton()
+  }
+
+  _getActiveTaskId() {
+    if (!this._isAiComment) return null
+    const userId = this.element.dataset.userId
+    return window._activeAgentTasks?.[userId] || null
+  }
+
+  _updateStopButton() {
+    if (!this.hasStopTaskTarget) return
+    const taskId = this._getActiveTaskId()
+    if (taskId) {
+      this.stopTaskTarget.classList.remove('comment-stop-hidden')
+      this.stopTaskTarget.dataset.taskId = taskId
+    } else {
+      this.stopTaskTarget.classList.add('comment-stop-hidden')
+    }
+  }
+
+  cancelTask(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    const taskId = event.currentTarget.dataset.taskId
+    if (!taskId) return
+    event.currentTarget.disabled = true
+    csrfFetch(`/tasks/${taskId}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+      .then((response) => {
+        if (!response.ok) event.currentTarget.disabled = false
+      })
+      .catch(() => { event.currentTarget.disabled = false })
   }
 
   triggerReactionPicker(event) {
@@ -226,6 +270,7 @@ export default class extends Controller {
       clearTimeout(this._streamingTimeout)
       this._streamingTimeout = null
     }
+    window.removeEventListener('agent-tasks-changed', this._handleAgentTasksChanged)
     document.removeEventListener('mouseup', this.handleMouseUp)
     this.hideReviewPopup()
     if (this._reviewPopupEl) {

@@ -64,6 +64,7 @@ export default class extends Controller {
     this.currentPresentIds = []
     this.typingUsers = {}
     this.activeAgentTasks = {}
+    this.syncGlobalAgentTasks()
     this.clearTypingTimers()
     this.clearManualTypingMessage()
     this.renderParticipants([])
@@ -217,6 +218,7 @@ export default class extends Controller {
           delete this.typingUsers[id]
           delete this.agentStatusTimers[id]
           delete this.activeAgentTasks?.[id]
+          this.syncGlobalAgentTasks()
           this.renderTypingIndicator()
         }, AGENT_STATUS_TIMEOUT)
       } else {
@@ -227,6 +229,7 @@ export default class extends Controller {
           delete this.agentStatusTimers[id]
         }
       }
+      this.syncGlobalAgentTasks()
       this.renderTypingIndicator()
     }
   }
@@ -380,6 +383,11 @@ export default class extends Controller {
     this.typingIndicatorTarget.appendChild(text)
   }
 
+  syncGlobalAgentTasks() {
+    window._activeAgentTasks = this.activeAgentTasks ? { ...this.activeAgentTasks } : {}
+    window.dispatchEvent(new CustomEvent('agent-tasks-changed', { detail: window._activeAgentTasks }))
+  }
+
   cancelAllAgentTasks() {
     const ids = Object.keys(this.activeAgentTasks || {})
     if (ids.length === 0) return false
@@ -403,6 +411,7 @@ export default class extends Controller {
             clearTimeout(this.agentStatusTimers[agentId])
             delete this.agentStatusTimers[agentId]
           }
+          this.syncGlobalAgentTasks()
           this.renderTypingIndicator()
         }
       })
