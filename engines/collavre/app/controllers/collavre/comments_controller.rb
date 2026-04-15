@@ -28,7 +28,7 @@ module Collavre
       limit = 20
 
       visible_scope = @creative.comments.visible_to(Current.user)
-      scope = visible_scope.with_attached_images.includes(:topic, :comment_reactions, :comment_versions, :snapshot_as_result)
+      scope = visible_scope.with_attached_images.includes(:task, :topic, :comment_reactions, :comment_versions, :snapshot_as_result)
 
       if params[:search].present?
         words = params[:search].to_s.strip.downcase.split(/\s+/)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_15_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_15_094811) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -142,6 +142,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_000000) do
     t.text "quoted_text"
     t.integer "review_type", limit: 1
     t.integer "selected_version_id"
+    t.integer "task_id"
     t.integer "topic_id"
     t.datetime "updated_at", null: false
     t.integer "user_id"
@@ -150,6 +151,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_000000) do
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
     t.index ["selected_version_id"], name: "index_comments_on_selected_version_id"
+    t.index ["task_id"], name: "index_comments_on_task_id"
     t.index ["topic_id"], name: "index_comments_on_topic_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
   end

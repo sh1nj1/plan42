@@ -10,7 +10,7 @@ if (!window._streamingCommentIds) window._streamingCommentIds = new Set()
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls", "stopTask"]
+  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls"]
 
   get _commentId() {
     return this.element.dataset.commentId
@@ -80,7 +80,6 @@ export default class extends Controller {
         }
       }
       this._isStreaming = false
-      this._updateStopButton()
     }, 10000)
   }
 
@@ -124,11 +123,6 @@ export default class extends Controller {
       }
     }
 
-    // Stop-task button visibility
-    this._handleAgentTasksChanged = this._handleAgentTasksChanged.bind(this)
-    window.addEventListener('agent-tasks-changed', this._handleAgentTasksChanged)
-    this._updateStopButton()
-
     // Text selection quote support
     this.handleMouseUp = this.handleMouseUp.bind(this)
     document.addEventListener('mouseup', this.handleMouseUp)
@@ -167,27 +161,6 @@ export default class extends Controller {
       this.actionApproveControlsTargets.forEach((el) => {
         el.classList.remove('comment-approve-hidden')
       })
-    }
-  }
-
-  _handleAgentTasksChanged() {
-    this._updateStopButton()
-  }
-
-  _getActiveTaskId() {
-    if (!this._isAiComment) return null
-    const userId = this.element.dataset.userId
-    return window._activeAgentTasks?.[userId] || null
-  }
-
-  _updateStopButton() {
-    if (!this.hasStopTaskTarget) return
-    const taskId = this._getActiveTaskId()
-    if (taskId) {
-      this.stopTaskTarget.classList.remove('comment-stop-hidden')
-      this.stopTaskTarget.dataset.taskId = taskId
-    } else {
-      this.stopTaskTarget.classList.add('comment-stop-hidden')
     }
   }
 
@@ -270,7 +243,6 @@ export default class extends Controller {
       clearTimeout(this._streamingTimeout)
       this._streamingTimeout = null
     }
-    window.removeEventListener('agent-tasks-changed', this._handleAgentTasksChanged)
     document.removeEventListener('mouseup', this.handleMouseUp)
     this.hideReviewPopup()
     if (this._reviewPopupEl) {

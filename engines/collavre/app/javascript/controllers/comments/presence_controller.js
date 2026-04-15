@@ -384,8 +384,7 @@ export default class extends Controller {
   }
 
   syncGlobalAgentTasks() {
-    window._activeAgentTasks = this.activeAgentTasks ? { ...this.activeAgentTasks } : {}
-    window.dispatchEvent(new CustomEvent('agent-tasks-changed', { detail: window._activeAgentTasks }))
+    // no-op: stop button is now server-rendered per comment via task_id
   }
 
   cancelAllAgentTasks() {

@@ -72,7 +72,8 @@ module Collavre
         reply_comment = @original_comment.creative.comments.create!(
           content: @response_content,
           user: @agent,
-          topic_id: @original_comment.topic_id
+          topic_id: @original_comment.topic_id,
+          task: @task
         )
 
         log_action("reply_created", { comment_id: reply_comment.id, content: @response_content })
