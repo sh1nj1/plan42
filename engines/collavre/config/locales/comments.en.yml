@@ -122,7 +122,7 @@ en:
       batch_delete_no_selection: Select at least one message to delete.
       batch_delete_not_found: Some selected messages could not be found.
       topic_search_placeholder: Search topics...
-      topic_main: Main
+      topic_main: All Messages
       fullscreen: Full screen
       exit_fullscreen: Exit full screen
       move_invalid_target: Select a valid creative to move messages to.

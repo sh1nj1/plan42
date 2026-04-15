@@ -23,6 +23,7 @@ module Collavre
       end
 
       system_topic_id = @creative.inbox? ? @creative.topics.find_by(name: Creative::SYSTEM_TOPIC_NAME)&.id : nil
+      main_topic_id = @creative.topics.find_by(name: Creative::MAIN_TOPIC_NAME)&.id
 
       render json: {
         topics: active_topics.map { |t| topic_json(t) },
@@ -31,7 +32,8 @@ module Collavre
         can_create_topic: can_create_topic,
         last_topic_id: last_topic_id,
         is_inbox: @creative.inbox?,
-        system_topic_id: system_topic_id
+        system_topic_id: system_topic_id,
+        main_topic_id: main_topic_id
       }
     end
 

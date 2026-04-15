@@ -50,7 +50,7 @@ module Collavre
 
     def create_branch_topic
       prefix = I18n.t("collavre.topics.branch_prefix")
-      source_name = source_topic&.name || I18n.t("collavre.topics.main_name", default: "Main")
+      source_name = source_topic&.name || I18n.t("collavre.comments.topic_main", default: "All Messages")
       name = "#{prefix}:#{source_name}"
 
       # Ensure uniqueness

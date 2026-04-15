@@ -44,7 +44,7 @@ class CommentsControllerBranchTest < ActionDispatch::IntegrationTest
 
     assert_response :created
     json = JSON.parse(response.body)
-    assert_match(/Branch:Main/, json["topic"]["name"])
+    assert_match(/Branch:All Messages/, json["topic"]["name"])
     assert_nil json["topic"]["source_topic_id"]
   end
 

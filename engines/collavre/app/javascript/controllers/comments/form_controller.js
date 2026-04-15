@@ -103,6 +103,7 @@ export default class extends Controller {
     this.currentTopicId = event.detail.topicId
     this._isInbox = event.detail.isInbox || false
     this._systemTopicId = event.detail.systemTopicId || null
+    this._mainTopicId = event.detail.mainTopicId || null
     this._updateInboxReplyMode()
   }
 
@@ -265,8 +266,9 @@ export default class extends Controller {
     const wasPrivate = this.privateCheckboxTarget?.checked ?? false
 
     const formData = new FormData(this.formTarget)
-    if (this.currentTopicId) {
-      formData.append('comment[topic_id]', this.currentTopicId)
+    const effectiveTopicId = this.currentTopicId || this._mainTopicId
+    if (effectiveTopicId) {
+      formData.append('comment[topic_id]', effectiveTopicId)
     }
     if (this._pendingReviewType) {
       formData.append('comment[review_type]', this._pendingReviewType)
@@ -763,8 +765,9 @@ export default class extends Controller {
     }
     const isPrivate = this.privateCheckboxTarget?.checked ?? false
     if (isPrivate) formData.append('comment[private]', '1')
-    if (this.currentTopicId) {
-      formData.append('comment[topic_id]', this.currentTopicId)
+    const effectiveTopicId = this.currentTopicId || this._mainTopicId
+    if (effectiveTopicId) {
+      formData.append('comment[topic_id]', effectiveTopicId)
     }
 
     const url = `/creatives/${this.creativeId}/comments`
