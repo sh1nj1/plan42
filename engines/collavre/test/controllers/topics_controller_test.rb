@@ -32,6 +32,22 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Updated Name", @topic.name
   end
 
+  test "should include primary_agent in update response" do
+    ai_agent = User.create!(
+      email: "agent-update@test.local", password: "password123", name: "UpdateAgent",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+    @topic.set_primary_agent!(ai_agent)
+
+    patch collavre.creative_topic_url(@creative, @topic), params: { topic: { name: "Renamed" } }, as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal "Renamed", json["name"]
+    assert json["primary_agent"].present?, "Response must include primary_agent"
+    assert_equal ai_agent.id, json["primary_agent"]["id"]
+  end
+
   test "should not update topic without permission" do
     other_user = users(:two)
     sign_in_as other_user, password: "password"

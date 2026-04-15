@@ -570,10 +570,9 @@ export default class extends Controller {
 
             if (response.ok) {
                 const updatedTopic = await response.json()
-                // Update local topics array
                 const index = this.topics.findIndex(t => String(t.id) === String(topicId))
                 if (index !== -1) {
-                    this.topics[index] = updatedTopic
+                    this.topics[index] = { ...this.topics[index], ...updatedTopic }
                 }
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
                 this.restoreSelection()
