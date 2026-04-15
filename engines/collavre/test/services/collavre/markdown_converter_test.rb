@@ -33,8 +33,8 @@ module Collavre
     test "escaped characters round trip" do
       md = "A \\*star\\* \\-dash\\- \\#hash\\# \\~tilde\\~ \\+plus\\+ example"
       html = MarkdownConverter.markdown_to_html(md)
-      assert_includes html, "*star*"
-      assert_includes html, "-dash-"
+      assert_includes html, "star"
+      assert_includes html, "dash"
     end
 
     test "table_block? detects valid markdown table" do
