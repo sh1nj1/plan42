@@ -137,6 +137,7 @@ module Collavre
         content: Comment::STREAMING_PLACEHOLDER_CONTENT,
         user: @agent,
         topic_id: @original_comment.topic_id,
+        task: @task,
         skip_dispatch: true  # A2A routing handled by A2aDispatcher after finalization
       )
     end

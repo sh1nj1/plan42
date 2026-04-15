@@ -7,10 +7,12 @@ module Collavre
     belongs_to :parent_task, class_name: "Collavre::Task", optional: true
     has_many :sub_tasks, class_name: "Collavre::Task", foreign_key: :parent_task_id, dependent: :destroy
     belongs_to :creative, class_name: "Collavre::Creative", optional: true
+    has_one :reply_comment, class_name: "Collavre::Comment", foreign_key: :task_id, dependent: :nullify
 
     validates :name, presence: true
 
     after_update_commit :check_trigger_loop_completion, if: :trigger_loop_candidate?
+    after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
 
     scope :running_for_topic, ->(topic_id, creative_id = nil) {
       rel = where(topic_id: topic_id, status: "running")
@@ -46,6 +48,21 @@ module Collavre
 
       trigger_topic_id = loop_config["trigger_topic_id"]
       trigger_topic_id.nil? || trigger_topic_id == topic_id
+    end
+
+    def became_terminal?
+      saved_change_to_attribute?("status") && status.in?(%w[done cancelled failed])
+    end
+
+    def broadcast_stop_button_removal
+      comment = reply_comment
+      return unless comment
+
+      comment.broadcast_replace_to(
+        [ comment.creative, :comments ],
+        partial: "collavre/comments/comment",
+        locals: { comment: comment, streaming: false }
+      )
     end
 
     def check_trigger_loop_completion

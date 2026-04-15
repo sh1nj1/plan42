@@ -13,6 +13,7 @@ module Collavre
     belongs_to :user, class_name: Collavre.configuration.user_class_name, optional: true
     belongs_to :approver, class_name: Collavre.configuration.user_class_name, optional: true
     belongs_to :action_executed_by, class_name: Collavre.configuration.user_class_name, optional: true
+    belongs_to :task, class_name: "Collavre::Task", optional: true
     belongs_to :topic, class_name: "Collavre::Topic", optional: true
     belongs_to :quoted_comment, class_name: "Collavre::Comment", optional: true
 

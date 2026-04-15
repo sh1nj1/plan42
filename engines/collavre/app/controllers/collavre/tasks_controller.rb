@@ -10,7 +10,7 @@ module Collavre
         return head :forbidden
       end
 
-      unless %w[running pending queued].include?(task.status)
+      unless %w[running pending queued pending_approval].include?(task.status)
         return head :unprocessable_entity
       end
 
