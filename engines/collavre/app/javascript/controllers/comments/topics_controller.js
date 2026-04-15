@@ -136,7 +136,8 @@ export default class extends Controller {
                           data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
                         ${agentAvatar}${branchIcon}#${topic.name}`
 
-            if (canManage) {
+            const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)
+            if (canManage && !isMainTopic) {
                 html += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
                 html += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
             }
@@ -193,7 +194,7 @@ export default class extends Controller {
         const agentJson = event.dataTransfer.getData('application/x-agent-drop')
         if (agentJson) {
             const agent = JSON.parse(agentJson)
-            const targetTopicId = event.currentTarget.dataset.id
+            const targetTopicId = event.currentTarget.dataset.id || this.mainTopicId
             if (targetTopicId) {
                 await this.setTopicPrimaryAgent(targetTopicId, agent)
             }
@@ -207,7 +208,7 @@ export default class extends Controller {
         const commentIds = JSON.parse(commentIdsJson)
         if (!commentIds || commentIds.length === 0) return
 
-        const targetTopicId = event.currentTarget.dataset.id // Empty string for Main
+        const targetTopicId = event.currentTarget.dataset.id || this.mainTopicId
 
         // Dispatch event for list_controller to handle the move
         this.dispatch('move-to-topic', {

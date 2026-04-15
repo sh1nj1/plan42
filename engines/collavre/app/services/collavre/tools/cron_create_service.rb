@@ -73,10 +73,15 @@ module Tools
     private
 
     def resolve_topic_id(creative, topic_name)
-      topic = Topic.find_by(name: topic_name, creative_id: creative.effective_origin.id)
-      return { error: "Topic '#{topic_name}' not found for this creative" } unless topic
+      origin = creative.effective_origin
+      if topic_name.casecmp(Creative::MAIN_TOPIC_NAME).zero?
+        origin.main_topic(fallback_user: Current.user).id
+      else
+        topic = Topic.find_by(name: topic_name, creative_id: origin.id)
+        return { error: "Topic '#{topic_name}' not found for this creative" } unless topic
 
-      topic.id
+        topic.id
+      end
     end
   end
 end

@@ -62,7 +62,7 @@ module Collavre
         assert_equal @main_topic.id, args[:topic_id]
       end
 
-      test "topic_name main (lowercase) returns error" do
+      test "topic_name main (lowercase) resolves to Main topic" do
         result = CronCreateService.new.call(
           creative_id: @creative.id,
           topic_name: "main",
@@ -70,8 +70,10 @@ module Collavre
           message: "Main topic message"
         )
 
-        assert result[:error]
-        assert_match(/Topic 'main' not found/, result[:error])
+        assert result[:success]
+        task = SolidQueue::RecurringTask.find_by(key: result[:key])
+        args = task.arguments.first
+        assert_equal @main_topic.id, args[:topic_id]
       end
 
       test "stores arguments for CronActionJob" do

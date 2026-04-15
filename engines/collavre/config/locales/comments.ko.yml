@@ -12,6 +12,7 @@ ko:
       default_name_prefix: "토픽"
       branch_prefix: "분기"
       main_name: "메인"
+      cannot_delete_main: "메인 토픽은 삭제할 수 없습니다."
       create_and_move: '"%{name}" 생성후 이동'
       move:
         no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.
