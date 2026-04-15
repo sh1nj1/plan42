@@ -1077,9 +1077,35 @@ body.chat-fullscreen {
     color: var(--color-text);
 }
 
+#typing-indicator-row {
+    display: flex;
+    align-items: center;
+    min-height: 24px;
+    margin: 0.3em 0;
+    gap: 4px;
+}
+
+.scroll-prev-msg-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 6px;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+}
+
+.scroll-prev-msg-btn:hover {
+    background: var(--color-section-bg);
+    color: var(--color-text);
+}
+
 #typing-indicator {
     font-style: italic;
-    margin: 0.3em 0;
+    flex: 1;
     min-height: 24px;
     display: flex;
     align-items: center;

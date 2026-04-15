@@ -8,7 +8,7 @@ import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
 export default class extends Controller {
-  static targets = ['list']
+  static targets = ['list', 'scrollPrevBtn']
 
   connect() {
     this.selection = new Set()
@@ -1059,6 +1059,46 @@ export default class extends Controller {
         this.loadInitialComments()
       })
       .finally(() => { this.movingComments = false })
+  }
+
+  scrollToPreviousMessage() {
+    const list = this.listTarget
+    const items = Array.from(list.querySelectorAll('.comment-item'))
+    if (items.length === 0) return
+
+    const listRect = list.getBoundingClientRect()
+    const viewportTop = listRect.top
+
+    let currentIdx = -1
+    for (let i = 0; i < items.length; i++) {
+      const rect = items[i].getBoundingClientRect()
+      if (rect.top >= viewportTop - 2) {
+        currentIdx = i
+        break
+      }
+    }
+
+    if (currentIdx === -1) currentIdx = items.length - 1
+
+    const currentItem = items[currentIdx]
+    const currentRect = currentItem.getBoundingClientRect()
+    const isAtTop = Math.abs(currentRect.top - viewportTop) < 4
+
+    const targetIdx = isAtTop ? currentIdx - 1 : currentIdx
+    if (targetIdx < 0) {
+      if (!this.allOlderLoaded) {
+        this.loadOlderComments()
+      }
+      return
+    }
+
+    const target = items[targetIdx]
+    const targetTop = target.offsetTop - list.offsetTop
+    list.scrollTo({ top: targetTop, behavior: 'smooth' })
+    this.stickToBottom = false
+
+    target.classList.add('highlight-flash')
+    setTimeout(() => target.classList.remove('highlight-flash'), 2000)
   }
 
   // UI Helpers
