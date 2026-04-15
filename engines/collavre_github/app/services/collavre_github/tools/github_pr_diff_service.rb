@@ -35,22 +35,19 @@ module CollavreGithub
       def call(creative_id:, repo:, pr_number:, max_length: nil)
         max_length ||= DIFF_MAX_LENGTH
 
-        client = find_github_client(creative_id, repo)
-        return { error: "GitHub account not found for this creative and repository" } unless client
+        with_github_client(creative_id: creative_id, repo: repo, error_context: "fetch PR diff") do |client|
+          diff = client.pull_request_diff(repo, pr_number)
+          return { error: "Could not fetch diff", diff: nil } unless diff
 
-        diff = client.pull_request_diff(repo, pr_number)
-        return { error: "Could not fetch diff", diff: nil } unless diff
+          truncated = diff.length > max_length
+          diff_text = truncated ? "#{diff[0, max_length]}\n...\n[Diff truncated to #{max_length} characters]" : diff
 
-        truncated = diff.length > max_length
-        diff_text = truncated ? "#{diff[0, max_length]}\n...\n[Diff truncated to #{max_length} characters]" : diff
-
-        {
-          diff: diff_text,
-          truncated: truncated,
-          original_length: diff.length
-        }
-      rescue StandardError => e
-        { error: "Failed to fetch PR diff: #{e.message}" }
+          {
+            diff: diff_text,
+            truncated: truncated,
+            original_length: diff.length
+          }
+        end
       end
     end
   end
