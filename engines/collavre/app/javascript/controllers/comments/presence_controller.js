@@ -64,6 +64,7 @@ export default class extends Controller {
     this.currentPresentIds = []
     this.typingUsers = {}
     this.activeAgentTasks = {}
+    this.syncGlobalAgentTasks()
     this.clearTypingTimers()
     this.clearManualTypingMessage()
     this.renderParticipants([])
