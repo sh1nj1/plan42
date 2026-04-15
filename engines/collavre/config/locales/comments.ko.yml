@@ -67,6 +67,7 @@ ko:
       convert_system_message: 'System: 메세지가 [%{title}](%{url}) 크리에이티브로 변환되었습니다'
       convert_system_message_default_title: 제목 없음
       system_user: System
+      scroll_to_prev: 이전 메시지
       search_button: 검색
       image_button: 이미지
       search_empty_prompt: 검색어 를 채팅 메세지 입력폼에 입력하시오

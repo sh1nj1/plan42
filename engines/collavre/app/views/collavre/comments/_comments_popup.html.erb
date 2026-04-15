@@ -118,7 +118,10 @@
   <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <%= render Collavre::CommandMenuComponent.new(menu_id: 'command-menu') %>
   <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>
-  <div id="typing-indicator" data-comments--presence-target="typingIndicator" data-comments--popup-target="typingIndicator" data-stop-agent-text="<%= t('collavre.comments.stop_agent') %>"></div>
+  <div id="typing-indicator-row">
+    <button type="button" id="scroll-prev-msg-btn" class="scroll-prev-msg-btn" data-action="click->comments--list#scrollToPreviousMessage" title="<%= t('collavre.comments.scroll_to_prev', default: 'Previous message') %>" aria-label="<%= t('collavre.comments.scroll_to_prev', default: 'Previous message') %>">&#8963;</button>
+    <div id="typing-indicator" data-comments--presence-target="typingIndicator" data-comments--popup-target="typingIndicator" data-stop-agent-text="<%= t('collavre.comments.stop_agent') %>"></div>
+  </div>
   <form id="new-comment-form" data-comments--popup-target="form" data-comments--form-target="form" style="display:none;">
     <input type="hidden" name="comment[quoted_comment_id]" data-comments--form-target="quotedCommentId" value="" />
     <input type="hidden" name="comment[quoted_text]" data-comments--form-target="quotedText" value="" />

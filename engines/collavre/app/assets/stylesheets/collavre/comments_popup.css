@@ -1077,10 +1077,36 @@ body.chat-fullscreen {
     color: var(--color-text);
 }
 
+#typing-indicator-row {
+    display: flex;
+    align-items: center;
+    min-height: var(--space-px-5);
+    margin: 0.3em 0;
+    gap: var(--space-1);
+}
+
+.scroll-prev-msg-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: var(--text-1);
+    line-height: 1;
+    padding: var(--space-px-1) var(--space-2);
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+}
+
+.scroll-prev-msg-btn:hover {
+    background: var(--color-section-bg);
+    color: var(--color-text);
+}
+
 #typing-indicator {
     font-style: italic;
-    margin: 0.3em 0;
-    min-height: 24px;
+    flex: 1;
+    min-height: var(--space-px-5);
     display: flex;
     align-items: center;
 }
