@@ -48,7 +48,8 @@ module Collavre
 
       cross_posted = @creative.comments.where(user: @user, content: "My reply from inbox").last
       assert cross_posted, "Expected cross-posted comment in original creative"
-      assert_nil cross_posted.topic_id, "Topic should match original (nil)"
+      main_topic = @creative.main_topic(fallback_user: @user)
+      assert_equal main_topic.id, cross_posted.topic_id, "Topic should be Main topic"
       assert_equal @original_comment.id, cross_posted.quoted_comment_id
     end
 

@@ -42,7 +42,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
 
     reply = @creative.comments.where(user: @agent).order(:created_at).last
     assert_equal "Chunk 1 Chunk 2", reply.content
-    assert_nil reply.topic_id # trigger comment has no topic
+    assert_equal @creative.main_topic.id, reply.topic_id
 
     # Verify actions were logged
     assert @task.task_actions.exists?(action_type: "start")

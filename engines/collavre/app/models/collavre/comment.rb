@@ -51,6 +51,7 @@ module Collavre
 
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
+    before_validation :assign_main_topic, on: :create
     before_save :apply_link_previews, if: :should_apply_link_previews?
     after_create_commit :dispatch_to_orchestration
     after_create_commit :resume_trigger_loop_if_awaiting
@@ -205,6 +206,14 @@ module Collavre
         "[Comment#resume_trigger_loop_if_awaiting] Failed for comment #{id}: " \
         "#{e.class} #{e.message}"
       )
+    end
+
+    def assign_main_topic
+      return if topic_id.present?
+      return unless creative
+
+      fallback = user || Collavre.current_user || creative.user
+      self.topic = creative.main_topic(fallback_user: fallback)
     end
 
     def use_origin_creative

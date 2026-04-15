@@ -35,8 +35,8 @@ class CommentsControllerBranchTest < ActionDispatch::IntegrationTest
     assert_equal @topic.id, @comment2.reload.topic_id
   end
 
-  test "branch from Main (nil topic_id)" do
-    main_comment = @creative.comments.create!(content: "Main msg", user: @user, topic_id: nil)
+  test "branch from All Messages view (no topic_id param)" do
+    main_comment = @creative.comments.create!(content: "Main msg", user: @user)
 
     post branch_creative_comments_path(@creative),
          params: { comment_ids: [ main_comment.id ] },
