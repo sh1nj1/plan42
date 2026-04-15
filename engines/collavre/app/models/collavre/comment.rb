@@ -108,8 +108,10 @@ module Collavre
     end
 
     def cancel_pending_tasks
-      # Cancel tasks triggered by this comment
-      Task.where(status: %w[pending running queued]).each do |task|
+      # Cancel tasks triggered by this comment, scoped to this creative
+      Task.where(status: %w[pending running queued])
+          .where("creative_id = ? OR creative_id IS NULL", creative_id)
+          .find_each do |task|
         if task.trigger_event_payload&.dig("comment", "id") == id
           task.update!(status: "cancelled")
         end

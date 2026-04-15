@@ -82,10 +82,13 @@ module Collavre
         children_level = @agent.creative_children_level
         max_depth = 1 + children_level
 
+        ids_to_load = active_ids.reject { |ctx_id| @injected_creative_ids.include?(ctx_id) }
+        creatives_by_id = Creative.where(id: ids_to_load).index_by(&:id)
+
         active_ids.each do |ctx_id|
           next if @injected_creative_ids.include?(ctx_id)
 
-          ctx = Creative.find_by(id: ctx_id)
+          ctx = creatives_by_id[ctx_id]
           next unless ctx
 
           @injected_creative_ids << ctx_id
@@ -109,11 +112,12 @@ module Collavre
         max_depth = 1 + children_level
 
         # Extract creative IDs from markdown links like [title](/creatives/123)
-        content.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.uniq.each do |id_str|
-          creative_id = id_str.to_i
-          next if @injected_creative_ids.include?(creative_id)
+        referenced_ids = content.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.uniq.map(&:to_i)
+        referenced_ids.reject! { |cid| @injected_creative_ids.include?(cid) }
+        creatives_by_id = Creative.where(id: referenced_ids).index_by(&:id)
 
-          creative = Creative.find_by(id: creative_id)
+        referenced_ids.each do |creative_id|
+          creative = creatives_by_id[creative_id]
           next unless creative
 
           @injected_creative_ids << creative_id
@@ -247,9 +251,12 @@ module Collavre
       # This is slightly broader than what's actually rendered (which is
       # limited by children_level), but ensures no descendant change is missed.
       def collect_rendered_creative_ids
-        @injected_creative_ids.flat_map do |root_id|
-          Creative.find_by(id: root_id)&.subtree_ids || [ root_id ]
-        end.uniq
+        roots = Creative.where(id: @injected_creative_ids.to_a).to_a
+        found_ids = roots.map(&:id).to_set
+
+        roots.flat_map(&:subtree_ids)
+             .concat(@injected_creative_ids.reject { |rid| found_ids.include?(rid) })
+             .uniq
       end
     end
   end
