@@ -127,6 +127,19 @@ class CommentTest < ActiveSupport::TestCase
     assert_equal initial_inbox_comment_count, inbox.comments.count
   end
 
+  test "inbox comments do not dispatch to orchestration" do
+    owner = User.create!(email: "inbox-orch-owner@example.com", password: TEST_PASSWORD, name: "InboxOrchOwner")
+    commenter = User.create!(email: "inbox-orch-commenter@example.com", password: TEST_PASSWORD, name: "InboxOrchCommenter")
+    inbox = Creative.inbox_for(owner)
+
+    dispatched = false
+    SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true }) do
+      inbox.comments.create!(user: commenter, content: "reply in inbox")
+    end
+
+    refute dispatched, "Expected no orchestration dispatch for inbox comments"
+  end
+
   test "creating an inbox notification broadcasts inbox badge immediately" do
     creative = creatives(:tshirt)
     commenter = users(:two)
