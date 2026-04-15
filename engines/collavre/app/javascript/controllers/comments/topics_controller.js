@@ -103,10 +103,7 @@ export default class extends Controller {
             }
         }
 
-        // Always dispatch change event to ensure form controller gets the correct topic.
-        // Without this, switching to a creative with no stored topic leaves the form
-        // controller with a stale topic_id from the previous creative.
-        this.selectTopic("")
+        this.selectTopic(this.mainTopicId || "")
     }
 
     renderTopics(topics, canManage = false, canCreateTopic = canManage) {
@@ -150,7 +147,7 @@ export default class extends Controller {
 
         html += `<span class="topic-tag topic-drop-target topic-all-messages ${this.currentTopicId ? '' : 'active'}"
                       data-action="click->comments--topics#select ${dropActions}"
-                      data-id="${this.mainTopicId || ''}">📋 ${allMessagesLabel}</span>`
+                      data-id="">📋 ${allMessagesLabel}</span>`
 
         // Archived topics section
         if (this.archivedTopics && this.archivedTopics.length > 0) {
