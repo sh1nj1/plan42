@@ -86,9 +86,8 @@ module Collavre
 
       def description_cannot_change_if_github_source
         return unless will_save_change_to_description?
-        return unless data.is_a?(Hash) && data.dig("source", "type") == "github_markdown"
-        # Allow changes from the sync context (set via Collavre::Current)
-        return if defined?(Collavre::Current) && Collavre::Current.respond_to?(:markdown_sync?) && Collavre::Current.markdown_sync?
+        return unless github_markdown?
+        return if @skip_github_validation
 
         errors.add(:description, "cannot be changed directly for GitHub synced content")
       end

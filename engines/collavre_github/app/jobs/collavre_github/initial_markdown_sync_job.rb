@@ -1,6 +1,7 @@
 module CollavreGithub
   class InitialMarkdownSyncJob < ApplicationJob
     queue_as :default
+    retry_on StandardError, wait: :polynomially_longer, attempts: 3
 
     def perform(repository_link_id)
       link = CollavreGithub::RepositoryLink.find_by(id: repository_link_id)
@@ -13,9 +14,6 @@ module CollavreGithub
         repository_link: link,
         user: user
       ).call
-    rescue StandardError => e
-      Rails.logger.error("[MarkdownSync] Initial import failed for link #{repository_link_id}: #{e.message}")
-      Rails.logger.error(e.backtrace&.first(10)&.join("\n"))
     end
   end
 end

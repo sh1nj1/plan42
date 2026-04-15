@@ -41,6 +41,8 @@ module Collavre
       data&.dig("kind") == "inbox"
     end
 
+    attr_accessor :skip_github_validation
+
     def github_markdown?
       data.is_a?(Hash) && data.dig("source", "type") == "github_markdown"
     end

@@ -35,6 +35,11 @@ if (!githubIntegrationInitialized) {
     const deleteSuccess = modal.dataset.deleteSuccess || 'Github 연동이 삭제되었습니다.';
     const deleteError = modal.dataset.deleteError || 'Github 연동을 삭제하지 못했습니다.';
     const deleteSelectWarning = modal.dataset.deleteSelectWarning || '삭제할 Repository를 선택하세요.';
+    const resyncBtn = document.getElementById('github-resync-btn');
+    const resyncConfirm = modal.dataset.resyncConfirm || '선택한 저장소의 마크다운을 전체 다시 가져오시겠습니까?';
+    const resyncSuccess = modal.dataset.resyncSuccess || '재동기화가 시작되었습니다.';
+    const resyncError = modal.dataset.resyncError || '재동기화를 시작하지 못했습니다.';
+    const resyncSelectWarning = modal.dataset.resyncSelectWarning || '재동기화할 저장소를 선택하세요.';
 
     let creativeId = null;
     let currentStep = 'connect';
@@ -48,10 +53,6 @@ if (!githubIntegrationInitialized) {
     let selectedReposForDeletion = new Set();
 
     const markdownSyncList = document.getElementById('github-markdown-sync-list');
-
-    function csrfToken() {
-      return document.querySelector('meta[name="csrf-token"]')?.content;
-    }
 
     function resetWizard() {
       currentStep = 'connect';
@@ -78,14 +79,15 @@ if (!githubIntegrationInitialized) {
         connectMessage.style.display = '';
       }
       if (deleteBtn) deleteBtn.style.display = 'none';
+      if (resyncBtn) resyncBtn.style.display = 'none';
       updateDeleteButtonState();
       if (loginBtn) loginBtn.style.display = 'inline-block';
       updateStep();
     }
 
     function updateDeleteButtonState() {
-      if (!deleteBtn) return;
-      deleteBtn.disabled = selectedReposForDeletion.size === 0;
+      if (deleteBtn) deleteBtn.disabled = selectedReposForDeletion.size === 0;
+      if (resyncBtn) resyncBtn.disabled = selectedReposForDeletion.size === 0;
     }
 
     function updateStep() {
@@ -301,6 +303,10 @@ if (!githubIntegrationInitialized) {
       if (deleteBtn) {
         deleteBtn.style.display = readOnly ? 'none' : 'inline-flex';
         updateDeleteButtonState();
+      }
+      if (resyncBtn) {
+        resyncBtn.style.display = readOnly ? 'none' : 'inline-flex';
+        resyncBtn.disabled = true;
       }
       if (loginBtn) loginBtn.style.display = 'none';
     }
@@ -631,6 +637,54 @@ if (!githubIntegrationInitialized) {
         .catch(function () {
           showError(deleteError);
         });
+    });
+
+    resyncBtn?.addEventListener('click', function () {
+      if (!creativeId) return;
+      clearError();
+      const checkboxes = existingList ? existingList.querySelectorAll('.github-existing-repo-checkbox:checked') : [];
+      const selectedToResync = Array.from(checkboxes).map(cb => cb.value);
+      if (!selectedToResync.length) {
+        showError(resyncSelectWarning);
+        return;
+      }
+      if (!window.confirm(resyncConfirm)) return;
+
+      resyncBtn.disabled = true;
+      let completed = 0;
+      let failed = 0;
+
+      selectedToResync.forEach(function (repo) {
+        fetch(`/github/creatives/${creativeId}/integration/resync`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken()
+          },
+          body: JSON.stringify({ repository: repo })
+        })
+          .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
+          .then(function (result) {
+            completed++;
+            if (!result.ok) failed++;
+            if (completed === selectedToResync.length) {
+              if (failed > 0) {
+                showError(resyncError);
+              } else {
+                statusEl.textContent = resyncSuccess;
+              }
+              resyncBtn.disabled = false;
+            }
+          })
+          .catch(function () {
+            completed++;
+            failed++;
+            if (completed === selectedToResync.length) {
+              showError(resyncError);
+              resyncBtn.disabled = false;
+            }
+          });
+      });
     });
 
     window.addEventListener('message', function (event) {

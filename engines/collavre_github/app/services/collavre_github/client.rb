@@ -85,6 +85,9 @@ module CollavreGithub
           active: true
         }
       )
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub create webhook failed for #{repo_full_name}: #{e.message}")
+      nil
     end
 
     def update_repository_webhook(repo_full_name, hook_id, url:, secret:, events:, content_type: "json")
@@ -102,10 +105,16 @@ module CollavreGithub
           active: true
         }
       )
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub update webhook failed for #{repo_full_name}: #{e.message}")
+      nil
     end
 
     def delete_repository_webhook(repo_full_name, hook_id)
       client.remove_hook(repo_full_name, hook_id)
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub delete webhook failed for #{repo_full_name}: #{e.message}")
+      nil
     end
 
     # Fetch the default branch name for a repository

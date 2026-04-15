@@ -11,7 +11,6 @@ module CollavreGithub
       end
 
       def call
-        Collavre::Current.markdown_sync = true
         branch = resolve_branch
         tree_entries = @client.tree(@repo, branch)
         md_entries = tree_entries.select { |e| e.type == "blob" && e.path.end_with?(".md") }
@@ -40,7 +39,7 @@ module CollavreGithub
           content = @client.file_content(@repo, entry.path, ref: branch)
           next if content.blank?
 
-          creative = Collavre::Creative.create!(
+          creative = Collavre::Creative.new(
             description: filename,
             parent: parent,
             user: @user,
@@ -55,6 +54,8 @@ module CollavreGithub
               }
             }
           )
+          creative.skip_github_validation = true
+          creative.save!
           file_creatives << creative
           created << creative
         end
@@ -75,8 +76,6 @@ module CollavreGithub
         resequence_directories_first(created)
         Collavre::Creative::RealtimeBroadcastable.broadcast_batch_created(created) if created.size > 1
         created
-      ensure
-        Collavre::Current.markdown_sync = false
       end
 
       private
@@ -93,7 +92,7 @@ module CollavreGithub
 
       def create_root_creative(parent)
         repo_name = @repo.split("/").last
-        Collavre::Creative.create!(
+        creative = Collavre::Creative.new(
           description: repo_name,
           parent: parent,
           user: @user,
@@ -106,6 +105,9 @@ module CollavreGithub
             }
           }
         )
+        creative.skip_github_validation = true
+        creative.save!
+        creative
       end
 
       def build_path_map(creatives)
@@ -130,14 +132,16 @@ module CollavreGithub
       end
 
       def resequence_directories_first(creatives)
-        creatives.group_by(&:parent_id).each do |_parent_id, siblings|
-          sorted = siblings.sort_by do |c|
-            path = c.data&.dig("source", "path") || ""
-            is_dir = path.end_with?("/") || path == ""
-            [is_dir ? 0 : 1, c.description.to_s.downcase]
-          end
-          sorted.each_with_index do |c, idx|
-            c.update_column(:sequence, idx)
+        Collavre::Creative.transaction do
+          creatives.group_by(&:parent_id).each do |_parent_id, siblings|
+            sorted = siblings.sort_by do |c|
+              path = c.data&.dig("source", "path") || ""
+              is_dir = path.end_with?("/") || path == ""
+              [is_dir ? 0 : 1, c.description.to_s.downcase]
+            end
+            sorted.each_with_index do |c, idx|
+              c.update_column(:sequence, idx)
+            end
           end
         end
       end
@@ -149,7 +153,7 @@ module CollavreGithub
         parts.each do |part|
           current_path = current_path.empty? ? part : "#{current_path}/#{part}"
           unless dir_map[current_path]
-            dir_creative = Collavre::Creative.create!(
+            dir_creative = Collavre::Creative.new(
               description: part,
               parent: parent,
               user: @user,
@@ -162,6 +166,8 @@ module CollavreGithub
                 }
               }
             )
+            dir_creative.skip_github_validation = true
+            dir_creative.save!
             dir_map[current_path] = dir_creative
             created << dir_creative
           end

@@ -271,6 +271,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_094811) do
     t.index ["creative_id", "repository_full_name"], name: "index_github_links_on_creative_and_repo", unique: true
     t.index ["creative_id"], name: "index_github_repository_links_on_creative_id"
     t.index ["github_account_id"], name: "index_github_repository_links_on_github_account_id"
+    t.index ["markdown_root_creative_id"], name: "index_github_repository_links_on_markdown_root_creative_id", where: "markdown_root_creative_id IS NOT NULL"
     t.index ["markdown_sync_enabled"], name: "index_github_repository_links_on_markdown_sync_enabled"
     t.index ["repository_full_name"], name: "index_github_repository_links_on_repository_full_name"
   end
