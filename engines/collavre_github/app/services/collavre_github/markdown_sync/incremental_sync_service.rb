@@ -68,12 +68,13 @@ module CollavreGithub
           content = @client.file_content(@repo, path, ref: branch)
           next if content.blank?
 
-          rendered_html = Collavre::MarkdownConverter.markdown_to_html(content)
           source = creative.data["source"].merge(
             "markdown" => content,
             "sha" => @tree_cache[path]
           )
-          creative.update!(description: rendered_html, data: creative.data.merge("source" => source))
+          source.delete("rendered_html")
+          creative.update!(data: creative.data.merge("source" => source))
+          update_content_comment(creative, content)
         end
 
         # Handle added files
@@ -85,9 +86,9 @@ module CollavreGithub
           content = @client.file_content(@repo, path, ref: branch)
           next if content.blank?
 
-          rendered_html = Collavre::MarkdownConverter.markdown_to_html(content)
+          filename = path.split("/").last
           creative = Collavre::Creative.create!(
-            description: rendered_html,
+            description: filename,
             parent: parent,
             user: @user,
             data: {
@@ -101,6 +102,7 @@ module CollavreGithub
               }
             }
           )
+          create_content_comment(creative, content)
           @synced_creatives[path] = creative
           created << creative
         end
@@ -130,6 +132,26 @@ module CollavreGithub
         end
 
         scope.each_with_object({}) { |c, h| h[c.data.dig("source", "path")] = c }
+      end
+
+      def create_content_comment(creative, markdown_content)
+        topic = creative.content_topic(fallback_user: @user)
+        creative.comments.create!(
+          content: markdown_content,
+          topic: topic,
+          user: @user,
+          skip_dispatch: true
+        )
+      end
+
+      def update_content_comment(creative, markdown_content)
+        topic = creative.content_topic(fallback_user: @user)
+        comment = creative.comments.where(topic: topic).order(:created_at).first
+        if comment
+          comment.update!(content: markdown_content)
+        else
+          create_content_comment(creative, markdown_content)
+        end
       end
 
       def ensure_parent_directories(parts, root)

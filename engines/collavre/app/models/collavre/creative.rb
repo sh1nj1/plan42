@@ -35,9 +35,14 @@ module Collavre
 
     SYSTEM_TOPIC_NAME = "System"
     MAIN_TOPIC_NAME = "Main"
+    CONTENT_TOPIC_NAME = "Content"
 
     def inbox?
       data&.dig("kind") == "inbox"
+    end
+
+    def github_markdown?
+      data.is_a?(Hash) && data.dig("source", "type") == "github_markdown"
     end
 
     # Find or create the "System" topic for this inbox creative.
@@ -50,6 +55,12 @@ module Collavre
 
     def main_topic(fallback_user: user)
       topics.find_or_create_by!(name: MAIN_TOPIC_NAME) do |topic|
+        topic.user = fallback_user
+      end
+    end
+
+    def content_topic(fallback_user: user)
+      topics.find_or_create_by!(name: CONTENT_TOPIC_NAME) do |topic|
         topic.user = fallback_user
       end
     end

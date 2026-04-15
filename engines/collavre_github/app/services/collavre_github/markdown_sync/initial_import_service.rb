@@ -44,9 +44,8 @@ module CollavreGithub
           content = @client.file_content(@repo, entry.path, ref: branch)
           next if content.blank?
 
-          rendered_html = Collavre::MarkdownConverter.markdown_to_html(content)
           creative = Collavre::Creative.create!(
-            description: rendered_html,
+            description: filename,
             parent: parent,
             user: @user,
             data: {
@@ -60,6 +59,7 @@ module CollavreGithub
               }
             }
           )
+          create_content_comment(creative, content)
           created << creative
         end
 
@@ -95,6 +95,16 @@ module CollavreGithub
               "repository_link_id" => @link.id
             }
           }
+        )
+      end
+
+      def create_content_comment(creative, markdown_content)
+        topic = creative.content_topic(fallback_user: @user)
+        creative.comments.create!(
+          content: markdown_content,
+          topic: topic,
+          user: @user,
+          skip_dispatch: true
         )
       end
 

@@ -191,6 +191,10 @@ module Collavre
     end
 
     def update
+      if github_synced_content_comment?(@comment)
+        render json: { error: I18n.t("collavre.comments.github_synced_readonly") }, status: :forbidden and return
+      end
+
       if @comment.user == Current.user
         safe_params = comment_params.except(:quoted_comment_id, :quoted_text)
         validate_topic_id!(safe_params[:topic_id]) or return
@@ -207,6 +211,10 @@ module Collavre
     end
 
     def destroy
+      if github_synced_content_comment?(@comment)
+        render json: { error: I18n.t("collavre.comments.github_synced_readonly") }, status: :forbidden and return
+      end
+
       # @comment is set by before_action
       is_owner = @comment.user == Current.user
       is_admin = @creative.has_permission?(Current.user, :admin)
@@ -330,6 +338,11 @@ module Collavre
     end
 
     private
+
+    def github_synced_content_comment?(comment)
+      return false unless comment.topic&.name == Collavre::Creative::CONTENT_TOPIC_NAME
+      comment.creative&.github_markdown?
+    end
 
     def comment_params
       params.require(:comment).permit(:content, :private, :topic_id, :quoted_comment_id, :quoted_text, :review_type, images: [])
