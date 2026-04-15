@@ -8,7 +8,7 @@ import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
 export default class extends Controller {
-  static targets = ['list', 'scrollPrevBtn']
+  static targets = ['list']
 
   connect() {
     this.selection = new Set()
@@ -579,10 +579,9 @@ export default class extends Controller {
     bar.querySelector('.selection-action-branch').addEventListener('click', (e) => { e.stopPropagation(); this.branchSelectedComments() })
     bar.querySelector('.selection-action-bar-close').addEventListener('click', () => this.clearSelection())
 
-    // Insert before typing indicator so it stays inside the popup window
-    const typingIndicator = this.element.querySelector('#typing-indicator')
-    if (typingIndicator) {
-      typingIndicator.parentNode.insertBefore(bar, typingIndicator)
+    const typingRow = this.element.querySelector('#typing-indicator-row') || this.element.querySelector('#typing-indicator')
+    if (typingRow) {
+      typingRow.parentNode.insertBefore(bar, typingRow)
     } else {
       this.element.appendChild(bar)
     }
