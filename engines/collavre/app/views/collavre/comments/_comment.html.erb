@@ -41,6 +41,9 @@
     <% can_convert_comment = comment.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
   </div>
     <div class="comment-action-container">
+      <button class="comment-stop-btn comment-stop-hidden" type="button" data-comment-target="stopTask" data-action="click->comment#cancelTask" title="<%= t('collavre.comments.stop_agent') %>">
+        <span class="agent-stop-icon">&#x25A0;</span> <%= t('collavre.comments.stop_agent') %>
+      </button>
       <button class="add-reaction-btn" type="button" data-action="click->comment#triggerReactionPicker" title="<%= t('collavre.comments.add_reaction') %>">
         <span class="grayscale-emoji">☺</span>
       </button>
