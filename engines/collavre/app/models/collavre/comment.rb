@@ -135,6 +135,7 @@ module Collavre
       return unless user_id        # nil user = system message
       return if user&.ai_user?     # AI replies use A2aDispatcher, not this callback
       return unless creative
+      return if creative.inbox?
 
       SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload)
     rescue StandardError => e
