@@ -2,7 +2,6 @@ en:
   collavre:
     stuck_detection:
       task_stuck: "⚠️ Task '%{task_name}' assigned to %{agent_name} has been stuck for %{minutes} minutes."
-      approval_timeout: "⚠️ Task '%{task_name}' assigned to %{agent_name} has been awaiting approval for %{minutes} minutes and was auto-cancelled."
       creative_stalled: "⚠️ Creative '%{creative_title}' has stalled at %{progress}%% for %{hours} hours."
       system_comment: "[System] Task '%{task_name}' by %{agent_name} appears stuck. Admin attention required."
     ai_agent:
