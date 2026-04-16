@@ -48,7 +48,7 @@ module Collavre
           # knows where in the hierarchy the conversation is happening
           ancestry = build_ancestry_chain(creative)
           @injected_creative_ids << creative.id
-          messages << { role: "user", kind: :creative_context, parts: [ { text: "Current Creative (id: #{creative.id}):#{topic_info}\nPath: #{ancestry}" } ] }
+          messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative Path: #{ancestry}#{topic_info}" } ] }
         else
           # Full self-context: inject the creative subtree with ancestry breadcrumb
           ancestry = build_ancestry_chain(creative)
@@ -59,12 +59,12 @@ module Collavre
           )
 
           @injected_creative_ids << creative.id
-          messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\nPath: #{ancestry}\n#{markdown}" } ] }
+          messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative Path: #{ancestry}#{topic_info}\n#{markdown}" } ] }
         end
       end
 
       def build_ancestry_chain(creative)
-        creative.self_and_ancestors.reverse.map(&:creative_snippet).join(" > ")
+        creative.self_and_ancestors.reverse.map { |c| "#{c.creative_snippet} (id: #{c.id})" }.join(" > ")
       end
 
       def append_context_creatives(messages)

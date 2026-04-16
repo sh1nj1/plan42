@@ -119,7 +119,8 @@ module Collavre
 
         creative_msg = messages.find { |m| m[:kind] == :creative_context }
         assert_not_nil creative_msg
-        assert_includes creative_msg[:parts].first[:text], "Path:"
+        assert_includes creative_msg[:parts].first[:text], "Creative Path:"
+        assert_match(/\(id: #{@creative.id}\)/, creative_msg[:parts].first[:text])
       end
 
       test "injects only ancestry chain when disabled_self_context is true" do
@@ -134,14 +135,10 @@ module Collavre
         result = builder.build
         messages = result[:messages]
 
-        # Should NOT include full subtree
-        full_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Creative (id:") }
-        assert_nil full_msg, "Should not include full creative subtree when disabled"
-
-        # Should include ancestry path
-        ancestry_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Current Creative (id:") }
+        # Both modes now use "Creative Path:" format
+        ancestry_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Creative Path:") }
         assert_not_nil ancestry_msg, "Should include ancestry chain when self-context disabled"
-        assert_includes ancestry_msg[:parts].first[:text], "Path:"
+        assert_match(/\(id: #{@creative.id}\)/, ancestry_msg[:parts].first[:text])
       end
 
       test "deduplicates context and referenced creatives" do

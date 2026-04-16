@@ -8,7 +8,7 @@ module Collavre
       setup do
         @system_prompt = "You are a helpful assistant"
         @full_messages = [
-          { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: 1):\n# Hello" } ] },
+          { role: "user", kind: :creative_context, parts: [ { text: "Creative Path: Test (id: 1)\n# Hello" } ] },
           { role: "user", kind: :context_creative, parts: [ { text: "Context Creative (id: 2):\n# Config" } ] },
           { role: "user", kind: :chat_history, parts: [ { text: "[Alice]: hi" } ] },
           { role: "model", kind: :chat_history, parts: [ { text: "Hello!" } ] },
