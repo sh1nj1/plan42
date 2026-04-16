@@ -14,6 +14,7 @@ export default class extends Controller {
         this.canCreateTopic = false
         this.subscribedCreativeId = null
         this.topicsSubscription = null
+        this._loadTopicsVersion = 0
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId) {
             this.loadTopics()
@@ -61,8 +62,16 @@ export default class extends Controller {
     async loadTopics() {
         if (!this.creativeId) return
 
+        const version = ++this._loadTopicsVersion
+        // Clear stale topics from previous creative to prevent name-based
+        // dedupe in handleTopicMessage from blocking valid broadcasts
+        this.topics = []
+
         try {
             const response = await fetch(`/creatives/${this.creativeId}/topics`)
+            // Discard stale response if a newer loadTopics() call was made
+            if (version !== this._loadTopicsVersion) return
+
             if (response.status === 404) {
                 throw new Error(`Creative ${this.creativeId} not found`)
             }
@@ -802,8 +811,12 @@ export default class extends Controller {
         if (!data.topic) return
 
         const topics = this.topics || []
-        const exists = topics.some((topic) => String(topic.id) === String(data.topic.id))
-        if (exists) return
+        const existsById = topics.some((topic) => String(topic.id) === String(data.topic.id))
+        if (existsById) return
+        // Prevent duplicate topic names (e.g. two "Main" topics from race between
+        // HTTP loadTopics and WebSocket broadcast)
+        const existsByName = data.topic.name && topics.some((topic) => topic.name === data.topic.name)
+        if (existsByName) return
 
         this.topics = [...topics, data.topic]
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
