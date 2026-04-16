@@ -63,6 +63,9 @@ export default class extends Controller {
         if (!this.creativeId) return
 
         const version = ++this._loadTopicsVersion
+        // Clear stale topics from previous creative to prevent name-based
+        // dedupe in handleTopicMessage from blocking valid broadcasts
+        this.topics = []
 
         try {
             const response = await fetch(`/creatives/${this.creativeId}/topics`)
