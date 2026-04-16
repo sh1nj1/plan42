@@ -43,14 +43,15 @@ module Collavre
         topic = current_topic
         topic_info = topic ? "\nTopic: #{topic.name} (id: #{topic.id})" : ""
 
+        ancestry = build_ancestry_chain(creative)
+
         if effective.data&.dig("disabled_self_context") == true
           # Self-context disabled: inject only the ancestry chain so the AI
           # knows where in the hierarchy the conversation is happening
-          ancestry = build_ancestry_chain(creative)
           @injected_creative_ids << creative.id
-          messages << { role: "user", kind: :creative_context, parts: [ { text: "Current Creative (id: #{creative.id}):#{topic_info}\nPath: #{ancestry}" } ] }
+          messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative Path: #{ancestry}#{topic_info}" } ] }
         else
-          # Full self-context: inject the creative subtree
+          # Full self-context: inject the creative subtree with ancestry breadcrumb
           children_level = @agent.creative_children_level
           max_depth = 1 + children_level
           markdown = ApplicationController.helpers.render_creative_tree_markdown(
@@ -58,12 +59,12 @@ module Collavre
           )
 
           @injected_creative_ids << creative.id
-          messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
+          messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative Path: #{ancestry}#{topic_info}\n#{markdown}" } ] }
         end
       end
 
       def build_ancestry_chain(creative)
-        creative.self_and_ancestors.reverse.map(&:creative_snippet).join(" > ")
+        creative.self_and_ancestors.reverse.map { |c| "#{c.creative_snippet} (id: #{c.id})" }.join(" > ")
       end
 
       def append_context_creatives(messages)
@@ -254,9 +255,18 @@ module Collavre
         roots = Creative.where(id: @injected_creative_ids.to_a).to_a
         found_ids = roots.map(&:id).to_set
 
-        roots.flat_map(&:subtree_ids)
-             .concat(@injected_creative_ids.reject { |rid| found_ids.include?(rid) })
-             .uniq
+        ids = roots.flat_map(&:subtree_ids)
+                   .concat(@injected_creative_ids.reject { |rid| found_ids.include?(rid) })
+
+        # Include ancestor IDs used in the breadcrumb so that changes to
+        # ancestor titles are detected by context_changed?
+        creative_id = @context.dig("creative", "id")
+        if creative_id
+          ancestor_ids = Creative.find_by(id: creative_id)&.ancestor_ids || []
+          ids.concat(ancestor_ids)
+        end
+
+        ids.uniq
       end
     end
   end
