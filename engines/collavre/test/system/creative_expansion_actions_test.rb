@@ -90,6 +90,8 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     visit collavre.creative_comment_path(@child, comment)
 
     assert_selector "#comments-popup", visible: :visible, wait: 10
+    # Verify comment content loaded (not stuck on Loading...)
+    assert_text "Shared comment", wait: 10
     assert_selector "#comment_#{comment.id}[data-highlighted='true']", wait: 10
   end
 end
