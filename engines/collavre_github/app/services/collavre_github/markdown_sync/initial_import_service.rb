@@ -21,8 +21,9 @@ module CollavreGithub
         end
 
         # Archive existing root tree before reimport (pause/resume flow)
-        if @link.markdown_root_creative&.archived_at.nil?
-          @link.markdown_root_creative.archive!
+        root = @link.markdown_root_creative
+        if root && root.archived_at.nil?
+          root.archive!
         end
 
         parent_creative = @link.creative
