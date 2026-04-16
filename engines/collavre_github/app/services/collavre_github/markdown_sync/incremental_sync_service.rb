@@ -84,7 +84,8 @@ module CollavreGithub
           parts = path.split("/")
           parts.pop
 
-          parent = ensure_parent_directories(parts, root)
+          parent, new_dirs = ensure_parent_directories(parts, root)
+          created.concat(new_dirs)
           content = @client.file_content(@repo, path, ref: branch)
           next if content.blank?
 
@@ -185,9 +186,11 @@ module CollavreGithub
         end
       end
 
+      # Returns [parent_creative, newly_created_directories]
       def ensure_parent_directories(parts, root)
         parent = root
         current_path = ""
+        new_dirs = []
 
         parts.each do |part|
           current_path = current_path.empty? ? part : "#{current_path}/#{part}"
@@ -214,11 +217,12 @@ module CollavreGithub
             dir_creative.skip_github_validation = true
             dir_creative.save!
             @synced_creatives[dir_path] = dir_creative
+            new_dirs << dir_creative
             parent = dir_creative
           end
         end
 
-        parent
+        [parent, new_dirs]
       end
     end
   end

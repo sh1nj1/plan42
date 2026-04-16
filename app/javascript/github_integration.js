@@ -219,7 +219,16 @@ if (!githubIntegrationInitialized) {
           }
           selectedRepos = new Set(data.selected_repositories || []);
           webhookDetails = data.webhooks || {};
-          
+
+          // Rehydrate markdownSyncRepos from existing server state
+          markdownSyncRepos = new Set();
+          var syncData = data.markdown_sync || {};
+          Object.keys(syncData).forEach(function (repo) {
+            if (syncData[repo] && syncData[repo].enabled) {
+              markdownSyncRepos.add(repo);
+            }
+          });
+
           hasExistingIntegration = selectedRepos.size > 0;
           
           if (loginBtn) loginBtn.style.display = 'none';
