@@ -113,7 +113,7 @@ module Collavre
         max_depth = 1 + children_level
 
         # Extract creative IDs from markdown links like [title](/creatives/123)
-        referenced_ids = content.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.uniq.map(&:to_i)
+        referenced_ids = content.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.map(&:to_i).uniq
         referenced_ids.reject! { |cid| @injected_creative_ids.include?(cid) }
         creatives_by_id = Creative.where(id: referenced_ids).index_by(&:id)
 
