@@ -81,6 +81,8 @@ module CollavreGithub
         end
 
         added_paths.each do |path|
+          next if @synced_creatives[path] # idempotency: skip if already synced (redelivery/retry)
+
           parts = path.split("/")
           parts.pop
 

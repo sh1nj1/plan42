@@ -20,6 +20,11 @@ module CollavreGithub
           md_entries = md_entries.first(MAX_FILES)
         end
 
+        # Archive existing root tree before reimport (pause/resume flow)
+        if @link.markdown_root_creative&.archived_at.nil?
+          @link.markdown_root_creative.archive!
+        end
+
         parent_creative = @link.creative
         root_creative = create_root_creative(parent_creative)
         @link.update!(markdown_root_creative_id: root_creative.id, last_synced_at: Time.current)
