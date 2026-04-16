@@ -164,7 +164,12 @@
       <details class="comment-action-details">
         <summary class="comment-action-summary"><%= t("collavre.comments.action_summary") %></summary>
         <div class="comment-action-body">
-          <pre class="comment-action-json" data-comment-action-json><%= formatted_comment_action(comment) %></pre>
+          <% action_md = comment_action_markdown(comment) %>
+          <% if action_md %>
+            <div class="comment-content comment-action-markdown"><%= action_md %></div>
+          <% else %>
+            <pre class="comment-action-json" data-comment-action-json><%= formatted_comment_action(comment) %></pre>
+          <% end %>
           <% if has_pending_action %>
             <div class="comment-action-approve-controls comment-approve-hidden" data-comment-target="actionApproveControls">
               <button class="edit-comment-action-btn" type="button" data-comment-id="<%= comment.id %>"><%= t("collavre.comments.edit_action_button") %></button>
