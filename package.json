@@ -36,7 +36,7 @@
     "@lexical/utils": "^0.38.2",
     "@rails/actioncable": "^8.0.201",
     "@rails/actiontext": "^8.0.201",
-    "dompurify": "^3.3.0",
+    "dompurify": "^3.4.0",
     "firebase": "^12.2.1",
     "highlight.js": "^11.11.1",
     "js-yaml": "^4.1.0",
