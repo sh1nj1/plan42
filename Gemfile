@@ -118,3 +118,5 @@ end
 # Ruby 3.4에서 "literal string will be frozen in the future" 경고가 나오지만
 # em-websocket 내부 이슈이며 동작에 영향 없음. https://github.com/igrigorik/em-websocket/issues
 gem "em-websocket", "~> 0.5.3", groups: [ :development, :test ]
+
+gem "commonmarker", "~> 2.7"

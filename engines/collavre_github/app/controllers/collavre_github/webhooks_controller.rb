@@ -13,7 +13,13 @@ module CollavreGithub
       return head :unauthorized unless valid_signature?(raw_body)
 
       payload = payload.presence || {}
-      create_system_comment(event, payload) if @repository_link&.creative
+
+      # Process all links for this repo (same repo can be linked to multiple creatives)
+      all_links = all_repository_links_for(payload)
+      all_links.each do |link|
+        create_system_comment_for(link, event, payload) if link.creative
+        trigger_markdown_sync_for(link, event, payload) if link.markdown_sync_enabled?
+      end
 
       head :ok
     rescue JSON::ParserError
@@ -22,8 +28,8 @@ module CollavreGithub
 
     private
 
-    def create_system_comment(event, payload)
-      creative = @repository_link.creative&.effective_origin
+    def create_system_comment_for(link, event, payload)
+      creative = link.creative&.effective_origin
       return unless creative
 
       content = format_github_event(event, payload)
@@ -33,7 +39,6 @@ module CollavreGithub
         content: content,
         private: false
       )
-      # Dispatch handled by Comment#after_create_commit (skipped for system messages with user: nil)
     end
 
     def format_github_event(event, payload)
@@ -200,6 +205,22 @@ module CollavreGithub
 
     def t_webhook(key, **options)
       I18n.t("collavre_github.webhooks.#{key}", **options)
+    end
+
+    def trigger_markdown_sync_for(link, event, payload)
+      return unless event == "push"
+
+      CollavreGithub::MarkdownSyncJob.perform_later(
+        link.id,
+        payload.as_json
+      )
+    end
+
+    def all_repository_links_for(payload)
+      repo = payload&.dig("repository", "full_name") || payload&.dig(:repository, :full_name)
+      return [ @repository_link ].compact if repo.blank?
+
+      CollavreGithub::RepositoryLink.where(repository_full_name: repo).to_a
     end
 
     def find_repository_link(payload)

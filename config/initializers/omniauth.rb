@@ -7,6 +7,12 @@ github_client_secret = ENV["GITHUB_CLIENT_SECRET"] || Rails.application.credenti
 notion_client_id = ENV["NOTION_CLIENT_ID"] || Rails.application.credentials.dig(:notion, :client_id)
 notion_client_secret = ENV["NOTION_CLIENT_SECRET"] || Rails.application.credentials.dig(:notion, :client_secret)
 
+github_mock_enabled = if ENV.key?("GITHUB_MOCK")
+                        ENV["GITHUB_MOCK"] == "1"
+else
+                        Rails.env.development? && github_client_id.blank?
+end
+
 Rails.application.config.middleware.use OmniAuth::Builder do
   if google_client_id.present? && google_client_secret.present?
     provider :google_oauth2,
@@ -27,6 +33,12 @@ Rails.application.config.middleware.use OmniAuth::Builder do
              github_client_secret,
              scope: "repo read:org admin:repo_hook",
              allow_signup: false
+  elsif github_mock_enabled
+    provider :github,
+             "mock-client-id",
+             "mock-client-secret",
+             scope: "repo read:org admin:repo_hook",
+             allow_signup: false
   end
 
   if notion_client_id.present? && notion_client_secret.present?
@@ -37,15 +49,6 @@ Rails.application.config.middleware.use OmniAuth::Builder do
 end
 
 OmniAuth.config.allowed_request_methods = %i[get post]
-
-# Enable OmniAuth mock mode in development when no real GitHub credentials are configured.
-# The mock server (bin/rails collavre_github:mock_server) runs by default via Procfile.dev.
-# Set GITHUB_MOCK=0 to explicitly disable mock mode even without credentials.
-github_mock_enabled = if ENV.key?("GITHUB_MOCK")
-                        ENV["GITHUB_MOCK"] == "1"
-else
-                        Rails.env.development? && github_client_id.blank?
-end
 
 if github_mock_enabled
   OmniAuth.config.test_mode = true

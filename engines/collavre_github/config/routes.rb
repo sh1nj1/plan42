@@ -16,6 +16,8 @@ CollavreGithub::Engine.routes.draw do
 
   # Creative integration endpoints
   resources :creatives, only: [] do
-    resource :integration, module: :creatives, only: [ :show, :update, :destroy ]
+    resource :integration, module: :creatives, only: [ :show, :update, :destroy ] do
+      post :resync, on: :member
+    end
   end
 end

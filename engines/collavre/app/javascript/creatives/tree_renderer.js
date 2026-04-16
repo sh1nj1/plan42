@@ -85,6 +85,7 @@ function applyRowProperties(row, node) {
   updateBooleanAttr('expanded', 'expanded', node.expanded)
   updateBooleanAttr('isRoot', 'is-root', node.is_root)
   updateBooleanAttr('archived', 'archived', node.archived)
+  updateBooleanAttr('githubSource', 'github-source', node.github_source)
 
   if (node.link_url) {
     if (row.linkUrl !== node.link_url) {

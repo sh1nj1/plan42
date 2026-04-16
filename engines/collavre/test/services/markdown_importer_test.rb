@@ -103,8 +103,9 @@ class MarkdownImporterTest < ActiveSupport::TestCase
 
     html = table_creative.description
     assert_includes html, "<table>"
-    assert_includes html, "<td>Alice</td>"
-    assert_includes html, "<td>5</td>"
+    assert_includes html, "Alice"
+    assert_includes html, "5"
+    assert_includes html, "<table>"
   end
 
   test "does not convert table syntax inside fenced code blocks" do

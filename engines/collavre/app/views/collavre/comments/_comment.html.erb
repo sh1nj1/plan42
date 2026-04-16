@@ -101,7 +101,8 @@
   <% end %>
 
 
-  <% if comment.images.attached? %>
+  <% github_inline_images = comment.creative&.github_markdown? && comment.topic&.name == Collavre::Creative::CONTENT_TOPIC_NAME %>
+  <% if comment.images.attached? && !github_inline_images %>
     <% images_list = comment.images.to_a %>
     <div class="comment-attachments"
          data-controller="image-lightbox"

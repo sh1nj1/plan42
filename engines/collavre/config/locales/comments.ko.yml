@@ -33,6 +33,7 @@ ko:
       delete: 댓글 삭제
       delete_button: 삭제
       not_owner: 댓글 소유자만 수정할 수 있습니다.
+      github_synced_readonly: GitHub에서 동기화된 콘텐츠로 수정할 수 없습니다.
       no_permission: 댓글을 추가할 권한이 없습니다.
       archived_creative: 아카이브된 크리에이티브입니다. 채팅이 비활성화되었습니다.
       convert_not_allowed: 댓글 소유자 또는 크리에이티브 관리자만 이 메시지를 전환할 수 있습니다.

@@ -75,6 +75,8 @@ module Creatives
 
     def cached_can_write?(creative)
       return false unless user
+      # GitHub-synced creatives are always read-only
+      return false if creative.github_markdown?
 
       if @permission_cache.key?(creative.id)
         @permission_cache[creative.id]
@@ -122,6 +124,7 @@ module Creatives
           expanded: expanded,
           is_root: creative.parent.nil?,
           archived: creative.archived?,
+          github_source: creative.github_markdown?,
           sequence: creative.sequence,
           link_url: view_context.collavre.creative_path(creative),
           templates: template_payload_for(creative, has_children: filtered_children.any?),

@@ -35,28 +35,33 @@ if (!githubIntegrationInitialized) {
     const deleteSuccess = modal.dataset.deleteSuccess || 'Github 연동이 삭제되었습니다.';
     const deleteError = modal.dataset.deleteError || 'Github 연동을 삭제하지 못했습니다.';
     const deleteSelectWarning = modal.dataset.deleteSelectWarning || '삭제할 Repository를 선택하세요.';
+    const resyncBtn = document.getElementById('github-resync-btn');
+    const resyncConfirm = modal.dataset.resyncConfirm || '선택한 저장소의 마크다운을 전체 다시 가져오시겠습니까?';
+    const resyncSuccess = modal.dataset.resyncSuccess || '재동기화가 시작되었습니다.';
+    const resyncError = modal.dataset.resyncError || '재동기화를 시작하지 못했습니다.';
+    const resyncSelectWarning = modal.dataset.resyncSelectWarning || '재동기화할 저장소를 선택하세요.';
 
     let creativeId = null;
     let currentStep = 'connect';
     let organizations = [];
     let selectedOrg = null;
     let selectedRepos = new Set();
+    let markdownSyncRepos = new Set();
     let webhookDetails = {};
-    
+
     let hasExistingIntegration = false;
     let selectedReposForDeletion = new Set();
 
-    function csrfToken() {
-      return document.querySelector('meta[name="csrf-token"]')?.content;
-    }
+    const markdownSyncList = document.getElementById('github-markdown-sync-list');
 
     function resetWizard() {
       currentStep = 'connect';
       organizations = [];
       selectedOrg = null;
       selectedRepos = new Set();
+      markdownSyncRepos = new Set();
       webhookDetails = {};
-      
+
       hasExistingIntegration = false;
       selectedReposForDeletion = new Set();
       statusEl.textContent = '';
@@ -74,18 +79,19 @@ if (!githubIntegrationInitialized) {
         connectMessage.style.display = '';
       }
       if (deleteBtn) deleteBtn.style.display = 'none';
+      if (resyncBtn) resyncBtn.style.display = 'none';
       updateDeleteButtonState();
       if (loginBtn) loginBtn.style.display = 'inline-block';
       updateStep();
     }
 
     function updateDeleteButtonState() {
-      if (!deleteBtn) return;
-      deleteBtn.disabled = selectedReposForDeletion.size === 0;
+      if (deleteBtn) deleteBtn.disabled = selectedReposForDeletion.size === 0;
+      if (resyncBtn) resyncBtn.disabled = selectedReposForDeletion.size === 0;
     }
 
     function updateStep() {
-      ['connect', 'organization', 'repositories', 'summary']
+      ['connect', 'organization', 'repositories', 'markdown-sync', 'summary']
         .forEach(function (step) {
           const el = document.getElementById(`github-step-${step}`);
           if (!el) return;
@@ -111,12 +117,54 @@ if (!githubIntegrationInitialized) {
         nextBtn.style.display = 'block';
         nextBtn.disabled = false;
         finishBtn.style.display = 'none';
+      } else if (currentStep === 'markdown-sync') {
+        prevBtn.style.display = 'block';
+        nextBtn.style.display = 'block';
+        nextBtn.disabled = false;
+        finishBtn.style.display = 'none';
       } else if (currentStep === 'summary') {
         prevBtn.style.display = 'block';
         nextBtn.style.display = 'none';
         finishBtn.style.display = 'block';
         updateSummary();
       }
+    }
+
+    function populateMarkdownSync() {
+      if (!markdownSyncList) return;
+      markdownSyncList.innerHTML = '';
+      const repos = Array.from(selectedRepos);
+      if (!repos.length) {
+        markdownSyncList.innerHTML = '<p style="padding:0.5em;color:#999;">No repositories selected.</p>';
+        return;
+      }
+      repos.forEach(function (fullName) {
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '0.5em';
+        label.style.marginBottom = '0.5em';
+        label.style.cursor = 'pointer';
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = fullName;
+        input.checked = markdownSyncRepos.has(fullName);
+        input.addEventListener('change', function () {
+          if (input.checked) {
+            markdownSyncRepos.add(fullName);
+          } else {
+            markdownSyncRepos.delete(fullName);
+          }
+        });
+
+        const span = document.createElement('span');
+        span.textContent = fullName + ' — Markdown Sync';
+
+        label.appendChild(input);
+        label.appendChild(span);
+        markdownSyncList.appendChild(label);
+      });
     }
 
     function showModal() {
@@ -171,7 +219,16 @@ if (!githubIntegrationInitialized) {
           }
           selectedRepos = new Set(data.selected_repositories || []);
           webhookDetails = data.webhooks || {};
-          
+
+          // Rehydrate markdownSyncRepos from existing server state
+          markdownSyncRepos = new Set();
+          var syncData = data.markdown_sync || {};
+          Object.keys(syncData).forEach(function (repo) {
+            if (syncData[repo] && syncData[repo].enabled) {
+              markdownSyncRepos.add(repo);
+            }
+          });
+
           hasExistingIntegration = selectedRepos.size > 0;
           
           if (loginBtn) loginBtn.style.display = 'none';
@@ -255,6 +312,10 @@ if (!githubIntegrationInitialized) {
       if (deleteBtn) {
         deleteBtn.style.display = readOnly ? 'none' : 'inline-flex';
         updateDeleteButtonState();
+      }
+      if (resyncBtn) {
+        resyncBtn.style.display = readOnly ? 'none' : 'inline-flex';
+        resyncBtn.disabled = true;
       }
       if (loginBtn) loginBtn.style.display = 'none';
     }
@@ -427,7 +488,11 @@ if (!githubIntegrationInitialized) {
 
     function saveSelection() {
       clearError();
-      const payload = { repositories: Array.from(selectedRepos) };
+      const markdownSync = {};
+      Array.from(selectedRepos).forEach(function (repo) {
+        markdownSync[repo] = markdownSyncRepos.has(repo);
+      });
+      const payload = { repositories: Array.from(selectedRepos), markdown_sync: markdownSync };
       
       fetch(`/github/creatives/${creativeId}/integration`, {
         method: 'PATCH',
@@ -477,8 +542,10 @@ if (!githubIntegrationInitialized) {
         currentStep = 'connect';
       } else if (currentStep === 'repositories') {
         currentStep = 'organization';
-      } else if (currentStep === 'summary') {
+      } else if (currentStep === 'markdown-sync') {
         currentStep = 'repositories';
+      } else if (currentStep === 'summary') {
+        currentStep = 'markdown-sync';
       }
       updateStep();
       if (currentStep === 'organization' && organizations.length === 0) loadOrganizations();
@@ -496,6 +563,10 @@ if (!githubIntegrationInitialized) {
         updateStep();
         loadRepositories();
       } else if (currentStep === 'repositories') {
+        currentStep = 'markdown-sync';
+        updateStep();
+        populateMarkdownSync();
+      } else if (currentStep === 'markdown-sync') {
         currentStep = 'summary';
         updateStep();
       }
@@ -575,6 +646,54 @@ if (!githubIntegrationInitialized) {
         .catch(function () {
           showError(deleteError);
         });
+    });
+
+    resyncBtn?.addEventListener('click', function () {
+      if (!creativeId) return;
+      clearError();
+      const checkboxes = existingList ? existingList.querySelectorAll('.github-existing-repo-checkbox:checked') : [];
+      const selectedToResync = Array.from(checkboxes).map(cb => cb.value);
+      if (!selectedToResync.length) {
+        showError(resyncSelectWarning);
+        return;
+      }
+      if (!window.confirm(resyncConfirm)) return;
+
+      resyncBtn.disabled = true;
+      let completed = 0;
+      let failed = 0;
+
+      selectedToResync.forEach(function (repo) {
+        fetch(`/github/creatives/${creativeId}/integration/resync`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken()
+          },
+          body: JSON.stringify({ repository: repo })
+        })
+          .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
+          .then(function (result) {
+            completed++;
+            if (!result.ok) failed++;
+            if (completed === selectedToResync.length) {
+              if (failed > 0) {
+                showError(resyncError);
+              } else {
+                statusEl.textContent = resyncSuccess;
+              }
+              resyncBtn.disabled = false;
+            }
+          })
+          .catch(function () {
+            completed++;
+            failed++;
+            if (completed === selectedToResync.length) {
+              showError(resyncError);
+              resyncBtn.disabled = false;
+            }
+          });
+      });
     });
 
     window.addEventListener('message', function (event) {
