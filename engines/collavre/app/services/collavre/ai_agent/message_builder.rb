@@ -50,7 +50,8 @@ module Collavre
           @injected_creative_ids << creative.id
           messages << { role: "user", kind: :creative_context, parts: [ { text: "Current Creative (id: #{creative.id}):#{topic_info}\nPath: #{ancestry}" } ] }
         else
-          # Full self-context: inject the creative subtree
+          # Full self-context: inject the creative subtree with ancestry breadcrumb
+          ancestry = build_ancestry_chain(creative)
           children_level = @agent.creative_children_level
           max_depth = 1 + children_level
           markdown = ApplicationController.helpers.render_creative_tree_markdown(
@@ -58,7 +59,7 @@ module Collavre
           )
 
           @injected_creative_ids << creative.id
-          messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
+          messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\nPath: #{ancestry}\n#{markdown}" } ] }
         end
       end
 

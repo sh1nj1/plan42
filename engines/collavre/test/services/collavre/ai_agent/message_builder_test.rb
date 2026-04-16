@@ -107,6 +107,21 @@ module Collavre
         assert_nil context_msg, "Should not include disabled context creative"
       end
 
+      test "includes ancestry breadcrumb in full subtree context" do
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Hello" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        result = builder.build
+        messages = result[:messages]
+
+        creative_msg = messages.find { |m| m[:kind] == :creative_context }
+        assert_not_nil creative_msg
+        assert_includes creative_msg[:parts].first[:text], "Path:"
+      end
+
       test "injects only ancestry chain when disabled_self_context is true" do
         @creative.update!(data: { "disabled_self_context" => true })
 
