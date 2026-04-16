@@ -222,7 +222,7 @@ module CollavreGithub
           end
         end
 
-        [parent, new_dirs]
+        [ parent, new_dirs ]
       end
     end
   end

@@ -218,7 +218,7 @@ module CollavreGithub
 
     def all_repository_links_for(payload)
       repo = payload&.dig("repository", "full_name") || payload&.dig(:repository, :full_name)
-      return [@repository_link].compact if repo.blank?
+      return [ @repository_link ].compact if repo.blank?
 
       CollavreGithub::RepositoryLink.where(repository_full_name: repo).to_a
     end
