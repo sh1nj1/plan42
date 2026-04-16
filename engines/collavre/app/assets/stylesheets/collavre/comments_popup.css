@@ -1161,7 +1161,7 @@ body.chat-fullscreen {
     background: var(--surface-btn);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2);
-    color: var(--text-muted);
+    color: var(--color-danger);
     cursor: pointer;
     font-size: var(--text-00);
     padding: var(--space-px-1) var(--space-px-2);
