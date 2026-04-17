@@ -1,3 +1,8 @@
+## v0.20.1 (2026-04-17)
+
+### Changes
+- 7bd18958 fix: move add_task_id_to_comments migration into collavre engine (#1217)
+
 ## v0.20.0 (2026-04-17)
 
 ### Changes
