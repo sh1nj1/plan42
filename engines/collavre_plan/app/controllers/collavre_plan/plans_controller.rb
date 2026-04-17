@@ -58,8 +58,8 @@ module CollavrePlan
     end
 
     def destroy
-      @plan = Collavre::Plan.find(params[:id])
-      return render_forbidden unless plan_editable_by_current_user?
+      @plan = Collavre::Plan.find_by(id: params[:id])
+      raise ActiveRecord::RecordNotFound unless @plan && plan_editable_by_current_user?
 
       @plan.destroy
       respond_to do |format|
@@ -72,8 +72,8 @@ module CollavrePlan
     end
 
     def update
-      @plan = Collavre::Plan.find(params[:id])
-      return render_forbidden unless plan_editable_by_current_user?
+      @plan = Collavre::Plan.find_by(id: params[:id])
+      raise ActiveRecord::RecordNotFound unless @plan && plan_editable_by_current_user?
 
       if @plan.update(plan_update_params)
         respond_to do |format|
@@ -117,18 +117,6 @@ module CollavrePlan
       return false unless @plan.tags.exists?(creative_id: tagged_creative.id)
 
       tagged_creative.has_permission?(Current.user, :write)
-    end
-
-    def render_forbidden
-      respond_to do |format|
-        format.html do
-          redirect_back fallback_location: main_app.root_path,
-                        alert: t("collavre.plans.update_forbidden", default: "You do not have permission to update this plan.")
-        end
-        format.json do
-          render json: { error: "forbidden" }, status: :forbidden
-        end
-      end
     end
 
     def plan_json(plan, creative_id: nil)

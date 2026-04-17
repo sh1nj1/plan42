@@ -61,6 +61,31 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     assert_equal I18n.t("collavre.creatives.share.shared"), flash[:notice]
   end
 
+  test "non-admin user gets 404 (not 403) when updating someone else's share" do
+    other_user = users(:two)
+    share = CreativeShare.create!(creative: @creative, user: @target_user, permission: :read, shared_by: @owner)
+
+    sign_in_as(other_user, password: "password")
+
+    patch collavre.creative_creative_share_path(@creative, share), params: { permission: :write }, as: :json
+
+    assert_response :not_found
+    assert_equal "read", share.reload.permission
+  end
+
+  test "non-admin user gets 404 (not 403) when destroying someone else's share" do
+    other_user = users(:two)
+    share = CreativeShare.create!(creative: @creative, user: @target_user, permission: :read, shared_by: @owner)
+
+    sign_in_as(other_user, password: "password")
+
+    assert_no_difference("CreativeShare.count") do
+      delete collavre.creative_creative_share_path(@creative, share), as: :json
+    end
+
+    assert_response :not_found
+  end
+
   test "anyone can share searchable AI agent" do
     # Create a searchable AI agent owned by @owner
     ai_agent = User.create!(

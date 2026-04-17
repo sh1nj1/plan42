@@ -188,7 +188,9 @@ class OrgChartTest < ActionDispatch::IntegrationTest
           headers: { "Accept" => "application/json" },
           as: :json
 
-    assert_response :forbidden
+    # Returns 404 rather than 403 to avoid leaking record existence to
+    # unauthorized users (IDOR hardening).
+    assert_response :not_found
     assert_equal "admin", @share_root.reload.permission
   end
 
@@ -303,7 +305,9 @@ class OrgChartTest < ActionDispatch::IntegrationTest
           headers: { "Accept" => "application/json" },
           as: :json
 
-    assert_response :forbidden
+    # Returns 404 rather than 403 to avoid leaking record existence to
+    # unauthorized users (IDOR hardening).
+    assert_response :not_found
     assert_equal "read", invitation.reload.permission
   ensure
     invitation&.destroy

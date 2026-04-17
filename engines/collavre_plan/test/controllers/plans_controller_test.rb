@@ -161,6 +161,30 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     assert_equal new_target_date, plan.target_date
   end
 
+  test "user without edit permission gets 404 (not 403) when updating plan" do
+    creative = creatives(:tshirt)
+    plan = Plan.create!(target_date: Date.today, creative: creative, owner: @owner)
+
+    login_as(@collaborator)
+    patch collavre_plan_engine.plan_path(plan, format: :json),
+          params: { plan: { target_date: Date.tomorrow } }
+
+    assert_response :not_found
+    assert_equal Date.today, plan.reload.target_date
+  end
+
+  test "user without edit permission gets 404 (not 403) when destroying plan" do
+    creative = creatives(:tshirt)
+    plan = Plan.create!(target_date: Date.today, creative: creative, owner: @owner)
+
+    login_as(@collaborator)
+    assert_no_difference("Plan.count") do
+      delete collavre_plan_engine.plan_path(plan, format: :json)
+    end
+
+    assert_response :not_found
+  end
+
   test "should return stripped html in json" do
     creative = creatives(:tshirt)
     creative.update!(description: "<b>T-Shirt</b> <i>Design</i>")
