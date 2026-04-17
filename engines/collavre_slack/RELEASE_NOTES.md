@@ -1,3 +1,11 @@
+## v0.2.6 (2026-04-17)
+
+### Changes
+- 7e50303f refactor: extract shared error handling in GitHub PR services and Slack jobs (#1203)
+- 7718c7d1 fix: add permission checks for IDOR and HTML-escape for XSS vulnerabilities (#1190)
+- e2a11327 refactor: extract shared IntegrationWizard JS module from modal wizards (#1177)
+- 3902cdae refactor: extract IntegrationSetup concern from integration controllers (#1176)
+
 ## v0.2.5 (2026-04-09)
 
 ### Changes

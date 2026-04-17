@@ -1,3 +1,11 @@
+## v0.6.1 (2026-04-17)
+
+### Changes
+- cfd0e0fb fix: resolve openclaw test bootsnap error, replace puts with logger, fix bare rescue, batch N+1 query (#1191)
+- adc3e698 feat(collavre): extract SessionContextResolver for common session management (#1186)
+- a06cdbcb fix: replace SQL interpolation with parameterized query and standardize rescue clauses (#1173)
+- d1c0bd62 feat: add LLM request timeout to system settings (#1163)
+
 ## v0.6.0 (2026-04-08)
 
 ### Changes

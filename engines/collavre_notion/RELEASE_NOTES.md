@@ -1,3 +1,9 @@
+## v0.1.3 (2026-04-17)
+
+### Changes
+- e2a11327 refactor: extract shared IntegrationWizard JS module from modal wizards (#1177)
+- 3902cdae refactor: extract IntegrationSetup concern from integration controllers (#1176)
+
 ## v0.1.2 (2026-04-09)
 
 ### Changes

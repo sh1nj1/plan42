@@ -1,3 +1,48 @@
+## v0.20.0 (2026-04-17)
+
+### Changes
+- e5bfa732 fix: prevent duplicate topics and stale loadTopics race in comments popup (#1212)
+- 0ea762f7 fix: increase wait times for comment share link system test (#1211)
+- 25401173 fix: unify stop button text color in chat popup (#1208)
+- 0345f1f0 feat: GitHub markdown datasource with read-only sync (#1201)
+- 7d78cbe4 fix: resolve N+1 queries and inefficient task scan (#1204)
+- 18ba9832 feat: always inject ancestry breadcrumb in AI agent context (#1205)
+- a327e375 refactor: server-side stop button with comment-task 1:1 link (#1202)
+- b07334c7 feat: add stop button on streaming AI messages (#1200)
+- 6462f049 feat: separate Main topic from All Messages view (#1197)
+- bc598aa7 fix: skip orchestration dispatch for inbox comments (#1199)
+- 7e1b0860 feat: add scroll-to-previous-message button in chat popup (#1198)
+- d401ea61 fix: include primary_agent in topic update broadcast and response (#1196)
+- 589ff5b6 refactor: extract duplicated topic validation, broadcast helper, and user_json (#1195)
+- 74f54e9f refactor: extract permission guard concern, add public_only scope, consolidate set_creative (#1193)
+- c641a5f6 fix: remove dead code — unused methods, services, models, and JS modules (#1192)
+- cfd0e0fb fix: resolve openclaw test bootsnap error, replace puts with logger, fix bare rescue, batch N+1 query (#1191)
+- 7718c7d1 fix: add permission checks for IDOR and HTML-escape for XSS vulnerabilities (#1190)
+- 885f9531 fix: pass gateway_url to AiClient in background jobs (#1194)
+- dd0e4db0 fix: dispatch creative-editing:stop for new creatives without ID (#1189)
+- 5421ae46 feat: fade chat popup when inline editor is active (#1188)
+- adc3e698 feat(collavre): extract SessionContextResolver for common session management (#1186)
+- b60aa962 fix: inherit disabled_context_ids from ancestor creatives (#1182)
+- f94a0f56 fix: prevent vertical scroll blocking over horizontal-only scrollable elements (#1184)
+- 55b41b62 fix: reorder chat history entries on revisit to reflect visit order (#1181)
+- 2eed586f feat(collavre): support MCP tool defaults per creative (#1168)
+- 5463545f Feat/ai client session id header (#1180)
+- e2a11327 refactor: extract shared IntegrationWizard JS module from modal wizards (#1177)
+- 3902cdae refactor: extract IntegrationSetup concern from integration controllers (#1176)
+- ffdbbe4e fix: remove html_safe usage and add Google Calendar error handling (#1175)
+- a06cdbcb fix: replace SQL interpolation with parameterized query and standardize rescue clauses (#1173)
+- ff1196a4 fix: add authorization checks to InvitesController and InboxItemsController (#1172)
+- 8e2b2c2f fix: prevent layout shift on creative row hover progress toggle (#1170)
+- f611a051 fix: prevent popup jumping to (0,0) when exiting fullscreen quickly (#1167)
+- ad12b385 feat: add markdown shortcuts to Lexical inline editor (#1122)
+- 9dafb818 fix: broadcast MCP-triggered creative changes to all users (#1166)
+- e3df9d9f feat: swap Enter/Shift+Enter shortcuts in creative inline editor (#1164)
+- 35873c0b Merge pull request #1129 from sh1nj1/fix/select-mode-block-click
+- d1c0bd62 feat: add LLM request timeout to system settings (#1163)
+- cfefd9c2 fix: address code scan 2026-04-10 findings — security, duplication, quality (#1160)
+- 3214fd73 fix: remove duplicate toggle logic, keep navigation block only
+- 17ea986b fix: block navigation click in select mode, toggle selection only
+
 ## v0.16.0 (2026-04-10)
 
 ### Changes

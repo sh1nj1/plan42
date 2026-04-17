@@ -1,3 +1,12 @@
+## v0.5.0 (2026-04-17)
+
+### Changes
+- 64a9d540 fix: prevent NoMethodError when markdown_root_creative is nil during initial sync (#1207)
+- 0345f1f0 feat: GitHub markdown datasource with read-only sync (#1201)
+- 7e50303f refactor: extract shared error handling in GitHub PR services and Slack jobs (#1203)
+- cfd0e0fb fix: resolve openclaw test bootsnap error, replace puts with logger, fix bare rescue, batch N+1 query (#1191)
+- 3902cdae refactor: extract IntegrationSetup concern from integration controllers (#1176)
+
 ## v0.4.1 (2026-04-09)
 
 ### Changes
