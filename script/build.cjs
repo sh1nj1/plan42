@@ -21,6 +21,7 @@ const GEM_ENGINES = [
     { name: 'collavre_slack', mainEntry: 'collavre_slack.js' },
     { name: 'collavre_notion', mainEntry: 'collavre_notion.js' },
     { name: 'collavre_plan', mainEntry: 'collavre_plan.js' },
+    { name: 'collavre_github', mainEntry: 'collavre_github.js' },
     // Add more engines here as needed:
     // { name: 'another_engine', mainEntry: 'another_engine.js' },
 ];
