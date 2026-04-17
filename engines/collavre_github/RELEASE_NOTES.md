@@ -1,3 +1,8 @@
+## v0.5.1 (2026-04-17)
+
+### Changes
+- 813a8a8a refactor: move github integration JS into collavre_github engine (#1218)
+
 ## v0.5.0 (2026-04-17)
 
 ### Changes

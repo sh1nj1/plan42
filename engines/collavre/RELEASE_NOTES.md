@@ -1,3 +1,9 @@
+## v0.20.2 (2026-04-17)
+
+### Changes
+- 14d9a0d1 perf: eliminate N+1 in slide_viewable#build_slide_ids (#1215)
+- 5a63037e fix: scope admin-only lookups in share/invitation/plan controllers (#1214)
+
 ## v0.20.1 (2026-04-17)
 
 ### Changes
