@@ -20,6 +20,7 @@ module Collavre
 
     def update
       if @user.update(params.permit(:password, :password_confirmation))
+        @user.update_column(:email_verified_at, Time.current) unless @user.email_verified?
         redirect_to new_session_path, notice: "Password has been reset."
       else
         redirect_to edit_password_path(params[:token]), alert: "Passwords did not match."
