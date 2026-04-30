@@ -1,3 +1,8 @@
+## v0.20.3 (2026-04-30)
+
+### Changes
+- 08062eaf Auto-verify email on successful password reset (#1224)
+
 ## v0.20.2 (2026-04-17)
 
 ### Changes

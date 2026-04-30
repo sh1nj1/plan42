@@ -50,7 +50,7 @@ PATH
 PATH
   remote: engines/collavre
   specs:
-    collavre (0.20.2)
+    collavre (0.20.3)
       bcrypt
       closure_tree
       commonmarker
