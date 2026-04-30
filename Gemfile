@@ -119,4 +119,4 @@ end
 # em-websocket 내부 이슈이며 동작에 영향 없음. https://github.com/igrigorik/em-websocket/issues
 gem "em-websocket", "~> 0.5.3", groups: [ :development, :test ]
 
-gem "commonmarker", "~> 2.7"
+gem "commonmarker", "~> 2.8"
