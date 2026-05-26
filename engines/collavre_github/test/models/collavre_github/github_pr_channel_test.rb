@@ -109,7 +109,7 @@ module CollavreGithub
       assert_nil @channel.handle(event: "pull_request_review", payload: payload)
     end
 
-    test "handle detaches channel and posts a final closing message on pull_request.closed (merged)" do
+    test "handle returns closing InjectedMessage on pull_request.closed (merged) without detaching" do
       payload = {
         "action" => "closed",
         "pull_request" => { "number" => 42, "merged" => true, "html_url" => "https://github.com/owner/repo/pull/42" },
@@ -118,8 +118,9 @@ module CollavreGithub
       result = @channel.handle(event: "pull_request", payload: payload)
       assert_kind_of Collavre::Channel::InjectedMessage, result
       assert_includes result.message, "merged"
-      @channel.reload
-      assert_predicate @channel, :detached?
+      # Detach is now performed by the webhook controller after inject_into_topic!,
+      # so handle() alone must NOT detach.
+      assert_predicate @channel.reload, :active?
     end
 
     test "handle returns nil when comment author matches ignore_actor_logins" do
@@ -133,7 +134,7 @@ module CollavreGithub
       assert_nil @channel.handle(event: "issue_comment", payload: payload)
     end
 
-    test "handle detaches channel on pull_request.closed (not merged)" do
+    test "handle returns closing InjectedMessage on pull_request.closed (not merged) without detaching" do
       payload = {
         "action" => "closed",
         "pull_request" => { "number" => 42, "merged" => false, "html_url" => "https://github.com/owner/repo/pull/42" },
@@ -141,7 +142,8 @@ module CollavreGithub
       }
       result = @channel.handle(event: "pull_request", payload: payload)
       assert_includes result.message, "closed"
-      assert_predicate @channel.reload, :detached?
+      # Detach is now performed by the webhook controller after inject_into_topic!.
+      assert_predicate @channel.reload, :active?
     end
   end
 end

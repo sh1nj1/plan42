@@ -68,6 +68,9 @@ module CollavreGithub
         next if injected.nil?
 
         channel.inject_into_topic!(injected)
+        # Detach AFTER injecting the closing message so the chip remains
+        # visible until the closing comment lands in the topic.
+        channel.detach! if event == "pull_request" && payload["action"] == "closed"
       end
     rescue => e
       Rails.logger.error("[CollavreGithub] channel dispatch failed: #{e.class}: #{e.message}")

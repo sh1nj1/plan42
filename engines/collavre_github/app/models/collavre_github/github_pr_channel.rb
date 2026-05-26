@@ -38,14 +38,14 @@ module CollavreGithub
       pr = payload["pull_request"]
       verb = pr["merged"] ? "merged" : "closed"
 
-      msg = Collavre::Channel::InjectedMessage.new(
+      Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
         message: "#{label} was **#{verb}**. Detaching channel.",
         label: "#{label} (#{verb})",
         link: pr_url
       )
-      detach!
-      msg
+      # Detach is performed by the webhook controller AFTER injecting this
+      # message, so the chip stays visible until the closing comment lands.
     end
 
     def handle_review_submitted(payload)

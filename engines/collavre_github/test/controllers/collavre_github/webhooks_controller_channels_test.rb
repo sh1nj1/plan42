@@ -49,5 +49,30 @@ module CollavreGithub
       end
       assert_response :ok
     end
+
+    test "pull_request.closed injects closing comment AND detaches channel" do
+      payload = {
+        action: "closed",
+        pull_request: {
+          number: 99,
+          merged: true,
+          html_url: "https://github.com/#{@link.repository_full_name}/pull/99"
+        },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
+        post "/github/webhook",
+          params: payload,
+          headers: {
+            "Content-Type" => "application/json",
+            "X-GitHub-Event" => "pull_request",
+            "X-Hub-Signature-256" => sig
+          }
+      end
+      assert_response :ok
+      assert_predicate @channel.reload, :detached?
+    end
   end
 end

@@ -30,5 +30,15 @@ module Collavre
       delete collavre.channel_path(id: 999_999)
       assert_response :not_found
     end
+
+    test "destroy returns 403 when user lacks write permission on creative" do
+      other_user = users(:two)
+      sign_out
+      sign_in_as(other_user, password: "password")
+
+      delete collavre.channel_path(@channel)
+      assert_response :forbidden
+      assert_predicate @channel.reload, :active?
+    end
   end
 end
