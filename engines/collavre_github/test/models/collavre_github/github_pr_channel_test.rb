@@ -124,7 +124,7 @@ module CollavreGithub
     end
 
     test "handle returns nil when comment author matches ignore_actor_logins" do
-      @channel.update!(config: @channel.config.merge("ignore_actor_logins" => ["my-bot"]))
+      @channel.update!(config: @channel.config.merge("ignore_actor_logins" => [ "my-bot" ]))
       payload = {
         "action" => "created",
         "comment" => { "body" => "noise", "user" => { "login" => "my-bot", "type" => "Bot" } },
