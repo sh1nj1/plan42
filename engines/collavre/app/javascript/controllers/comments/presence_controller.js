@@ -423,9 +423,21 @@ export default class extends Controller {
   refreshChannelChips(topicId) {
     const target = this.hasChannelChipsTarget ? this.channelChipsTarget : null
     if (!target) return
-    const currentTopic = target.dataset.topicId
-    if (currentTopic && String(currentTopic) !== String(topicId)) return
     if (!this.creativeId) return
+
+    // Source of truth for "what the user is looking at" is the topics
+    // controller's currentTopicId, NOT the chip container's data-topic-id:
+    // - On initial popup open the container is empty (no data-topic-id),
+    //   so a stray broadcast for any topic in the same creative used to
+    //   paint chips for the wrong topic.
+    // - After the user switches topics the container's data-topic-id is
+    //   stale until something repaints it, blocking legit updates.
+    const topicsCtrl = this.application.getControllerForElementAndIdentifier(
+      this.element, 'comments--topics'
+    )
+    const activeTopicId = topicsCtrl?.currentTopicId || ''
+    if (String(activeTopicId) !== String(topicId)) return
+
     fetch(`/creatives/${this.creativeId}/topics/${topicId}/channel_chips`, {
       headers: { Accept: 'text/html' },
       credentials: 'same-origin',

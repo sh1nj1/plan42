@@ -80,16 +80,22 @@ module CollavreGithub
       GithubPrChannel.active.find_each do |channel|
         next unless channel.repo_full_name == repo && channel.pr_number == pr_number
 
-        injected = channel.handle(event: event, payload: payload)
-        next if injected.nil?
+        begin
+          injected = channel.handle(event: event, payload: payload)
+          next if injected.nil?
 
-        channel.inject_into_topic!(injected)
-        # Detach AFTER injecting the closing message so the chip remains
-        # visible until the closing comment lands in the topic.
-        channel.detach! if event == "pull_request" && payload["action"] == "closed"
+          channel.inject_into_topic!(injected)
+          # Detach AFTER injecting the closing message so the chip remains
+          # visible until the closing comment lands in the topic.
+          channel.detach! if event == "pull_request" && payload["action"] == "closed"
+        rescue => e
+          # Isolate per-channel failures so one broken channel does not block
+          # sibling channels monitoring the same PR.
+          Rails.logger.error(
+            "[CollavreGithub] channel #{channel.id} dispatch failed: #{e.class}: #{e.message}"
+          )
+        end
       end
-    rescue => e
-      Rails.logger.error("[CollavreGithub] channel dispatch failed: #{e.class}: #{e.message}")
     end
 
     def extract_pr_number(event, payload)
