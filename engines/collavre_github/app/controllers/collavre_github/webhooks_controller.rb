@@ -21,6 +21,7 @@ module CollavreGithub
         trigger_markdown_sync_for(link, event, payload) if link.markdown_sync_enabled?
       end
 
+      maybe_auto_attach_channel(event, payload)
       dispatch_to_channels(event, payload)
 
       head :ok
@@ -29,6 +30,28 @@ module CollavreGithub
     end
 
     private
+
+    def maybe_auto_attach_channel(event, payload)
+      return unless event == "pull_request" && payload["action"] == "opened"
+      repo = payload.dig("repository", "full_name")
+      pr_number = payload.dig("pull_request", "number")
+      body = payload.dig("pull_request", "body")
+      topic_id = CollavreGithub::PrTopicLinkParser.call(body)
+      return unless repo && pr_number && topic_id
+
+      topic = Collavre::Topic.find_by(id: topic_id)
+      return unless topic
+
+      existing = GithubPrChannel.where(topic_id: topic.id).find { |c| c.repo_full_name == repo && c.pr_number == pr_number }
+      existing || GithubPrChannel.create!(
+        topic_id: topic.id,
+        config: { "repo_full_name" => repo, "pr_number" => pr_number }
+      )
+    rescue ActiveRecord::RecordNotUnique
+      # concurrent webhook safe
+    rescue => e
+      Rails.logger.error("[CollavreGithub] auto-attach failed: #{e.class}: #{e.message}")
+    end
 
     def dispatch_to_channels(event, payload)
       repo = payload.dig("repository", "full_name")
