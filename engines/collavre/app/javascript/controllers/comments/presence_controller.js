@@ -24,11 +24,13 @@ export default class extends Controller {
     this.handleInput = this.handleInput.bind(this)
     this.handleFocus = this.handleFocus.bind(this)
     this.handleBlur = this.handleBlur.bind(this)
+    this.handleTopicChange = this.handleTopicChange.bind(this)
 
     this.textareaTarget.addEventListener('input', this.handleInput)
     this.textareaTarget.addEventListener('focus', this.handleFocus)
     this.textareaTarget.addEventListener('blur', this.handleBlur)
     this.privateCheckboxTarget?.addEventListener('change', () => this.stoppedTyping())
+    this.element.addEventListener('comments--topics:change', this.handleTopicChange)
   }
 
   disconnect() {
@@ -36,6 +38,16 @@ export default class extends Controller {
     this.textareaTarget.removeEventListener('input', this.handleInput)
     this.textareaTarget.removeEventListener('focus', this.handleFocus)
     this.textareaTarget.removeEventListener('blur', this.handleBlur)
+    this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
+  }
+
+  handleTopicChange(event) {
+    const topicId = event.detail?.topicId
+    if (topicId) {
+      this.refreshChannelChips(topicId)
+    } else {
+      this.clearChannelChips()
+    }
   }
 
   get listController() {
@@ -420,10 +432,21 @@ export default class extends Controller {
       .catch((err) => console.warn('[presence] cancel agent task failed:', err))
   }
 
+  clearChannelChips() {
+    const target = this.hasChannelChipsTarget ? this.channelChipsTarget : null
+    if (!target) return
+    target.innerHTML = ''
+    delete target.dataset.topicId
+  }
+
   refreshChannelChips(topicId) {
     const target = this.hasChannelChipsTarget ? this.channelChipsTarget : null
     if (!target) return
     if (!this.creativeId) return
+    if (!topicId) {
+      this.clearChannelChips()
+      return
+    }
 
     // Source of truth for "what the user is looking at" is the topics
     // controller's currentTopicId, NOT the chip container's data-topic-id:
