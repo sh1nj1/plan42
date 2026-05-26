@@ -24,10 +24,28 @@ module CollavreGithub
         handle_issue_comment(payload)
       when "pull_request_review_comment"
         handle_review_comment(payload)
+      when "pull_request_review"
+        handle_review_submitted(payload)
       end
     end
 
     private
+
+    def handle_review_submitted(payload)
+      return nil unless payload["action"] == "submitted"
+      review = payload["review"]
+      body = review["body"].to_s
+      return nil if body.strip.empty?
+
+      author = review.dig("user", "login")
+      state = review["state"]
+      Collavre::Channel::InjectedMessage.new(
+        speaker: channel_bot_user,
+        message: "**@#{author}** submitted a review (`#{state}`) on #{label}:\n\n#{body}",
+        label: label,
+        link: pr_url
+      )
+    end
 
     def handle_review_comment(payload)
       return nil unless payload["action"] == "created"

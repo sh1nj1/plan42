@@ -74,5 +74,39 @@ module CollavreGithub
       assert_includes result.message, "app/foo.rb"
       assert_includes result.message, "rename this var"
     end
+
+    test "handle returns InjectedMessage for pull_request_review.submitted with body" do
+      payload = {
+        "action" => "submitted",
+        "review" => {
+          "id" => 3003,
+          "state" => "changes_requested",
+          "body" => "Overall LGTM but please address comments.",
+          "html_url" => "https://github.com/owner/repo/pull/42#pullrequestreview-3003",
+          "user" => { "login" => "carol", "type" => "User", "id" => 9 }
+        },
+        "pull_request" => { "number" => 42 },
+        "repository" => { "full_name" => "owner/repo" }
+      }
+      result = @channel.handle(event: "pull_request_review", payload: payload)
+      assert_kind_of Collavre::Channel::InjectedMessage, result
+      assert_includes result.message, "carol"
+      assert_includes result.message, "changes_requested"
+      assert_includes result.message, "Overall LGTM"
+    end
+
+    test "handle returns nil for pull_request_review.submitted with empty body" do
+      payload = {
+        "action" => "submitted",
+        "review" => {
+          "state" => "approved",
+          "body" => "",
+          "user" => { "login" => "carol", "type" => "User" }
+        },
+        "pull_request" => { "number" => 42 },
+        "repository" => { "full_name" => "owner/repo" }
+      }
+      assert_nil @channel.handle(event: "pull_request_review", payload: payload)
+    end
   end
 end
