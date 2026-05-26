@@ -80,6 +80,28 @@ module CollavreGithub
       end
     end
 
+    test "pull_request.opened with topic on a child creative auto-attaches (subtree inherits link)" do
+      child = Collavre::Creative.create!(parent: @creative, user: @user, description: "child")
+      child_topic = Collavre::Topic.create!(creative: child, user: @user, name: "Child T")
+
+      payload = {
+        action: "opened",
+        pull_request: {
+          number: 560,
+          body: "Linked topic: /creatives/#{child.id}/topics/#{child_topic.id}"
+        },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      assert_difference -> { GithubPrChannel.count }, 1 do
+        post "/github/webhook", params: payload,
+          headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
+      end
+      channel = GithubPrChannel.last
+      assert_equal child_topic.id, channel.topic_id
+    end
+
     test "pull_request.opened reactivates a detached channel" do
       detached = GithubPrChannel.create!(
         topic_id: @topic.id,

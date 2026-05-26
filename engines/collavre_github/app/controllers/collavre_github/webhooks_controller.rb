@@ -45,10 +45,14 @@ module CollavreGithub
       # Security: the PR description is attacker-controlled. Anyone able to open
       # a PR on this repo could otherwise drop a link to an unrelated tenant's
       # topic and have subsequent PR comments injected there. Only auto-attach
-      # when the topic's creative is actually linked to this repo.
+      # when the topic's creative — or any of its ancestors — is linked to this
+      # repo (RepositoryLink applies to the whole subtree).
       linked_creative_ids = CollavreGithub::RepositoryLink
         .where(repository_full_name: repo).pluck(:creative_id)
-      return unless linked_creative_ids.include?(topic.creative_id)
+      creative = topic.creative
+      return unless creative
+      candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
+      return if (linked_creative_ids & candidate_ids).empty?
 
       existing = GithubPrChannel.where(topic_id: topic.id).find { |c| c.repo_full_name == repo && c.pr_number == pr_number }
       if existing
