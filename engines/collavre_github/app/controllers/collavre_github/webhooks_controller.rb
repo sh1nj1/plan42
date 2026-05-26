@@ -42,8 +42,20 @@ module CollavreGithub
       topic = Collavre::Topic.find_by(id: topic_id)
       return unless topic
 
+      # Security: the PR description is attacker-controlled. Anyone able to open
+      # a PR on this repo could otherwise drop a link to an unrelated tenant's
+      # topic and have subsequent PR comments injected there. Only auto-attach
+      # when the topic's creative is actually linked to this repo.
+      linked_creative_ids = CollavreGithub::RepositoryLink
+        .where(repository_full_name: repo).pluck(:creative_id)
+      return unless linked_creative_ids.include?(topic.creative_id)
+
       existing = GithubPrChannel.where(topic_id: topic.id).find { |c| c.repo_full_name == repo && c.pr_number == pr_number }
-      existing || GithubPrChannel.create!(
+      if existing
+        existing.update!(state: :active) unless existing.active?
+        return existing
+      end
+      GithubPrChannel.create!(
         topic_id: topic.id,
         config: { "repo_full_name" => repo, "pr_number" => pr_number }
       )

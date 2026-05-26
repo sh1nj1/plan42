@@ -87,6 +87,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_26_000000) do
     t.integer "topic_id", null: false
     t.string "type", null: false
     t.datetime "updated_at", null: false
+    t.index "type, topic_id, json_extract(config, '$.repo_full_name'), json_extract(config, '$.pr_number')", name: "index_channels_on_type_topic_repo_pr", unique: true
     t.index ["topic_id"], name: "index_channels_on_topic_id"
     t.index ["type"], name: "index_channels_on_type"
   end

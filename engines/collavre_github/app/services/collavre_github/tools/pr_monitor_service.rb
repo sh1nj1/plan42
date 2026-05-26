@@ -29,14 +29,36 @@ module CollavreGithub
         pr_number = m[2].to_i
 
         topic = Collavre::Topic.find(topic_id)
-        existing = CollavreGithub::GithubPrChannel.where(topic_id: topic.id).find do |c|
-          c.repo_full_name == repo && c.pr_number == pr_number
+        channel = find_or_attach_channel(topic, repo, pr_number)
+        { ok: true, channel_id: channel.id, repo: repo, pr_number: pr_number }
+      end
+
+      private
+
+      sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns(CollavreGithub::GithubPrChannel) }
+      def find_or_attach_channel(topic, repo, pr_number)
+        existing = lookup_channel(topic, repo, pr_number)
+        if existing
+          existing.update!(state: :active) unless existing.active?
+          return existing
         end
-        channel = existing || CollavreGithub::GithubPrChannel.create!(
+        CollavreGithub::GithubPrChannel.create!(
           topic_id: topic.id,
           config: { "repo_full_name" => repo, "pr_number" => pr_number }
         )
-        { ok: true, channel_id: channel.id, repo: repo, pr_number: pr_number }
+      rescue ActiveRecord::RecordNotUnique
+        # Concurrent caller won the race; reuse the row they created.
+        existing = lookup_channel(topic, repo, pr_number)
+        raise unless existing
+        existing.update!(state: :active) unless existing.active?
+        existing
+      end
+
+      sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns(T.nilable(CollavreGithub::GithubPrChannel)) }
+      def lookup_channel(topic, repo, pr_number)
+        CollavreGithub::GithubPrChannel.where(topic_id: topic.id).find do |c|
+          c.repo_full_name == repo && c.pr_number == pr_number
+        end
       end
     end
   end

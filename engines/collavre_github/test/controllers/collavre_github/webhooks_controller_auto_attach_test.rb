@@ -57,5 +57,64 @@ module CollavreGithub
           headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
       end
     end
+
+    test "pull_request.opened ignores topic link pointing to a creative not linked to this repo" do
+      # An attacker opens a PR on owner/repo, but puts a foreign tenant's
+      # topic link in the description. We must NOT auto-attach.
+      foreign_creative = creatives(:childless_creative)
+      foreign_topic = Collavre::Topic.create!(creative: foreign_creative, user: @user, name: "Foreign")
+
+      payload = {
+        action: "opened",
+        pull_request: {
+          number: 557,
+          body: "Linked topic: /creatives/#{foreign_creative.id}/topics/#{foreign_topic.id}"
+        },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      assert_no_difference -> { GithubPrChannel.count } do
+        post "/github/webhook", params: payload,
+          headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
+      end
+    end
+
+    test "pull_request.opened reactivates a detached channel" do
+      detached = GithubPrChannel.create!(
+        topic_id: @topic.id,
+        config: { "repo_full_name" => @link.repository_full_name, "pr_number" => 558 },
+        state: :detached
+      )
+
+      payload = {
+        action: "opened",
+        pull_request: {
+          number: 558,
+          body: "Linked topic: /creatives/#{@creative.id}/topics/#{@topic.id}"
+        },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      assert_no_difference -> { GithubPrChannel.count } do
+        post "/github/webhook", params: payload,
+          headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
+      end
+      assert detached.reload.active?
+    end
+
+    test "channels table rejects duplicate (type, topic, repo, pr) at DB level" do
+      GithubPrChannel.create!(
+        topic_id: @topic.id,
+        config: { "repo_full_name" => @link.repository_full_name, "pr_number" => 559 }
+      )
+      assert_raises(ActiveRecord::RecordNotUnique) do
+        GithubPrChannel.create!(
+          topic_id: @topic.id,
+          config: { "repo_full_name" => @link.repository_full_name, "pr_number" => 559 }
+        )
+      end
+    end
   end
 end

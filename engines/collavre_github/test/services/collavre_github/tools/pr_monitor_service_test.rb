@@ -35,6 +35,23 @@ module CollavreGithub
           PrMonitorService.new.call(topic_id: @topic.id, pr_url: "https://example.com/not-a-pr")
         end
       end
+
+      test "reactivates a detached channel instead of orphaning it" do
+        channel = GithubPrChannel.create!(
+          topic_id: @topic.id,
+          config: { "repo_full_name" => "owner/repo", "pr_number" => 77 },
+          state: :detached
+        )
+
+        result = PrMonitorService.new.call(
+          topic_id: @topic.id,
+          pr_url: "https://github.com/owner/repo/pull/77"
+        )
+
+        assert result[:ok]
+        assert_equal channel.id, result[:channel_id]
+        assert channel.reload.active?
+      end
     end
   end
 end
