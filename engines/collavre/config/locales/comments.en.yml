@@ -211,6 +211,8 @@ en:
         delete: Delete
         delete_confirm: Delete this image?
         counter: "%{current} / %{total}"
+    channels:
+      detach: "Detach"
     calendar_events:
       deleted: Calendar event deleted.
     google_calendar:
