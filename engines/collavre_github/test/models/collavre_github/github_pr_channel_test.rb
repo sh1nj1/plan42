@@ -108,5 +108,29 @@ module CollavreGithub
       }
       assert_nil @channel.handle(event: "pull_request_review", payload: payload)
     end
+
+    test "handle detaches channel and posts a final closing message on pull_request.closed (merged)" do
+      payload = {
+        "action" => "closed",
+        "pull_request" => { "number" => 42, "merged" => true, "html_url" => "https://github.com/owner/repo/pull/42" },
+        "repository" => { "full_name" => "owner/repo" }
+      }
+      result = @channel.handle(event: "pull_request", payload: payload)
+      assert_kind_of Collavre::Channel::InjectedMessage, result
+      assert_includes result.message, "merged"
+      @channel.reload
+      assert_predicate @channel, :detached?
+    end
+
+    test "handle detaches channel on pull_request.closed (not merged)" do
+      payload = {
+        "action" => "closed",
+        "pull_request" => { "number" => 42, "merged" => false, "html_url" => "https://github.com/owner/repo/pull/42" },
+        "repository" => { "full_name" => "owner/repo" }
+      }
+      result = @channel.handle(event: "pull_request", payload: payload)
+      assert_includes result.message, "closed"
+      assert_predicate @channel.reload, :detached?
+    end
   end
 end

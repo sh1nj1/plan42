@@ -26,10 +26,27 @@ module CollavreGithub
         handle_review_comment(payload)
       when "pull_request_review"
         handle_review_submitted(payload)
+      when "pull_request"
+        handle_pull_request(payload)
       end
     end
 
     private
+
+    def handle_pull_request(payload)
+      return nil unless payload["action"] == "closed"
+      pr = payload["pull_request"]
+      verb = pr["merged"] ? "merged" : "closed"
+
+      msg = Collavre::Channel::InjectedMessage.new(
+        speaker: channel_bot_user,
+        message: "#{label} was **#{verb}**. Detaching channel.",
+        label: "#{label} (#{verb})",
+        link: pr_url
+      )
+      detach!
+      msg
+    end
 
     def handle_review_submitted(payload)
       return nil unless payload["action"] == "submitted"
