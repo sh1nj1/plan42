@@ -15,7 +15,7 @@ module CollavreGithub
     end
 
     def label
-      "PR ##{pr_number}"
+      t("label", number: pr_number)
     end
 
     def handle(event:, payload:)
@@ -36,12 +36,13 @@ module CollavreGithub
     def handle_pull_request(payload)
       return nil unless payload["action"] == "closed"
       pr = payload["pull_request"]
-      verb = pr["merged"] ? "merged" : "closed"
+      verb_key = pr["merged"] ? "state_merged" : "state_closed"
+      verb = t(verb_key)
 
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
-        message: "#{label} was **#{verb}**. Detaching channel.",
-        label: "#{label} (#{verb})",
+        message: t("closed_message", label: label, verb: verb),
+        label: t("label_with_state", label: label, state: verb),
         link: pr_url
       )
       # Detach is performed by the webhook controller AFTER injecting this
@@ -59,7 +60,7 @@ module CollavreGithub
       state = review["state"]
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
-        message: "**@#{author}** submitted a review (`#{state}`) on #{label}:\n\n#{body}",
+        message: t("review_submitted_message", author: author, state: state, label: label, body: body),
         label: label,
         link: pr_url
       )
@@ -74,10 +75,17 @@ module CollavreGithub
       line = comment["line"]
       body = comment["body"].to_s
 
-      location = path ? " on `#{path}`#{line ? ":#{line}" : ''}" : ""
+      location =
+        if path && line
+          t("review_comment_location_path_line", path: path, line: line)
+        elsif path
+          t("review_comment_location_path", path: path)
+        else
+          ""
+        end
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
-        message: "**@#{author}** reviewed #{label}#{location}:\n\n#{body}",
+        message: t("review_comment_message", author: author, label: label, location: location, body: body),
         label: label,
         link: pr_url
       )
@@ -94,7 +102,7 @@ module CollavreGithub
 
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
-        message: "**@#{author}** commented on #{label}:\n\n#{body}",
+        message: t("comment_message", author: author, label: label, body: body),
         label: label,
         link: pr_url
       )
@@ -104,8 +112,30 @@ module CollavreGithub
       Array(config["ignore_actor_logins"]).include?(login)
     end
 
+    def t(key, **opts)
+      I18n.t("collavre_github.channel.pr.#{key}", **opts)
+    end
+
+    # Find the channel bot user. Falls back to creating the row when missing
+    # (e.g. migrations applied but `db:seed` was skipped). Without this
+    # fallback every PR webhook would raise RecordNotFound and the event
+    # would be silently dropped by the controller's rescue.
     def channel_bot_user
-      @channel_bot_user ||= Collavre::User.find_by!(email: Collavre::Channel::BOT_EMAIL)
+      @channel_bot_user ||=
+        Collavre::User.find_by(email: Collavre::Channel::BOT_EMAIL) ||
+          ensure_channel_bot_user!
+    end
+
+    def ensure_channel_bot_user!
+      email = Collavre::Channel::BOT_EMAIL
+      user = Collavre::User.find_or_initialize_by(email: email)
+      user.name = Collavre::Channel::BOT_NAME
+      user.password = SecureRandom.hex(32) if user.new_record?
+      user.email_verified_at ||= Time.current
+      user.searchable = false if user.respond_to?(:searchable=)
+      user.llm_vendor = nil
+      user.save!
+      user
     end
   end
 end

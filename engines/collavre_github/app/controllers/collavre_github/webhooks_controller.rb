@@ -33,7 +33,10 @@ module CollavreGithub
 
     def maybe_auto_attach_channel(event, payload)
       return unless event == "pull_request" && payload["action"] == "opened"
-      repo = payload.dig("repository", "full_name")
+      # GitHub repo identifiers are case-insensitive; normalize so stored
+      # channels (also lowercased) match incoming dispatch payloads regardless
+      # of how the repo casing arrives from clients.
+      repo = payload.dig("repository", "full_name")&.downcase
       pr_number = payload.dig("pull_request", "number")
       body = payload.dig("pull_request", "body")
       topic_id = CollavreGithub::PrTopicLinkParser.call(body)
@@ -48,13 +51,15 @@ module CollavreGithub
       # when the topic's creative — or any of its ancestors — is linked to this
       # repo (RepositoryLink applies to the whole subtree).
       linked_creative_ids = CollavreGithub::RepositoryLink
-        .where(repository_full_name: repo).pluck(:creative_id)
+        .where("LOWER(repository_full_name) = ?", repo).pluck(:creative_id)
       creative = topic.creative
       return unless creative
       candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
       return if (linked_creative_ids & candidate_ids).empty?
 
-      existing = GithubPrChannel.where(topic_id: topic.id).find { |c| c.repo_full_name == repo && c.pr_number == pr_number }
+      existing = GithubPrChannel.where(topic_id: topic.id).find do |c|
+        c.repo_full_name.to_s.downcase == repo && c.pr_number == pr_number
+      end
       if existing
         existing.update!(state: :active) unless existing.active?
         return existing
@@ -70,15 +75,17 @@ module CollavreGithub
     end
 
     def dispatch_to_channels(event, payload)
-      repo = payload.dig("repository", "full_name")
+      repo = payload.dig("repository", "full_name")&.downcase
       pr_number = extract_pr_number(event, payload)
       return if repo.blank? || pr_number.nil?
 
       # Ruby-level filter for DB portability (SQLite dev/test, Postgres prod).
       # Future optimization: switch to a jsonb-portable query once an established
-      # pattern exists in this codebase.
+      # pattern exists in this codebase. Compare repo names case-insensitively
+      # so legacy mixed-case rows continue to match the canonical lowercase
+      # payload value.
       GithubPrChannel.active.find_each do |channel|
-        next unless channel.repo_full_name == repo && channel.pr_number == pr_number
+        next unless channel.repo_full_name.to_s.downcase == repo && channel.pr_number == pr_number
 
         begin
           injected = channel.handle(event: event, payload: payload)

@@ -68,6 +68,23 @@ export default class extends Controller {
     this.subscribe()
     this.renderParticipants([])
     this.renderTypingIndicator()
+    // Bootstrap chips for the topic that is already active when the popup opens.
+    // Without this, chips only appear after a `topics:change` event fires
+    // (i.e. a topic switch) or after a webhook arrives — leaving the user
+    // unable to detach existing channels until something else triggers a paint.
+    this.bootstrapChannelChips()
+  }
+
+  bootstrapChannelChips() {
+    const topicsCtrl = this.application.getControllerForElementAndIdentifier(
+      this.element, 'comments--topics'
+    )
+    const topicId = topicsCtrl?.currentTopicId
+    if (topicId) {
+      this.refreshChannelChips(topicId)
+    } else {
+      this.clearChannelChips()
+    }
   }
 
   onPopupClosed() {

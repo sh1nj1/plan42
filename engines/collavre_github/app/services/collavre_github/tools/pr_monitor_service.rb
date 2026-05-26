@@ -25,7 +25,10 @@ module CollavreGithub
       def call(topic_id:, pr_url:)
         m = pr_url.match(PR_URL_RE)
         raise ArgumentError, "Invalid PR URL: #{pr_url}" unless m
-        repo = m[1]
+        # GitHub owner/repo identifiers are case-insensitive but webhook payloads
+        # always carry the canonical case. Normalize on store so user input
+        # like "Owner/Repo" still matches incoming events.
+        repo = m[1].downcase
         pr_number = m[2].to_i
 
         topic = Collavre::Topic.find(topic_id)
@@ -57,7 +60,7 @@ module CollavreGithub
       sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns(T.nilable(CollavreGithub::GithubPrChannel)) }
       def lookup_channel(topic, repo, pr_number)
         CollavreGithub::GithubPrChannel.where(topic_id: topic.id).find do |c|
-          c.repo_full_name == repo && c.pr_number == pr_number
+          c.repo_full_name.to_s.downcase == repo.downcase && c.pr_number == pr_number
         end
       end
     end

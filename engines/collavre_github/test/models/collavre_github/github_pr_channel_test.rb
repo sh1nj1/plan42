@@ -134,6 +134,21 @@ module CollavreGithub
       assert_nil @channel.handle(event: "issue_comment", payload: payload)
     end
 
+    test "ensures the channel bot user exists when seeds were not run" do
+      Collavre::User.where(email: Collavre::Channel::BOT_EMAIL).destroy_all
+
+      payload = {
+        "action" => "created",
+        "comment" => { "id" => 999, "body" => "hi", "user" => { "login" => "alice", "type" => "User" } },
+        "issue" => { "number" => 42, "pull_request" => {} },
+        "repository" => { "full_name" => "owner/repo" }
+      }
+
+      result = @channel.handle(event: "issue_comment", payload: payload)
+      assert_kind_of Collavre::Channel::InjectedMessage, result
+      assert_equal Collavre::Channel::BOT_EMAIL, result.speaker.email
+    end
+
     test "handle returns closing InjectedMessage on pull_request.closed (not merged) without detaching" do
       payload = {
         "action" => "closed",

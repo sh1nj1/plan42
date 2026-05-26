@@ -107,6 +107,41 @@ module CollavreGithub
       end
     end
 
+    test "dispatch matches channels case-insensitively against repo_full_name" do
+      # Legacy channel rows may have stored mixed-case repo names (created
+      # before normalization landed). Webhook payloads always carry the
+      # canonical lowercase value; comparison must be case-insensitive so
+      # those rows still receive events.
+      legacy_topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Legacy")
+      GithubPrChannel.create!(
+        topic: legacy_topic,
+        config: { "repo_full_name" => @link.repository_full_name.upcase, "pr_number" => 99 }
+      )
+
+      payload = {
+        action: "created",
+        comment: {
+          id: 42,
+          body: "case insensitive",
+          user: { login: "alice", type: "User", id: 1 }
+        },
+        issue: { number: 99, pull_request: {} },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      assert_difference -> { Collavre::Comment.where(topic_id: legacy_topic.id).count }, 1 do
+        post "/github/webhook",
+          params: payload,
+          headers: {
+            "Content-Type" => "application/json",
+            "X-GitHub-Event" => "issue_comment",
+            "X-Hub-Signature-256" => sig
+          }
+      end
+      assert_response :ok
+    end
+
     test "pull_request.closed injects closing comment AND detaches channel" do
       payload = {
         action: "closed",
