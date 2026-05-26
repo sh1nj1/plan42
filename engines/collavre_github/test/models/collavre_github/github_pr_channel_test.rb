@@ -1,0 +1,57 @@
+require "test_helper"
+
+module CollavreGithub
+  class GithubPrChannelTest < ActiveSupport::TestCase
+    setup do
+      # NOTE: collavre_topics(:one) fixture does not exist; create inline.
+      @user = Collavre::User.find_by!(email: "one@example1.com")
+      @creative = Collavre::Creative.create!(description: "Test", user: @user)
+      @topic = Collavre::Topic.create!(name: "T", creative: @creative, user: @user)
+      @channel = GithubPrChannel.create!(
+        topic: @topic,
+        config: { "repo_full_name" => "owner/repo", "pr_number" => 42 }
+      )
+    end
+
+    test "handle returns InjectedMessage for issue_comment.created" do
+      payload = {
+        "action" => "created",
+        "comment" => {
+          "id" => 1001,
+          "body" => "please fix typo",
+          "html_url" => "https://github.com/owner/repo/pull/42#issuecomment-1001",
+          "user" => { "login" => "alice", "type" => "User", "id" => 7 }
+        },
+        "issue" => { "number" => 42, "pull_request" => {} },
+        "repository" => { "full_name" => "owner/repo" }
+      }
+
+      result = @channel.handle(event: "issue_comment", payload: payload)
+      assert_kind_of Collavre::Channel::InjectedMessage, result
+      assert_includes result.message, "alice"
+      assert_includes result.message, "please fix typo"
+      assert_equal "PR #42", result.label
+      assert_equal "https://github.com/owner/repo/pull/42", result.link
+    end
+
+    test "handle returns nil when action is not created" do
+      payload = {
+        "action" => "edited",
+        "comment" => { "body" => "x", "user" => { "login" => "a", "type" => "User" } },
+        "issue" => { "number" => 42, "pull_request" => {} },
+        "repository" => { "full_name" => "owner/repo" }
+      }
+      assert_nil @channel.handle(event: "issue_comment", payload: payload)
+    end
+
+    test "handle returns nil when issue has no pull_request (plain issue)" do
+      payload = {
+        "action" => "created",
+        "comment" => { "body" => "x", "user" => { "login" => "a", "type" => "User" } },
+        "issue" => { "number" => 42 },
+        "repository" => { "full_name" => "owner/repo" }
+      }
+      assert_nil @channel.handle(event: "issue_comment", payload: payload)
+    end
+  end
+end
