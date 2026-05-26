@@ -1,5 +1,8 @@
 module Collavre
   class Channel < ApplicationRecord
+    BOT_EMAIL = "channel@collavre.local"
+    BOT_NAME = "Channel"
+
     self.table_name = "channels"
 
     belongs_to :topic, class_name: "Collavre::Topic"

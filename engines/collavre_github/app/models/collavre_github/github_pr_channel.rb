@@ -2,8 +2,6 @@ module CollavreGithub
   class GithubPrChannel < Collavre::Channel
     self.table_name = "channels"
 
-    CHANNEL_BOT_EMAIL = "channel@collavre.local"
-
     def repo_full_name
       config["repo_full_name"]
     end
@@ -46,7 +44,7 @@ module CollavreGithub
     end
 
     def channel_bot_user
-      @channel_bot_user ||= Collavre::User.find_by!(email: CHANNEL_BOT_EMAIL)
+      @channel_bot_user ||= Collavre::User.find_by!(email: Collavre::Channel::BOT_EMAIL)
     end
   end
 end
