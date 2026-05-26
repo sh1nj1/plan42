@@ -17,5 +17,18 @@ module Collavre
     def record_event!(label:, link:)
       update!(latest_label: label, latest_link: link, last_event_at: Time.current)
     end
+
+    def inject_into_topic!(injected_message)
+      transaction do
+        comment = topic.creative.comments.create!(
+          user: injected_message.speaker,
+          topic_id: topic.id,
+          content: injected_message.message,
+          private: false
+        )
+        record_event!(label: injected_message.label, link: injected_message.link)
+        comment
+      end
+    end
   end
 end
