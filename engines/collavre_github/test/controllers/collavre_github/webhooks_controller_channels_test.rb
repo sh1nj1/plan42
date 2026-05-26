@@ -187,6 +187,42 @@ module CollavreGithub
       assert outside_channel.reload.active?, "channel state remains untouched (only dispatch is skipped)"
     end
 
+    test "case-mismatched repository.full_name still uses repo-specific webhook secret (fallback bypass guard)" do
+      # Stored RepositoryLink: "owner/repo" (lowercase).
+      # Attacker sends payload with case-mutated repo "Owner/Repo" signed with the fallback ENV secret,
+      # hoping exact-case lookup misses → fallback secret is selected → signature passes →
+      # case-insensitive dispatch still finds the channel.
+      # With case-insensitive find_repository_link, the repo-specific secret is always selected,
+      # so a fallback-signed request must be rejected.
+      ENV["GITHUB_WEBHOOK_SECRET"] = "attacker-known-fallback"
+
+      payload = {
+        action: "created",
+        comment: {
+          id: 999,
+          body: "injected via fallback",
+          user: { login: "mallory", type: "User", id: 9 }
+        },
+        issue: { number: 99, pull_request: {} },
+        repository: { full_name: "Owner/Repo" }
+      }.to_json
+
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", ENV["GITHUB_WEBHOOK_SECRET"], payload)
+
+      assert_no_difference -> { Collavre::Comment.where(topic_id: @topic.id).count } do
+        post "/github/webhook",
+          params: payload,
+          headers: {
+            "Content-Type" => "application/json",
+            "X-GitHub-Event" => "issue_comment",
+            "X-Hub-Signature-256" => sig
+          }
+      end
+      assert_response :unauthorized
+    ensure
+      ENV.delete("GITHUB_WEBHOOK_SECRET")
+    end
+
     test "pull_request.closed injects closing comment AND detaches channel" do
       payload = {
         action: "closed",

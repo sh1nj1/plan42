@@ -330,7 +330,9 @@ module CollavreGithub
       repo = payload&.dig("repository", "full_name") || payload&.dig(:repository, :full_name)
       return [ @repository_link ].compact if repo.blank?
 
-      CollavreGithub::RepositoryLink.where(repository_full_name: repo).to_a
+      CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", repo.downcase)
+        .to_a
     end
 
     def find_repository_link(payload)
@@ -351,7 +353,9 @@ module CollavreGithub
         return
       end
 
-      CollavreGithub::RepositoryLink.find_by(repository_full_name: full_name)
+      CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", full_name.downcase)
+        .first
     end
 
     def valid_signature?(raw_body)
