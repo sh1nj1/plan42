@@ -30,6 +30,7 @@ Collavre::Engine.routes.draw do
   delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment
 
   resources :calendar_events, only: [ :destroy ]
+  resources :channels, only: [ :destroy ]
   resources :contacts, only: [ :destroy ]
   resources :devices, only: [ :create ]
 
@@ -58,6 +59,7 @@ Collavre::Engine.routes.draw do
         get :next_name
       end
       member do
+        get :channel_chips
         patch :move
         patch :archive
         patch :unarchive

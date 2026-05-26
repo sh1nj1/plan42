@@ -76,6 +76,7 @@ module CollavreGithub
       github_pr_commits
       creative_retrieval_service
       creative_batch_service
+      pr_monitor
     ].freeze
 
     def self.call

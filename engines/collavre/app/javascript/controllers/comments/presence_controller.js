@@ -7,7 +7,7 @@ const TYPING_TIMEOUT = 3000
 const AGENT_STATUS_TIMEOUT = 10000 // Safety timeout for agent_status (heartbeat expected every 3s)
 
 export default class extends Controller {
-  static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox']
+  static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox', 'channelChips']
 
   connect() {
     this.creativeId = null
@@ -24,11 +24,13 @@ export default class extends Controller {
     this.handleInput = this.handleInput.bind(this)
     this.handleFocus = this.handleFocus.bind(this)
     this.handleBlur = this.handleBlur.bind(this)
+    this.handleTopicChange = this.handleTopicChange.bind(this)
 
     this.textareaTarget.addEventListener('input', this.handleInput)
     this.textareaTarget.addEventListener('focus', this.handleFocus)
     this.textareaTarget.addEventListener('blur', this.handleBlur)
     this.privateCheckboxTarget?.addEventListener('change', () => this.stoppedTyping())
+    this.element.addEventListener('comments--topics:change', this.handleTopicChange)
   }
 
   disconnect() {
@@ -36,6 +38,16 @@ export default class extends Controller {
     this.textareaTarget.removeEventListener('input', this.handleInput)
     this.textareaTarget.removeEventListener('focus', this.handleFocus)
     this.textareaTarget.removeEventListener('blur', this.handleBlur)
+    this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
+  }
+
+  handleTopicChange(event) {
+    const topicId = event.detail?.topicId
+    if (topicId) {
+      this.refreshChannelChips(topicId)
+    } else {
+      this.clearChannelChips()
+    }
   }
 
   get listController() {
@@ -56,6 +68,23 @@ export default class extends Controller {
     this.subscribe()
     this.renderParticipants([])
     this.renderTypingIndicator()
+    // Bootstrap chips for the topic that is already active when the popup opens.
+    // Without this, chips only appear after a `topics:change` event fires
+    // (i.e. a topic switch) or after a webhook arrives — leaving the user
+    // unable to detach existing channels until something else triggers a paint.
+    this.bootstrapChannelChips()
+  }
+
+  bootstrapChannelChips() {
+    const topicsCtrl = this.application.getControllerForElementAndIdentifier(
+      this.element, 'comments--topics'
+    )
+    const topicId = topicsCtrl?.currentTopicId
+    if (topicId) {
+      this.refreshChannelChips(topicId)
+    } else {
+      this.clearChannelChips()
+    }
   }
 
   onPopupClosed() {
@@ -200,6 +229,9 @@ export default class extends Controller {
 
       this.loadParticipants({ closeOnForbidden: shareChange.has_access === false })
       return
+    }
+    if (data.channel_chips) {
+      this.refreshChannelChips(data.channel_chips.topic_id)
     }
     if (data.agent_status) {
       const { id, name, status, task_id, creative_id: agentCreativeId } = data.agent_status
@@ -415,6 +447,56 @@ export default class extends Controller {
         }
       })
       .catch((err) => console.warn('[presence] cancel agent task failed:', err))
+  }
+
+  clearChannelChips() {
+    const target = this.hasChannelChipsTarget ? this.channelChipsTarget : null
+    if (!target) return
+    target.innerHTML = ''
+    delete target.dataset.topicId
+  }
+
+  refreshChannelChips(topicId) {
+    const target = this.hasChannelChipsTarget ? this.channelChipsTarget : null
+    if (!target) return
+    if (!this.creativeId) return
+    if (!topicId) {
+      this.clearChannelChips()
+      return
+    }
+
+    // Source of truth for "what the user is looking at" is the topics
+    // controller's currentTopicId, NOT the chip container's data-topic-id:
+    // - On initial popup open the container is empty (no data-topic-id),
+    //   so a stray broadcast for any topic in the same creative used to
+    //   paint chips for the wrong topic.
+    // - After the user switches topics the container's data-topic-id is
+    //   stale until something repaints it, blocking legit updates.
+    const topicsCtrl = this.application.getControllerForElementAndIdentifier(
+      this.element, 'comments--topics'
+    )
+    const activeTopicId = topicsCtrl?.currentTopicId || ''
+    if (String(activeTopicId) !== String(topicId)) return
+
+    fetch(`/creatives/${this.creativeId}/topics/${topicId}/channel_chips`, {
+      headers: { Accept: 'text/html' },
+      credentials: 'same-origin',
+    })
+      .then((r) => (r.ok ? r.text() : null))
+      .then((html) => {
+        if (html) target.outerHTML = html
+      })
+      .catch((err) => console.warn('[presence] refresh channel chips failed:', err))
+  }
+
+  detachChannel(event) {
+    const btn = event.currentTarget
+    const id = btn.dataset.channelId
+    if (!id) return
+    csrfFetch(`/channels/${id}`, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
+    }).catch((err) => console.warn('[presence] detach channel failed:', err))
   }
 
   clearTypingTimers() {

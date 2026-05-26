@@ -93,3 +93,15 @@ ko:
         updated: "업데이트됨"
         ready_for_review: "리뷰 준비됨"
         event: "이벤트"
+    channel:
+      pr:
+        label: "PR #%{number}"
+        label_with_state: "%{label} (%{state})"
+        state_merged: "머지됨"
+        state_closed: "닫힘"
+        comment_message: "**@%{author}**님이 %{label}에 댓글을 남겼습니다:\n\n%{body}"
+        review_comment_message: "**@%{author}**님이 %{label}%{location}을(를) 리뷰했습니다:\n\n%{body}"
+        review_comment_location_path: " (`%{path}`)"
+        review_comment_location_path_line: " (`%{path}`:%{line})"
+        review_submitted_message: "**@%{author}**님이 %{label}에 리뷰를 제출했습니다 (`%{state}`):\n\n%{body}"
+        closed_message: "%{label}이(가) **%{verb}** 되었습니다. 채널을 해제합니다."

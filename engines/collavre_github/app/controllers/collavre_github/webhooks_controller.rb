@@ -21,12 +21,122 @@ module CollavreGithub
         trigger_markdown_sync_for(link, event, payload) if link.markdown_sync_enabled?
       end
 
+      maybe_auto_attach_channel(event, payload)
+      dispatch_to_channels(event, payload)
+
       head :ok
     rescue JSON::ParserError
       head :bad_request
     end
 
     private
+
+    def maybe_auto_attach_channel(event, payload)
+      return unless event == "pull_request" && payload["action"] == "opened"
+      # GitHub repo identifiers are case-insensitive; normalize so stored
+      # channels (also lowercased) match incoming dispatch payloads regardless
+      # of how the repo casing arrives from clients.
+      repo = payload.dig("repository", "full_name")&.downcase
+      pr_number = payload.dig("pull_request", "number")
+      body = payload.dig("pull_request", "body")
+      topic_id = CollavreGithub::PrTopicLinkParser.call(body)
+      return unless repo && pr_number && topic_id
+
+      topic = Collavre::Topic.find_by(id: topic_id)
+      return unless topic
+
+      # Security: the PR description is attacker-controlled. Anyone able to open
+      # a PR on this repo could otherwise drop a link to an unrelated tenant's
+      # topic and have subsequent PR comments injected there. Only auto-attach
+      # when the topic's creative — or any of its ancestors — is linked to this
+      # repo (RepositoryLink applies to the whole subtree).
+      linked_creative_ids = CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", repo).pluck(:creative_id)
+      creative = topic.creative
+      return unless creative
+      candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
+      return if (linked_creative_ids & candidate_ids).empty?
+
+      existing = GithubPrChannel.where(topic_id: topic.id).find do |c|
+        c.repo_full_name.to_s.downcase == repo && c.pr_number == pr_number
+      end
+      if existing
+        existing.update!(state: :active) unless existing.active?
+        return existing
+      end
+      GithubPrChannel.create!(
+        topic_id: topic.id,
+        config: { "repo_full_name" => repo, "pr_number" => pr_number }
+      )
+    rescue ActiveRecord::RecordNotUnique
+      # concurrent webhook safe
+    rescue => e
+      Rails.logger.error("[CollavreGithub] auto-attach failed: #{e.class}: #{e.message}")
+    end
+
+    def dispatch_to_channels(event, payload)
+      repo = payload.dig("repository", "full_name")&.downcase
+      pr_number = extract_pr_number(event, payload)
+      return if repo.blank? || pr_number.nil?
+
+      # Re-resolve which creatives are linked to this repo on every dispatch.
+      # The auto-attach guard validated the link at creation time, but a
+      # RepositoryLink can be removed or a topic can be moved to a different
+      # creative subtree after attachment. Without re-validating here, an
+      # orphaned channel would keep receiving cross-tenant PR events.
+      linked_creative_ids = CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", repo).pluck(:creative_id)
+
+      # Ruby-level filter for DB portability (SQLite dev/test, Postgres prod).
+      # Future optimization: switch to a jsonb-portable query once an established
+      # pattern exists in this codebase. Compare repo names case-insensitively
+      # so legacy mixed-case rows continue to match the canonical lowercase
+      # payload value.
+      GithubPrChannel.active.find_each do |channel|
+        next unless channel.repo_full_name.to_s.downcase == repo && channel.pr_number == pr_number
+        next unless channel_in_repo_scope?(channel, linked_creative_ids)
+
+        begin
+          injected = channel.handle(event: event, payload: payload)
+          next if injected.nil?
+
+          channel.inject_into_topic!(injected)
+          # Detach AFTER injecting the closing message so the chip remains
+          # visible until the closing comment lands in the topic.
+          channel.detach! if event == "pull_request" && payload["action"] == "closed"
+        rescue => e
+          # Isolate per-channel failures so one broken channel does not block
+          # sibling channels monitoring the same PR.
+          Rails.logger.error(
+            "[CollavreGithub] channel #{channel.id} dispatch failed: #{e.class}: #{e.message}"
+          )
+        end
+      end
+    end
+
+    # A channel is in-scope iff its topic's creative — or any ancestor — is
+    # still listed in a RepositoryLink for the webhook's repo. Mirrors the
+    # auto-attach guard so removing a link severs the dispatch, not just the
+    # ability to create new monitors.
+    def channel_in_repo_scope?(channel, linked_creative_ids)
+      return false if linked_creative_ids.empty?
+
+      creative = channel.topic&.creative
+      return false unless creative
+
+      candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
+      (linked_creative_ids & candidate_ids).any?
+    end
+
+    def extract_pr_number(event, payload)
+      case event
+      when "issue_comment"
+        n = payload.dig("issue", "number")
+        n if payload.dig("issue", "pull_request")
+      when "pull_request_review_comment", "pull_request_review", "pull_request"
+        payload.dig("pull_request", "number")
+      end
+    end
 
     def create_system_comment_for(link, event, payload)
       creative = link.creative&.effective_origin
@@ -220,7 +330,9 @@ module CollavreGithub
       repo = payload&.dig("repository", "full_name") || payload&.dig(:repository, :full_name)
       return [ @repository_link ].compact if repo.blank?
 
-      CollavreGithub::RepositoryLink.where(repository_full_name: repo).to_a
+      CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", repo.downcase)
+        .to_a
     end
 
     def find_repository_link(payload)
@@ -241,7 +353,9 @@ module CollavreGithub
         return
       end
 
-      CollavreGithub::RepositoryLink.find_by(repository_full_name: full_name)
+      CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", full_name.downcase)
+        .first
     end
 
     def valid_signature?(raw_body)

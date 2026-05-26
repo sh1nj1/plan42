@@ -3,7 +3,7 @@ module Collavre
     include Collavre::CreativePermissionGuard
 
     before_action :set_creative
-    before_action :require_creative_read!, only: %i[next_name]
+    before_action :require_creative_read!, only: %i[next_name channel_chips]
     before_action :require_creative_admin!, only: %i[update destroy move reorder]
     before_action :require_creative_write!, only: %i[create archive unarchive set_primary_agent]
 
@@ -71,6 +71,11 @@ module Collavre
 
     def next_name
       render json: { name: generate_next_topic_name }
+    end
+
+    def channel_chips
+      topic = @creative.topics.find(params[:id])
+      render partial: "collavre/comments/channel_chips", locals: { topic: topic }
     end
 
     def update

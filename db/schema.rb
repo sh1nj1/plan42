@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_26_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -75,6 +75,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_000000) do
     t.index ["creative_id"], name: "index_calendar_events_on_creative_id"
     t.index ["google_event_id"], name: "index_calendar_events_on_google_event_id", unique: true
     t.index ["user_id"], name: "index_calendar_events_on_user_id"
+  end
+
+  create_table "channels", force: :cascade do |t|
+    t.json "config", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "last_event_at"
+    t.string "latest_label"
+    t.string "latest_link"
+    t.integer "state", default: 0, null: false
+    t.integer "topic_id", null: false
+    t.string "type", null: false
+    t.datetime "updated_at", null: false
+    t.index "type, topic_id, json_extract(config, '$.repo_full_name'), json_extract(config, '$.pr_number')", name: "index_channels_on_type_topic_repo_pr", unique: true
+    t.index ["topic_id"], name: "index_channels_on_topic_id"
+    t.index ["type"], name: "index_channels_on_type"
   end
 
   create_table "comment_reactions", force: :cascade do |t|
@@ -815,6 +830,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_000000) do
   add_foreign_key "activity_logs", "users"
   add_foreign_key "calendar_events", "creatives"
   add_foreign_key "calendar_events", "users"
+  add_foreign_key "channels", "topics"
   add_foreign_key "comment_reactions", "comments"
   add_foreign_key "comment_reactions", "users"
   add_foreign_key "comment_read_pointers", "creatives"

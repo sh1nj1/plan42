@@ -93,3 +93,15 @@ en:
         updated: "Updated"
         ready_for_review: "Ready for Review"
         event: "Event"
+    channel:
+      pr:
+        label: "PR #%{number}"
+        label_with_state: "%{label} (%{state})"
+        state_merged: "merged"
+        state_closed: "closed"
+        comment_message: "**@%{author}** commented on %{label}:\n\n%{body}"
+        review_comment_message: "**@%{author}** reviewed %{label}%{location}:\n\n%{body}"
+        review_comment_location_path: " on `%{path}`"
+        review_comment_location_path_line: " on `%{path}`:%{line}"
+        review_submitted_message: "**@%{author}** submitted a review (`%{state}`) on %{label}:\n\n%{body}"
+        closed_message: "%{label} was **%{verb}**. Detaching channel."
