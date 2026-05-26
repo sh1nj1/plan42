@@ -21,12 +21,44 @@ module CollavreGithub
         trigger_markdown_sync_for(link, event, payload) if link.markdown_sync_enabled?
       end
 
+      dispatch_to_channels(event, payload)
+
       head :ok
     rescue JSON::ParserError
       head :bad_request
     end
 
     private
+
+    def dispatch_to_channels(event, payload)
+      repo = payload.dig("repository", "full_name")
+      pr_number = extract_pr_number(event, payload)
+      return if repo.blank? || pr_number.nil?
+
+      # Ruby-level filter for DB portability (SQLite dev/test, Postgres prod).
+      # Future optimization: switch to a jsonb-portable query once an established
+      # pattern exists in this codebase.
+      GithubPrChannel.active.find_each do |channel|
+        next unless channel.repo_full_name == repo && channel.pr_number == pr_number
+
+        injected = channel.handle(event: event, payload: payload)
+        next if injected.nil?
+
+        channel.inject_into_topic!(injected)
+      end
+    rescue => e
+      Rails.logger.error("[CollavreGithub] channel dispatch failed: #{e.class}: #{e.message}")
+    end
+
+    def extract_pr_number(event, payload)
+      case event
+      when "issue_comment"
+        n = payload.dig("issue", "number")
+        n if payload.dig("issue", "pull_request")
+      when "pull_request_review_comment", "pull_request_review", "pull_request"
+        payload.dig("pull_request", "number")
+      end
+    end
 
     def create_system_comment_for(link, event, payload)
       creative = link.creative&.effective_origin
