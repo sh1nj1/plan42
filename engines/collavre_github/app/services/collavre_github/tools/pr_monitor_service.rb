@@ -32,11 +32,28 @@ module CollavreGithub
         pr_number = m[2].to_i
 
         topic = Collavre::Topic.find(topic_id)
+        authorize_topic_write!(topic)
         channel = find_or_attach_channel(topic, repo, pr_number)
         { ok: true, channel_id: channel.id, repo: repo, pr_number: pr_number }
       end
 
       private
+
+      # Attaching a channel injects external messages into the topic, so it is a
+      # write-equivalent mutation. Mirror CreativePermissionGuard#require_creative_write!
+      # against the topic's effective_origin so MCP callers cannot drop monitors
+      # onto topics they would not be allowed to comment on.
+      def authorize_topic_write!(topic)
+        creative = topic.creative&.effective_origin
+        raise ArgumentError, "Topic has no creative" unless creative
+
+        user = Collavre::Current.user
+        return if creative.user == user
+        return if user && creative.has_permission?(user, :write)
+
+        raise CollavreGithub::Tools::PermissionDeniedError,
+          "No write permission on topic #{topic.id}"
+      end
 
       sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns(CollavreGithub::GithubPrChannel) }
       def find_or_attach_channel(topic, repo, pr_number)

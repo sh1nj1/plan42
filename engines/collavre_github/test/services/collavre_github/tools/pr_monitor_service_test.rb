@@ -9,6 +9,11 @@ module CollavreGithub
         @user = users(:one)
         @creative = creatives(:tshirt)
         @topic = Collavre::Topic.create!(name: "T", creative: @creative, user: @user)
+        Collavre::Current.user = @user
+      end
+
+      teardown do
+        Collavre::Current.user = nil
       end
 
       test "attaches a GithubPrChannel for given topic and PR URL" do
@@ -57,6 +62,19 @@ module CollavreGithub
         )
         assert_equal first[:channel_id], second[:channel_id]
         assert_equal 1, GithubPrChannel.where(topic_id: @topic.id).count
+      end
+
+      test "denies attachment when current user lacks write permission on the topic's creative" do
+        outsider = users(:two)
+        Collavre::Current.user = outsider
+
+        assert_raises(CollavreGithub::Tools::PermissionDeniedError) do
+          PrMonitorService.new.call(
+            topic_id: @topic.id,
+            pr_url: "https://github.com/owner/repo/pull/77"
+          )
+        end
+        assert_equal 0, GithubPrChannel.where(topic_id: @topic.id).count
       end
 
       test "reactivates a detached channel instead of orphaning it" do

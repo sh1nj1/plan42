@@ -142,6 +142,51 @@ module CollavreGithub
       assert_response :ok
     end
 
+    test "skips dispatch when channel's creative is no longer in the repo's link scope" do
+      # Channel was attached when the link existed. After the link is removed
+      # (or the topic moves to an unrelated creative subtree), the channel must
+      # NOT receive further events from the original repo — otherwise external
+      # PR comments would keep leaking into a tenant that no longer owns the
+      # repo. Build the scenario by attaching to an unrelated creative.
+      outside_user = users(:two)
+      outside_creative = Collavre::Creative.create!(user: outside_user, description: "outside")
+      outside_topic = Collavre::Topic.create!(creative: outside_creative, user: outside_user, name: "Outside")
+      outside_channel = GithubPrChannel.create!(
+        topic: outside_topic,
+        config: { "repo_full_name" => @link.repository_full_name, "pr_number" => 99 }
+      )
+
+      payload = {
+        action: "created",
+        comment: {
+          id: 11,
+          body: "should not leak",
+          user: { login: "alice", type: "User", id: 1 }
+        },
+        issue: { number: 99, pull_request: {} },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      before_outside = Collavre::Comment.where(topic_id: outside_topic.id).count
+      before_inside = Collavre::Comment.where(topic_id: @topic.id).count
+
+      post "/github/webhook",
+        params: payload,
+        headers: {
+          "Content-Type" => "application/json",
+          "X-GitHub-Event" => "issue_comment",
+          "X-Hub-Signature-256" => sig
+        }
+
+      assert_response :ok
+      assert_equal before_outside, Collavre::Comment.where(topic_id: outside_topic.id).count,
+        "out-of-scope channel must not receive injected message"
+      assert_equal before_inside + 1, Collavre::Comment.where(topic_id: @topic.id).count,
+        "in-scope channel still receives injected message"
+      assert outside_channel.reload.active?, "channel state remains untouched (only dispatch is skipped)"
+    end
+
     test "pull_request.closed injects closing comment AND detaches channel" do
       payload = {
         action: "closed",

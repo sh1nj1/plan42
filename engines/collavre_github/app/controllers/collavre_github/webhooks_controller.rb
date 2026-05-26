@@ -79,6 +79,14 @@ module CollavreGithub
       pr_number = extract_pr_number(event, payload)
       return if repo.blank? || pr_number.nil?
 
+      # Re-resolve which creatives are linked to this repo on every dispatch.
+      # The auto-attach guard validated the link at creation time, but a
+      # RepositoryLink can be removed or a topic can be moved to a different
+      # creative subtree after attachment. Without re-validating here, an
+      # orphaned channel would keep receiving cross-tenant PR events.
+      linked_creative_ids = CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", repo).pluck(:creative_id)
+
       # Ruby-level filter for DB portability (SQLite dev/test, Postgres prod).
       # Future optimization: switch to a jsonb-portable query once an established
       # pattern exists in this codebase. Compare repo names case-insensitively
@@ -86,6 +94,7 @@ module CollavreGithub
       # payload value.
       GithubPrChannel.active.find_each do |channel|
         next unless channel.repo_full_name.to_s.downcase == repo && channel.pr_number == pr_number
+        next unless channel_in_repo_scope?(channel, linked_creative_ids)
 
         begin
           injected = channel.handle(event: event, payload: payload)
@@ -103,6 +112,20 @@ module CollavreGithub
           )
         end
       end
+    end
+
+    # A channel is in-scope iff its topic's creative — or any ancestor — is
+    # still listed in a RepositoryLink for the webhook's repo. Mirrors the
+    # auto-attach guard so removing a link severs the dispatch, not just the
+    # ability to create new monitors.
+    def channel_in_repo_scope?(channel, linked_creative_ids)
+      return false if linked_creative_ids.empty?
+
+      creative = channel.topic&.creative
+      return false unless creative
+
+      candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
+      (linked_creative_ids & candidate_ids).any?
     end
 
     def extract_pr_number(event, payload)
