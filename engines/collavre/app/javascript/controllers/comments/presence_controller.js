@@ -7,7 +7,7 @@ const TYPING_TIMEOUT = 3000
 const AGENT_STATUS_TIMEOUT = 10000 // Safety timeout for agent_status (heartbeat expected every 3s)
 
 export default class extends Controller {
-  static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox']
+  static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox', 'channelChips']
 
   connect() {
     this.creativeId = null
@@ -200,6 +200,9 @@ export default class extends Controller {
 
       this.loadParticipants({ closeOnForbidden: shareChange.has_access === false })
       return
+    }
+    if (data.channel_chips) {
+      this.refreshChannelChips(data.channel_chips.topic_id)
     }
     if (data.agent_status) {
       const { id, name, status, task_id, creative_id: agentCreativeId } = data.agent_status
@@ -415,6 +418,33 @@ export default class extends Controller {
         }
       })
       .catch((err) => console.warn('[presence] cancel agent task failed:', err))
+  }
+
+  refreshChannelChips(topicId) {
+    const target = this.hasChannelChipsTarget ? this.channelChipsTarget : null
+    if (!target) return
+    const currentTopic = target.dataset.topicId
+    if (currentTopic && String(currentTopic) !== String(topicId)) return
+    if (!this.creativeId) return
+    fetch(`/creatives/${this.creativeId}/topics/${topicId}/channel_chips`, {
+      headers: { Accept: 'text/html' },
+      credentials: 'same-origin',
+    })
+      .then((r) => (r.ok ? r.text() : null))
+      .then((html) => {
+        if (html) target.outerHTML = html
+      })
+      .catch((err) => console.warn('[presence] refresh channel chips failed:', err))
+  }
+
+  detachChannel(event) {
+    const btn = event.currentTarget
+    const id = btn.dataset.channelId
+    if (!id) return
+    csrfFetch(`/channels/${id}`, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
+    }).catch((err) => console.warn('[presence] detach channel failed:', err))
   }
 
   clearTypingTimers() {

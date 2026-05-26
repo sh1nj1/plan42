@@ -33,5 +33,14 @@ module Collavre
         comment
       end
     end
+
+    after_create_commit  :broadcast_chips_changed
+    after_update_commit  :broadcast_chips_changed
+
+    private
+
+    def broadcast_chips_changed
+      Collavre::CommentsPresenceChannel.broadcast_channel_chips_changed(topic.creative_id, topic_id: topic_id)
+    end
   end
 end

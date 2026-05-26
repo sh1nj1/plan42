@@ -1,0 +1,18 @@
+<%# locals: { topic: Collavre::Topic } %>
+<div class="channel-chips" data-comments--presence-target="channelChips" data-topic-id="<%= topic.id %>">
+  <% topic.channels.active.each do |channel| %>
+    <span class="channel-chip" data-channel-id="<%= channel.id %>">
+      <% if channel.latest_link.present? %>
+        <a href="<%= channel.latest_link %>" target="_blank" rel="noopener">
+          <%= channel.latest_label.presence || channel.class.name.demodulize %>
+        </a>
+      <% else %>
+        <%= channel.latest_label.presence || channel.class.name.demodulize %>
+      <% end %>
+      <button type="button"
+              data-action="comments--presence#detachChannel"
+              data-channel-id="<%= channel.id %>"
+              aria-label="<%= t('collavre.channels.detach', default: 'Detach') %>">&times;</button>
+    </span>
+  <% end %>
+</div>
