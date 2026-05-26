@@ -55,6 +55,7 @@ module CollavreGithub
       return nil if body.strip.empty?
 
       author = review.dig("user", "login")
+      return nil if ignored_actor?(author)
       state = review["state"]
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
@@ -68,6 +69,7 @@ module CollavreGithub
       return nil unless payload["action"] == "created"
       comment = payload["comment"]
       author = comment.dig("user", "login")
+      return nil if ignored_actor?(author)
       path = comment["path"]
       line = comment["line"]
       body = comment["body"].to_s
@@ -87,6 +89,7 @@ module CollavreGithub
 
       comment = payload["comment"]
       author = comment.dig("user", "login")
+      return nil if ignored_actor?(author)
       body = comment["body"].to_s
 
       Collavre::Channel::InjectedMessage.new(
@@ -95,6 +98,10 @@ module CollavreGithub
         label: label,
         link: pr_url
       )
+    end
+
+    def ignored_actor?(login)
+      Array(config["ignore_actor_logins"]).include?(login)
     end
 
     def channel_bot_user

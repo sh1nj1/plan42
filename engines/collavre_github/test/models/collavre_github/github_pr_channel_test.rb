@@ -122,6 +122,17 @@ module CollavreGithub
       assert_predicate @channel, :detached?
     end
 
+    test "handle returns nil when comment author matches ignore_actor_logins" do
+      @channel.update!(config: @channel.config.merge("ignore_actor_logins" => ["my-bot"]))
+      payload = {
+        "action" => "created",
+        "comment" => { "body" => "noise", "user" => { "login" => "my-bot", "type" => "Bot" } },
+        "issue" => { "number" => 42, "pull_request" => {} },
+        "repository" => { "full_name" => "owner/repo" }
+      }
+      assert_nil @channel.handle(event: "issue_comment", payload: payload)
+    end
+
     test "handle detaches channel on pull_request.closed (not merged)" do
       payload = {
         "action" => "closed",
