@@ -22,10 +22,29 @@ module CollavreGithub
       case event
       when "issue_comment"
         handle_issue_comment(payload)
+      when "pull_request_review_comment"
+        handle_review_comment(payload)
       end
     end
 
     private
+
+    def handle_review_comment(payload)
+      return nil unless payload["action"] == "created"
+      comment = payload["comment"]
+      author = comment.dig("user", "login")
+      path = comment["path"]
+      line = comment["line"]
+      body = comment["body"].to_s
+
+      location = path ? " on `#{path}`#{line ? ":#{line}" : ''}" : ""
+      Collavre::Channel::InjectedMessage.new(
+        speaker: channel_bot_user,
+        message: "**@#{author}** reviewed #{label}#{location}:\n\n#{body}",
+        label: label,
+        link: pr_url
+      )
+    end
 
     def handle_issue_comment(payload)
       return nil unless payload["action"] == "created"

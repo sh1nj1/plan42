@@ -53,5 +53,26 @@ module CollavreGithub
       }
       assert_nil @channel.handle(event: "issue_comment", payload: payload)
     end
+
+    test "handle returns InjectedMessage for pull_request_review_comment.created" do
+      payload = {
+        "action" => "created",
+        "comment" => {
+          "id" => 2002,
+          "body" => "rename this var",
+          "path" => "app/foo.rb",
+          "line" => 42,
+          "html_url" => "https://github.com/owner/repo/pull/42#discussion_r2002",
+          "user" => { "login" => "bob", "type" => "User", "id" => 8 }
+        },
+        "pull_request" => { "number" => 42 },
+        "repository" => { "full_name" => "owner/repo" }
+      }
+      result = @channel.handle(event: "pull_request_review_comment", payload: payload)
+      assert_kind_of Collavre::Channel::InjectedMessage, result
+      assert_includes result.message, "bob"
+      assert_includes result.message, "app/foo.rb"
+      assert_includes result.message, "rename this var"
+    end
   end
 end
