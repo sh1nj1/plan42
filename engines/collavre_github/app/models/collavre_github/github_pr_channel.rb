@@ -18,6 +18,15 @@ module CollavreGithub
       t("label", number: pr_number)
     end
 
+    def attached_message
+      Collavre::Channel::InjectedMessage.new(
+        speaker: channel_bot_user,
+        message: t("attached_message", label: label, url: pr_url),
+        label: label,
+        link: pr_url
+      )
+    end
+
     def handle(event:, payload:)
       case event
       when "issue_comment"

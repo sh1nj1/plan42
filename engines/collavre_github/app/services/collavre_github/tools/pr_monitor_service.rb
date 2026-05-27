@@ -33,7 +33,8 @@ module CollavreGithub
 
         topic = Collavre::Topic.find(topic_id)
         authorize_topic_write!(topic)
-        channel = find_or_attach_channel(topic, repo, pr_number)
+        channel, created = find_or_attach_channel(topic, repo, pr_number)
+        channel.inject_into_topic!(channel.attached_message) if created
         { ok: true, channel_id: channel.id, repo: repo, pr_number: pr_number }
       end
 
@@ -55,23 +56,24 @@ module CollavreGithub
           "No write permission on topic #{topic.id}"
       end
 
-      sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns(CollavreGithub::GithubPrChannel) }
+      sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns([CollavreGithub::GithubPrChannel, T::Boolean]) }
       def find_or_attach_channel(topic, repo, pr_number)
         existing = lookup_channel(topic, repo, pr_number)
         if existing
           existing.update!(state: :active) unless existing.active?
-          return existing
+          return [existing, false]
         end
-        CollavreGithub::GithubPrChannel.create!(
+        created = CollavreGithub::GithubPrChannel.create!(
           topic_id: topic.id,
           config: { "repo_full_name" => repo, "pr_number" => pr_number }
         )
+        [created, true]
       rescue ActiveRecord::RecordNotUnique
         # Concurrent caller won the race; reuse the row they created.
         existing = lookup_channel(topic, repo, pr_number)
         raise unless existing
         existing.update!(state: :active) unless existing.active?
-        existing
+        [existing, false]
       end
 
       sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns(T.nilable(CollavreGithub::GithubPrChannel)) }
