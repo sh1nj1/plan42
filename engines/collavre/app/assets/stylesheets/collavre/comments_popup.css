@@ -1184,6 +1184,80 @@ body.chat-fullscreen {
     color: var(--text-on-btn);
 }
 
+/* --- Channel Chips (PR monitor etc) ------------------------------------ */
+#channel-chips-container,
+.channel-chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    align-items: center;
+}
+
+.channel-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-px-1);
+    padding: var(--space-px-1) var(--space-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2);
+    background: var(--color-section-bg);
+    font-size: var(--text-00);
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.channel-chip a {
+    color: var(--color-text);
+    text-decoration: none;
+}
+
+.channel-chip a:hover {
+    text-decoration: underline;
+}
+
+.channel-chip button {
+    background: none;
+    border: 0;
+    padding: 0 var(--space-px-1);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.1em;
+    line-height: 1;
+}
+
+.channel-chip button:hover {
+    color: var(--color-danger);
+}
+
+/* Detached chips lose a touch of contrast so users can tell a closed/merged
+   PR apart from one that is still actively monitored. */
+.channel-chip--detached {
+    opacity: 0.7;
+}
+
+.channel-chip-badge {
+    display: inline-block;
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: 999px;
+    flex-shrink: 0;
+    background: var(--color-text);
+}
+
+.channel-chip-badge--open {
+    background: var(--color-success);
+}
+
+.channel-chip-badge--merged {
+    /* No purple token yet; --color-active (blue) is the closest neutral that
+       reads as "shipped" without colliding with success/danger semantics. */
+    background: var(--color-active);
+}
+
+.channel-chip-badge--closed_without_merge {
+    background: var(--color-danger);
+}
+
 /* --- Context Chips --- */
 .comment-contexts-list {
     display: flex;

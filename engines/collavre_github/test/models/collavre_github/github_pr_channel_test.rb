@@ -109,7 +109,7 @@ module CollavreGithub
       assert_nil @channel.handle(event: "pull_request_review", payload: payload)
     end
 
-    test "handle returns closing InjectedMessage on pull_request.closed (merged) without detaching" do
+    test "handle returns closing InjectedMessage on pull_request.closed (merged) without detaching and sets pr_state=merged" do
       payload = {
         "action" => "closed",
         "pull_request" => { "number" => 42, "merged" => true, "html_url" => "https://github.com/owner/repo/pull/42" },
@@ -118,9 +118,12 @@ module CollavreGithub
       result = @channel.handle(event: "pull_request", payload: payload)
       assert_kind_of Collavre::Channel::InjectedMessage, result
       assert_includes result.message, "merged"
+      # Badge carries the state; the chip label itself must stay clean.
+      assert_equal "PR #42", result.label
       # Detach is now performed by the webhook controller after inject_into_topic!,
       # so handle() alone must NOT detach.
       assert_predicate @channel.reload, :active?
+      assert_equal "merged", @channel.pr_state
     end
 
     test "handle returns nil when comment author matches ignore_actor_logins" do
@@ -149,7 +152,7 @@ module CollavreGithub
       assert_equal Collavre::Channel::BOT_EMAIL, result.speaker.email
     end
 
-    test "handle returns closing InjectedMessage on pull_request.closed (not merged) without detaching" do
+    test "handle returns closing InjectedMessage on pull_request.closed (not merged) without detaching and sets pr_state=closed_without_merge" do
       payload = {
         "action" => "closed",
         "pull_request" => { "number" => 42, "merged" => false, "html_url" => "https://github.com/owner/repo/pull/42" },
@@ -157,8 +160,30 @@ module CollavreGithub
       }
       result = @channel.handle(event: "pull_request", payload: payload)
       assert_includes result.message, "closed"
+      assert_equal "PR #42", result.label
       # Detach is now performed by the webhook controller after inject_into_topic!.
       assert_predicate @channel.reload, :active?
+      assert_equal "closed_without_merge", @channel.pr_state
+    end
+
+    test "pr_state defaults to open when config has no pr_state" do
+      assert_equal "open", @channel.pr_state
+    end
+
+    test "pr_state= rejects values outside PR_STATES" do
+      assert_raises(ArgumentError) { @channel.pr_state = "merged_" }
+      assert_raises(ArgumentError) { @channel.pr_state = "" }
+      assert_raises(ArgumentError) { @channel.pr_state = nil }
+      # Reader stays at the safe default; no garbage written.
+      assert_equal "open", @channel.pr_state
+    end
+
+    test "pr_state= persists each whitelisted value via the config writer" do
+      CollavreGithub::GithubPrChannel::PR_STATES.each do |s|
+        @channel.pr_state = s
+        @channel.save!
+        assert_equal s, @channel.reload.pr_state
+      end
     end
   end
 end

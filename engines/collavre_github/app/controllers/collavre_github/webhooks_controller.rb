@@ -42,15 +42,29 @@ module CollavreGithub
     end
 
     def maybe_auto_attach_channel(event, payload)
-      return unless event == "pull_request" && payload["action"] == "opened"
+      return unless event == "pull_request" && %w[opened reopened].include?(payload["action"])
       # GitHub repo identifiers are case-insensitive; normalize so stored
       # channels (also lowercased) match incoming dispatch payloads regardless
       # of how the repo casing arrives from clients.
       repo = payload.dig("repository", "full_name")&.downcase
       pr_number = payload.dig("pull_request", "number")
+      return unless repo && pr_number
+
+      # `reopened` must resurrect ANY existing channel for this (repo, pr) — not
+      # just channels whose PR body still contains a topic link. Manually attached
+      # channels (via `pr_monitor`) and PRs whose body link was later removed both
+      # have a valid channel but no link; without this branch, the body-link path
+      # below would short-circuit and dispatch_to_channels (.active scope) would
+      # skip the dismissed/detached row, leaving the chip hidden and the PR
+      # unmonitored for the rest of its reopened life.
+      reactivate_existing_channels_on_reopen(repo, pr_number) if payload["action"] == "reopened"
+
+      # Body-link path: only used to CREATE a new channel. Existing-channel paths
+      # are intentionally handled above (reopened) or as a strict no-op (opened
+      # redelivery — must not undo a user's X dismissal).
       body = payload.dig("pull_request", "body")
       topic_id = CollavreGithub::PrTopicLinkParser.call(body)
-      return unless repo && pr_number && topic_id
+      return unless topic_id
 
       topic = Collavre::Topic.find_by(id: topic_id)
       return unless topic
@@ -70,18 +84,66 @@ module CollavreGithub
       existing = GithubPrChannel.where(topic_id: topic.id).find do |c|
         c.repo_full_name.to_s.downcase == repo && c.pr_number == pr_number
       end
-      if existing
-        existing.update!(state: :active) unless existing.active?
-        return existing
-      end
+      # Existing channel: strict no-op. `reopened` was already handled by the
+      # repo+pr scan above; `opened` redelivery must leave dismissed_at intact.
+      return existing if existing
+
       GithubPrChannel.create!(
         topic_id: topic.id,
-        config: { "repo_full_name" => repo, "pr_number" => pr_number }
+        config: { "repo_full_name" => repo, "pr_number" => pr_number, "pr_state" => "open" }
       )
     rescue ActiveRecord::RecordNotUnique
       # concurrent webhook safe
     rescue => e
       Rails.logger.error("[CollavreGithub] auto-attach failed: #{e.class}: #{e.message}")
+    end
+
+    # Resurrect every existing channel for (repo, pr_number) on `pull_request.
+    # reopened`, regardless of whether the PR description currently contains a
+    # topic link. Mirrors dispatch's scope re-validation so a channel whose
+    # creative is no longer linked to this repo is NOT resurrected.
+    def reactivate_existing_channels_on_reopen(repo, pr_number)
+      linked_creative_ids = CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", repo).pluck(:creative_id)
+      return if linked_creative_ids.empty?
+
+      GithubPrChannel.find_each do |channel|
+        next unless channel.repo_full_name.to_s.downcase == repo && channel.pr_number == pr_number
+        next unless channel_in_repo_scope?(channel, linked_creative_ids)
+
+        begin
+          # Row-level lock + re-read guards against duplicate reopened announcements
+          # when two `pull_request.reopened` deliveries for the same dismissed/
+          # detached channel arrive concurrently (GitHub retries on 5xx, or
+          # duplicate fan-out). Without it, both requests can read was_inactive=true
+          # before either clears dismissed_at, then both inject the reopened
+          # message. Mirrors the close-path with_lock in dispatch_to_channels.
+          channel.with_lock do
+            was_inactive = !channel.active? || !channel.dismissed_at.nil?
+            if was_inactive || channel.pr_state != "open"
+              channel.state = :active unless channel.active?
+              channel.dismissed_at = nil unless channel.dismissed_at.nil?
+              channel.pr_state = "open" if channel.pr_state != "open"
+              channel.save!
+            end
+            # When the chip silently reappears after dismiss/detach, inject a
+            # one-line announcement so the user can trace the lifecycle —
+            # mirrors the attach announcement on first create.
+            if was_inactive
+              begin
+                channel.inject_into_topic!(channel.reopened_message)
+              rescue => e
+                Rails.logger.error("[CollavreGithub] reopened announce failed: #{e.class}: #{e.message}")
+              end
+            end
+          end
+        rescue => e
+          # Per-channel isolation: one bad row must not block sibling channels.
+          Rails.logger.error(
+            "[CollavreGithub] reopen reactivate failed for channel #{channel.id}: #{e.class}: #{e.message}"
+          )
+        end
+      end
     end
 
     def dispatch_to_channels(event, payload)
@@ -107,13 +169,22 @@ module CollavreGithub
         next unless channel_in_repo_scope?(channel, linked_creative_ids)
 
         begin
-          injected = channel.handle(event: event, payload: payload)
-          next if injected.nil?
+          # Row-level lock + re-check guards against duplicate dispatch when the
+          # same webhook is redelivered (GitHub retries on 5xx) or two webhooks
+          # arrive concurrently. Without it, both processes read state=active
+          # and each inject the closing comment. The query-level .active scope
+          # alone does not race-protect the inject+detach window.
+          channel.with_lock do
+            next unless channel.active?
 
-          channel.inject_into_topic!(injected)
-          # Detach AFTER injecting the closing message so the chip remains
-          # visible until the closing comment lands in the topic.
-          channel.detach! if event == "pull_request" && payload["action"] == "closed"
+            injected = channel.handle(event: event, payload: payload)
+            next if injected.nil?
+
+            channel.inject_into_topic!(injected)
+            # Detach AFTER injecting the closing message so the chip remains
+            # visible (now with merged/closed badge) until dismissed by the user.
+            channel.detach! if event == "pull_request" && payload["action"] == "closed"
+          end
         rescue => e
           # Isolate per-channel failures so one broken channel does not block
           # sibling channels monitoring the same PR.

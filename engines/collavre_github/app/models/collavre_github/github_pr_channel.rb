@@ -18,10 +18,40 @@ module CollavreGithub
       t("label", number: pr_number)
     end
 
+    # PR lifecycle state used by the chip badge color. Defaults to "open" so
+    # freshly attached channels render the green badge before any close event
+    # has been received. Persisted in `config` to avoid a schema change for a
+    # channel-subtype-specific concern.
+    PR_STATES = %w[open merged closed_without_merge].freeze
+
+    def pr_state
+      state = config["pr_state"].to_s
+      PR_STATES.include?(state) ? state : "open"
+    end
+
+    # Symmetric with the reader: refuse to persist values outside PR_STATES
+    # rather than silently downgrading to "open" at read time. Without this
+    # any caller that mistypes (e.g. "merged_") would corrupt the badge color
+    # with no error surfaced.
+    def pr_state=(value)
+      value = value.to_s
+      raise ArgumentError, "Invalid pr_state: #{value.inspect}" unless PR_STATES.include?(value)
+      self.config = config.merge("pr_state" => value)
+    end
+
     def attached_message
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
         message: t("attached_message", label: label, url: pr_url),
+        label: label,
+        link: pr_url
+      )
+    end
+
+    def reopened_message
+      Collavre::Channel::InjectedMessage.new(
+        speaker: channel_bot_user,
+        message: t("reopened_message", label: label, url: pr_url),
         label: label,
         link: pr_url
       )
@@ -45,13 +75,21 @@ module CollavreGithub
     def handle_pull_request(payload)
       return nil unless payload["action"] == "closed"
       pr = payload["pull_request"]
-      verb_key = pr["merged"] ? "state_merged" : "state_closed"
-      verb = t(verb_key)
+      new_state = pr["merged"] ? "merged" : "closed_without_merge"
+      verb = pr["merged"] ? t("state_merged") : t("state_closed")
+
+      # pr_state is updated atomically with the closing comment: the dispatch
+      # path wraps both `handle` and `inject_into_topic!` in a single with_lock
+      # transaction, so an inject failure rolls this update back too. That is
+      # the intended behavior — we don't want the chip to flash merged/closed
+      # without the matching closing message in the timeline.
+      self.pr_state = new_state
+      save!
 
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
         message: t("closed_message", label: label, verb: verb),
-        label: t("label_with_state", label: label, state: verb),
+        label: label,
         link: pr_url
       )
       # Detach is performed by the webhook controller AFTER injecting this

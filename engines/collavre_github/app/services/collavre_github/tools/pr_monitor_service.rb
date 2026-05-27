@@ -73,27 +73,36 @@ module CollavreGithub
       def find_or_attach_channel(topic, repo, pr_number)
         existing = lookup_channel(topic, repo, pr_number)
         if existing
-          if existing.active?
-            return [ existing, :noop ]
-          end
-          existing.update!(state: :active)
+          return [ existing, :noop ] if existing.active? && existing.dismissed_at.nil?
+          reactivate!(existing)
           return [ existing, :reactivated ]
         end
         created = CollavreGithub::GithubPrChannel.create!(
           topic_id: topic.id,
-          config: { "repo_full_name" => repo, "pr_number" => pr_number }
+          config: { "repo_full_name" => repo, "pr_number" => pr_number, "pr_state" => "open" }
         )
         [ created, :created ]
       rescue ActiveRecord::RecordNotUnique
         # Concurrent caller won the race; reuse the row they created.
         existing = lookup_channel(topic, repo, pr_number)
         raise unless existing
-        if existing.active?
+        if existing.active? && existing.dismissed_at.nil?
           [ existing, :noop ]
         else
-          existing.update!(state: :active)
+          reactivate!(existing)
           [ existing, :reactivated ]
         end
+      end
+
+      # Mirror WebhooksController#maybe_auto_attach_channel reactivation: clear
+      # dismissed_at and reset pr_state so the chip surfaces again under the
+      # not_dismissed render scope. Otherwise pr_monitor would report success
+      # and inject the attached message while the chip stayed hidden.
+      def reactivate!(channel)
+        channel.state = :active unless channel.active?
+        channel.dismissed_at = nil unless channel.dismissed_at.nil?
+        channel.pr_state = "open" if channel.pr_state != "open"
+        channel.save!
       end
 
       sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns(T.nilable(CollavreGithub::GithubPrChannel)) }
