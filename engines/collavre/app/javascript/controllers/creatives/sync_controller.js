@@ -24,20 +24,31 @@ export default class extends Controller {
       }
     }
 
+    // Defer ActionCable subscribe until tree finishes loading. Opening the
+    // WebSocket while the tree fetch is in flight triggers ERR_NETWORK_CHANGED
+    // in Chromium because the browser tears down the in-flight HTTP connection.
+    this._handleTreeUpdated = () => {
+      this.element.removeEventListener('creative-tree:updated', this._handleTreeUpdated)
+      this._handleTreeUpdated = null
+      if (this.rootIdValue > 0) {
+        this.subscribe()
+      } else {
+        this.inferAndSubscribe()
+      }
+    }
+    this.element.addEventListener('creative-tree:updated', this._handleTreeUpdated)
+
     document.addEventListener('creative-editing:start', this.handleEditStart)
     document.addEventListener('creative-editing:stop', this.handleEditStop)
-
-    if (this.rootIdValue > 0) {
-      this.subscribe()
-    } else {
-      // Top-level /creatives page — try to infer root from tree rows
-      this.inferAndSubscribe()
-    }
   }
 
   disconnect() {
     document.removeEventListener('creative-editing:start', this.handleEditStart)
     document.removeEventListener('creative-editing:stop', this.handleEditStop)
+    if (this._handleTreeUpdated) {
+      this.element.removeEventListener('creative-tree:updated', this._handleTreeUpdated)
+      this._handleTreeUpdated = null
+    }
 
     if (this.subscription) {
       this.subscription.cleanup()
@@ -50,9 +61,9 @@ export default class extends Controller {
       this.subscription.cleanup()
       this.subscription = null
     }
-    if (this.rootIdValue > 0) {
-      this.subscribe()
-    }
+    // Skip re-subscribing here — connect() defers the first subscribe until
+    // creative-tree:updated fires so the WebSocket handshake doesn't race
+    // the tree's HTTP fetch.
   }
 
   inferAndSubscribe() {

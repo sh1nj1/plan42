@@ -2,6 +2,8 @@ import { Controller } from '@hotwired/stimulus'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { parseEmojis } from '../../utils/emoji_parser'
 
+const TREE_RETRY_DELAYS_MS = [200, 600]
+
 export default class extends Controller {
   static values = {
     url: String,
@@ -48,6 +50,10 @@ export default class extends Controller {
     if (this.abortController) {
       this.abortController.abort()
       this.abortController = null
+    }
+    if (this._retryTimer) {
+      clearTimeout(this._retryTimer)
+      this._retryTimer = null
     }
     window.removeEventListener('resize', this.handleResize)
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
@@ -138,8 +144,12 @@ export default class extends Controller {
       this.abortController.abort()
     }
     this.abortController = new AbortController()
+    this._retryCount = 0
     this.showLoadingIndicator()
+    this._fetchTree()
+  }
 
+  _fetchTree() {
     fetch(this.urlValue, {
       headers: { Accept: 'application/json' },
       signal: this.abortController.signal,
@@ -154,10 +164,23 @@ export default class extends Controller {
       })
       .catch((error) => {
         if (error.name === 'AbortError') return
+        // Transient network failures (ERR_NETWORK_CHANGED, offline blips, VPN
+        // toggles) surface as TypeError "Failed to fetch". Retry briefly so a
+        // momentary network event doesn't leave the user with an empty tree.
+        if (this._isTransientNetworkError(error) && this._retryCount < TREE_RETRY_DELAYS_MS.length) {
+          const delay = TREE_RETRY_DELAYS_MS[this._retryCount]
+          this._retryCount += 1
+          this._retryTimer = setTimeout(() => this._fetchTree(), delay)
+          return
+        }
         console.error(error)
         this.hideLoadingIndicator()
         this.showEmptyState()
       })
+  }
+
+  _isTransientNetworkError(error) {
+    return error instanceof TypeError && /fetch|network/i.test(error.message || '')
   }
 
   renderData(data) {
