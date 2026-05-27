@@ -42,7 +42,7 @@ module CollavreGithub
     end
 
     def maybe_auto_attach_channel(event, payload)
-      return unless event == "pull_request" && payload["action"] == "opened"
+      return unless event == "pull_request" && %w[opened reopened].include?(payload["action"])
       # GitHub repo identifiers are case-insensitive; normalize so stored
       # channels (also lowercased) match incoming dispatch payloads regardless
       # of how the repo casing arrives from clients.

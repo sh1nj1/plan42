@@ -126,6 +126,43 @@ module CollavreGithub
       assert detached.reload.active?
     end
 
+    test "pull_request.reopened reactivates a dismissed+detached channel and resets pr_state" do
+      # User dismissed the chip after merge; later the PR is reopened on GitHub.
+      # GitHub fires `pull_request.reopened` (NOT `opened`), so the auto-attach
+      # guard must accept reopened to clear dismissed_at and flip state back to
+      # active — otherwise dispatch_to_channels (.active scope) skips the row
+      # and the chip stays hidden for the lifetime of the reopened PR.
+      dismissed = GithubPrChannel.create!(
+        topic_id: @topic.id,
+        config: {
+          "repo_full_name" => @link.repository_full_name,
+          "pr_number" => 561,
+          "pr_state" => "merged"
+        },
+        state: :detached,
+        dismissed_at: 1.day.ago
+      )
+
+      payload = {
+        action: "reopened",
+        pull_request: {
+          number: 561,
+          body: "Linked topic: /creatives/#{@creative.id}/topics/#{@topic.id}"
+        },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      assert_no_difference -> { GithubPrChannel.count } do
+        post "/github/webhook", params: payload,
+          headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
+      end
+      dismissed.reload
+      assert dismissed.active?
+      assert_nil dismissed.dismissed_at
+      assert_equal "open", dismissed.pr_state
+    end
+
     test "channels table rejects duplicate (type, topic, repo, pr) at DB level" do
       GithubPrChannel.create!(
         topic_id: @topic.id,
