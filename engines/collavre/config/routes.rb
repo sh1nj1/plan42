@@ -28,6 +28,10 @@ Collavre::Engine.routes.draw do
   match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
 
   delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment
+  get "/public-assets/blobs/:signed_id/*filename",
+      to: "public_assets#show",
+      as: :public_asset,
+      format: false
 
   resources :calendar_events, only: [ :destroy ]
   resources :channels, only: [ :destroy ]
