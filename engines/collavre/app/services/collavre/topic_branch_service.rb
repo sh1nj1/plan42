@@ -4,16 +4,23 @@ module Collavre
 
     MAX_BRANCH_COMMENTS = 100
 
-    def initialize(creative:, user:, source_topic:)
+    def initialize(creative:, user:, source_topic:, name: nil)
       @creative = creative
       @user = user
       @source_topic = source_topic
+      @name = name
     end
 
     # Creates a new topic with copies of the selected comments.
     # Returns the new Topic.
-    def call(comment_ids:)
-      comment_ids = Array(comment_ids).map(&:presence).compact.map(&:to_i).first(MAX_BRANCH_COMMENTS)
+    # enforce_limit: false bypasses MAX_BRANCH_COMMENTS for system-initiated
+    # full-history copies (e.g. Drop Trigger) where the UI's selection cap
+    # does not apply.
+    # auto_select: false omits user_id from the topic-created broadcast so
+    # background/system branches do not hijack the owner's current selection.
+    def call(comment_ids:, enforce_limit: true, auto_select: true)
+      comment_ids = Array(comment_ids).map(&:presence).compact.map(&:to_i)
+      comment_ids = comment_ids.first(MAX_BRANCH_COMMENTS) if enforce_limit
       raise BranchError, I18n.t("collavre.comments.branch.no_selection") if comment_ids.empty?
 
       validate_permissions!
@@ -24,14 +31,14 @@ module Collavre
         copy_comments(originals)
       end
 
-      broadcast_topic_created
+      broadcast_topic_created(auto_select: auto_select)
 
       @new_topic
     end
 
     private
 
-    attr_reader :creative, :user, :source_topic
+    attr_reader :creative, :user, :source_topic, :name
 
     def validate_permissions!
       unless creative.has_permission?(user, :feedback)
@@ -49,23 +56,26 @@ module Collavre
     end
 
     def create_branch_topic
-      prefix = I18n.t("collavre.topics.branch_prefix")
-      source_name = source_topic&.name || I18n.t("collavre.comments.topic_main", default: "All Messages")
-      name = "#{prefix}:#{source_name}"
-
-      # Ensure uniqueness
-      existing = creative.topics.where("name LIKE ?", "#{Topic.sanitize_sql_like(name)}%").pluck(:name)
-      if existing.include?(name)
-        counter = 2
-        counter += 1 while existing.include?("#{name} #{counter}")
-        name = "#{name} #{counter}"
-      end
+      topic_name = name.presence || default_branch_name
 
       creative.topics.create!(
-        name: name,
+        name: topic_name,
         user: user,
         source_topic_id: source_topic&.id
       )
+    end
+
+    def default_branch_name
+      prefix = I18n.t("collavre.topics.branch_prefix")
+      source_name = source_topic&.name || I18n.t("collavre.comments.topic_main", default: "All Messages")
+      candidate = "#{prefix}:#{source_name}"
+
+      existing = creative.topics.where("name LIKE ?", "#{Topic.sanitize_sql_like(candidate)}%").pluck(:name)
+      return candidate unless existing.include?(candidate)
+
+      counter = 2
+      counter += 1 while existing.include?("#{candidate} #{counter}")
+      "#{candidate} #{counter}"
     end
 
     def copy_comments(originals)
@@ -98,15 +108,13 @@ module Collavre
       end
     end
 
-    def broadcast_topic_created
-      TopicsChannel.broadcast_to(
-        creative,
-        {
-          action: "created",
-          topic: { id: @new_topic.id, name: @new_topic.name, source_topic_id: @new_topic.source_topic_id },
-          user_id: user.id
-        }
-      )
+    def broadcast_topic_created(auto_select: true)
+      payload = {
+        action: "created",
+        topic: { id: @new_topic.id, name: @new_topic.name, source_topic_id: @new_topic.source_topic_id }
+      }
+      payload[:user_id] = user.id if auto_select
+      TopicsChannel.broadcast_to(creative, payload)
     end
   end
 end
