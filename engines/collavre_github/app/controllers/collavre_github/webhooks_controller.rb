@@ -17,7 +17,7 @@ module CollavreGithub
       # Process all links for this repo (same repo can be linked to multiple creatives)
       all_links = all_repository_links_for(payload)
       all_links.each do |link|
-        create_system_comment_for(link, event, payload) if link.creative
+        create_system_comment_for(link, event, payload) if link.creative && !channel_only_event?(event)
         trigger_markdown_sync_for(link, event, payload) if link.markdown_sync_enabled?
       end
 
@@ -30,6 +30,16 @@ module CollavreGithub
     end
 
     private
+
+    # `WebhookProvisioner` auto-subscribes every repo webhook to the events
+    # GithubPrChannel needs (`issue_comment`, `pull_request_review`,
+    # `pull_request_review_comment`). Those events must only reach attached
+    # PR channels — letting them through the creative feed would spam every
+    # linked creative with system comments from issues/PRs that nobody asked
+    # to monitor. `push` and `pull_request` continue to flow into the feed.
+    def channel_only_event?(event)
+      CollavreGithub::WebhookProvisioner::CHANNEL_EVENTS.include?(event)
+    end
 
     def maybe_auto_attach_channel(event, payload)
       return unless event == "pull_request" && payload["action"] == "opened"

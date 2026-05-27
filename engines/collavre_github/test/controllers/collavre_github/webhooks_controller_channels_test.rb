@@ -223,6 +223,110 @@ module CollavreGithub
       ENV.delete("GITHUB_WEBHOOK_SECRET")
     end
 
+    test "channel-only events (issue_comment) do NOT create creative-level feed comments" do
+      # Regression: WebhookProvisioner started auto-subscribing every repo
+      # webhook to issue_comment / pull_request_review / pull_request_review_comment
+      # so PR channels actually receive deliveries. Those events must only feed
+      # attached PR channels — they must NOT spam every linked creative with a
+      # system comment for unrelated issues/PRs. `push` and `pull_request`
+      # still flow into the feed as before. The feed comment lands on the
+      # creative's main_topic (assigned by Comment#assign_main_topic), so we
+      # count comments on that topic — must not increment.
+      main_topic = @creative.main_topic(fallback_user: @user)
+      assert_not_equal @topic.id, main_topic.id, "test depends on @topic != main_topic"
+
+      payload = {
+        action: "created",
+        comment: {
+          id: 501,
+          body: "no feed entry please",
+          user: { login: "alice", type: "User", id: 1 }
+        },
+        issue: { number: 99, pull_request: {} },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      before_main = Collavre::Comment.where(topic_id: main_topic.id).count
+
+      assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
+        post "/github/webhook",
+          params: payload,
+          headers: {
+            "Content-Type" => "application/json",
+            "X-GitHub-Event" => "issue_comment",
+            "X-Hub-Signature-256" => sig
+          }
+      end
+      assert_response :ok
+      assert_equal before_main, Collavre::Comment.where(topic_id: main_topic.id).count,
+        "issue_comment must not create a creative-level (main_topic) feed comment"
+    end
+
+    test "channel-only event on UNmonitored PR creates neither feed nor topic comment" do
+      # Detach the only channel so the PR is unmonitored, then send issue_comment.
+      # Nothing should be written anywhere — the event should be dropped entirely.
+      @channel.detach!
+
+      payload = {
+        action: "created",
+        comment: {
+          id: 502,
+          body: "unmonitored",
+          user: { login: "bob", type: "User", id: 2 }
+        },
+        issue: { number: 99, pull_request: {} },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      before_any = Collavre::Comment.where(creative_id: @creative.id).count
+
+      post "/github/webhook",
+        params: payload,
+        headers: {
+          "Content-Type" => "application/json",
+          "X-GitHub-Event" => "issue_comment",
+          "X-Hub-Signature-256" => sig
+        }
+
+      assert_response :ok
+      assert_equal before_any, Collavre::Comment.where(creative_id: @creative.id).count,
+        "unmonitored channel-only event must not produce any comment"
+    end
+
+    test "pull_request event still creates a creative-level feed comment" do
+      # Opposite-direction guard: pull_request is NOT a channel-only event,
+      # so it should keep flowing into the creative feed. Use action=opened
+      # WITHOUT a topic-link body so auto-attach is a no-op and we only
+      # observe the feed write. The feed comment is routed to main_topic.
+      main_topic = @creative.main_topic(fallback_user: @user)
+
+      payload = {
+        action: "opened",
+        pull_request: {
+          number: 1234,
+          title: "feat: x",
+          html_url: "https://github.com/#{@link.repository_full_name}/pull/1234",
+          user: { login: "alice" },
+          body: ""
+        },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      assert_difference -> { Collavre::Comment.where(topic_id: main_topic.id).count }, 1 do
+        post "/github/webhook",
+          params: payload,
+          headers: {
+            "Content-Type" => "application/json",
+            "X-GitHub-Event" => "pull_request",
+            "X-Hub-Signature-256" => sig
+          }
+      end
+      assert_response :ok
+    end
+
     test "pull_request.closed injects closing comment AND detaches channel" do
       payload = {
         action: "closed",
