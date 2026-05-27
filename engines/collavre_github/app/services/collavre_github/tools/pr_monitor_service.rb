@@ -110,28 +110,42 @@ module CollavreGithub
       # Returns a warning string when provisioning cannot run or fails; nil on
       # success so the MCP response stays clean.
       def ensure_webhook_events(topic, repo)
-        link = primary_repository_link_for(topic, repo)
-        return "no RepositoryLink found for #{repo} in topic creative scope; webhook events not auto-provisioned" unless link
+        scoped_link = scoped_repository_link_for(topic, repo)
+        return "no RepositoryLink found for #{repo} in topic creative scope; webhook events not auto-provisioned" unless scoped_link
 
-        account = link.github_account
+        # Provision through the *global* primary link (lowest id across all
+        # creatives), not the scoped link. WebhookProvisioner only patches hook
+        # events when the link IS the primary; non-primary links short-circuit
+        # to secret alignment and skip the GitHub edit_hook call. So if we
+        # provisioned the scoped link and it was not the global primary, the
+        # existing hook would keep its old event list. The scoped link is only
+        # used as an authorization gate above.
+        provisioning_link = global_primary_repository_link_for(repo) || scoped_link
+
+        account = provisioning_link.github_account
         return "RepositoryLink for #{repo} has no GitHub account; webhook events not auto-provisioned" unless account
 
-        CollavreGithub::WebhookProvisioner.ensure_for_links(
+        results = CollavreGithub::WebhookProvisioner.ensure_for_links(
           account: account,
-          links: [ link ],
+          links: [ provisioning_link ],
           webhook_url: github_webhook_url
         )
+        status = results.first&.last
+        # :failed means Client returned nil (Octokit/Faraday error rescued in
+        # CollavreGithub::Client). Surface that to the MCP caller so they know
+        # webhook events were not actually patched.
+        return "webhook provisioning failed: GitHub API rejected the hook request (see logs)" if status == :failed
         nil
       rescue => e
         Rails.logger.warn("[pr_monitor] webhook provisioning failed for #{repo}: #{e.class}: #{e.message}")
         "webhook provisioning failed: #{e.message}"
       end
 
-      # Pick the canonical RepositoryLink whose subtree contains this topic.
-      # Mirrors WebhookProvisioner's "primary link" definition (lowest id) so
-      # the secret/events stay aligned with whatever the integrations controller
-      # would have provisioned.
-      def primary_repository_link_for(topic, repo)
+      # Authorization gate: a RepositoryLink for `repo` must live in this
+      # topic's creative subtree (the topic creative itself or one of its
+      # ancestors). Without one, the dispatch path in WebhooksController would
+      # silently drop events for this topic anyway.
+      def scoped_repository_link_for(topic, repo)
         creative = topic.creative
         return nil unless creative
 
@@ -139,6 +153,17 @@ module CollavreGithub
         CollavreGithub::RepositoryLink
           .where("LOWER(repository_full_name) = ?", repo.downcase)
           .where(creative_id: candidate_ids)
+          .order(:id)
+          .first
+      end
+
+      # Mirrors WebhookProvisioner#primary_link_for: the lowest-id link for the
+      # repo across ALL creatives. This is the link whose secret + events the
+      # hook is aligned to, so we must provision through it to trigger an
+      # actual edit_hook call.
+      def global_primary_repository_link_for(repo)
+        CollavreGithub::RepositoryLink
+          .where("LOWER(repository_full_name) = ?", repo.downcase)
           .order(:id)
           .first
       end
