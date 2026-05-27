@@ -28,6 +28,36 @@ module CollavreGithub
         assert_equal 77, channel.pr_number
       end
 
+      test "first attach seeds chip label and link so the chip is clickable before any webhook fires" do
+        result = PrMonitorService.new.call(
+          topic_id: @topic.id,
+          pr_url: "https://github.com/owner/repo/pull/77"
+        )
+        channel = GithubPrChannel.find(result[:channel_id])
+        assert_equal "PR #77", channel.latest_label
+        assert_equal "https://github.com/owner/repo/pull/77", channel.latest_link
+      end
+
+      test "first attach injects an announcement comment into the topic creative" do
+        assert_difference -> { @creative.comments.count }, 1 do
+          PrMonitorService.new.call(
+            topic_id: @topic.id,
+            pr_url: "https://github.com/owner/repo/pull/77"
+          )
+        end
+        comment = @creative.comments.order(:created_at).last
+        assert_equal @topic.id, comment.topic_id
+        assert_includes comment.content, "PR #77"
+        assert_includes comment.content, "https://github.com/owner/repo/pull/77"
+      end
+
+      test "idempotent re-attach does not inject a duplicate announcement" do
+        PrMonitorService.new.call(topic_id: @topic.id, pr_url: "https://github.com/owner/repo/pull/77")
+        assert_no_difference -> { @creative.comments.count } do
+          PrMonitorService.new.call(topic_id: @topic.id, pr_url: "https://github.com/owner/repo/pull/77")
+        end
+      end
+
       test "idempotent: calling twice does not create duplicate" do
         2.times do
           PrMonitorService.new.call(topic_id: @topic.id, pr_url: "https://github.com/owner/repo/pull/77")
