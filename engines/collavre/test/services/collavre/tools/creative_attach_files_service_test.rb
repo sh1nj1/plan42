@@ -25,7 +25,7 @@ module Collavre
       test "attaches multiple local files and returns public URLs" do
         result = CreativeAttachFilesService.new.call(
           creative_id: @creative.id,
-          file_paths: [@file_a, @file_b]
+          file_paths: [ @file_a, @file_b ]
         )
 
         assert result[:success], result.inspect
@@ -41,7 +41,7 @@ module Collavre
 
         result = CreativeAttachFilesService.new.call(
           creative_id: @creative.id,
-          file_paths: [@file_a]
+          file_paths: [ @file_a ]
         )
 
         assert_nil result[:success]
@@ -52,7 +52,7 @@ module Collavre
       test "returns error when creative not found" do
         result = CreativeAttachFilesService.new.call(
           creative_id: 9_999_999,
-          file_paths: [@file_a]
+          file_paths: [ @file_a ]
         )
         assert_match(/not found/i, result[:error])
       end
@@ -60,7 +60,7 @@ module Collavre
       test "returns error when a file path does not exist" do
         result = CreativeAttachFilesService.new.call(
           creative_id: @creative.id,
-          file_paths: [@file_a, "/nope/missing.bin"]
+          file_paths: [ @file_a, "/nope/missing.bin" ]
         )
         assert_match(/missing/i, result[:error])
         assert_equal 0, @creative.reload.files.count, "must not attach any when one is missing"
