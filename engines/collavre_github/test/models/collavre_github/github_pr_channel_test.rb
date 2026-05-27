@@ -178,6 +178,17 @@ module CollavreGithub
       assert_equal "open", @channel.pr_state
     end
 
+    test "default_label and default_link derive from config without any webhook event" do
+      fresh = GithubPrChannel.create!(
+        topic: @topic,
+        config: { "repo_full_name" => "owner/repo", "pr_number" => 7 }
+      )
+      assert_nil fresh.latest_label
+      assert_nil fresh.latest_link
+      assert_equal "PR #7", fresh.default_label
+      assert_equal "https://github.com/owner/repo/pull/7", fresh.default_link
+    end
+
     test "pr_state= persists each whitelisted value via the config writer" do
       CollavreGithub::GithubPrChannel::PR_STATES.each do |s|
         @channel.pr_state = s

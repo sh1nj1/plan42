@@ -15,6 +15,17 @@ module Collavre
       raise NotImplementedError, "#{self.class} must implement #handle"
     end
 
+    # Chip fallbacks rendered before any webhook event populates latest_label /
+    # latest_link. Base class returns nil; subclasses override when they can
+    # derive a stable label/link from their own config (e.g. PR #N + URL).
+    def default_label
+      nil
+    end
+
+    def default_link
+      nil
+    end
+
     def detach!
       update!(state: :detached)
     end

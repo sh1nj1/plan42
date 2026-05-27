@@ -7,18 +7,20 @@
     <% pr_state = channel.respond_to?(:pr_state) ? channel.pr_state : nil %>
     <% chip_classes = [ "channel-chip" ]
        chip_classes << "channel-chip--detached" if channel.detached? %>
+    <% chip_label = channel.latest_label.presence || channel.default_label.presence || channel.class.name.demodulize %>
+    <% chip_link  = channel.latest_link.presence  || channel.default_link.presence %>
     <span class="<%= chip_classes.join(' ') %>" data-channel-id="<%= channel.id %>">
       <% if pr_state %>
         <span class="channel-chip-badge channel-chip-badge--<%= pr_state %>"
               title="<%= t("collavre_github.channel.pr.badge.#{pr_state}", default: pr_state.to_s) %>"
               aria-label="<%= t("collavre_github.channel.pr.badge.#{pr_state}", default: pr_state.to_s) %>"></span>
       <% end %>
-      <% if channel.latest_link.present? %>
-        <a href="<%= channel.latest_link %>" target="_blank" rel="noopener">
-          <%= channel.latest_label.presence || channel.class.name.demodulize %>
+      <% if chip_link %>
+        <a href="<%= chip_link %>" target="_blank" rel="noopener">
+          <%= chip_label %>
         </a>
       <% else %>
-        <%= channel.latest_label.presence || channel.class.name.demodulize %>
+        <%= chip_label %>
       <% end %>
       <button type="button"
               data-action="comments--presence#detachChannel"

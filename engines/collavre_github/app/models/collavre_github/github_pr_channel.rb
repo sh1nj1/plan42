@@ -18,6 +18,17 @@ module CollavreGithub
       t("label", number: pr_number)
     end
 
+    # Chip fallbacks: derived directly from config so the chip can render the
+    # full "PR #N" + URL immediately on attach, without waiting for the first
+    # webhook event to populate latest_label / latest_link.
+    def default_label
+      label
+    end
+
+    def default_link
+      pr_url
+    end
+
     # PR lifecycle state used by the chip badge color. Defaults to "open" so
     # freshly attached channels render the green badge before any close event
     # has been received. Persisted in `config` to avoid a schema change for a
