@@ -13,8 +13,12 @@ module Collavre
 
     # Creates a new topic with copies of the selected comments.
     # Returns the new Topic.
-    def call(comment_ids:)
-      comment_ids = Array(comment_ids).map(&:presence).compact.map(&:to_i).first(MAX_BRANCH_COMMENTS)
+    # enforce_limit: false bypasses MAX_BRANCH_COMMENTS for system-initiated
+    # full-history copies (e.g. Drop Trigger) where the UI's selection cap
+    # does not apply.
+    def call(comment_ids:, enforce_limit: true)
+      comment_ids = Array(comment_ids).map(&:presence).compact.map(&:to_i)
+      comment_ids = comment_ids.first(MAX_BRANCH_COMMENTS) if enforce_limit
       raise BranchError, I18n.t("collavre.comments.branch.no_selection") if comment_ids.empty?
 
       validate_permissions!

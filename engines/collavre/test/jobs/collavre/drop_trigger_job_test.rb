@@ -265,6 +265,63 @@ module Collavre
       assert trigger_comment, "Trigger comment should still be posted into the branched topic"
     end
 
+    test "skips other users' private comments in Main when branching" do
+      other_user = users(:two)
+      CreativeShare.create!(creative: @child, user: other_user, permission: :feedback)
+      main = @child.main_topic(fallback_user: @owner)
+
+      visible = @child.comments.create!(
+        content: "visible to owner",
+        topic_id: main.id,
+        user: @owner,
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+      @child.comments.create!(
+        content: "private from other user",
+        topic_id: main.id,
+        user: other_user,
+        private: true,
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        DropTriggerJob.perform_now(@parent.id, @child.id)
+      end
+
+      topic = @child.topics.find_by(name: "Drop Trigger")
+      assert topic, "Drop Trigger should be created even when Main has hidden comments"
+      copied_contents = topic.comments.pluck(:content)
+      assert_includes copied_contents, visible.content
+      refute(copied_contents.any? { |c| c.include?("private from other user") },
+        "Other users' private Main comments must not leak into the branched topic")
+    end
+
+    test "branches more than MAX_BRANCH_COMMENTS Main messages without truncation" do
+      main = @child.main_topic(fallback_user: @owner)
+      total = TopicBranchService::MAX_BRANCH_COMMENTS + 5
+      total.times do |i|
+        @child.comments.create!(
+          content: "msg #{i}",
+          topic_id: main.id,
+          user: @owner,
+          skip_default_user: true,
+          skip_dispatch: true
+        )
+      end
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        DropTriggerJob.perform_now(@parent.id, @child.id)
+      end
+
+      topic = @child.topics.find_by(name: "Drop Trigger")
+      # Branched copies + the trigger comment appended on top.
+      copied = topic.comments.where.not("content LIKE ?", "%@#{@ai_bot.name}:%").count
+      assert_equal total, copied,
+        "Drop Trigger must inherit the full Main history regardless of MAX_BRANCH_COMMENTS"
+    end
+
     test "does not branch when child Main has no messages" do
       assert_equal 0, @child.main_topic(fallback_user: @owner).comments.count
 

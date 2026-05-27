@@ -97,7 +97,13 @@ module Collavre
     # fixed to "Drop Trigger".
     def create_drop_trigger_topic(creative)
       main = creative.main_topic(fallback_user: creative.user)
-      main_comment_ids = main.comments.order(:created_at).pluck(:id)
+      # Mirror the manual "select all → branch" flow: only comments the owner
+      # can see are copied. enforce_limit: false bypasses the UI's 100-comment
+      # selection cap so full Main history transfers regardless of length.
+      main_comment_ids = main.comments
+                             .visible_to(creative.user)
+                             .order(:created_at)
+                             .pluck(:id)
 
       if main_comment_ids.any?
         TopicBranchService.new(
@@ -105,7 +111,7 @@ module Collavre
           user: creative.user,
           source_topic: main,
           name: DROP_TRIGGER_TOPIC_NAME
-        ).call(comment_ids: main_comment_ids)
+        ).call(comment_ids: main_comment_ids, enforce_limit: false)
       else
         creative.topics.create!(
           name: DROP_TRIGGER_TOPIC_NAME,
