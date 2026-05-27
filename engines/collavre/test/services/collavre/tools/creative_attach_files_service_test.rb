@@ -10,15 +10,26 @@ module Collavre
         Current.user = @user
         @creative = Creative.create!(description: "<p>x</p>", user: @user)
 
-        @tmp = Dir.mktmpdir
+        @upload_root = Dir.mktmpdir
+        @prev_upload_root = ENV["MCP_UPLOAD_ROOT"]
+        ENV["MCP_UPLOAD_ROOT"] = @upload_root
+
+        @tmp = Dir.mktmpdir(nil, @upload_root)
         @file_a = File.join(@tmp, "a.txt")
         @file_b = File.join(@tmp, "b.bin")
         File.write(@file_a, "alpha")
         File.binwrite(@file_b, "\x00\x01\x02")
+
+        @outside_dir = Dir.mktmpdir
+        @outside_file = File.join(@outside_dir, "secret.txt")
+        File.write(@outside_file, "top secret")
       end
 
       teardown do
         FileUtils.remove_entry(@tmp) if @tmp && Dir.exist?(@tmp)
+        FileUtils.remove_entry(@upload_root) if @upload_root && Dir.exist?(@upload_root)
+        FileUtils.remove_entry(@outside_dir) if @outside_dir && Dir.exist?(@outside_dir)
+        ENV["MCP_UPLOAD_ROOT"] = @prev_upload_root
         Current.user = nil
       end
 
@@ -60,10 +71,36 @@ module Collavre
       test "returns error when a file path does not exist" do
         result = CreativeAttachFilesService.new.call(
           creative_id: @creative.id,
-          file_paths: [ @file_a, "/nope/missing.bin" ]
+          file_paths: [ @file_a, File.join(@upload_root, "nope/missing.bin") ]
         )
         assert_match(/missing/i, result[:error])
         assert_equal 0, @creative.reload.files.count, "must not attach any when one is missing"
+      end
+
+      test "rejects file paths outside the upload root" do
+        result = CreativeAttachFilesService.new.call(
+          creative_id: @creative.id,
+          file_paths: [ @file_a, @outside_file ]
+        )
+
+        assert_nil result[:success]
+        assert_match(/outside/i, result[:error])
+        assert_includes result[:outside], @outside_file
+        assert_equal 0, @creative.reload.files.count, "must not attach any when one escapes upload root"
+      end
+
+      test "rejects symlinks that escape the upload root" do
+        symlink = File.join(@tmp, "evil.lnk")
+        File.symlink(@outside_file, symlink)
+
+        result = CreativeAttachFilesService.new.call(
+          creative_id: @creative.id,
+          file_paths: [ symlink ]
+        )
+
+        assert_nil result[:success]
+        assert_match(/outside/i, result[:error])
+        assert_equal 0, @creative.reload.files.count
       end
     end
   end
