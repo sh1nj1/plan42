@@ -231,6 +231,52 @@ module Collavre
         "Comment should start with @AgentName: mention"
     end
 
+    test "branches Drop Trigger topic from child Main when Main has messages" do
+      main = @child.main_topic(fallback_user: @owner)
+      original_a = @child.comments.create!(
+        content: "first message",
+        topic_id: main.id,
+        user: @owner,
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+      original_b = @child.comments.create!(
+        content: "second message",
+        topic_id: main.id,
+        user: @owner,
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        DropTriggerJob.perform_now(@parent.id, @child.id)
+      end
+
+      topic = @child.topics.find_by(name: "Drop Trigger")
+      assert topic, "Drop Trigger topic should be created"
+      assert_equal main.id, topic.source_topic_id, "Drop Trigger should branch from Main"
+
+      copied_contents = topic.comments.order(:created_at).pluck(:content)
+      assert_includes copied_contents, original_a.content
+      assert_includes copied_contents, original_b.content
+
+      # The trigger comment is appended on top of the branched history.
+      trigger_comment = topic.comments.find { |c| c.content.include?("@#{@ai_bot.name}:") }
+      assert trigger_comment, "Trigger comment should still be posted into the branched topic"
+    end
+
+    test "does not branch when child Main has no messages" do
+      assert_equal 0, @child.main_topic(fallback_user: @owner).comments.count
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        DropTriggerJob.perform_now(@parent.id, @child.id)
+      end
+
+      topic = @child.topics.find_by(name: "Drop Trigger")
+      assert topic, "Drop Trigger topic should still be created"
+      assert_nil topic.source_topic_id, "Empty Main should not produce a branch link"
+    end
+
     test "uses creative_snippet for plain text names" do
       @child.update!(description: "<p>HTML <strong>description</strong> that is very long and should be truncated</p>")
 

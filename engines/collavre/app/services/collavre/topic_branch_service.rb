@@ -4,10 +4,11 @@ module Collavre
 
     MAX_BRANCH_COMMENTS = 100
 
-    def initialize(creative:, user:, source_topic:)
+    def initialize(creative:, user:, source_topic:, name: nil)
       @creative = creative
       @user = user
       @source_topic = source_topic
+      @name = name
     end
 
     # Creates a new topic with copies of the selected comments.
@@ -31,7 +32,7 @@ module Collavre
 
     private
 
-    attr_reader :creative, :user, :source_topic
+    attr_reader :creative, :user, :source_topic, :name
 
     def validate_permissions!
       unless creative.has_permission?(user, :feedback)
@@ -49,23 +50,26 @@ module Collavre
     end
 
     def create_branch_topic
-      prefix = I18n.t("collavre.topics.branch_prefix")
-      source_name = source_topic&.name || I18n.t("collavre.comments.topic_main", default: "All Messages")
-      name = "#{prefix}:#{source_name}"
-
-      # Ensure uniqueness
-      existing = creative.topics.where("name LIKE ?", "#{Topic.sanitize_sql_like(name)}%").pluck(:name)
-      if existing.include?(name)
-        counter = 2
-        counter += 1 while existing.include?("#{name} #{counter}")
-        name = "#{name} #{counter}"
-      end
+      topic_name = name.presence || default_branch_name
 
       creative.topics.create!(
-        name: name,
+        name: topic_name,
         user: user,
         source_topic_id: source_topic&.id
       )
+    end
+
+    def default_branch_name
+      prefix = I18n.t("collavre.topics.branch_prefix")
+      source_name = source_topic&.name || I18n.t("collavre.comments.topic_main", default: "All Messages")
+      candidate = "#{prefix}:#{source_name}"
+
+      existing = creative.topics.where("name LIKE ?", "#{Topic.sanitize_sql_like(candidate)}%").pluck(:name)
+      return candidate unless existing.include?(candidate)
+
+      counter = 2
+      counter += 1 while existing.include?("#{candidate} #{counter}")
+      "#{candidate} #{counter}"
     end
 
     def copy_comments(originals)
