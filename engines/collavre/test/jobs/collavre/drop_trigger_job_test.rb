@@ -322,6 +322,29 @@ module Collavre
         "Drop Trigger must inherit the full Main history regardless of MAX_BRANCH_COMMENTS"
     end
 
+    test "broadcasts topic creation without user_id so the owner is not auto-switched" do
+      main = @child.main_topic(fallback_user: @owner)
+      @child.comments.create!(
+        content: "first message",
+        topic_id: main.id,
+        user: @owner,
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+
+      broadcasts = []
+      TopicsChannel.stub(:broadcast_to, ->(_target, payload) { broadcasts << payload }) do
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+          DropTriggerJob.perform_now(@parent.id, @child.id)
+        end
+      end
+
+      created = broadcasts.find { |p| p[:action] == "created" }
+      assert created, "Topic creation broadcast expected"
+      refute created.key?(:user_id),
+        "Background Drop Trigger branch must omit user_id to avoid auto-selecting the owner's open creative"
+    end
+
     test "does not branch when child Main has no messages" do
       assert_equal 0, @child.main_topic(fallback_user: @owner).comments.count
 

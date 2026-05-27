@@ -106,12 +106,14 @@ module Collavre
                              .pluck(:id)
 
       if main_comment_ids.any?
+        # auto_select: false prevents the broadcast from hijacking the owner's
+        # current topic selection while this background job runs.
         TopicBranchService.new(
           creative: creative,
           user: creative.user,
           source_topic: main,
           name: DROP_TRIGGER_TOPIC_NAME
-        ).call(comment_ids: main_comment_ids, enforce_limit: false)
+        ).call(comment_ids: main_comment_ids, enforce_limit: false, auto_select: false)
       else
         creative.topics.create!(
           name: DROP_TRIGGER_TOPIC_NAME,

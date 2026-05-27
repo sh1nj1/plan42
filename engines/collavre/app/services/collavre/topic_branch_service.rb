@@ -16,7 +16,9 @@ module Collavre
     # enforce_limit: false bypasses MAX_BRANCH_COMMENTS for system-initiated
     # full-history copies (e.g. Drop Trigger) where the UI's selection cap
     # does not apply.
-    def call(comment_ids:, enforce_limit: true)
+    # auto_select: false omits user_id from the topic-created broadcast so
+    # background/system branches do not hijack the owner's current selection.
+    def call(comment_ids:, enforce_limit: true, auto_select: true)
       comment_ids = Array(comment_ids).map(&:presence).compact.map(&:to_i)
       comment_ids = comment_ids.first(MAX_BRANCH_COMMENTS) if enforce_limit
       raise BranchError, I18n.t("collavre.comments.branch.no_selection") if comment_ids.empty?
@@ -29,7 +31,7 @@ module Collavre
         copy_comments(originals)
       end
 
-      broadcast_topic_created
+      broadcast_topic_created(auto_select: auto_select)
 
       @new_topic
     end
@@ -106,15 +108,13 @@ module Collavre
       end
     end
 
-    def broadcast_topic_created
-      TopicsChannel.broadcast_to(
-        creative,
-        {
-          action: "created",
-          topic: { id: @new_topic.id, name: @new_topic.name, source_topic_id: @new_topic.source_topic_id },
-          user_id: user.id
-        }
-      )
+    def broadcast_topic_created(auto_select: true)
+      payload = {
+        action: "created",
+        topic: { id: @new_topic.id, name: @new_topic.name, source_topic_id: @new_topic.source_topic_id }
+      }
+      payload[:user_id] = user.id if auto_select
+      TopicsChannel.broadcast_to(creative, payload)
     end
   end
 end
