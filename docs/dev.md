@@ -1,4 +1,3 @@
-
 # FAQ
 
 ### CSS changes are not reflected immediately during development
