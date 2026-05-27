@@ -27,6 +27,7 @@ users.each do |role, attrs|
   u.name = attrs[:name]
   u.password = pw
   u.password_confirmation = pw
+  u.email_verified_at = Time.current if u.respond_to?(:email_verified_at=)
   u.save!
   created_users[role] = u
   $stdout.puts "User: #{u.name} (#{u.email})"
@@ -39,6 +40,7 @@ ai.password = pw
 ai.password_confirmation = pw
 ai.agent_conf = { "provider" => "anthropic", "model" => "claude-sonnet-4-20250514" }
 ai.system_prompt = "You are Vrex, an AI teammate at Collabre. Help the team with code reviews, architecture decisions, and documentation."
+ai.email_verified_at = Time.current if ai.respond_to?(:email_verified_at=)
 ai.save!
 created_users[:ai] = ai
 $stdout.puts "AI Agent: #{ai.name}"
