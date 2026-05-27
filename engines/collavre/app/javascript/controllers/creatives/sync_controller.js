@@ -27,16 +27,26 @@ export default class extends Controller {
     // Defer ActionCable subscribe until tree finishes loading. Opening the
     // WebSocket while the tree fetch is in flight triggers ERR_NETWORK_CHANGED
     // in Chromium because the browser tears down the in-flight HTTP connection.
-    this._handleTreeUpdated = () => {
-      this.element.removeEventListener('creative-tree:updated', this._handleTreeUpdated)
-      this._handleTreeUpdated = null
+    // Exception: Turbo cache restores leave data-loaded="true" so tree_controller
+    // skips load() and never dispatches creative-tree:updated — subscribe now.
+    const subscribeForRoot = () => {
       if (this.rootIdValue > 0) {
         this.subscribe()
       } else {
         this.inferAndSubscribe()
       }
     }
-    this.element.addEventListener('creative-tree:updated', this._handleTreeUpdated)
+
+    if (this.element.dataset.loaded === 'true') {
+      subscribeForRoot()
+    } else {
+      this._handleTreeUpdated = () => {
+        this.element.removeEventListener('creative-tree:updated', this._handleTreeUpdated)
+        this._handleTreeUpdated = null
+        subscribeForRoot()
+      }
+      this.element.addEventListener('creative-tree:updated', this._handleTreeUpdated)
+    }
 
     document.addEventListener('creative-editing:start', this.handleEditStart)
     document.addEventListener('creative-editing:stop', this.handleEditStop)

@@ -67,4 +67,23 @@ describe('CreativesSyncController subscribe timing', () => {
 
     expect(subscribeToCreatives).toHaveBeenCalledTimes(1)
   })
+
+  test('subscribes immediately when tree is already loaded (Turbo cache restore)', async () => {
+    // Simulate Turbo restoring a cached tree page: data-loaded is already set
+    // before sync_controller connects, so tree_controller skips load() and
+    // never dispatches creative-tree:updated.
+    const cached = document.createElement('div')
+    cached.id = 'sync-cached'
+    cached.setAttribute('data-controller', 'creatives--cached-sync')
+    cached.setAttribute('data-creatives--cached-sync-root-id-value', '991')
+    cached.setAttribute('data-loaded', 'true')
+    cached.innerHTML = '<creative-tree-row creative-id="1"></creative-tree-row>'
+    document.body.appendChild(cached)
+
+    application.register('creatives--cached-sync', SyncController)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(subscribeToCreatives).toHaveBeenCalledTimes(1)
+    expect(subscribeToCreatives).toHaveBeenCalledWith(991, expect.any(Object))
+  })
 })
