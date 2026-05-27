@@ -224,6 +224,54 @@ module CollavreGithub
       assert active.reload.active?
     end
 
+    test "pull_request.reopened reactivation runs inside with_lock so concurrent deliveries cannot double-announce" do
+      # Regression: without a row lock + re-read inside, two concurrent reopened
+      # webhook deliveries for the same dismissed/detached channel both observe
+      # was_inactive=true and both inject the reopened announcement. The fix
+      # wraps the reactivation block in `existing.with_lock`; this test asserts
+      # the lock is acquired before any state mutation / inject so that the
+      # contract is captured by tests, not just by inspection.
+      dismissed = GithubPrChannel.create!(
+        topic_id: @topic.id,
+        config: {
+          "repo_full_name" => @link.repository_full_name,
+          "pr_number" => 563,
+          "pr_state" => "merged"
+        },
+        state: :detached,
+        dismissed_at: 1.day.ago
+      )
+
+      lock_acquired = false
+      original_with_lock = GithubPrChannel.instance_method(:with_lock)
+      GithubPrChannel.define_method(:with_lock) do |*args, &block|
+        lock_acquired = true if id == dismissed.id
+        original_with_lock.bind(self).call(*args, &block)
+      end
+
+      begin
+        payload = {
+          action: "reopened",
+          pull_request: {
+            number: 563,
+            body: "Linked topic: /creatives/#{@creative.id}/topics/#{@topic.id}"
+          },
+          repository: { full_name: @link.repository_full_name }
+        }.to_json
+        sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+        post "/github/webhook", params: payload,
+          headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
+      ensure
+        GithubPrChannel.define_method(:with_lock, original_with_lock)
+      end
+
+      assert lock_acquired, "expected reactivation path to acquire row lock on the dismissed channel"
+      dismissed.reload
+      assert dismissed.active?
+      assert_nil dismissed.dismissed_at
+    end
+
     test "channels table rejects duplicate (type, topic, repo, pr) at DB level" do
       GithubPrChannel.create!(
         topic_id: @topic.id,

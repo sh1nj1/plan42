@@ -78,21 +78,29 @@ module CollavreGithub
         # `opened` on an existing row we just no-op (idempotent redelivery).
         return existing unless payload["action"] == "reopened"
 
-        was_inactive = !existing.active? || !existing.dismissed_at.nil?
-        if was_inactive || existing.pr_state != "open"
-          existing.state = :active unless existing.active?
-          existing.dismissed_at = nil unless existing.dismissed_at.nil?
-          existing.pr_state = "open" if existing.pr_state != "open"
-          existing.save!
-        end
-        # When the chip silently reappears after dismiss/detach, inject a
-        # one-line announcement so the user can trace the lifecycle —
-        # mirrors the attach announcement on first create.
-        if was_inactive
-          begin
-            existing.inject_into_topic!(existing.reopened_message)
-          rescue => e
-            Rails.logger.error("[CollavreGithub] reopened announce failed: #{e.class}: #{e.message}")
+        # Row-level lock + re-read guards against duplicate reopened announcements
+        # when two `pull_request.reopened` deliveries for the same dismissed/
+        # detached channel arrive concurrently (GitHub retries on 5xx, or
+        # duplicate fan-out). Without it, both requests can read was_inactive=true
+        # before either clears dismissed_at, then both inject the reopened
+        # message. Mirrors the close-path with_lock below.
+        existing.with_lock do
+          was_inactive = !existing.active? || !existing.dismissed_at.nil?
+          if was_inactive || existing.pr_state != "open"
+            existing.state = :active unless existing.active?
+            existing.dismissed_at = nil unless existing.dismissed_at.nil?
+            existing.pr_state = "open" if existing.pr_state != "open"
+            existing.save!
+          end
+          # When the chip silently reappears after dismiss/detach, inject a
+          # one-line announcement so the user can trace the lifecycle —
+          # mirrors the attach announcement on first create.
+          if was_inactive
+            begin
+              existing.inject_into_topic!(existing.reopened_message)
+            rescue => e
+              Rails.logger.error("[CollavreGithub] reopened announce failed: #{e.class}: #{e.message}")
+            end
           end
         end
         return existing
