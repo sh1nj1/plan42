@@ -151,6 +151,30 @@ module CollavreGithub
         assert_equal "https://github.com/owner/repo/pull/77", channel.latest_link
       end
 
+      test "reactivation clears dismissed_at and resets pr_state so the chip resurfaces under not_dismissed" do
+        # Scenario: user dismissed the post-close chip (X button), which set
+        # state=:detached AND dismissed_at to keep the chip hidden under the
+        # new not_dismissed render scope. Calling pr_monitor again must clear
+        # dismissed_at + reset pr_state to "open", or the tool returns success
+        # while the chip stays invisible.
+        channel = GithubPrChannel.create!(
+          topic_id: @topic.id,
+          config: { "repo_full_name" => "owner/repo", "pr_number" => 77, "pr_state" => "merged" },
+          state: :detached,
+          dismissed_at: 1.hour.ago
+        )
+
+        PrMonitorService.new.call(
+          topic_id: @topic.id,
+          pr_url: "https://github.com/owner/repo/pull/77"
+        )
+
+        channel.reload
+        assert channel.active?
+        assert_nil channel.dismissed_at
+        assert_equal "open", channel.pr_state
+      end
+
       test "active->active idempotent re-attach does not re-announce" do
         PrMonitorService.new.call(topic_id: @topic.id, pr_url: "https://github.com/owner/repo/pull/77")
         assert_no_difference -> { @creative.comments.count } do
