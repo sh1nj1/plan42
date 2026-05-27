@@ -13,14 +13,24 @@ module Collavre
       sign_in_as(@user, password: "password")
     end
 
-    test "destroy detaches channel and returns 204" do
+    test "destroy dismisses an active channel (detaches + sets dismissed_at) and returns 204" do
       delete collavre.channel_path(@channel)
       assert_response :no_content
-      assert_predicate @channel.reload, :detached?
+      @channel.reload
+      assert_predicate @channel, :detached?
+      assert_predicate @channel, :dismissed?
     end
 
-    test "destroy returns 404 when channel already detached" do
+    test "destroy on a detached (but not yet dismissed) channel dismisses it" do
       @channel.detach!
+
+      delete collavre.channel_path(@channel)
+      assert_response :no_content
+      assert_predicate @channel.reload, :dismissed?
+    end
+
+    test "destroy returns 404 when channel was already dismissed" do
+      @channel.dismiss!
 
       delete collavre.channel_path(@channel)
       assert_response :not_found

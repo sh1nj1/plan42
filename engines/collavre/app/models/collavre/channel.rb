@@ -9,12 +9,29 @@ module Collavre
 
     enum :state, { active: 0, detached: 1 }, default: :active
 
+    scope :not_dismissed, -> { where(dismissed_at: nil) }
+
     def handle(event:, payload:)
       raise NotImplementedError, "#{self.class} must implement #handle"
     end
 
     def detach!
       update!(state: :detached)
+    end
+
+    def dismissed?
+      dismissed_at.present?
+    end
+
+    # Hide the chip from the typing-indicator row. Performs detach! as a
+    # side-effect when the channel is still active so dismissal is a single
+    # user-facing action — clicking the X always removes the chip regardless
+    # of prior state.
+    def dismiss!
+      transaction do
+        detach! if active?
+        update!(dismissed_at: Time.current) if dismissed_at.nil?
+      end
     end
 
     def record_event!(label:, link:)

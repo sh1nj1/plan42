@@ -71,12 +71,20 @@ module CollavreGithub
         c.repo_full_name.to_s.downcase == repo && c.pr_number == pr_number
       end
       if existing
-        existing.update!(state: :active) unless existing.active?
+        # Clear dismissed_at + flip state in one update so a reopened PR
+        # surfaces the chip again even if the user had previously dismissed
+        # the (post-merge) chip. Reset pr_state to "open" to match the new
+        # lifecycle — the next close event repopulates it.
+        attrs = {}
+        attrs[:state] = :active unless existing.active?
+        attrs[:dismissed_at] = nil unless existing.dismissed_at.nil?
+        attrs[:config] = existing.config.merge("pr_state" => "open") if existing.pr_state != "open"
+        existing.update!(attrs) if attrs.any?
         return existing
       end
       GithubPrChannel.create!(
         topic_id: topic.id,
-        config: { "repo_full_name" => repo, "pr_number" => pr_number }
+        config: { "repo_full_name" => repo, "pr_number" => pr_number, "pr_state" => "open" }
       )
     rescue ActiveRecord::RecordNotUnique
       # concurrent webhook safe
@@ -107,13 +115,22 @@ module CollavreGithub
         next unless channel_in_repo_scope?(channel, linked_creative_ids)
 
         begin
-          injected = channel.handle(event: event, payload: payload)
-          next if injected.nil?
+          # Row-level lock + re-check guards against duplicate dispatch when the
+          # same webhook is redelivered (GitHub retries on 5xx) or two webhooks
+          # arrive concurrently. Without it, both processes read state=active
+          # and each inject the closing comment. The query-level .active scope
+          # alone does not race-protect the inject+detach window.
+          channel.with_lock do
+            next unless channel.active?
 
-          channel.inject_into_topic!(injected)
-          # Detach AFTER injecting the closing message so the chip remains
-          # visible until the closing comment lands in the topic.
-          channel.detach! if event == "pull_request" && payload["action"] == "closed"
+            injected = channel.handle(event: event, payload: payload)
+            next if injected.nil?
+
+            channel.inject_into_topic!(injected)
+            # Detach AFTER injecting the closing message so the chip remains
+            # visible (now with merged/closed badge) until dismissed by the user.
+            channel.detach! if event == "pull_request" && payload["action"] == "closed"
+          end
         rescue => e
           # Isolate per-channel failures so one broken channel does not block
           # sibling channels monitoring the same PR.

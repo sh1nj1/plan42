@@ -106,3 +106,7 @@ ko:
         review_submitted_message: "**@%{author}**님이 %{label}에 리뷰를 제출했습니다 (`%{state}`):\n\n%{body}"
         closed_message: "%{label}이(가) **%{verb}** 되었습니다. 채널을 해제합니다."
         attached_message: "%{label} 모니터링이 시작되었습니다.\n\n%{url}"
+        badge:
+          open: "열림"
+          merged: "머지됨"
+          closed_without_merge: "머지 없이 닫힘"

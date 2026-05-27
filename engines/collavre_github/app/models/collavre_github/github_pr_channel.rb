@@ -18,6 +18,17 @@ module CollavreGithub
       t("label", number: pr_number)
     end
 
+    # PR lifecycle state used by the chip badge color. Defaults to "open" so
+    # freshly attached channels render the green badge before any close event
+    # has been received. Persisted in `config` to avoid a schema change for a
+    # channel-subtype-specific concern.
+    PR_STATES = %w[open merged closed_without_merge].freeze
+
+    def pr_state
+      state = config["pr_state"].to_s
+      PR_STATES.include?(state) ? state : "open"
+    end
+
     def attached_message
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
@@ -45,13 +56,18 @@ module CollavreGithub
     def handle_pull_request(payload)
       return nil unless payload["action"] == "closed"
       pr = payload["pull_request"]
-      verb_key = pr["merged"] ? "state_merged" : "state_closed"
-      verb = t(verb_key)
+      new_state = pr["merged"] ? "merged" : "closed_without_merge"
+      verb = pr["merged"] ? t("state_merged") : t("state_closed")
+
+      # Persist pr_state inline so the badge color flips even if the caller
+      # later swallows the InjectedMessage (e.g. injection fails). The chip
+      # status is the source of truth for the badge, not the closing comment.
+      update!(config: config.merge("pr_state" => new_state))
 
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
         message: t("closed_message", label: label, verb: verb),
-        label: t("label_with_state", label: label, state: verb),
+        label: label,
         link: pr_url
       )
       # Detach is performed by the webhook controller AFTER injecting this

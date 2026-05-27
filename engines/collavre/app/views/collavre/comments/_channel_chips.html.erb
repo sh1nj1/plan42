@@ -1,7 +1,19 @@
 <%# locals: { topic: Collavre::Topic } %>
 <div class="channel-chips" data-comments--presence-target="channelChips" data-topic-id="<%= topic.id %>">
-  <% topic.channels.active.each do |channel| %>
-    <span class="channel-chip" data-channel-id="<%= channel.id %>">
+  <% topic.channels.not_dismissed.each do |channel| %>
+    <%# Chip is kept after detach so the final merged/closed badge stays visible
+        until the user dismisses it with the X button. Subclasses that expose
+        `pr_state` get a status-colored badge; others fall back to no badge. %>
+    <% pr_state = channel.respond_to?(:pr_state) ? channel.pr_state : nil %>
+    <% chip_classes = [ "channel-chip" ]
+       chip_classes << "channel-chip--detached" if channel.respond_to?(:detached?) && channel.detached?
+       chip_classes << "channel-chip--#{pr_state}" if pr_state %>
+    <span class="<%= chip_classes.join(' ') %>" data-channel-id="<%= channel.id %>">
+      <% if pr_state %>
+        <span class="channel-chip-badge channel-chip-badge--<%= pr_state %>"
+              title="<%= t("collavre_github.channel.pr.badge.#{pr_state}", default: pr_state.to_s) %>"
+              aria-label="<%= t("collavre_github.channel.pr.badge.#{pr_state}", default: pr_state.to_s) %>"></span>
+      <% end %>
       <% if channel.latest_link.present? %>
         <a href="<%= channel.latest_link %>" target="_blank" rel="noopener">
           <%= channel.latest_label.presence || channel.class.name.demodulize %>
