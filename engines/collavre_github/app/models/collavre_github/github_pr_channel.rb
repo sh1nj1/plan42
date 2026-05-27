@@ -29,10 +29,29 @@ module CollavreGithub
       PR_STATES.include?(state) ? state : "open"
     end
 
+    # Symmetric with the reader: refuse to persist values outside PR_STATES
+    # rather than silently downgrading to "open" at read time. Without this
+    # any caller that mistypes (e.g. "merged_") would corrupt the badge color
+    # with no error surfaced.
+    def pr_state=(value)
+      value = value.to_s
+      raise ArgumentError, "Invalid pr_state: #{value.inspect}" unless PR_STATES.include?(value)
+      self.config = config.merge("pr_state" => value)
+    end
+
     def attached_message
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
         message: t("attached_message", label: label, url: pr_url),
+        label: label,
+        link: pr_url
+      )
+    end
+
+    def reopened_message
+      Collavre::Channel::InjectedMessage.new(
+        speaker: channel_bot_user,
+        message: t("reopened_message", label: label, url: pr_url),
         label: label,
         link: pr_url
       )
@@ -59,10 +78,13 @@ module CollavreGithub
       new_state = pr["merged"] ? "merged" : "closed_without_merge"
       verb = pr["merged"] ? t("state_merged") : t("state_closed")
 
-      # Persist pr_state inline so the badge color flips even if the caller
-      # later swallows the InjectedMessage (e.g. injection fails). The chip
-      # status is the source of truth for the badge, not the closing comment.
-      update!(config: config.merge("pr_state" => new_state))
+      # pr_state is updated atomically with the closing comment: the dispatch
+      # path wraps both `handle` and `inject_into_topic!` in a single with_lock
+      # transaction, so an inject failure rolls this update back too. That is
+      # the intended behavior — we don't want the chip to flash merged/closed
+      # without the matching closing message in the timeline.
+      self.pr_state = new_state
+      save!
 
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,

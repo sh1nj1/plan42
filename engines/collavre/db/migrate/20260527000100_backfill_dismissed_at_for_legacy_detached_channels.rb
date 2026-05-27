@@ -7,11 +7,16 @@ class BackfillDismissedAtForLegacyDetachedChannels < ActiveRecord::Migration[8.1
   # using their last-touched timestamp as a best-effort dismissed_at.
   #
   # Idempotent: the WHERE clause skips rows that already have dismissed_at.
+  # Scoped to GithubPrChannel because the dismiss-on-detach UI ships only for
+  # PR chips. Future Channel STI subtypes opt in by adding their own backfill
+  # or by being created post-upgrade.
   def up
     execute <<~SQL.squish
       UPDATE channels
       SET dismissed_at = COALESCE(updated_at, CURRENT_TIMESTAMP)
-      WHERE state = 1 AND dismissed_at IS NULL
+      WHERE state = 1
+        AND dismissed_at IS NULL
+        AND type = 'CollavreGithub::GithubPrChannel'
     SQL
   end
 

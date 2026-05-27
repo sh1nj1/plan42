@@ -106,6 +106,7 @@ en:
         review_submitted_message: "**@%{author}** submitted a review (`%{state}`) on %{label}:\n\n%{body}"
         closed_message: "%{label} was **%{verb}**. Detaching channel."
         attached_message: "%{label} monitoring started.\n\n%{url}"
+        reopened_message: "%{label} was reopened. Monitoring resumed.\n\n%{url}"
         badge:
           open: "Open"
           merged: "Merged"

@@ -6,8 +6,7 @@
         `pr_state` get a status-colored badge; others fall back to no badge. %>
     <% pr_state = channel.respond_to?(:pr_state) ? channel.pr_state : nil %>
     <% chip_classes = [ "channel-chip" ]
-       chip_classes << "channel-chip--detached" if channel.respond_to?(:detached?) && channel.detached?
-       chip_classes << "channel-chip--#{pr_state}" if pr_state %>
+       chip_classes << "channel-chip--detached" if channel.detached? %>
     <span class="<%= chip_classes.join(' ') %>" data-channel-id="<%= channel.id %>">
       <% if pr_state %>
         <span class="channel-chip-badge channel-chip-badge--<%= pr_state %>"

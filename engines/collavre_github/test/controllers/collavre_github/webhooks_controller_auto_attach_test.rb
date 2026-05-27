@@ -153,14 +153,44 @@ module CollavreGithub
       }.to_json
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
-      assert_no_difference -> { GithubPrChannel.count } do
-        post "/github/webhook", params: payload,
-          headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
+      # PR events also feed the creative system-comment stream, so the reopen
+      # webhook produces 2 new comments: the feed event + the channel-scoped
+      # reopen announcement. The announcement is the one we care about here.
+      assert_difference -> { @topic.comments.count }, 1 do
+        assert_no_difference -> { GithubPrChannel.count } do
+          post "/github/webhook", params: payload,
+            headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
+        end
       end
       dismissed.reload
       assert dismissed.active?
       assert_nil dismissed.dismissed_at
       assert_equal "open", dismissed.pr_state
+      # User saw the chip silently reappear before this; verify the lifecycle
+      # is now traceable via a one-line announcement comment in the topic.
+      last = @topic.comments.order(:created_at).last
+      assert_match(/reopened|재오픈/i, last.content)
+    end
+
+    test "pull_request.opened reactivation of an already-active channel does NOT re-announce" do
+      # Idempotent webhook redelivery of `opened` shouldn't spam the topic
+      # with a reopen announcement (the creative feed comment is separate).
+      active = GithubPrChannel.create!(
+        topic_id: @topic.id,
+        config: { "repo_full_name" => @link.repository_full_name, "pr_number" => 562, "pr_state" => "open" }
+      )
+      payload = {
+        action: "opened",
+        pull_request: { number: 562, body: "Linked topic: /creatives/#{@creative.id}/topics/#{@topic.id}" },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      assert_no_difference -> { @topic.comments.count } do
+        post "/github/webhook", params: payload,
+          headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
+      end
+      assert active.reload.active?
     end
 
     test "channels table rejects duplicate (type, topic, repo, pr) at DB level" do

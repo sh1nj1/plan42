@@ -75,11 +75,23 @@ module CollavreGithub
         # surfaces the chip again even if the user had previously dismissed
         # the (post-merge) chip. Reset pr_state to "open" to match the new
         # lifecycle — the next close event repopulates it.
-        attrs = {}
-        attrs[:state] = :active unless existing.active?
-        attrs[:dismissed_at] = nil unless existing.dismissed_at.nil?
-        attrs[:config] = existing.config.merge("pr_state" => "open") if existing.pr_state != "open"
-        existing.update!(attrs) if attrs.any?
+        was_inactive = !existing.active? || !existing.dismissed_at.nil?
+        if was_inactive || existing.pr_state != "open"
+          existing.state = :active unless existing.active?
+          existing.dismissed_at = nil unless existing.dismissed_at.nil?
+          existing.pr_state = "open" if existing.pr_state != "open"
+          existing.save!
+        end
+        # When the chip silently reappears after dismiss/detach, inject a
+        # one-line announcement so the user can trace the lifecycle —
+        # mirrors the attach announcement on first create.
+        if was_inactive
+          begin
+            existing.inject_into_topic!(existing.reopened_message)
+          rescue => e
+            Rails.logger.error("[CollavreGithub] reopened announce failed: #{e.class}: #{e.message}")
+          end
+        end
         return existing
       end
       GithubPrChannel.create!(

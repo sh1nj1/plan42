@@ -169,5 +169,21 @@ module CollavreGithub
     test "pr_state defaults to open when config has no pr_state" do
       assert_equal "open", @channel.pr_state
     end
+
+    test "pr_state= rejects values outside PR_STATES" do
+      assert_raises(ArgumentError) { @channel.pr_state = "merged_" }
+      assert_raises(ArgumentError) { @channel.pr_state = "" }
+      assert_raises(ArgumentError) { @channel.pr_state = nil }
+      # Reader stays at the safe default; no garbage written.
+      assert_equal "open", @channel.pr_state
+    end
+
+    test "pr_state= persists each whitelisted value via the config writer" do
+      CollavreGithub::GithubPrChannel::PR_STATES.each do |s|
+        @channel.pr_state = s
+        @channel.save!
+        assert_equal s, @channel.reload.pr_state
+      end
+    end
   end
 end
