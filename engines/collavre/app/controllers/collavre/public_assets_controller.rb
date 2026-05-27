@@ -13,13 +13,10 @@ module Collavre
     def show
       blob = ActiveStorage::Blob.find_signed!(params[:signed_id])
       response.headers["Cache-Control"] = PUBLIC_CACHE_CONTROL
-      response.headers["Content-Type"] = blob.content_type if blob.content_type.present?
-      response.headers["Content-Disposition"] =
-        ActionDispatch::Http::ContentDisposition.format(
-          disposition: "inline",
-          filename: blob.filename.sanitized
-        )
-      send_data blob.download, type: blob.content_type, disposition: "inline"
+      send_data blob.download,
+                type: blob.content_type,
+                disposition: "inline",
+                filename: blob.filename.sanitized
     rescue ActiveSupport::MessageVerifier::InvalidSignature, ActiveRecord::RecordNotFound
       head :not_found
     end
