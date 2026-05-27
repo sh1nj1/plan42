@@ -33,9 +33,18 @@ module CollavreGithub
 
         topic = Collavre::Topic.find(topic_id)
         authorize_topic_write!(topic)
-        channel, created = find_or_attach_channel(topic, repo, pr_number)
-        channel.inject_into_topic!(channel.attached_message) if created
-        { ok: true, channel_id: channel.id, repo: repo, pr_number: pr_number }
+        channel, attach_status = find_or_attach_channel(topic, repo, pr_number)
+        # Re-seed announcement on fresh attach AND on detached->active so the
+        # chip label/link cache is repopulated after the channel was previously
+        # auto-detached (PR closed) and the user reattached it.
+        if attach_status == :created || attach_status == :reactivated
+          channel.inject_into_topic!(channel.attached_message)
+        end
+
+        result = { ok: true, channel_id: channel.id, repo: repo, pr_number: pr_number }
+        warning = ensure_webhook_events(topic, repo)
+        result[:webhook_warning] = warning if warning
+        result
       end
 
       private
@@ -56,24 +65,35 @@ module CollavreGithub
           "No write permission on topic #{topic.id}"
       end
 
-      sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns([ CollavreGithub::GithubPrChannel, T::Boolean ]) }
+      # Returns the channel plus a status symbol so callers can distinguish:
+      #   :created     - new row inserted
+      #   :reactivated - existing detached row flipped back to active
+      #   :noop        - row was already active (idempotent re-attach)
+      sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns([ CollavreGithub::GithubPrChannel, Symbol ]) }
       def find_or_attach_channel(topic, repo, pr_number)
         existing = lookup_channel(topic, repo, pr_number)
         if existing
-          existing.update!(state: :active) unless existing.active?
-          return [ existing, false ]
+          if existing.active?
+            return [ existing, :noop ]
+          end
+          existing.update!(state: :active)
+          return [ existing, :reactivated ]
         end
         created = CollavreGithub::GithubPrChannel.create!(
           topic_id: topic.id,
           config: { "repo_full_name" => repo, "pr_number" => pr_number }
         )
-        [ created, true ]
+        [ created, :created ]
       rescue ActiveRecord::RecordNotUnique
         # Concurrent caller won the race; reuse the row they created.
         existing = lookup_channel(topic, repo, pr_number)
         raise unless existing
-        existing.update!(state: :active) unless existing.active?
-        [ existing, false ]
+        if existing.active?
+          [ existing, :noop ]
+        else
+          existing.update!(state: :active)
+          [ existing, :reactivated ]
+        end
       end
 
       sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns(T.nilable(CollavreGithub::GithubPrChannel)) }
@@ -81,6 +101,52 @@ module CollavreGithub
         CollavreGithub::GithubPrChannel.where(topic_id: topic.id).find do |c|
           c.repo_full_name.to_s.downcase == repo.downcase && c.pr_number == pr_number
         end
+      end
+
+      # Make sure the repo's webhook subscribes to the PR-channel events
+      # (issue_comment / pull_request_review / pull_request_review_comment).
+      # Without these, GitHub never delivers comment payloads and the channel
+      # silently misses them — exactly the bug that motivated this method.
+      # Returns a warning string when provisioning cannot run or fails; nil on
+      # success so the MCP response stays clean.
+      def ensure_webhook_events(topic, repo)
+        link = primary_repository_link_for(topic, repo)
+        return "no RepositoryLink found for #{repo} in topic creative scope; webhook events not auto-provisioned" unless link
+
+        account = link.github_account
+        return "RepositoryLink for #{repo} has no GitHub account; webhook events not auto-provisioned" unless account
+
+        CollavreGithub::WebhookProvisioner.ensure_for_links(
+          account: account,
+          links: [ link ],
+          webhook_url: github_webhook_url
+        )
+        nil
+      rescue => e
+        Rails.logger.warn("[pr_monitor] webhook provisioning failed for #{repo}: #{e.class}: #{e.message}")
+        "webhook provisioning failed: #{e.message}"
+      end
+
+      # Pick the canonical RepositoryLink whose subtree contains this topic.
+      # Mirrors WebhookProvisioner's "primary link" definition (lowest id) so
+      # the secret/events stay aligned with whatever the integrations controller
+      # would have provisioned.
+      def primary_repository_link_for(topic, repo)
+        creative = topic.creative
+        return nil unless creative
+
+        candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
+        CollavreGithub::RepositoryLink
+          .where("LOWER(repository_full_name) = ?", repo.downcase)
+          .where(creative_id: candidate_ids)
+          .order(:id)
+          .first
+      end
+
+      def github_webhook_url
+        CollavreGithub::Engine.routes.url_helpers.webhooks_url(
+          Rails.application.config.action_mailer.default_url_options
+        )
       end
     end
   end

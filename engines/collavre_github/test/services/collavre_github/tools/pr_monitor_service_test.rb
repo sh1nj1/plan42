@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
-require "test_helper"
+# Load the engine's test_helper (not the app's) so WebMock + GitHub stubs are
+# available for the webhook-provisioning test below.
+require_relative "../../../test_helper"
 
 module CollavreGithub
   module Tools
@@ -122,6 +124,106 @@ module CollavreGithub
         assert result[:ok]
         assert_equal channel.id, result[:channel_id]
         assert channel.reload.active?
+      end
+
+      test "detached->active re-attach re-seeds the chip label/link cache and announces in the topic" do
+        # Simulate a previously-attached channel that was auto-detached when
+        # the PR closed: latest_label / latest_link were populated at one
+        # point but no fresh announcement has run since reactivation.
+        channel = GithubPrChannel.create!(
+          topic_id: @topic.id,
+          config: { "repo_full_name" => "owner/repo", "pr_number" => 77 },
+          state: :detached,
+          latest_label: nil,
+          latest_link: nil
+        )
+
+        assert_difference -> { @creative.comments.count }, 1 do
+          PrMonitorService.new.call(
+            topic_id: @topic.id,
+            pr_url: "https://github.com/owner/repo/pull/77"
+          )
+        end
+
+        channel.reload
+        assert channel.active?
+        assert_equal "PR #77", channel.latest_label
+        assert_equal "https://github.com/owner/repo/pull/77", channel.latest_link
+      end
+
+      test "active->active idempotent re-attach does not re-announce" do
+        PrMonitorService.new.call(topic_id: @topic.id, pr_url: "https://github.com/owner/repo/pull/77")
+        assert_no_difference -> { @creative.comments.count } do
+          PrMonitorService.new.call(topic_id: @topic.id, pr_url: "https://github.com/owner/repo/pull/77")
+        end
+      end
+
+      test "returns webhook_warning when no RepositoryLink covers the topic creative scope" do
+        result = PrMonitorService.new.call(
+          topic_id: @topic.id,
+          pr_url: "https://github.com/owner/repo/pull/77"
+        )
+        # No CollavreGithub::RepositoryLink exists for owner/repo in @creative's
+        # subtree, so pr_monitor cannot provision webhook events. It should
+        # surface this in the response rather than silently succeeding.
+        assert_includes result[:webhook_warning].to_s, "no RepositoryLink found"
+      end
+
+      test "auto-provisions PR-channel webhook events when a RepositoryLink exists" do
+        account = CollavreGithub::Account.create!(
+          user: @user,
+          github_uid: "pr-monitor-prov-1",
+          login: "owner",
+          name: @user.name,
+          token: "ghp-test-token-prov"
+        )
+        link = CollavreGithub::RepositoryLink.create!(
+          creative: @creative,
+          github_account: account,
+          repository_full_name: "owner/repo",
+          webhook_secret: "secret-1234567890"
+        )
+
+        # Existing hook on the repo is subscribed only to `pull_request` —
+        # exactly the production bug. WebhookProvisioner must PATCH it to add
+        # the PR-channel events.
+        webhook_url = CollavreGithub::Engine.routes.url_helpers.webhooks_url(
+          Rails.application.config.action_mailer.default_url_options
+        )
+        existing_hook_id = 42424242
+        # Use regex so Octokit's `?per_page=100` query suffix still matches.
+        stub_request(:get, %r{https://api\.github\.com/repos/owner/repo/hooks})
+          .to_return(
+            status: 200,
+            body: [ { id: existing_hook_id, config: { url: webhook_url }, events: [ "pull_request" ] } ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        patched_events = nil
+        edit_stub = stub_request(:patch, "https://api.github.com/repos/owner/repo/hooks/#{existing_hook_id}")
+          .with do |req|
+            body = JSON.parse(req.body)
+            patched_events = body["events"]
+            true
+          end
+          .to_return(
+            status: 200,
+            body: { id: existing_hook_id, active: true }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        result = PrMonitorService.new.call(
+          topic_id: @topic.id,
+          pr_url: "https://github.com/owner/repo/pull/77"
+        )
+
+        assert result[:ok]
+        assert_nil result[:webhook_warning]
+        assert_requested(edit_stub)
+        assert_includes patched_events, "issue_comment"
+        assert_includes patched_events, "pull_request_review"
+        assert_includes patched_events, "pull_request_review_comment"
+        assert_includes patched_events, "pull_request"
       end
     end
   end

@@ -1,7 +1,13 @@
 module CollavreGithub
   class WebhookProvisioner
-    EVENTS = %w[pull_request].freeze
-    EVENTS_WITH_PUSH = %w[pull_request push].freeze
+    # PR channel webhooks need every event GithubPrChannel handles. Without
+    # `issue_comment` / `pull_request_review` / `pull_request_review_comment`
+    # GitHub never delivers the relevant deliveries, so pr_monitor would attach
+    # a channel that silently misses comments. `pull_request` is required by
+    # the auto-attach + close detection paths.
+    CHANNEL_EVENTS = %w[issue_comment pull_request_review pull_request_review_comment].freeze
+    EVENTS = (%w[pull_request] + CHANNEL_EVENTS).freeze
+    EVENTS_WITH_PUSH = (%w[pull_request push] + CHANNEL_EVENTS).freeze
     CONTENT_TYPE = "json".freeze
 
     def self.ensure_for_links(account:, links:, webhook_url:)
