@@ -71,10 +71,13 @@ module CollavreGithub
         c.repo_full_name.to_s.downcase == repo && c.pr_number == pr_number
       end
       if existing
-        # Clear dismissed_at + flip state in one update so a reopened PR
-        # surfaces the chip again even if the user had previously dismissed
-        # the (post-merge) chip. Reset pr_state to "open" to match the new
-        # lifecycle — the next close event repopulates it.
+        # Only `reopened` resurrects a dismissed/detached chip. A redelivered
+        # `opened` webhook (GitHub retries 5xx, or duplicate fan-out) must NOT
+        # undo a user's X dismissal — the PR was not actually reopened, and
+        # silently bringing the chip back would defeat the dismissal UX. For
+        # `opened` on an existing row we just no-op (idempotent redelivery).
+        return existing unless payload["action"] == "reopened"
+
         was_inactive = !existing.active? || !existing.dismissed_at.nil?
         if was_inactive || existing.pr_state != "open"
           existing.state = :active unless existing.active?

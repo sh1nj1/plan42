@@ -102,7 +102,10 @@ module CollavreGithub
       assert_equal child_topic.id, channel.topic_id
     end
 
-    test "pull_request.opened reactivates a detached channel" do
+    test "pull_request.opened redelivery does NOT reactivate a detached channel" do
+      # A `pull_request.opened` redelivery (GitHub retries on 5xx or duplicate
+      # fan-out) must not undo a prior detach. Only `reopened` reflects an
+      # actual lifecycle change on the GitHub side.
       detached = GithubPrChannel.create!(
         topic_id: @topic.id,
         config: { "repo_full_name" => @link.repository_full_name, "pr_number" => 558 },
@@ -123,7 +126,35 @@ module CollavreGithub
         post "/github/webhook", params: payload,
           headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
       end
-      assert detached.reload.active?
+      assert detached.reload.detached?
+    end
+
+    test "pull_request.opened redelivery does NOT undo a dismissed chip" do
+      # User clicks X on an open PR's chip → dismiss! sets dismissed_at and
+      # flips state to detached. A subsequent `opened` redelivery from GitHub
+      # must leave the dismissal intact (no dismissed_at clear, no reactivate,
+      # no announce). Only `reopened` is allowed to resurrect a dismissed chip.
+      dismissed = GithubPrChannel.create!(
+        topic_id: @topic.id,
+        config: { "repo_full_name" => @link.repository_full_name, "pr_number" => 563, "pr_state" => "open" },
+        state: :detached,
+        dismissed_at: 1.hour.ago
+      )
+      original_dismissed_at = dismissed.dismissed_at
+      payload = {
+        action: "opened",
+        pull_request: { number: 563, body: "Linked topic: /creatives/#{@creative.id}/topics/#{@topic.id}" },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      assert_no_difference -> { @topic.comments.count } do
+        post "/github/webhook", params: payload,
+          headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
+      end
+      dismissed.reload
+      assert dismissed.detached?
+      assert_equal original_dismissed_at.to_i, dismissed.dismissed_at.to_i
     end
 
     test "pull_request.reopened reactivates a dismissed+detached channel and resets pr_state" do
