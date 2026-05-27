@@ -18,7 +18,7 @@ users = {
   be2:      { name: "윤백엔드", email: "be2@collabre.dev" },
   designer: { name: "조디자인", email: "design@collabre.dev" },
   qa:       { name: "최테스트", email: "qa@collabre.dev" },
-  devops:   { name: "강데옵스", email: "devops@collabre.dev" },
+  devops:   { name: "강데옵스", email: "devops@collabre.dev" }
 }
 
 created_users = {}
@@ -109,7 +109,7 @@ create_creative(parent: onboard, user: pm_user, desc: html("회사 문화와 원
 create_creative(parent: onboard, user: created_users[:designer], desc: html("디자인 시스템 사용법"), progress: 0.5, seq: 4)
 
 # ─── Context: API v2에 온보딩 가이드를 컨텍스트로 연결 ───
-ms_api.update!(data: { "context_ids" => [onboard.id] })
+ms_api.update!(data: { "context_ids" => [ onboard.id ] })
 
 # ─── Topics & Comments (채팅) ───
 # v2 프로젝트에 토픽 생성
