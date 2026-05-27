@@ -272,6 +272,77 @@ module CollavreGithub
       assert_nil dismissed.dismissed_at
     end
 
+    test "pull_request.reopened without topic link in PR body still reactivates an existing manually-attached channel" do
+      # Channels created via `pr_monitor` MCP tool (manual attach) have a valid
+      # GithubPrChannel row but the PR description never had a topic link. When
+      # the PR is later reopened, GitHub's webhook payload has no topic link in
+      # body. Without this regression path, `maybe_auto_attach_channel` would
+      # short-circuit at the PrTopicLinkParser gate and never reactivate the
+      # existing dismissed/detached row; dispatch_to_channels (.active scope)
+      # would then skip the chip and the PR would go unmonitored after reopen.
+      dismissed = GithubPrChannel.create!(
+        topic_id: @topic.id,
+        config: {
+          "repo_full_name" => @link.repository_full_name,
+          "pr_number" => 570,
+          "pr_state" => "closed_without_merge"
+        },
+        state: :detached,
+        dismissed_at: 2.hours.ago
+      )
+
+      payload = {
+        action: "reopened",
+        pull_request: { number: 570, body: "no topic link in this PR body" },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      assert_difference -> { @topic.comments.count }, 1 do
+        post "/github/webhook", params: payload,
+          headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
+      end
+      dismissed.reload
+      assert dismissed.active?
+      assert_nil dismissed.dismissed_at
+      assert_equal "open", dismissed.pr_state
+      last = @topic.comments.order(:created_at).last
+      assert_match(/reopened|재오픈/i, last.content)
+    end
+
+    test "pull_request.reopened does NOT reactivate channel whose creative no longer has the repo link" do
+      # If the RepositoryLink for this repo was removed (or the channel's topic
+      # was moved to a creative subtree outside the link scope), the reopen
+      # webhook must not resurrect a stale monitor for a different tenant.
+      foreign_creative = creatives(:childless_creative)
+      foreign_topic = Collavre::Topic.create!(creative: foreign_creative, user: @user, name: "Foreign")
+      stale = GithubPrChannel.create!(
+        topic_id: foreign_topic.id,
+        config: {
+          "repo_full_name" => @link.repository_full_name,
+          "pr_number" => 571,
+          "pr_state" => "merged"
+        },
+        state: :detached,
+        dismissed_at: 1.hour.ago
+      )
+
+      payload = {
+        action: "reopened",
+        pull_request: { number: 571, body: "no link" },
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+      sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+
+      assert_no_difference -> { foreign_topic.comments.count } do
+        post "/github/webhook", params: payload,
+          headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
+      end
+      stale.reload
+      assert stale.detached?
+      assert_not_nil stale.dismissed_at
+    end
+
     test "channels table rejects duplicate (type, topic, repo, pr) at DB level" do
       GithubPrChannel.create!(
         topic_id: @topic.id,
