@@ -119,6 +119,88 @@ module Collavre
         assert_equal 0, Collavre::PreviewChannel.where(topic_id: @topic.id).count
       end
 
+      test "rejects javascript: URL schemes to prevent chip-link XSS" do
+        assert_raises(ArgumentError) do
+          PreviewAttachService.new.call(
+            topic_id: @topic.id,
+            preview_url: "javascript:alert(1)",
+            worktree_id: "wt-1"
+          )
+        end
+        assert_equal 0, Collavre::PreviewChannel.where(topic_id: @topic.id).count
+      end
+
+      test "rejects data: URL schemes" do
+        assert_raises(ArgumentError) do
+          PreviewAttachService.new.call(
+            topic_id: @topic.id,
+            preview_url: "data:text/html,<script>alert(1)</script>",
+            worktree_id: "wt-1"
+          )
+        end
+      end
+
+      test "rejects malformed URLs" do
+        assert_raises(ArgumentError) do
+          PreviewAttachService.new.call(
+            topic_id: @topic.id,
+            preview_url: "not a url at all",
+            worktree_id: "wt-1"
+          )
+        end
+      end
+
+      test "accepts https preview URLs (e.g. tunneled dev servers)" do
+        result = PreviewAttachService.new.call(
+          topic_id: @topic.id,
+          preview_url: "https://wt1.preview.example.com",
+          worktree_id: "wt-1"
+        )
+        assert result[:ok]
+        assert_equal :created, result[:status]
+      end
+
+      test "refreshes preview_url on noop reattach so port changes don't leave dead chip links" do
+        PreviewAttachService.new.call(
+          topic_id: @topic.id,
+          preview_url: "http://localhost:4001",
+          worktree_id: "wt-1"
+        )
+
+        # Same worktree, fresh URL — server restarted on a new port while the
+        # chip is still active. Must update config silently (no announcement).
+        assert_no_difference -> { @creative.comments.count } do
+          result = PreviewAttachService.new.call(
+            topic_id: @topic.id,
+            preview_url: "http://localhost:4099",
+            worktree_id: "wt-1"
+          )
+          assert_equal :noop, result[:status]
+        end
+
+        channel = Collavre::PreviewChannel.where(topic_id: @topic.id).first
+        assert_equal "http://localhost:4099", channel.preview_url
+      end
+
+      test "updates label on noop reattach when caller supplies a new label" do
+        PreviewAttachService.new.call(
+          topic_id: @topic.id,
+          preview_url: "http://localhost:4001",
+          worktree_id: "wt-1",
+          label: "Preview #1"
+        )
+
+        PreviewAttachService.new.call(
+          topic_id: @topic.id,
+          preview_url: "http://localhost:4001",
+          worktree_id: "wt-1",
+          label: "Preview #1 (renamed)"
+        )
+
+        channel = Collavre::PreviewChannel.where(topic_id: @topic.id).first
+        assert_equal "Preview #1 (renamed)", channel.default_label
+      end
+
       test "custom label is persisted and surfaces in the chip" do
         result = PreviewAttachService.new.call(
           topic_id: @topic.id,

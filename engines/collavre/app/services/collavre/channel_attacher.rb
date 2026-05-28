@@ -14,10 +14,15 @@ module Collavre
     #
     # `lookup` is called twice in the unique-violation race path, so it must
     # be a fresh query each call (not a captured AR record).
-    def self.call(channel_class:, lookup:, create_attrs:, on_reactivate: nil)
+    #
+    # `on_noop` runs when the existing channel is still active+visible and we
+    # would otherwise short-circuit. Preview channels use it to silently refresh
+    # config (e.g. new port after a restart) so the chip link never points at a
+    # dead server while reporting success.
+    def self.call(channel_class:, lookup:, create_attrs:, on_reactivate: nil, on_noop: nil)
       existing = lookup.call
       if existing
-        return [ existing, :noop ] if existing.active? && existing.dismissed_at.nil?
+        return noop(existing, on_noop) if existing.active? && existing.dismissed_at.nil?
         reactivate(existing, on_reactivate)
         return [ existing, :reactivated ]
       end
@@ -26,7 +31,7 @@ module Collavre
       existing = lookup.call
       raise unless existing
       if existing.active? && existing.dismissed_at.nil?
-        [ existing, :noop ]
+        noop(existing, on_noop)
       else
         reactivate(existing, on_reactivate)
         [ existing, :reactivated ]
@@ -40,5 +45,14 @@ module Collavre
       channel.save!
     end
     private_class_method :reactivate
+
+    def self.noop(channel, on_noop)
+      if on_noop
+        on_noop.call(channel)
+        channel.save! if channel.changed?
+      end
+      [ channel, :noop ]
+    end
+    private_class_method :noop
   end
 end

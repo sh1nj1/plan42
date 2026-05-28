@@ -34,8 +34,24 @@ module Tools
       ).returns(T::Hash[Symbol, T.untyped])
     end
     def call(topic_id:, preview_url:, worktree_id:, label: nil)
+      validate_preview_url!(preview_url)
+
       topic = Collavre::Topic.find(topic_id)
       Collavre::Tools::TopicAuthorizer.authorize_write!(topic)
+
+      refresh_config = ->(c) {
+        # Re-attach against the same worktree may carry a fresh URL/label
+        # (e.g. port reassignment after a restart). Refresh the persisted
+        # config so the chip link goes to the live server, not the dead one
+        # — applies both when reactivating a stopped chip and when the chip
+        # is still active (:noop), which is the common dev-restart case.
+        new_config = c.config.merge(
+          "preview_url" => preview_url,
+          "preview_state" => "running"
+        )
+        new_config["label"] = label if label
+        c.config = new_config
+      }
 
       channel, status = Collavre::ChannelAttacher.call(
         channel_class: Collavre::PreviewChannel,
@@ -49,17 +65,8 @@ module Tools
             "label" => label
           }.compact
         },
-        on_reactivate: ->(c) {
-          # Re-attach against the same worktree may carry a fresh URL/label
-          # (e.g. port reassignment after a restart). Refresh the persisted
-          # config so the chip link goes to the live server, not the dead one.
-          new_config = c.config.merge(
-            "preview_url" => preview_url,
-            "preview_state" => "running"
-          )
-          new_config["label"] = label if label
-          c.config = new_config
-        }
+        on_reactivate: refresh_config,
+        on_noop: refresh_config
       )
 
       # Mirror PR-channel UX: only the first attach (and a true reactivation
@@ -79,6 +86,24 @@ module Tools
     end
 
     private
+
+    ALLOWED_PREVIEW_URL_SCHEMES = %w[http https].freeze
+    private_constant :ALLOWED_PREVIEW_URL_SCHEMES
+
+    # The preview_url is rendered directly as the chip's <a href> via ERB,
+    # which escapes quotes but does NOT reject dangerous URL schemes. Without
+    # this gate a write-capable MCP caller could persist `javascript:...` or
+    # `data:...` and turn the chip into a one-click XSS for any topic viewer.
+    sig { params(preview_url: String).void }
+    def validate_preview_url!(preview_url)
+      uri = URI.parse(preview_url)
+      unless ALLOWED_PREVIEW_URL_SCHEMES.include?(uri.scheme&.downcase)
+        raise ArgumentError, "preview_url must be http(s); got: #{preview_url.inspect}"
+      end
+      raise ArgumentError, "preview_url must include a host" if uri.host.to_s.empty?
+    rescue URI::InvalidURIError
+      raise ArgumentError, "preview_url is not a valid URI: #{preview_url.inspect}"
+    end
 
     # config is JSON, so worktree_id matching is a Ruby-side scan over the
     # topic's preview channels. With only a handful of previews per topic in
