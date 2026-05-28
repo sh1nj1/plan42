@@ -51,6 +51,14 @@ module Tools
         )
         new_config["label"] = label if label
         c.config = new_config
+        # Also refresh the cached chip fields that record_event! seeded on the
+        # first attach. The chip partial renders latest_link.presence ||
+        # default_link, so without this update a :noop reattach with a new port
+        # leaves the chip pointing at the dead URL even though config is fresh.
+        # (On :reactivate the subsequent inject_into_topic! would overwrite
+        # these via record_event! anyway, so updating here is harmless.)
+        c.latest_link = preview_url
+        c.latest_label = c.default_label
       }
 
       channel, status = Collavre::ChannelAttacher.call(

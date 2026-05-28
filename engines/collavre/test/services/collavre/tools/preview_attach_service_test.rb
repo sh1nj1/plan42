@@ -180,6 +180,10 @@ module Collavre
 
         channel = Collavre::PreviewChannel.where(topic_id: @topic.id).first
         assert_equal "http://localhost:4099", channel.preview_url
+        # Chip partial renders latest_link.presence || default_link, so refreshing
+        # config alone is not enough — the cached field must also update or the
+        # chip keeps pointing at the dead port.
+        assert_equal "http://localhost:4099", channel.latest_link
       end
 
       test "updates label on noop reattach when caller supplies a new label" do
@@ -199,6 +203,9 @@ module Collavre
 
         channel = Collavre::PreviewChannel.where(topic_id: @topic.id).first
         assert_equal "Preview #1 (renamed)", channel.default_label
+        # Cached chip label must follow the renamed config, not the original
+        # announcement value seeded by record_event!.
+        assert_equal "Preview #1 (renamed)", channel.latest_label
       end
 
       test "custom label is persisted and surfaces in the chip" do
