@@ -32,7 +32,7 @@ module CollavreGithub
         pr_number = m[2].to_i
 
         topic = Collavre::Topic.find(topic_id)
-        authorize_topic_write!(topic)
+        Collavre::Tools::TopicAuthorizer.authorize_write!(topic)
         channel, attach_status = find_or_attach_channel(topic, repo, pr_number)
         # Re-seed announcement on fresh attach AND on detached->active so the
         # chip label/link cache is repopulated after the channel was previously
@@ -49,60 +49,25 @@ module CollavreGithub
 
       private
 
-      # Attaching a channel injects external messages into the topic, so it is a
-      # write-equivalent mutation. Mirror CreativePermissionGuard#require_creative_write!
-      # against the topic's effective_origin so MCP callers cannot drop monitors
-      # onto topics they would not be allowed to comment on.
-      def authorize_topic_write!(topic)
-        creative = topic.creative&.effective_origin
-        raise ArgumentError, "Topic has no creative" unless creative
-
-        user = Collavre::Current.user
-        return if creative.user == user
-        return if user && creative.has_permission?(user, :write)
-
-        raise CollavreGithub::Tools::PermissionDeniedError,
-          "No write permission on topic #{topic.id}"
-      end
-
-      # Returns the channel plus a status symbol so callers can distinguish:
-      #   :created     - new row inserted
-      #   :reactivated - existing detached row flipped back to active
-      #   :noop        - row was already active (idempotent re-attach)
+      # Wraps Collavre::ChannelAttacher with PR-specific create attrs and a
+      # PR-specific reactivation reset (pr_state back to "open"). The shared
+      # attacher handles the create/reactivate/noop lifecycle, including the
+      # concurrent insert race and dismissed_at clearing — Mirror
+      # WebhooksController#maybe_auto_attach_channel reactivation, so the
+      # chip resurfaces under the not_dismissed render scope.
       sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns([ CollavreGithub::GithubPrChannel, Symbol ]) }
       def find_or_attach_channel(topic, repo, pr_number)
-        existing = lookup_channel(topic, repo, pr_number)
-        if existing
-          return [ existing, :noop ] if existing.active? && existing.dismissed_at.nil?
-          reactivate!(existing)
-          return [ existing, :reactivated ]
-        end
-        created = CollavreGithub::GithubPrChannel.create!(
-          topic_id: topic.id,
-          config: { "repo_full_name" => repo, "pr_number" => pr_number, "pr_state" => "open" }
+        Collavre::ChannelAttacher.call(
+          channel_class: CollavreGithub::GithubPrChannel,
+          lookup: -> { lookup_channel(topic, repo, pr_number) },
+          create_attrs: {
+            topic_id: topic.id,
+            config: { "repo_full_name" => repo, "pr_number" => pr_number, "pr_state" => "open" }
+          },
+          on_reactivate: ->(channel) {
+            channel.pr_state = "open" if channel.pr_state != "open"
+          }
         )
-        [ created, :created ]
-      rescue ActiveRecord::RecordNotUnique
-        # Concurrent caller won the race; reuse the row they created.
-        existing = lookup_channel(topic, repo, pr_number)
-        raise unless existing
-        if existing.active? && existing.dismissed_at.nil?
-          [ existing, :noop ]
-        else
-          reactivate!(existing)
-          [ existing, :reactivated ]
-        end
-      end
-
-      # Mirror WebhooksController#maybe_auto_attach_channel reactivation: clear
-      # dismissed_at and reset pr_state so the chip surfaces again under the
-      # not_dismissed render scope. Otherwise pr_monitor would report success
-      # and inject the attached message while the chip stayed hidden.
-      def reactivate!(channel)
-        channel.state = :active unless channel.active?
-        channel.dismissed_at = nil unless channel.dismissed_at.nil?
-        channel.pr_state = "open" if channel.pr_state != "open"
-        channel.save!
       end
 
       sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns(T.nilable(CollavreGithub::GithubPrChannel)) }

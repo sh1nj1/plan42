@@ -26,6 +26,19 @@ module Collavre
       nil
     end
 
+    # Badge interface for the typing-indicator chip. Subclasses override
+    # `badge_state` to drive the chip badge color (the value becomes a CSS
+    # modifier: channel-chip-badge--<state>), and `badge_title` to provide a
+    # localized title / aria-label string. Returning nil from `badge_state`
+    # hides the badge entirely.
+    def badge_state
+      nil
+    end
+
+    def badge_title
+      nil
+    end
+
     def detach!
       update!(state: :detached)
     end

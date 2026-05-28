@@ -1,0 +1,11 @@
+ko:
+  collavre:
+    channels:
+      detach: "해제"
+    channel:
+      preview:
+        label_default: "프리뷰"
+        attached_message: "%{label} 서버가 시작되었습니다.\n\n%{url}"
+        badge:
+          running: "실행 중"
+          stopped: "중지됨"

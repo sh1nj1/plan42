@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_27_000100) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_28_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -88,6 +88,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_27_000100) do
     t.integer "topic_id", null: false
     t.string "type", null: false
     t.datetime "updated_at", null: false
+    t.index "topic_id, json_extract(config, '$.worktree_id')", name: "index_channels_on_topic_preview_worktree", unique: true, where: "type = 'Collavre::PreviewChannel'"
     t.index "type, topic_id, json_extract(config, '$.repo_full_name'), json_extract(config, '$.pr_number')", name: "index_channels_on_type_topic_repo_pr", unique: true
     t.index ["dismissed_at"], name: "index_channels_on_dismissed_at"
     t.index ["topic_id"], name: "index_channels_on_topic_id"

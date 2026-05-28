@@ -1,0 +1,11 @@
+en:
+  collavre:
+    channels:
+      detach: "Detach"
+    channel:
+      preview:
+        label_default: "Preview"
+        attached_message: "%{label} server started.\n\n%{url}"
+        badge:
+          running: "Running"
+          stopped: "Stopped"
