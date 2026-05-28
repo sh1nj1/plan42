@@ -24,6 +24,8 @@ module Collavre
     has_many :comment_read_pointers, class_name: "Collavre::CommentReadPointer", dependent: :delete_all
     has_many :comment_snapshots, class_name: "Collavre::CommentSnapshot", dependent: :destroy
 
+    has_many_attached :files, dependent: :purge_later
+
     has_closure_tree order: :sequence, name_column: :description, hierarchy_table_name: "creative_hierarchies"
 
     # --- Archive scopes ---
