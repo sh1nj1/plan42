@@ -1,0 +1,51 @@
+en:
+  collavre:
+    landing:
+      meta:
+        title: "Where Teams Think Together"
+        description: "The collaborative workspace where hierarchical creatives, AI agents, and real-time chat come together. Organize, collaborate, and ship — with AI as your teammate."
+      hero:
+        headline_html: "A platform for both AI agents and people."
+        subline: "Achieve sustainable productivity gains."
+        learn_more: "Learn More"
+      demo:
+        title: "See it in action"
+        placeholder: "Product demo video goes here"
+      problem:
+        title: "Your tools are failing you"
+        notion:
+          title: "Notion"
+          desc: "Docs become graveyards. Nobody edits someone else's page. Search replaces structure."
+        jira:
+          title: "Jira"
+          desc: "Great for tasks, terrible for knowledge. Results never sync back to the wiki. Information overload."
+        slack:
+          title: "Slack"
+          desc: "Conversations vanish in the stream. Flat channel lists explode. Context is lost daily."
+      features:
+        title: "Everything in one living tree"
+        subtitle: "Creatives are hierarchical blocks that organize your work, track progress, and carry context — all at once."
+        tree:
+          title: "Hierarchical Creatives"
+          desc: "Organize work as a tree. Drag, link, and reuse blocks across projects. Progress rolls up automatically."
+        ai:
+          title: "AI Agents as Teammates"
+          desc: "Add AI agents to any conversation. They review, collaborate, and respond to @mentions — just like a colleague."
+        context:
+          title: "Context System"
+          desc: "Reduce cognitive load for people, and inject the knowledge and skills AI needs."
+        chat:
+          title: "Real-time Chat & Topics"
+          desc: "Every creative has a chat. Organize conversations with topics, move messages between creatives, and keep discussions focused."
+        integrations:
+          title: "Integrations"
+          desc: "GitHub PRs auto-analyzed, Slack messages synced, Google Calendar events linked, MCP tools built-in."
+        progress:
+          title: "Live Progress"
+          desc: "Track completion from leaf to root. Filter by tags, plans, or status. See your project's real health at a glance."
+      cta:
+        title: "Ready to collaborate smarter?"
+        subtitle: "Start organizing your work with AI-powered context."
+        start: "Get Started"
+      footer:
+        rights: "All rights reserved."
