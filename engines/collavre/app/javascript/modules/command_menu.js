@@ -85,7 +85,8 @@ if (!commandMenuInitialized) {
 
     function currentTopicIdFromController(popupEl) {
       const controller = window.Stimulus?.getControllerForElementAndIdentifier(popupEl, 'comments--topics')
-      const id = controller?.currentTopicId
+      if (!controller) return ''
+      const id = controller.currentTopicId || controller.mainTopicId
       return id ? String(id) : ''
     }
 
