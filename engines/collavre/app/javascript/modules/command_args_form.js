@@ -20,13 +20,16 @@ export default class CommandArgsForm {
    * @param {Element}  opts.container - if set, the modal is scoped inside this element
    *                                    (overlay covers only the container, content is blurred)
    * @param {Function} opts.creativeIdFn - returns current creative ID for mention search
+   * @param {Function} opts.contextValuesFn - returns { creative_id, topic_id } used to
+   *                                          pre-fill params whose name matches
    */
-  constructor({ onSubmit, onCancel, labels, container, creativeIdFn } = {}) {
+  constructor({ onSubmit, onCancel, labels, container, creativeIdFn, contextValuesFn } = {}) {
     this.onSubmit = onSubmit || (() => {})
     this.onCancel = onCancel || (() => {})
     this.labels = labels || { submit: 'OK', cancel: 'Cancel' }
     this.container = container || null
     this._creativeIdFn = creativeIdFn || (() => null)
+    this._contextValuesFn = contextValuesFn || (() => ({}))
     this.command = null
     this.overlay = null
     this.dialog = null
@@ -173,6 +176,18 @@ export default class CommandArgsForm {
     host.appendChild(this.dialog)
   }
 
+  _contextDefaultFor(paramName) {
+    if (paramName !== 'creative_id' && paramName !== 'topic_id') return null
+    let ctx
+    try {
+      ctx = this._contextValuesFn() || {}
+    } catch (_e) {
+      return null
+    }
+    const value = ctx[paramName]
+    return value == null || value === '' ? null : value
+  }
+
   _buildField(param, index) {
     const wrapper = document.createElement('div')
     wrapper.className = 'modal-dialog-field'
@@ -241,9 +256,12 @@ export default class CommandArgsForm {
     input.dataset.paramRequired = param.required ? 'true' : 'false'
     if (param.description) input.placeholder = param.description
 
-    // Pre-fill with default value from creative tool defaults
-    if (param.default_value != null) {
-      input.value = String(param.default_value)
+    // Pre-fill priority: explicit default_value (from creative tool config) wins,
+    // otherwise auto-fill creative_id / topic_id from the current chat context.
+    const contextFill = this._contextDefaultFor(param.name)
+    const prefill = param.default_value != null ? param.default_value : contextFill
+    if (prefill != null && prefill !== '') {
+      input.value = String(prefill)
       if (input.tagName === 'TEXTAREA') {
         requestAnimationFrame(() => this._autoResize(input))
       }

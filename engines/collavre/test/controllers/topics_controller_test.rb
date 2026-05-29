@@ -8,6 +8,21 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     sign_in_as @user, password: "password"
   end
 
+  test "index returns effective_creative_id for non-linked creative" do
+    get collavre.creative_topics_url(@creative), as: :json
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal @creative.id, json["effective_creative_id"]
+  end
+
+  test "index returns effective_creative_id for linked creative (origin id)" do
+    linked = Collavre::Creative.create!(user: @user, description: "linked wrapper", origin: @creative)
+    get collavre.creative_topics_url(linked), as: :json
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal @creative.id, json["effective_creative_id"]
+  end
+
   test "should create topic and broadcast" do
     assert_difference("Topic.count") do
       post collavre.creative_topics_url(@creative), params: { topic: { name: "New Strategy" } }, as: :json

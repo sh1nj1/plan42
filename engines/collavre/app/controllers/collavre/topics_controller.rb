@@ -32,7 +32,8 @@ module Collavre
         last_topic_id: last_topic_id,
         is_inbox: @creative.inbox?,
         system_topic_id: system_topic_id,
-        main_topic_id: main_topic_id
+        main_topic_id: main_topic_id,
+        effective_creative_id: @creative.id
       }
     end
 
