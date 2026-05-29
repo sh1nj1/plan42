@@ -102,7 +102,7 @@ module Collavre
       ensure
         # Guarantee resource release for all paths except pending_approval
         tracker.release!(resource_id, tokens_used: 0) if should_release && tracker && resource_id
-        if task&.trigger_event_payload&.key?("topic") && %w[done failed cancelled escalated delegated].include?(task.reload.status)
+        if task&.trigger_event_payload&.key?("topic") && %w[done failed cancelled escalated].include?(task.reload.status)
           Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
         end
       end

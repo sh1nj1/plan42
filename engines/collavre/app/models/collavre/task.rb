@@ -15,7 +15,7 @@ module Collavre
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
 
     scope :running_for_topic, ->(topic_id, creative_id = nil) {
-      rel = where(topic_id: topic_id, status: "running")
+      rel = where(topic_id: topic_id, status: %w[running delegated])
       rel = rel.where(creative_id: creative_id) if creative_id
       rel
     }

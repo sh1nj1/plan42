@@ -176,6 +176,80 @@ module Collavre
           assert_equal task.id, Comment.find(body["comment_id"]).task_id
         end
 
+        test "reply advances parent workflow when delegated subtask completes" do
+          reg = register_agent("workflow-subtask-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          topic = Topic.find(topic_id)
+          creative = topic.creative.effective_origin
+
+          parent_task = Collavre::Task.create!(
+            name: "Parent workflow",
+            status: "running",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+          subtask = Collavre::Task.create!(
+            name: "Subtask",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id,
+            parent_task: parent_task
+          )
+
+          completed_with = nil
+          executor_stub = lambda { |passed_parent|
+            assert_equal parent_task.id, passed_parent.id
+            mock = Minitest::Mock.new
+            mock.expect(:complete_subtask!, nil) { |t| completed_with = t.id; true }
+            mock
+          }
+
+          Collavre::Comments::WorkflowExecutor.stub(:new, executor_stub) do
+            post "/api/v1/agent/reply",
+              params: { topic_id: topic_id, text: "Subtask done" },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :created
+
+          assert_equal "done", subtask.reload.status
+          assert_equal subtask.id, completed_with,
+            "WorkflowExecutor#complete_subtask! must be called with the freshly-completed subtask"
+        end
+
+        test "reply drains topic queue after delegated task completes" do
+          reg = register_agent("dequeue-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          topic = Topic.find(topic_id)
+          creative = topic.creative.effective_origin
+
+          Collavre::Task.create!(
+            name: "Delegated",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          called_with = nil
+          stub = lambda { |tid, cid = nil| called_with = [ tid, cid ] }
+
+          Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, stub) do
+            post "/api/v1/agent/reply",
+              params: { topic_id: topic_id, text: "Reply" },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :created
+          assert_equal [ topic_id, creative.id ], called_with
+        end
+
         test "reply leaves non-delegated tasks untouched" do
           reg = register_agent("non-delegated-test")
           topic_id = reg["topic_id"]

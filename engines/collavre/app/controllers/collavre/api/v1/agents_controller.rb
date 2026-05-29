@@ -111,6 +111,8 @@ module Collavre
         # topic as done so trigger-loop / workflow completion paths can fire.
         # Without this, drop-trigger loops stay stuck because
         # Task#trigger_loop_candidate? only triggers on status == "done".
+        # Also advance the parent workflow (if any) and drain the topic queue,
+        # mirroring the completion path AiAgentJob takes for non-delegated runs.
         def complete_delegated_task(agent, topic, comment)
           task = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
                      .order(:created_at).first
@@ -120,6 +122,12 @@ module Collavre
             comment.update_column(:task_id, task.id)
             task.update!(status: "done")
           end
+
+          if task.parent_task_id.present?
+            Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
+          end
+
+          Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
         end
 
         def dispatch_a2a(agent, comment)
