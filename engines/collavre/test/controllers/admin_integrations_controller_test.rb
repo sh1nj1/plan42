@@ -152,5 +152,4 @@ class AdminIntegrationsControllerTest < ActionDispatch::IntegrationTest
     delete collavre.reset_admin_integration_path(key: "no_such_key")
     assert_response :not_found
   end
-
 end
