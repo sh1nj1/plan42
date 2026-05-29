@@ -28,8 +28,15 @@
     </div>
   </td>
   <td style="padding: 0.5em; vertical-align: top;">
-    <% input_type = definition.sensitive ? :password_field : :text_field %>
-    <%= f.send(input_type, "integration_setting[#{key_str}]", placeholder: t("collavre.admin.integrations.placeholder_leave_blank"), autocomplete: "off", style: "width: 100%;") %>
+    <%# Input references the bulk form via HTML5 `form` attribute so the table is not nested inside <form>. %>
+    <% input_tag = definition.sensitive ? :password_field_tag : :text_field_tag %>
+    <%= send(input_tag,
+          "integration_setting[#{key_str}]",
+          nil,
+          form: bulk_form_id,
+          placeholder: t("collavre.admin.integrations.placeholder_leave_blank"),
+          autocomplete: "off",
+          style: "width: 100%;") %>
   </td>
   <td style="padding: 0.5em; vertical-align: top; white-space: nowrap;">
     <%= button_to t("collavre.admin.integrations.actions.reset"),

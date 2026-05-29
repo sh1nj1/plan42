@@ -14,7 +14,7 @@
     </thead>
     <tbody>
       <% rows.each do |row| %>
-        <%= render partial: "setting_row", locals: { row: row, f: f } %>
+        <%= render partial: "setting_row", locals: { row: row, bulk_form_id: bulk_form_id } %>
       <% end %>
     </tbody>
   </table>

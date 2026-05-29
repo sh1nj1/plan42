@@ -10,9 +10,14 @@ module Collavre
     # - ENV is consulted only when no DB row exists.
     # - The registry's static default is the final fallback.
     #
-    # Reads are memoized in `Rails.cache` for 5 minutes under
-    # `IntegrationSetting.cache_key_for(key)`. The model's `after_commit`
-    # hook invalidates this key on any write.
+    # Caching:
+    # - **Sensitive** definitions are NEVER cached. `Rails.cache` may resolve
+    #   to a durable store (e.g. `:solid_cache_store` in production), which
+    #   would persist decrypted secrets outside the encrypted `value` column
+    #   and defeat at-rest encryption. Sensitive reads hit the DB every time.
+    # - **Non-sensitive** definitions are memoized in `Rails.cache` for 5
+    #   minutes under `IntegrationSetting.cache_key_for(key)`. The model's
+    #   `after_commit` hook invalidates this key on any write.
     class Resolver
       # Raised by {.get} when the key has not been registered.
       class UnknownKeyError < StandardError; end
@@ -29,8 +34,10 @@ module Collavre
           definition = Registry.instance.find(key) or
             raise UnknownKeyError, "Unknown integration setting: #{key}"
 
+          return resolve(definition) if definition.sensitive
+
           Rails.cache.fetch(IntegrationSetting.cache_key_for(definition.key), expires_in: CACHE_TTL) do
-            db_value(definition) || env_value(definition) || definition.default
+            resolve(definition)
           end
         end
 
@@ -46,6 +53,10 @@ module Collavre
         end
 
         private
+
+        def resolve(definition)
+          db_value(definition) || env_value(definition) || definition.default
+        end
 
         def db_value(definition)
           IntegrationSetting.find_by(key: definition.key)&.value.presence
