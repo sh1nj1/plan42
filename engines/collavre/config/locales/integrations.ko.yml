@@ -1,0 +1,44 @@
+ko:
+  collavre:
+    admin:
+      integrations:
+        title: "통합"
+        subtitle: "외부 통합 비밀값을 설정합니다. DB 값이 ENV보다 우선하며, ENV는 시드/폴백입니다."
+        tab_label: "통합"
+        empty_state: "등록된 통합이 없습니다."
+        sensitive: "(민감)"
+        restart_required: "재시작 필요"
+        seeded_from_env: "ENV에서 시드됨"
+        placeholder_leave_blank: "비워두면 현재 값 유지"
+        confirm_reset: "DB 값을 삭제하고 ENV로 폴백할까요?"
+        headers:
+          key: "키"
+          current: "현재 값"
+          new_value: "새 값"
+          actions: "작업"
+        source:
+          db: "DB"
+          env: "ENV"
+          default: "기본값"
+          unknown: "알 수 없음"
+        category:
+          slack: "Slack"
+          google_oauth: "Google OAuth"
+          github_oauth: "GitHub OAuth"
+          notion_oauth: "Notion OAuth"
+          aws_s3: "AWS S3"
+          aws_ses: "AWS SES"
+          firebase: "Firebase"
+          fcm: "FCM"
+          gemini: "Gemini"
+          mail: "메일"
+        actions:
+          save: "변경사항 저장"
+          reset: "ENV로 초기화"
+          seed_from_env: "ENV에서 시드"
+        flash:
+          updated: "통합 설정이 저장되었습니다."
+          restart_required: "변경된 일부 키는 서버 재시작 후에 적용됩니다."
+          reset_done: "%{key}을(를) ENV/기본값으로 초기화했습니다."
+          seed_done: "%{key}을(를) ENV에서 시드했습니다."
+          seed_no_env: "%{key}에 대한 ENV 값이 없어 시드하지 않았습니다."

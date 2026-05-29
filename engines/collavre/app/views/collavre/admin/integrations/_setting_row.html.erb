@@ -1,0 +1,47 @@
+<% definition = row[:definition] %>
+<% key_str = definition.key.to_s %>
+<tr style="border-top: 1px solid var(--color-border);">
+  <td style="padding: 0.5em; vertical-align: top;">
+    <code><%= key_str %></code>
+    <% if definition.requires_restart %>
+      <span class="badge badge-warning" style="display: inline-block; margin-left: 0.5em; padding: 0.1em 0.5em; font-size: 0.75em; background: var(--color-warning, #f0ad4e); color: white; border-radius: 3px;">
+        <%= t("collavre.admin.integrations.restart_required") %>
+      </span>
+    <% end %>
+    <div style="font-size: 0.8em; color: var(--color-text-muted); margin-top: 0.25em;">
+      ENV: <code><%= definition.env_var %></code>
+    </div>
+  </td>
+  <td style="padding: 0.5em; vertical-align: top;">
+    <% if row[:present] %>
+      <code><%= row[:display_value] %></code>
+    <% else %>
+      <span style="color: var(--color-text-muted);">—</span>
+    <% end %>
+    <div style="font-size: 0.8em; margin-top: 0.25em;">
+      <span class="badge badge-source-<%= row[:source] %>" style="display: inline-block; padding: 0.1em 0.5em; font-size: 0.85em; border-radius: 3px; background: var(--color-surface-2, #eee);">
+        <%= t("collavre.admin.integrations.source.#{row[:source]}", default: row[:source].to_s.upcase) %>
+      </span>
+      <% if definition.sensitive %>
+        <span style="margin-left: 0.5em; font-size: 0.8em; color: var(--color-text-muted);"><%= t("collavre.admin.integrations.sensitive") %></span>
+      <% end %>
+    </div>
+  </td>
+  <td style="padding: 0.5em; vertical-align: top;">
+    <% input_type = definition.sensitive ? :password_field : :text_field %>
+    <%= f.send(input_type, "integration_setting[#{key_str}]", placeholder: t("collavre.admin.integrations.placeholder_leave_blank"), autocomplete: "off", style: "width: 100%;") %>
+  </td>
+  <td style="padding: 0.5em; vertical-align: top; white-space: nowrap;">
+    <%= button_to t("collavre.admin.integrations.actions.reset"),
+          collavre.reset_admin_integration_path(key: key_str),
+          method: :delete,
+          form: { style: "display: inline-block; margin-right: 0.25em;" },
+          class: "btn btn-small btn-secondary",
+          data: { confirm: t("collavre.admin.integrations.confirm_reset") } %>
+    <%= button_to t("collavre.admin.integrations.actions.seed_from_env"),
+          collavre.seed_from_env_admin_integration_path(key: key_str),
+          method: :post,
+          form: { style: "display: inline-block;" },
+          class: "btn btn-small btn-secondary" %>
+  </td>
+</tr>

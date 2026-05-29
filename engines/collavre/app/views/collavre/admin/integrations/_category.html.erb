@@ -1,0 +1,21 @@
+<div style="margin-top: 2em; border-top: 1px solid var(--color-border); padding-top: 1.5em;">
+  <h3 style="font-size: 1.1em; margin-bottom: 1em;">
+    <%= t("collavre.admin.integrations.category.#{category}", default: category.to_s.humanize) %>
+  </h3>
+
+  <table class="settings-table" style="width: 100%; border-collapse: collapse;">
+    <thead>
+      <tr>
+        <th style="text-align: left; padding: 0.5em; width: 25%;"><%= t("collavre.admin.integrations.headers.key") %></th>
+        <th style="text-align: left; padding: 0.5em; width: 25%;"><%= t("collavre.admin.integrations.headers.current") %></th>
+        <th style="text-align: left; padding: 0.5em; width: 30%;"><%= t("collavre.admin.integrations.headers.new_value") %></th>
+        <th style="text-align: left; padding: 0.5em; width: 20%;"><%= t("collavre.admin.integrations.headers.actions") %></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% rows.each do |row| %>
+        <%= render partial: "setting_row", locals: { row: row, f: f } %>
+      <% end %>
+    </tbody>
+  </table>
+</div>
