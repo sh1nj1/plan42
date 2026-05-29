@@ -75,6 +75,24 @@ module CollavreSlack
       end
     end
 
+    test "getters fall back to ENV when Resolver constant is undefined (USE_COLLAVRE_GEM with older core)" do
+      KEYS.each do |_attr, meta|
+        ENV[meta[:env]] = "gem-#{meta[:env]}"
+      end
+
+      # Simulate the `Collavre::IntegrationSettings::Resolver` namespace not being
+      # loaded (e.g. installed `collavre` gem predates this feature).
+      resolver_const = Collavre::IntegrationSettings.send(:remove_const, :Resolver)
+      begin
+        KEYS.each do |attr, meta|
+          assert_equal "gem-#{meta[:env]}", CollavreSlack::Configuration.new.public_send(attr),
+            "expected ENV fallback for #{attr} when Resolver constant missing"
+        end
+      ensure
+        Collavre::IntegrationSettings.const_set(:Resolver, resolver_const)
+      end
+    end
+
     test "writers still override resolver lookups (test affordance)" do
       ENV["SLACK_SIGNING_SECRET"] = "env-signing"
       config = CollavreSlack::Configuration.new

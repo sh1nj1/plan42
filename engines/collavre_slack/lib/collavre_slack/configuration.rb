@@ -7,9 +7,13 @@ module CollavreSlack
   # preserved so tests and explicit `CollavreSlack.configure` overrides keep
   # working: an explicitly-assigned value short-circuits the resolver.
   #
-  # If the `integration_settings` table is unavailable (e.g. during
-  # `db:create`, `db:schema:load`, `assets:precompile`, or fresh installs)
-  # the getters fall back to plain `ENV[...]` so boot does not crash.
+  # Fallback to plain `ENV[...]` when the resolver is not usable:
+  #   - `integration_settings` table missing (db:create, db:schema:load,
+  #     assets:precompile, fresh installs)
+  #   - DB connection not established
+  #   - `Collavre::IntegrationSettings` API not present in the installed
+  #     core `collavre` gem (e.g. `USE_COLLAVRE_GEM=true` pinned to a
+  #     version predating this feature)
   class Configuration
     RESOLVER_KEYS = {
       client_id:      { registry: :slack_client_id,      env: "SLACK_CLIENT_ID" },
@@ -37,6 +41,8 @@ module CollavreSlack
     private
 
     def resolve_setting(registry_key, env_var)
+      return ENV[env_var] unless defined?(Collavre::IntegrationSettings::Resolver)
+
       Collavre::IntegrationSettings::Resolver.get(registry_key)
     rescue ActiveRecord::StatementInvalid, ActiveRecord::ConnectionNotEstablished
       ENV[env_var]
