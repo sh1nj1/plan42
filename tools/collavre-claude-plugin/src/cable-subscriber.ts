@@ -3,6 +3,10 @@ import WebSocket from "ws";
 export interface AgentEvent {
   type: "dispatch" | "comment";
   agent_id?: number;
+  // task_id is set when the dispatch corresponds to a delegated Task; the
+  // MCP client must echo it back via /reply so the server can complete the
+  // exact dispatched task (required when topic concurrency > 1).
+  task_id?: number | null;
   comment: {
     id: number;
     content: string;
@@ -28,6 +32,7 @@ export class CableSubscriber {
   private baseUrl: string;
   private token: string;
   private topicId: number | null = null;
+  private agentId: number | null = null;
   private callback: EventCallback;
   private channelIdentifier: string | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -76,6 +81,21 @@ export class CableSubscriber {
     this.channelIdentifier = JSON.stringify({
       channel: "Collavre::AgentChannel",
       topic_id: topicId,
+    });
+    this.sendSubscribe();
+  }
+
+  // Subscribe by agent_id so the plugin receives every dispatch routed to
+  // this agent regardless of which topic triggered the comment. This is the
+  // primary subscription path for Claude Channel: comments outside the
+  // registration inbox (which is where real work happens — inbox comments
+  // are skipped by Comment#dispatch_to_orchestration) only reach the client
+  // through the per-agent stream.
+  subscribeToAgent(agentId: number): void {
+    this.agentId = agentId;
+    this.channelIdentifier = JSON.stringify({
+      channel: "Collavre::AgentChannel",
+      agent_id: agentId,
     });
     this.sendSubscribe();
   }
@@ -205,14 +225,14 @@ export class CableSubscriber {
 
     if (msg.type === "confirm_subscription") {
       process.stderr.write(
-        `[collavre-cable] Subscribed to topic ${this.topicId}\n`,
+        `[collavre-cable] Subscribed (${this.subscriptionDescription()})\n`,
       );
       return;
     }
 
     if (msg.type === "reject_subscription") {
       process.stderr.write(
-        `[collavre-cable] Subscription rejected for topic ${this.topicId}\n`,
+        `[collavre-cable] Subscription rejected (${this.subscriptionDescription()})\n`,
       );
       return;
     }
@@ -257,6 +277,12 @@ export class CableSubscriber {
       // scheduleReconnect.
       this.openSocket();
     }, delay);
+  }
+
+  private subscriptionDescription(): string {
+    if (this.agentId !== null) return `agent ${this.agentId}`;
+    if (this.topicId !== null) return `topic ${this.topicId}`;
+    return "unknown";
   }
 
   private clearWelcomeWaiters(): void {

@@ -35,14 +35,26 @@ module Collavre
           ClaudeChannelAdapter.new(agent: @agent, context: @context).deliver
         end
 
-        dispatch = broadcasts.find { |b| b[:data][:type] == "dispatch" }
-        assert_not_nil dispatch
-        assert_equal "agent:topic:#{@topic.id}", dispatch[:channel]
-        assert_equal @agent.id, dispatch[:data][:agent_id]
-        assert_equal "Hello Claude", dispatch[:data][:comment][:content]
-        assert_equal 1, dispatch[:data][:comment][:id]
-        assert_equal @topic.id, dispatch[:data][:comment][:topic_id]
-        assert_equal @creative.id, dispatch[:data][:comment][:creative_id]
+        topic_dispatch = broadcasts.find { |b| b[:channel] == "agent:topic:#{@topic.id}" }
+        assert_not_nil topic_dispatch
+        assert_equal "dispatch", topic_dispatch[:data][:type]
+        assert_equal @agent.id, topic_dispatch[:data][:agent_id]
+        assert_equal "Hello Claude", topic_dispatch[:data][:comment][:content]
+        assert_equal 1, topic_dispatch[:data][:comment][:id]
+        assert_equal @topic.id, topic_dispatch[:data][:comment][:topic_id]
+        assert_equal @creative.id, topic_dispatch[:data][:comment][:creative_id]
+      end
+
+      test "broadcasts dispatch to per-agent stream so MCP plugin receives it regardless of topic" do
+        broadcasts = []
+        ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
+          ClaudeChannelAdapter.new(agent: @agent, context: @context).deliver
+        end
+
+        agent_dispatch = broadcasts.find { |b| b[:channel] == "agent:user:#{@agent.id}" }
+        assert_not_nil agent_dispatch, "expected broadcast on agent:user:#{@agent.id} so MCP plugin (subscribed by agent_id) receives the dispatch even when topic_id is a non-inbox creative"
+        assert_equal "dispatch", agent_dispatch[:data][:type]
+        assert_equal @topic.id, agent_dispatch[:data][:comment][:topic_id]
       end
 
       test "broadcast includes task_id when task is provided" do

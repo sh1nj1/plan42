@@ -35,8 +35,10 @@ function buildServer(client: CollavreClient): Server {
         tools: {},
       },
       instructions: [
-        'Messages from Collavre arrive as <channel source="collavre" topic_id="..." author="..." comment_id="...">.',
-        "Reply using the reply tool, passing topic_id from the tag.",
+        'Messages from Collavre arrive as <channel source="collavre" topic_id="..." author="..." comment_id="..." task_id="...">.',
+        "Reply using the reply tool, passing topic_id AND task_id from the tag",
+        "(task_id correlates the reply with the exact dispatched task when",
+        "multiple delegated tasks can be in flight on the same topic).",
         'Never reply to your own messages (author starts with "claude-").',
       ].join("\n"),
     },
@@ -57,6 +59,11 @@ function buildServer(client: CollavreClient): Server {
             text: {
               type: "string",
               description: "The message text to send",
+            },
+            task_id: {
+              type: "number",
+              description:
+                "Task ID from the channel message meta — required when present so the server completes the exact delegated task this reply addresses.",
             },
           },
           required: ["topic_id", "text"],
@@ -83,8 +90,16 @@ function buildServer(client: CollavreClient): Server {
     if (typeof text !== "string" || text.length === 0) {
       return errorResult("text must be a non-empty string");
     }
+    let taskId: number | undefined;
+    if (record.task_id !== undefined && record.task_id !== null) {
+      const parsed = Number(record.task_id);
+      if (!Number.isFinite(parsed)) {
+        return errorResult("task_id must be a number");
+      }
+      taskId = parsed;
+    }
 
-    const result = await client.reply(topicId, text);
+    const result = await client.reply(topicId, text, taskId);
     return {
       content: [
         { type: "text" as const, text: `Sent (comment #${result.comment_id})` },
@@ -107,20 +122,24 @@ function makeEventHandler(server: Server, debug: boolean) {
     }
 
     process.stderr.write(
-      `[collavre] Dispatch: comment #${event.comment.id} by ${event.comment.author_name} (id=${event.comment.author_id})\n`,
+      `[collavre] Dispatch: comment #${event.comment.id} by ${event.comment.author_name} (id=${event.comment.author_id}) task_id=${event.task_id ?? "none"}\n`,
     );
 
     try {
+      const meta: Record<string, string> = {
+        topic_id: String(event.comment.topic_id),
+        comment_id: String(event.comment.id),
+        author: event.comment.author_name,
+        author_id: String(event.comment.author_id),
+      };
+      if (event.task_id != null) {
+        meta.task_id = String(event.task_id);
+      }
       await server.notification({
         method: "notifications/claude/channel" as const,
         params: {
           content: event.comment.content,
-          meta: {
-            topic_id: String(event.comment.topic_id),
-            comment_id: String(event.comment.id),
-            author: event.comment.author_name,
-            author_id: String(event.comment.author_id),
-          },
+          meta,
         },
       });
       process.stderr.write(`[collavre] Notification sent OK\n`);
@@ -163,10 +182,13 @@ async function main(): Promise<void> {
 
   const reg = await client.register(agentName);
   process.stderr.write(
-    `[collavre] Registered: ${reg.agent_name} → topic #${reg.topic_id} (${reg.topic_name})\n`,
+    `[collavre] Registered: ${reg.agent_name} (agent #${reg.agent_id}) → inbox topic #${reg.topic_id} (${reg.topic_name})\n`,
   );
 
-  cable.subscribeTo(reg.topic_id);
+  // Subscribe by agent_id, not topic_id. Comments in the registration inbox
+  // are skipped by Comment#dispatch_to_orchestration; real dispatches arrive
+  // on the per-agent stream regardless of which topic triggered them.
+  cable.subscribeToAgent(reg.agent_id);
 
   const cleanup = async () => {
     cable.disconnect();

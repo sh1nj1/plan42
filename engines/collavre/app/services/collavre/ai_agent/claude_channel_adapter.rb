@@ -26,7 +26,7 @@ module Collavre
         end
 
         comment = find_comment
-        AgentChannel.broadcast_to_topic(@topic_id, {
+        payload = {
           type: "dispatch",
           agent_id: @agent.id,
           # task_id lets the MCP client echo it back via /reply so the server
@@ -42,7 +42,15 @@ module Collavre
             creative_id: @context.dig("creative", "id"),
             created_at: comment&.created_at&.iso8601
           }
-        })
+        }
+
+        # Per-agent stream is the source of truth for MCP plugin clients:
+        # they subscribe once by agent_id and receive every dispatch routed
+        # to this agent regardless of which topic triggered it. The per-topic
+        # stream is kept for legacy/UI viewers but is not how Claude Channel
+        # plugins consume dispatches.
+        AgentChannel.broadcast_to_agent(@agent.id, payload)
+        AgentChannel.broadcast_to_topic(@topic_id, payload)
       end
 
       private

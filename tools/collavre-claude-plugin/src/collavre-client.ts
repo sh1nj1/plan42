@@ -36,19 +36,26 @@ export class CollavreClient {
     return res.json() as Promise<RegisterResult>;
   }
 
-  async reply(topicId: number, text: string): Promise<{ comment_id: number }> {
+  async reply(
+    topicId: number,
+    text: string,
+    taskId?: number,
+  ): Promise<{ comment_id: number }> {
+    const body: Record<string, unknown> = { topic_id: topicId, text };
+    if (taskId !== undefined) body.task_id = taskId;
+
     const res = await fetch(`${this.baseUrl}/api/v1/agent/reply`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.token}`,
       },
-      body: JSON.stringify({ topic_id: topicId, text }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Reply failed (${res.status}): ${body}`);
+      const respBody = await res.text();
+      throw new Error(`Reply failed (${res.status}): ${respBody}`);
     }
 
     return res.json() as Promise<{ comment_id: number }>;
