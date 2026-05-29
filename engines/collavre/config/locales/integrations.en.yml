@@ -13,8 +13,7 @@ en:
         confirm_reset: "Delete the DB value and fall back to ENV?"
         headers:
           key: "Key"
-          current: "Current value"
-          new_value: "New value"
+          value: "Value"
           actions: "Actions"
         source:
           db: "DB"

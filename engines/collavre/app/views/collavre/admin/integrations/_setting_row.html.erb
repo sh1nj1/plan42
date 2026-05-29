@@ -6,6 +6,7 @@
     when :env     then ["var(--color-warning)", "var(--text-on-badge)"]
     else               ["var(--surface-btn)",   "var(--text-on-btn)"]
   end
+  current_display = row[:present] ? row[:display_value].to_s : "—"
 %>
 <tr style="border-top: 1px solid var(--color-border);">
   <td style="padding: 0.5em; vertical-align: top;">
@@ -20,30 +21,25 @@
     </div>
   </td>
   <td style="padding: 0.5em; vertical-align: top;">
-    <% if row[:present] %>
-      <code><%= row[:display_value] %></code>
-    <% else %>
-      <span style="color: var(--color-muted);">—</span>
-    <% end %>
-    <div style="font-size: 0.8em; margin-top: 0.25em;">
-      <span class="badge badge-source-<%= row[:source] %>" style="display: inline-block; padding: 0.1em 0.5em; font-size: 0.85em; border-radius: 3px; background: <%= source_bg %>; color: <%= source_fg %>;">
-        <%= t("collavre.admin.integrations.source.#{row[:source]}", default: row[:source].to_s.upcase) %>
-      </span>
-      <% if definition.sensitive %>
-        <span style="margin-left: 0.5em; font-size: 0.8em; color: var(--color-muted);"><%= t("collavre.admin.integrations.sensitive") %></span>
-      <% end %>
-    </div>
-  </td>
-  <td style="padding: 0.5em; vertical-align: top;">
     <%# Input references the bulk form via HTML5 `form` attribute so the table is not nested inside <form>. %>
+    <%# Placeholder displays the current value (masked for sensitive); empty input keeps the existing value. %>
     <% input_tag = definition.sensitive ? :password_field_tag : :text_field_tag %>
     <%= send(input_tag,
           "integration_setting[#{key_str}]",
           nil,
           form: bulk_form_id,
-          placeholder: t("collavre.admin.integrations.placeholder_leave_blank"),
+          placeholder: current_display,
           autocomplete: "off",
           style: "width: 100%;") %>
+    <div style="font-size: 0.8em; margin-top: 0.25em;">
+      <span class="badge badge-source-<%= row[:source] %>" style="display: inline-block; padding: 0.1em 0.5em; font-size: 0.85em; border-radius: 3px; background: <%= source_bg %>; color: <%= source_fg %>;">
+        <%= t("collavre.admin.integrations.source.#{row[:source]}", default: row[:source].to_s.upcase) %>
+      </span>
+      <% if definition.sensitive %>
+        <span style="margin-left: 0.5em; color: var(--color-muted);"><%= t("collavre.admin.integrations.sensitive") %></span>
+      <% end %>
+      <span style="margin-left: 0.5em; color: var(--color-muted);"><%= t("collavre.admin.integrations.placeholder_leave_blank") %></span>
+    </div>
   </td>
   <td style="padding: 0.5em; vertical-align: top; white-space: nowrap;">
     <%= button_to t("collavre.admin.integrations.actions.reset"),

@@ -13,8 +13,7 @@ ko:
         confirm_reset: "DB 값을 삭제하고 ENV로 폴백할까요?"
         headers:
           key: "키"
-          current: "현재 값"
-          new_value: "새 값"
+          value: "값"
           actions: "작업"
         source:
           db: "DB"
