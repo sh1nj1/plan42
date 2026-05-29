@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_29_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_29_100000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -309,6 +309,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_29_000000) do
     t.index ["creative_id"], name: "index_inbox_items_on_creative_id"
     t.index ["owner_id"], name: "index_inbox_items_on_owner_id"
     t.index ["state"], name: "index_inbox_items_on_state"
+  end
+
+  create_table "integration_settings", force: :cascade do |t|
+    t.string "category", null: false
+    t.datetime "created_at", null: false
+    t.string "key", null: false
+    t.boolean "seeded_from_env", default: false, null: false
+    t.boolean "sensitive", default: true, null: false
+    t.datetime "updated_at", null: false
+    t.text "value"
+    t.index ["category"], name: "index_integration_settings_on_category"
+    t.index ["key"], name: "index_integration_settings_on_key", unique: true
   end
 
   create_table "invitations", force: :cascade do |t|
