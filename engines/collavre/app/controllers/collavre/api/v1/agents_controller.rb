@@ -123,6 +123,11 @@ module Collavre
             task.update!(status: "done")
           end
 
+          # The job that started this task held its ResourceTracker slot under
+          # task.id while waiting for the MCP reply; release it now so the
+          # agent's concurrency capacity reflects reality.
+          Orchestration::ResourceTracker.for(agent).release!(task.id)
+
           if task.parent_task_id.present?
             Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
           end

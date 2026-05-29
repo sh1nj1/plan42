@@ -59,7 +59,7 @@ module Collavre
           next unless stuck_item.type == :task
 
           task = stuck_item.item
-          next unless task.status == "running"
+          next unless %w[running delegated].include?(task.status)
 
           task.update!(status: "failed")
           Rails.logger.info(
@@ -89,7 +89,10 @@ module Collavre
         threshold_minutes = config["task_stuck_threshold_minutes"] || 30
         threshold_time = threshold_minutes.minutes.ago
 
-        stuck_tasks = Task.where(status: "running")
+        # Include delegated tasks: Claude Channel tasks sit in delegated
+        # waiting for an external MCP reply; if the client disconnects, the
+        # task can otherwise stay delegated forever and block the topic queue.
+        stuck_tasks = Task.where(status: %w[running delegated])
                           .where("updated_at < ?", threshold_time)
 
         stuck_tasks.filter_map do |task|

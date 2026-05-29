@@ -25,9 +25,12 @@ module Collavre
       rel.order(:created_at)
     }
 
-    # Check if agent already has a running task triggered by the same comment
+    # Check if agent already has an in-flight task triggered by the same comment.
+    # Treats "delegated" as in-flight: a Claude Channel task that is waiting on
+    # an external MCP reply is still active work — re-dispatching the same
+    # comment would produce duplicate replies.
     def self.duplicate_running_for_comment?(agent_id, comment_id)
-      where(agent_id: agent_id, status: "running", trigger_event_name: "comment_created")
+      where(agent_id: agent_id, status: %w[running delegated], trigger_event_name: "comment_created")
         .find_each do |task|
         return true if task.trigger_event_payload&.dig("comment", "id").to_s == comment_id.to_s
       end

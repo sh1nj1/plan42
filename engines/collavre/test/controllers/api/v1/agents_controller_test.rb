@@ -250,6 +250,40 @@ module Collavre
           assert_equal [ topic_id, creative.id ], called_with
         end
 
+        test "reply releases agent resource slot on delegated completion" do
+          reg = register_agent("release-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          topic = Topic.find(topic_id)
+          creative = topic.creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "Delegated",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          # Simulate the slot the AiAgentJob held under task.id for this Claude
+          # Channel run; reply must release it so capacity reflects reality.
+          tracker = Collavre::Orchestration::ResourceTracker.for(ai_user)
+          tracker.reset!
+          tracker.reserve!(task.id)
+          assert_equal 1, tracker.active_jobs
+
+          Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(_t, _c) { nil }) do
+            post "/api/v1/agent/reply",
+              params: { topic_id: topic_id, text: "Reply" },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :created
+          assert_equal 0, Collavre::Orchestration::ResourceTracker.for(ai_user).active_jobs,
+            "Expected the delegated task's slot to be released after reply"
+        end
+
         test "reply leaves non-delegated tasks untouched" do
           reg = register_agent("non-delegated-test")
           topic_id = reg["topic_id"]

@@ -337,6 +337,34 @@ module Collavre
       ensure
         policy&.destroy
       end
+
+      test "detects and auto-recovers stuck delegated Claude Channel task" do
+        policy = create_policy_with_stuck_detection(enabled: true, task_threshold: 30)
+
+        task = Collavre::Task.create!(
+          name: "Stuck delegated task",
+          agent: @ai_agent,
+          status: "delegated",
+          trigger_event_payload: { "creative" => { "id" => @creative.id } },
+          topic_id: @topic.id,
+          creative_id: @creative.id
+        )
+        task.update_columns(created_at: 1.hour.ago, updated_at: 1.hour.ago)
+
+        detector = StuckDetector.new
+        stuck_items = detector.detect
+
+        assert_equal 1, stuck_items.count
+        assert_equal task.id, stuck_items.first.item.id
+
+        Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(_t, _c) { nil }) do
+          detector.detect_and_escalate
+        end
+
+        assert_equal "failed", task.reload.status
+      ensure
+        policy&.destroy
+      end
     end
   end
 end

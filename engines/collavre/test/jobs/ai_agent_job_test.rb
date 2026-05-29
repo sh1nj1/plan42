@@ -333,6 +333,30 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected no new task when duplicate running task exists for same comment"
   end
 
+  test "skips duplicate execution when agent has delegated Claude Channel task for same comment" do
+    # A delegated task is still in-flight (waiting on external MCP reply);
+    # re-dispatching the same comment would produce duplicate replies.
+    Task.create!(
+      name: "Response to comment_created",
+      status: "delegated",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: @context,
+      agent: @agent,
+      topic_id: nil
+    )
+
+    initial_task_count = Task.where(agent_id: @agent.id).count
+
+    AiClient.stub :new, ->(**kwargs) { FakeAiClient.new } do
+      perform_enqueued_jobs do
+        AiAgentJob.perform_later(@agent.id, "comment_created", @context)
+      end
+    end
+
+    assert_equal initial_task_count, Task.where(agent_id: @agent.id).count,
+      "Expected no new task when duplicate delegated task exists for same comment"
+  end
+
   test "releases resources in ensure block on success" do
     AiClient.stub :new, FakeAiClient.new do
       AiAgentJob.perform_now(@agent.id, "test_event", @context)

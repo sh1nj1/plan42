@@ -48,7 +48,11 @@ module Collavre
 
       # Reserve resources before starting work
       tracker = Orchestration::ResourceTracker.for(agent)
-      resource_id = job_id || task.id
+      # Claude Channel tasks live past this job (MCP reply happens later), so
+      # reserve under the stable task.id — that's the key reply / cancel /
+      # stuck-recovery will use to release the slot.
+      is_claude_channel_agent = agent.claude_channel_agent?
+      resource_id = is_claude_channel_agent ? task.id : (job_id || task.id)
       tracker.reserve!(resource_id)
       should_release = true
 
@@ -56,8 +60,10 @@ module Collavre
         response_content = AiAgentService.new(task).call
 
         # Claude Channel agents delegate via MCP; no immediate response expected
-        if agent.claude_channel_agent?
+        if is_claude_channel_agent
           task.update!(status: "delegated")
+          # Hold agent capacity until reply / cancel / stuck-recovery releases it.
+          should_release = false
         # Workflow subtasks with empty responses should retry, then fail
         elsif task.parent_task_id.present? && response_content.blank?
           max_retries = 2
