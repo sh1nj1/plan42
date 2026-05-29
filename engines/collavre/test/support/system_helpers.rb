@@ -14,7 +14,16 @@ module SystemHelpers
     fill_in placeholder: I18n.t("collavre.users.new.enter_your_email"), with: user.email
     fill_in placeholder: I18n.t("collavre.users.new.enter_your_password"), with: password
     find("#sign-in-submit").click
-    assert_current_path root_path, ignore_query: true
+    assert_current_path post_sign_in_path, ignore_query: true
+  end
+
+  # Mirrors Collavre::ApplicationController#redirect_authenticated_root_to_home:
+  # authenticated users hitting "/" are redirected to home_page_path_authenticated
+  # unless it is blank or "/", in which case they stay at root.
+  def post_sign_in_path
+    target = Collavre::SystemSetting.home_page_path_authenticated
+    return root_path if target.blank? || target == "/"
+    target
   end
 
   def resize_window_to(width = 1200, height = 800)
