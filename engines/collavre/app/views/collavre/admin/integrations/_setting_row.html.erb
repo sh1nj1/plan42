@@ -35,9 +35,11 @@
     <%= button_to t("collavre.admin.integrations.actions.reset"),
           collavre.reset_admin_integration_path(key: key_str),
           method: :delete,
-          form: { style: "display: inline-block; margin-right: 0.25em;" },
-          class: "btn btn-small btn-secondary",
-          data: { confirm: t("collavre.admin.integrations.confirm_reset") } %>
+          form: {
+            style: "display: inline-block; margin-right: 0.25em;",
+            data: { turbo_confirm: t("collavre.admin.integrations.confirm_reset") }
+          },
+          class: "btn btn-small btn-secondary" %>
     <%= button_to t("collavre.admin.integrations.actions.seed_from_env"),
           collavre.seed_from_env_admin_integration_path(key: key_str),
           method: :post,
