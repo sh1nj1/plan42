@@ -54,15 +54,36 @@
   animation: trigger-running-pulse 1.5s ease-in-out infinite;
 }
 
-/* Orbiting border glow */
+/* Orbiting border glow — conic gradient sweeps the rounded-square outline
+ * (the element itself stays put so the shape stays aligned with the icon). */
+@property --trigger-orbit-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
 .drop-trigger-toggle-btn.trigger-state-running::after {
   content: '';
   position: absolute;
   inset: -2px;
   border-radius: 10px;
-  border: 1.5px solid transparent;
-  border-top-color: var(--color-active);
-  opacity: 0.6;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--trigger-orbit-angle),
+    var(--color-active) 0deg,
+    color-mix(in srgb, var(--color-active) 40%, transparent) 40deg,
+    transparent 90deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+          mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  opacity: 0.85;
   animation: trigger-orbit 1.2s linear infinite;
   pointer-events: none;
 }
@@ -73,8 +94,7 @@
 }
 
 @keyframes trigger-orbit {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  to { --trigger-orbit-angle: 360deg; }
 }
 
 /* ──────────────────────────────────────────────
