@@ -110,11 +110,35 @@ module Collavre
     def cancel_pending_tasks
       # Cancel tasks triggered by this comment (no creative_id scoping —
       # CommentMoveService can change comment.creative_id without updating
-      # existing tasks, so scoping would miss moved-comment tasks)
-      Task.where(status: %w[pending running queued]).find_each do |task|
-        if task.trigger_event_payload&.dig("comment", "id") == id
-          task.update!(status: "cancelled")
+      # existing tasks, so scoping would miss moved-comment tasks).
+      # Include "delegated" so a deleted prompt also cancels Claude Channel
+      # work that's still waiting on an external MCP reply — otherwise the
+      # delegated task keeps holding the topic/agent slot until stuck recovery.
+      Task.where(status: %w[pending running queued delegated]).find_each do |task|
+        next unless task.trigger_event_payload&.dig("comment", "id") == id
+
+        was_delegated = task.status == "delegated"
+        task.update!(status: "cancelled")
+
+        # Delegated tasks live past their job: the AiAgentJob already returned,
+        # holding the agent slot under task.id and counting against the per-topic
+        # serializer. Mirror the cancel path used elsewhere to free both.
+        next unless was_delegated
+        if task.agent
+          Collavre::Orchestration::ResourceTracker.for(task.agent).release!(task.id)
         end
+        if task.parent_task_id.present?
+          begin
+            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+              task, error_message: "Triggering comment was deleted"
+            )
+          rescue StandardError => e
+            Rails.logger.error(
+              "[Comment#cancel_pending_tasks] fail_subtask! failed for task #{task.id}: #{e.message}"
+            )
+          end
+        end
+        Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
       end
 
       # Cancel queued tasks when their waiting notice (system comment) is deleted

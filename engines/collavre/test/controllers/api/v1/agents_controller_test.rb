@@ -399,17 +399,21 @@ module Collavre
           assert topic.archived?
         end
 
-        test "destroy archives topic by primary_agent fallback" do
-          reg = register_agent("fallback-test")
+        test "destroy requires topic_id to avoid archiving a sibling session" do
+          # Two concurrent sessions for the same user reuse the same ai_user as
+          # primary_agent on both topics. Without topic_id, destroy can't tell
+          # which session is ending; it must refuse rather than guess.
+          first = register_agent("session-x")
+          second = register_agent("session-y")
+          assert_equal first["agent_id"], second["agent_id"]
 
-          delete "/api/v1/agent/#{reg['agent_id']}",
+          delete "/api/v1/agent/#{first['agent_id']}",
             headers: auth_headers,
             as: :json
+          assert_response :unprocessable_entity
 
-          assert_response :no_content
-
-          topic = Topic.find(reg["topic_id"])
-          assert topic.archived?
+          assert_not Topic.find(first["topic_id"]).archived?
+          assert_not Topic.find(second["topic_id"]).archived?
         end
 
         test "destroy rejects non-owned agent" do
@@ -435,6 +439,45 @@ module Collavre
             headers: auth_headers,
             as: :json
           assert_response :not_found
+        end
+
+        test "destroy fails delegated tasks and releases agent slot before archive" do
+          reg = register_agent("unregister-delegated-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          topic = Topic.find(topic_id)
+          creative = topic.creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "Delegated",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          tracker = Collavre::Orchestration::ResourceTracker.for(ai_user)
+          tracker.reset!
+          tracker.reserve!(task.id)
+          assert_equal 1, tracker.active_jobs
+
+          dequeue_called_with = nil
+          stub = ->(t, c = nil) { dequeue_called_with = [ t, c ] }
+
+          Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, stub) do
+            delete "/api/v1/agent/#{ai_user.id}",
+              params: { topic_id: topic_id },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :no_content
+
+          assert_equal "cancelled", task.reload.status
+          assert_equal 0, Collavre::Orchestration::ResourceTracker.for(ai_user).active_jobs,
+            "Expected the delegated task's agent slot to be released on unregister"
+          assert_equal [ topic_id, creative.id ], dequeue_called_with
+          assert Topic.find(topic_id).archived?
         end
 
         test "destroy ignores topic_id that does not belong to the agent" do

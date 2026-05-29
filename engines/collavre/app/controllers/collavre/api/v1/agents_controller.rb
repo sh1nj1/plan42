@@ -43,8 +43,11 @@ module Collavre
         end
 
         # DELETE /api/v1/agent/:id
-        # Archives the agent's topic (session ended)
-        # Accepts optional topic_id param; falls back to finding by primary_agent association
+        # Archives the agent's topic (session ended).
+        # topic_id is required: register reuses the same ai_user across all
+        # sessions for the same human, so the primary_agent association alone
+        # cannot identify which session is ending. Without an explicit topic_id
+        # we could archive a sibling session's active topic.
         def destroy
           ai_user = User.find_by(id: params[:id])
           unless ai_user&.ai_user? && ai_user.created_by_id == current_user.id
@@ -52,16 +55,24 @@ module Collavre
             return
           end
 
-          topic = if params[:topic_id].present?
-            inbox = Creative.inbox_for(current_user)
-            candidate = inbox.topics.active.find_by(id: params[:topic_id])
-            # Ensure the topic actually belongs to this agent so a mismatched
-            # topic_id can't archive an unrelated inbox conversation.
-            candidate if candidate && candidate.primary_agent&.id == ai_user.id
-          else
-            find_agent_topic(ai_user)
+          if params[:topic_id].blank?
+            render json: { error: "topic_id is required" }, status: :unprocessable_entity
+            return
           end
-          topic&.archive!
+
+          inbox = Creative.inbox_for(current_user)
+          topic = inbox.topics.active.find_by(id: params[:topic_id])
+          # Ensure the topic actually belongs to this agent so a mismatched
+          # topic_id can't archive an unrelated inbox conversation.
+          topic = nil unless topic && topic.primary_agent&.id == ai_user.id
+
+          if topic
+            # Fail any tasks still delegated to this MCP session before the
+            # topic is archived. Without this, the ResourceTracker slot and
+            # per-topic queue stay blocked until stuck detection times out.
+            cancel_delegated_tasks_for_session(ai_user, topic)
+            topic.archive!
+          end
 
           head :no_content
         end
@@ -138,6 +149,35 @@ module Collavre
           Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
         end
 
+        # When an MCP session unregisters, any tasks still in delegated state
+        # are abandoned — the client that would have called /reply is gone.
+        # Mirror the cancel path so the agent's slot and the topic queue both
+        # free up immediately rather than waiting for stuck detection.
+        def cancel_delegated_tasks_for_session(agent, topic)
+          tasks = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
+          return if tasks.empty?
+
+          tracker = Orchestration::ResourceTracker.for(agent)
+          tasks.find_each do |task|
+            task.update!(status: "cancelled")
+            tracker.release!(task.id)
+
+            if task.parent_task_id.present?
+              begin
+                Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+                  task, error_message: "Claude Channel session unregistered before reply"
+                )
+              rescue StandardError => e
+                Rails.logger.error(
+                  "[AgentsController] fail_subtask! failed for task #{task.id}: #{e.message}"
+                )
+              end
+            end
+
+            Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+          end
+        end
+
         def dispatch_a2a(agent, comment)
           AiAgent::A2aDispatcher.new(
             agent: agent,
@@ -167,12 +207,6 @@ module Collavre
           end
 
           ai_user
-        end
-
-        # Find the active topic where this AI user is the primary agent
-        def find_agent_topic(ai_user)
-          inbox = Creative.inbox_for(current_user)
-          inbox.topics.active.find { |t| t.primary_agent&.id == ai_user.id }
         end
       end
     end
