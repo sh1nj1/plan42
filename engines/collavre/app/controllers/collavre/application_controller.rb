@@ -9,7 +9,27 @@ module Collavre
     # of sync with the session cookie and POSTs fail with 422.
     after_action :set_csrf_token_header
 
+    before_action :redirect_authenticated_root_to_home
+
     private
+
+    # If the original request was for "/" and the user is signed in,
+    # honor SystemSetting.home_page_path_authenticated by redirecting.
+    # The middleware preserves "/" as a stable URL for unauthenticated
+    # visitors; authenticated users get a real URL change so the address
+    # bar reflects state.
+    def redirect_authenticated_root_to_home
+      return unless request.get?
+      return unless request.env["collavre.root_request"]
+      return unless authenticated?
+
+      target = SystemSetting.home_page_path_authenticated
+      return if target.blank?
+      return if target == "/"
+      return if request.path == target
+
+      redirect_to target
+    end
 
     def set_csrf_token_header
       return unless protect_against_forgery?

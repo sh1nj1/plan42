@@ -65,4 +65,56 @@ class AdminSettingsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "input[name='password_min_length'][min='#{SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH}'][max='72']"
   end
+
+  test "update saves both home_page_path and home_page_path_authenticated" do
+    sign_in_as(@admin, password: "password")
+
+    patch collavre.admin_settings_path, params: {
+      home_page_path: "/creatives",
+      home_page_path_authenticated: "/users",
+      auth_providers: [ "email" ]
+    }
+
+    assert_redirected_to collavre.admin_settings_path
+    Rails.cache.clear
+    assert_equal "/creatives", SystemSetting.home_page_path
+    assert_equal "/users", SystemSetting.home_page_path_authenticated
+  end
+
+  test "update clears home_page_path_authenticated when blank" do
+    SystemSetting.find_or_create_by!(key: "home_page_path_authenticated") { |s| s.value = "/users" }
+    Rails.cache.clear
+    assert_equal "/users", SystemSetting.home_page_path_authenticated
+
+    sign_in_as(@admin, password: "password")
+    patch collavre.admin_settings_path, params: {
+      home_page_path_authenticated: "",
+      auth_providers: [ "email" ]
+    }
+
+    assert_redirected_to collavre.admin_settings_path
+    Rails.cache.clear
+    assert_nil SystemSetting.home_page_path_authenticated
+  end
+
+  test "update rejects invalid home_page_path_authenticated" do
+    sign_in_as(@admin, password: "password")
+
+    patch collavre.admin_settings_path, params: {
+      home_page_path_authenticated: "https://evil.example.com",
+      auth_providers: [ "email" ]
+    }
+
+    assert_response :unprocessable_entity
+  end
+
+  test "index renders both home path fields" do
+    sign_in_as(@admin, password: "password")
+
+    get collavre.admin_settings_path
+
+    assert_response :success
+    assert_select "input[name='home_page_path']"
+    assert_select "input[name='home_page_path_authenticated']"
+  end
 end

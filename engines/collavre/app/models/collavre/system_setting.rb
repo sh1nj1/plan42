@@ -25,8 +25,11 @@ module Collavre
     # By default, public access is allowed (false)
     DEFAULT_CREATIVES_LOGIN_REQUIRED = false
 
-    # Default home page path (nil means use root_path "/")
+    # Default home page path for unauthenticated visitors (nil means use root_path "/")
     DEFAULT_HOME_PAGE_PATH = nil
+
+    # Default home page path for authenticated users (nil means no redirect — follow the same path as unauthenticated)
+    DEFAULT_HOME_PAGE_PATH_AUTHENTICATED = nil
 
     # Default theme IDs (nil means use built-in light/dark)
     # These reference UserTheme IDs for admin-configured custom themes
@@ -59,7 +62,7 @@ module Collavre
         lockout_duration_minutes session_timeout_minutes password_min_length
         password_reset_rate_limit password_reset_rate_period_minutes
         api_rate_limit api_rate_period_minutes auth_providers_disabled
-        creatives_login_required home_page_path default_light_theme_id default_dark_theme_id
+        creatives_login_required home_page_path home_page_path_authenticated default_light_theme_id default_dark_theme_id
         display_level completion_mark llm_request_timeout_seconds
       ].each { |k| Rails.cache.delete("system_setting:#{k}") }
     end
@@ -85,6 +88,11 @@ module Collavre
 
     def self.home_page_path
       value = cached_value("home_page_path")
+      value.presence
+    end
+
+    def self.home_page_path_authenticated
+      value = cached_value("home_page_path_authenticated")
       value.presence
     end
 
