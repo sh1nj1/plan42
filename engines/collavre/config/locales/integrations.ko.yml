@@ -9,6 +9,7 @@ ko:
         sensitive: "(민감)"
         restart_required: "재시작 필요"
         placeholder_leave_blank: "비워두면 현재 값 유지"
+        env_var_label: "환경변수"
         confirm_reset: "DB 값을 삭제하고 ENV로 폴백할까요?"
         headers:
           key: "키"

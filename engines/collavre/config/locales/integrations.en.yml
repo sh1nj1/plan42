@@ -9,6 +9,7 @@ en:
         sensitive: "(sensitive)"
         restart_required: "restart required"
         placeholder_leave_blank: "Leave blank to keep current"
+        env_var_label: "ENV"
         confirm_reset: "Delete the DB value and fall back to ENV?"
         headers:
           key: "Key"
