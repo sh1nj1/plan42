@@ -88,6 +88,12 @@ export default class extends Controller {
                 this.isInbox = !!data.is_inbox
                 this.systemTopicId = data.system_topic_id ? String(data.system_topic_id) : null
                 this.mainTopicId = data.main_topic_id ? String(data.main_topic_id) : null
+                // Expose effective origin id so chat-context autofill (slash commands)
+                // and any other consumer can target the same creative the server uses
+                // (linked creatives resolve params[:creative_id] through effective_origin).
+                if (data.effective_creative_id) {
+                    this.element.dataset.effectiveCreativeId = String(data.effective_creative_id)
+                }
 
                 // Migrate localStorage to server if server has no value
                 this.migrateLocalStorage()

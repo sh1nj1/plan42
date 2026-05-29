@@ -20,7 +20,11 @@ if (!commandMenuInitialized) {
       container: popup,
       creativeIdFn: () => popup.dataset.creativeId,
       contextValuesFn: () => ({
-        creative_id: popup.dataset.creativeId || null,
+        // Prefer the effective origin id (what comments/topics controllers
+        // operate on). For linked creatives, popup.dataset.creativeId is the
+        // wrapper row id, but the server resolves through effective_origin —
+        // MCP tools expect the same effective id.
+        creative_id: popup.dataset.effectiveCreativeId || popup.dataset.creativeId || null,
         topic_id: currentTopicIdFromController(popup) || null
       }),
       labels: {
@@ -84,20 +88,22 @@ if (!commandMenuInitialized) {
     })
 
     function currentTopicIdFromController(popupEl) {
-      // Prefer the form controller's locally-cached topic id (the same value
-      // used when submitting a comment). It is set from the
-      // `comments--topics:change` event so it reflects the user's actual
-      // selection after restoreSelection, while topics_controller's
-      // currentTopicId getter can still return a stale URL deep-link.
+      // Prefer the form controller's locally-cached topic id — the same value
+      // used when submitting a comment. It is set from the
+      // `comments--topics:change` event, so it reflects the user's actual
+      // selection after restoreSelection rather than a stale URL deep-link.
       const formCtrl = window.Stimulus?.getControllerForElementAndIdentifier(popupEl, 'comments--form')
       if (formCtrl) {
         const id = formCtrl.currentTopicId || formCtrl._mainTopicId
         if (id) return String(id)
       }
+      // Topics may not have loaded yet (form hasn't received any change event).
+      // Fall back to mainTopicId only — never topicsCtrl.currentTopicId, whose
+      // getter prioritizes window.location.search?topic_id= even when that
+      // topic does not belong to the current creative.
       const topicsCtrl = window.Stimulus?.getControllerForElementAndIdentifier(popupEl, 'comments--topics')
       if (!topicsCtrl) return ''
-      const id = topicsCtrl.currentTopicId || topicsCtrl.mainTopicId
-      return id ? String(id) : ''
+      return topicsCtrl.mainTopicId ? String(topicsCtrl.mainTopicId) : ''
     }
 
     function clearCommandText() {
