@@ -28,8 +28,11 @@ module Collavre
     # Default home page path for unauthenticated visitors (nil means use root_path "/")
     DEFAULT_HOME_PAGE_PATH = nil
 
-    # Default home page path for authenticated users (nil means no redirect — follow the same path as unauthenticated)
-    DEFAULT_HOME_PAGE_PATH_AUTHENTICATED = nil
+    # Default home page path for authenticated users.
+    # Signed-in visitors hitting "/" are redirected to this path when the
+    # admin has not configured a value. Set to "/" via the admin UI to
+    # disable the redirect and fall back to the unauthenticated rewrite.
+    DEFAULT_HOME_PAGE_PATH_AUTHENTICATED = "/creatives"
 
     # Default theme IDs (nil means use built-in light/dark)
     # These reference UserTheme IDs for admin-configured custom themes
@@ -93,7 +96,7 @@ module Collavre
 
     def self.home_page_path_authenticated
       value = cached_value("home_page_path_authenticated")
-      value.presence
+      value.presence || DEFAULT_HOME_PAGE_PATH_AUTHENTICATED
     end
 
     def self.mcp_tool_approval_required?

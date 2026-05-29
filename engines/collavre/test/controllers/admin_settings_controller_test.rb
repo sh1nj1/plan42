@@ -81,7 +81,7 @@ class AdminSettingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "/users", SystemSetting.home_page_path_authenticated
   end
 
-  test "update clears home_page_path_authenticated when blank" do
+  test "update clears home_page_path_authenticated when blank, falling back to default" do
     SystemSetting.find_or_create_by!(key: "home_page_path_authenticated") { |s| s.value = "/users" }
     Rails.cache.clear
     assert_equal "/users", SystemSetting.home_page_path_authenticated
@@ -94,7 +94,9 @@ class AdminSettingsControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to collavre.admin_settings_path
     Rails.cache.clear
-    assert_nil SystemSetting.home_page_path_authenticated
+    # Stored value is nil, but reader returns the default for authenticated users
+    assert_nil SystemSetting.find_by(key: "home_page_path_authenticated")&.value
+    assert_equal "/creatives", SystemSetting.home_page_path_authenticated
   end
 
   test "update rejects invalid home_page_path_authenticated" do

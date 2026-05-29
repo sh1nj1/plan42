@@ -66,15 +66,26 @@ class RootHomePathTest < ActionDispatch::IntegrationTest
     assert_equal "/users", URI.parse(response.location).path
   end
 
-  test "authenticated user hitting / without home_page_path_authenticated falls back to unauth rewrite" do
+  test "authenticated user hitting / without setting is redirected to default /creatives" do
+    Rails.cache.clear
+
+    sign_in_as(@user, password: "password")
+    get "/"
+
+    assert_response :redirect
+    assert_equal "/creatives", URI.parse(response.location).path
+  end
+
+  test "authenticated user falls back to unauth rewrite when admin sets authenticated path to '/'" do
     SystemSetting.create!(key: "home_page_path", value: "/users")
+    SystemSetting.create!(key: "home_page_path_authenticated", value: "/")
     Rails.cache.clear
 
     sign_in_as(@user, password: "password")
     get "/"
 
     assert_response :success
-    # Should not redirect - falls back to middleware rewrite behavior
+    # "/" sentinel disables the redirect - middleware rewrite still applies
   end
 
   test "authenticated user visiting the authenticated home directly does not loop" do
