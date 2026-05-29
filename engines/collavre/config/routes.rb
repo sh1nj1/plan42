@@ -150,7 +150,6 @@ Collavre::Engine.routes.draw do
       end
       member do
         delete :reset
-        post :seed_from_env
       end
     end
   end

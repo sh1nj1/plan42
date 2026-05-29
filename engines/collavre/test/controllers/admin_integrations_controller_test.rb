@@ -153,35 +153,4 @@ class AdminIntegrationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  # ---------- seed_from_env ----------
-
-  test "seed_from_env copies ENV value into DB with seeded_from_env true" do
-    ENV["SLACK_CLIENT_ID"] = "from-env"
-    sign_in_as(@admin, password: "password")
-
-    post collavre.seed_from_env_admin_integration_path(key: "slack_client_id")
-
-    assert_redirected_to collavre.admin_integrations_path
-    row = IntegrationSetting.find_by(key: "slack_client_id")
-    assert_not_nil row
-    assert_equal "from-env", row.value
-    assert_equal "slack", row.category
-    assert row.seeded_from_env
-  end
-
-  test "seed_from_env with blank ENV does not create a row" do
-    ENV.delete("SLACK_CLIENT_ID")
-    sign_in_as(@admin, password: "password")
-
-    post collavre.seed_from_env_admin_integration_path(key: "slack_client_id")
-
-    assert_redirected_to collavre.admin_integrations_path
-    assert_nil IntegrationSetting.find_by(key: "slack_client_id")
-  end
-
-  test "seed_from_env on unknown key returns 404" do
-    sign_in_as(@admin, password: "password")
-    post collavre.seed_from_env_admin_integration_path(key: "no_such_key")
-    assert_response :not_found
-  end
 end

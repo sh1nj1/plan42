@@ -50,14 +50,9 @@
           collavre.reset_admin_integration_path(key: key_str),
           method: :delete,
           form: {
-            style: "display: inline-block; margin-right: 0.25em;",
+            style: "display: inline-block;",
             data: { turbo_confirm: t("collavre.admin.integrations.confirm_reset") }
           },
-          class: "btn btn-small btn-secondary" %>
-    <%= button_to t("collavre.admin.integrations.actions.seed_from_env"),
-          collavre.seed_from_env_admin_integration_path(key: key_str),
-          method: :post,
-          form: { style: "display: inline-block;" },
           class: "btn btn-small btn-secondary" %>
   </td>
 </tr>

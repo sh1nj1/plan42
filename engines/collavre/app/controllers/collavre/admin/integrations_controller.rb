@@ -4,7 +4,7 @@ module Collavre
   module Admin
     class IntegrationsController < ApplicationController
       before_action :require_system_admin!
-      before_action :load_definition!, only: [ :reset, :seed_from_env ]
+      before_action :load_definition!, only: [ :reset ]
 
       Registry = Collavre::IntegrationSettings::Registry
       Resolver = Collavre::IntegrationSettings::Resolver
@@ -42,25 +42,6 @@ module Collavre
         Collavre::IntegrationSetting.where(key: @definition.key.to_s).destroy_all
         redirect_to collavre.admin_integrations_path,
           notice: t("collavre.admin.integrations.flash.reset_done", key: @definition.key)
-      end
-
-      def seed_from_env
-        env_value = ENV[@definition.env_var].to_s
-
-        if env_value.blank?
-          redirect_to collavre.admin_integrations_path,
-            notice: t("collavre.admin.integrations.flash.seed_no_env", key: @definition.key)
-          return
-        end
-
-        row = Collavre::IntegrationSetting.find_or_initialize_by(key: @definition.key.to_s)
-        row.category = @definition.category
-        row.value = env_value
-        row.seeded_from_env = true
-        row.save!
-
-        redirect_to collavre.admin_integrations_path,
-          notice: t("collavre.admin.integrations.flash.seed_done", key: @definition.key)
       end
 
       private

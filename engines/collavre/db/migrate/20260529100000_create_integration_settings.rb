@@ -5,7 +5,6 @@ class CreateIntegrationSettings < ActiveRecord::Migration[8.1]
       t.text    :value
       t.string  :category, null: false
       t.boolean :sensitive, null: false, default: true
-      t.boolean :seeded_from_env, null: false, default: false
 
       t.timestamps
     end

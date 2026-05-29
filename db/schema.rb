@@ -315,7 +315,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_29_100000) do
     t.string "category", null: false
     t.datetime "created_at", null: false
     t.string "key", null: false
-    t.boolean "seeded_from_env", default: false, null: false
     t.boolean "sensitive", default: true, null: false
     t.datetime "updated_at", null: false
     t.text "value"
