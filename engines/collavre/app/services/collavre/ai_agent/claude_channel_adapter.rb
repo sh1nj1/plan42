@@ -6,6 +6,8 @@ module Collavre
     # instead of RubyLLM. Messages are delivered through AgentChannel WebSocket;
     # responses arrive asynchronously via the reply API endpoint.
     class ClaudeChannelAdapter
+      class UndeliverableError < StandardError; end
+
       def initialize(agent:, context:)
         @agent = agent
         @context = context
@@ -14,8 +16,12 @@ module Collavre
 
       def deliver
         unless @topic_id
-          Rails.logger.warn("[ClaudeChannelAdapter] No topic_id in context for agent #{@agent.id}")
-          return
+          # Workflow subtasks build context without a topic (see
+          # WorkflowExecutor#build_subtask_context). A Claude Channel agent
+          # cannot service those — raise so AiAgentJob fails the task and the
+          # parent workflow advances via fail_subtask! instead of hanging.
+          raise UndeliverableError,
+                "Claude Channel delivery requires a topic_id (agent=#{@agent.id})"
         end
 
         comment = find_comment

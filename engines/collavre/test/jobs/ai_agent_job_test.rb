@@ -392,4 +392,58 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_operator Task.where(agent_id: @agent.id).count, :>, initial_task_count,
       "Expected new task when existing task is done"
   end
+
+  test "claude channel workflow subtask without topic fails and notifies parent" do
+    claude_agent = User.create!(
+      email: "cc-workflow-agent@agent.collavre.local",
+      name: "Claude Workflow Agent",
+      password: SecureRandom.hex(32),
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      created_by_id: @owner.id,
+      searchable: false
+    )
+
+    parent_creative = Creative.create!(user: @owner, description: "Workflow Parent")
+    parent_task = Task.create!(
+      name: "Workflow Parent",
+      status: "running",
+      agent: @owner,
+      creative_id: parent_creative.id
+    )
+
+    # Workflow subtasks are built without a topic — see WorkflowExecutor#build_subtask_context.
+    workflow_context = {
+      "creative" => { "id" => @creative.id },
+      "comment" => { "id" => @comment.id, "content" => "Run subtask" }
+    }
+
+    fail_called_with = nil
+    fake_executor = Class.new do
+      define_method(:fail_subtask!) do |sub_task, error_message: nil|
+        fail_called_with = { sub_task: sub_task, error_message: error_message }
+      end
+    end.new
+
+    Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
+      assert_raises(Collavre::AiAgent::ClaudeChannelAdapter::UndeliverableError) do
+        # Create the task explicitly with parent_task_id; perform_now exercises the job path.
+        sub_task = Task.create!(
+          name: "Claude subtask",
+          status: "running",
+          agent: claude_agent,
+          parent_task_id: parent_task.id,
+          creative_id: @creative.id,
+          trigger_event_payload: workflow_context
+        )
+        AiAgentJob.perform_now(sub_task)
+      end
+    end
+
+    sub_task = Task.where(agent_id: claude_agent.id, parent_task_id: parent_task.id).last
+    assert_equal "failed", sub_task.status
+    assert_not_nil fail_called_with, "Expected WorkflowExecutor#fail_subtask! to be invoked"
+    assert_equal sub_task.id, fail_called_with[:sub_task].id
+    assert_match(/Claude Channel/, fail_called_with[:error_message].to_s)
+  end
 end

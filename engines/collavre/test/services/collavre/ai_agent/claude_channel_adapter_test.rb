@@ -45,13 +45,13 @@ module Collavre
         assert_equal @creative.id, dispatch[:data][:comment][:creative_id]
       end
 
-      test "handles missing topic_id gracefully" do
+      test "raises UndeliverableError when topic_id is missing" do
         adapter = ClaudeChannelAdapter.new(
           agent: @agent,
           context: { "comment" => { "id" => 1 } }
         )
 
-        assert_nothing_raised { adapter.deliver }
+        assert_raises(ClaudeChannelAdapter::UndeliverableError) { adapter.deliver }
       end
     end
   end
