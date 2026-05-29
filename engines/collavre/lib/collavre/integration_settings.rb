@@ -7,6 +7,7 @@
 
 require_relative "integration_settings/key_definition"
 require_relative "integration_settings/registry"
+require_relative "integration_settings/resolver"
 
 module Collavre
   module IntegrationSettings
