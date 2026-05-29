@@ -23,6 +23,7 @@ module Collavre
           topic = inbox.topics.find_or_create_by!(name: topic_name) do |t|
             t.user = current_user
           end
+          topic.unarchive! if topic.archived?
 
           topic.set_primary_agent!(ai_user)
 
@@ -97,6 +98,7 @@ module Collavre
           )
 
           if comment.save
+            complete_delegated_task(agent, topic, comment)
             dispatch_a2a(agent, comment)
             render json: { comment_id: comment.id }, status: :created
           else
@@ -104,6 +106,21 @@ module Collavre
           end
         end
         private
+
+        # When Claude responds, mark the oldest still-delegated task in this
+        # topic as done so trigger-loop / workflow completion paths can fire.
+        # Without this, drop-trigger loops stay stuck because
+        # Task#trigger_loop_candidate? only triggers on status == "done".
+        def complete_delegated_task(agent, topic, comment)
+          task = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
+                     .order(:created_at).first
+          return unless task
+
+          Task.transaction do
+            comment.update_column(:task_id, task.id)
+            task.update!(status: "done")
+          end
+        end
 
         def dispatch_a2a(agent, comment)
           AiAgent::A2aDispatcher.new(

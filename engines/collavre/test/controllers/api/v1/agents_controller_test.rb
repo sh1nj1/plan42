@@ -100,6 +100,24 @@ module Collavre
           assert_equal "Claude session-2", second["topic_name"]
         end
 
+        test "register unarchives prior archived topic with same session name" do
+          first = register_agent("recycled-pid")
+          first_topic_id = first["topic_id"]
+
+          delete "/api/v1/agent/#{first['agent_id']}",
+            params: { topic_id: first_topic_id },
+            headers: auth_headers,
+            as: :json
+          assert_response :no_content
+          assert Topic.find(first_topic_id).archived?
+
+          second = register_agent("recycled-pid")
+          assert_equal first_topic_id, second["topic_id"],
+            "register should reuse the archived topic, not create a new row"
+          assert_not Topic.find(first_topic_id).archived?,
+            "register should unarchive the reused topic so its comments are visible again"
+        end
+
         test "register requires name" do
           post "/api/v1/agent/register",
             params: { name: "" },
@@ -129,6 +147,58 @@ module Collavre
           # skip_dispatch is a virtual attribute, verified via agent user
           ai_user = User.find(reg["agent_id"])
           assert_equal ai_user.id, comment.user_id
+        end
+
+        test "reply marks delegated task done and links comment" do
+          reg = register_agent("delegated-task-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          topic = Topic.find(topic_id)
+          creative = topic.creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "Response to comment_created",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "Claude responded" },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+          body = JSON.parse(response.body)
+
+          assert_equal "done", task.reload.status
+          assert_equal task.id, Comment.find(body["comment_id"]).task_id
+        end
+
+        test "reply leaves non-delegated tasks untouched" do
+          reg = register_agent("non-delegated-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          topic = Topic.find(topic_id)
+          creative = topic.creative.effective_origin
+
+          running_task = Collavre::Task.create!(
+            name: "Running task",
+            status: "running",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "Hi" },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          assert_equal "running", running_task.reload.status
         end
 
         test "reply dispatches A2A when mentioning another agent" do
