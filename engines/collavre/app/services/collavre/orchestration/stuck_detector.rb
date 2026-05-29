@@ -73,6 +73,23 @@ module Collavre
             tracker.release!(task.id)
           end
 
+          # If this was a workflow subtask, fail the parent so the workflow
+          # advances instead of staying running with pending_creative_ids
+          # pointing at a child that's been failed underneath it.
+          if task.parent_task_id.present?
+            begin
+              Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+                task,
+                error_message: "Auto-recovered: stuck for " \
+                               "#{((Time.current - stuck_item.stuck_since) / 60).round} minutes"
+              )
+            rescue StandardError => e
+              Rails.logger.error(
+                "[StuckDetector] fail_subtask! failed for task #{task.id}: #{e.message}"
+              )
+            end
+          end
+
           # Drain the queue for the topic so waiting tasks can execute
           AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
         rescue StandardError => e

@@ -470,4 +470,45 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_equal sub_task.id, fail_called_with[:sub_task].id
     assert_match(/Claude Channel/, fail_called_with[:error_message].to_s)
   end
+
+  test "claude channel task is delegated before adapter deliver" do
+    claude_agent = User.create!(
+      email: "cc-race-agent@agent.collavre.local",
+      name: "Claude Race Agent",
+      password: SecureRandom.hex(32),
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      created_by_id: @owner.id,
+      searchable: false
+    )
+
+    topic = Topic.create!(creative: @creative, name: "cc-race", user: @owner)
+    context = {
+      "creative" => { "id" => @creative.id },
+      "topic" => { "id" => topic.id },
+      "comment" => { "id" => @comment.id, "content" => "Race test" }
+    }
+
+    status_at_deliver = nil
+    delivered = false
+    fake_adapter = Class.new do
+      define_method(:initialize) { |agent:, context:| @agent = agent; @context = context }
+      define_method(:deliver) do
+        status_at_deliver = Task.where(agent_id: @agent.id).order(:created_at).last&.status
+        delivered = true
+        nil
+      end
+    end
+
+    Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
+      AiAgentJob.perform_now(claude_agent.id, "comment_created", context)
+    end
+
+    assert delivered, "Expected ClaudeChannelAdapter#deliver to be invoked"
+    assert_equal "delegated", status_at_deliver,
+      "Task must be in 'delegated' state before the MCP dispatch so a fast reply can find it"
+
+    task = Task.where(agent_id: claude_agent.id).last
+    assert_equal "delegated", task.status
+  end
 end

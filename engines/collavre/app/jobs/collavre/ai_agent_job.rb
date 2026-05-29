@@ -57,11 +57,17 @@ module Collavre
       should_release = true
 
       begin
+        # For Claude Channel agents, transition to "delegated" BEFORE dispatching.
+        # The MCP client can receive the broadcast and POST /reply on a different
+        # thread before AiAgentService#call returns; the reply handler only looks
+        # for status: "delegated" tasks, so a late update! would leave the
+        # already-answered task stuck in delegated until stuck recovery.
+        task.update!(status: "delegated") if is_claude_channel_agent
+
         response_content = AiAgentService.new(task).call
 
         # Claude Channel agents delegate via MCP; no immediate response expected
         if is_claude_channel_agent
-          task.update!(status: "delegated")
           # Hold agent capacity until reply / cancel / stuck-recovery releases it.
           should_release = false
         # Workflow subtasks with empty responses should retry, then fail
