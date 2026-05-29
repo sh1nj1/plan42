@@ -19,6 +19,10 @@ if (!commandMenuInitialized) {
     const argsForm = new CommandArgsForm({
       container: popup,
       creativeIdFn: () => popup.dataset.creativeId,
+      contextValuesFn: () => ({
+        creative_id: popup.dataset.creativeId || null,
+        topic_id: currentTopicIdFromController(popup) || null
+      }),
       labels: {
         submit: menu.dataset.formSubmit || 'OK',
         cancel: menu.dataset.formCancel || 'Cancel'
@@ -78,6 +82,12 @@ if (!commandMenuInitialized) {
         textarea.focus()
       }
     })
+
+    function currentTopicIdFromController(popupEl) {
+      const controller = window.Stimulus?.getControllerForElementAndIdentifier(popupEl, 'comments--topics')
+      const id = controller?.currentTopicId
+      return id ? String(id) : ''
+    }
 
     function clearCommandText() {
       const pos = textarea.selectionStart
