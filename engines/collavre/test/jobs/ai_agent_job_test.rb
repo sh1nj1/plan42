@@ -492,7 +492,7 @@ class AiAgentJobTest < ActiveJob::TestCase
     status_at_deliver = nil
     delivered = false
     fake_adapter = Class.new do
-      define_method(:initialize) { |agent:, context:| @agent = agent; @context = context }
+      define_method(:initialize) { |agent:, context:, task: nil| @agent = agent; @context = context; @task = task }
       define_method(:deliver) do
         status_at_deliver = Task.where(agent_id: @agent.id).order(:created_at).last&.status
         delivered = true

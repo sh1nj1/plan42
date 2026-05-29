@@ -176,6 +176,74 @@ module Collavre
           assert_equal task.id, Comment.find(body["comment_id"]).task_id
         end
 
+        test "reply with task_id completes the specified delegated task" do
+          # When topic concurrency > 1, multiple delegated tasks can co-exist
+          # in the same topic. Claude may reply to a later dispatch first;
+          # task_id correlation must complete the right task, not the oldest.
+          reg = register_agent("task-id-correlation-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          topic = Topic.find(topic_id)
+          creative = topic.creative.effective_origin
+
+          older = Collavre::Task.create!(
+            name: "Older dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id,
+            created_at: 2.minutes.ago
+          )
+          newer = Collavre::Task.create!(
+            name: "Newer dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id,
+            created_at: 1.minute.ago
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "Reply to newer", task_id: newer.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+          body = JSON.parse(response.body)
+
+          assert_equal "done", newer.reload.status, "newer task should be completed"
+          assert_equal "delegated", older.reload.status, "older task should remain delegated"
+          assert_equal newer.id, Comment.find(body["comment_id"]).task_id
+        end
+
+        test "reply with task_id ignored when it does not match a delegated task in this topic" do
+          # Foreign or stale task_id must not punch through the scope.
+          reg = register_agent("task-id-foreign-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          topic = Topic.find(topic_id)
+          creative = topic.creative.effective_origin
+
+          delegated = Collavre::Task.create!(
+            name: "Real delegated task",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "Stale id", task_id: 99_999_999 },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          assert_equal "delegated", delegated.reload.status,
+            "real delegated task must not be completed by a foreign task_id"
+        end
+
         test "reply advances parent workflow when delegated subtask completes" do
           reg = register_agent("workflow-subtask-test")
           topic_id = reg["topic_id"]

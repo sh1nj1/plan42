@@ -45,6 +45,37 @@ module Collavre
         assert_equal @creative.id, dispatch[:data][:comment][:creative_id]
       end
 
+      test "broadcast includes task_id when task is provided" do
+        task = Collavre::Task.create!(
+          name: "Response to comment_created",
+          status: "running",
+          trigger_event_name: "comment_created",
+          agent: @agent,
+          topic_id: @topic.id,
+          creative_id: @creative.id
+        )
+
+        broadcasts = []
+        ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
+          ClaudeChannelAdapter.new(agent: @agent, context: @context, task: task).deliver
+        end
+
+        dispatch = broadcasts.find { |b| b[:data][:type] == "dispatch" }
+        assert_not_nil dispatch
+        assert_equal task.id, dispatch[:data][:task_id]
+      end
+
+      test "broadcast task_id is nil when task is not provided" do
+        broadcasts = []
+        ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
+          ClaudeChannelAdapter.new(agent: @agent, context: @context).deliver
+        end
+
+        dispatch = broadcasts.find { |b| b[:data][:type] == "dispatch" }
+        assert_not_nil dispatch
+        assert_nil dispatch[:data][:task_id]
+      end
+
       test "raises UndeliverableError when topic_id is missing" do
         adapter = ClaudeChannelAdapter.new(
           agent: @agent,

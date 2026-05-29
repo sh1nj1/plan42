@@ -43,7 +43,8 @@ module Collavre
 
       AiAgent::ClaudeChannelAdapter.new(
         agent: @agent,
-        context: @context
+        context: @context,
+        task: @task
       ).deliver
 
       log_action("delegated", { message: "Message delivered to Claude Channel" })

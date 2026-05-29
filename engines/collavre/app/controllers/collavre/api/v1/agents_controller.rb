@@ -112,7 +112,7 @@ module Collavre
           )
 
           if comment.save
-            complete_delegated_task(agent, topic, comment)
+            complete_delegated_task(agent, topic, comment, params[:task_id])
             dispatch_a2a(agent, comment)
             render json: { comment_id: comment.id }, status: :created
           else
@@ -121,15 +121,30 @@ module Collavre
         end
         private
 
-        # When Claude responds, mark the oldest still-delegated task in this
-        # topic as done so trigger-loop / workflow completion paths can fire.
+        # When Claude responds, complete the delegated task this reply
+        # corresponds to so trigger-loop / workflow completion paths fire.
         # Without this, drop-trigger loops stay stuck because
         # Task#trigger_loop_candidate? only triggers on status == "done".
-        # Also advance the parent workflow (if any) and drain the topic queue,
-        # mirroring the completion path AiAgentJob takes for non-delegated runs.
-        def complete_delegated_task(agent, topic, comment)
-          task = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
-                     .order(:created_at).first
+        #
+        # Correlation rules:
+        #  - If the client echoes back the task_id from the dispatch payload,
+        #    complete that specific task (verifying it belongs to the same
+        #    agent + topic and is still delegated). This is required when
+        #    topic concurrency > 1 — multiple delegated tasks can co-exist
+        #    in one topic, and Claude may reply out of dispatch order.
+        #  - Otherwise (back-compat for clients that don't yet echo task_id),
+        #    fall back to the oldest delegated task in this agent+topic.
+        # Also advances the parent workflow (if any) and drains the topic
+        # queue, mirroring the completion path AiAgentJob takes for
+        # non-delegated runs.
+        def complete_delegated_task(agent, topic, comment, requested_task_id)
+          scope = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
+          task =
+            if requested_task_id.present?
+              scope.find_by(id: requested_task_id)
+            else
+              scope.order(:created_at).first
+            end
           return unless task
 
           Task.transaction do

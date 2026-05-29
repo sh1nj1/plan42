@@ -8,9 +8,10 @@ module Collavre
     class ClaudeChannelAdapter
       class UndeliverableError < StandardError; end
 
-      def initialize(agent:, context:)
+      def initialize(agent:, context:, task: nil)
         @agent = agent
         @context = context
+        @task = task
         @topic_id = context.dig("topic", "id")
       end
 
@@ -28,6 +29,10 @@ module Collavre
         AgentChannel.broadcast_to_topic(@topic_id, {
           type: "dispatch",
           agent_id: @agent.id,
+          # task_id lets the MCP client echo it back via /reply so the server
+          # can complete the exact dispatched task even when topic concurrency
+          # > 1 allows multiple in-flight delegated tasks per topic.
+          task_id: @task&.id,
           comment: {
             id: @context.dig("comment", "id"),
             content: @context.dig("comment", "content"),
