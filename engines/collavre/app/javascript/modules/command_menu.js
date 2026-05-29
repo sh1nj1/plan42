@@ -84,9 +84,19 @@ if (!commandMenuInitialized) {
     })
 
     function currentTopicIdFromController(popupEl) {
-      const controller = window.Stimulus?.getControllerForElementAndIdentifier(popupEl, 'comments--topics')
-      if (!controller) return ''
-      const id = controller.currentTopicId || controller.mainTopicId
+      // Prefer the form controller's locally-cached topic id (the same value
+      // used when submitting a comment). It is set from the
+      // `comments--topics:change` event so it reflects the user's actual
+      // selection after restoreSelection, while topics_controller's
+      // currentTopicId getter can still return a stale URL deep-link.
+      const formCtrl = window.Stimulus?.getControllerForElementAndIdentifier(popupEl, 'comments--form')
+      if (formCtrl) {
+        const id = formCtrl.currentTopicId || formCtrl._mainTopicId
+        if (id) return String(id)
+      }
+      const topicsCtrl = window.Stimulus?.getControllerForElementAndIdentifier(popupEl, 'comments--topics')
+      if (!topicsCtrl) return ''
+      const id = topicsCtrl.currentTopicId || topicsCtrl.mainTopicId
       return id ? String(id) : ''
     }
 
