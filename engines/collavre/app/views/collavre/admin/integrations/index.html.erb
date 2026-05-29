@@ -8,12 +8,12 @@
     <%= tag.div(flash[:warning], class: "flash-warning") if flash[:warning] %>
     <%= tag.div(flash[:notice], class: "flash-notice") if flash[:notice] %>
 
-    <p style="color: var(--color-text-muted); margin-bottom: 1.5em;">
+    <p style="color: var(--color-muted); margin-bottom: 1.5em;">
       <%= t("collavre.admin.integrations.subtitle") %>
     </p>
 
     <% if @grouped_settings.empty? %>
-      <p class="empty-state" style="padding: 2em; text-align: center; color: var(--color-text-muted);">
+      <p class="empty-state" style="padding: 2em; text-align: center; color: var(--color-muted);">
         <%= t("collavre.admin.integrations.empty_state") %>
       </p>
     <% else %>
