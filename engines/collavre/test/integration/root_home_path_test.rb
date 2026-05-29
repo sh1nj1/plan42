@@ -54,6 +54,18 @@ class RootHomePathTest < ActionDispatch::IntegrationTest
     assert_equal "/users", URI.parse(response.location).path
   end
 
+  test "authenticated user is redirected even when both paths resolve to the same target" do
+    SystemSetting.create!(key: "home_page_path", value: "/users")
+    SystemSetting.create!(key: "home_page_path_authenticated", value: "/users")
+    Rails.cache.clear
+
+    sign_in_as(@user, password: "password")
+    get "/"
+
+    assert_response :redirect
+    assert_equal "/users", URI.parse(response.location).path
+  end
+
   test "authenticated user hitting / without home_page_path_authenticated falls back to unauth rewrite" do
     SystemSetting.create!(key: "home_page_path", value: "/users")
     Rails.cache.clear

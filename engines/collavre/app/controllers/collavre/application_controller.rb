@@ -18,6 +18,14 @@ module Collavre
     # The middleware preserves "/" as a stable URL for unauthenticated
     # visitors; authenticated users get a real URL change so the address
     # bar reflects state.
+    #
+    # Loop safety: the env flag is only set when PATH_INFO == "/" hits
+    # the middleware. Direct visits to the redirect target never trip it,
+    # so comparing request.path to target would be wrong here — when both
+    # home_page_path and home_page_path_authenticated resolve to the same
+    # path, the middleware has already rewritten request.path to that
+    # target while the browser URL is still "/", and we must still
+    # redirect so the address bar reflects state.
     def redirect_authenticated_root_to_home
       return unless request.get?
       return unless request.env["collavre.root_request"]
@@ -26,7 +34,6 @@ module Collavre
       target = SystemSetting.home_page_path_authenticated
       return if target.blank?
       return if target == "/"
-      return if request.path == target
 
       redirect_to target
     end
