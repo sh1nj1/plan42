@@ -29,6 +29,14 @@ module CollavreGithub
       pr_url
     end
 
+    def badge_state
+      pr_state
+    end
+
+    def badge_title
+      I18n.t("collavre_github.channel.pr.badge.#{pr_state}", default: pr_state.to_s)
+    end
+
     # PR lifecycle state used by the chip badge color. Defaults to "open" so
     # freshly attached channels render the green badge before any close event
     # has been received. Persisted in `config` to avoid a schema change for a
