@@ -437,6 +437,26 @@ module Collavre
           assert_response :not_found
         end
 
+        test "destroy ignores topic_id that does not belong to the agent" do
+          reg = register_agent("ownership-test")
+          agent_id = reg["agent_id"]
+
+          # An unrelated active topic in the same inbox (no primary_agent on it,
+          # or a different agent) — destroy must NOT archive it.
+          inbox = Creative.inbox_for(@user)
+          unrelated = inbox.topics.create!(name: "Unrelated", user: @user)
+
+          delete "/api/v1/agent/#{agent_id}",
+            params: { topic_id: unrelated.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :no_content
+
+          assert_not unrelated.reload.archived?,
+            "destroy must not archive a topic that is not owned by the :id agent"
+        end
+
+
         private
 
         def auth_headers

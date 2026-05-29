@@ -54,7 +54,10 @@ module Collavre
 
           topic = if params[:topic_id].present?
             inbox = Creative.inbox_for(current_user)
-            inbox.topics.active.find_by(id: params[:topic_id])
+            candidate = inbox.topics.active.find_by(id: params[:topic_id])
+            # Ensure the topic actually belongs to this agent so a mismatched
+            # topic_id can't archive an unrelated inbox conversation.
+            candidate if candidate && candidate.primary_agent&.id == ai_user.id
           else
             find_agent_topic(ai_user)
           end
