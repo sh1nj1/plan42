@@ -9,7 +9,10 @@ class AdminIntegrationsControllerTest < ActionDispatch::IntegrationTest
     @admin = users(:one)
     @user  = users(:two)
 
-    # Reset registry for hermetic tests.
+    # Reset registry for hermetic tests, but snapshot boot-time
+    # registrations (e.g. Slack engine) so other tests in the same
+    # process don't lose their key definitions.
+    @registry_snapshot = Registry.instance.instance_variable_get(:@definitions).dup
     Registry.instance.instance_variable_set(:@definitions, {})
     Registry.instance.register(
       :slack_client_secret,
@@ -33,7 +36,7 @@ class AdminIntegrationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   teardown do
-    Registry.instance.instance_variable_set(:@definitions, {})
+    Registry.instance.instance_variable_set(:@definitions, @registry_snapshot || {})
     ENV.delete("SLACK_CLIENT_ID")
     ENV.delete("SLACK_CLIENT_SECRET")
     Rails.cache.clear

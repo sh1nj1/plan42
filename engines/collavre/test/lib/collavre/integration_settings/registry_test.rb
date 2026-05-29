@@ -5,8 +5,17 @@ require "test_helper"
 module Collavre
   module IntegrationSettings
     class RegistryTest < ActiveSupport::TestCase
-      setup { Registry.instance.instance_variable_set(:@definitions, {}) }
-      teardown { Registry.instance.instance_variable_set(:@definitions, {}) }
+      setup do
+        # Snapshot boot-time registrations (e.g. Slack engine) so we can
+        # restore them in teardown without polluting other tests in the
+        # same process.
+        @registry_snapshot = Registry.instance.instance_variable_get(:@definitions).dup
+        Registry.instance.instance_variable_set(:@definitions, {})
+      end
+
+      teardown do
+        Registry.instance.instance_variable_set(:@definitions, @registry_snapshot || {})
+      end
 
       test "registers a key with defaults" do
         Registry.instance.register(:slack_client_id, category: "slack")

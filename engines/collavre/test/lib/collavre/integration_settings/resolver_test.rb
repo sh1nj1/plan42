@@ -6,6 +6,9 @@ module Collavre
   module IntegrationSettings
     class ResolverTest < ActiveSupport::TestCase
       setup do
+        # Snapshot boot-time registrations (e.g. Slack engine) so other tests
+        # in the same process don't lose their key definitions.
+        @registry_snapshot = Registry.instance.instance_variable_get(:@definitions).dup
         Registry.instance.instance_variable_set(:@definitions, {})
         Registry.instance.register(
           :slack_client_id,
@@ -18,7 +21,7 @@ module Collavre
       end
 
       teardown do
-        Registry.instance.instance_variable_set(:@definitions, {})
+        Registry.instance.instance_variable_set(:@definitions, @registry_snapshot || {})
         ENV.delete("SLACK_CLIENT_ID")
         Rails.cache.clear
       end
