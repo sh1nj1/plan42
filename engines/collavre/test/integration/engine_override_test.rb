@@ -102,6 +102,7 @@ class EngineOverrideTest < ActionDispatch::IntegrationTest
     user.update!(email_verified_at: Time.current) unless user.email_verified?
     post collavre.session_path, params: { email: user.email, password: "password" }
     get root_path
+    follow_redirect! if response.redirect?
 
     assert_response :success
     assert_select "#custom-footer", text: "Custom Enterprise Footer"
