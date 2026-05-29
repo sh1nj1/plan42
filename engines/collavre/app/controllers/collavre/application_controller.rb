@@ -27,7 +27,7 @@ module Collavre
     # target while the browser URL is still "/", and we must still
     # redirect so the address bar reflects state.
     def redirect_authenticated_root_to_home
-      return unless request.get?
+      return unless request.get? || request.head?
       return unless request.env["collavre.root_request"]
       return unless authenticated?
 
