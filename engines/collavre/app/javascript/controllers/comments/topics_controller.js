@@ -34,10 +34,15 @@ export default class extends Controller {
 
     onPopupOpened({ creativeId }) {
         this.creativeIdValue = creativeId
-        // Clear stale cached effective id from the previous creative — otherwise
-        // chat-context autofill (command_menu) reads the old value during the
+        // Clear stale cached state from the previous creative — otherwise
+        // chat-context autofill (command_menu) reads stale values during the
         // window between popup switch and the new topics fetch completing.
+        // form_controller's currentTopicId is cleared upstream in
+        // popup_controller.notifyChildControllers; here we clear our own
+        // mainTopicId (read directly as the autofill fallback) and the cached
+        // effective_creative_id. loadTopics() repopulates both.
         delete this.element.dataset.effectiveCreativeId
+        this.mainTopicId = null
         this.subscribe()
         return this.loadTopics()
     }
