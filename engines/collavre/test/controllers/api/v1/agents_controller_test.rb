@@ -52,7 +52,9 @@ module Collavre
           body = JSON.parse(response.body)
 
           assert body["agent_id"].present?
-          assert_equal "Claude Channel", body["agent_name"]
+          # Per-session agents: name includes session_name so the agent picker
+          # shows distinct entries when multiple Claude sessions are running.
+          assert_equal "Claude Channel (session-a1b2)", body["agent_name"]
           assert body["topic_id"].present?
           assert_equal "Claude session-a1b2", body["topic_name"]
           assert body["inbox_creative_id"].present?
@@ -76,9 +78,36 @@ module Collavre
           assert_not Contact.exists?(user: @user, contact_user: ai_user)
         end
 
-        test "register reuses same agent across sessions with different topics" do
+        test "register creates distinct agents for concurrent sessions with different names" do
+          # Two concurrent Claude Code sessions for the same human must produce
+          # two distinct ai_users so each session subscribes to its own
+          # agent:user:<id> stream — otherwise both would receive every
+          # dispatch routed to the shared agent and produce duplicate replies.
+          assert_difference -> { User.count }, 2 do
+            post "/api/v1/agent/register",
+              params: { name: "session-1" },
+              headers: auth_headers,
+              as: :json
+            assert_response :ok
+            post "/api/v1/agent/register",
+              params: { name: "session-2" },
+              headers: auth_headers,
+              as: :json
+            assert_response :ok
+          end
+
+          users = User.where(created_by_id: @user.id, llm_model: "claude-code").order(:id).last(2)
+          assert_equal 2, users.size
+          assert_not_equal users[0].id, users[1].id
+          assert_equal "Claude Channel (session-1)", users[0].name
+          assert_equal "Claude Channel (session-2)", users[1].name
+        end
+
+        test "register reuses agent for same session_name (idempotent re-register)" do
+          # Same session re-registering (e.g. plugin reconnect) must not
+          # proliferate ai_users.
           post "/api/v1/agent/register",
-            params: { name: "session-1" },
+            params: { name: "session-recycle" },
             headers: auth_headers,
             as: :json
           assert_response :ok
@@ -86,18 +115,15 @@ module Collavre
 
           assert_no_difference -> { User.count } do
             post "/api/v1/agent/register",
-              params: { name: "session-2" },
+              params: { name: "session-recycle" },
               headers: auth_headers,
               as: :json
           end
-
           assert_response :ok
           second = JSON.parse(response.body)
 
           assert_equal first["agent_id"], second["agent_id"]
-          assert_not_equal first["topic_id"], second["topic_id"]
-          assert_equal "Claude session-1", first["topic_name"]
-          assert_equal "Claude session-2", second["topic_name"]
+          assert_equal first["topic_id"], second["topic_id"]
         end
 
         test "register unarchives prior archived topic with same session name" do
@@ -467,21 +493,18 @@ module Collavre
           assert topic.archived?
         end
 
-        test "destroy requires topic_id to avoid archiving a sibling session" do
-          # Two concurrent sessions for the same user reuse the same ai_user as
-          # primary_agent on both topics. Without topic_id, destroy can't tell
-          # which session is ending; it must refuse rather than guess.
-          first = register_agent("session-x")
-          second = register_agent("session-y")
-          assert_equal first["agent_id"], second["agent_id"]
+        test "destroy still requires topic_id" do
+          # Per-session agents removed the sibling-collision concern, but the
+          # endpoint contract still requires an explicit topic_id so the
+          # caller declares which session topic is ending.
+          reg = register_agent("session-x")
 
-          delete "/api/v1/agent/#{first['agent_id']}",
+          delete "/api/v1/agent/#{reg['agent_id']}",
             headers: auth_headers,
             as: :json
           assert_response :unprocessable_entity
 
-          assert_not Topic.find(first["topic_id"]).archived?
-          assert_not Topic.find(second["topic_id"]).archived?
+          assert_not Topic.find(reg["topic_id"]).archived?
         end
 
         test "destroy rejects non-owned agent" do
@@ -546,6 +569,52 @@ module Collavre
             "Expected the delegated task's agent slot to be released on unregister"
           assert_equal [ topic_id, creative.id ], dequeue_called_with
           assert Topic.find(topic_id).archived?
+        end
+
+        test "destroy cancels delegated tasks on work topics outside the registration inbox" do
+          # Real Claude Channel dispatches happen on work topics (non-inbox);
+          # inbox comments are skipped by Comment#dispatch_to_orchestration.
+          # If unregister only scanned the inbox topic, work-topic delegated
+          # tasks would keep holding the slot/topic queue until stuck recovery.
+          reg = register_agent("cross-topic-cancel")
+          inbox_topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+
+          # A delegated task on a *different* (work) topic — the realistic case.
+          work_creative = creatives(:tshirt)
+          work_topic = work_creative.topics.create!(name: "Work topic", user: @user)
+          work_task = Collavre::Task.create!(
+            name: "Delegated on work topic",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: work_topic.id,
+            creative_id: work_creative.id
+          )
+
+          tracker = Collavre::Orchestration::ResourceTracker.for(ai_user)
+          tracker.reset!
+          tracker.reserve!(work_task.id)
+          assert_equal 1, tracker.active_jobs
+
+          dequeue_calls = []
+          stub = ->(t, c = nil) { dequeue_calls << [ t, c ] }
+
+          Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, stub) do
+            delete "/api/v1/agent/#{ai_user.id}",
+              params: { topic_id: inbox_topic_id },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :no_content
+
+          assert_equal "cancelled", work_task.reload.status,
+            "work-topic delegated task must be cancelled on unregister, not just inbox-topic ones"
+          assert_equal 0, Collavre::Orchestration::ResourceTracker.for(ai_user).active_jobs,
+            "work-topic task's slot must be released"
+          assert_includes dequeue_calls, [ work_topic.id, work_creative.id ],
+            "work topic queue must be drained on unregister"
+          assert Topic.find(inbox_topic_id).archived?
         end
 
         test "destroy ignores topic_id that does not belong to the agent" do

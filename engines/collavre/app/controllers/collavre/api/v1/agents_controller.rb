@@ -16,7 +16,14 @@ module Collavre
             return
           end
 
-          ai_user = find_or_create_claude_channel_agent
+          # Per-session ai_user: each MCP session gets its own agent so the
+          # per-agent ActionCable stream (agent:user:<id>) and per-agent task
+          # scope (Task.where(agent_id: ...)) are isolated. Two concurrent
+          # Claude Code sessions for the same human no longer share a stream
+          # (which would cause both to receive every dispatch and produce
+          # duplicate replies) or share delegated-task scope (which would
+          # force unregister to narrow to one topic and leak work-topic tasks).
+          ai_user = find_or_create_session_agent(session_name)
 
           inbox = Creative.inbox_for(current_user)
           topic_name = "Claude #{session_name}"
@@ -66,13 +73,14 @@ module Collavre
           # topic_id can't archive an unrelated inbox conversation.
           topic = nil unless topic && topic.primary_agent&.id == ai_user.id
 
-          if topic
-            # Fail any tasks still delegated to this MCP session before the
-            # topic is archived. Without this, the ResourceTracker slot and
-            # per-topic queue stay blocked until stuck detection times out.
-            cancel_delegated_tasks_for_session(ai_user, topic)
-            topic.archive!
-          end
+          # Fail any tasks still delegated to this MCP session — including
+          # dispatches routed to *work* topics outside the registration inbox.
+          # The agent is per-session, so agent_id alone uniquely identifies
+          # this session's delegated work; scoping by topic_id here would only
+          # cancel inbox-topic tasks and leak the actually common case (a /work
+          # dispatch on a project topic) until stuck detection times out.
+          cancel_delegated_tasks_for_session(ai_user)
+          topic.archive! if topic
 
           head :no_content
         end
@@ -166,10 +174,12 @@ module Collavre
 
         # When an MCP session unregisters, any tasks still in delegated state
         # are abandoned — the client that would have called /reply is gone.
-        # Mirror the cancel path so the agent's slot and the topic queue both
-        # free up immediately rather than waiting for stuck detection.
-        def cancel_delegated_tasks_for_session(agent, topic)
-          tasks = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
+        # Mirror the cancel path so the agent's slot and each topic's queue
+        # both free up immediately rather than waiting for stuck detection.
+        # Scopes by agent_id only: per-session ai_users mean every delegated
+        # task for this agent belongs to this session, on any topic.
+        def cancel_delegated_tasks_for_session(agent)
+          tasks = Task.where(agent_id: agent.id, status: "delegated")
           return if tasks.empty?
 
           tracker = Orchestration::ResourceTracker.for(agent)
@@ -204,13 +214,19 @@ module Collavre
           ).dispatch
         end
 
-        def find_or_create_claude_channel_agent
-          email = "claude-channel-#{current_user.id}@agent.collavre.local"
+        # One ai_user per (current_user, session_name) so each MCP session has
+        # its own agent identity. Same session_name re-registering (e.g. the
+        # plugin reconnects with the same hostname-pid) reuses the existing
+        # row — idempotent retries don't proliferate agents.
+        def find_or_create_session_agent(session_name)
+          slug = session_name.to_s.downcase.gsub(/[^a-z0-9-]+/, "-").squeeze("-").gsub(/\A-|-\z/, "")
+          slug = "session" if slug.blank?
+          email = "claude-channel-#{current_user.id}-#{slug}@agent.collavre.local"
 
           ai_user = User.find_or_initialize_by(email: email)
           if ai_user.new_record?
             ai_user.assign_attributes(
-              name: "Claude Channel",
+              name: "Claude Channel (#{session_name})",
               password: SecureRandom.hex(32),
               llm_vendor: "anthropic",
               llm_model: "claude-code",
