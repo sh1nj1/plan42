@@ -699,6 +699,42 @@ module Collavre
           assert Topic.find(inbox_topic_id).archived?
         end
 
+        test "destroy clears routing_expression to exclude session agent from Matcher" do
+          # Per-session ai_users left lying around with routing_expression="true"
+          # keep being scanned by Orchestration::Matcher#match_by_expression,
+          # creating delegated tasks for a session whose MCP client has exited.
+          reg = register_agent("disable-routing-test")
+          ai_user = User.find(reg["agent_id"])
+          assert_equal "true", ai_user.routing_expression,
+            "sanity: register should leave routing_expression='true'"
+
+          delete "/api/v1/agent/#{ai_user.id}",
+            params: { topic_id: reg["topic_id"] },
+            headers: auth_headers,
+            as: :json
+          assert_response :no_content
+
+          assert_nil ai_user.reload.routing_expression,
+            "unregister must null routing_expression so the matcher skips the session agent"
+        end
+
+        test "re-register restores routing_expression cleared by prior unregister" do
+          first = register_agent("restore-routing-test")
+          agent_id = first["agent_id"]
+          delete "/api/v1/agent/#{agent_id}",
+            params: { topic_id: first["topic_id"] },
+            headers: auth_headers,
+            as: :json
+          assert_response :no_content
+          assert_nil User.find(agent_id).routing_expression
+
+          second = register_agent("restore-routing-test")
+          assert_equal agent_id, second["agent_id"],
+            "same session_name must reuse the same ai_user row"
+          assert_equal "true", User.find(agent_id).routing_expression,
+            "re-register must restore routing_expression so the matcher can dispatch again"
+        end
+
         test "destroy ignores topic_id that does not belong to the agent" do
           reg = register_agent("ownership-test")
           agent_id = reg["agent_id"]

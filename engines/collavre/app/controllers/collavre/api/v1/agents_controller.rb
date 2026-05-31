@@ -80,6 +80,13 @@ module Collavre
           # cancel inbox-topic tasks and leak the actually common case (a /work
           # dispatch on a project topic) until stuck detection times out.
           cancel_delegated_tasks_for_session(ai_user)
+          # Clear routing_expression so Orchestration::Matcher#match_by_expression
+          # stops dispatching new comments to this now-clientless session agent.
+          # Without this, every creative still feedback-shared with the session
+          # ai_user keeps generating delegated tasks that only time out via
+          # stuck recovery, blocking the per-topic queue in the meantime.
+          # Re-register restores routing_expression in find_or_create_session_agent.
+          ai_user.update_column(:routing_expression, nil) if ai_user.routing_expression.present?
           topic.archive! if topic
 
           head :no_content
@@ -268,6 +275,11 @@ module Collavre
               routing_expression: "true"
             )
             ai_user.save!
+          elsif ai_user.routing_expression.blank?
+            # Prior unregister cleared routing_expression to exclude this session
+            # from Matcher#match_by_expression. Restore it on re-register so the
+            # new MCP session can again receive dispatches.
+            ai_user.update_column(:routing_expression, "true")
           end
 
           ai_user
