@@ -24,6 +24,10 @@ module Collavre
           # duplicate replies) or share delegated-task scope (which would
           # force unregister to narrow to one topic and leak work-topic tasks).
           ai_user = find_or_create_session_agent(session_name)
+          unless ai_user
+            render json: { error: "Session agent email is already in use by a different account" }, status: :conflict
+            return
+          end
 
           inbox = Creative.inbox_for(current_user)
           topic_name = "Claude #{session_name}"
@@ -258,31 +262,45 @@ module Collavre
         # its own agent identity. Same session_name re-registering (e.g. the
         # plugin reconnects with the same hostname-pid) reuses the existing
         # row — idempotent retries don't proliferate agents.
+        #
+        # Returns nil when a row with the deterministic email already exists
+        # but is owned by someone else or isn't a Claude Channel ai_user. The
+        # email format is human-derivable (current_user.id + slug), so a
+        # foreign row could be planted by signup/import; silently reusing it
+        # would attach the caller's inbox feedback share to that foreign User
+        # and leave the plugin's AgentChannel subscription rejected on
+        # ownership mismatch. Caller renders 409 in that case.
         def find_or_create_session_agent(session_name)
           slug = session_name.to_s.downcase.gsub(/[^a-z0-9-]+/, "-").squeeze("-").gsub(/\A-|-\z/, "")
           slug = "session" if slug.blank?
           email = "claude-channel-#{current_user.id}-#{slug}@agent.collavre.local"
 
-          ai_user = User.find_or_initialize_by(email: email)
-          if ai_user.new_record?
-            ai_user.assign_attributes(
-              name: "Claude Channel (#{session_name})",
-              password: SecureRandom.hex(32),
-              llm_vendor: "anthropic",
-              llm_model: "claude-code",
-              created_by_id: current_user.id,
-              searchable: false,
-              routing_expression: "true"
-            )
-            ai_user.save!
-          elsif ai_user.routing_expression.blank?
-            # Prior unregister cleared routing_expression to exclude this session
-            # from Matcher#match_by_expression. Restore it on re-register so the
-            # new MCP session can again receive dispatches.
-            ai_user.update_column(:routing_expression, "true")
+          ai_user = User.find_by(email: email)
+          if ai_user
+            return nil unless ai_user.created_by_id == current_user.id &&
+                              ai_user.ai_user? &&
+                              ai_user.claude_channel_agent?
+
+            if ai_user.routing_expression.blank?
+              # Prior unregister cleared routing_expression to exclude this
+              # session from Matcher#match_by_expression. Restore on re-register
+              # so the new MCP session can again receive dispatches.
+              ai_user.update_column(:routing_expression, "true")
+            end
+
+            return ai_user
           end
 
-          ai_user
+          User.create!(
+            email: email,
+            name: "Claude Channel (#{session_name})",
+            password: SecureRandom.hex(32),
+            llm_vendor: "anthropic",
+            llm_model: "claude-code",
+            created_by_id: current_user.id,
+            searchable: false,
+            routing_expression: "true"
+          )
         end
       end
     end

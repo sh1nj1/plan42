@@ -126,6 +126,61 @@ module Collavre
           assert_equal first["topic_id"], second["topic_id"]
         end
 
+        test "register rejects when deterministic email is held by foreign-owned User" do
+          # Email is human-derivable (claude-channel-<uid>-<slug>@...). If a row
+          # with that exact email exists but is owned by someone else, silently
+          # reusing it would attach the caller's inbox feedback share to a
+          # foreign User and leave AgentChannel#subscribed rejecting the
+          # plugin's WS subscription on ownership mismatch.
+          other = users(:two)
+          slug = "collision"
+          email = "claude-channel-#{@user.id}-#{slug}@agent.collavre.local"
+          User.create!(
+            email: email,
+            name: "Squatter",
+            password: SecureRandom.hex(32),
+            llm_vendor: "anthropic",
+            llm_model: "claude-code",
+            created_by_id: other.id,
+            searchable: false,
+            routing_expression: "true"
+          )
+
+          assert_no_difference -> { User.count } do
+            post "/api/v1/agent/register",
+              params: { name: slug },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :conflict
+        end
+
+        test "register rejects when email is held by non-Claude-Channel ai_user" do
+          # A row owned by the caller but with a different llm_model (e.g. a
+          # Gemini agent previously created with the same email) must not be
+          # silently repurposed as a Claude Channel agent.
+          slug = "wrongmodel"
+          email = "claude-channel-#{@user.id}-#{slug}@agent.collavre.local"
+          User.create!(
+            email: email,
+            name: "Gemini",
+            password: SecureRandom.hex(32),
+            llm_vendor: "google",
+            llm_model: "gemini-1.5-pro",
+            created_by_id: @user.id,
+            searchable: false,
+            routing_expression: "true"
+          )
+
+          assert_no_difference -> { User.count } do
+            post "/api/v1/agent/register",
+              params: { name: slug },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :conflict
+        end
+
         test "register unarchives prior archived topic with same session name" do
           first = register_agent("recycled-pid")
           first_topic_id = first["topic_id"]
