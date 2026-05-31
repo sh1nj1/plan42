@@ -20,8 +20,22 @@ module Collavre
       end
     end
 
+    # When the MCP process crashes or the WebSocket drops before the plugin
+    # can call DELETE /api/v1/agent/:id, the per-session Claude Channel agent
+    # would otherwise stay matchable (routing_expression: "true") and any
+    # future comment on a creative still shared with it would dispatch into
+    # an empty stream — delegated work that only clears via stuck recovery.
+    # Mark the session agent offline here so Orchestration::Matcher stops
+    # selecting it; subscribe_to_agent_stream restores routing on reconnect.
     def unsubscribed
-      # No cleanup needed
+      return unless @session_agent
+
+      @session_agent.reload
+      if @session_agent.routing_expression.present?
+        @session_agent.update_column(:routing_expression, nil)
+      end
+    rescue ActiveRecord::RecordNotFound
+      # Agent deleted between subscribe and unsubscribe — nothing to clear.
     end
 
     # Broadcast an arbitrary payload to a topic's agent stream.
@@ -52,6 +66,15 @@ module Collavre
       return reject unless agent&.ai_user?
       return reject unless agent.created_by_id == current_user.id
 
+      # Reconnect-grace: if a prior unsubscribed cleared routing_expression
+      # (or an explicit /destroy disabled the agent and the same MCP session
+      # is resubscribing without re-registering), restore it on a successful
+      # claim of the per-agent stream by the owner so dispatches resume.
+      if agent.claude_channel_agent? && agent.routing_expression.blank?
+        agent.update_column(:routing_expression, "true")
+      end
+
+      @session_agent = agent if agent.claude_channel_agent?
       stream_from "agent:user:#{agent.id}"
     end
   end

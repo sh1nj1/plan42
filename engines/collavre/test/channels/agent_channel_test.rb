@@ -105,5 +105,68 @@ module Collavre
         AgentChannel.broadcast_to_agent(42, payload)
       end
     end
+
+    test "unsubscribe clears routing_expression on Claude Channel session agent" do
+      agent = User.create!(
+        email: "agent-channel-unsub-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: "true",
+        created_by_id: @user.id,
+        searchable: false
+      )
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      assert subscription.confirmed?
+
+      unsubscribe
+
+      assert_nil agent.reload.routing_expression
+    end
+
+    test "resubscribe restores routing_expression cleared by prior unsubscribe" do
+      agent = User.create!(
+        email: "agent-channel-resub-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: "true",
+        created_by_id: @user.id,
+        searchable: false
+      )
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      unsubscribe
+      assert_nil agent.reload.routing_expression
+
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      assert subscription.confirmed?
+
+      assert_equal "true", agent.reload.routing_expression
+    end
+
+    test "unsubscribe does not touch non-Claude-Channel agent routing_expression" do
+      agent = User.create!(
+        email: "agent-channel-other-ai-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Other AI Agent",
+        llm_vendor: "google",
+        llm_model: "gemini-1.5-pro",
+        routing_expression: "true",
+        created_by_id: @user.id,
+        searchable: false
+      )
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      assert subscription.confirmed?
+
+      unsubscribe
+
+      assert_equal "true", agent.reload.routing_expression
+    end
   end
 end
