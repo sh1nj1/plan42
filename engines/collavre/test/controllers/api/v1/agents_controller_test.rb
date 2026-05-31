@@ -754,6 +754,72 @@ module Collavre
           assert Topic.find(inbox_topic_id).archived?
         end
 
+        test "destroy cancels queued and pending tasks so dequeue does not activate clientless work" do
+          # Topic queue (Task.queued_for_topic) is per-topic, not per-agent.
+          # Without cancelling this agent's queued/pending tasks first,
+          # dequeue_next_for_topic (called for every cancelled delegated task)
+          # would flip a queued task for this clientless agent to pending and
+          # enqueue AiAgentJob, which broadcasts to an agent stream with no
+          # subscriber and leaves the task stuck in delegated until stuck recovery.
+          reg = register_agent("cancel-queued-test")
+          inbox_topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+
+          work_creative = creatives(:tshirt)
+          work_topic = work_creative.topics.create!(name: "Work topic queue", user: @user)
+
+          delegated_task = Collavre::Task.create!(
+            name: "Delegated",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: work_topic.id,
+            creative_id: work_creative.id
+          )
+          queued_task = Collavre::Task.create!(
+            name: "Queued behind delegated",
+            status: "queued",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: work_topic.id,
+            creative_id: work_creative.id
+          )
+          pending_task = Collavre::Task.create!(
+            name: "Pending mid-dispatch",
+            status: "pending",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: work_topic.id,
+            creative_id: work_creative.id
+          )
+
+          tracker = Collavre::Orchestration::ResourceTracker.for(ai_user)
+          tracker.reset!
+          tracker.reserve!(delegated_task.id)
+
+          # Spy: dequeue must NOT pick our agent's queued/pending tasks because
+          # we cancelled them first. We don't care how many times it's called,
+          # only that no AiAgentJob fires for our tasks.
+          ai_jobs = []
+          job_stub = ->(arg) { ai_jobs << arg }
+
+          Collavre::AiAgentJob.stub(:perform_later, job_stub) do
+            delete "/api/v1/agent/#{ai_user.id}",
+              params: { topic_id: inbox_topic_id },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :no_content
+
+          assert_equal "cancelled", queued_task.reload.status,
+            "queued task for clientless agent must be cancelled, not left for dequeue to activate"
+          assert_equal "cancelled", pending_task.reload.status,
+            "pending task for clientless agent must be cancelled before draining"
+          assert_equal "cancelled", delegated_task.reload.status
+          assert_empty ai_jobs.select { |a| a.respond_to?(:agent_id) && a.agent_id == ai_user.id },
+            "no AiAgentJob may be enqueued for this clientless agent during drain"
+        end
+
         test "destroy clears routing_expression to exclude session agent from Matcher" do
           # Per-session ai_users left lying around with routing_expression="true"
           # keep being scanned by Orchestration::Matcher#match_by_expression,

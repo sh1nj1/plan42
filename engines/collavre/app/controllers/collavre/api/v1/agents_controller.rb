@@ -77,6 +77,28 @@ module Collavre
           # topic_id can't archive an unrelated inbox conversation.
           topic = nil unless topic && topic.primary_agent&.id == ai_user.id
 
+          # Clear routing_expression FIRST so Orchestration::Matcher#match_by_expression
+          # stops dispatching new comments to this now-clientless session agent
+          # while we're draining its task graph. Without this, every creative
+          # still feedback-shared with the session ai_user keeps generating
+          # delegated tasks that only time out via stuck recovery, blocking
+          # the per-topic queue in the meantime — and a comment arriving mid-
+          # drain could create a new queued task right after we cancelled the
+          # last one. Re-register restores routing_expression in
+          # find_or_create_session_agent.
+          ai_user.update_column(:routing_expression, nil) if ai_user.routing_expression.present?
+
+          # Cancel queued/pending tasks for this agent BEFORE draining the
+          # topic queues. The topic queue (Task.queued_for_topic) is scoped by
+          # topic_id, not agent_id, so dequeue_next_for_topic would otherwise
+          # flip a queued task for this clientless session agent to pending
+          # and enqueue AiAgentJob — which then broadcasts to a stream with
+          # no subscriber and leaves the task stuck in delegated until stuck
+          # recovery. Cancelling them first means subsequent dequeue calls
+          # either pick up a queued task for a different agent (fine) or
+          # find nothing (fine).
+          cancel_pending_tasks_for_session(ai_user)
+
           # Fail any tasks still delegated to this MCP session — including
           # dispatches routed to *work* topics outside the registration inbox.
           # The agent is per-session, so agent_id alone uniquely identifies
@@ -84,13 +106,6 @@ module Collavre
           # cancel inbox-topic tasks and leak the actually common case (a /work
           # dispatch on a project topic) until stuck detection times out.
           cancel_delegated_tasks_for_session(ai_user)
-          # Clear routing_expression so Orchestration::Matcher#match_by_expression
-          # stops dispatching new comments to this now-clientless session agent.
-          # Without this, every creative still feedback-shared with the session
-          # ai_user keeps generating delegated tasks that only time out via
-          # stuck recovery, blocking the per-topic queue in the meantime.
-          # Re-register restores routing_expression in find_or_create_session_agent.
-          ai_user.update_column(:routing_expression, nil) if ai_user.routing_expression.present?
           topic.archive! if topic
 
           head :no_content
@@ -244,6 +259,33 @@ module Collavre
             end
 
             Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+          end
+        end
+
+        # Cancel queued or pending tasks for this session's agent that haven't
+        # acquired a resource slot yet (queued = waiting in topic queue,
+        # pending = briefly between dequeue and AiAgentJob#perform). No slot
+        # release needed — AiAgentJob#perform reserves the slot lazily. Parent
+        # subtasks are still failed so workflow executors don't deadlock
+        # waiting for a reply that will never come.
+        def cancel_pending_tasks_for_session(agent)
+          tasks = Task.where(agent_id: agent.id, status: %w[queued pending])
+          return if tasks.empty?
+
+          tasks.find_each do |task|
+            task.update!(status: "cancelled")
+
+            if task.parent_task_id.present?
+              begin
+                Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+                  task, error_message: "Claude Channel session unregistered before dispatch"
+                )
+              rescue StandardError => e
+                Rails.logger.error(
+                  "[AgentsController] fail_subtask! failed for queued task #{task.id}: #{e.message}"
+                )
+              end
+            end
           end
         end
 
