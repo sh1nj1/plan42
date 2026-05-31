@@ -1,0 +1,54 @@
+<% definition = row[:definition] %>
+<% key_str = definition.key.to_s %>
+<%
+  source_bg, source_fg = case row[:source]
+    when :db      then ["var(--color-success)", "var(--text-on-badge)"]
+    when :env     then ["var(--color-warning)", "var(--text-on-badge)"]
+    else               ["var(--surface-btn)",   "var(--text-on-btn)"]
+  end
+  current_display = row[:present] ? row[:display_value].to_s : "—"
+%>
+<tr style="border-top: 1px solid var(--color-border);">
+  <td style="padding: 0.5em; vertical-align: top;">
+    <code><%= key_str %></code>
+    <% if definition.requires_restart %>
+      <span class="badge badge-warning" style="display: inline-block; margin-left: 0.5em; padding: 0.1em 0.5em; font-size: 0.75em; background: var(--color-warning); color: var(--text-on-badge); border-radius: 3px;">
+        <%= t("collavre.admin.integrations.restart_required") %>
+      </span>
+    <% end %>
+    <div style="font-size: 0.8em; color: var(--color-muted); margin-top: 0.25em;">
+      <%= t("collavre.admin.integrations.env_var_label") %>: <code><%= definition.env_var %></code>
+    </div>
+  </td>
+  <td style="padding: 0.5em; vertical-align: top;">
+    <%# Input references the bulk form via HTML5 `form` attribute so the table is not nested inside <form>. %>
+    <%# Placeholder displays the current value (masked for sensitive); empty input keeps the existing value. %>
+    <% input_tag = definition.sensitive ? :password_field_tag : :text_field_tag %>
+    <%= send(input_tag,
+          "integration_setting[#{key_str}]",
+          nil,
+          form: bulk_form_id,
+          placeholder: current_display,
+          autocomplete: "off",
+          style: "width: 100%;") %>
+    <div style="font-size: 0.8em; margin-top: 0.25em;">
+      <span class="badge badge-source-<%= row[:source] %>" style="display: inline-block; padding: 0.1em 0.5em; font-size: 0.85em; border-radius: 3px; background: <%= source_bg %>; color: <%= source_fg %>;">
+        <%= t("collavre.admin.integrations.source.#{row[:source]}", default: row[:source].to_s.upcase) %>
+      </span>
+      <% if definition.sensitive %>
+        <span style="margin-left: 0.5em; color: var(--color-muted);"><%= t("collavre.admin.integrations.sensitive") %></span>
+      <% end %>
+      <span style="margin-left: 0.5em; color: var(--color-muted);"><%= t("collavre.admin.integrations.placeholder_leave_blank") %></span>
+    </div>
+  </td>
+  <td style="padding: 0.5em; vertical-align: top; white-space: nowrap;">
+    <%= button_to t("collavre.admin.integrations.actions.reset"),
+          collavre.reset_admin_integration_path(key: key_str),
+          method: :delete,
+          form: {
+            style: "display: inline-block;",
+            data: { turbo_confirm: t("collavre.admin.integrations.confirm_reset") }
+          },
+          class: "btn btn-small btn-secondary" %>
+  </td>
+</tr>

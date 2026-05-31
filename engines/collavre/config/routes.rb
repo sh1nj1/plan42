@@ -143,5 +143,14 @@ Collavre::Engine.routes.draw do
     get "/uiux", to: "admin/settings#uiux", as: :uiux
     patch "/uiux", to: "admin/settings#update_uiux"
     resource :orchestration, only: [ :show, :update ], controller: "admin/orchestration"
+
+    resources :integrations, only: [ :index ], param: :key, controller: "admin/integrations" do
+      collection do
+        patch :bulk_update
+      end
+      member do
+        delete :reset
+      end
+    end
   end
 end

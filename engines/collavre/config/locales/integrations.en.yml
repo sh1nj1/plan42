@@ -1,0 +1,40 @@
+en:
+  collavre:
+    admin:
+      integrations:
+        title: "Integrations"
+        subtitle: "Configure external integration secrets. Database values take precedence over ENV; ENV is the seed/fallback."
+        tab_label: "Integrations"
+        empty_state: "No integrations registered yet."
+        sensitive: "(sensitive)"
+        restart_required: "restart required"
+        placeholder_leave_blank: "Leave blank to keep current"
+        env_var_label: "ENV"
+        confirm_reset: "Delete the DB value and fall back to ENV?"
+        headers:
+          key: "Key"
+          value: "Value"
+          actions: "Actions"
+        source:
+          db: "DB"
+          env: "ENV"
+          default: "default"
+          unknown: "unknown"
+        category:
+          slack: "Slack"
+          google_oauth: "Google OAuth"
+          github_oauth: "GitHub OAuth"
+          notion_oauth: "Notion OAuth"
+          aws_s3: "AWS S3"
+          aws_ses: "AWS SES"
+          firebase: "Firebase"
+          fcm: "FCM"
+          gemini: "Gemini"
+          mail: "Mail"
+        actions:
+          save: "Save changes"
+          reset: "Reset to ENV"
+        flash:
+          updated: "Integration settings saved."
+          restart_required: "Some changed keys require a server restart to take effect."
+          reset_done: "Reset %{key} to ENV/default."
