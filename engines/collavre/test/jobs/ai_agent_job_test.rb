@@ -515,9 +515,10 @@ class AiAgentJobTest < ActiveJob::TestCase
   test "claude channel job skips dispatch when task cancelled between reserve and delegated" do
     # Simulates AgentsController#destroy cancelling a running Claude Channel
     # task while AiAgentJob#perform is between tracker.reserve! and the
-    # running → delegated transition. Without the reload guard, the job
-    # would overwrite "cancelled" with "delegated" and broadcast to a
-    # clientless stream.
+    # running → delegated transition. The atomic `WHERE status = 'running'`
+    # UPDATE finds no rows to flip when status has already moved to
+    # "cancelled", so the job skips dispatch instead of overwriting the
+    # external cancel and broadcasting to a clientless stream.
     claude_agent = User.create!(
       email: "cc-cancel-race-agent@agent.collavre.local",
       name: "Claude Cancel Race Agent",

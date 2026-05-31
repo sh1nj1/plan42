@@ -63,19 +63,23 @@ module Collavre
         # for status: "delegated" tasks, so a late update! would leave the
         # already-answered task stuck in delegated until stuck recovery.
         if is_claude_channel_agent
-          # Guard against late cancellation between reserve! above and the
-          # delegated transition. AgentsController#destroy on session
-          # unregister cancels running Claude Channel tasks for this agent;
-          # without this reload check, the update! below would overwrite the
-          # external "cancelled" with "delegated" and dispatch into a
-          # clientless stream. The ensure block still releases the slot.
-          if task.reload.status == "cancelled"
+          # Atomic running -> delegated transition. If AgentsController#destroy
+          # races us between reserve! above and this line and flips the task
+          # to "cancelled", the WHERE filter excludes us, rows_updated == 0,
+          # we skip dispatch, and the ensure block releases the slot. A
+          # separate reload + update! would let the cancel slip in between.
+          rows_updated = Task.where(id: task.id, status: "running").update_all(
+            status: "delegated", updated_at: Time.current
+          )
+          if rows_updated.zero?
+            task.reload
             Rails.logger.info(
-              "[AiAgentJob] Claude Channel task #{task.id} cancelled before delegation; skipping dispatch"
+              "[AiAgentJob] Claude Channel task #{task.id} not in running state " \
+              "(status=#{task.status}); skipping dispatch"
             )
             return
           end
-          task.update!(status: "delegated")
+          task.reload
         end
 
         response_content = AiAgentService.new(task).call
