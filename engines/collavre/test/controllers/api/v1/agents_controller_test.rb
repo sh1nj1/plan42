@@ -270,6 +270,88 @@ module Collavre
             "real delegated task must not be completed by a foreign task_id"
         end
 
+        test "reply with task_id authorizes Claude Channel agent on topic where primary_agent diverges" do
+          # When the matcher dispatches a Claude Channel agent via
+          # routing_expression on a work topic whose primary_agent is unset or
+          # a different AI agent, the legacy topic.primary_agent gate would
+          # 403 the reply and leak a delegated task. The echoed task_id should
+          # authorize the dispatched agent directly.
+          reg = register_agent("primary-diverge-test")
+          ai_user = User.find(reg["agent_id"])
+
+          # Build a non-inbox creative + topic the agent was matched against,
+          # share feedback permission to mimic agent picker selection, and
+          # leave primary_agent set to a *different* AI agent (or nil) so the
+          # legacy gate would deny.
+          creative = Creative.create!(user: @user, description: "Work creative")
+          other_agent = users(:ai_bot)
+          topic = creative.topics.create!(name: "Work topic", user: @user)
+          topic.set_primary_agent!(other_agent)
+          CreativeShare.create!(creative: creative, user: ai_user, permission: "feedback")
+
+          task = Collavre::Task.create!(
+            name: "Dispatch via routing_expression",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic.id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, text: "Claude replying via task_id", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          body = JSON.parse(response.body)
+          comment = Comment.find(body["comment_id"])
+          assert_equal ai_user.id, comment.user_id,
+            "comment must be attributed to the dispatched Claude Channel agent, not topic.primary_agent"
+          assert_equal task.id, comment.task_id
+          assert_equal "done", task.reload.status
+        end
+
+        test "reply with task_id refuses when task agent is not owned by current_user" do
+          # task_id must not become a back-door to ventriloquize someone else's
+          # agent — the resolved agent still has to be owned by the token holder.
+          reg = register_agent("task-id-foreign-owner-test")
+          topic = Topic.find(reg["topic_id"])
+          creative = topic.creative.effective_origin
+
+          other_user = users(:two)
+          foreign_agent = User.create!(
+            email: "foreign-claude@agent.collavre.local",
+            name: "Foreign Claude",
+            password: SecureRandom.hex(32),
+            llm_vendor: "anthropic",
+            llm_model: "claude-code",
+            created_by_id: other_user.id
+          )
+          foreign_task = Collavre::Task.create!(
+            name: "Foreign delegated task",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: foreign_agent,
+            topic_id: topic.id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, text: "should not bind", task_id: foreign_task.id },
+            headers: auth_headers,
+            as: :json
+
+          # Falls through to topic.primary_agent (which is the registering
+          # user's Claude Channel agent), so the reply is attributed to that
+          # agent — NOT to the foreign agent.
+          assert_response :created
+          body = JSON.parse(response.body)
+          assert_equal reg["agent_id"], Comment.find(body["comment_id"]).user_id
+          assert_equal "delegated", foreign_task.reload.status,
+            "foreign agent's delegated task must not be completed by this token holder"
+        end
+
         test "reply advances parent workflow when delegated subtask completes" do
           reg = register_agent("workflow-subtask-test")
           topic_id = reg["topic_id"]

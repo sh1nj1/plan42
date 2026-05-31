@@ -105,8 +105,8 @@ module Collavre
             return
           end
 
-          agent = topic.primary_agent
-          unless agent && agent.created_by_id == current_user.id
+          agent = resolve_reply_agent(topic, params[:task_id])
+          unless agent
             render json: { error: "Not authorized" }, status: :forbidden
             return
           end
@@ -128,6 +128,39 @@ module Collavre
           end
         end
         private
+
+        # Identify which Claude Channel agent this reply is for.
+        #
+        # Prefer the echoed task_id from the dispatch payload: the matcher can
+        # route to a Claude Channel agent via routing_expression on a topic
+        # whose primary_agent is unset or a different agent (e.g. multiple AI
+        # agents share a topic, or this agent only has feedback permission on
+        # the creative without being the topic's primary). In those cases the
+        # topic.primary_agent gate would 403 the reply and leave the delegated
+        # task hanging.
+        #
+        # When task_id is provided, look it up scoped to this topic and the
+        # delegated state, then take the agent from the task. The token holder
+        # is still required to own the agent (created_by_id == current_user.id)
+        # and the agent must be a Claude Channel agent so this endpoint can't
+        # be used to ventriloquize an unrelated AI agent.
+        #
+        # When task_id is absent, fall back to topic.primary_agent for
+        # back-compat with older plugin builds that don't echo task_id.
+        def resolve_reply_agent(topic, requested_task_id)
+          if requested_task_id.present?
+            task = Task.where(topic_id: topic.id, status: "delegated").find_by(id: requested_task_id)
+            agent = task&.agent
+            if agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
+              return agent
+            end
+          end
+
+          agent = topic.primary_agent
+          return agent if agent && agent.created_by_id == current_user.id
+
+          nil
+        end
 
         # When Claude responds, complete the delegated task this reply
         # corresponds to so trigger-loop / workflow completion paths fire.
