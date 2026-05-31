@@ -63,10 +63,10 @@ function buildServer(client: CollavreClient): Server {
             task_id: {
               type: "number",
               description:
-                "Task ID from the channel message meta — required when present so the server completes the exact delegated task this reply addresses.",
+                "Task ID echoed from the dispatch notification meta. Required: when topic concurrency > 1 multiple delegated tasks can coexist, and replies must correlate to the exact dispatched task — omitting this would let the server fall back to the oldest delegated task and complete the wrong one.",
             },
           },
-          required: ["topic_id", "text"],
+          required: ["topic_id", "text", "task_id"],
         },
       },
     ],
@@ -90,13 +90,14 @@ function buildServer(client: CollavreClient): Server {
     if (typeof text !== "string" || text.length === 0) {
       return errorResult("text must be a non-empty string");
     }
-    let taskId: number | undefined;
-    if (record.task_id !== undefined && record.task_id !== null) {
-      const parsed = Number(record.task_id);
-      if (!Number.isFinite(parsed)) {
-        return errorResult("task_id must be a number");
-      }
-      taskId = parsed;
+    if (record.task_id === undefined || record.task_id === null) {
+      return errorResult(
+        "task_id is required — echo the task_id from the dispatch notification meta so the server completes the exact delegated task",
+      );
+    }
+    const taskId = Number(record.task_id);
+    if (!Number.isFinite(taskId)) {
+      return errorResult("task_id must be a number");
     }
 
     const result = await client.reply(topicId, text, taskId);

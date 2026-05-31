@@ -39,10 +39,9 @@ export class CollavreClient {
   async reply(
     topicId: number,
     text: string,
-    taskId?: number,
+    taskId: number,
   ): Promise<{ comment_id: number }> {
-    const body: Record<string, unknown> = { topic_id: topicId, text };
-    if (taskId !== undefined) body.task_id = taskId;
+    const body: Record<string, unknown> = { topic_id: topicId, text, task_id: taskId };
 
     const res = await fetch(`${this.baseUrl}/api/v1/agent/reply`, {
       method: "POST",
