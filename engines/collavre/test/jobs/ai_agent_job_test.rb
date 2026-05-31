@@ -478,6 +478,7 @@ class AiAgentJobTest < ActiveJob::TestCase
       password: SecureRandom.hex(32),
       llm_vendor: "anthropic",
       llm_model: "claude-code",
+      routing_expression: "true",
       created_by_id: @owner.id,
       searchable: false
     )
@@ -564,5 +565,49 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_equal "cancelled", task.reload.status,
       "task must stay cancelled — job must not overwrite with 'delegated'"
     refute delivered, "ClaudeChannelAdapter#deliver must not run after external cancel"
+  end
+
+  test "claude channel delayed job skips dispatch when session unregistered during delay" do
+    # Simulates Scheduler returning :delayed for a busy / rate-limited Claude
+    # Channel agent. Scheduler enqueues AiAgentJob with agent.id (no Task row
+    # yet). During the delay, the MCP session unregisters and
+    # AgentsController#destroy / AgentChannel#unsubscribed clears
+    # routing_expression. When the delayed job fires, the agent_id-keyed path
+    # must NOT create a Task, flip it to "delegated", or invoke the adapter —
+    # there is no live client to receive the broadcast.
+    claude_agent = User.create!(
+      email: "cc-delayed-offline-agent@agent.collavre.local",
+      name: "Claude Delayed Offline Agent",
+      password: SecureRandom.hex(32),
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      routing_expression: nil,
+      created_by_id: @owner.id,
+      searchable: false
+    )
+
+    topic = Topic.create!(creative: @creative, name: "cc-delayed-offline", user: @owner)
+    context = {
+      "creative" => { "id" => @creative.id },
+      "topic" => { "id" => topic.id },
+      "comment" => { "id" => @comment.id, "content" => "Delayed test" }
+    }
+
+    delivered = false
+    fake_adapter = Class.new do
+      define_method(:initialize) { |agent:, context:, task: nil| }
+      define_method(:deliver) { delivered = true; nil }
+    end
+
+    tasks_before = Task.where(agent_id: claude_agent.id).count
+
+    Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
+      AiAgentJob.perform_now(claude_agent.id, "comment_created", context)
+    end
+
+    refute delivered,
+      "ClaudeChannelAdapter#deliver must not run for an unregistered Claude Channel session"
+    assert_equal tasks_before, Task.where(agent_id: claude_agent.id).count,
+      "no Task row should be created for an offline Claude Channel session"
   end
 end

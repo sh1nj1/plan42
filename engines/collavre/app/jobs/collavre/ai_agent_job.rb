@@ -15,6 +15,23 @@ module Collavre
         # Create new task
         agent = User.find(agent_id_or_task)
 
+        # Guard: skip if the Claude Channel session has unregistered (or its WS
+        # dropped) during the window between Scheduler enqueue and this job
+        # firing. AgentsController#destroy / AgentChannel#unsubscribed clear
+        # routing_expression on the per-session ai_user, so a blank value here
+        # means there is no live MCP client to receive the dispatch. Without
+        # this guard, a :delayed (busy / rate-limited) enqueue from
+        # Scheduler#evaluate would materialize a fresh Task, flip it to
+        # "delegated", and broadcast to a clientless agent:user:<id> stream
+        # — holding the topic/agent slot until stuck recovery.
+        if agent.claude_channel_agent? && agent.routing_expression.blank?
+          Rails.logger.info(
+            "[AiAgentJob] Skipping Claude Channel job for agent #{agent.id}: " \
+            "session offline (routing_expression blank, event=#{event_name})"
+          )
+          return
+        end
+
         # Guard: skip if there's already a running task for the same agent + comment
         comment_id = context&.dig("comment", "id")
         if comment_id && Task.duplicate_running_for_comment?(agent.id, comment_id)
