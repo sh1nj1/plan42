@@ -167,7 +167,14 @@ module CollavreGithub
     def resolve_api_endpoint
       return ENV["GITHUB_API_ENDPOINT"] if ENV["GITHUB_API_ENDPOINT"].present?
 
-      if Rails.env.development? && ENV["GITHUB_CLIENT_ID"].blank?
+      github_client_id =
+        if defined?(Collavre::IntegrationSettings::Resolver)
+          Collavre::IntegrationSettings::Resolver.get(:github_client_id).presence
+        else
+          ENV["GITHUB_CLIENT_ID"].presence
+        end
+
+      if Rails.env.development? && github_client_id.blank?
         MOCK_SERVER_DEFAULT
       end
     end
