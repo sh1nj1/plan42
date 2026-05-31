@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd ${CLAUDE_PLUGIN_ROOT} && { [ -d node_modules ] || npm install --ignore-scripts; } && { [ -d dist ] || npm run build; }"
+            "command": "cd ${CLAUDE_PLUGIN_ROOT} && { { [ -d node_modules ] && [ ! package-lock.json -nt node_modules/.package-lock.json ]; } || npm install --ignore-scripts; } && { { [ -f dist/index.js ] && [ -z \"$(find package.json package-lock.json tsconfig.json src -newer dist/index.js -print -quit 2>/dev/null)\" ]; } || npm run build; }"
           }
         ]
       }
