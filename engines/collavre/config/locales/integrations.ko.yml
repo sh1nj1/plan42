@@ -25,6 +25,7 @@ ko:
           google_oauth: "Google OAuth"
           github_oauth: "GitHub OAuth"
           notion_oauth: "Notion OAuth"
+          github: "GitHub 연동"
           aws_s3: "AWS S3"
           aws_ses: "AWS SES"
           firebase: "Firebase"

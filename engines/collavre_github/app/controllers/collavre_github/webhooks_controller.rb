@@ -470,7 +470,11 @@ module CollavreGithub
     end
 
     def fallback_webhook_secret
-      ENV["GITHUB_WEBHOOK_SECRET"] || Rails.application.credentials.dig(:github, :webhook_secret)
+      resolved =
+        if defined?(Collavre::IntegrationSettings::Resolver)
+          Collavre::IntegrationSettings::Resolver.get(:github_webhook_secret).presence
+        end
+      resolved || ENV["GITHUB_WEBHOOK_SECRET"] || Rails.application.credentials.dig(:github, :webhook_secret)
     end
 
     def parse_payload(raw_body)
