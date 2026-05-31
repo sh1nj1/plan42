@@ -334,16 +334,19 @@ module Collavre
                               ai_user.ai_user? &&
                               ai_user.claude_channel_agent?
 
-            if ai_user.routing_expression.blank?
-              # Prior unregister cleared routing_expression to exclude this
-              # session from Matcher#match_by_expression. Restore on re-register
-              # so the new MCP session can again receive dispatches.
-              ai_user.update_column(:routing_expression, "true")
-            end
-
+            # Do NOT restore routing_expression here. Activation is deferred
+            # until AgentChannel#subscribe_to_agent_stream so the agent only
+            # becomes matchable once a WebSocket subscriber actually exists
+            # for agent:user:<id>. Otherwise comments matched between this
+            # POST returning and the client's subsequent cable subscribe would
+            # broadcast into an empty stream — stuck delegated tasks until
+            # stuck recovery.
             return ai_user
           end
 
+          # routing_expression: nil so the new ai_user is not matchable until
+          # the client claims the per-agent stream via AgentChannel. See the
+          # comment on the reuse path above.
           User.create!(
             email: email,
             name: "Claude Channel (#{session_name})",
@@ -352,7 +355,7 @@ module Collavre
             llm_model: "claude-code",
             created_by_id: current_user.id,
             searchable: false,
-            routing_expression: "true"
+            routing_expression: nil
           )
         end
       end

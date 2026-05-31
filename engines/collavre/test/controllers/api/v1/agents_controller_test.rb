@@ -62,7 +62,13 @@ module Collavre
           ai_user = User.find(body["agent_id"])
           assert_equal "anthropic", ai_user.llm_vendor
           assert_equal "claude-code", ai_user.llm_model
-          assert_equal "true", ai_user.routing_expression
+          # Routing is deferred to AgentChannel#subscribe_to_agent_stream so
+          # the agent only becomes matchable once a WebSocket subscriber
+          # actually exists. Otherwise comments matched between this register
+          # call returning and the client's subsequent cable subscribe would
+          # dispatch into an empty stream — stuck delegated work.
+          assert_nil ai_user.routing_expression,
+            "register must NOT activate routing_expression — defer to subscribe"
           assert_equal @user.id, ai_user.created_by_id
           assert ai_user.ai_user?
           assert ai_user.claude_channel_agent?
@@ -867,8 +873,10 @@ module Collavre
           # creating delegated tasks for a session whose MCP client has exited.
           reg = register_agent("disable-routing-test")
           ai_user = User.find(reg["agent_id"])
-          assert_equal "true", ai_user.routing_expression,
-            "sanity: register should leave routing_expression='true'"
+          # Register no longer activates routing — AgentChannel does on subscribe.
+          # Simulate a subscribed session by flipping routing_expression manually
+          # so destroy has something to clear.
+          ai_user.update_column(:routing_expression, "true")
 
           delete "/api/v1/agent/#{ai_user.id}",
             params: { topic_id: reg["topic_id"] },
@@ -880,9 +888,16 @@ module Collavre
             "unregister must null routing_expression so the matcher skips the session agent"
         end
 
-        test "re-register restores routing_expression cleared by prior unregister" do
+        test "re-register reuses agent but leaves routing_expression nil until subscribe" do
+          # After the activation-on-subscribe move, re-register must NOT
+          # auto-restore routing_expression: doing so would reopen the race
+          # where matched comments broadcast into an empty stream during the
+          # window between register returning and the new cable subscribe.
           first = register_agent("restore-routing-test")
           agent_id = first["agent_id"]
+          # Simulate live session having activated routing on subscribe.
+          User.find(agent_id).update_column(:routing_expression, "true")
+
           delete "/api/v1/agent/#{agent_id}",
             params: { topic_id: first["topic_id"] },
             headers: auth_headers,
@@ -893,8 +908,8 @@ module Collavre
           second = register_agent("restore-routing-test")
           assert_equal agent_id, second["agent_id"],
             "same session_name must reuse the same ai_user row"
-          assert_equal "true", User.find(agent_id).routing_expression,
-            "re-register must restore routing_expression so the matcher can dispatch again"
+          assert_nil User.find(agent_id).routing_expression,
+            "re-register must NOT restore routing_expression — wait for subscribe"
         end
 
         test "destroy ignores topic_id that does not belong to the agent" do

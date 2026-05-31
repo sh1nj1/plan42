@@ -149,6 +149,32 @@ module Collavre
       assert_equal "true", agent.reload.routing_expression
     end
 
+    test "subscribe activates routing_expression on freshly-registered Claude agent" do
+      # Closes the register-before-subscribe race: register() now creates the
+      # ai_user with routing_expression=nil so the Matcher cannot select it
+      # until a real subscriber exists for agent:user:<id>. The first cable
+      # subscribe by the owner is the activation event — same code path that
+      # restores routing on reconnect.
+      agent = User.create!(
+        email: "agent-channel-fresh-activate-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: nil,
+        created_by_id: @user.id,
+        searchable: false
+      )
+      assert_nil agent.routing_expression, "precondition: register left routing disabled"
+
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      assert subscription.confirmed?
+
+      assert_equal "true", agent.reload.routing_expression,
+        "first owner subscribe must activate routing_expression so dispatches resume"
+    end
+
     test "unsubscribe does not touch non-Claude-Channel agent routing_expression" do
       agent = User.create!(
         email: "agent-channel-other-ai-test@agent.collavre.local",
