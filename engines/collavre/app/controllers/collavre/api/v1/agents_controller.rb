@@ -262,18 +262,29 @@ module Collavre
           end
         end
 
-        # Cancel queued or pending tasks for this session's agent that haven't
-        # acquired a resource slot yet (queued = waiting in topic queue,
-        # pending = briefly between dequeue and AiAgentJob#perform). No slot
-        # release needed — AiAgentJob#perform reserves the slot lazily. Parent
-        # subtasks are still failed so workflow executors don't deadlock
+        # Cancel pre-delegation tasks for this session's agent:
+        #   - queued: waiting in topic queue, no slot reserved
+        #   - pending: between dequeue and AiAgentJob#perform, no slot reserved
+        #   - running: AiAgentJob is mid-perform; for Claude Channel agents the
+        #     slot is reserved with task.id between tracker.reserve! and the
+        #     "running → delegated" transition. AiAgentJob#perform reloads the
+        #     task before the delegated transition and exits if it sees
+        #     "cancelled", so we close that race here.
+        #
+        # Release the tracker slot defensively for running tasks — release! is
+        # idempotent (Set#delete no-ops on missing key) and we don't know from
+        # the DB whether AiAgentJob had already reached tracker.reserve!.
+        # Parent subtasks are still failed so workflow executors don't deadlock
         # waiting for a reply that will never come.
         def cancel_pending_tasks_for_session(agent)
-          tasks = Task.where(agent_id: agent.id, status: %w[queued pending])
+          tasks = Task.where(agent_id: agent.id, status: %w[queued pending running])
           return if tasks.empty?
 
+          tracker = Orchestration::ResourceTracker.for(agent)
           tasks.find_each do |task|
+            was_running = task.status == "running"
             task.update!(status: "cancelled")
+            tracker.release!(task.id) if was_running
 
             if task.parent_task_id.present?
               begin

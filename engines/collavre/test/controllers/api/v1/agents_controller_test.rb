@@ -820,6 +820,47 @@ module Collavre
             "no AiAgentJob may be enqueued for this clientless agent during drain"
         end
 
+        test "destroy cancels running tasks and releases reserved slot before delegated transition" do
+          # AiAgentJob#perform reserves a slot under task.id and then flips
+          # the task from running → delegated. If destroy lands in that
+          # window, neither the queued/pending sweep nor the delegated sweep
+          # would catch it, the eventual delegated transition (without the
+          # reload guard) would overwrite cancelled with delegated, and the
+          # slot would stay held until stuck recovery.
+          reg = register_agent("cancel-running-test")
+          inbox_topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+
+          work_creative = creatives(:tshirt)
+          work_topic = work_creative.topics.create!(name: "Work topic running", user: @user)
+
+          running_task = Collavre::Task.create!(
+            name: "Running pre-delegation",
+            status: "running",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: work_topic.id,
+            creative_id: work_creative.id
+          )
+
+          tracker = Collavre::Orchestration::ResourceTracker.for(ai_user)
+          tracker.reset!
+          tracker.reserve!(running_task.id)
+          assert_equal 1, tracker.active_jobs,
+            "sanity: AiAgentJob would have reserved a slot under task.id by now"
+
+          delete "/api/v1/agent/#{ai_user.id}",
+            params: { topic_id: inbox_topic_id },
+            headers: auth_headers,
+            as: :json
+          assert_response :no_content
+
+          assert_equal "cancelled", running_task.reload.status,
+            "running task must be cancelled so AiAgentJob's reload guard exits before broadcast"
+          assert_equal 0, tracker.active_jobs,
+            "agent slot must be released so concurrency capacity reflects reality"
+        end
+
         test "destroy clears routing_expression to exclude session agent from Matcher" do
           # Per-session ai_users left lying around with routing_expression="true"
           # keep being scanned by Orchestration::Matcher#match_by_expression,

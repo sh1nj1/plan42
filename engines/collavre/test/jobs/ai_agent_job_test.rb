@@ -511,4 +511,57 @@ class AiAgentJobTest < ActiveJob::TestCase
     task = Task.where(agent_id: claude_agent.id).last
     assert_equal "delegated", task.status
   end
+
+  test "claude channel job skips dispatch when task cancelled between reserve and delegated" do
+    # Simulates AgentsController#destroy cancelling a running Claude Channel
+    # task while AiAgentJob#perform is between tracker.reserve! and the
+    # running → delegated transition. Without the reload guard, the job
+    # would overwrite "cancelled" with "delegated" and broadcast to a
+    # clientless stream.
+    claude_agent = User.create!(
+      email: "cc-cancel-race-agent@agent.collavre.local",
+      name: "Claude Cancel Race Agent",
+      password: SecureRandom.hex(32),
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      created_by_id: @owner.id,
+      searchable: false
+    )
+
+    topic = Topic.create!(creative: @creative, name: "cc-cancel-race", user: @owner)
+    task = Collavre::Task.create!(
+      name: "Pre-existing running task",
+      status: "running",
+      trigger_event_name: "comment_created",
+      agent: claude_agent,
+      topic_id: topic.id,
+      creative_id: @creative.id
+    )
+
+    # Fake tracker that simulates AgentsController#destroy landing between
+    # tracker.reserve! and the running → delegated transition by flipping
+    # the task to "cancelled" inside reserve!.
+    fake_tracker = Object.new
+    fake_tracker.define_singleton_method(:reserve!) do |_resource_id, **_opts|
+      task.update!(status: "cancelled")
+      true
+    end
+    fake_tracker.define_singleton_method(:release!) { |_resource_id, **_opts| true }
+
+    delivered = false
+    fake_adapter = Class.new do
+      define_method(:initialize) { |agent:, context:, task: nil| }
+      define_method(:deliver) { delivered = true; nil }
+    end
+
+    Collavre::Orchestration::ResourceTracker.stub :for, ->(_agent) { fake_tracker } do
+      Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
+        AiAgentJob.perform_now(task)
+      end
+    end
+
+    assert_equal "cancelled", task.reload.status,
+      "task must stay cancelled — job must not overwrite with 'delegated'"
+    refute delivered, "ClaudeChannelAdapter#deliver must not run after external cancel"
+  end
 end
