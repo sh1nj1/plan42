@@ -28,6 +28,11 @@ Rails.application.configure do
   # Change to :null_store to avoid any caching.
   config.cache_store = :memory_store
 
+  # Pre-warm encryption fallback keys so `AwsCredentials.s3` can decrypt
+  # admin-saved DB rows even though `config/initializers/active_record_encryption.rb`
+  # runs later (see production.rb for the rationale).
+  EncryptionBootstrap.ensure_keys!(Rails.application)
+
   # Collavre uploaded files storage: S3 only when a source-coherent pair of
   # S3 credentials is available (`AwsCredentials.s3` enforces same-source
   # access key id + secret). When `Collavre::AwsCredentials` is unavailable

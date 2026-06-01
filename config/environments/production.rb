@@ -29,6 +29,15 @@ Rails.application.configure do
   # Enable serving of images, stylesheets, and JavaScripts from an asset server.
   # config.asset_host = "http://assets.example.com"
 
+  # Pre-warm encryption fallback keys so `AwsCredentials.s3` (and any other
+  # boot-time `IntegrationSettings.fetch(..., boot_safe: true)` call below)
+  # can decrypt admin-saved DB rows even though
+  # `config/initializers/active_record_encryption.rb` runs later. Without
+  # this, the `boot_safe:` rescue would swallow the encryption error, return
+  # blank credentials, and downgrade S3 storage to `:local` for the whole
+  # boot — ignoring legitimate admin-saved DB credentials.
+  EncryptionBootstrap.ensure_keys!(Rails.application)
+
   # Collavre uploaded files storage: S3 only when a source-coherent pair of
   # S3 credentials is available (`AwsCredentials.s3` enforces same-source
   # access key id + secret). When `Collavre::AwsCredentials` is unavailable

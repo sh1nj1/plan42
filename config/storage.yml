@@ -7,6 +7,13 @@ local:
   root: <%= Rails.root.join("storage") %>
 
 <%
+  # Pre-warm encryption fallback keys so the calls below can decrypt
+  # admin-saved DB rows even though
+  # `config/initializers/active_record_encryption.rb` runs later. Without
+  # this, the `boot_safe:` rescue would swallow the encryption error and
+  # silently downgrade DB-backed S3 to local disk.
+  EncryptionBootstrap.ensure_keys!(Rails.application) if defined?(EncryptionBootstrap)
+
   # `AwsCredentials.s3` returns a source-coherent pair (both DB, both ENV, or
   # neither), so a partial admin save can't combine a DB access_key_id with an
   # ENV secret and boot Active Storage with a mismatched credential pair.
