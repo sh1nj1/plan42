@@ -15,7 +15,13 @@ module Collavre
     # Returns `Resolver.get(key)` when the registry+DB are reachable, otherwise
     # falls back to `ENV[key.upcase]`. After the next boot, the DB value wins —
     # matching the `requires_restart` semantics callers register.
-    def self.fetch(key, default: nil)
+    #
+    # `boot_safe: true` additionally rescues `ActiveRecord::Encryption::Errors::Base`
+    # so callers reached before `config/initializers/active_record_encryption.rb`
+    # runs (e.g. `storage.yml`, `config/environments/*.rb`) cannot crash the boot
+    # if an encrypted row is unreadable. Runtime callers MUST leave this false so
+    # decryption failures surface instead of silently treating values as blank.
+    def self.fetch(key, default: nil, boot_safe: false)
       return ENV[key.to_s.upcase].presence || default unless defined?(Resolver)
 
       value =
@@ -29,12 +35,8 @@ module Collavre
                NameError
           ENV[key.to_s.upcase]
         rescue StandardError => e
-          # Encryption may not be configured yet at boot-time: the host app's
-          # `config/initializers/active_record_encryption.rb` fallback runs at
-          # `:load_config_initializers`, later than `:load_environment_config`
-          # where AWS keys are consumed. Treat any encryption-layer error as
-          # "DB unavailable" and fall back to ENV.
-          raise unless defined?(ActiveRecord::Encryption::Errors::Base) &&
+          raise unless boot_safe &&
+                       defined?(ActiveRecord::Encryption::Errors::Base) &&
                        e.is_a?(ActiveRecord::Encryption::Errors::Base)
           ENV[key.to_s.upcase]
         end

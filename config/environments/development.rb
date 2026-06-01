@@ -34,7 +34,7 @@ Rails.application.configure do
   # (`USE_COLLAVRE_GEM=true` with an older gem), fall back to plain ENV.
   s3_credentials =
     if defined?(Collavre::AwsCredentials)
-      Collavre::AwsCredentials.s3
+      Collavre::AwsCredentials.s3(boot_safe: true)
     elsif ENV["AWS_S3_ACCESS_KEY_ID"].present? && ENV["AWS_S3_SECRET_ACCESS_KEY"].present?
       { access_key_id: ENV["AWS_S3_ACCESS_KEY_ID"], secret_access_key: ENV["AWS_S3_SECRET_ACCESS_KEY"] }
     else

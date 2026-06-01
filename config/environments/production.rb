@@ -36,7 +36,7 @@ Rails.application.configure do
   # legacy env-based S3 deploys keep S3 selected.
   s3_credentials =
     if defined?(Collavre::AwsCredentials)
-      Collavre::AwsCredentials.s3
+      Collavre::AwsCredentials.s3(boot_safe: true)
     elsif ENV["AWS_S3_ACCESS_KEY_ID"].present? && ENV["AWS_S3_SECRET_ACCESS_KEY"].present?
       { access_key_id: ENV["AWS_S3_ACCESS_KEY_ID"], secret_access_key: ENV["AWS_S3_SECRET_ACCESS_KEY"] }
     else
@@ -106,7 +106,7 @@ Rails.application.configure do
   ses_region = ENV["AWS_REGION"] || Rails.application.credentials.dig(:aws, :region)
   ses_smtp_credentials =
     if defined?(Collavre::AwsCredentials)
-      Collavre::AwsCredentials.ses_smtp
+      Collavre::AwsCredentials.ses_smtp(boot_safe: true)
     else
       legacy_user = ENV["AWS_SES_SMTP_USERNAME"].presence || Rails.application.credentials.dig(:aws, :smtp_username).presence
       legacy_pass = ENV["AWS_SES_SMTP_PASSWORD"].presence || Rails.application.credentials.dig(:aws, :smtp_password).presence

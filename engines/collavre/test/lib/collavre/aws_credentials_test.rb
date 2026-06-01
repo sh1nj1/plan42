@@ -64,15 +64,29 @@ module Collavre
       assert_equal({}, Collavre::AwsCredentials.ses_smtp)
     end
 
-    test "falls through to ENV when DB decrypt raises at boot (encryption not configured)" do
+    test "boot_safe: true falls through to ENV when DB decrypt raises at boot" do
       # Simulates the boot window where `:load_environment_config` runs before
       # the host app's encryption initializer wires up keys: reading the
-      # encrypted `value` column raises an encryption error. AwsCredentials
-      # must treat that as "DB unavailable" so the ENV pair still wins.
+      # encrypted `value` column raises an encryption error. Boot callers
+      # (storage.yml, config/environments/*.rb) opt in with boot_safe: true so
+      # the ENV pair still wins and the app boots.
       ENV["AWS_S3_ACCESS_KEY_ID"] = "ENV-KEY"
       ENV["AWS_S3_SECRET_ACCESS_KEY"] = "ENV-SECRET"
       Collavre::IntegrationSetting.stub(:find_by, ->(*_) { raise ActiveRecord::Encryption::Errors::Configuration, "no key" }) do
-        assert_equal({ access_key_id: "ENV-KEY", secret_access_key: "ENV-SECRET" }, Collavre::AwsCredentials.s3)
+        assert_equal({ access_key_id: "ENV-KEY", secret_access_key: "ENV-SECRET" }, Collavre::AwsCredentials.s3(boot_safe: true))
+      end
+    end
+
+    test "default (runtime) raises when DB decrypt fails so SES rotation can't silently fall back" do
+      # Runtime callers like SesSettingsInterceptor MUST see decryption failures
+      # — silently falling back to ENV would leave admins thinking a rotated SES
+      # password is in effect when the old fallback pair is still being used.
+      ENV["AWS_SES_SMTP_USERNAME"] = "env-u"
+      ENV["AWS_SES_SMTP_PASSWORD"] = "env-p"
+      Collavre::IntegrationSetting.stub(:find_by, ->(*_) { raise ActiveRecord::Encryption::Errors::Configuration, "no key" }) do
+        assert_raises(ActiveRecord::Encryption::Errors::Configuration) do
+          Collavre::AwsCredentials.ses_smtp
+        end
       end
     end
   end

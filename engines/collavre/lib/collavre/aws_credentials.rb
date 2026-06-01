@@ -13,29 +13,36 @@ module Collavre
   module AwsCredentials
     module_function
 
+    # @param boot_safe [Boolean] when true, swallow encryption errors so
+    #   `storage.yml` / env configs can boot before
+    #   `active_record_encryption.rb` runs. Runtime callers (e.g.
+    #   `SesSettingsInterceptor`) MUST leave this false so a decryption
+    #   failure surfaces instead of silently falling back to ENV.
     # @return [Hash{Symbol => String}] coherent S3 credential pair or `{}`
-    def s3
+    def s3(boot_safe: false)
       coherent_pair(
+        boot_safe,
         [ :aws_s3_access_key_id,     :access_key_id,     "AWS_S3_ACCESS_KEY_ID",     nil ],
         [ :aws_s3_secret_access_key, :secret_access_key, "AWS_S3_SECRET_ACCESS_KEY", nil ]
       )
     end
 
     # @return [Hash{Symbol => String}] coherent SES SMTP credential pair or `{}`
-    def ses_smtp
+    def ses_smtp(boot_safe: false)
       coherent_pair(
+        boot_safe,
         [ :aws_ses_smtp_username, :user_name, "AWS_SES_SMTP_USERNAME", %i[aws smtp_username] ],
         [ :aws_ses_smtp_password, :password,  "AWS_SES_SMTP_PASSWORD", %i[aws smtp_password] ]
       )
     end
 
-    def coherent_pair(*entries)
-      [ db_pair(entries), env_pair(entries), credentials_pair(entries) ]
+    def coherent_pair(boot_safe, *entries)
+      [ db_pair(entries, boot_safe), env_pair(entries), credentials_pair(entries) ]
         .find { |pair| pair.values.all?(&:present?) } || {}
     end
 
-    def db_pair(entries)
-      entries.to_h { |entry| [ entry[1], read_db(entry[0]) ] }
+    def db_pair(entries, boot_safe)
+      entries.to_h { |entry| [ entry[1], read_db(entry[0], boot_safe: boot_safe) ] }
     end
 
     def env_pair(entries)
@@ -50,7 +57,7 @@ module Collavre
       end
     end
 
-    def read_db(key)
+    def read_db(key, boot_safe: false)
       return nil unless defined?(Collavre::IntegrationSetting)
       Collavre::IntegrationSetting.find_by(key: key.to_s)&.value.presence
     rescue ActiveRecord::StatementInvalid,
@@ -59,10 +66,8 @@ module Collavre
            NameError
       nil
     rescue StandardError => e
-      # Encryption may not be configured yet at boot-time (see
-      # IntegrationSettings.fetch); treat as DB unavailable so callers fall
-      # back to ENV/credentials instead of crashing app boot.
-      raise unless defined?(ActiveRecord::Encryption::Errors::Base) &&
+      raise unless boot_safe &&
+                   defined?(ActiveRecord::Encryption::Errors::Base) &&
                    e.is_a?(ActiveRecord::Encryption::Errors::Base)
       nil
     end

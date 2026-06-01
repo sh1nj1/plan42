@@ -120,6 +120,46 @@ module Collavre
       assert_nil message.delivery_method.settings[:password]
     end
 
+    test "passes through non-SES SMTP provider with credentials" do
+      # Host app uses SendGrid (or any non-SES SMTP). Even with SES creds
+      # configured, the interceptor must leave non-SES messages untouched.
+      ENV["AWS_REGION"] = "us-east-1"
+      ENV["AWS_SES_SMTP_USERNAME"] = "env-user"
+      ENV["AWS_SES_SMTP_PASSWORD"] = "env-pass"
+
+      message = build_smtp_message(
+        settings: {
+          address:   "smtp.sendgrid.net",
+          port:      587,
+          user_name: "sendgrid-user",
+          password:  "sendgrid-pass"
+        }
+      )
+      Collavre::SesSettingsInterceptor.delivering_email(message)
+
+      assert_equal "smtp.sendgrid.net", message.delivery_method.settings[:address]
+      assert_equal "sendgrid-user",     message.delivery_method.settings[:user_name]
+      assert_equal "sendgrid-pass",     message.delivery_method.settings[:password]
+    end
+
+    test "does not clear credentials on non-SES SMTP provider when no SES pair" do
+      # Host using a non-SES provider with no SES configured — earlier code
+      # would have deleted :user_name/:password (the P1 Codex caught).
+      message = build_smtp_message(
+        settings: {
+          address:   "smtp.mailgun.org",
+          port:      587,
+          user_name: "mg-user",
+          password:  "mg-pass"
+        }
+      )
+      Collavre::SesSettingsInterceptor.delivering_email(message)
+
+      assert_equal "smtp.mailgun.org", message.delivery_method.settings[:address]
+      assert_equal "mg-user",          message.delivery_method.settings[:user_name]
+      assert_equal "mg-pass",          message.delivery_method.settings[:password]
+    end
+
     test "skips non-SMTP delivery methods" do
       message = ::Mail.new
       message.delivery_method :test
