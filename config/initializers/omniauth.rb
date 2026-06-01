@@ -42,8 +42,9 @@ github_client_secret = resolve_oauth.call(:github_client_secret, %i[github clien
 notion_client_id     = resolve_oauth.call(:notion_client_id,     %i[notion client_id])
 notion_client_secret = resolve_oauth.call(:notion_client_secret, %i[notion client_secret])
 
-github_mock_enabled = if ENV.key?("GITHUB_MOCK")
-                        ENV["GITHUB_MOCK"] == "1"
+github_mock_setting = resolve_oauth.call(:github_mock, %i[github mock])
+github_mock_enabled = if github_mock_setting.present?
+                        github_mock_setting == "1"
 else
                         Rails.env.development? && github_client_id.blank?
 end
