@@ -66,6 +66,17 @@ module Collavre
       return reject unless agent&.ai_user?
       return reject unless agent.created_by_id == current_user.id
 
+      # Attach the stream BEFORE activating routing. Orchestration::Matcher
+      # can pick this agent as soon as routing_expression becomes "true";
+      # broadcasts to agent:user:<id> in the window between the UPDATE
+      # committing and stream_from registering the subscription would land
+      # in a stream with no subscriber, leaving the new delegated task
+      # waiting on stuck recovery. Registering the subscription first means
+      # by the time the agent is matchable, this connection is already
+      # receiving broadcasts.
+      @session_agent = agent if agent.claude_channel_agent?
+      stream_from "agent:user:#{agent.id}"
+
       # Reconnect-grace: if a prior unsubscribed cleared routing_expression
       # (or an explicit /destroy disabled the agent and the same MCP session
       # is resubscribing without re-registering), restore it on a successful
@@ -73,9 +84,6 @@ module Collavre
       if agent.claude_channel_agent? && agent.routing_expression.blank?
         agent.update_column(:routing_expression, "true")
       end
-
-      @session_agent = agent if agent.claude_channel_agent?
-      stream_from "agent:user:#{agent.id}"
     end
   end
 end

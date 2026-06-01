@@ -304,8 +304,13 @@ module Collavre
           assert_equal newer.id, Comment.find(body["comment_id"]).task_id
         end
 
-        test "reply with task_id ignored when it does not match a delegated task in this topic" do
-          # Foreign or stale task_id must not punch through the scope.
+        test "reply with unresolved task_id refuses instead of falling back to primary_agent" do
+          # A present-but-unresolved task_id means the client believes it is
+          # answering a specific dispatch that no longer exists (cancelled,
+          # timed out, stale, or wrong topic). Falling through to
+          # topic.primary_agent would save the reply against a different task
+          # — or no task at all — while leaving the real intended task
+          # cancelled/failed. Must return 403 instead.
           reg = register_agent("task-id-foreign-test")
           topic_id = reg["topic_id"]
           ai_user = User.find(reg["agent_id"])
@@ -321,14 +326,18 @@ module Collavre
             creative_id: creative.id
           )
 
+          comments_before = creative.comments.count
+
           post "/api/v1/agent/reply",
             params: { topic_id: topic_id, text: "Stale id", task_id: 99_999_999 },
             headers: auth_headers,
             as: :json
-          assert_response :created
+          assert_response :forbidden
 
           assert_equal "delegated", delegated.reload.status,
             "real delegated task must not be completed by a foreign task_id"
+          assert_equal comments_before, creative.comments.count,
+            "no comment should be saved when task_id is unresolved"
         end
 
         test "reply with task_id authorizes Claude Channel agent on topic where primary_agent diverges" do
@@ -398,19 +407,21 @@ module Collavre
             creative_id: creative.id
           )
 
+          comments_before = creative.comments.count
+
           post "/api/v1/agent/reply",
             params: { topic_id: topic.id, text: "should not bind", task_id: foreign_task.id },
             headers: auth_headers,
             as: :json
 
-          # Falls through to topic.primary_agent (which is the registering
-          # user's Claude Channel agent), so the reply is attributed to that
-          # agent — NOT to the foreign agent.
-          assert_response :created
-          body = JSON.parse(response.body)
-          assert_equal reg["agent_id"], Comment.find(body["comment_id"]).user_id
+          # A present-but-unresolved-for-this-user task_id is a mistargeted
+          # reply. The new contract refuses instead of silently rebinding to
+          # this token holder's primary_agent.
+          assert_response :forbidden
           assert_equal "delegated", foreign_task.reload.status,
             "foreign agent's delegated task must not be completed by this token holder"
+          assert_equal comments_before, creative.comments.count,
+            "no comment should be saved when task_id resolves to a foreign agent"
         end
 
         test "reply advances parent workflow when delegated subtask completes" do

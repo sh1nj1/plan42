@@ -173,13 +173,22 @@ module Collavre
         #
         # When task_id is absent, fall back to topic.primary_agent for
         # back-compat with older plugin builds that don't echo task_id.
+        #
+        # If task_id IS supplied but the delegated task lookup fails (late
+        # reply after cancel/timeout, stale id, wrong topic), do NOT fall
+        # through to primary_agent — a present-but-unresolved task_id means
+        # the client believes it is answering a specific dispatch that no
+        # longer exists. Saving the reply against primary_agent would create
+        # an unlinked comment while complete_delegated_task finds nothing,
+        # potentially duplicating a reply after the task was already
+        # completed/cancelled. Return nil so reply renders 403.
         def resolve_reply_agent(topic, requested_task_id)
           if requested_task_id.present?
             task = Task.where(topic_id: topic.id, status: "delegated").find_by(id: requested_task_id)
             agent = task&.agent
-            if agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
-              return agent
-            end
+            return nil unless agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
+
+            return agent
           end
 
           agent = topic.primary_agent

@@ -171,6 +171,11 @@ module Collavre
       subscribe agent_id: agent.id
       assert subscription.confirmed?
 
+      # stream_from must be attached BEFORE routing_expression is activated,
+      # otherwise a comment matched in the small window between the UPDATE
+      # committing and stream_from registering the subscription would
+      # broadcast into a stream with no subscriber.
+      assert_has_stream "agent:user:#{agent.id}"
       assert_equal "true", agent.reload.routing_expression,
         "first owner subscribe must activate routing_expression so dispatches resume"
     end
