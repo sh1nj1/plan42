@@ -48,12 +48,12 @@ module Collavre
     initializer "collavre.integration_settings_registry.aws", before: :load_environment_config do
       if defined?(Collavre::IntegrationSettings::Registry)
         registry = Collavre::IntegrationSettings::Registry.instance
-        registry.register(:aws_s3_access_key_id,     category: "aws", sensitive: true,  requires_restart: true)
-        registry.register(:aws_s3_secret_access_key, category: "aws", sensitive: true,  requires_restart: true)
-        registry.register(:aws_s3_bucket,            category: "aws", sensitive: false, requires_restart: true)
-        registry.register(:aws_region,               category: "aws", sensitive: false, requires_restart: true)
-        registry.register(:aws_ses_smtp_username,    category: "aws", sensitive: true,  requires_restart: false)
-        registry.register(:aws_ses_smtp_password,    category: "aws", sensitive: true,  requires_restart: false)
+        registry.register(:aws_s3_access_key_id,     category: "aws_s3",  sensitive: true,  requires_restart: true)
+        registry.register(:aws_s3_secret_access_key, category: "aws_s3",  sensitive: true,  requires_restart: true)
+        registry.register(:aws_s3_bucket,            category: "aws_s3",  sensitive: false, requires_restart: true)
+        registry.register(:aws_region,               category: "aws_s3",  sensitive: false, requires_restart: true)
+        registry.register(:aws_ses_smtp_username,    category: "aws_ses", sensitive: true,  requires_restart: false)
+        registry.register(:aws_ses_smtp_password,    category: "aws_ses", sensitive: true,  requires_restart: false)
       end
     end
 

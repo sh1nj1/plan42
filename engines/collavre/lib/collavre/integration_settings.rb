@@ -28,6 +28,15 @@ module Collavre
                ActiveRecord::ConnectionNotEstablished,
                NameError
           ENV[key.to_s.upcase]
+        rescue StandardError => e
+          # Encryption may not be configured yet at boot-time: the host app's
+          # `config/initializers/active_record_encryption.rb` fallback runs at
+          # `:load_config_initializers`, later than `:load_environment_config`
+          # where AWS keys are consumed. Treat any encryption-layer error as
+          # "DB unavailable" and fall back to ENV.
+          raise unless defined?(ActiveRecord::Encryption::Errors::Base) &&
+                       e.is_a?(ActiveRecord::Encryption::Errors::Base)
+          ENV[key.to_s.upcase]
         end
       value.presence || default
     end

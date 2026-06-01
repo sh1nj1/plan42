@@ -58,6 +58,13 @@ module Collavre
            ActiveRecord::ConnectionNotEstablished,
            NameError
       nil
+    rescue StandardError => e
+      # Encryption may not be configured yet at boot-time (see
+      # IntegrationSettings.fetch); treat as DB unavailable so callers fall
+      # back to ENV/credentials instead of crashing app boot.
+      raise unless defined?(ActiveRecord::Encryption::Errors::Base) &&
+                   e.is_a?(ActiveRecord::Encryption::Errors::Base)
+      nil
     end
   end
 end

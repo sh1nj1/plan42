@@ -59,6 +59,29 @@ module Collavre
                        Collavre::IntegrationSettings.fetch(:default_mailer_from)
         end
       end
+
+      test "encryption errors at boot-time fall back to ENV instead of raising" do
+        # AWS keys are consumed during `:load_environment_config`, which can
+        # run before the host app's encryption initializer wires up keys. If
+        # encryption isn't configured yet, decrypting the IntegrationSetting
+        # row raises an ActiveRecord::Encryption::Errors::Base subclass. The
+        # fetch helper must treat that the same as "DB unavailable".
+        ENV["DEFAULT_MAILER_FROM"] = "env-after-encryption-error@example.com"
+        Resolver.stub(:get, ->(_k) { raise ActiveRecord::Encryption::Errors::Configuration, "no key" }) do
+          assert_equal "env-after-encryption-error@example.com",
+                       Collavre::IntegrationSettings.fetch(:default_mailer_from)
+        end
+      end
+
+      test "non-encryption StandardError still bubbles up" do
+        # Encryption errors are explicitly rescued; other StandardError
+        # subclasses must still propagate so genuine bugs aren't masked.
+        Resolver.stub(:get, ->(_k) { raise RuntimeError, "unexpected" }) do
+          assert_raises(RuntimeError) do
+            Collavre::IntegrationSettings.fetch(:default_mailer_from)
+          end
+        end
+      end
     end
   end
 end
