@@ -19,6 +19,7 @@ module Collavre
           env_var: "DEFAULT_MAILER_FROM",
           default: nil
         )
+        ENV.delete("DEFAULT_MAILER_FROM")
         Rails.cache.clear
         IntegrationSetting.delete_all
       end
