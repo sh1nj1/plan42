@@ -65,15 +65,8 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
       permission: :feedback
     )
 
-    # Create a topic-level OrchestratorPolicy with primary_agent_id
-    Collavre::OrchestratorPolicy.create!(
-      policy_type: "arbitration",
-      scope_type: "Topic",
-      scope_id: @topic.id,
-      priority: 10,
-      config: { "strategy" => "primary_first", "primary_agent_id" => ai_agent.id },
-      enabled: true
-    )
+    # Set primary agent directly on topic
+    @topic.update!(primary_agent_id: ai_agent.id)
 
     captured_vendor = nil
     captured_model = nil

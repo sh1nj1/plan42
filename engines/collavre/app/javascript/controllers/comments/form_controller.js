@@ -145,6 +145,10 @@ export default class extends Controller {
   onPopupOpened({ creativeId, canComment }) {
     this.creativeId = creativeId
     this.element.dataset.creativeId = creativeId || ''
+    // Stale topic ids from the previous creative are cleared by the popup
+    // controller BEFORE topics loadTopics() dispatches comments--topics:change,
+    // so by the time we get here, currentTopicId already reflects the new
+    // creative's restored topic. Do not re-clear it.
     this.formTarget.style.display = canComment ? '' : 'none'
     this.resetForm()
     if (canComment && this.shouldAutoFocusOnOpen()) {

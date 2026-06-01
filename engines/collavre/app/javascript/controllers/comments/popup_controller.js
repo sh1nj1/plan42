@@ -289,6 +289,15 @@ export default class extends Controller {
 
   async notifyChildControllers({ creativeId, canComment, highlightId }) {
     this.topicsController?.clearOverrideTopicId()
+    // Drop the previous creative's topic selection from the form controller
+    // synchronously, BEFORE topics loadTopics() dispatches `comments--topics:change`
+    // (which repopulates these via handleTopicChange). Doing it later — e.g. in
+    // formController.onPopupOpened, which runs after the topics await — would
+    // erase the topic that restoreSelection() just restored from the server.
+    if (this.formController) {
+      this.formController.currentTopicId = ''
+      this.formController._mainTopicId = null
+    }
     // Pre-set creativeId on list controller BEFORE loading topics.
     // Topics loading triggers a change event that list controller handles.
     // Without this, list controller still holds the previous creative's ID

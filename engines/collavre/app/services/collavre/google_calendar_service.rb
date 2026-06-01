@@ -110,8 +110,10 @@ module Collavre
       raise GoogleCalendarError, I18n.t("collavre.google_calendar.errors.not_connected") if token.blank?
 
       Google::Auth::UserRefreshCredentials.new(
-        client_id:     ENV["GOOGLE_CLIENT_ID"] || Rails.application.credentials.dig(:google, :client_id),
-        client_secret: ENV["GOOGLE_CLIENT_SECRET"] || Rails.application.credentials.dig(:google, :client_secret),
+        client_id:     Collavre::IntegrationSettings::Resolver.get(:google_client_id).presence ||
+                       Rails.application.credentials.dig(:google, :client_id),
+        client_secret: Collavre::IntegrationSettings::Resolver.get(:google_client_secret).presence ||
+                       Rails.application.credentials.dig(:google, :client_secret),
         scope:         [ Google::Apis::CalendarV3::AUTH_CALENDAR_APP_CREATED ],
         refresh_token: token
       ).tap(&:fetch_access_token!)

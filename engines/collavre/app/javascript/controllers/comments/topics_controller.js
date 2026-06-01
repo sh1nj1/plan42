@@ -34,6 +34,15 @@ export default class extends Controller {
 
     onPopupOpened({ creativeId }) {
         this.creativeIdValue = creativeId
+        // Clear stale cached state from the previous creative — otherwise
+        // chat-context autofill (command_menu) reads stale values during the
+        // window between popup switch and the new topics fetch completing.
+        // form_controller's currentTopicId is cleared upstream in
+        // popup_controller.notifyChildControllers; here we clear our own
+        // mainTopicId (read directly as the autofill fallback) and the cached
+        // effective_creative_id. loadTopics() repopulates both.
+        delete this.element.dataset.effectiveCreativeId
+        this.mainTopicId = null
         this.subscribe()
         return this.loadTopics()
     }
@@ -88,6 +97,12 @@ export default class extends Controller {
                 this.isInbox = !!data.is_inbox
                 this.systemTopicId = data.system_topic_id ? String(data.system_topic_id) : null
                 this.mainTopicId = data.main_topic_id ? String(data.main_topic_id) : null
+                // Expose effective origin id so chat-context autofill (slash commands)
+                // and any other consumer can target the same creative the server uses
+                // (linked creatives resolve params[:creative_id] through effective_origin).
+                if (data.effective_creative_id) {
+                    this.element.dataset.effectiveCreativeId = String(data.effective_creative_id)
+                }
 
                 // Migrate localStorage to server if server has no value
                 this.migrateLocalStorage()

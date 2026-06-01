@@ -162,12 +162,26 @@ module CollavreGithub
 
     attr_reader :client
 
-    # Use GITHUB_API_ENDPOINT env var if set, otherwise fall back to mock server
-    # in development when no real GitHub credentials are configured.
+    # Resolve the API endpoint via Resolver (DB > ENV), otherwise fall back to
+    # the mock server in development when no real GitHub credentials are
+    # configured.
     def resolve_api_endpoint
-      return ENV["GITHUB_API_ENDPOINT"] if ENV["GITHUB_API_ENDPOINT"].present?
+      endpoint =
+        if defined?(Collavre::IntegrationSettings::Resolver)
+          Collavre::IntegrationSettings::Resolver.get(:github_api_endpoint).presence
+        else
+          ENV["GITHUB_API_ENDPOINT"].presence
+        end
+      return endpoint if endpoint.present?
 
-      if Rails.env.development? && ENV["GITHUB_CLIENT_ID"].blank?
+      github_client_id =
+        if defined?(Collavre::IntegrationSettings::Resolver)
+          Collavre::IntegrationSettings::Resolver.get(:github_client_id).presence
+        else
+          ENV["GITHUB_CLIENT_ID"].presence
+        end
+
+      if Rails.env.development? && github_client_id.blank?
         MOCK_SERVER_DEFAULT
       end
     end

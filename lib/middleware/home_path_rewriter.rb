@@ -5,6 +5,13 @@ class HomePathRewriter
 
   def call(env)
     if env["PATH_INFO"] == "/"
+      # Mark this as an original root request so downstream controllers can
+      # detect a "/" hit even after we rewrite PATH_INFO. This is what lets
+      # the controller-side before_action redirect authenticated users to
+      # home_page_path_authenticated without affecting direct visits to the
+      # rewrite target.
+      env["collavre.root_request"] = true
+
       home_path = SystemSetting.home_page_path.presence
       if home_path
         # Normalize in case value was set via console with invalid format
