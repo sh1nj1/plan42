@@ -571,8 +571,8 @@ module CollavreOpenclaw
 
       host = options[:host]
       host ||= Rails.application.config.action_controller.default_url_options&.dig(:host)
-      host ||= ENV["APP_HOST"]
-      host ||= ENV["RAILS_HOST"]
+      host ||= Collavre::IntegrationSettings.fetch(:app_host)
+      host ||= Collavre::IntegrationSettings.fetch(:rails_host)
 
       result = { host: host }
       result[:protocol] = options[:protocol] || "https"

@@ -31,7 +31,10 @@ en:
           firebase: "Firebase"
           fcm: "FCM"
           gemini: "Gemini"
-          mail: "Mail"
+          llm: "LLM API Keys"
+          openclaw: "OpenClaw Gateway"
+          mail: "Mail / Host"
+          misc: "Miscellaneous"
         actions:
           save: "Save changes"
           reset: "Reset to ENV"

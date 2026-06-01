@@ -80,7 +80,7 @@ module Tools
     end
 
     def self.upload_root
-      raw = ENV["MCP_UPLOAD_ROOT"].presence || Rails.root.join("tmp/mcp_uploads").to_s
+      raw = Collavre::IntegrationSettings.fetch(:mcp_upload_root, default: Rails.root.join("tmp/mcp_uploads").to_s)
       Pathname.new(File.expand_path(raw)).tap do |p|
         FileUtils.mkdir_p(p) unless p.exist?
       end.realpath

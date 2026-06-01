@@ -7,7 +7,7 @@ module Collavre
     # absolute; otherwise relative so the browser uses the current host.
     def public_asset_url(blob)
       path = "/public-assets/blobs/#{blob.signed_id}/#{blob.filename.sanitized}"
-      host = ENV["PUBLIC_ASSETS_HOST"].presence
+      host = Collavre::IntegrationSettings.fetch(:public_assets_host)
       host ? "#{host.chomp('/')}#{path}" : path
     end
   end

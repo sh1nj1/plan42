@@ -31,7 +31,10 @@ ko:
           firebase: "Firebase"
           fcm: "FCM"
           gemini: "Gemini"
-          mail: "메일"
+          llm: "LLM API 키"
+          openclaw: "OpenClaw 게이트웨이"
+          mail: "메일 / 호스트"
+          misc: "기타"
         actions:
           save: "변경사항 저장"
           reset: "ENV로 초기화"

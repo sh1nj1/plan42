@@ -113,17 +113,17 @@ module Collavre
 
       context_block = case normalized_vendor
       when "openai"
-        api_key = @llm_api_key.presence || ENV["OPENAI_API_KEY"]
+        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:openai_api_key)
         base_url = @gateway_url.presence
         proc do |config|
           config.openai_api_key = api_key
           config.openai_api_base = base_url if base_url
         end
       when "anthropic"
-        api_key = @llm_api_key.presence || ENV["ANTHROPIC_API_KEY"]
+        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:anthropic_api_key)
         proc { |config| config.anthropic_api_key = api_key }
       else
-        api_key = @llm_api_key.presence || ENV["GEMINI_API_KEY"]
+        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:gemini_api_key)
         proc { |config| config.gemini_api_key = api_key }
       end
 
