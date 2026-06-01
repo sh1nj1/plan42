@@ -29,10 +29,17 @@ Rails.application.configure do
   # Enable serving of images, stylesheets, and JavaScripts from an asset server.
   # config.asset_host = "http://assets.example.com"
 
-  # Collavre uploaded files storage: S3 if aws_s3_access_key_id is configured
-  # (DB via IntegrationSettings or AWS_S3_ACCESS_KEY_ID env var), otherwise local disk.
+  # Collavre uploaded files storage: S3 only if BOTH access key id and secret
+  # are configured (DB via IntegrationSettings or AWS_S3_* env vars). Gating
+  # on the full credential pair avoids booting into `:amazon` with half-set
+  # admin keys, which would silently break uploads/downloads at runtime.
   config.active_storage.service =
-    Collavre::IntegrationSettings.fetch(:aws_s3_access_key_id).present? ? :amazon : :local
+    if Collavre::IntegrationSettings.fetch(:aws_s3_access_key_id).present? &&
+       Collavre::IntegrationSettings.fetch(:aws_s3_secret_access_key).present?
+      :amazon
+    else
+      :local
+    end
 
   # Assume all access to the app is happening through a SSL-terminating reverse proxy.
   config.assume_ssl = true

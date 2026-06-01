@@ -45,12 +45,15 @@ module Collavre
 
     test "DB value beats ENV" do
       ENV["AWS_SES_SMTP_USERNAME"] = "env-user"
+      ENV["AWS_SES_SMTP_PASSWORD"] = "env-pass"
       Collavre::IntegrationSetting.create!(key: "aws_ses_smtp_username", value: "db-user", category: "aws")
+      Collavre::IntegrationSetting.create!(key: "aws_ses_smtp_password", value: "db-pass", category: "aws")
 
       message = build_smtp_message(settings: { port: 587 })
       Collavre::SesSettingsInterceptor.delivering_email(message)
 
       assert_equal "db-user", message.delivery_method.settings[:user_name]
+      assert_equal "db-pass", message.delivery_method.settings[:password]
     end
 
     test "falls back to ENV when no DB row" do
@@ -71,6 +74,26 @@ module Collavre
       Collavre::SesSettingsInterceptor.delivering_email(message)
 
       assert_equal "preset.example.com", message.delivery_method.settings[:address]
+      assert_nil message.delivery_method.settings[:user_name]
+      assert_nil message.delivery_method.settings[:password]
+    end
+
+    test "skips half-configured SES credentials (username without password)" do
+      Collavre::IntegrationSetting.create!(key: "aws_ses_smtp_username", value: "DB-USER", category: "aws")
+
+      message = build_smtp_message(settings: { port: 587 })
+      Collavre::SesSettingsInterceptor.delivering_email(message)
+
+      assert_nil message.delivery_method.settings[:user_name]
+      assert_nil message.delivery_method.settings[:password]
+    end
+
+    test "skips half-configured SES credentials (password without username)" do
+      Collavre::IntegrationSetting.create!(key: "aws_ses_smtp_password", value: "DB-PASS", category: "aws")
+
+      message = build_smtp_message(settings: { port: 587 })
+      Collavre::SesSettingsInterceptor.delivering_email(message)
+
       assert_nil message.delivery_method.settings[:user_name]
       assert_nil message.delivery_method.settings[:password]
     end

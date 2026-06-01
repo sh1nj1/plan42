@@ -19,9 +19,14 @@ module Collavre
         password = resolve(:aws_ses_smtp_password, %i[aws smtp_password])
 
         settings = message.delivery_method.settings
-        settings[:address]   = "email-smtp.#{region}.amazonaws.com" if region.present?
-        settings[:user_name] = username if username.present?
-        settings[:password]  = password if password.present?
+        settings[:address] = "email-smtp.#{region}.amazonaws.com" if region.present?
+        # Inject SES SMTP credentials atomically — half-configured creds (username
+        # without password or vice versa) would still trigger SMTP auth and break
+        # every outbound delivery, which is worse than leaving the scaffold blank.
+        if username.present? && password.present?
+          settings[:user_name] = username
+          settings[:password]  = password
+        end
       end
 
       private
