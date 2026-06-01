@@ -6,6 +6,13 @@ require "rails/all"
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
 
+# Compatibility shim for boot-time `Collavre::IntegrationSettings.fetch` and
+# `Collavre::AwsCredentials.{s3,ses_smtp}` callers. Required eagerly so
+# `config/storage.yml` (ERB) and `config/environments/*.rb` can use
+# `CollavreCompat.call` to drop kwargs an older gem version doesn't accept
+# (e.g. `USE_COLLAVRE_GEM=true` pinned to a pre-`boot_safe:` release).
+require_relative "../lib/collavre_compat"
+
 # Ensure .env values override existing ENV values when using dotenv's Rails integration
 if defined?(Dotenv::Rails)
   Dotenv::Rails.overwrite = true

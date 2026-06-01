@@ -33,10 +33,12 @@ Rails.application.configure do
   # S3 credentials is available (`AwsCredentials.s3` enforces same-source
   # access key id + secret). When `Collavre::AwsCredentials` is unavailable
   # (`USE_COLLAVRE_GEM=true` with an older gem), fall back to plain ENV so
-  # legacy env-based S3 deploys keep S3 selected.
+  # legacy env-based S3 deploys keep S3 selected. `CollavreCompat.call`
+  # (loaded by `config/application.rb`) drops kwargs older gem versions
+  # don't accept, avoiding ArgumentError under `USE_COLLAVRE_GEM=true`.
   s3_credentials =
     if defined?(Collavre::AwsCredentials)
-      Collavre::AwsCredentials.s3(boot_safe: true)
+      CollavreCompat.call(Collavre::AwsCredentials, :s3, boot_safe: true)
     elsif ENV["AWS_S3_ACCESS_KEY_ID"].present? && ENV["AWS_S3_SECRET_ACCESS_KEY"].present?
       { access_key_id: ENV["AWS_S3_ACCESS_KEY_ID"], secret_access_key: ENV["AWS_S3_SECRET_ACCESS_KEY"] }
     else
@@ -106,7 +108,7 @@ Rails.application.configure do
   ses_region = ENV["AWS_REGION"] || Rails.application.credentials.dig(:aws, :region)
   ses_smtp_credentials =
     if defined?(Collavre::AwsCredentials)
-      Collavre::AwsCredentials.ses_smtp(boot_safe: true)
+      CollavreCompat.call(Collavre::AwsCredentials, :ses_smtp, boot_safe: true)
     else
       legacy_user = ENV["AWS_SES_SMTP_USERNAME"].presence || Rails.application.credentials.dig(:aws, :smtp_username).presence
       legacy_pass = ENV["AWS_SES_SMTP_PASSWORD"].presence || Rails.application.credentials.dig(:aws, :smtp_password).presence

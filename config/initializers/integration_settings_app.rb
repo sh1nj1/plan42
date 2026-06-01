@@ -21,7 +21,7 @@ end
 # established in `config/application.rb`. Skipped in `test` to match the host
 # guard in `application.rb` (avoids OpenRedirect mismatches in request specs).
 unless Rails.env.test? || !defined?(Collavre::IntegrationSettings)
-  db_host = Collavre::IntegrationSettings.fetch(:default_url_host, boot_safe: true)
+  db_host = CollavreCompat.call(Collavre::IntegrationSettings, :fetch, :default_url_host, boot_safe: true)
   if db_host.present?
     Rails.application.config.action_mailer.default_url_options ||= {}
     Rails.application.config.action_controller.default_url_options ||= {}

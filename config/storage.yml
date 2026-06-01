@@ -12,10 +12,12 @@ local:
   # ENV secret and boot Active Storage with a mismatched credential pair.
   # When `Collavre::AwsCredentials` is unavailable (`USE_COLLAVRE_GEM=true`
   # with a gem version predating this feature), fall back to plain ENV so
-  # legacy env-based S3 deploys keep working.
+  # legacy env-based S3 deploys keep working. `CollavreCompat.call` drops
+  # the `boot_safe:` keyword on older gem versions that don't accept it,
+  # avoiding an ArgumentError at boot. Loaded eagerly by `config/application.rb`.
   s3_credentials =
     if defined?(Collavre::AwsCredentials)
-      Collavre::AwsCredentials.s3(boot_safe: true)
+      CollavreCompat.call(Collavre::AwsCredentials, :s3, boot_safe: true)
     elsif ENV["AWS_S3_ACCESS_KEY_ID"].present? && ENV["AWS_S3_SECRET_ACCESS_KEY"].present?
       { access_key_id: ENV["AWS_S3_ACCESS_KEY_ID"], secret_access_key: ENV["AWS_S3_SECRET_ACCESS_KEY"] }
     else
@@ -24,14 +26,14 @@ local:
 
   s3_region =
     if defined?(Collavre::IntegrationSettings)
-      Collavre::IntegrationSettings.fetch(:aws_region, default: ENV.fetch("AWS_REGION", "ap-northeast-2"), boot_safe: true)
+      CollavreCompat.call(Collavre::IntegrationSettings, :fetch, :aws_region, default: ENV.fetch("AWS_REGION", "ap-northeast-2"), boot_safe: true)
     else
       ENV.fetch("AWS_REGION", "ap-northeast-2")
     end
 
   s3_bucket =
     if defined?(Collavre::IntegrationSettings)
-      Collavre::IntegrationSettings.fetch(:aws_s3_bucket, default: ENV.fetch("AWS_S3_BUCKET", "collavre-uploads-#{Rails.env}"), boot_safe: true)
+      CollavreCompat.call(Collavre::IntegrationSettings, :fetch, :aws_s3_bucket, default: ENV.fetch("AWS_S3_BUCKET", "collavre-uploads-#{Rails.env}"), boot_safe: true)
     else
       ENV.fetch("AWS_S3_BUCKET", "collavre-uploads-#{Rails.env}")
     end
