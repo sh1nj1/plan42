@@ -51,18 +51,26 @@ module CollavreOpenclaw
 
     private
 
+    def fetch_raw(key)
+      if defined?(Collavre::IntegrationSettings)
+        Collavre::IntegrationSettings.fetch(key)
+      else
+        ENV[key.to_s.upcase]
+      end
+    end
+
     def fetch_string(key, default)
-      raw = Collavre::IntegrationSettings.fetch(key)
+      raw = fetch_raw(key)
       raw.presence || default
     end
 
     def fetch_int(key, default)
-      raw = Collavre::IntegrationSettings.fetch(key)
+      raw = fetch_raw(key)
       raw.present? ? raw.to_i : default
     end
 
     def fetch_float(key, default)
-      raw = Collavre::IntegrationSettings.fetch(key)
+      raw = fetch_raw(key)
       raw.present? ? raw.to_f : default
     end
   end
