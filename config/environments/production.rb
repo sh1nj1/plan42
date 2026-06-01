@@ -105,7 +105,24 @@ Rails.application.configure do
   # mail. When the interceptor IS loaded, it overrides address/user_name/
   # password with DB > ENV > credentials at each send so admins can rotate
   # SES creds via /admin/integrations without redeploying.
-  ses_region = ENV["AWS_REGION"] || Rails.application.credentials.dig(:aws, :region)
+  # Resolve ses_region from DB > ENV > Rails.credentials so an admin-only SES
+  # setup (region + creds all stored in `integration_settings`) still emits an
+  # SES-shaped baseline address at boot. Without DB lookup here the scaffold
+  # leaves `:address` nil → compact removes it → `Mail::SMTP` falls back to
+  # `"localhost"`, which the interceptor's `ses_target?` now rejects, leaving
+  # production trying to authenticate to localhost with DB SES creds.
+  ses_region =
+    if defined?(Collavre::IntegrationSettings)
+      CollavreCompat.call(
+        Collavre::IntegrationSettings,
+        :fetch,
+        :aws_region,
+        default: ENV["AWS_REGION"],
+        boot_safe: true
+      ).presence || Rails.application.credentials.dig(:aws, :region)
+    else
+      ENV["AWS_REGION"].presence || Rails.application.credentials.dig(:aws, :region)
+    end
   ses_smtp_credentials =
     if defined?(Collavre::AwsCredentials)
       CollavreCompat.call(Collavre::AwsCredentials, :ses_smtp, boot_safe: true)
