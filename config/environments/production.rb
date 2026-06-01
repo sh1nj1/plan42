@@ -30,12 +30,12 @@ Rails.application.configure do
   # config.asset_host = "http://assets.example.com"
 
   # Collavre uploaded files storage: S3 only if BOTH access key id and secret
-  # are configured (DB via IntegrationSettings or AWS_S3_* env vars). Gating
-  # on the full credential pair avoids booting into `:amazon` with half-set
-  # admin keys, which would silently break uploads/downloads at runtime.
+  # are configured. `default: ENV[...]` preserves env-based deploys for
+  # `USE_COLLAVRE_GEM=true` builds where the gem-pinned version may not have
+  # the AWS keys registered (fetch otherwise returns nil for unknown keys).
   config.active_storage.service =
-    if Collavre::IntegrationSettings.fetch(:aws_s3_access_key_id).present? &&
-       Collavre::IntegrationSettings.fetch(:aws_s3_secret_access_key).present?
+    if Collavre::IntegrationSettings.fetch(:aws_s3_access_key_id, default: ENV["AWS_S3_ACCESS_KEY_ID"]).present? &&
+       Collavre::IntegrationSettings.fetch(:aws_s3_secret_access_key, default: ENV["AWS_S3_SECRET_ACCESS_KEY"]).present?
       :amazon
     else
       :local
@@ -88,15 +88,24 @@ Rails.application.configure do
   #   authentication: :plain
   # }
 
-  # AWS SES SMTP scaffold. `address`, `user_name`, `password` are injected at
-  # send time by `Collavre::SesSettingsInterceptor` (DB > ENV > credentials)
-  # so admins can rotate SES creds via /admin/integrations without redeploying.
+  # AWS SES SMTP. ENV/credentials populate the baseline so `USE_COLLAVRE_GEM=true`
+  # builds (which don't load `Collavre::SesSettingsInterceptor`) still send mail.
+  # When the interceptor IS loaded, it overrides address/user_name/password
+  # with DB > ENV > credentials at each send, so admins can rotate SES creds
+  # via /admin/integrations without redeploying.
+  ses_region = ENV["AWS_REGION"] || Rails.application.credentials.dig(:aws, :region)
+  ses_smtp_username = ENV["AWS_SES_SMTP_USERNAME"] || Rails.application.credentials.dig(:aws, :smtp_username)
+  ses_smtp_password = ENV["AWS_SES_SMTP_PASSWORD"] || Rails.application.credentials.dig(:aws, :smtp_password)
+
   config.action_mailer.delivery_method = :smtp
   config.action_mailer.smtp_settings = {
+    address:              ("email-smtp.#{ses_region}.amazonaws.com" if ses_region.present?),
     port:                 587,
+    user_name:            ses_smtp_username,
+    password:             ses_smtp_password,
     authentication:       :plain,
     enable_starttls_auto: true
-  }
+  }.compact
 
   # Enable locale fallbacks for I18n (makes lookups for any locale fall back to
   # the I18n.default_locale when a translation cannot be found).
