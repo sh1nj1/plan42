@@ -28,13 +28,12 @@ Rails.application.configure do
   # Change to :null_store to avoid any caching.
   config.cache_store = :memory_store
 
-  # Collavre uploaded files storage: S3 only if BOTH access key id and secret
-  # are configured. `default: ENV[...]` preserves env-based deploys for
-  # `USE_COLLAVRE_GEM=true` builds where the gem-pinned version may not have
-  # the AWS keys registered (fetch otherwise returns nil for unknown keys).
+  # Collavre uploaded files storage: S3 only when a source-coherent pair of
+  # S3 credentials is available (`AwsCredentials.s3` enforces same-source
+  # access key id + secret), otherwise local disk.
+  s3_credentials = defined?(Collavre::AwsCredentials) ? Collavre::AwsCredentials.s3 : {}
   config.active_storage.service =
-    if Collavre::IntegrationSettings.fetch(:aws_s3_access_key_id, default: ENV["AWS_S3_ACCESS_KEY_ID"]).present? &&
-       Collavre::IntegrationSettings.fetch(:aws_s3_secret_access_key, default: ENV["AWS_S3_SECRET_ACCESS_KEY"]).present?
+    if s3_credentials[:access_key_id].present? && s3_credentials[:secret_access_key].present?
       :amazon
     else
       :local

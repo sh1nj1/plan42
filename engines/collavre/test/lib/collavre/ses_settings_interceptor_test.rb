@@ -98,6 +98,18 @@ module Collavre
       assert_nil message.delivery_method.settings[:password]
     end
 
+    test "falls through to coherent ENV pair when only one DB half is set" do
+      ENV["AWS_SES_SMTP_USERNAME"] = "env-user"
+      ENV["AWS_SES_SMTP_PASSWORD"] = "env-pass"
+      Collavre::IntegrationSetting.create!(key: "aws_ses_smtp_username", value: "db-user", category: "aws")
+
+      message = build_smtp_message(settings: { port: 587 })
+      Collavre::SesSettingsInterceptor.delivering_email(message)
+
+      assert_equal "env-user", message.delivery_method.settings[:user_name]
+      assert_equal "env-pass", message.delivery_method.settings[:password]
+    end
+
     test "skips non-SMTP delivery methods" do
       message = ::Mail.new
       message.delivery_method :test

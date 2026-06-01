@@ -14,26 +14,28 @@ module Collavre
       def delivering_email(message)
         return unless message.delivery_method.is_a?(::Mail::SMTP)
 
-        region   = resolve(:aws_region, %i[aws region])
-        username = resolve(:aws_ses_smtp_username, %i[aws smtp_username])
-        password = resolve(:aws_ses_smtp_password, %i[aws smtp_password])
+        region = resolve_region
+        creds  = Collavre::AwsCredentials.ses_smtp
 
         settings = message.delivery_method.settings
         settings[:address] = "email-smtp.#{region}.amazonaws.com" if region.present?
-        # Inject SES SMTP credentials atomically — half-configured creds (username
-        # without password or vice versa) would still trigger SMTP auth and break
-        # every outbound delivery, which is worse than leaving the scaffold blank.
-        if username.present? && password.present?
-          settings[:user_name] = username
-          settings[:password]  = password
+        # `AwsCredentials.ses_smtp` returns only source-coherent pairs (both DB,
+        # both ENV, or both credentials). When admins save just one half via
+        # /admin/integrations while the other still lives in ENV, the helper
+        # drops the partial DB write and falls through to a coherent ENV/cred
+        # pair, avoiding mismatched (db-user, env-pass) injections that would
+        # break every SMTP delivery.
+        if creds[:user_name].present? && creds[:password].present?
+          settings[:user_name] = creds[:user_name]
+          settings[:password]  = creds[:password]
         end
       end
 
       private
 
-      def resolve(key, credentials_path)
-        value = Collavre::IntegrationSettings.fetch(key)
-        value.presence || Rails.application.credentials.dig(*credentials_path)
+      def resolve_region
+        value = Collavre::IntegrationSettings.fetch(:aws_region, default: ENV["AWS_REGION"])
+        value.presence || Rails.application.credentials.dig(:aws, :region)
       end
     end
   end

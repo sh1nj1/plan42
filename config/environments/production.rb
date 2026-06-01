@@ -29,13 +29,12 @@ Rails.application.configure do
   # Enable serving of images, stylesheets, and JavaScripts from an asset server.
   # config.asset_host = "http://assets.example.com"
 
-  # Collavre uploaded files storage: S3 only if BOTH access key id and secret
-  # are configured. `default: ENV[...]` preserves env-based deploys for
-  # `USE_COLLAVRE_GEM=true` builds where the gem-pinned version may not have
-  # the AWS keys registered (fetch otherwise returns nil for unknown keys).
+  # Collavre uploaded files storage: S3 only when a source-coherent pair of
+  # S3 credentials is available (`AwsCredentials.s3` enforces same-source
+  # access key id + secret), otherwise local disk.
+  s3_credentials = defined?(Collavre::AwsCredentials) ? Collavre::AwsCredentials.s3 : {}
   config.active_storage.service =
-    if Collavre::IntegrationSettings.fetch(:aws_s3_access_key_id, default: ENV["AWS_S3_ACCESS_KEY_ID"]).present? &&
-       Collavre::IntegrationSettings.fetch(:aws_s3_secret_access_key, default: ENV["AWS_S3_SECRET_ACCESS_KEY"]).present?
+    if s3_credentials[:access_key_id].present? && s3_credentials[:secret_access_key].present?
       :amazon
     else
       :local
@@ -88,21 +87,22 @@ Rails.application.configure do
   #   authentication: :plain
   # }
 
-  # AWS SES SMTP. ENV/credentials populate the baseline so `USE_COLLAVRE_GEM=true`
-  # builds (which don't load `Collavre::SesSettingsInterceptor`) still send mail.
-  # When the interceptor IS loaded, it overrides address/user_name/password
-  # with DB > ENV > credentials at each send, so admins can rotate SES creds
-  # via /admin/integrations without redeploying.
+  # AWS SES SMTP. `AwsCredentials.ses_smtp` returns a source-coherent pair so
+  # the baseline never mixes ENV with credentials. ENV/credentials populate
+  # the scaffold so `USE_COLLAVRE_GEM=true` builds (which don't load
+  # `Collavre::SesSettingsInterceptor`) still send mail. When the interceptor
+  # IS loaded, it overrides address/user_name/password with DB > ENV >
+  # credentials at each send so admins can rotate SES creds via
+  # /admin/integrations without redeploying.
   ses_region = ENV["AWS_REGION"] || Rails.application.credentials.dig(:aws, :region)
-  ses_smtp_username = ENV["AWS_SES_SMTP_USERNAME"] || Rails.application.credentials.dig(:aws, :smtp_username)
-  ses_smtp_password = ENV["AWS_SES_SMTP_PASSWORD"] || Rails.application.credentials.dig(:aws, :smtp_password)
+  ses_smtp_credentials = defined?(Collavre::AwsCredentials) ? Collavre::AwsCredentials.ses_smtp : {}
 
   config.action_mailer.delivery_method = :smtp
   config.action_mailer.smtp_settings = {
     address:              ("email-smtp.#{ses_region}.amazonaws.com" if ses_region.present?),
     port:                 587,
-    user_name:            ses_smtp_username,
-    password:             ses_smtp_password,
+    user_name:            ses_smtp_credentials[:user_name],
+    password:             ses_smtp_credentials[:password],
     authentication:       :plain,
     enable_starttls_auto: true
   }.compact
