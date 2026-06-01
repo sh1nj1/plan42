@@ -1,9 +1,10 @@
 # Register app-level integration setting keys with the central registry and
 # wire the keys whose effective values must be (re)applied on every boot.
 #
-# Engine-internal keys (`:default_mailer_from`, `:public_assets_host`,
-# `:mcp_upload_root`) are registered inside `Collavre::Engine` itself so they
-# remain owned by the engine when it is mounted as a gem in a host app.
+# Engine-owned keys live in each engine's `Engine` class so they remain
+# registered when an engine is mounted as a gem in a host app:
+#   - `Collavre::Engine` → `:default_mailer_from`, `:public_assets_host`, `:mcp_upload_root`
+#   - `CollavreOpenclaw::Engine` → `:app_host`, `:rails_host`
 #
 # `:default_url_host` carries `requires_restart: true` because its primary
 # read site (`config/application.rb`) executes before initializers; the wiring
@@ -13,8 +14,6 @@
 if defined?(Collavre::IntegrationSettings::Registry)
   registry = Collavre::IntegrationSettings::Registry.instance
   registry.register(:default_url_host, category: "mail", sensitive: false, requires_restart: true)
-  registry.register(:app_host,         category: "mail", sensitive: false, requires_restart: false)
-  registry.register(:rails_host,       category: "mail", sensitive: false, requires_restart: false)
   registry.register(:origin_shared_secret, category: "misc", sensitive: true, requires_restart: false)
 end
 
