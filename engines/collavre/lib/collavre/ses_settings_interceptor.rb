@@ -28,6 +28,13 @@ module Collavre
         if creds[:user_name].present? && creds[:password].present?
           settings[:user_name] = creds[:user_name]
           settings[:password]  = creds[:password]
+        else
+          # No coherent pair available (admin reset DB and no ENV/credentials
+          # fallback). Clear stale settings so we don't keep using boot-time
+          # or previously-injected credentials — these keys are registered
+          # with requires_restart: false, so runtime reset must take effect.
+          settings.delete(:user_name)
+          settings.delete(:password)
         end
       end
 

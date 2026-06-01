@@ -110,6 +110,16 @@ module Collavre
       assert_equal "env-pass", message.delivery_method.settings[:password]
     end
 
+    test "clears stale user_name/password when no coherent pair remains" do
+      message = build_smtp_message(
+        settings: { port: 587, user_name: "stale-user", password: "stale-pass" }
+      )
+      Collavre::SesSettingsInterceptor.delivering_email(message)
+
+      assert_nil message.delivery_method.settings[:user_name]
+      assert_nil message.delivery_method.settings[:password]
+    end
+
     test "skips non-SMTP delivery methods" do
       message = ::Mail.new
       message.delivery_method :test
