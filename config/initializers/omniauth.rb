@@ -45,9 +45,9 @@ notion_client_secret = resolve_oauth.call(:notion_client_secret, %i[notion clien
 github_mock_setting = resolve_oauth.call(:github_mock, %i[github mock])
 github_mock_enabled = if github_mock_setting.present?
                         github_mock_setting == "1"
-                      else
+else
                         Rails.env.development? && github_client_id.blank?
-                      end
+end
 
 Rails.application.config.middleware.use OmniAuth::Builder do
   if google_client_id.present? && google_client_secret.present?
