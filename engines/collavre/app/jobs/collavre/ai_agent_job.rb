@@ -25,7 +25,21 @@ module Collavre
             "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
             "session offline (routing_expression blank)"
           )
-          task.update!(status: "cancelled")
+          # Workflow subtasks created by WorkflowExecutor carry parent_task_id and
+          # no topic. If we only cancel the child and return, the parent workflow
+          # stays "running" with its current/pending creative state forever — no
+          # rescue path runs because we never raise. Mirror the StandardError
+          # rescue below: fail the child and notify the parent so the workflow
+          # transitions to "failed" with a failure_reason.
+          if task.parent_task_id.present?
+            task.update!(status: "failed")
+            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+              task,
+              error_message: "Claude Channel session offline before dispatch"
+            )
+          else
+            task.update!(status: "cancelled")
+          end
           if task.trigger_event_payload&.key?("topic")
             Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
           end

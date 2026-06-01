@@ -664,4 +664,73 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_equal "cancelled", queued.reload.status,
       "the offline-resumed task must be cancelled so it does not leak slots / queue space"
   end
+
+  test "claude channel offline-resumed workflow subtask fails parent workflow" do
+    # WorkflowExecutor builds subtasks with parent_task_id and no topic
+    # (see WorkflowExecutor#build_subtask_context). If the resumed task's
+    # session went offline (routing_expression blank) before the job fires,
+    # the offline guard must not only cancel the child but also propagate
+    # failure to the parent via WorkflowExecutor#fail_subtask! — otherwise
+    # the parent workflow stays "running" indefinitely because no rescue
+    # path runs (we never raise).
+    claude_agent = User.create!(
+      email: "cc-offline-subtask-agent@agent.collavre.local",
+      name: "Claude Offline Subtask Agent",
+      password: SecureRandom.hex(32),
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      routing_expression: nil,
+      created_by_id: @owner.id,
+      searchable: false
+    )
+
+    parent_creative = Creative.create!(user: @owner, description: "Offline Workflow Parent")
+    parent_task = Task.create!(
+      name: "Offline Workflow Parent",
+      status: "running",
+      agent: @owner,
+      creative_id: parent_creative.id
+    )
+
+    workflow_context = {
+      "creative" => { "id" => @creative.id },
+      "comment" => { "id" => @comment.id, "content" => "Offline subtask" }
+    }
+
+    sub_task = Task.create!(
+      name: "Claude offline subtask",
+      status: "pending",
+      agent: claude_agent,
+      parent_task_id: parent_task.id,
+      creative_id: @creative.id,
+      trigger_event_payload: workflow_context
+    )
+
+    fail_called_with = nil
+    fake_executor = Class.new do
+      define_method(:fail_subtask!) do |child, error_message: nil|
+        fail_called_with = { sub_task: child, error_message: error_message }
+      end
+    end.new
+
+    delivered = false
+    fake_adapter = Class.new do
+      define_method(:initialize) { |agent:, context:, task: nil| }
+      define_method(:deliver) { delivered = true; nil }
+    end
+
+    Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
+      Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
+        AiAgentJob.perform_now(sub_task)
+      end
+    end
+
+    refute delivered, "adapter must not run for offline-resumed Claude Channel subtask"
+    assert_equal "failed", sub_task.reload.status,
+      "subtask must transition to failed so the parent workflow sees a terminal state"
+    assert_not_nil fail_called_with,
+      "Expected WorkflowExecutor#fail_subtask! to be invoked so the parent workflow fails"
+    assert_equal sub_task.id, fail_called_with[:sub_task].id
+    assert_match(/offline/i, fail_called_with[:error_message].to_s)
+  end
 end
