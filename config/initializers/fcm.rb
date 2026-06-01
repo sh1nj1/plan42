@@ -33,9 +33,10 @@ FCM_CREDENTIALS = resolve.call(:google_application_credentials, %i[fcm google_ap
 if FCM_CREDENTIALS.present? && File.exist?(FCM_CREDENTIALS)
 
   # `Google::Auth.get_application_default` reads `ENV["GOOGLE_APPLICATION_CREDENTIALS"]`,
-  # so when the path came from DB-only configuration we must export it before the
-  # ADC lookup — otherwise the file-exists check passes but ADC ignores the path.
-  ENV["GOOGLE_APPLICATION_CREDENTIALS"] ||= FCM_CREDENTIALS
+  # so we must export the resolved path before the ADC lookup. Overwrite
+  # unconditionally — `resolve` already applied DB > ENV precedence, so any
+  # pre-existing ENV value lost that race and must not leak back into ADC.
+  ENV["GOOGLE_APPLICATION_CREDENTIALS"] = FCM_CREDENTIALS
 
   # Use default application credentials (reads from GOOGLE_APPLICATION_CREDENTIALS env var)
   credentials = Google::Auth.get_application_default(
