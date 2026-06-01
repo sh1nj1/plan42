@@ -6,6 +6,8 @@ module Collavre
   module Api
     module V1
       class AgentsControllerTest < ActionDispatch::IntegrationTest
+        include ActiveJob::TestHelper
+
         setup do
           @user = users(:one)
           @user.update!(email_verified_at: Time.current)
@@ -405,6 +407,71 @@ module Collavre
           assert_response :conflict
           assert_equal comments_before, creative.comments.count,
             "loser of the atomic claim must not save a comment"
+        end
+
+        test "Claude Channel reply enqueues TriggerLoopCheckJob for drop-trigger loops" do
+          # claim_delegated_task must use update! (not update_all) so that
+          # Task's after_update_commit :check_trigger_loop_completion fires
+          # on the delegated → done transition. Otherwise drop-trigger loops
+          # whose continue step is delegated to a Claude Channel agent stay
+          # stuck at state="running" because TriggerLoopCheckJob never
+          # enqueues — normal agent completions go through update! so they
+          # advance the loop; Claude replies must match that contract.
+          reg = register_agent("trigger-loop-callback-test")
+          ai_user = User.find(reg["agent_id"])
+
+          # Drop-trigger setup: parent enables on_child_enter, child has
+          # the running loop config. Mirrors trigger_loop_candidate? gates.
+          parent = Collavre::Creative.create!(
+            user: @user,
+            description: "Trigger container",
+            data: { "trigger" => { "on_child_enter" => true } }
+          )
+          child = Collavre::Creative.create!(
+            user: @user,
+            description: "Loop child"
+          )
+          Collavre::Creative.where(id: child.id).update_all(parent_id: parent.id)
+          child.reload
+
+          loop_topic = child.topics.create!(name: "Loop topic", user: @user)
+          loop_topic.set_primary_agent!(ai_user)
+
+          child.update!(data: {
+            "trigger" => {
+              "loop" => {
+                "state" => "running",
+                "cooldown_seconds" => 0,
+                "trigger_topic_id" => loop_topic.id
+              }
+            }
+          })
+
+          task = Collavre::Task.create!(
+            name: "Loop response",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            trigger_event_payload: { "comment" => { "id" => 999 } },
+            agent: ai_user,
+            topic_id: loop_topic.id,
+            creative_id: child.id
+          )
+
+          prev_adapter = ActiveJob::Base.queue_adapter
+          ActiveJob::Base.queue_adapter = :test
+          begin
+            assert_enqueued_with(job: Collavre::TriggerLoopCheckJob, args: [ task.id ]) do
+              post "/api/v1/agent/reply",
+                params: { topic_id: loop_topic.id, text: "Loop continuation", task_id: task.id },
+                headers: auth_headers,
+                as: :json
+              assert_response :created
+            end
+          ensure
+            ActiveJob::Base.queue_adapter = prev_adapter
+          end
+
+          assert_equal "done", task.reload.status
         end
 
         test "reply with unresolved task_id refuses instead of falling back to primary_agent" do

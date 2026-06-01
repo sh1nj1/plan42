@@ -220,11 +220,16 @@ module Collavre
         #      under topic concurrency > 1 where multiple delegated tasks
         #      coexist; the client echoes the dispatch's task_id). Without
         #      task_id (legacy clients), oldest-first.
-        #   2. Conditional UPDATE: WHERE id=? AND status='delegated' →
-        #      'done'. If rows_updated == 0, the candidate was completed/
-        #      cancelled between the find and the UPDATE (e.g. a concurrent
-        #      /reply or AgentsController#destroy beat us) — return nil so
-        #      the caller can refuse the duplicate.
+        #   2. Inside a transaction: SELECT FOR UPDATE the row, re-check
+        #      status == 'delegated' under the lock, then update! to 'done'.
+        #      Concurrent claimers block on the lock; the loser sees the
+        #      already-flipped status post-lock and returns nil so the
+        #      caller can refuse the duplicate.
+        # update! (not update_all) is required so that Task's
+        # after_update_commit callbacks fire — drop-trigger loops depend on
+        # check_trigger_loop_completion enqueuing TriggerLoopCheckJob on
+        # status="done", and the stop-button removal broadcast depends on
+        # became_terminal? firing here. Both are bypassed by update_all.
         # Returns the claimed Task on success, nil on conflict / no
         # delegated task. The caller is responsible for finalize_claimed_task
         # only AFTER the reply comment has been saved.
@@ -238,12 +243,15 @@ module Collavre
             end
           return nil unless candidate
 
-          rows_updated = Task.where(id: candidate.id, status: "delegated").update_all(
-            status: "done", updated_at: Time.current
-          )
-          return nil if rows_updated.zero?
+          claimed = nil
+          Task.transaction do
+            locked = Task.lock.find_by(id: candidate.id)
+            next unless locked && locked.status == "delegated"
 
-          candidate.reload
+            locked.update!(status: "done")
+            claimed = locked
+          end
+          claimed
         end
 
         # Post-claim side effects, run only after the reply comment is saved.
