@@ -304,6 +304,109 @@ module Collavre
           assert_equal newer.id, Comment.find(body["comment_id"]).task_id
         end
 
+        test "concurrent replies for same task_id only one wins; loser gets 409 without duplicate comment" do
+          # Race: two /reply requests for the same task_id can both pass
+          # resolve_reply_agent (read-only scope check). Without an atomic
+          # WHERE status='delegated' transition, both would save separate
+          # comments and both would run complete_delegated_task — producing
+          # duplicate linked replies for one dispatch. Atomic claim ensures
+          # exactly one /reply wins.
+          reg = register_agent("concurrent-reply-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          topic = Topic.find(topic_id)
+          creative = topic.creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "Race target",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          comments_before = creative.comments.count
+
+          # First reply: wins the atomic claim, transitions task → done.
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "First reply", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+          first_comment_id = JSON.parse(response.body)["comment_id"]
+          assert_equal "done", task.reload.status
+
+          # Second reply (same task_id) arrives after the first has completed.
+          # The task is no longer in delegated state — resolve_reply_agent
+          # cannot find it, returns nil, and reply renders 403. Either way,
+          # no duplicate comment is created.
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "Duplicate reply", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          # The post-completion lookup falls through resolve_reply_agent (which
+          # scopes to status: "delegated") → 403. Either way, the second
+          # request must not produce a 2xx.
+          refute_includes 200..299, response.status,
+            "second reply for an already-completed task must not return 2xx"
+
+          assert_equal comments_before + 1, creative.comments.count,
+            "exactly one comment should be linked to one delegated dispatch"
+          assert_equal first_comment_id, Comment.where(task_id: task.id).pluck(:id).first,
+            "only the winning reply's comment should be linked to the task"
+          assert_equal 1, Comment.where(task_id: task.id).count,
+            "no duplicate linked replies for one dispatch"
+        end
+
+        test "reply atomically claims delegated task — concurrent claim against the same task_id returns 409" do
+          # Direct unit-style test of the claim_delegated_task race. Simulate
+          # a concurrent winner by flipping the task to "done" BETWEEN
+          # resolve_reply_agent and claim_delegated_task — i.e. emulating the
+          # window where two Rails workers have both passed the scope check.
+          # The atomic WHERE status='delegated' UPDATE must return 0 rows
+          # for the loser, producing 409 (not a saved comment).
+          reg = register_agent("atomic-claim-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          topic = Topic.find(topic_id)
+          creative = topic.creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "Atomic race target",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          comments_before = creative.comments.count
+
+          # Patch claim_delegated_task to simulate a concurrent winner flipping
+          # the task to "done" after resolve_reply_agent saw it as "delegated"
+          # but before the atomic UPDATE runs.
+          original = Collavre::Api::V1::AgentsController.instance_method(:claim_delegated_task)
+          Collavre::Api::V1::AgentsController.define_method(:claim_delegated_task) do |agent, topic_arg, requested_task_id|
+            # Race in: another worker completes the task before our atomic UPDATE.
+            Collavre::Task.where(id: requested_task_id).update_all(status: "done")
+            original.bind_call(self, agent, topic_arg, requested_task_id)
+          end
+
+          begin
+            post "/api/v1/agent/reply",
+              params: { topic_id: topic_id, text: "Loser reply", task_id: task.id },
+              headers: auth_headers,
+              as: :json
+          ensure
+            Collavre::Api::V1::AgentsController.define_method(:claim_delegated_task, original)
+          end
+
+          assert_response :conflict
+          assert_equal comments_before, creative.comments.count,
+            "loser of the atomic claim must not save a comment"
+        end
+
         test "reply with unresolved task_id refuses instead of falling back to primary_agent" do
           # A present-but-unresolved task_id means the client believes it is
           # answering a specific dispatch that no longer exists (cancelled,

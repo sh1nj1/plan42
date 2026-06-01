@@ -9,8 +9,30 @@ module Collavre
         task = agent_id_or_task
         return if task.reload.status == "cancelled"
 
-        task.update!(status: "running")
         agent = task.agent
+
+        # Guard: same offline-session check as the agent_id branch below.
+        # Queued Claude Channel tasks resumed via Orchestration::AgentOrchestrator
+        # .dequeue_next_for_topic enter this branch as AiAgentJob.perform_later(task).
+        # If AgentChannel#unsubscribed cleared routing_expression while the
+        # task was queued (WS drop without DELETE /agent/:id, e.g. SIGKILL or
+        # network blip past the reconnect grace), and another completion later
+        # drains the queue, this task would otherwise be promoted to running →
+        # delegated and broadcast to a clientless agent:user:<id> stream —
+        # held until stuck recovery.
+        if agent.claude_channel_agent? && agent.routing_expression.blank?
+          Rails.logger.info(
+            "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
+            "session offline (routing_expression blank)"
+          )
+          task.update!(status: "cancelled")
+          if task.trigger_event_payload&.key?("topic")
+            Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+          end
+          return
+        end
+
+        task.update!(status: "running")
       else
         # Create new task
         agent = User.find(agent_id_or_task)

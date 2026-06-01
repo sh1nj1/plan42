@@ -180,6 +180,58 @@ module Collavre
         "first owner subscribe must activate routing_expression so dispatches resume"
     end
 
+    test "late unsubscribe does not clear routing when a newer subscribe already took over" do
+      # Race: WS drops on the old connection, but ActionCable's ping-timeout
+      # (default ~5s) means unsubscribed fires several seconds late. During
+      # that window the MCP client reconnects → new Channel instance subscribes
+      # → routing_expression is restored and the new connection is now the
+      # live subscriber. The late unsubscribed for the OLD connection must NOT
+      # clear routing — that would mark the live agent offline and stop
+      # dispatches until another reconnect.
+      agent = User.create!(
+        email: "agent-channel-late-unsub-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: nil,
+        created_by_id: @user.id,
+        searchable: false
+      )
+
+      # Old connection subscribes; routing activates; capture the old token.
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      assert subscription.confirmed?
+      assert_equal "true", agent.reload.routing_expression
+      old_token = AgentChannel.subscription_tokens[agent.id]
+      assert old_token.present?
+
+      # New (reconnected) connection subscribes BEFORE the old connection's
+      # unsubscribed callback has had time to fire. This is a separate
+      # Channel instance in real life — the implementation uses a class-
+      # level token map to distinguish ownership across instances.
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      assert subscription.confirmed?
+      new_token = AgentChannel.subscription_tokens[agent.id]
+      assert new_token.present?
+      refute_equal old_token, new_token,
+        "new subscribe must mint a fresh token so a stale unsubscribe is a no-op"
+
+      # Simulate the OLD subscription's delayed unsubscribed firing AFTER the
+      # new subscription has already claimed ownership.
+      stale_channel = AgentChannel.allocate
+      stale_channel.instance_variable_set(:@session_agent, agent)
+      stale_channel.instance_variable_set(:@subscription_token, old_token)
+      stale_channel.send(:unsubscribed)
+
+      assert_equal "true", agent.reload.routing_expression,
+        "late unsubscribe from a stale connection must not clobber the live subscription"
+      assert_equal new_token, AgentChannel.subscription_tokens[agent.id],
+        "the live connection's token must still be the registered owner"
+    end
+
     test "unsubscribe does not touch non-Claude-Channel agent routing_expression" do
       agent = User.create!(
         email: "agent-channel-other-ai-test@agent.collavre.local",

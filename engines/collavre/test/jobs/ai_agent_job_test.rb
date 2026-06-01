@@ -424,6 +424,10 @@ class AiAgentJobTest < ActiveJob::TestCase
       password: SecureRandom.hex(32),
       llm_vendor: "anthropic",
       llm_model: "claude-code",
+      # Online session — without this, the resumed-task offline guard
+      # (commit fixing P2 "Guard queued Claude jobs when session offline")
+      # would short-circuit before the adapter's UndeliverableError fires.
+      routing_expression: "true",
       created_by_id: @owner.id,
       searchable: false
     )
@@ -609,5 +613,55 @@ class AiAgentJobTest < ActiveJob::TestCase
       "ClaudeChannelAdapter#deliver must not run for an unregistered Claude Channel session"
     assert_equal tasks_before, Task.where(agent_id: claude_agent.id).count,
       "no Task row should be created for an offline Claude Channel session"
+  end
+
+  test "claude channel queued task skips dispatch when session went offline before dequeue" do
+    # Topic-concurrency queueing path: Scheduler returns :queued, a Task row
+    # is created and held in queued state. Later, dequeue_next_for_topic
+    # (after another task completes or stuck recovery drains the queue)
+    # promotes the task and calls AiAgentJob.perform_later(task) — entering
+    # the Task branch of perform. If AgentChannel#unsubscribed cleared
+    # routing_expression while the task was queued (WS drop without
+    # DELETE /agent/:id), the broadcast would otherwise land in a clientless
+    # agent:user:<id> stream — held until stuck recovery.
+    claude_agent = User.create!(
+      email: "cc-queued-offline-agent@agent.collavre.local",
+      name: "Claude Queued Offline Agent",
+      password: SecureRandom.hex(32),
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      routing_expression: nil,
+      created_by_id: @owner.id,
+      searchable: false
+    )
+
+    topic = Topic.create!(creative: @creative, name: "cc-queued-offline", user: @owner)
+    queued = Task.create!(
+      name: "Resumed-from-queue",
+      status: "pending",
+      agent: claude_agent,
+      topic_id: topic.id,
+      creative_id: @creative.id,
+      trigger_event_payload: {
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => topic.id },
+        "comment" => { "id" => @comment.id }
+      }
+    )
+
+    delivered = false
+    fake_adapter = Class.new do
+      define_method(:initialize) { |agent:, context:, task: nil| }
+      define_method(:deliver) { delivered = true; nil }
+    end
+
+    Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
+      AiAgentJob.perform_now(queued)
+    end
+
+    refute delivered,
+      "ClaudeChannelAdapter#deliver must not run when the resumed task's session is offline"
+    assert_equal "cancelled", queued.reload.status,
+      "the offline-resumed task must be cancelled so it does not leak slots / queue space"
   end
 end

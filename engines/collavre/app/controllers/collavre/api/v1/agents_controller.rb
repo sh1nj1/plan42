@@ -137,6 +137,20 @@ module Collavre
             return
           end
 
+          # Atomically claim the delegated task BEFORE saving the reply.
+          # Two concurrent /reply requests with the same task_id can both
+          # pass resolve_reply_agent (which is a read-only scope check) and,
+          # without an atomic WHERE status='delegated' transition, both would
+          # save separate comments and both would run completion logic —
+          # producing duplicate linked replies for one dispatch. Claim first,
+          # save second, so the loser sees rows_updated == 0 and bails out
+          # before touching the comments table.
+          claimed_task = claim_delegated_task(agent, topic, params[:task_id])
+          if params[:task_id].present? && claimed_task.nil?
+            render json: { error: "Task already completed or not delegated" }, status: :conflict
+            return
+          end
+
           comment = creative.comments.build(
             content: params[:text].to_s,
             topic: topic,
@@ -146,10 +160,13 @@ module Collavre
           )
 
           if comment.save
-            complete_delegated_task(agent, topic, comment, params[:task_id])
+            finalize_claimed_task(agent, claimed_task, comment) if claimed_task
             dispatch_a2a(agent, comment)
             render json: { comment_id: comment.id }, status: :created
           else
+            # Restore the dispatch so the MCP client can retry — the failure
+            # is text-level (validation), not task-level.
+            claimed_task&.update!(status: "delegated")
             render json: { errors: comment.errors.full_messages }, status: :unprocessable_entity
           end
         end
@@ -197,40 +214,46 @@ module Collavre
           nil
         end
 
-        # When Claude responds, complete the delegated task this reply
-        # corresponds to so trigger-loop / workflow completion paths fire.
-        # Without this, drop-trigger loops stay stuck because
-        # Task#trigger_loop_candidate? only triggers on status == "done".
-        #
-        # Correlation rules:
-        #  - If the client echoes back the task_id from the dispatch payload,
-        #    complete that specific task (verifying it belongs to the same
-        #    agent + topic and is still delegated). This is required when
-        #    topic concurrency > 1 — multiple delegated tasks can co-exist
-        #    in one topic, and Claude may reply out of dispatch order.
-        #  - Otherwise (back-compat for clients that don't yet echo task_id),
-        #    fall back to the oldest delegated task in this agent+topic.
-        # Also advances the parent workflow (if any) and drains the topic
-        # queue, mirroring the completion path AiAgentJob takes for
-        # non-delegated runs.
-        def complete_delegated_task(agent, topic, comment, requested_task_id)
+        # Atomically claim a delegated task for completion. Two-step:
+        #   1. Find a candidate task in delegated state, scoped to this
+        #      agent + topic. With task_id supplied, exact match (required
+        #      under topic concurrency > 1 where multiple delegated tasks
+        #      coexist; the client echoes the dispatch's task_id). Without
+        #      task_id (legacy clients), oldest-first.
+        #   2. Conditional UPDATE: WHERE id=? AND status='delegated' →
+        #      'done'. If rows_updated == 0, the candidate was completed/
+        #      cancelled between the find and the UPDATE (e.g. a concurrent
+        #      /reply or AgentsController#destroy beat us) — return nil so
+        #      the caller can refuse the duplicate.
+        # Returns the claimed Task on success, nil on conflict / no
+        # delegated task. The caller is responsible for finalize_claimed_task
+        # only AFTER the reply comment has been saved.
+        def claim_delegated_task(agent, topic, requested_task_id)
           scope = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
-          task =
+          candidate =
             if requested_task_id.present?
               scope.find_by(id: requested_task_id)
             else
               scope.order(:created_at).first
             end
-          return unless task
+          return nil unless candidate
 
-          Task.transaction do
-            comment.update_column(:task_id, task.id)
-            task.update!(status: "done")
-          end
+          rows_updated = Task.where(id: candidate.id, status: "delegated").update_all(
+            status: "done", updated_at: Time.current
+          )
+          return nil if rows_updated.zero?
 
-          # The job that started this task held its ResourceTracker slot under
-          # task.id while waiting for the MCP reply; release it now so the
-          # agent's concurrency capacity reflects reality.
+          candidate.reload
+        end
+
+        # Post-claim side effects, run only after the reply comment is saved.
+        # Links the comment to the claimed task, releases the ResourceTracker
+        # slot the AiAgentJob held under task.id, advances the parent
+        # workflow (if any), and drains the topic queue — mirroring
+        # AiAgentJob#perform's success path for non-delegated runs.
+        def finalize_claimed_task(agent, task, comment)
+          comment.update_column(:task_id, task.id)
+
           Orchestration::ResourceTracker.for(agent).release!(task.id)
 
           if task.parent_task_id.present?
