@@ -571,8 +571,16 @@ module CollavreOpenclaw
 
       host = options[:host]
       host ||= Rails.application.config.action_controller.default_url_options&.dig(:host)
-      host ||= ENV["APP_HOST"]
-      host ||= ENV["RAILS_HOST"]
+      # When the engine is mounted without core Collavre (gemspec has no `collavre`
+      # dependency), `IntegrationSettings` is undefined — fall back to the ENV
+      # path the previous code used so standalone deployments still resolve a host.
+      if defined?(Collavre::IntegrationSettings)
+        host ||= Collavre::IntegrationSettings.fetch(:app_host)
+        host ||= Collavre::IntegrationSettings.fetch(:rails_host)
+      else
+        host ||= ENV["APP_HOST"]
+        host ||= ENV["RAILS_HOST"]
+      end
 
       result = { host: host }
       result[:protocol] = options[:protocol] || "https"

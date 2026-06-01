@@ -2,11 +2,14 @@
 
 return unless defined?(RubyLLM)
 
+# LLM API keys are registered by `Collavre::Engine` so the registry is
+# populated even when the engine is mounted as a gem without this app-level
+# initializer. Resolver here serves values via DB > ENV > default.
+
 RubyLLM.configure do |config|
-  config.gemini_api_key = ENV["GEMINI_API_KEY"]
-  if ENV["GEMINI_API_BASE"].present?
-    config.gemini_api_base = ENV["GEMINI_API_BASE"]
-  end
+  config.gemini_api_key = Collavre::IntegrationSettings.fetch(:gemini_api_key)
+  gemini_api_base = Collavre::IntegrationSettings.fetch(:gemini_api_base)
+  config.gemini_api_base = gemini_api_base if gemini_api_base.present?
   config.request_timeout = begin
     Collavre::SystemSetting.llm_request_timeout_seconds
   rescue StandardError

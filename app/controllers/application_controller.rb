@@ -53,14 +53,14 @@ class ApplicationController < ActionController::Base
   def verify_cloudfront_origin!
     return if skip_cloudfront_verification?
 
-    unless request.headers["X-Origin-Secret"] == ENV["ORIGIN_SHARED_SECRET"]
+    unless request.headers["X-Origin-Secret"] == Collavre::IntegrationSettings.fetch(:origin_shared_secret)
       head :forbidden
     end
   end
 
   def skip_cloudfront_verification?
     return false if request.headers["X-Origin-Secret"].present?
-    return true if ENV["ORIGIN_SHARED_SECRET"].blank?
+    return true if Collavre::IntegrationSettings.fetch(:origin_shared_secret).blank?
 
     # health checks, internal callbacks, etc.
     request.path.start_with?("/up") || request.path.start_with?("/health")
