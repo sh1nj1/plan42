@@ -31,8 +31,17 @@ Rails.application.configure do
 
   # Collavre uploaded files storage: S3 only when a source-coherent pair of
   # S3 credentials is available (`AwsCredentials.s3` enforces same-source
-  # access key id + secret), otherwise local disk.
-  s3_credentials = defined?(Collavre::AwsCredentials) ? Collavre::AwsCredentials.s3 : {}
+  # access key id + secret). When `Collavre::AwsCredentials` is unavailable
+  # (`USE_COLLAVRE_GEM=true` with an older gem), fall back to plain ENV so
+  # legacy env-based S3 deploys keep S3 selected.
+  s3_credentials =
+    if defined?(Collavre::AwsCredentials)
+      Collavre::AwsCredentials.s3
+    elsif ENV["AWS_S3_ACCESS_KEY_ID"].present? && ENV["AWS_S3_SECRET_ACCESS_KEY"].present?
+      { access_key_id: ENV["AWS_S3_ACCESS_KEY_ID"], secret_access_key: ENV["AWS_S3_SECRET_ACCESS_KEY"] }
+    else
+      {}
+    end
   config.active_storage.service =
     if s3_credentials[:access_key_id].present? && s3_credentials[:secret_access_key].present?
       :amazon
@@ -88,14 +97,21 @@ Rails.application.configure do
   # }
 
   # AWS SES SMTP. `AwsCredentials.ses_smtp` returns a source-coherent pair so
-  # the baseline never mixes ENV with credentials. ENV/credentials populate
-  # the scaffold so `USE_COLLAVRE_GEM=true` builds (which don't load
-  # `Collavre::SesSettingsInterceptor`) still send mail. When the interceptor
-  # IS loaded, it overrides address/user_name/password with DB > ENV >
-  # credentials at each send so admins can rotate SES creds via
-  # /admin/integrations without redeploying.
+  # the baseline never mixes ENV with credentials. When `Collavre::AwsCredentials`
+  # is unavailable (`USE_COLLAVRE_GEM=true` with an older gem), fall back to
+  # plain ENV / Rails.credentials so legacy env-based deploys keep sending
+  # mail. When the interceptor IS loaded, it overrides address/user_name/
+  # password with DB > ENV > credentials at each send so admins can rotate
+  # SES creds via /admin/integrations without redeploying.
   ses_region = ENV["AWS_REGION"] || Rails.application.credentials.dig(:aws, :region)
-  ses_smtp_credentials = defined?(Collavre::AwsCredentials) ? Collavre::AwsCredentials.ses_smtp : {}
+  ses_smtp_credentials =
+    if defined?(Collavre::AwsCredentials)
+      Collavre::AwsCredentials.ses_smtp
+    else
+      legacy_user = ENV["AWS_SES_SMTP_USERNAME"].presence || Rails.application.credentials.dig(:aws, :smtp_username).presence
+      legacy_pass = ENV["AWS_SES_SMTP_PASSWORD"].presence || Rails.application.credentials.dig(:aws, :smtp_password).presence
+      legacy_user && legacy_pass ? { user_name: legacy_user, password: legacy_pass } : {}
+    end
 
   config.action_mailer.delivery_method = :smtp
   config.action_mailer.smtp_settings = {

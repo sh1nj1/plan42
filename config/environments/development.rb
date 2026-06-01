@@ -30,8 +30,16 @@ Rails.application.configure do
 
   # Collavre uploaded files storage: S3 only when a source-coherent pair of
   # S3 credentials is available (`AwsCredentials.s3` enforces same-source
-  # access key id + secret), otherwise local disk.
-  s3_credentials = defined?(Collavre::AwsCredentials) ? Collavre::AwsCredentials.s3 : {}
+  # access key id + secret). When `Collavre::AwsCredentials` is unavailable
+  # (`USE_COLLAVRE_GEM=true` with an older gem), fall back to plain ENV.
+  s3_credentials =
+    if defined?(Collavre::AwsCredentials)
+      Collavre::AwsCredentials.s3
+    elsif ENV["AWS_S3_ACCESS_KEY_ID"].present? && ENV["AWS_S3_SECRET_ACCESS_KEY"].present?
+      { access_key_id: ENV["AWS_S3_ACCESS_KEY_ID"], secret_access_key: ENV["AWS_S3_SECRET_ACCESS_KEY"] }
+    else
+      {}
+    end
   config.active_storage.service =
     if s3_credentials[:access_key_id].present? && s3_credentials[:secret_access_key].present?
       :amazon
