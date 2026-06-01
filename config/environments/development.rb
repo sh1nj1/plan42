@@ -28,8 +28,10 @@ Rails.application.configure do
   # Change to :null_store to avoid any caching.
   config.cache_store = :memory_store
 
-  # Collavre uploaded files storage: S3 if AWS_S3_ACCESS_KEY_ID is set, otherwise local disk.
-  config.active_storage.service = ENV["AWS_S3_ACCESS_KEY_ID"].present? ? :amazon : :local
+  # Collavre uploaded files storage: S3 if aws_s3_access_key_id is configured
+  # (DB via IntegrationSettings or AWS_S3_ACCESS_KEY_ID env var), otherwise local disk.
+  config.active_storage.service =
+    Collavre::IntegrationSettings.fetch(:aws_s3_access_key_id).present? ? :amazon : :local
 
   # Don't care if the mailer can't send.
   config.action_mailer.raise_delivery_errors = false

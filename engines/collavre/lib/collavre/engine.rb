@@ -38,6 +38,35 @@ module Collavre
       end
     end
 
+    # AWS keys are consumed by `config/environments/*.rb` (active_storage.service
+    # decision, SMTP scaffold) and `config/storage.yml` ERB, both of which evaluate
+    # during the `:load_environment_config` initializer — earlier than
+    # `:load_config_initializers`. Register them in their own block so
+    # `IntegrationSettings.fetch` can resolve the keys at that earlier point.
+    # S3 keys are `requires_restart: true` because Rails resolves the storage
+    # service once at boot; SES keys are runtime-injected by SesSettingsInterceptor.
+    initializer "collavre.integration_settings_registry.aws", before: :load_environment_config do
+      if defined?(Collavre::IntegrationSettings::Registry)
+        registry = Collavre::IntegrationSettings::Registry.instance
+        registry.register(:aws_s3_access_key_id,     category: "aws", sensitive: true,  requires_restart: true)
+        registry.register(:aws_s3_secret_access_key, category: "aws", sensitive: true,  requires_restart: true)
+        registry.register(:aws_s3_bucket,            category: "aws", sensitive: false, requires_restart: true)
+        registry.register(:aws_region,               category: "aws", sensitive: false, requires_restart: true)
+        registry.register(:aws_ses_smtp_username,    category: "aws", sensitive: true,  requires_restart: false)
+        registry.register(:aws_ses_smtp_password,    category: "aws", sensitive: true,  requires_restart: false)
+      end
+    end
+
+    # Register the SES SMTP settings interceptor so each outgoing mail picks up
+    # the current DB > ENV > credentials value for SES creds at send time.
+    # Hooked after ActionMailer loads to ensure Mail::SMTP is defined.
+    initializer "collavre.ses_settings_interceptor" do
+      ActiveSupport.on_load(:action_mailer) do
+        require "mail"
+        ::Mail.register_interceptor(Collavre::SesSettingsInterceptor)
+      end
+    end
+
     # Add engine migrations to main app's migration path
     # This allows migrations to live in the engine but be run from the host app
     initializer "collavre.migrations" do |app|
