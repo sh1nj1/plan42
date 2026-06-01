@@ -16,6 +16,21 @@ module Collavre
       root.join("app/assets/stylesheets")
     end
 
+    # Register engine-internal integration settings keys with the central
+    # registry. These keys are consumed by engine code (mailer `from`, public
+    # assets helper, MCP upload service), so the engine itself must own their
+    # registration — host apps may not include the app-level
+    # `integration_settings_app.rb` initializer when mounting the engine as a gem.
+    # `register` is idempotent, so host app re-registration remains safe.
+    initializer "collavre.integration_settings_registry", before: :load_config_initializers do
+      if defined?(Collavre::IntegrationSettings::Registry)
+        registry = Collavre::IntegrationSettings::Registry.instance
+        registry.register(:default_mailer_from, category: "mail", sensitive: false, requires_restart: true)
+        registry.register(:public_assets_host,  category: "mail", sensitive: false, requires_restart: false)
+        registry.register(:mcp_upload_root,     category: "misc", sensitive: false, requires_restart: false)
+      end
+    end
+
     # Add engine migrations to main app's migration path
     # This allows migrations to live in the engine but be run from the host app
     initializer "collavre.migrations" do |app|
