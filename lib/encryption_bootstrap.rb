@@ -23,6 +23,16 @@ module EncryptionBootstrap
     return unless defined?(ActiveRecord::Encryption)
 
     encryption_config = rails_app.config.active_record.encryption
+
+    # Mirror the initializer's read-side options BEFORE any early return so
+    # boot-time callers (storage.yml, environments/*.rb) can decrypt rows even
+    # when keys are already populated. Without this, a plaintext or
+    # previous-key `integration_settings.value` raises during the env config
+    # read, `boot_safe:` returns blank, and DB-backed S3/SES are silently
+    # downgraded for the whole process.
+    encryption_config.support_unencrypted_data = true
+    encryption_config.extend_queries = true
+
     return if encryption_config.primary_key.present? &&
               encryption_config.deterministic_key.present? &&
               encryption_config.key_derivation_salt.present?

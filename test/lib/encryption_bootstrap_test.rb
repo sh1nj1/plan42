@@ -7,12 +7,15 @@ class EncryptionBootstrapTest < ActiveSupport::TestCase
   # DB readers (storage.yml / environments/*.rb) can decrypt admin-saved
   # integration_settings rows BEFORE the encryption initializer runs.
 
-  FakeEncryptionConfig = Struct.new(:primary_key, :deterministic_key, :key_derivation_salt)
+  FakeEncryptionConfig = Struct.new(
+    :primary_key, :deterministic_key, :key_derivation_salt,
+    :support_unencrypted_data, :extend_queries
+  )
 
   class FakeApp
     def initialize(secret:, primary: nil, deterministic: nil, salt: nil)
       @secret = secret
-      @encryption_config = FakeEncryptionConfig.new(primary, deterministic, salt)
+      @encryption_config = FakeEncryptionConfig.new(primary, deterministic, salt, nil, nil)
     end
 
     attr_reader :secret_key_base
@@ -59,6 +62,25 @@ class EncryptionBootstrapTest < ActiveSupport::TestCase
     assert_nil cfg.primary_key
     assert_nil cfg.deterministic_key
     assert_nil cfg.key_derivation_salt
+  end
+
+  test "enables support_unencrypted_data and extend_queries even when keys already populated" do
+    # Codex round 10 P2: read-side options must run BEFORE the
+    # `return if ... present?` early return so plaintext / previous-key
+    # integration_settings rows are still readable from boot-time callers.
+    app = FakeApp.new(secret: "x" * 64, primary: "P", deterministic: "D", salt: "S")
+    EncryptionBootstrap.ensure_keys!(app)
+    cfg = app.encryption_config
+    assert_equal true, cfg.support_unencrypted_data
+    assert_equal true, cfg.extend_queries
+  end
+
+  test "enables support_unencrypted_data and extend_queries when secret is blank" do
+    app = FakeApp.new(secret: nil)
+    EncryptionBootstrap.ensure_keys!(app)
+    cfg = app.encryption_config
+    assert_equal true, cfg.support_unencrypted_data
+    assert_equal true, cfg.extend_queries
   end
 
   test "derived keys are deterministic for the same secret" do
