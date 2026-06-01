@@ -165,7 +165,7 @@
         <summary class="comment-action-summary"><%= t("collavre.comments.action_summary") %></summary>
         <div class="comment-action-body">
           <% action_md = comment_action_markdown(comment) %>
-          <% if action_md %>
+          <% if action_md && !has_pending_action %>
             <div class="comment-content comment-action-markdown"><%= action_md %></div>
           <% else %>
             <pre class="comment-action-json" data-comment-action-json><%= formatted_comment_action(comment) %></pre>
