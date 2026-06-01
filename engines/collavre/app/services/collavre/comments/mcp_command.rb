@@ -100,8 +100,8 @@ module Collavre
         result = response[:result]
         escaped_tool = ERB::Util.html_escape(tool_name)
 
-        if result.is_a?(Hash) && result["markdown"].is_a?(String) && result["markdown"].present?
-          markdown_body = result["markdown"]
+        markdown_body = extract_markdown(result)
+        if markdown_body
           return <<~HTML
           <details open><summary>#{escaped_tool} response</summary>
 
@@ -124,6 +124,25 @@ module Collavre
         <pre><code>#{escaped_content}</code></pre>
         </details>
         HTML
+      end
+
+      def extract_markdown(result)
+        candidate = nil
+
+        if result.is_a?(Hash)
+          candidate = result["markdown"] || result[:markdown]
+        elsif result.is_a?(String)
+          parsed = begin
+            JSON.parse(result)
+          rescue JSON::ParserError
+            nil
+          end
+          candidate = parsed["markdown"] if parsed.is_a?(Hash)
+        end
+
+        return nil unless candidate.is_a?(String) && candidate.strip.length.positive?
+
+        candidate
       end
 
       def tool_name
